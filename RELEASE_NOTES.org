@@ -37,6 +37,15 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- ~(setvar "LOGFILEMODE" 1)~ keeps a command-history log per drawing, as
+  AutoCAD and BricsCAD do: ~LOGFILEPATH~ (default
+  ~$XDG_STATE_HOME/clautolisp/logs/~) and ~LOGFILEMODE~ are saved preferences,
+  ~LOGFILENAME~ names the current drawing's file. The name, the header, what
+  is logged (AutoCAD: the whole command line; BricsCAD: the command channel)
+  and the encoding (AutoCAD windows-1252) follow the dialect, as measured;
+  ~-Elog~ chooses the encoding.
+- ~(findfile "")~ and ~(vl-file-size "")~ return nil, as on AutoCAD and
+  BricsCAD (they answered the current directory and 0).
 - Under the debugger, a ~lambda~ evaluated in a loop is instrumented once,
   not once per iteration: its closures share one debug record, and its
   debugging body compiles once the loop is hot (it used to stay interpreted,

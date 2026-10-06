@@ -152,6 +152,11 @@ derived value."
          (make-autolisp-string (or (cli-situation-encoding options "file" "read") "")))
    (list "*AUTOLISP-FILE-WRITE-ENCODING*"
          (make-autolisp-string (or (cli-situation-encoding options "file" "write") "")))
+   ;; The `log' situation (-Elog): the encoding of the command-history log
+   ;; file (cador command-log.lisp) -- empty when not given (then the
+   ;; product's: windows-1252 for AutoCAD, UTF-8 otherwise).
+   (list "*AUTOLISP-LOG-ENCODING*"
+         (make-autolisp-string (or (cli-situation-encoding options "log" nil) "")))
    (list "*AUTOLISP-TERMINAL-ENCODING*"
          (make-autolisp-string
           (resolve-effective-encoding (cli-options-io-encoding options))))
@@ -403,7 +408,16 @@ Side effects:
      context (transmit-dialect-keyword bindings))
     (apply-dialect-trust-defaults context (transmit-dialect-keyword bindings))
     (apply-dialect-sysvar-defaults context (transmit-dialect-keyword bindings))
-    (apply-persisted-lispsys context bindings)))
+    (apply-persisted-lispsys context bindings)
+    (apply-command-log-preferences context)))
+
+(defun apply-command-log-preferences (context)
+  "The saved LOGFILEMODE / LOGFILEPATH of the active product, or the defaults
+(0, $XDG_STATE_HOME/clautolisp/logs/), on a cador host."
+  (when context
+    (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
+      (when (typep host 'clautolisp.cador:cador)
+        (clautolisp.cador:apply-command-log-preferences host)))))
 
 ;;; --- LISPSYS: persisted, read at launch, the AutoCAD source default -------
 ;;; Spec, "LISPSYS governs the AutoCAD source default (2021 and later)" and
@@ -490,7 +504,10 @@ the controller in autolisp-builtins-core/source/secureload.lisp."
            ;; dialect's product.
            (apply-persisted-lispsys-value
             host (ignore-errors (clautolisp.autolisp-reader:find-autolisp-dialect
-                                 dialect-keyword)))))))))
+                                 dialect-keyword)))
+           ;; ... and the product's log preferences.
+           (when (typep host 'clautolisp.cador:cador)
+             (clautolisp.cador:apply-command-log-preferences host))))))))
 
 (defun transmit-dialect-keyword (bindings)
   "Recover the dialect keyword (:strict / :autocad-2026 / :bricscad-v26

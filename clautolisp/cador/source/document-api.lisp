@@ -263,6 +263,9 @@ current document activates the first remaining one."
         :cannot-close-last-document
         "cador refuses to close the only open document ~S." key))
       (t
+       ;; command-log.lisp: a closed document's log is closed with it.
+       (when (fboundp 'cador-close-command-log)
+         (funcall 'cador-close-command-log host key))
        (let ((was-current (string= key (or (cador-active-document-key host) ""))))
          (setf (cador-documents host) (remove cell (cador-documents host)))
          (when was-current

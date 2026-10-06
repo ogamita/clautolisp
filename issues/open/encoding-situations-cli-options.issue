@@ -672,3 +672,14 @@ every-situation shorthand; -Eterminal exists with -in / -out.
 Still open: `log` (no reader of the CAD log exists yet), `console` -in and
 the CAD-side `file` default (the bootstrap `open` shim's default encoding,
 point 5), and one keyword per situation on start-engine (point 1).
+
+* The `log' situation (2026-10-06, clautolisp 2.2.207)
+
+Measured (probe-logfile, MR !428): AutoCAD 2022 writes its LOGFILEMODE log in
+windows-1252 (an e-acute PRINCed reads back as 233). BricsCAD V25 logs only the
+command channel, so the PRINC marker never reached the file; its accented
+prompts read back whole, which fits windows-1252 or UTF-8 with a BOM -- not
+settled. clautolisp now writes per-drawing logs (cador command-log.lisp) and
+-Elog reaches them (*AUTOLISP-LOG-ENCODING*): default windows-1252 under the
+AutoCAD dialects, UTF-8 otherwise. Still open here: console -in, the CAD-side
+file default, one keyword per situation on start-engine.

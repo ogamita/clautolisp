@@ -2924,7 +2924,10 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
   (let* ((value (autolisp-string-value (require-string filename "FINDFILE")))
          (search-dirs (append (%effective-support-dirs)
                               (%secureload-trusted-dirs)))
-         (located (resolve-existing-file value search-dirs)))
+         ;; The empty name names nothing: nil on AutoCAD 2022, BricsCAD V25
+         ;; and V26 (probe-logfile); resolving it found the current directory.
+         (located (and (string/= value "")
+                       (resolve-existing-file value search-dirs))))
     (emit-dotdot-path-portability-warning value "FINDFILE")
     (emit-forward-slash-ellipsis-portability-warning value "FINDFILE")
     (if located
@@ -3045,8 +3048,12 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
 (defun builtin-vl-file-size (filename)
   (let* ((value (autolisp-string-value
                  (require-string filename "VL-FILE-SIZE")))
-         (resolved (resolve-open-pathname value "VL-FILE-SIZE")))
+         (resolved (and (string/= value "")
+                        (resolve-open-pathname value "VL-FILE-SIZE"))))
     (cond
+      ;; The empty name: nil on AutoCAD 2022, BricsCAD V25 and V26
+      ;; (probe-logfile), not the current directory's 0.
+      ((null resolved) nil)
       ((uiop:directory-exists-p resolved)
        0)
       ((not (probe-file resolved))

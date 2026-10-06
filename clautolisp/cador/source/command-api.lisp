@@ -57,14 +57,16 @@ so a host that never sets CMDECHO keeps echoing. system-variables.issue
   ;; CMDECHO, matching AutoCAD where CMDECHO=0 silences the prompt echo
   ;; without disabling the command itself.
   (let ((sink (cador-prompt-output host)))
-    (when (and sink (%cador-cmdecho-on-p host))
-      (if arguments
-          (format sink "~&Command:~{ ~A~}~%"
-                  (mapcar #'render-command-token arguments))
-          ;; (command) with no arguments — the vendor-documented
-          ;; "cancel the current command" call.
-          (format sink "~&Command: *Cancel*~%"))
-      (finish-output sink)))
+    (when (%cador-cmdecho-on-p host)
+      (cador-console-write
+       host sink
+       (if arguments
+           (format nil "Command:~{ ~A~}~%"
+                   (mapcar #'render-command-token arguments))
+           ;; (command) with no arguments — the vendor-documented
+           ;; "cancel the current command" call.
+           (format nil "Command: *Cancel*~%"))
+       :fresh-line t)))
   (%execute-command-tokens host arguments)
   nil)
 
@@ -1020,10 +1022,12 @@ clautolisp declining what the program asked for (cador-4 slice 4)."
   "Print `; cador: <message> -- the rest of the command sequence is ignored.'
 on HOST's console when the command echo is on."
   (let ((sink (cador-prompt-output host)))
-    (when (and sink (%cador-cmdecho-on-p host))
-      (format sink "~&; cador: ~? -- the rest of the command sequence is ignored.~%"
-              control arguments)
-      (finish-output sink))))
+    (when (%cador-cmdecho-on-p host)
+      (cador-console-write
+       host sink
+       (format nil "; cador: ~? -- the rest of the command sequence is ignored.~%"
+               control arguments)
+       :fresh-line t))))
 
 (defun %registered-lisp-command (host name)
   "The function of the LISP command NAME registered with vlax-add-cmd (by

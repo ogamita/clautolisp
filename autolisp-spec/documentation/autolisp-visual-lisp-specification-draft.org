@@ -38601,6 +38601,16 @@ Specifies whether the contents of the command history are written to a log file.
 *** Compatibility
 AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
 
+*** Measured
+AutoCAD 2022, BricsCAD V25 (Windows) and V26 (macOS), probe-logfile (MR !428):
+setting it to 1 opens the current drawing's log (AutoCAD and BricsCAD/Windows
+create the file at once; BricsCAD/macOS in batch mode writes none); 0 closes
+it; turning it on again appends to the same file under a new header.
+
+*** clautolisp
+One log per drawing; a registry preference, per product, read at launch.
+See the clautolisp user manual, "The command-history log file".
+
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C0C25385-F210-4834-B7D4-B29C2592D36A
 - BricsCAD: https://help.bricsys.com/en-us/document/system-variable-reference/l/logfilemode-system-variable
@@ -38630,6 +38640,16 @@ Specifies the path and name of the command history log file for the current draw
 AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
 Divergence: saved-in AutoCAD Drawing, BricsCAD Not saved.
 
+*** Measured
+Read-only on all three. AutoCAD 2022: ~<LOGFILEPATH>\<drawing>_1<8 hex>.log~
+(~Dessin1_1696f0cec.log~). BricsCAD V25 (Windows):
+~<LOGFILEPATH><drawing>_YYYY-MM-DD_HH-MM-SS.log~. BricsCAD V26 (macOS): the
+bare name ~bricscad.log~. A new name each time LOGFILEPATH is set.
+
+*** clautolisp
+Follows the dialect's product as measured; other dialects use the BricsCAD
+form. See the clautolisp user manual, "The command-history log file".
+
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-38D94E23-56D3-4B41-8684-200150A2DDA7
 - BricsCAD: https://help.bricsys.com/en-us/document/system-variable-reference/l/logfilename-system-variable
@@ -38657,6 +38677,15 @@ Specifies the path for the command history log files for all drawings in a sessi
 
 *** Compatibility
 AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
+
+*** Measured
+AutoCAD 2022 keeps the value as given; BricsCAD (V25 Windows, V26 macOS) adds a
+trailing separator. Setting it starts a new log file there. The factory
+default could not be measured on either product.
+
+*** clautolisp
+Default ~$XDG_STATE_HOME/clautolisp/logs/~ (~~/.local/state/clautolisp/logs/~
+when XDG_STATE_HOME is unset or empty); a registry preference, per product.
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0E2D4DF2-4C26-48AC-ACBC-819E3C46CE59

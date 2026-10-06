@@ -177,6 +177,39 @@ These commands need a debug session, which the interactive REPL always
 has; a non-interactive batch run (~-x~ / ~-l~ without a REPL) reports
 that debugging is not active.
 
+*** The command-history log file (LOGFILEMODE)
+
+As on AutoCAD and BricsCAD, ~(setvar "LOGFILEMODE" 1)~ keeps a log of the
+command line, *one file per drawing*:
+
+- ~LOGFILEPATH~ is the directory. Default:
+  ~$XDG_STATE_HOME/clautolisp/logs/~, or ~~/.local/state/clautolisp/logs/~
+  when ~XDG_STATE_HOME~ is unset or empty (neither vendor's factory
+  location could be measured).
+- ~LOGFILENAME~ (read-only) names the current drawing's file.
+- ~LOGFILEMODE~ and ~LOGFILEPATH~ are preferences: saved in the registry,
+  per product (~HKEY_CURRENT_USER\Software\clautolisp\Variables\<product>~,
+  like ~LISPSYS~), and read at launch.
+- Turning logging off and on again appends to the same file, under a new
+  header; setting ~LOGFILEPATH~ starts new files there. Closing a drawing
+  closes its log.
+
+What is logged, the file's name, its header and its encoding follow the
+active dialect's product, as measured on AutoCAD 2022 and BricsCAD V25 / V26:
+
+| dialect          | LOGFILENAME                                    | logged                         | encoding     |
+|------------------+------------------------------------------------+--------------------------------+--------------|
+| AutoCAD          | ~<path>/<drawing>_1<8 hex>.log~                | the whole command line         | windows-1252 |
+| BricsCAD         | ~<path>/<drawing>_YYYY-MM-DD_HH-MM-SS.log~     | the command channel only       | UTF-8        |
+| BricsCAD (macOS) | ~bricscad.log~ (in ~LOGFILEPATH~)              | the command channel only       | UTF-8        |
+| other dialects   | ~<path>/<drawing>_YYYY-MM-DD_HH-MM-SS.log~     | the whole command line         | UTF-8        |
+
+"The command channel" is cador's prompts, the command echo, its
+~; cador:~ notices and the answers typed after a prompt; "the whole command
+line" adds the REPL's own output (~princ~ ...) and the lines typed at it.
+BricsCAD adds a trailing separator to ~LOGFILEPATH~; AutoCAD keeps it as
+given. ~-Elog ENC~ (~--log-encoding~) chooses the encoding.
+
 *** Recording the session: the dribble
 
 The REPL can record its interactions — input lines, standard output,

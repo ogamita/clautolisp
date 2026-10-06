@@ -40,14 +40,13 @@ initget is issued."
             (if state (initget-keywords state) '()))))
 
 (defun cador-write-prompt (host string)
-  (let ((sink (cador-prompt-output host)))
-    (when (and string sink)
-      (write-string string sink)
-      ;; When the sink is a live terminal (interactive REPL) the prompt
-      ;; must reach the screen before the following blocking read; on a
-      ;; string-output-stream (the deterministic test path) this is a
-      ;; harmless no-op.
-      (finish-output sink))))
+  ;; CADOR-CONSOLE-WRITE finishes the output: when the sink is a live
+  ;; terminal (interactive REPL) the prompt must reach the screen before the
+  ;; following blocking read; on a string-output-stream (the deterministic
+  ;; test path) that is a harmless no-op. It also logs the prompt
+  ;; (command-log.lisp).
+  (when string
+    (cador-console-write host (cador-prompt-output host) string)))
 
 (defun %prompt-input-status (stream)
   "Classify STREAM for a prompt read WITHOUT consuming a usable character:
@@ -114,12 +113,19 @@ synchronously exactly as before."
       ((cador-pending-input host) (%pending-input-line host))
       ((null stream) :eof)
       (t
-        (ecase (%prompt-input-status stream)
-          (:eof :eof)
-          (:ready (read-line stream nil :eof))
-          (:would-block
-           (%cador-maybe-park-read host
-                                   (lambda () (read-line stream nil :eof)))))))))
+       ;; The answer goes to the log after its prompt, as on AutoCAD and
+       ;; BricsCAD ("prompt: input"); bound so the REPL's input echo does
+       ;; not log the same line a second time.
+       (let* ((*command-log-channel-active* t)
+              (line (ecase (%prompt-input-status stream)
+                      (:eof :eof)
+                      (:ready (read-line stream nil :eof))
+                      (:would-block
+                       (%cador-maybe-park-read host
+                                               (lambda () (read-line stream nil :eof)))))))
+         (when (stringp line)
+           (command-log-channel-text host (format nil "~A~%" line)))
+         line)))))
 
 (defmethod host-grread ((host cador) track key-press cursor)
   "clautolisp keyboard grread (grread-keyboard-event-is-a-list-not-a-dotted-pair
