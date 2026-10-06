@@ -674,7 +674,8 @@ the shared blocker.
 |--------------------------------------+----------+------|
 | debugger-public-interface-and-on-error | TODO   | **MAJ 2026-10-06 : le transport aldb est fait** (--aldb-listen / --aldb-stdio, testés). Reste : partager les options avec alfe (décision pjb), --aldb-swank (différé), --on-interrupt sous CCL. clal-* API + --on-error/--debugger-ui/--aldb-* CLI |
 | instrumenter-no-pollpoints-on-atoms   | DONE     | clautolisp 2.2.142: `set atom-poll-points on` (default off) gives every evaluated atom -- variable reference or literal -- its own poll point, positioned by its occurrence (the cons cell holding it). SETQ places / FOREACH var / operators excluded; `break LINE` still means the statement. Compiled instrumented forks checked. issues/closed/ |
-| deferred-debugger-compiler-two-bodies | TODO | BLOCAGE PÉRIMÉ levé 2026-09-29 : la porte était « le compilateur n'existe pas » ; il existe (compiler.issue, tranches 2.0.0 et suivantes). Discipline à deux corps debug/ordinaire faisable maintenant, sous Linux. |
+| deferred-debugger-compiler-two-bodies | DONE | **CLOS 2026-10-06 (2.2.206)** : livre sous une autre forme -- corps en slots du usubr, choix par appele pour la session (DN-2 remplace la propagation par site d appel) ; ajoute (debug 3) au corps de debogage compile et les positions source dans le .lap ; spec 5/13 mise a jour. issues/closed/ |
+| debug-lambda-in-a-loop-reinstrumented | TODO | NOUVEAU 2026-10-06 (P3) : sous session, un lambda dans une boucle est retisse a chaque iteration et son corps de debogage jamais compile (le site ne partage que le corps ordinaire). |
 | deferred-debugger-remote-cad          | DEFERRED | gated on transport + CAD (Phase 9) |
 
 ** DCL (dialog control language)

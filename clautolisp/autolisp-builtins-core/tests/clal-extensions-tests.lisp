@@ -1159,6 +1159,49 @@ as one loaded from its source."
              (is (eql 49 (%eval-here "(docsq 7)"))))
         (ignore-errors (delete-file lap))))))
 
+(defun %body-of (name)
+  (clautolisp.autolisp-runtime:autolisp-usubr-body
+   (clautolisp.autolisp-runtime:lookup-function
+    (clautolisp.autolisp-runtime:intern-autolisp-symbol name))))
+
+(test an-artefact-keeps-the-source-positions-for-the-debugger
+  "A function loaded from a .lap is debuggable by line like one loaded from
+its source: loaded with positions tracked (a debugger UI), its body's forms
+carry their source lines. Loaded without, nothing is recorded -- an ordinary
+load of a .lap stays as allocation-free as one of its source -- and compiling
+leaves nothing in the compiling image's tables either."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(setq x 1)
+(defun possq (x)
+  (setq x (* x x))
+  (+ x 1))")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (let ((clautolisp.source:*source-position-table* (make-hash-table :test 'eq))
+                 (clautolisp.source:*source-element-position-table* (make-hash-table :test 'eq)))
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (is (zerop (hash-table-count clautolisp.source:*source-position-table*))
+                 "compiling the .lap left positions in the compiling image")
+             ;; an ordinary load: nothing recorded
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (null (clautolisp.source:position-of (first (%body-of "POSSQ")))))
+             ;; a debug load: the body's forms carry their lines
+             (%fresh-builtin-context)
+             (let ((clautolisp.source:*track-source-positions* t))
+               (%load-here lap))
+             (let ((first-form (clautolisp.source:position-of (first (%body-of "POSSQ"))))
+                   (second-form (clautolisp.source:position-of (second (%body-of "POSSQ")))))
+               (is (not (null first-form)) "no position for the body's first form")
+               (is (not (null second-form)) "no position for the body's second form")
+               (when (and first-form second-form)
+                 (is (eql 3 (clautolisp.source:source-position-start-line first-form)))
+                 (is (eql 4 (clautolisp.source:source-position-start-line second-form)))))
+             (is (eql 26 (%eval-here "(possq 5)"))))
+        (ignore-errors (delete-file lap))))))
+
 (test clal-compile-file-reports-a-missing-file-the-way-load-does
   (%fresh-builtin-context)
   (is (null (clautolisp.autolisp-builtins-core::builtin-clal-compile-file

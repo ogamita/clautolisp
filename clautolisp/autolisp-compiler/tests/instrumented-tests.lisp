@@ -105,6 +105,22 @@ or the debugger's poll points would keep firing on undebugged code."
     (is (not (autolisp-function-compiled-p usubr))
         "compiling the instrumented body also filled the plain fork")))
 
+(test the-debug-fork-is-compiled-at-debug-3
+  "Debugger spec 5.2, the debug body's half of the two-bodies discipline: no
+optimisation across a poll point, every frame kept. DEBUG 3 is what states it
+-- and what stops the host merging a tail call into its caller's frame, which
+would drop a frame from the debugger's backtrace."
+  (multiple-value-bind (context usubr)
+      (%instrumented-context "(defun sq (x) (* x x))" "SQ")
+    (declare (ignore context))
+    (let* ((form (clautolisp.autolisp-compiler::instrumented-fork-lambda-form usubr))
+           (declarations (loop for item in (cddr form)
+                               while (and (consp item) (eq 'declare (first item)))
+                               append (rest item))))
+      (is (eq 'lambda (first form)))
+      (is (member '(optimize (debug 3)) declarations :test #'equal)
+          "the debug fork lost its (optimize (debug 3)): ~S" declarations))))
+
 (test a-malformed-poll-node-is-left-to-the-interpreter
   "FID and FORM-ID are host integers written by the instrumenter. Anything
 else is not a woven node, and the transpiler must not translate it as one

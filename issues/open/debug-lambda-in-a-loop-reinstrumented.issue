@@ -1,0 +1,44 @@
+debug-lambda-in-a-loop-reinstrumented -- under a debug session a LAMBDA in a loop is woven again per iteration and never compiled
+==================================================================================================================
+
+Status: TODO
+Priority: P3
+Found: 2026-10-06, closing deferred-debugger-compiler-two-bodies.
+
+Symptom
+-------
+
+lambda-in-a-loop-never-compiles (2.0.23) fixed the PLAIN fork: all the
+closures built from one LAMBDA form share a usubr-site, which counts calls
+and publishes the compiled body. The debug side has no such sharing:
+
+- maybe-compile-instrumented-usubr (autolisp-runtime api.lisp) counts on the
+  closure's own call-count, so a closure built per iteration never reaches
+  the threshold: its debugging body stays interpreted however hot the loop;
+- each new closure is woven again by the instrumenter on its first call
+  (maybe-instrument-usubr), with a fresh function id and metadata record.
+
+eval-lambda-form shares only the plain compiled body, deliberately: "an
+instrumented body carries form-ids tied to one function's debug metadata,
+so sharing it would make the debugger step through the wrong record".
+
+Repro (reasoned from the code, not yet measured): under a debug session,
+(repeat 10000 (mapcar '(lambda (x) (* x x)) '(1 2 3))) -- count
+instrumentations and compiled-instrumented bodies.
+
+Fix direction
+-------------
+
+Make the debug record per CODE, like the compiled body: the site holds the
+instrumented body, its metadata (one function id for the lambda form) and
+its compiled debugging body; closures from the site inherit them. Check
+what breakpoints and the shadow stack key on (function id vs closure)
+before changing it -- a breakpoint on the lambda's line should then hit
+every closure, which is arguably what the user means.
+
+Acceptance
+----------
+
+Under a session, a hot lambda in a loop is woven once and compiled once;
+breakpoints and stepping inside it behave as for a DEFUN; test in
+autolisp-compiler/tests/instrumented-tests.lisp.
