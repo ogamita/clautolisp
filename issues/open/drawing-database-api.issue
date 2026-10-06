@@ -143,3 +143,14 @@ Acceptance criteria
   - Conventions: DEVELOP bumped on each source-touching step;
     AutoLISP-visible extensions take the `clal-` prefix; the
     NEW/OPEN/CLOSE divergence carries a parity issue.
+
+Progress (2026-10-06, triage refresh)
+-------------------------------------
+
+  - 17f -- multi-document host, NEW/OPEN/SAVE/CLOSE, per-document contexts,
+    the drawing argument: DONE (clautolisp 2.2.185-2.2.193, MRs !414 / !415;
+    deferred-document-lifecycle-command-semantics closed).
+  - 17h -- the blackboard and its cross-drawing transport: DONE; the copy
+    semantics measured on AutoCAD 2022 and BricsCAD V25/V26 (2.2.201, !421).
+  - 17g -- the ObjectDBX / COM veneer (side documents invisible to
+    entget / ssget): what remains.

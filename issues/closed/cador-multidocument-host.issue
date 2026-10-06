@@ -388,3 +388,11 @@ resolution or a stated assumption, and a provenance grade.
 - The lexical binding work, and the alpha-renaming and boxing strategies, except
   where R2 forces the symbol model to be per-document.
 - GUI work of any kind.
+
+## Closed 2026-10-06
+
+cador-1, cador-2 and cador-3 are closed; cador-4 is built except the wire host
+(pjb, 2026-10-05: "keep wire host deferred, implement the rest" -- MRs !419,
+!421, clautolisp 2.2.197-2.2.201). The multi-document runtime is on master
+(MR !414, 2.2.185-2.2.192; --dwg 2.2.193). The one thing left, the wire host
+and the cador-2 items deferred to it, is tracked in cador-4-epic-remainder.

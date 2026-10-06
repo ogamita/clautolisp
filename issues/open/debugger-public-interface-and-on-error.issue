@@ -53,13 +53,10 @@ the command reference is authoritative for the VALUE names):
 
 Remaining (this issue stays open for):
 
-- The aldb transport itself (deliverable 3): the TCP listener /
-  stdio-framed RPC binding the emacs-ui streams, the §10 "waiting for
-  aldb to connect" prompt, port-0 free-port printing. Until it lands,
-  --debugger-ui aldb (explicit or implied by an aldb channel option)
-  fails with a clear "not yet implemented" message (exit 2); a
-  persisted default-user-interface=aldb falls back to tui with a
-  warning.
+- (DONE since -- 2026-10-06 note) The aldb transport itself: --aldb-listen
+  (TCP) and --aldb-stdio are built and tested (tools/clautolisp/tests/
+  aldb-socket-tests.lisp, debugger-options-tests.lisp; issues/closed/
+  debugger-ui-emacs-aldb.issue).
 - Sharing the options with alfe (the issue's tables say both tools; the
   options currently stay clautolisp-specific like --on-error before
   them) — needs the alfe debugger story (CAD backends have no aldo)
