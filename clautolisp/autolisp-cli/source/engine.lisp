@@ -144,15 +144,39 @@ host Lisp's printed structure, which is what the user saw before
        ;; Name the file and the encoding, not the host's stream object.
        (let* ((source (and (typep condition 'stream-error)
                            (ignore-errors (stream-error-stream condition))))
-              (file (and source (ignore-errors (namestring (pathname source)))))
+              (file (if (typep condition 'clautolisp.autolisp-reader:source-decoding-error)
+                        (ignore-errors
+                         (namestring
+                          (clautolisp.autolisp-reader:source-decoding-error-pathname condition)))
+                        (and source (ignore-errors (namestring (pathname source))))))
               (format (and source (ignore-errors (stream-external-format source))))
               (encoding (if (consp format) (first format) format)))
          (format stream "~&~A: ~@[~A: ~]read error: bytes that are not valid ~
 ~:[in the source encoding~;~:*~(~A~)~] (choose the encoding with -Esource ~
 ENCODING)~%"
                  program file encoding)))
+      ((typep condition 'file-error)
+       ;; In the engine's own words: each host Lisp words its FILE-ERROR
+       ;; report differently, and alfe's direct variant (on CCL) must print
+       ;; what the clautolisp-sbcl child prints
+       ;; (alfe-ccl-parity-missing-load-file-message.issue).
+       (format stream "~&~A: ~A~%" program (file-error-message condition)))
       (t
        (format stream "~&~A: ~A~%" program condition)))))
+
+(defun file-error-message (condition)
+  "`cannot open FILE: REASON' for the FILE-ERROR CONDITION, the same text on
+every host Lisp. REASON is what the file system says now: the file is not
+there, or it is there but cannot be read."
+  (let* ((pathname (ignore-errors (file-error-pathname condition)))
+         (name (if pathname
+                   (or (ignore-errors (namestring pathname)) (princ-to-string pathname))
+                   "a file")))
+    (format nil "cannot open ~A: ~A" name
+            (cond ((null pathname) "file error")
+                  ((null (ignore-errors (probe-file pathname)))
+                   "no such file or directory")
+                  (t "permission denied")))))
 
 (defun engine-drawing-error-message (path condition)
   "The message for a --dwg drawing PATH the host could not open (CONDITION).

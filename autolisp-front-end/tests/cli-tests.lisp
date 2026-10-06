@@ -427,7 +427,7 @@ or --dcl tui / auto, stays in-process
               (handler-case
                   (progn (apply #'%variant-for "--backend" "direct" argv) nil)
                 (cli-usage-error (condition)
-                  (is (= 2 (exit-code-for-condition condition)))
+                  (is (= clautolisp.sysexits:+ex-usage+ (exit-code-for-condition condition)))
                   (alfe.error:cli-usage-error-message condition)))))
         (is (and message (search reason message))
             "~S with --backend direct: ~S" argv message)

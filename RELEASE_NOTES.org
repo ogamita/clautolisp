@@ -37,6 +37,13 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- A =-l= file that cannot be opened is reported in clautolisp's own words,
+  =clautolisp: cannot open FILE: no such file or directory= (or
+  =permission denied=), the same on every host Lisp: alfe's in-process engine
+  on CCL used to word it differently from the clautolisp program (clautolisp
+  2.2.217, alfe 2.2.161). Built on CCL, clautolisp also refuses a source
+  whose bytes are not valid in its encoding (EX_DATAERR, 65), as on SBCL:
+  CCL used to replace them silently with U+FFFD.
 - alfe 2.2.160: the last =--backend direct= / =--backend subprocess=
   differences are gone. A run that needs the clautolisp /program/ itself
   -- a REPL (=-i=, or a bare =alfe=), =--dribble=, =--dcl ncurses= /

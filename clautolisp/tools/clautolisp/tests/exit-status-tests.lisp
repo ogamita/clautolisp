@@ -74,9 +74,15 @@ engine's report of it."
   (map 'list #'char-code string))
 
 (test exit-status-missing-load-file-is-noinput
-  "-l FILE that does not exist: EX_NOINPUT (66)."
-  (is (= clautolisp.sysexits:+ex-noinput+
-         (%status-of-action '(:file . "/nonexistent/sysexits-missing.lsp")))))
+  "-l FILE that does not exist: EX_NOINPUT (66), reported in the engine's own
+words, the same on every host Lisp (alfe-ccl-parity-missing-load-file-message.issue)."
+  (multiple-value-bind (status condition report)
+      (%status-of-action '(:file . "/nonexistent/sysexits-missing.lsp"))
+    (declare (ignore condition))
+    (is (= clautolisp.sysexits:+ex-noinput+ status))
+    (is (search "clautolisp: cannot open /nonexistent/sysexits-missing.lsp: no such file or directory"
+                report)
+        "report ~S" report)))
 
 (test exit-status-unreadable-load-file-is-noinput
   "-l FILE that exists but cannot be read (mode 000): EX_NOINPUT (66).

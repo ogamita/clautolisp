@@ -20,6 +20,8 @@
    #:diagnostic-severity
    #:diagnostic-code
    #:diagnostic-message
+   #:source-decoding-error
+   #:source-decoding-error-pathname
    #:diagnostic-span
    #:token
    #:token-kind

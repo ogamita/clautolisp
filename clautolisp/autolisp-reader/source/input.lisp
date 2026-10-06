@@ -15,6 +15,35 @@
            (t
             (write-char ch out))))))
 
+(define-condition clautolisp.autolisp-reader:source-decoding-error (error)
+  ((pathname :initarg :pathname
+             :reader clautolisp.autolisp-reader:source-decoding-error-pathname))
+  (:report (lambda (condition stream)
+             (format stream "~A: bytes that are not valid in the source encoding"
+                     (clautolisp.autolisp-reader:source-decoding-error-pathname condition))))
+  (:documentation
+   "A source file whose bytes are not valid in its encoding, detected after the
+host decoded it leniently. CCL's file streams replace an invalid byte sequence
+by U+FFFD instead of signalling, where SBCL's signal a STREAM-DECODING-ERROR;
+this condition makes the two hosts agree (the class name ends in
+DECODING-ERROR, so the engine maps it to EX_DATAERR like the host's own)."))
+
+(defun %octets-contain-utf-8-replacement-p (octets)
+  "True when OCTETS hold the UTF-8 encoding of U+FFFD (EF BF BD) literally."
+  (loop for i from 0 below (- (length octets) 2)
+        thereis (and (= (aref octets i) #xEF)
+                     (= (aref octets (1+ i)) #xBF)
+                     (= (aref octets (+ i 2)) #xBD))))
+
+(defun %check-lenient-decoding (path text)
+  "Signal SOURCE-DECODING-ERROR when the host decoded PATH into TEXT by
+replacing invalid bytes with U+FFFD -- a U+FFFD the file does not literally
+contain (CCL; see SOURCE-DECODING-ERROR). Returns TEXT."
+  (when (and (find (code-char #xFFFD) text)
+             (not (%octets-contain-utf-8-replacement-p (%read-file-octets path))))
+    (error 'clautolisp.autolisp-reader:source-decoding-error :pathname path))
+  text)
+
 (defun decode-and-normalize-stream (stream)
   (normalize-line-endings
    (with-output-to-string (out)
@@ -62,8 +91,10 @@ not valid UTF-8 read as windows-1252 instead (a fallback, not an error)."
       (let ((stream (open-with-external-format path
                                                :direction :input
                                                :external-format external-format)))
-        (unwind-protect (decode-and-normalize-stream stream)
-          (close stream)))
-      (with-open-file (stream path
-                              :direction :input)
-        (decode-and-normalize-stream stream))))
+        (%check-lenient-decoding
+         path (unwind-protect (decode-and-normalize-stream stream)
+                (close stream))))
+      (%check-lenient-decoding
+       path (with-open-file (stream path
+                                    :direction :input)
+              (decode-and-normalize-stream stream)))))
