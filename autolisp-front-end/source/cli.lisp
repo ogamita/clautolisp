@@ -220,15 +220,16 @@
 ;; below, once *ALFE-OPTION-SPECS* exists.
 
 (defvar *on-error* :quit
-  "The --on-error policy in force for the current RUN. alfe has no
-interactive debugger of its own (the CAD backends run no aldo), so the
-policy governs how an unexpected Lisp condition escaping the run is
-reported: :QUIT prints the one-line `alfe: <condition>' and exits (the
-default, unchanged); :DEBUG and :IGNORE additionally dump the CL
-backtrace at the point of the error — the intact stack, captured with
-HANDLER-BIND before the outer HANDLER-CASE unwinds — so a crash inside
-alfe itself (as opposed to the user's AutoLISP) can be diagnosed without
-a rebuild. Bound per RUN and set by the --on-error option handler.")
+  "The --on-error policy in force for the current RUN, as it governs alfe
+ITSELF. --on-error is the clautolisp program's option (shared spec): under
+--clautolisp the engine applies it to the user's AutoLISP errors (debug stops
+in aldo), in both variants. Independently, and under every backend, it says
+how an unexpected Lisp condition escaping alfe itself is reported: :QUIT --
+also when the option is absent -- prints the one-line `alfe: <condition>' and
+exits; :DEBUG and :IGNORE additionally dump the CL backtrace at the point of
+the error -- the intact stack, captured with HANDLER-BIND before the outer
+HANDLER-CASE unwinds -- so a crash inside alfe itself can be diagnosed without
+a rebuild. Bound per RUN; set by RUN from the parsed option.")
 
 ;;; --- options record --------------------------------------------------
 ;;;
@@ -399,12 +400,29 @@ Diagnostics:
                          commutative: among --quiet/--verbose/--debug,
                          the most verbose request wins regardless of
                          CLI argument order.
-      --on-error POLICY  How an unexpected Lisp condition escaping alfe
-                         itself is reported: quit (default — the terse
-                         `alfe: <error>' line, then exit) or debug|ignore
-                         (additionally dump the CL backtrace, captured
-                         before the stack unwinds). alfe has no aldo, so
-                         debug and ignore behave the same here.
+
+Debugger (aldo; the clautolisp program's options, same spelling and meaning):
+      --on-error POLICY  An uncaught AutoLISP error under --clautolisp: quit
+                         (report it and exit 1; the default of a batch run),
+                         debug (stop in the aldo debugger at the error; the
+                         default of an interactive REPL) or ignore (no
+                         debugger: the AutoLISP *error* handler runs). Under
+                         every backend, debug and ignore also make alfe dump
+                         the CL backtrace of an unexpected condition in alfe
+                         itself.
+      --on-interrupt POLICY  Control-C under --clautolisp: debug (break into
+                         aldo; the default), ignore, or quit (exit 130).
+      --on-quit POLICY   (quit) / (exit) under --clautolisp: quit (default) or
+                         debug (enter aldo before unwinding).
+      --debugger-ui UI   The aldo front-end: dumb (alias terminal, tui),
+                         ncurses, or aldb (alias emacs).
+      --aldb-listen [HOST:]PORT  The aldb (Emacs) listener address; implies
+                         --debugger-ui aldb.
+      --aldb-stdio       aldb over stdin/stdout; implies --debugger-ui aldb;
+                         excludes --interactive and --aldb-listen.
+                         All six apply to both --backend variants. The CAD
+                         backends have no aldo: they refuse every one of them
+                         except --on-error (EX_USAGE 64).
 
 Informational:
   -h, --help             Show this help and exit.
@@ -647,16 +665,12 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-print-command-p opts) t)))
-   ;; --on-error quit|debug|ignore: how an unexpected Lisp condition
-   ;; escaping the run is reported. alfe has no aldo of its own, so DEBUG
-   ;; and IGNORE both dump the CL backtrace (captured with the stack still
-   ;; intact); QUIT keeps the terse one-line message (the default).
-   (make-option-spec
-    :longs '("--on-error") :takes-arg-p t
-    :handler (lambda (opts value name)
-               (setf *on-error*
-                     (setf (clautolisp.autolisp-cli:cli-options-on-error opts)
-                           (clautolisp.autolisp-cli:parse-on-error value name)))))
+   ;; --on-error, --on-interrupt, --on-quit, --debugger-ui, --aldb-listen
+   ;; and --aldb-stdio are the SHARED specs of *COMMON-OPTION-SPECS*: the
+   ;; clautolisp program's, spelled, parsed and meant the same way
+   ;; (debugger-public-interface-and-on-error.issue, pjb 2026-10-06). RUN
+   ;; sets *ON-ERROR* from the parsed --on-error, and refuses the ones a CAD
+   ;; backend cannot honour (CHECK-DEBUGGER-OPTIONS-FOR-BACKEND).
    (make-option-spec
     :longs '("--keep-workdir") :takes-arg-p nil
     :handler (lambda (opts value name)
@@ -736,6 +750,9 @@ the action objects back to conses on the fly."
     ;; Command line, then environment, then default; the options of a
     ;; plug-in that is not active are refused here, as a usage error.
     (resolve-plugin-options options)
+    ;; The aldb channel rules, as the clautolisp program applies them:
+    ;; --aldb-stdio excludes --interactive and --aldb-listen.
+    (clautolisp.autolisp-cli:validate-debugger-options options)
     options))
 
 (defun %action-object-to-cons (action)
@@ -1329,7 +1346,14 @@ the table is in the alfe specification, Exit status):
                          ;; Plug-ins first: their options are what the
                          ;; parser must accept.
                          (%load-installed-plugins argv version)
-                         (parse-arguments argv))))
+                         (let ((options (parse-arguments argv)))
+                           ;; --on-error also governs how alfe reports its
+                           ;; OWN unexpected conditions (see *ON-ERROR*).
+                           (setf *on-error*
+                                 (or (clautolisp.autolisp-cli:cli-options-on-error
+                                      options)
+                                     :quit))
+                           options))))
         (cond
           ((cli-options-help-p options)
            (print-usage)
@@ -1425,6 +1449,10 @@ the table is in the alfe specification, Exit status):
                    (let ((backend (resolve-backend
                                    options
                                    :detect-p (not (cli-options-dry-run-p options)))))
+                     ;; The debugger options a CAD backend cannot honour are
+                     ;; refused, never silently ignored -- dry run included.
+                     (check-debugger-options-for-backend
+                      options (alfe.backend:backend-name backend))
                      ;; From here the run's backend is the one really chosen
                      ;; (an $ALFE_BACKEND_OVERRIDE, a default), which is what
                      ;; a plug-in's :applies-to is matched against.
@@ -1446,6 +1474,32 @@ the table is in the alfe specification, Exit status):
     (error (condition)
       (format *error-output* "~&alfe: ~A~%" condition)
       (exit-code-for-condition condition))))
+
+(defparameter +cad-refused-debugger-options+
+  '("--on-interrupt" "--on-quit" "--debugger-ui" "--aldb-listen" "--aldb-stdio")
+  "The debugger options a CAD backend (--autocad / --bricscad) refuses. They
+configure aldo, the clautolisp engine's debugger, and the AutoLISP of a CAD runs
+in the CAD, with no aldo: honouring them is impossible and ignoring them would
+lie. --on-error is not among them: under every backend it also governs how
+alfe reports its own unexpected conditions (*ON-ERROR*).")
+
+(defun check-debugger-options-for-backend (options backend-name)
+  "Signal a CLI-USAGE-ERROR when OPTIONS carry a debugger option the backend
+BACKEND-NAME cannot honour (+CAD-REFUSED-DEBUGGER-OPTIONS+ under a CAD
+backend). The clautolisp backend honours them all, in both variants."
+  (when (member backend-name '(:autocad :bricscad))
+    (let ((refused (remove-if-not
+                    (lambda (name)
+                      (member name +cad-refused-debugger-options+ :test #'string=))
+                    (clautolisp.autolisp-cli:given-debugger-options options))))
+      (when refused
+        (error 'cli-usage-error
+               :option (format nil "~{~A~^, ~}" refused)
+               :message
+               (format nil "~:[this option configures~;these options configure~] ~
+aldo, the debugger of the clautolisp engine; the ~(~A~) backend runs AutoLISP in ~
+the CAD, which has no aldo (use --clautolisp, or drop ~:[it~;them~])"
+                       (rest refused) backend-name (rest refused)))))))
 
 (defun effective-dialect (options)
   "Resolve the dialect to run, per alfe-clautolisp-dialect.issue point 1.

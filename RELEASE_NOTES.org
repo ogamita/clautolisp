@@ -37,6 +37,16 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Debugger options shared with alfe; =--on-interrupt= on CCL (clautolisp
+  2.2.218 / alfe 2.2.162): =--on-error=, =--on-interrupt=, =--on-quit=,
+  =--debugger-ui=, =--aldb-listen= and =--aldb-stdio= are now shared options,
+  and =alfe --clautolisp= takes them with the same spelling and meaning in both
+  variants -- the in-process engine starts the aldo session as clautolisp does,
+  the subprocess variant forwards them (the child then gets the terminal);
+  =--autocad= / =--bricscad= refuse all but =--on-error= (EX_USAGE, 64).
+  The CCL build now applies =--on-interrupt= to Control-C as the SBCL build
+  does (through CCL's =*break-hook*=); it used to fall into CCL's own break
+  loop under every policy.
 - A =-l= file that cannot be opened is reported in clautolisp's own words,
   =clautolisp: cannot open FILE: no such file or directory= (or
   =permission denied=), the same on every host Lisp: alfe's in-process engine

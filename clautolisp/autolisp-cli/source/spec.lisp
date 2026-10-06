@@ -405,13 +405,52 @@ specs without mutating the shared template."
     :longs '("--no-color") :shorts nil :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value name))
-               (setf (cli-options-no-color-p opts) t)))))
+               (setf (cli-options-no-color-p opts) t)))
+
+   ;; --- debugger (aldo) options ---------------------------------
+   ;; debugger command reference §10, debugger-public-interface-and-
+   ;; on-error.issue Parts B-D. SHARED since the alfe decision of
+   ;; 2026-10-06 (pjb): alfe accepts them with the same spelling,
+   ;; parsing and semantics -- its clautolisp engine applies them in
+   ;; both variants, and alfe refuses the ones a CAD backend cannot honour
+   ;; (see DEBUGGER-OPTIONS-FOR-CAD-BACKEND). The slots stay NIL unless
+   ;; given: each program applies the context-dependent defaults itself.
+   (make-option-spec
+    :longs '("--on-error") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-on-error opts) (parse-on-error value name))))
+   (make-option-spec
+    :longs '("--on-interrupt") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-on-interrupt opts) (parse-on-interrupt value name))))
+   (make-option-spec
+    :longs '("--on-quit") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-on-quit opts) (parse-on-quit value name))))
+   (make-option-spec
+    :longs '("--debugger-ui") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-user-interface opts)
+                     (parse-user-interface value name))))
+   (make-option-spec
+    :longs '("--aldb-listen") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (multiple-value-bind (host port) (parse-aldb-listen value name)
+                 (setf (cli-options-aldb-address opts) host
+                       (cli-options-aldb-port opts) port))))
+   (make-option-spec
+    :longs '("--aldb-stdio") :shorts nil :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-aldb-stdio-p opts) t)))))
 
 (defparameter *common-option-specs*
   (append (%make-common-option-specs) (%encoding-option-specs))
   "The intersection of CLI options accepted by both clautolisp and
 alfe. Each tool builds its full spec list by appending its
 tool-specific specs (alfe's --mode/--backend/--dwg/etc.;
-clautolisp's --mock-input/--gui/--trace). Tools may also append
+clautolisp's --mock-input/--gui/--trace). The debugger options
+(--on-error, --on-interrupt, --on-quit, --debugger-ui, --aldb-listen,
+--aldb-stdio) are here too: both programs accept them. Tools may also append
 duplicate handlers — the first match wins, so prepending a custom
 handler replaces the common one without removing it.")

@@ -129,7 +129,12 @@ What Control-C (SIGINT) does:
 Sets
 .BR *CLAL-ON-INTERRUPT* ,
 re-read live at each interrupt. A second Control-C while one is being
-handled exits immediately.
+handled exits immediately. Applies to the SBCL and the CCL builds alike
+(not to the Windows SBCL build, which keeps the console behaviour).
+.BR alfe (1)
+accepts the same debugger options for its
+.B \-\-clautolisp
+backend.
 .TP
 .BR \-\-on-quit " " \fIPOLICY\fR
 What
