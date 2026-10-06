@@ -70,6 +70,11 @@
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
   :depends-on ("autolisp-front-end/core"
+               ;; INSTALLATION-PREFIXES, *EXECUTABLE-PATHNAME-FUNCTION* and
+               ;; HOST-OS: the installed clautolisp-sbcl is found from the
+               ;; running alfe executable (alfe-installed-subprocess-binary-
+               ;; not-discovered), with the same prefix logic as the assets.
+               "autolisp-front-end/backend-cad-common"
                "trivial-gray-streams")
   :serial t
   :components

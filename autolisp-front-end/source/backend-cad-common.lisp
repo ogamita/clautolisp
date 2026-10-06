@@ -37,6 +37,7 @@
            #:discover-bootstrap-lsp
            #:require-runtime-assets
            #:installation-prefixes
+           #:alfe-executable-p
            #:asset-search-candidates
            #:*executable-pathname-function*
            #:*vendored-asset-system*

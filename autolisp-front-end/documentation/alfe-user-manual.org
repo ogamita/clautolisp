@@ -412,11 +412,31 @@ as a child process — alfe selects =--backend subprocess= by itself — and
 gives it the dialect, =--host cadtui=, the source encoding (=-Esource=)
 and one =-l= / =-x= / =-i= per action of the plan, plus =--quiet= and
 =--no-init= (alfe owns the init policy). Other alfe options are not passed
-on. The executable is looked for in =$ALFE_CLAUTOLISP_BIN=, in the
-=tools/clautolisp/bin/= of the checkout alfe was built from, on =$PATH=,
-and in =/usr/local/bin=, in that order; when it is nowhere alfe exits with
-status 3. Asking for cadtui together with =--backend direct=, the
+on. Asking for cadtui together with =--backend direct=, the
 in-process engine, is a usage error.
+
+The engine executable, =clautolisp-sbcl= (=clautolisp-sbcl.exe= on
+MS-Windows), is looked for in this order, by =--host cadtui= and by
+=--backend subprocess= alike, and the first file that exists is run:
+
+1. =$ALFE_CLAUTOLISP_BIN=, when set and not empty;
+2. the engine installed with the running alfe: the =clautolisp-sbcl= in
+   the same directory as the running =alfe-sbcl= image (in a release both
+   live in =PREFIX/libexec/clautolisp/binaries/OS/CPU/=, where the
+   =bin/alfe= launcher dispatches to), then, for an alfe installed in
+   =PREFIX/bin/=, =PREFIX/libexec/clautolisp/binaries/OS/CPU/clautolisp-sbcl=,
+   OS (=linux=, =darwin=, =windows=) and CPU (=x86-64=, =arm64=) named as
+   the launcher names them. PREFIX is derived from where the running
+   executable is, so an installation works under any prefix, spaces
+   included, after being moved, from any current directory, without
+   =$PATH= entries for =libexec= and without =$ALFE_CLAUTOLISP_BIN=;
+3. the =tools/clautolisp/bin/clautolisp-sbcl= of the checkout alfe was
+   built from, only when that file still exists;
+4. =clautolisp-sbcl= on =$PATH=;
+5. =/usr/local/bin/clautolisp-sbcl= (not on MS-Windows).
+
+When it is nowhere alfe exits with status 3, and the
+=NO-SUBPROCESS-BINARY= message lists every place it looked.
 
 #+begin_src sh
 alfe --clautolisp --host cadtui -l dialog-test.lsp     # batch: the output comes back when the child ends
@@ -1641,7 +1661,9 @@ plug-in is active.
 ** Engine location and launch
 - =$ALFE_CLAUTOLISP_BIN= :: the =clautolisp= executable the clautolisp
   backend runs as a subprocess. Set it to test a build that is not the
-  installed one.
+  installed one. Unset, an installed alfe runs the =clautolisp-sbcl=
+  installed in the same prefix; the whole search order is under
+  /cadtui/ in the hosts chapter.
 - =$ALFE_BOOTSTRAP_LSP=, =$ALFE_RUNTIME_LSP= :: the two CAD runtime
   files, =autolisp-bootstrap.lsp= and =autolisp-remote-io.lsp=, in
   place of the installed ones. A value naming no file is ignored. See

@@ -1497,6 +1497,35 @@ The =alfe= binary can:
   for isolating the engine or for running the engine under a
   different Lisp).
 
+*Engine discovery (subprocess mode).* The executable is
+=clautolisp-sbcl=, =clautolisp-sbcl.exe= on MS-Windows. alfe tries, in
+this order, and runs the first that exists:
+
+1. =$ALFE_CLAUTOLISP_BIN=, when set and non-empty (an explicit override
+   always wins);
+2. the engine installed with the running alfe. The installation is
+   derived from the pathname of the running executable (its truename),
+   never from the current directory nor from the tree alfe was built in:
+   first =clautolisp-sbcl[.exe]= in the same directory as the running
+   =alfe-<lisp>[.exe]= (a release installs both in
+   =PREFIX/libexec/clautolisp/binaries/OS/CPU/=, reached through the
+   =PREFIX/bin/alfe= dispatcher), then
+   =PREFIX/libexec/clautolisp/binaries/OS/CPU/clautolisp-sbcl[.exe]= for
+   every installation prefix of the executable (the parent of its
+   deepest =libexec= ancestor, or of the =bin= directory it is in). OS
+   (=linux=, =darwin=, =windows=), CPU (=x86-64=, =arm64=) and the
+   =.exe= suffix follow =clautolisp/tools/packaging/dispatch.sh= and
+   =dispatch.cmd=. A development image (running as =sbcl= or =ccl=)
+   claims no installation;
+3. the =clautolisp/tools/clautolisp/bin/clautolisp-sbcl= of the checkout
+   alfe was compiled from, only when that file exists;
+4. =clautolisp-sbcl[.exe]= on =$PATH= (split on =;= on MS-Windows, on
+   =:= elsewhere);
+5. =/usr/local/bin/clautolisp-sbcl=, except on MS-Windows.
+
+When none exists, DETECT fails with =NO-SUBPROCESS-BINARY= (exit 3),
+whose message lists every candidate tried, in that order.
+
 *Hosts.* =--host NAME= takes =cador= (the default), =cadtui= or =nihil=,
 and nothing else (a usage error, exit 2, listing the three); the keyword is
 what =*AUTOLISP-HOST*= shows (=CADOR=, =CADTUI=, =NIHIL=) in both modes. alfe

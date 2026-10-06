@@ -342,6 +342,28 @@ overrides.
 .B AUTOLISP_BOOTSTRAP_PHASE\fR, \fBAUTOLISP_DWG
 CAD-side defaults.
 .TP
+.B ALFE_CLAUTOLISP_BIN
+The
+.B clautolisp-sbcl
+executable run by
+.B \-\-backend subprocess
+(and
+.BR "\-\-host cadtui" ).
+Unset or empty,
+.B alfe
+looks, in order, for
+.B clautolisp-sbcl
+(\fBclautolisp-sbcl.exe\fR on MS-Windows) in the directory of the running
+alfe image, in
+.IB PREFIX /libexec/clautolisp/binaries/ OS / CPU /
+of the prefix that image is installed in (derived from the image's own
+location, so any prefix works, from any current directory), in the
+checkout alfe was built from when it still exists, on
+.BR $PATH ,
+and in
+.BR /usr/local/bin ;
+the NO-SUBPROCESS-BINARY error lists every place tried.
+.TP
 .B ALFE_PLUGIN_PATH
 Extra plug-in roots, a PATH-style list (separated by colons, or by
 semicolons on MS-Windows), searched after the
