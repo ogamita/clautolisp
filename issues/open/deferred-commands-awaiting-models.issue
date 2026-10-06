@@ -1,0 +1,42 @@
+# CAD commands measured and deferred: each waits on a piece cador does not model
+
+Status: DEFERRED
+Priority: P3
+Parent: autolisp-spec-alref-commands (closed 2026-10-06)
+Baseline: origin/master a368b3a8
+
+## Summary
+
+The alref commands work (autolisp-spec-alref-commands) is complete: every
+AutoCAD / BricsCAD command is specified (1621 Command Entries), classified,
+documented in alref with its Availability and clautolisp status (alref
+1.4.0 / 1.5.0, !425 / !426), and the core-tier commands are built in cador.
+Six commands were measured on AutoCAD 2022, BricsCAD V25 and V26 (MR !423,
+jobs 16961057455 / 16961057459 / 16961057456) and deferred, because each
+needs a piece cador does not model yet. Until then, (command "_.NAME" ...)
+stops at them with the "; cador: ... -- the rest of the command sequence is
+ignored." notice, as for any command cador does not execute.
+
+| Command              | Needs first                                             |
+|----------------------+---------------------------------------------------------|
+| UNGROUP (and -GROUP) | a probe that reads the GROUP object: the DXF route sees  |
+|                      | it EMPTY on both; next try the COM Groups collection    |
+|                      | (vla-get-groups) on BricsCAD                             |
+| HELIX                | each vendor's spline fit (AutoCAD 50 knots, BricsCAD 31) |
+| REGION               | an ACIS writer (AutoCAD encrypted SAT, BricsCAD plain    |
+|                      | SAT 7.0 "Open Design Alliance ACIS Builder")             |
+| CHSPACE              | the viewport's view (centre / height) in cador's        |
+|                      | viewports; AutoCAD MOVES the entity to paper space,      |
+|                      | BricsCAD makes a NEW one                                 |
+| ARRAYEDIT            | associative arrays: BricsCAD's ARRAYRECT makes an INSERT |
+| ARRAYCLOSE           | of an anonymous block (*U9) plus association objects;    |
+|                      | AutoCAD's core console left the source alone             |
+
+The full measurements are in issues/closed/autolisp-spec-alref-commands.issue,
+"Final round, measured (2026-10-06, MR !423)".
+
+## Acceptance
+
+Per command, once its piece exists: re-run the probe-commands case on both
+vendors, build it in cador to match, flip its Availability / clautolisp
+status in the spec (gen-command-entries.lisp reads cador), add a test.

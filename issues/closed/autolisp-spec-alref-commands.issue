@@ -1,6 +1,6 @@
 # AutoCAD / BricsCAD commands: collect, specify, classify, and implement
 
-Status: open
+Status: closed (2026-10-06)
 Baseline: origin/master
 Spec: autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
 
@@ -471,3 +471,13 @@ probe-commands, the last cases (AutoCAD 2022 job 16961057455, BricsCAD V25
     ARRAYCLOSE act on that block and its association objects. Deferred.
 Left: UNGROUP, HELIX, REGION, CHSPACE, ARRAYEDIT, ARRAYCLOSE -- each needs
 the piece named above first.
+
+## Closed (2026-10-06)
+
+All four phases are done, and the commands are in alref: alref-apropos lists
+them as Command (alref 1.4.0, !425) in their own namespace beside functions,
+variables and system variables (alref 1.5.0, !426), each page giving its
+Availability and its clautolisp status read from cador. The six commands left
+above (UNGROUP, HELIX, REGION, CHSPACE, ARRAYEDIT, ARRAYCLOSE) moved to
+issues/open/deferred-commands-awaiting-models.issue, each with the piece it
+waits on.
