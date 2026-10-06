@@ -23,7 +23,9 @@ and delegate to ALFE.CLI:RUN, then exit with its returned exit code."
         (finish-output)
         (finish-output *error-output*)
         (quit exit-code))
+    ;; RUN maps every error it sees; one that escapes it is an internal
+    ;; error: EX_SOFTWARE (sysexits-exit-statuses.issue).
     (error (condition)
       (format *error-output* "~&alfe: unexpected error: ~A~%" condition)
       (finish-output *error-output*)
-      (quit 1))))
+      (quit clautolisp.sysexits:+ex-software+))))

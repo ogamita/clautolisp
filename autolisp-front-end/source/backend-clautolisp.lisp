@@ -616,11 +616,8 @@ SHUTDOWN."
                            host-instance dwg)
                           nil)
                       (error (condition)
-                        (make-condition
-                         'clautolisp.autolisp-cli:cli-usage-error
-                         :option "--dwg"
-                         :message (clautolisp.autolisp-cli:engine-drawing-error-message
-                                   dwg condition)))))))
+                        (clautolisp.autolisp-cli:engine-drawing-error
+                         dwg condition))))))
            ;; The host set-up of the clautolisp program (SETUP-CONTEXT): the
            ;; session's host, then the startup drawing's LISP namespace --
            ;; the context's (multi-document slice 1) -- then the builtins.
@@ -1031,7 +1028,10 @@ another line or give up and surface the error."
                 (error startup-error)))
             (dolist (action plan)
               (when (clautolisp-direct-session-interrupt-requested-p session)
-                (setf status :aborted)
+                ;; Interrupted: the status of a Control-C under the quit
+                ;; policy, as the clautolisp program gives it.
+                (setf status :aborted
+                      exit-code clautolisp.sysexits:+exit-interrupted+)
                 (return))
               ;; Each action is a top-level read: a document switch the
               ;; previous one requested (NEW / OPEN ...) takes effect here.
@@ -1049,10 +1049,13 @@ another line or give up and surface the error."
             (unless (eq status :aborted)
               (setf exit-code (clautolisp.autolisp-runtime:autolisp-exit-status
                                context))))
+        ;; Every status comes from the table the clautolisp program uses
+        ;; (CLAUTOLISP.AUTOLISP-CLI:ENGINE-EXIT-STATUS;
+        ;; sysexits-exit-statuses.issue).
         (autolisp-runtime-error (condition)
           (setf status :failed
                 final-value nil
-                exit-code 1)
+                exit-code (clautolisp.autolisp-cli:engine-exit-status condition))
           ;; No host-Lisp backtrace: the child engine never prints one
           ;; either (alfe spawns it --quiet, never --debug).
           (clautolisp.autolisp-cli:report-autolisp-runtime-error condition))
@@ -1061,16 +1064,15 @@ another line or give up and surface the error."
           (clautolisp.autolisp-cli:report-autolisp-termination condition)
           (setf exit-code (clautolisp.autolisp-runtime:autolisp-termination-status
                            condition)))
-        (file-error (condition)
-          (setf status :failed
-                exit-code 2)
-          (clautolisp.autolisp-cli:report-engine-error condition))
         (backend-eval-error (condition)
           (setf status :failed)
           (format *error-output* "~&alfe: ~A~%" condition))
+        ;; A file that cannot be opened (EX_NOINPUT), a source the reader
+        ;; refuses (EX_DATAERR), a --dwg drawing (its CLI-ERROR status), an
+        ;; internal error (EX_SOFTWARE).
         (error (condition)
           (setf status :failed
-                exit-code 1)
+                exit-code (clautolisp.autolisp-cli:engine-exit-status condition))
           (clautolisp.autolisp-cli:report-engine-error condition))))
     (when (and (integerp exit-code) (/= 0 exit-code))
       (setf status :failed))
@@ -1245,12 +1247,15 @@ the run)."
             (write-string stdout *standard-output*)
             (write-string stderr *error-output*))
           ;; The child's status is the engine's: (exit N), a file error's
-          ;; 2 -- passed on, as the direct variant does.
+          ;; EX_NOINPUT -- passed on, as the direct variant does.
           (setf exit-status exit-code)
           (unless (zerop exit-code)
             (setf status :failed)))
+      ;; The child could not be started: an operating-system failure
+      ;; (cannot fork / exec), EX_OSERR.
       (error (probe)
-        (setf status :failed)
+        (setf status :failed
+              exit-status clautolisp.sysexits:+ex-oserr+)
         (format captured-stderr "subprocess launch failed: ~A~%" probe)
         (format *error-output* "alfe: subprocess launch failed: ~A~%" probe)))
     (session-state-set session :done)

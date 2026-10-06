@@ -429,7 +429,7 @@ code 4); a usage error or a backend error keeps its own class and exit code."
           (is (eq :plan (alfe.error:plugin-error-hook condition)))
           (is (search "boom" (format nil "~A" condition)))
           (is (search "plug-in bad" (format nil "~A" condition)))
-          (is (= 4 (exit-code-for-condition condition)))))
+          (is (= clautolisp.sysexits:+ex-software+ (exit-code-for-condition condition)))))
       (alfe.plugin:register-hook "bad" :plan (lambda (ctx value &key &allow-other-keys)
                                                (declare (ignore ctx value))
                                                (error 'cli-usage-error
@@ -671,12 +671,12 @@ greeting comes out before the user's own output."
       (is (= 0 code))
       (is (not (search "Hello" out))))))
 
-(test plugin-run-inactive-plugin-option-exits-2
+(test plugin-run-inactive-plugin-option-exits-usage
   (with-clean-plugins ()
     (multiple-value-bind (code out err)
         (apply #'%run-alfe (%fixture-path "--hello-name" "Ada" "-x" "(+ 1 2)"))
       (declare (ignore out))
-      (is (= 2 code))
+      (is (= clautolisp.sysexits:+ex-usage+ code))
       (is (search "--hello-name" err))
       (is (search "--hello" err)))))
 
@@ -712,13 +712,13 @@ then unknown."
     (multiple-value-bind (code out err)
         (apply #'%run-alfe (%fixture-path "--no-plugins" "--hello" "-x" "(+ 1 2)"))
       (declare (ignore out))
-      (is (= 2 code))
+      (is (= clautolisp.sysexits:+ex-usage+ code))
       (is (search "Unknown option --hello" err)))
     (with-plugin-env (("ALFE_NO_PLUGINS" "1"))
       (multiple-value-bind (code out err)
           (apply #'%run-alfe (%fixture-path "--hello" "-x" "(+ 1 2)"))
         (declare (ignore out))
-        (is (= 2 code))
+        (is (= clautolisp.sysexits:+ex-usage+ code))
         (is (search "Unknown option --hello" err))))))
 
 (test plugin-run-a-broken-plugin-does-not-stop-alfe
@@ -754,7 +754,7 @@ then unknown."
         (multiple-value-bind (code out err)
             (%run-alfe "--compile-plugin" (namestring (merge-pathnames "nothere.lisp" root)))
           (declare (ignore out))
-          (is (= 1 code))
+          (is (= clautolisp.sysexits:+ex-noinput+ code))
           (is (search "--compile-plugin" err)))))))
 
 (defun %recorded-hooks ()
@@ -805,7 +805,7 @@ error, before it is turned into an exit code; the exit code is unchanged."
     (multiple-value-bind (code out err)
         (apply #'%run-alfe (%fixture-path "--recorder" "--raiser" "-x" "(+ 1 2)"))
       (declare (ignore out))
-      (is (= 2 code))
+      (is (= clautolisp.sysexits:+ex-usage+ code))
       (is (search "raised on purpose" err)))
     (let ((errors (%recorded :error)))
       (is (= 1 (length errors)))
@@ -813,7 +813,7 @@ error, before it is turned into an exit code; the exit code is unchanged."
       ;; The recorder stores the TYPE of a value it has no size for.
       (is (eq 'cli-usage-error (getf (cdr (first errors)) :value))))))
 
-(test plugin-run-hook-error-exits-4-and-names-the-plugin
+(test plugin-run-hook-error-exits-software-and-names-the-plugin
   (with-clean-plugins ()
     (alfe.plugin:register-plugin "kaput" :options '((:flag "--kaput" :activates t)))
     (alfe.plugin:register-hook "kaput" :plan (lambda (ctx value &key &allow-other-keys)
@@ -821,7 +821,7 @@ error, before it is turned into an exit code; the exit code is unchanged."
                                                (error "kaput inside")))
     (multiple-value-bind (code out err) (%run-alfe "--kaput" "-x" "(+ 1 2)")
       (declare (ignore out))
-      (is (= 4 code))
+      (is (= clautolisp.sysexits:+ex-software+ code))
       (is (search "plug-in kaput" err))
       (is (search "kaput inside" err)))))
 

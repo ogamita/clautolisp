@@ -347,11 +347,18 @@ application for headless interactive/scriptable testing (generalises cador)."
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/sysexits"
+  :description "The process exit statuses (sysexits.h) shared by clautolisp, read-autolisp and alfe."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :components
+  ((:file "autolisp-cli/source/sysexits")))
+
 (asdf:defsystem "clautolisp/read-autolisp"
   :description "Command-line reader validation tool for AutoLISP source."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-reader" "uiop")
+  :depends-on ("clautolisp/autolisp-reader" "clautolisp/sysexits" "uiop")
   :serial t
   :components
   ((:file "autolisp-reader/tools/read-autolisp/source/package")
@@ -362,7 +369,8 @@ application for headless interactive/scriptable testing (generalises cador)."
   :description "Shared CLI option parser + *AUTOLISP-…* variable installer for clautolisp and alfe."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime"
+  :depends-on ("clautolisp/sysexits"
+               "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
                ;; for APPLY-DIALECT-TRUST-SYSVAR-DEFAULTS, the launch-time
                ;; dialect-dependent SECURELOAD / TRUSTEDPATHS overlay.
@@ -500,6 +508,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "tools/clautolisp/tests/debugger-options-tests")
    (:file "tools/clautolisp/tests/optimize-option-tests")
    (:file "tools/clautolisp/tests/dwg-option-tests")
+   (:file "tools/clautolisp/tests/exit-status-tests")
    (:file "tools/clautolisp/tests/encoding-option-tests")
    (:file "tools/clautolisp/tests/transmit-tests")
    (:file "tools/clautolisp/tests/aldo-conf-tests")

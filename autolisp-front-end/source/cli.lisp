@@ -1229,15 +1229,19 @@ none and forgets any registered before; --plugin-path adds roots."
                          :version (or version "0.0.0"))))))
 
 (defun %compile-plugin-command (file version)
-  "--compile-plugin FILE: compile FILE for this alfe, print where, exit code."
+  "--compile-plugin FILE: compile FILE for this alfe, print where, and return
+the exit status: 0, EX_NOINPUT (66) when FILE cannot be opened, EX_DATAERR
+(65) when it does not compile (or is not named NAME.lisp)."
   (handler-case
       (let ((output (compile-plugin file :version (or version "0.0.0"))))
         (format t "~&~A~%" (uiop:native-namestring output))
         (finish-output)
-        0)
+        clautolisp.sysexits:+ex-ok+)
     (error (condition)
       (format *error-output* "~&alfe: --compile-plugin: ~A~%" condition)
-      1)))
+      (if (typep condition 'file-error)
+          clautolisp.sysexits:+ex-noinput+
+          clautolisp.sysexits:+ex-dataerr+))))
 
 (defun %condition-phase (condition)
   (typecase condition
@@ -1263,12 +1267,14 @@ name; VERSION is the version string printed by --version. Returns an
 integer exit code; the executable's MAIN wraps this and calls UIOP:QUIT
 with the result.
 
-The handler chain matches alfe-cli.issue's exit-code table:
-  0 — success
-  1 — user script reported failure (or unexpected condition)
-  2 — CLI-USAGE-ERROR
-  3 — BACKEND-NOT-AVAILABLE
-  4 — BACKEND-BOOTSTRAP-ERROR / BACKEND-PROTOCOL-ERROR"
+The exit statuses are the <sysexits.h> codes (sysexits-exit-statuses.issue;
+the table is in the alfe specification, Exit status):
+  0  — success
+  1  — the user's AutoLISP program failed
+  N  — the program's own (exit N) / (quit N) / autolisp-set-status N
+  64..78 — the condition that stopped the run, mapped by
+       ALFE.ERROR:EXIT-CODE-FOR-CONDITION (EX_USAGE for a usage error,
+       EX_UNAVAILABLE for an engine that is not there, ...)"
   (handler-case
       (let ((*on-error* :quit))
         (handler-bind
@@ -1391,27 +1397,11 @@ The handler chain matches alfe-cli.issue's exit-code table:
                         (print-command-plan options backend :version-text version))
                        (t
                         (run-plan options backend :version-text version)))))))))))))
-    (cli-usage-error (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      2)
-    (backend-not-available (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      3)
-    (alfe.error:backend-bootstrap-error (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      4)
-    (alfe.error:backend-protocol-error (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      4)
-    (backend-eval-error (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      1)
-    (backend-error (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      (exit-code-for-condition condition))
+    ;; One report, one mapping for every error that ends the run
+    ;; (sysexits-exit-statuses.issue).
     (error (condition)
       (format *error-output* "~&alfe: ~A~%" condition)
-      1)))
+      (exit-code-for-condition condition))))
 
 (defun effective-dialect (options)
   "Resolve the dialect to run, per alfe-clautolisp-dialect.issue point 1.
@@ -1478,6 +1468,18 @@ registered one of the two hooks."
        :condition (and last (eval-result-condition last))
        :exit-code (and last (eval-result-exit-code last))))))
 
+(defun %prepare-workdir-or-fail (backend workdir-root)
+  "PREPARE-WORKDIR, with a workdir that cannot be created reported as a
+BACKEND-BOOTSTRAP-ERROR of code :CANNOT-CREATE-WORKDIR, whose exit status
+is EX_CANTCREAT (73) (sysexits-exit-statuses.issue)."
+  (handler-case (prepare-workdir backend workdir-root)
+    (file-error (condition)
+      (error 'alfe.error:backend-bootstrap-error
+             :backend (alfe.backend:backend-name backend)
+             :code :cannot-create-workdir
+             :message (format nil "cannot create the workdir~@[ ~A~]: ~A"
+                              workdir-root condition)))))
+
 (defun run-plan (options backend &key version-text)
   "Drive a real backend through the action plan. Returns the exit code.
 VERSION-TEXT propagates the alfe version string from RUN so backends
@@ -1491,8 +1493,8 @@ engine."
          ;; plug-in that cannot build its part of it (EPUREE without ALPM)
          ;; says so at once, not after a two-minute CAD start.
          (plan (effective-plan options))
-         (workdir (let ((wd (prepare-workdir backend
-                                             (cli-options-workdir options))))
+         (workdir (let ((wd (%prepare-workdir-or-fail
+                             backend (cli-options-workdir options))))
                     (%write-workdir-path-file options wd)
                     (run-hook :workdir-prepared wd)
                     wd))
@@ -1572,11 +1574,13 @@ engine."
                                         ;; decided one (the clautolisp backend:
                                         ;; (exit N), a file error), else the
                                         ;; outcome's.
+                                        ;; :aborted is a CAD that did not
+                                        ;; answer in time: EX_TEMPFAIL.
                                         (or (eval-result-exit-code result)
                                             (ecase (eval-result-status result)
-                                              (:success  0)
-                                              (:failed   1)
-                                              (:aborted  1)))
+                                              (:success  clautolisp.sysexits:+ex-ok+)
+                                              (:failed   clautolisp.sysexits:+exit-autolisp-error+)
+                                              (:aborted  clautolisp.sysexits:+ex-tempfail+)))
                                         :result result))
                    (elapsed (/ (float (- (get-internal-real-time) started-at))
                                internal-time-units-per-second)))
@@ -1611,17 +1615,26 @@ session, which is the double-recording the issue's acceptance criteria forbid."
   (let ((dribble (clautolisp.autolisp-cli:cli-options-dribble options))
         (kind (cli-options-backend options)))
     (when (and dribble (member kind '(:autocad :bricscad)))
-      (let ((path (alfe.dribble:start-dribble
-                   :file dribble
-                   :backend kind
-                   :alfe-version version-text
-                   ;; What alfe KNOWS now: the --cad denotation it resolved
-                   ;; (acad-2022, bricscad-v25, …). The engine has not answered
-                   ;; yet and may never; ALFE.DRIBBLE writes `unknown' then, and
-                   ;; the header is not delayed for it -- a transcript that
-                   ;; appeared only after a successful CAD start would be
-                   ;; missing the sessions worth reading.
-                   :cad-version (cli-options-cad options))))
+      (let ((path (handler-case
+                   (alfe.dribble:start-dribble
+                     :file dribble
+                     :backend kind
+                     :alfe-version version-text
+                     ;; What alfe KNOWS now: the --cad denotation it resolved
+                     ;; (acad-2022, bricscad-v25, …). The engine has not answered
+                     ;; yet and may never; ALFE.DRIBBLE writes `unknown' then, and
+                     ;; the header is not delayed for it -- a transcript that
+                     ;; appeared only after a successful CAD start would be
+                     ;; missing the sessions worth reading.
+                     :cad-version (cli-options-cad options))
+                    ;; A transcript that cannot be created: EX_CANTCREAT
+                    ;; (sysexits-exit-statuses.issue).
+                    (file-error (condition)
+                      (error 'clautolisp.autolisp-cli:cli-error
+                             :option "--dribble"
+                             :message (format nil "cannot create the transcript: ~A"
+                                              condition)
+                             :status clautolisp.sysexits:+ex-cantcreat+)))))
         (log-verbose "cli: dribble recording into ~A" path)
         path))))
 

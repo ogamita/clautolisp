@@ -1,0 +1,152 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: sysexits-exit-statuses — the programs exit with the <sysexits.h> codes, on every system
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: feature
+#+DEPENDS: -
+#+BRANCH: sysexits-exit-statuses
+
+* Context
+
+pjb, 2026-10-06, verbatim:
+
+#+begin_quote
+unopenable -l is an error, exit status. Note in general about exit
+status, linux defines sysexits.h with some "semistandard" exit codes for
+various conditions. We should use them on all systems, if applicable. so
+if a -l file is not present or not readable, EX_NOINPUT should be the
+status code. see https://man7.org/linux/man-pages/man3/sysexits.h.3head.html
+A read error on -x form would be an EX_DATAERR ; etc.
+#+end_quote
+
+* Problem
+
+Before this change the three programs had ad hoc statuses:
+
+- clautolisp: 1 for a runtime error, for a usage error AND for every
+  other failure (a reader error, a missing --dwg drawing, an internal
+  error); 2 for a file it could not open (a CL FILE-ERROR).
+- alfe: 1 a failing program or any unexpected condition, 2 a usage error
+  (or, under --clautolisp, the engine's 2 for an unopenable -l file),
+  3 backend not available, 4 bootstrap / protocol / plug-in error.
+- read-autolisp: 1 for everything.
+
+A script could not tell a usage error from a failing program from a
+missing input. Also, a reader error was reported as the host Lisp's
+printed DIAGNOSTIC structure (=clautolisp: #S(DIAGNOSTIC :SEVERITY ERROR
+...)=), a Common Lisp object in the user's face.
+
+* Decision
+
+The values are those of <sysexits.h> (checked against
+/usr/include/sysexits.h on Debian 13 and the man page, 2026-10-06):
+EX_OK 0, EX_USAGE 64, EX_DATAERR 65, EX_NOINPUT 66, EX_NOUSER 67,
+EX_NOHOST 68, EX_UNAVAILABLE 69, EX_SOFTWARE 70, EX_OSERR 71, EX_OSFILE
+72, EX_CANTCREAT 73, EX_IOERR 74, EX_TEMPFAIL 75, EX_PROTOCOL 76,
+EX_NOPERM 77, EX_CONFIG 78. They are written out in ONE table, the
+=clautolisp.sysexits= package (=clautolisp/autolisp-cli/source/sysexits.lisp=,
+its own dependency-free system =clautolisp/sysexits=, so read-autolisp
+shares it without carrying the evaluator), and used with the same values
+on every system: MS-Windows has no <sysexits.h>, and a script testing for
+66 must work everywhere. Nothing in 64..78 is invented.
+
+Kept outside sysexits, on purpose:
+
+- 1 for an AutoLISP runtime error that escapes the user's program. The
+  sysexits codes name what kept a program from running properly (the
+  command line, an input, a service); when the command line was right,
+  the files were there and the engine worked, the PROGRAM failed, and 1
+  is the conventional status of a failing program (a test runner,
+  false(1), grep). It is also what existing scripts and CI jobs test for.
+- N for (exit N) / (quit N) / (autolisp-set-status N): the program's own
+  choice, passed through unchanged (both alfe transports: the subprocess
+  child's status passes through).
+- 130 for Control-C under the quit interrupt policy: 128 + SIGINT, the
+  shell's convention for a death by SIGINT, which a user sees either way.
+
+* Mapping
+
+| Condition                                                                 | Status             |
+|---------------------------------------------------------------------------+--------------------|
+| success                                                                   | 0 EX_OK            |
+| AutoLISP runtime error escaping the program (any backend)                 | 1                  |
+| (exit N) / (quit N) / autolisp-set-status N                               | N                  |
+| unknown option, missing argument, bad option value, conflicting options   | 64 EX_USAGE        |
+| plug-in option without its plug-in; --print-command without a CAD backend | 64 EX_USAGE        |
+| --dwg on a host without drawings (nihil); --host cadtui --backend direct  | 64 EX_USAGE        |
+| alfe bootstrap codes :unknown-dialect :unknown-host :host-needs-subprocess :no-dwg | 64 EX_USAGE |
+| -l file / -x form the reader refuses (reader diagnostic)                  | 65 EX_DATAERR      |
+| source bytes not valid in the source encoding (decoding error)            | 65 EX_DATAERR      |
+| --dwg file that is not a drawing; malformed --front-end-bindings file     | 65 EX_DATAERR      |
+| --compile-plugin source that does not compile                             | 65 EX_DATAERR      |
+| -l file missing or unreadable (any FILE-ERROR in the engine)              | 66 EX_NOINPUT      |
+| --dwg drawing, --mock-input, --front-end-bindings, --epuree-alpm FILE, --compile-plugin FILE missing | 66 EX_NOINPUT |
+| backend not available (CAD absent, unsupported OS, no clautolisp exe)     | 69 EX_UNAVAILABLE  |
+| bootstrap failure (accoreconsole, launch command, runtime asset, EPURE script, launcher died, ...) | 69 EX_UNAVAILABLE |
+| DWG native library absent; alpm.lsp not installed                         | 69 EX_UNAVAILABLE  |
+| internal error (any other Lisp error); plug-in hook error                 | 70 EX_SOFTWARE     |
+| clautolisp child process cannot be started (--backend subprocess)         | 71 EX_OSERR        |
+| workdir / --dribble transcript cannot be created                          | 73 EX_CANTCREAT    |
+| other stream error                                                        | 74 EX_IOERR        |
+| CAD not READY in time; request/shutdown not answered (:aborted); stdin/control slot busy | 75 EX_TEMPFAIL |
+| protocol error (unknown control, malformed status)                        | 76 EX_PROTOCOL     |
+| Control-C, quit policy                                                    | 130                |
+
+Not used: 67 EX_NOUSER, 68 EX_NOHOST (no user or host lookup), 72
+EX_OSFILE (no system file needed), 77 EX_NOPERM (an unreadable input file
+is EX_NOINPUT, as <sysexits.h> says), 78 EX_CONFIG (aldo.conf / lisp.conf
+errors are ignored at start-up, never fatal).
+
+* What changed
+
+- =clautolisp.sysexits= (new): the constants, =*exit-statuses*=,
+  =exit-status-name=, =exit-status-description=.
+- =clautolisp.autolisp-cli=: new =cli-error= condition (option, message,
+  STATUS), =cli-usage-error= is now its subclass with status EX_USAGE;
+  =engine-exit-status= (condition -> status), shared by the clautolisp
+  program and alfe's in-process engine; =engine-drawing-error= (a --dwg
+  failure as a =cli-error= with the right status);
+  =reader-diagnostic-error-p=; =report-engine-error= renders a reader
+  diagnostic as =SOURCE:LINE:COLUMN: read error: MESSAGE [CODE]=.
+- =clautolisp.drawing:drawing-library-unavailable= (new subclass of
+  drawing-error), signalled by the DWG codec when its native library is
+  absent, so it can be told from a bad drawing.
+- clautolisp main: every exit goes through the table (usage, file, read,
+  internal errors; 130 named).
+- alfe: =exit-code-for-condition= maps through the table (cli-error
+  status, backend errors by class and code, else engine-exit-status); RUN
+  has one error clause; the direct engine uses engine-exit-status (and
+  130 for an interrupt); a subprocess launch failure is EX_OSERR; a
+  workdir that cannot be created is :cannot-create-workdir (EX_CANTCREAT);
+  --dribble creation failure EX_CANTCREAT; --compile-plugin 66 / 65; a
+  plug-in hook may signal any =cli-error= without being wrapped; an
+  :aborted plan is EX_TEMPFAIL; the executable's last-resort handler 70.
+- epuree plug-in: named alpm.lsp missing 66, none installed 69.
+- read-autolisp: 64 / 65 (reader errors) / 66 / 70 / 74.
+- The shared image generator's last-resort handler exits 70.
+
+Versions: clautolisp 2.2.215, alfe 2.2.159, read-autolisp 1.9.2.
+
+* Tests
+
+- clautolisp tool suite: =exit-status-tests.lisp= (missing -l 66,
+  mode-000 -l 66, unbalanced -l 65 with a =read error= report, bad UTF-8
+  65, -x read errors 65, runtime error 1, (quit 7) 7, usage errors 64,
+  --dwg missing 66 / nihil 64 / garbage .dxf 65, internal 70, stream 74);
+  dwg-option tests; autolisp-cli =--front-end-bindings= missing 66 /
+  malformed 65.
+- alfe: smoke mapping test + the table test (=sysexits-table-matches-sysexits-h=);
+  cli, plugin and shipped-plugin tests re-pinned; the backend parity table
+  now asserts the status of each failure row in BOTH transports (missing
+  -l 66, reader-refused file and -x 65, unknown option 64, missing drawing
+  66, runtime error 1, exit 3, recorded 5).
+- conformance corpus: 14 scenarios re-pinned (2 -> 64/66, 3 -> 69,
+  1 -> 66 for --compile-plugin), two new (=actions/read-error-expression=,
+  =clautolisp/dwg-missing=).
+
+* Acceptance criteria
+
+- [X] one shared table; only documented sysexits values.
+- [X] missing / unreadable -l -> 66; -x / file read error -> 65.
+- [X] direct and subprocess alfe give the same status (parity table).
+- [X] manuals, man pages, alfe spec table, release notes.

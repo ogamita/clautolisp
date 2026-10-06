@@ -60,9 +60,19 @@ Therefore:
 - strict versus lax only affects token acceptance.
 
 * Exit Status
-- Exit status ~0~ means all input files were read without reader errors.
-- Exit status ~1~ means command-line usage failed, file reading failed, or the
-  reader reported at least one error diagnostic.
+The statuses are the codes of ~<sysexits.h>~, with the same values on
+every system (sysexits-exit-statuses.issue):
+
+- ~0~ (~EX_OK~): all input files were read without reader errors.
+- ~64~ (~EX_USAGE~): command-line usage error (unknown option, missing
+  argument, invalid value, no input file).
+- ~65~ (~EX_DATAERR~): the reader reported at least one error diagnostic,
+  or a file's bytes are not valid in its encoding.
+- ~66~ (~EX_NOINPUT~): an input file does not exist or is not readable.
+- ~70~ (~EX_SOFTWARE~): internal error.
+- ~74~ (~EX_IOERR~): input/output error.
+
+Before read-autolisp 1.9.2 every failure exited ~1~.
 
 Warnings are printed on ~*error-output*~ and do not change a successful exit
 status by themselves.

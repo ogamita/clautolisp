@@ -37,6 +37,23 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Exit statuses are the =<sysexits.h>= codes (clautolisp 2.2.215, alfe
+  2.2.159, read-autolisp 1.9.2), with the same values on every system,
+  MS-Windows included: 64 =EX_USAGE= for a usage error, 65 =EX_DATAERR=
+  for a =-l= file or =-x= expression the reader refuses (and for a
+  =--dwg= file that is not a drawing), 66 =EX_NOINPUT= for a =-l= file or
+  =--dwg= drawing that is missing or unreadable, 69 =EX_UNAVAILABLE= for
+  an engine or support file that is not there (alfe's old 3), 70
+  =EX_SOFTWARE= for an internal error, 73 =EX_CANTCREAT= for a workdir or
+  transcript that cannot be created, 75 =EX_TEMPFAIL= / 76 =EX_PROTOCOL=
+  for a CAD that does not answer in time / answers wrong (alfe's old 4).
+  1 stays the status of a failing AutoLISP program, =(exit N)= /
+  =(quit N)= / =autolisp-set-status N= still give =N=, Control-C still
+  130, and both =alfe --clautolisp= transports still agree. *Scripts that
+  tested for 2, 3 or 4 must be adapted* (2 is now 64 or 66). A reader
+  error is now reported as =SOURCE:LINE:COLUMN: read error: MESSAGE
+  [CODE]= instead of a printed Lisp structure. See /Exit Codes/ in the
+  clautolisp user manual and /Exit status/ in the alfe user manual.
 - OPEN's encoding forms warn out of dialect (2.2.214): ~(open f "w"
   "utf8")~, ~(open f "w" "cp1252")~ and ~(open f "w,ccs=UTF-8")~ are
   honoured under every dialect (an AutoCAD dialect at ~LISPSYS~ 0 or

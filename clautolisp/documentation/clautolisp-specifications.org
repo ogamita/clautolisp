@@ -383,19 +383,44 @@ separators by locale, /those/ features will consult their own
 matching ~LC_*~ category.
 
 * Exit Codes
-~clautolisp~ exits with one of the following statuses:
+~clautolisp~ exits with one of the following statuses
+(sysexits-exit-statuses.issue). Apart from 1, /N/ and 130 they are the
+codes of ~<sysexits.h>~, with the same values on every system
+(MS-Windows included). The table is defined once, in the
+~clautolisp.sysexits~ package (=autolisp-cli/source/sysexits.lisp=), and
+mapped from conditions by ~clautolisp.autolisp-cli:engine-exit-status~,
+which alfe's in-process engine uses too, so both engine variants give
+the same status for the same failure.
 
-- ~0~ ::
-  successful evaluation of the file or expression; clean ~--help~ /
-  ~--version~ output; clean termination of the REPL via EOF; a form
-  that invoked ~(exit)~, ~(quit)~ or ~(vl-exit-with-value ...)~.
+- ~0~ (~EX_OK~) ::
+  successful evaluation of every action; clean ~--help~ / ~--version~ /
+  ~--list-...~ output; clean termination of the REPL via EOF.
 - ~1~ ::
-  uncaught runtime error escaped from the AutoLISP evaluator; or an
-  unknown command-line option; or any other unexpected internal
-  failure that reaches the top-level handler.
-- ~2~ ::
-  the FILE argument could not be opened (reported as a CL
-  ~file-error~ wrapped in a one-line diagnostic).
+  an AutoLISP runtime error escaped the program. Deliberately not a
+  ~<sysexits.h>~ code: the program ran and failed.
+- /N/ ::
+  ~(exit N)~, ~(quit N)~ or a status recorded with
+  ~(autolisp-set-status N)~, passed through unchanged.
+- ~64~ (~EX_USAGE~) ::
+  an unknown option, a missing argument, an invalid option value;
+  ~--dwg~ on a host without drawings.
+- ~65~ (~EX_DATAERR~) ::
+  a ~-l~ file or ~-x~ expression the reader refuses (reader diagnostic,
+  or bytes not valid in the source encoding); a ~--dwg~ file that is not
+  a drawing; a malformed ~--front-end-bindings~ file.
+- ~66~ (~EX_NOINPUT~) ::
+  an input file that does not exist or is not readable: ~-l~, ~--dwg~,
+  ~--mock-input~, ~--front-end-bindings~.
+- ~69~ (~EX_UNAVAILABLE~) ::
+  the DWG native library a ~--dwg~ drawing needs is absent.
+- ~70~ (~EX_SOFTWARE~) ::
+  any other error reaching the top-level handler: an internal error.
+- ~73~ (~EX_CANTCREAT~) ::
+  the ~--dribble~ transcript cannot be created.
+- ~74~ (~EX_IOERR~) ::
+  another stream error.
+- ~130~ ::
+  Control-C under the ~quit~ interrupt policy (128 + SIGINT).
 
 A non-zero exit code is the only programmatic signal of failure
 suitable for use from a Makefile or CI runner.
@@ -410,15 +435,19 @@ Raised by the reader during file or expression mode, or by the REPL
 between forms. Format:
 
 #+BEGIN_EXAMPLE
-clautolisp: <severity>: <code>: <message>
-  at <source-name>:<start-line>:<start-column>-<end-line>:<end-column>
+clautolisp: <source-name>:<start-line>:<start-column>: read error: <message> [<code>]
 #+END_EXAMPLE
 
 The diagnostic is built from the structured ~diagnostic~ object the
-reader attaches to the simple-error condition. ~severity~ is one of
-~error~, ~warning~, ~note~. The source-name is the FILE path in file
-mode, ~"<expression>"~ in expression mode, and ~"<repl>"~ in
-interactive mode.
+reader attaches to the simple-error condition
+(~clautolisp.autolisp-cli:report-engine-error~, shared with alfe's
+in-process engine). The source-name is the FILE path for ~-l~ and
+~<-x>~ for ~-x~. The run exits with ~EX_DATAERR~ (65). Bytes that are not
+valid in the source encoding are reported as
+~clautolisp: <file>: read error: bytes that are not valid in the source
+encoding (choose the encoding with -Esource ENCODING)~, also 65. Before
+2.2.215 both printed the host Lisp's own rendering of the condition (a
+~#S(DIAGNOSTIC ...)~ structure, a stream object) and exited 1.
 
 ** Runtime errors
 Raised by the AutoLISP evaluator. Format:

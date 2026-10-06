@@ -11,6 +11,10 @@
    #:apply-terminal-encoding
    #:windows-console-code-page
    ;; conditions
+   #:cli-error
+   #:cli-error-option
+   #:cli-error-message
+   #:cli-error-status
    #:cli-usage-error
    #:cli-usage-error-option
    #:cli-usage-error-message
@@ -119,6 +123,9 @@
    #:report-autolisp-termination
    #:report-engine-error
    #:engine-drawing-error-message
+   #:engine-drawing-error
+   #:engine-exit-status
+   #:reader-diagnostic-error-p
 
    ;; encoding registry + resolver
    #:*encoding-aliases*

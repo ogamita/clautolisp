@@ -80,6 +80,7 @@ from the cador package before the Phase-17a extraction.")
    #:sysvar-cell-p
    ;; Conditions (Phase 17b).
    #:drawing-error
+   #:drawing-library-unavailable
    #:drawing-read-error
    #:drawing-write-error
    #:drawing-format-error

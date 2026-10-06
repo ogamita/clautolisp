@@ -269,7 +269,7 @@ candidate locations. Signals a clear error if no candidate can be used (run
            ;; Present but none usable: name every one and the loader's own
            ;; words for it. "no writer codec registered" is what this used
            ;; to look like from the outside.
-           (error 'drawing-error
+           (error 'drawing-library-unavailable
                   :format-control "no usable DWG native library. Tried ~
 ~{~{~A (~A)~}~^; ~}."
                   :format-arguments
@@ -281,7 +281,7 @@ candidate locations. Signals a clear error if no candidate can be used (run
            ;; (clautolisp-distributed-native-libraries-not-loaded): the Lisp
            ;; module not activated is now impossible -- it is baked into the
            ;; program -- and the other three each say so, with the pathnames.
-           (error 'drawing-error
+           (error 'drawing-library-unavailable
                   :format-control "the DWG native library ~A was not found. ~
 Looked in: ~{~A~^, ~}. A release must ship it under ~
 lib/clautolisp/~A/~A/ beside the program; in a checkout build it with ~

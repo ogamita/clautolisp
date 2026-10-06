@@ -175,13 +175,17 @@ when it cannot be read."
                      (progn
                        (apply (read-from-string ,main-function-name)
                               (argv)))
+                   ;; An error the program's MAIN did not handle is an
+                   ;; internal error: EX_SOFTWARE, 70 (clautolisp.sysexits,
+                   ;; written out because this form is built before any
+                   ;; system is loaded; sysexits-exit-statuses.issue).
                    (error (err)
                      (finish-output *standard-output*)
                      (finish-output *trace-output*)
                      (format *error-output* "~&~A~%" err)
                      (finish-output *error-output*)
-                     #+ccl (ccl:quit 1)
-                     #+sbcl (sb-ext:exit :code 1)))
+                     #+ccl (ccl:quit 70)
+                     #+sbcl (sb-ext:exit :code 70)))
                  #+ccl (ccl:quit 0)
                  #+sbcl (sb-ext:exit :code 0))))
     #-ecl (coerce form 'function)))

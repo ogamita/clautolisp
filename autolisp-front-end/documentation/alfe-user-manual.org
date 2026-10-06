@@ -72,7 +72,7 @@ directory alfe was built in. The search order is:
 4. =/opt/local=, =/usr/local= and =/usr= (=share/alfe/runtime/=).
 
 If either file cannot be found, the CAD is not started. alfe exits
-with status 4 and lists every path it tried (see /Troubleshooting/).
+with status 69 (=EX_UNAVAILABLE=) and lists every path it tried (see /Troubleshooting/).
 
 ** The installed plug-ins
 
@@ -137,12 +137,13 @@ every option alfe accepts with =--clautolisp=:
   =*AUTOLISP-ACTIONS*= lists your actions, and =(getvar "PROGRAM")= is
   =alfe= in both. Only =*AUTOLISP-PROCESS*= tells them apart (=DIRECT= /
   =SUBPROCESS=), which is its purpose;
-- the diagnostics and the exit status are the same: a runtime error is
-  reported in the engine's words with its AutoLISP backtrace, =(exit N)=,
-  =(quit N)= and =autolisp-set-status= give exit status =N=, a =-l= file
-  that cannot be opened gives 2 (the =clautolisp= program's code), an
-  unreadable drawing is =--dwg: cannot open the drawing ...=, exit 1, and
-  =--main FN= runs as =-x "(FN)"= does.
+- the diagnostics and the exit status are the same (see /Exit status/): a
+  runtime error is reported in the engine's words with its AutoLISP
+  backtrace (exit 1), =(exit N)=, =(quit N)= and =autolisp-set-status= give
+  exit status =N=, a =-l= file that cannot be opened gives 66
+  (=EX_NOINPUT=), a source the reader refuses 65 (=EX_DATAERR=), a drawing
+  that cannot be opened is =--dwg: cannot open the drawing ...= with 66
+  (missing) or 65 (not a drawing), and =--main FN= runs as =-x "(FN)"= does.
 
 Three options still behave differently, and are the remaining work of the
 parity ticket (=alfe-clautolisp-backend-semantic-parity=):
@@ -411,7 +412,8 @@ to clautolisp, which supports all three.
 | =--host cadtui= | =cadtui= | The textual UI-tree host, layered on the cador core.  |
 | =--host nihil=  | =nihil=  | No host at all: every host operation is refused.      |
 
-Any other name is a usage error (exit status 2) that lists these three.
+Any other name is a usage error (exit status 64, =EX_USAGE=) that lists
+these three.
 
 =--host= only matters with the =clautolisp= backend. Under =--bricscad=
 and =--autocad= the host is the CAD itself and the option is accepted and
@@ -484,7 +486,7 @@ MS-Windows), is looked for in this order, by =--host cadtui= and by
 4. =clautolisp-sbcl= on =$PATH=;
 5. =/usr/local/bin/clautolisp-sbcl= (not on MS-Windows).
 
-When it is nowhere alfe exits with status 3, and the
+When it is nowhere alfe exits with status 69 (=EX_UNAVAILABLE=), and the
 =NO-SUBPROCESS-BINARY= message lists every place it looked.
 
 #+begin_src sh
@@ -1059,7 +1061,7 @@ lists the installed plug-ins.
 An active plug-in's other options take their value from the command
 line, else from their environment variable, else from their default.
 Giving an option of a plug-in that is *not* active is a usage error (exit
-status 2) that names the option activating the plug-in: =alfe
+status 64) that names the option activating the plug-in: =alfe
 --epure-profile Epure …= fails and points at =--epure=.
 
 A plug-in declares the backends it takes part in. Under another backend
@@ -1154,8 +1156,8 @@ The default control script is
   AutoCAD.
 
 When the script does not exist the run stops with a
-=backend-bootstrap-error= naming the path (exit status 4) — unless it is
-a =--dry-run=.
+=backend-bootstrap-error= naming the path (exit status 69,
+=EX_UNAVAILABLE=) — unless it is a =--dry-run=.
 
 *** How the control script is run
 
@@ -1217,7 +1219,8 @@ with EPURE 2022_b installed:
   save-parameters dialog's =Sauvprm.lsp=: =toutes_options=,
   =f_DateHeure_UTC= — are *not* there in a fresh session, on either CAD.
 - Run one CAD at a time: an AutoCAD started while the previous run's CAD
-  was still exiting failed before READY (exit 4).
+  was still exiting failed before READY (exit 4 then; 69 since alfe
+  2.2.159).
 - =--mode automation= is *not* the answer for BricsCAD, and is not
   wanted in any case: =--epure= exists for GUI work. On the runner the
   COM bridge hung at attach/create even *without* EPURE, so BricsCAD COM
@@ -1237,7 +1240,7 @@ neither a GUI nor profiles. So:
 | BricsCAD, =batch= (the default)         | Starts =bricscad.exe [template] /p PROFILE /b run.scr= from =UserDataCache=. The =/Automation= switch, which hides the main window, is *dropped*. =run.scr= =LOAD=s the control script, then loads =run-common.lsp=. |
 | BricsCAD, =--mode automation= (COM)     | The bridge tries to activate the profile through =Preferences.Profiles= (a failure is written to the errors file and the run carries on with the current profile), and sends =._SCRIPT= before the load.                        |
 | AutoCAD, =automation= (COM)             | The default under =--epure=. The bridge activates the profile and sends =._SCRIPT= before the load.                                                                                                                             |
-| AutoCAD, =--mode batch= (accoreconsole) | Refused: usage error (exit status 2), "EPURE requires the full AutoCAD GUI; accoreconsole (--mode batch) has no profile support. Use --mode automation."                                                                                                              |
+| AutoCAD, =--mode batch= (accoreconsole) | Refused: usage error (exit status 64), "EPURE requires the full AutoCAD GUI; accoreconsole (--mode batch) has no profile support. Use --mode automation."                                                                                                              |
 
 Under COM the run-time is loaded into the GUI session, and its server
 loop keeps the CAD's UI thread busy for as long as alfe drives it: the
@@ -1518,10 +1521,12 @@ as ANSI), variables declared with =Dim=, strings quoted with the helper
 
 *** Errors raised by a hook
 
-A =cli-usage-error= or a =backend-error= signalled by a handler passes
-through unchanged, with its usual exit status. Any other Lisp error
+A =cli-error= (=cli-usage-error= is one) or a =backend-error= signalled by
+a handler passes through unchanged, with its usual exit status; a
+=cli-error= may carry its own (=:status clautolisp.sysexits:+ex-noinput+=
+for a file an option names that is not there). Any other Lisp error
 becomes an =alfe.error:plugin-error=, reported as =plug-in NAME, hook
-:HOOK: …= with exit status 4.
+:HOOK: …= with exit status 70 (=EX_SOFTWARE=).
 
 * The *AUTOLISP-…* globals
 
@@ -1666,10 +1671,66 @@ Two things to know:
 
 =--print-command= requires a CAD backend. Under =--clautolisp= there
 is no external command line — the engine runs in-process — so alfe
-exits 2 with a usage error rather than printing nothing.
+exits 64 (=EX_USAGE=) rather than printing nothing.
 
 It is distinct from =--dry-run=, which resolves nothing, touches no
 disk and just prints the action plan.
+
+* Exit status
+
+alfe's exit status says how the run ended, and is the same whichever
+transport runs the =clautolisp= engine (=--backend direct= or
+=subprocess=). Apart from 1, /N/ and 130, the statuses are the
+semi-standard codes of =<sysexits.h>= (see =sysexits.h(3head)=), with the
+same values on *every* system, MS-Windows included -- a script that tests
+for 66 works everywhere.
+
+| Status | Name             | When                                                                                                    |
+|--------+------------------+---------------------------------------------------------------------------------------------------------|
+|    =0= | =EX_OK=          | Success.                                                                                                |
+|    =1= |                  | The AutoLISP program failed: a runtime error escaped it, on any backend (a CAD request that answered =FAIL=). |
+|    /N/ |                  | Under =--clautolisp=: the program's own =(exit N)=, =(quit N)= or =autolisp-set-status N=, unchanged.    |
+|   =64= | =EX_USAGE=       | The command line is wrong: an unknown option, a missing argument, an invalid value, conflicting options, a plug-in option without its plug-in, =--host cadtui --backend direct=, =--print-command= without a CAD backend, =--dwg= on a host without drawings, =--autocad --mode batch= without a drawing or with =--epure=. |
+|   =65= | =EX_DATAERR=     | An input is not well formed: a =-l= file or =-x= expression the reader refuses (unbalanced parenthesis, unterminated string, bytes not valid in the source encoding); a =--dwg= file that is not a drawing; a =--compile-plugin= source that does not compile. |
+|   =66= | =EX_NOINPUT=     | An input file does not exist or is not readable: the =-l= file, the =--dwg= drawing, the =--epuree-alpm= file, the =--compile-plugin= source. |
+|   =69= | =EX_UNAVAILABLE= | The backend, or something it needs, is not there or would not start: the CAD is not installed or not supported on this system, no clautolisp executable for =--backend subprocess=, no accoreconsole, EPURE or alpm.lsp not installed, the DWG native library missing, the CAD launcher died before READY. |
+|   =70= | =EX_SOFTWARE=    | An internal error: a defect of alfe, of the engine, or of a plug-in (an error raised by a plug-in hook).  |
+|   =71= | =EX_OSERR=       | The clautolisp child process (=--backend subprocess=) could not be started.                            |
+|   =73= | =EX_CANTCREAT=   | An output cannot be created: the workdir, the =--dribble= transcript.                                    |
+|   =74= | =EX_IOERR=       | An input/output error while reading or writing.                                                         |
+|   =75= | =EX_TEMPFAIL=    | The CAD did not answer in time -- READY within =--timeout=, a request, the shutdown -- or a protocol slot stayed busy. Retrying may succeed. |
+|   =76= | =EX_PROTOCOL=    | The CAD runtime answered something the file protocol does not allow.                                    |
+|  =130= |                  | Interrupted: Control-C under the =quit= interrupt policy (128 + SIGINT).                                 |
+
+The other =<sysexits.h>= codes are not used: alfe looks up no user (67
+=EX_NOUSER=) or host name (68 =EX_NOHOST=), needs no system file (72
+=EX_OSFILE=), reports an unreadable input file as =EX_NOINPUT= the way
+=<sysexits.h>= says rather than as 77 =EX_NOPERM=, and has no
+configuration file whose error stops a run (78 =EX_CONFIG=).
+
+Why 1 for a failing program, and not a =<sysexits.h>= code: those codes
+say what kept a program from running properly -- a bad command line, a
+missing input, an engine that is not there. When everything was in place
+and the AutoLISP program itself signalled an error, the /program/
+failed, and 1 is what a failing program conventionally returns. Keeping
+it at 1 also keeps the meaning of 1 that scripts and CI jobs already test
+for.
+
+#+begin_example
+$ alfe -l no-such-file.lsp ; echo "exit $?"
+clautolisp: The file #P"/home/me/no-such-file.lsp" does not exist: No such file or directory
+exit 66
+$ alfe -x '(princ' ; echo "exit $?"
+clautolisp: <-x>:1:7: read error: Unexpected end of input inside list. [UNEXPECTED-EOF]
+exit 65
+#+end_example
+
+*Changed in alfe 2.2.159.* The codes were 1 (a failing program, or any
+unexpected error), 2 (a usage error, or a =-l= file the =clautolisp=
+engine could not open), 3 (backend not available) and 4 (bootstrap,
+protocol or plug-in error). A script that tested for 2, 3 or 4 must be
+adapted: 2 is now 64 (usage) or 66 (missing file), 3 is 69, and 4 is 69,
+75, 76 or 70 depending on the failure.
 
 * Environment variables
 
@@ -1881,7 +1942,7 @@ the CAD backends, so a long eval was aborted at the fixed 30 s default.)
 
 =--epure-profile=, =--epure-script=, =--epuree-path=, =--epuree-alpm=
 and every other option a plug-in defines are usage errors (exit status
-2) while their plug-in is not active. The message names the option that
+64) while their plug-in is not active. The message names the option that
 activates it — for =--epure-profile=, that is =--epure=. Add that
 option, or activate the plug-in by name: =--plugin epure=, or
 =$ALFE_PLUGINS=epure= in your shell init. See /Activating a plug-in/.
@@ -1917,15 +1978,17 @@ Run with =--verbose= to see the message saying so, and name the backend.
 
 ** A run under EPURE or EPUREE stops before the script starts
 
-- EPURE control script not found (exit status 4): the message names the
+- EPURE control script not found (exit status 69): the message names the
   path looked at. Install EPURE, or point =--epure-script= (or
   =$AUTOLISP_EPURE_SCRIPT=) at the script. A =--dry-run= does not check.
-- =--autocad --mode batch --epure= is refused (exit status 2):
+- =--autocad --mode batch --epure= is refused (exit status 64):
   accoreconsole has no profile support. Drop =--mode batch=; AutoCAD
   then runs under COM automation.
-- =alpm.lsp= not found under =--epuree=: a usage error listing the places
-  tried. Give =--epuree-alpm FILE=, or set =$ALPM_LSP=.
-- =plug-in NAME, hook :HOOK: …= (exit status 4): a plug-in's hook raised
+- =alpm.lsp= not found under =--epuree=: exit status 66 when the file
+  named by =--epuree-alpm= is not there, 69 when none is installed in the
+  places tried (the message lists them). Give =--epuree-alpm FILE=, or set
+  =$ALPM_LSP=.
+- =plug-in NAME, hook :HOOK: …= (exit status 70): a plug-in's hook raised
   an error that is not a usage or backend error. It is a defect of that
   plug-in.
 
