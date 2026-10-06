@@ -104,29 +104,79 @@ loaders + the consume hook; the rest directly). Returns T."
   t)
 
 ;;; --- named window layouts (windows-and-interactor-templates.issue Q5) ----
-;;; A layout is the frame's split tree recorded as a readable role-tree
-;;; (:horizontal RATIO A B | :vertical RATIO A B | ROLE-keyword). Named layouts
-;;; live in the "layouts" config's :LAYOUTS alist (name -> spec) and persist with
-;;; the rest of the cascade. Replay RE-TILES the existing panes; recreating NEW
-;;; windows over saved targets ("2 sedit on different files") waits on the
-;;; make-*-window window-creation.
+;;; A layout is the frame's split tree recorded as a readable tree:
+;;;   (:horizontal RATIO A B) | (:vertical RATIO A B)  -- a split;
+;;;   ROLE                                             -- a debugger pane
+;;;                                                       (:stack :source
+;;;                                                       :interactor :repl);
+;;;   (:window ROLE COMMAND ARG)                       -- a USER-MADE window:
+;;;      the make-*-window COMMAND and the ARG text it was made with.
+;;; pjb (Q5): "record their constructor parameters and replay them". Restoring
+;;; a layout closes the current user-made windows, replays each (:window ...)
+;;; leaf's command with its argument -- recreating the interactor (a sedit on
+;;; the same form, a lisp REPL instance, an inspector on the value of the same
+;;; expression...) -- and re-tiles the panes and the new windows by the tree.
+;;; Named layouts live in the "layouts" config's :LAYOUTS alist (name -> spec)
+;;; and persist with the rest of the cascade by the explicit M-x
+;;; save-configuration (Q7). The layout named "debugger", when saved, is the
+;;; one a new ncurses debugger opens with (at its first stop): the fixed four
+;;; panes are only the default when no such layout exists.
 
 (defparameter +layouts-config-name+ "layouts")
 
-(defun layout->spec (node)
-  "Serialise a frame layout NODE (a split list or a window) to a role-tree."
+(defparameter +startup-layout-name+ "debugger"
+  "The saved layout a new ncurses debugger UI applies at its first stop.")
+
+(defun %pane-window-p (window)
+  "True for the debugger's own panes (and the minibuffer), which a layout
+re-tiles but never recreates or closes."
+  (or (member (window-role window) +window-roles+)
+      (eq (window-role window) :minibuffer)))
+
+(defun layout->spec (node &optional ui)
+  "Serialise a frame layout NODE (a split list or a window) to a layout spec.
+With UI, a user-made window that has a recipe is recorded as
+(:window ROLE COMMAND ARG) so it can be recreated; otherwise a leaf is its role."
   (if (and (consp node) (member (first node) '(:horizontal :vertical)))
       (destructuring-bind (split ratio a b) node
-        (list split ratio (layout->spec a) (layout->spec b)))
-      (clautolisp.ui.tui:window-role node)))
+        (list split ratio (layout->spec a ui) (layout->spec b ui)))
+      (let ((recipe (and ui (not (%pane-window-p node)) (window-recipe ui node))))
+        (if recipe
+            (list :window (clautolisp.ui.tui:window-role node) (car recipe) (cdr recipe))
+            (clautolisp.ui.tui:window-role node)))))
 
-(defun spec->layout (ui spec)
-  "Rebuild a frame layout tree from SPEC (a role-tree), mapping each role back to
-UI's existing window of that role."
-  (if (and (consp spec) (member (first spec) '(:horizontal :vertical)))
-      (destructuring-bind (split ratio a b) spec
-        (list split ratio (spec->layout ui a) (spec->layout ui b)))
-      (ui-window ui spec)))
+(defun %recipe-leaf-p (spec)
+  (and (consp spec) (eq (first spec) :window)))
+
+(defun replay-window-recipe (ui command arg &key session hit)
+  "Recreate a user-made window by running its make-*-window COMMAND with ARG, as
+the user did. Returns the new window, or NIL when the command made none (e.g. a
+stack browser outside a stop) or is unknown."
+  (let ((entry (assoc command *ncurses-commands* :test #'string-equal))
+        (before (copy-list (ui-windows ui))))
+    (when entry
+      (let ((*replaying-layout* t))
+        (handler-case (funcall (cdr entry) ui session hit arg)
+          (error (e) (set-message ui "layout: ~A: ~A" command e))))
+      (find-if (lambda (w) (not (member w before))) (ui-windows ui)))))
+
+(defun spec->layout (ui spec &key session hit)
+  "Rebuild a frame layout tree from SPEC: a role leaf maps to UI's existing
+window of that role, a (:window ROLE COMMAND ARG) leaf is recreated by replaying
+its command. A leaf that yields no window collapses out of its split. Returns
+the tree, or NIL when nothing could be placed."
+  (cond
+    ((and (consp spec) (member (first spec) '(:horizontal :vertical)))
+     (destructuring-bind (split ratio a b) spec
+       (let ((la (spec->layout ui a :session session :hit hit))
+             (lb (spec->layout ui b :session session :hit hit)))
+         (cond ((and la lb) (list split ratio la lb))
+               (t (or la lb))))))
+    ((%recipe-leaf-p spec)
+     (destructuring-bind (role command &optional (arg "")) (rest spec)
+       (declare (ignore role))
+       (replay-window-recipe ui command arg :session session :hit hit)))
+    (t (ui-window ui spec))))
 
 (defun saved-layouts ()
   "The alist (NAME . SPEC) of named layouts."
@@ -134,22 +184,60 @@ UI's existing window of that role."
    (clautolisp.ui.tui:ensure-config +layouts-config-name+) :layouts '()))
 
 (defun save-layout (ui name)
-  "Record UI's current frame layout under NAME into the \"layouts\" config
-(persisted with the rest by M-x save-configuration; no file I/O here)."
-  (let* ((spec (layout->spec (ui-layout ui)))
+  "Record UI's current frame layout -- with the recipes of its user-made
+windows -- under NAME into the \"layouts\" config (persisted with the rest by
+M-x save-configuration; no file I/O here)."
+  (let* ((spec (layout->spec (ui-layout ui) ui))
          (cfg (clautolisp.ui.tui:ensure-config +layouts-config-name+))
          (rest (remove name (clautolisp.ui.tui:config-value cfg :layouts '())
                        :key #'car :test #'string-equal)))
     (clautolisp.ui.tui:config-set-value cfg :layouts (acons name spec rest))
     name))
 
-(defun load-layout (ui name)
-  "Re-tile UI's frame to the saved layout NAME (using the existing panes).
-Returns T when a layout of that name exists."
+(defun close-user-windows (ui)
+  "Close every user-made window of UI (keeping the debugger panes)."
+  (dolist (w (copy-list (ui-windows ui)))
+    (unless (%pane-window-p w)
+      (remhash w (ncurses-ui-window-recipes ui))
+      (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) w))))
+
+(defun %reseat-window-manager (ui)
+  "Make the active window a tiled one, and the only one carrying :WINDOW-MANAGER."
+  (let ((leaves (clautolisp.ui.tui:layout-leaves (ui-layout ui))))
+    (unless (member (active-window ui) leaves)
+      (setf (frame-selected-window (ncurses-ui-frame ui)) (first leaves)))
+    (dolist (w (ui-windows ui))
+      (setf (window-stack w) (remove :window-manager (window-stack w))))
+    (let ((active (active-window ui)))
+      (when active (push :window-manager (window-stack active))))))
+
+(defun load-layout (ui name &key session hit)
+  "Restore the saved layout NAME in UI: close the current user-made windows,
+recreate the layout's own (replaying their make-*-window commands, over the stop
+SESSION/HIT when given) and re-tile. Returns T when a layout of that name
+exists."
   (let ((spec (cdr (assoc name (saved-layouts) :test #'string-equal))))
     (when spec
-      (setf (ui-layout ui) (spec->layout ui spec))
+      (close-user-windows ui)
+      ;; replay from the debugger's interactor pane, so a recreated window
+      ;; shares its (aldo lisp) stack bottom, as one made from there would
+      (let ((pane (ui-window ui :interactor)))
+        (when pane (activate-window ui pane)))
+      (let ((tree (spec->layout ui spec :session session :hit hit)))
+        (when tree
+          (setf (ui-layout ui) tree))
+        (%reseat-window-manager ui))
       t)))
+
+(defun apply-startup-layout (ui session hit)
+  "At UI's first stop, restore the saved layout named \"debugger\" when there
+is one (the debugger's default layout, pjb Q5). Only once per UI; a failure
+leaves the default four panes. Returns T when a layout was applied."
+  (unless (ncurses-ui-startup-layout-done ui)
+    (setf (ncurses-ui-startup-layout-done ui) t)
+    (and (layout-exists-p +startup-layout-name+)
+         (ignore-errors
+          (load-layout ui +startup-layout-name+ :session session :hit hit)))))
 
 (defun layout-exists-p (name)
   "True when a named layout NAME is saved."
@@ -182,10 +270,9 @@ layout of that name existed (windows-and-interactor-templates / ncurses-windows
   nil)
 
 (defun load-layout-command (ui session hit arg)
-  (declare (ignore session hit))
   (let ((name (%read-name ui arg "load layout: ")))
     (when name
-      (if (load-layout ui name)
+      (if (load-layout ui name :session session :hit hit)
           (set-message ui "layout ~A restored" name)
           (set-message ui "no layout named ~A" name))))
   nil)

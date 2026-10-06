@@ -713,6 +713,16 @@ hold the whole multiple-value tuple).")
 (defun %repl-intern (name)
   (intern-autolisp-symbol name))
 
+;;; The history family is per REPL INSTANCE (windows-and-interactor-
+;;; templates.issue, the singleton split): every lisp instance over the one
+;;; evaluator -- the tty REPL, the debugger's lisp<2>, a make-lisp-window --
+;;; keeps its own :- / :* / :/ values, swapped in around each of its turns by
+;;; CLAUTOLISP.REPL:CALL-WITH-REPL-INSTANCE-VARIABLES.
+(setf clautolisp.repl:*repl-instance-variables*
+      (append *repl-form-history-symbols*
+              *repl-result-history-symbols*
+              *repl-list-result-history-symbols*))
+
 (defun %repl-init-history (context)
   "Initialise every REPL history slot to nil up-front so that the first
 time the user references one (before any turn has shifted a value in)
@@ -1029,12 +1039,16 @@ one, both listed)."
                ;; so ordinary evaluation is unchanged. The seam is the console
                ;; activation's PASS-READER / PASS-EVALUATOR (console-interactor).
                (*interactor-stack*
-                 (let ((base (list (make-activation *autolisp*
-                                                    (make-repl-state
-                                                     :context context
-                                                     :session session
-                                                     :break-on-error break-on-error))
-                                   (make-sleeping-aldo-activation session))))
+                 (let* ((lisp (make-activation *autolisp*
+                                               (make-repl-state
+                                                :context context
+                                                :session session
+                                                :break-on-error break-on-error)
+                                               ;; the first lisp instance of the
+                                               ;; image: a debugger's own lisp
+                                               ;; is then "Lisp REPL<2>"
+                                               "Lisp REPL"))
+                        (base (list lisp (make-sleeping-aldo-activation session))))
                    (if *cadtui-root*
                        (cons (clautolisp.cadtui:make-console-activation
                               *cadtui-root*
@@ -1046,9 +1060,12 @@ one, both listed)."
                                           (current-evaluation-dialect context))))
                               :pass-evaluator
                               (lambda (source)
-                                (funcall clautolisp.repl:*repl-eval-hook*
-                                         source context session break-on-error
-                                         (lambda () (interactor-return :terminated)))))
+                                (clautolisp.repl:call-with-repl-instance-variables
+                                 (activation-state lisp)
+                                 (lambda ()
+                                   (funcall clautolisp.repl:*repl-eval-hook*
+                                            source context session break-on-error
+                                            (lambda () (interactor-return :terminated)))))))
                              base)
                        base))))
            (when (null (interactor-loop))

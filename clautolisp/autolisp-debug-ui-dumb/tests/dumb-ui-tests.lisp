@@ -1465,3 +1465,33 @@
     (is (eq :the-hit (clautolisp.ui.dumb::aldo-state-hit state)))
     ;; a fresh instance is named after the template's display-name
     (is (string= "Aldo debugger" (clautolisp.interactor:activation-name act)))))
+
+(test two-aldo-instances-share-the-debugger-not-their-state
+  ;; the singleton split: two instances of the "aldo" template over ONE
+  ;; session (the shared debugger) each get a command side of their own -- a
+  ;; fresh dumb-ui with its own display list, step repeat and browse stack --
+  ;; and distinct instance names.
+  (let* ((out1 (make-string-output-stream))
+         (a1 (clautolisp.interactor:instantiate-interactor-template
+              "aldo" (clautolisp.interactor:make-template-context
+                      :target (list :session :the-session :output out1))))
+         (a2 (clautolisp.interactor:instantiate-interactor-template
+              "aldo" (clautolisp.interactor:make-template-context :target (list :session :the-session))
+              :existing-names (list (clautolisp.interactor:activation-label a1))))
+         (s1 (clautolisp.interactor:activation-state a1))
+         (s2 (clautolisp.interactor:activation-state a2))
+         (u1 (clautolisp.ui.dumb:aldo-state-ui s1))
+         (u2 (clautolisp.ui.dumb:aldo-state-ui s2)))
+    (is (eq :the-session (clautolisp.ui.dumb:aldo-state-session s1)))
+    (is (eq :the-session (clautolisp.ui.dumb:aldo-state-session s2)))
+    (is (typep u1 'clautolisp.ui.dumb:dumb-ui))
+    (is (typep u2 'clautolisp.ui.dumb:dumb-ui))
+    (is (not (eq u1 u2)))
+    ;; the plist's :output stream is the instance's own
+    (is (eq out1 (clautolisp.ui.dumb::dumb-ui-output u1)))
+    (setf (clautolisp.ui.dumb:dumb-ui-last-step-command u1) "n")
+    (push "x" (clautolisp.ui.dumb:dumb-ui-displays u1))
+    (is (null (clautolisp.ui.dumb:dumb-ui-last-step-command u2)))
+    (is (null (clautolisp.ui.dumb:dumb-ui-displays u2)))
+    (is (string= "Aldo debugger" (clautolisp.interactor:activation-label a1)))
+    (is (string= "Aldo debugger<2>" (clautolisp.interactor:activation-label a2)))))

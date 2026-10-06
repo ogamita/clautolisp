@@ -380,10 +380,15 @@ Debugger / ncurses UI (P3, pure-Lisp, this branch's workstream =debugger-ui-ncur
 - DRAFT =ncurses-misc= — broad "mini-emacs" vision / design reference, no
   acceptance criteria; much of its API is already realized but it is not a
   closable unit. Keep open.
-- PARTIAL =windows-and-interactor-templates= — pjb answered the spec (Q1-Q8);
-  make-*-window commands + per-window real-activation stacks landed and tested;
-  remaining: the singleton-split refactor of the lisp/aldo interactors and
-  layout persistence that recreates user-defined interactors.
+- DONE =windows-and-interactor-templates= — CLOSED 2026-10-06 (clautolisp
+  2.2.219): the singleton split -- every lisp instance keeps its own :* / :+ /
+  :/ history and transcript over the one evaluator, every aldo instance its own
+  command-side dumb-ui over the one debugger (the ncurses *aldo-view* is gone:
+  its panes and windows hold "aldo" template instances), names uniquified
+  ("Lisp REPL<2>"); and layout persistence -- save-layout records each
+  user-made window's make-*-window command + argument, load-layout replays them
+  to recreate the interactors, and a layout named "debugger" (saved by M-x
+  save-configuration) opens every new ncurses debugger. issues/closed/.
 Docs / spec:
 - DONE =autolisp-spec-alref-commands= — CLOSED 2026-10-06: every command
   specified (1621), classified, built at the core tier, and in alref as its own
