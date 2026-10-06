@@ -274,9 +274,18 @@ test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 #   - the test lanes also quit with an explicit status (pjb), which
 #     turns a signalled test failure into exit 1 rather than relying on
 #     the error path alone.
-test-ccl:  ## Run the alfe FiveAM suite under CCL.
+#
+# TEST_TIMEOUT (seconds, 0 = none): a guard OUTSIDE the Lisp process
+# (ccl-protocol-write-atomic-file-contention-hangs). The suite's own watchdog
+# (120 s, file-protocol-tests) cannot fire when the whole process freezes --
+# the x86 CCL under Rosetta stalls at 0 % CPU, every thread stopped -- so the
+# run is killed from outside and the step fails (exit 142, SIGALRM) instead
+# of hanging the lane. perl, not timeout(1): macOS ships no GNU timeout.
+TEST_TIMEOUT ?= 3600
+WITH_TEST_TIMEOUT = $(if $(filter-out 0,$(TEST_TIMEOUT)),perl -e 'alarm shift; exec @ARGV or die "exec: $$!"' $(TEST_TIMEOUT))
+test-ccl:  ## Run the alfe FiveAM suite under CCL (killed after TEST_TIMEOUT s).
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	"$(CCL)" --no-init --quiet --batch \
+	$(WITH_TEST_TIMEOUT) "$(CCL)" --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \

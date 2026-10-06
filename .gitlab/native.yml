@@ -314,6 +314,30 @@ test:alfe:macos:
   script:
     - make -C autolisp-front-end test-sbcl
 
+# alfe under CCL on macOS (ccl-protocol-write-atomic-file-contention-hangs):
+# MANUAL, a measurement lane -- no other lane runs CCL on macOS, where the
+# contention test was seen to freeze the x86 CCL under Rosetta. Uses the first
+# CCL it finds; the Makefile's TEST_TIMEOUT kills a frozen run (exit 142).
+test:alfe:ccl:macos:
+  tags: [macos, arm64, shell]
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - |
+      CCLBIN=""
+      for c in "$CCL" ccl ccl64 dx86cl64 /usr/local/src/ccl/dx86cl64 /usr/local/src/ccl/dx86cl /opt/local/bin/ccl64; do
+        [ -n "$c" ] || continue
+        if command -v "$c" >/dev/null 2>&1; then CCLBIN=$(command -v "$c"); break; fi
+      done
+      if [ -z "$CCLBIN" ]; then echo "test:alfe:ccl:macos: no CCL on this runner"; exit 1; fi
+      echo "CCL: $CCLBIN"; file "$CCLBIN" || true
+      echo "machine: $(uname -m); Rosetta-translated shell: $(sysctl -in sysctl.proc_translated 2>/dev/null || echo n/a)"
+      make -C autolisp-front-end test-ccl CCL="$CCLBIN" TEST_TIMEOUT=1800
+
 test:alfe:windows:
   extends: .gate-windows-hard
   stage: test
