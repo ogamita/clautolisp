@@ -1,0 +1,120 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-installed-subprocess-binary-not-discovered — find the distributed clautolisp engine
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-alfe-installed-subprocess-binary-not-discovered
+#+DATE: 2026-10-06
+
+* Context
+
+The installed Clautolisp distribution deliberately separates dispatch
+launchers from implementation-specific saved images:
+
+#+begin_example
+PREFIX/bin/alfe
+PREFIX/bin/clautolisp
+PREFIX/libexec/clautolisp/binaries/OS/CPU/alfe-sbcl[.exe]
+PREFIX/libexec/clautolisp/binaries/OS/CPU/clautolisp-sbcl[.exe]
+#+end_example
+
+The two saved images are not interchangeable.  In particular,
+=clautolisp-sbcl= contains runtime subsystems which the smaller =alfe-sbcl=
+image does not embed.  The subprocess backend exists precisely to run that
+complete standalone engine.
+
+* Reproduction
+
+Install a release under a non-standard prefix and run the installed alfe
+without adding its implementation-specific =libexec= directory to =PATH=:
+
+#+begin_src sh
+PREFIX=/opt/clautolisp
+PATH="$PREFIX/bin:$PATH" \
+  "$PREFIX/bin/alfe" --clautolisp --backend subprocess --host cador \
+  --dwg drawing.dwg --quit
+#+end_src
+
+The same defect was observed in SCHME GitLab job 527207.  Its installation
+lived under =$CI_PROJECT_DIR/.clautolisp=, but detection failed with:
+
+#+begin_example
+alfe: alfe CLAUTOLISP backend error (phase DETECT):
+clautolisp-sbcl not found (looked in
+.../.clautolisp-build-527207/autolisp-front-end/source/../../clautolisp/tools/clautolisp/bin/clautolisp-sbcl,
+/usr/local/bin/clautolisp-sbcl) [NO-SUBPROCESS-BINARY]
+#+end_example
+
+The binary was present at:
+
+#+begin_example
+$CI_PROJECT_DIR/.clautolisp/libexec/clautolisp/binaries/linux/x86-64/clautolisp-sbcl
+#+end_example
+
+On the Windows server the corresponding installed file is:
+
+#+begin_example
+C:/RunForestRun/outils/local/libexec/clautolisp/binaries/windows/x86-64/clautolisp-sbcl.exe
+#+end_example
+
+* Cause
+
+=candidate-clautolisp-binaries= currently tries only:
+
+1. =$ALFE_CLAUTOLISP_BIN=;
+2. the source-checkout path captured while compiling alfe;
+3. =clautolisp-sbcl= on =PATH=;
+4. =/usr/local/bin/clautolisp-sbcl=.
+
+After packaging, the captured checkout path is stale and the build directory
+may already have been deleted.  The installed =bin= directory contains the
+portable dispatchers, not a =clautolisp-sbcl= image.  Detection never derives
+the installation prefix from the running alfe program and therefore never
+examines the canonical distributed =libexec= location.
+
+This makes an installation incomplete from alfe's point of view even though
+all advertised files were installed correctly.
+
+* Temporary downstream workaround
+
+SCHME derives the installed prefix from the =clautolisp= dispatcher, maps the
+native OS and CPU to the distribution directory names, appends =.exe= only on
+Windows, and passes the resulting absolute pathname through
+=ALFE_CLAUTOLISP_BIN=.  This downstream knowledge must be removed once alfe
+performs the same discovery itself.
+
+* Required fix
+
+1. Determine the installation prefix of the running alfe image or launcher
+   without depending on the current directory or the vanished build tree.
+2. Add the canonical candidate
+   =PREFIX/libexec/clautolisp/binaries/OS/CPU/clautolisp-sbcl[.exe]= before
+   generic =PATH= and =/usr/local/bin= fallbacks.
+3. Use the same OS, architecture and executable-suffix normalization as the
+   release dispatchers; do not maintain a second incompatible mapping.
+4. Preserve =$ALFE_CLAUTOLISP_BIN= as the highest-priority explicit override.
+5. Report every installed-layout candidate in the =NO-SUBPROCESS-BINARY=
+   diagnostic when discovery fails.
+6. Document that an installed alfe automatically finds the clautolisp engine
+   shipped in the same prefix.
+
+* Acceptance criteria
+
+- A release installed under an arbitrary prefix runs
+  =alfe --clautolisp --backend subprocess= without =PATH= entries for
+  =libexec= and without =$ALFE_CLAUTOLISP_BIN=.
+- The test passes on Linux and Windows, including the required =.exe= suffix
+  on Windows and its absence on POSIX.
+- The installation prefix may contain spaces and may be moved after staging;
+  discovery remains relative to the running installation.
+- Running from an unrelated current directory does not affect discovery.
+- A stale compile-time checkout path cannot shadow or invalidate the shipped
+  engine.
+- An explicit =$ALFE_CLAUTOLISP_BIN= still wins and is covered by a regression
+  test.
+- Packaged-release verification launches the installed =alfe= subprocess
+  backend against the installed =clautolisp-sbcl= image, rather than testing
+  only source-tree binaries.
+- The alfe user manual, specifications and man page describe the installed
+  discovery order.
