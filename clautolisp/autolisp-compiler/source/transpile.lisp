@@ -536,7 +536,9 @@ Never fails: an unhandled form becomes an interpreter call on itself."
               (%fallback form context-var)
               `(let ((%value nil))
                  (declare (ignorable %value))
-                 ,@(loop for (symbol value-form) on arguments by #'cddr
+                 ,@(loop with doc = (gethash form *preceding-docs*)
+                         for (symbol value-form) on arguments by #'cddr
+                         for first-pair-p = t then nil
                          for variable = (%lexical-variable symbol)
                          collect (if variable
                                      `(setf %value
@@ -545,7 +547,13 @@ Never fails: an unhandled form becomes an interpreter call on itself."
                                      `(setf %value
                                             (set-variable ',symbol
                                                           ,(transpile-form value-form context-var)
-                                                          ,context-var))))
+                                                          ,context-var)))
+                         ;; A ;|...|; block before the SETQ documents its
+                         ;; FIRST name, as EVAL-SETQ-FORM does -- so a
+                         ;; documented top-level SETQ keeps its doc in a .lap.
+                         when (and doc first-pair-p (not variable))
+                           collect `(set-binding-doc ',symbol '(:variable ,doc)
+                                                     ,context-var))
                  %value)))
 
          ;; AND / OR yield the T SYMBOL or nil -- not the last value, which

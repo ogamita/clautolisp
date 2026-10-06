@@ -108,7 +108,8 @@ neither the custom var nor any default location is populated."
 ;;
 ;; symbols.txt is one line per documented symbol:
 ;;   SYMBOL\tKIND\tBASENAME\tFLAGS
-;; KIND is the prose-name of the entry kind (Function / Reader Syntax /
+;; KIND is the prose-name of the entry kind (Function / Command / System
+;; Variable / Reader Syntax /
 ;; Special Operator / Variable / Macro / Type). BASENAME is the on-disk
 ;; stem (filename without extension); appended to pages/ → .txt, html/
 ;; → .html, etc. FLAGS is the ABC availability column ('A' AutoCAD,

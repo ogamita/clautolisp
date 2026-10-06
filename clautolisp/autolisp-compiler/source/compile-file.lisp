@@ -68,9 +68,23 @@ OBJECT — with symbols interned in THAT image's table."
     ;; CONS rather than LIST: an AutoLISP dotted pair is a normal value
     ;; (a point, an entity association) and rebuilding it with LIST would
     ;; turn (1 . 2) into (1 2) — a change of type, not of representation.
-    (cons `(cons ,(externalize-datum (car object))
-                 ,(externalize-datum (cdr object))))
+    ;;
+    ;; A cons the reader registered with a ;|...|; block keeps it: the
+    ;; rebuilt cons is registered in the loading image too, so a nested
+    ;; DEFUN or SETQ the interpreter runs from a .lap documents its name
+    ;; exactly as it does from the source.
+    (cons (let ((built `(cons ,(externalize-datum (car object))
+                              ,(externalize-datum (cdr object))))
+                (doc (gethash object *preceding-docs*)))
+            (if doc
+                `(cons-with-preceding-doc ,built ,doc)
+                built)))
     (t `',object)))
+
+(defun cons-with-preceding-doc (cons doc)
+  "Register DOC as the ;|...|; documentation of CONS; return CONS."
+  (register-preceding-doc cons doc)
+  cons)
 
 (defun externalize-code (form)
   "Rewrite FORM — Common Lisp code produced by the transpiler — so that it
@@ -101,7 +115,7 @@ longer locate."
 
 ;;;; --- what a loaded .lap does ----------------------------------------
 
-(defun load-compiled-defun (name lambda-list body compiled-body)
+(defun load-compiled-defun (name lambda-list body compiled-body &optional doc)
   "Install, in the loading image, the function a .lap carries.
 
 Reproduces what EVAL-DEFUN-FORM does — make a usubr, bind it to NAME —
@@ -112,12 +126,18 @@ BODY is kept even though COMPILED-BODY is what runs. It is not dead
 weight: it is what the debugger instruments when a session starts, what
 CLAL-COMPILATION-level changes fall back to, and what an error report
 prints. An artefact that dropped it would be faster to load and
-undebuggable."
+undebuggable.
+
+DOC is the text of the ;|...|; block that preceded the DEFUN in the
+source, or nil: kept in the .lap and installed as EVAL-DEFUN-FORM installs
+it -- every DEFUN rewrites its binding's documentation -- so a function
+loaded from a .lap is as documented as one loaded from its source."
   (let* ((context (current-evaluation-context))
          (usubr (make-autolisp-usubr (autolisp-symbol-name name)
                                      lambda-list body context)))
     (setf (autolisp-usubr-compiled-body usubr) compiled-body)
     (set-function name usubr context)
+    (set-binding-doc name (and doc (list :function doc)) context)
     name))
 
 (defun load-compiled-toplevel (thunk)
@@ -144,7 +164,9 @@ undebuggable."
           ,(externalize-datum body)
           (lambda (%context)
             (declare (ignorable %context))
-            ,(externalize-code (transpile-body body '%context)))))
+            ,(externalize-code (transpile-body body '%context)))
+          ,@(let ((doc (gethash form *preceding-docs*)))
+              (and doc (list doc)))))
       ;; Everything else — SETQ at top level, a call, a nested DEFUN
       ;; inside a PROGN — is transpiled as an ordinary form. Operators the
       ;; transpiler does not handle fall back to the interpreter exactly

@@ -3105,7 +3105,11 @@ T
 
 Functions arriving from a ~.lap~ come already compiled — they never pay
 the hotness threshold again — and they keep their source body, so they
-stay debuggable.
+stay debuggable. They keep their documentation too: the ~;| ... |;~ block
+before a ~defun~ or a ~setq~ is written into the ~.lap~ and installed
+when it is loaded, so ~clautolisp-documentation~ (and alref's
+~alref-documentation~ / ~alref-describe~) answer the same from the
+~.lap~ as from the source.
 
 ~vlisp-compile~ is the vendor spelling of the same thing: it writes a
 ~.lap~ where AutoCAD writes ~.fas~ and BricsCAD writes ~.des~, and
