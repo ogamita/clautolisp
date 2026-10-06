@@ -12,6 +12,13 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
                 #:autolisp-usubr-body
                 #:autolisp-usubr-instrumented-body
                 #:autolisp-usubr-debug-metadata
+                ;; debug-lambda-in-a-loop-reinstrumented: one debug record per
+                ;; lambda FORM, kept on its site.
+                #:autolisp-usubr-site
+                #:autolisp-usubr-compiled-instrumented-body
+                #:usubr-site-instrumented-body
+                #:usubr-site-debug-metadata
+                #:usubr-site-compiled-instrumented-body
                 #:autolisp-symbol
                 #:autolisp-symbol-name
                 #:autolisp-string

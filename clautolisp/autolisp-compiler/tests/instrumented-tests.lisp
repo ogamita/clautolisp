@@ -163,3 +163,53 @@ compiled code."
        (lambda () (autolisp-eval (%read-one "(sq 3)") context)))
       (is (autolisp-function-instrumented-compiled-p usubr)
           "a function called under a debug session never compiled"))))
+
+(test a-lambda-in-a-loop-is-woven-once-and-compiled-once-under-a-session
+  "debug-lambda-in-a-loop-reinstrumented. The closures of one LAMBDA form are
+the same code, so under a debug session they share one debug record -- one
+instrumented body, one function id -- kept on the form's site: weaving each
+closure again grew the metadata registry by one record per loop iteration,
+and no closure lived long enough to get its debugging body compiled. Counted
+on the site, the debugging body compiles once, and a closure built afterwards
+starts compiled."
+  (reset-function-id-registry)
+  (let* ((context (%fresh-context))
+         (lambda-form (compile-autolisp-form (%read-one "(lambda (x) (* x 2))")))
+         (a (funcall lambda-form context))
+         (b (funcall lambda-form context)))
+    (let ((*autolisp-compilation-enabled* t)
+          (*autolisp-compilation-threshold* 2)
+          (*compile-instrumented-usubr-hook* #'compile-instrumented-usubr))
+      (call-with-debugging
+       (lambda ()
+         (instrument-usubr a)
+         (instrument-usubr b)
+         (is (eq (clautolisp.autolisp-runtime:autolisp-usubr-debug-metadata a)
+                 (clautolisp.autolisp-runtime:autolisp-usubr-debug-metadata b))
+             "two closures of one lambda form got two debug records")
+         (is (= 1 (length (clautolisp.debug:all-function-metadata)))
+             "the registry grew by one record per closure")
+         ;; two calls, one on each closure: the SITE reaches the threshold
+         (is (eql 6 (clautolisp.autolisp-runtime::call-autolisp-function-in-context a context 3)))
+         (is (eql 8 (clautolisp.autolisp-runtime::call-autolisp-function-in-context b context 4)))
+         (is (autolisp-function-instrumented-compiled-p b)
+             "the debugging body never compiled although its code is hot")
+         ;; a closure built afterwards adopts the compiled debugging body
+         (let ((c (funcall lambda-form context)))
+           (instrument-usubr c)
+           (is (autolisp-function-instrumented-compiled-p c)
+               "a later closure recompiled instead of inheriting")
+           (is (eql 10 (clautolisp.autolisp-runtime::call-autolisp-function-in-context
+                        c context 5)))))))
+    ;; a new session (registry reset) weaves afresh rather than adopting a
+    ;; record nobody can resolve any more
+    (reset-function-id-registry)
+    (let ((d (funcall lambda-form context)))
+      (call-with-debugging
+       (lambda ()
+         (instrument-usubr d)
+         (is (eq (clautolisp.autolisp-runtime:autolisp-usubr-debug-metadata d)
+                 (clautolisp.debug::metadata-for-function-id
+                  (clautolisp.debug:function-debug-metadata-function-id
+                   (clautolisp.autolisp-runtime:autolisp-usubr-debug-metadata d))))
+             "after a registry reset the closure adopted an unregistered record"))))))

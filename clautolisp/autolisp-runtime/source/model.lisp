@@ -459,7 +459,17 @@ compiling the BODY, which is the one thing they have in common. See the
 SITE slot of AUTOLISP-USUBR for why the decision cannot live on the
 closure."
   (call-count 0 :type fixnum)
-  (compiled-body nil))
+  (compiled-body nil)
+  ;; The DEBUG side, shared the same way (debug-lambda-in-a-loop-
+  ;; reinstrumented): the instrumented body and its debug metadata -- one
+  ;; record, one function id, for the lambda FORM rather than one per closure
+  ;; -- and, once the site is hot under a session, the compiled debugging
+  ;; body. Filled by the debugger's instrumenter (clautolisp.debug), which
+  ;; reuses them only while that metadata is still registered.
+  (instrumented-body nil)
+  (debug-metadata nil)
+  (debug-call-count 0 :type fixnum)
+  (compiled-instrumented-body nil))
 
 (defstruct autolisp-catch-all-error
   (message "" :type string)
