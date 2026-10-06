@@ -315,6 +315,9 @@ application for headless interactive/scriptable testing (generalises cador)."
   :components
   ((:file "autolisp-builtins-core/source/package")
    (:file "autolisp-builtins-core/source/secureload")
+   ;; the measured ActiveX constant table (generated from probe-activex-
+   ;; constants runs; cador-activex-enumeration-constants-unbound).
+   (:file "autolisp-builtins-core/source/activex-constants-table")
    (:file "autolisp-builtins-core/source/api")
    (:file "autolisp-builtins-core/source/diesel")
    ;; the source-file editing module (sedit-bugs-and-design.issue) — after api,

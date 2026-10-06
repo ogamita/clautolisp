@@ -10627,109 +10627,88 @@ misspelling would hide a typo in a build script forever."
 
 (defun builtin-vl-load-com ()
   ;; Flip the COM-loaded flag that gates the dynamic vla-* accessor
-  ;; façade (RESOLVE-VLA-ACCESSOR), matching Visual LISP where vla-*
+  ;; facade (RESOLVE-VLA-ACCESSOR), matching Visual LISP where vla-*
   ;; names become resolvable only after (vl-load-com).
   (setf *com-loaded-p* t)
   ;; ... and bind the ActiveX enumeration constants (acAlignmentMiddleLeft,
-  ;; acByLayer, acLnWt025, ...) that the vendors' type library makes
-  ;; visible to AutoLISP once COM support is loaded.
+  ;; acByLayer, acLnWt025, ...): INSTALL-ACTIVEX-ENUMERATION-CONSTANTS.
   (install-activex-enumeration-constants)
-  (autolisp-true))
+  ;; Measured (probe-activex-constants): AutoCAD 2022 answers NIL, BricsCAD
+  ;; V25 / V26 T.
+  (if (eq (%activex-constants-product) :autocad) nil (autolisp-true)))
 
 ;;; --- ActiveX enumeration constants (cador-activex-enumeration-constants-
 ;;; unbound.issue) -------------------------------------------------------
 ;;;
-;;; AutoCAD and BricsCAD expose the enumerations of their ActiveX type
-;;; library as AutoLISP global variables: Autodesk's own Visual LISP
-;;; examples write (vl-load-com) and then (vla-put-Alignment textObj
-;;; acAlignmentRight); BricsCAD's DevRef lists the same names ("AC...
-;;; (constants)", 935 of them). clautolisp binds the families its
-;;; implemented vla-* / vlax-* operations consume. Every value below is
-;;; documented -- see the SOURCE of each family -- and is checked on the
-;;; real products by probes/sources/probe-activex-constants.lsp.
+;;; AutoCAD and BricsCAD bind the enumerations of their ActiveX type library
+;;; as AutoLISP global variables (acAlignmentMiddleLeft = 9, acByLayer = 256,
+;;; acLnWt025 = 25 ...). MEASURED, every one: probes/sources/probe-activex-
+;;; constants.lsp on AutoCAD 2022, BricsCAD V25 (Windows) and V26 (macOS)
+;;; recorded (boundp value) for each of the 934 names of BricsCAD's list of
+;;; AC constants. The table, *ACTIVEX-MEASURED-CONSTANTS* in
+;;; activex-constants-table.lisp, is GENERATED from those runs: 932 integer
+;;; constants (the other two names of the list are functions), 832 bound on
+;;; AutoCAD, all 932 on BricsCAD; both BricsCAD builds agree, and 30 names
+;;; differ between the products (the AcViewportScale family is off by one,
+;;; acNative 64 vs 60).
 ;;;
-;;; WHEN: at (vl-load-com), the documented point at which the ActiveX
-;;; surface appears (AutoCAD's examples all begin with it; vla-* names are
-;;; resolvable only after it, see *COM-LOADED-P*). A name the program has
-;;; already given a non-nil value is LEFT ALONE, so calling (vl-load-com)
-;;; again -- every acaddoc.lsp does -- neither erases nor replaces a user
-;;; binding. Whether the vendors protect or re-assert these values on a
-;;; second (vl-load-com) is not measured yet; the probe records it.
+;;; WHICH: the dialect's product's -- AutoCAD's names and values under the
+;;; AutoCAD dialects, BricsCAD's under the BricsCAD ones; under strict only
+;;; the names both products bind to the SAME value (the portable subset);
+;;; under clautolisp / lax every name, AutoCAD's value where they differ
+;;; (Autodesk's type library is the one the API comes from).
+;;;
+;;; WHEN: at the first (vl-load-com) of a document. Measured on all three: a
+;;; later (vl-load-com) re-binds nothing -- not even a name the program set
+;;; to nil -- and a value the program set (setq acRed 99) is kept. So the
+;;; constants are installed ONCE per document, and never over a non-nil user
+;;; value. (Whether the vendors bind them before any (vl-load-com) is not
+;;; settled: the probe ran after another suite had loaded COM.)
 
-(defparameter *activex-enumeration-constants*
-  '(;; AcAlignment -- Text / Attribute / AttributeRef .Alignment. Names and
-    ;; order: Autodesk "Alignment Property (ActiveX)"
-    ;; (help.autodesk.com/cloudhelp/2025/ENU/AutoCAD-LT-ActiveX-Reference/
-    ;; files/GUID-27030E1C-6480-4A64-BE0A-E72C1FFF2023.htm); the 0-14 values
-    ;; are the ones cador's property bridge already maps to DXF 72 + 73/74
-    ;; (cador/source/vlax-api.lisp, %ENTITY-ALIGNMENT).
-    (:ac-alignment
-     ("acAlignmentLeft" 0) ("acAlignmentCenter" 1) ("acAlignmentRight" 2)
-     ("acAlignmentAligned" 3) ("acAlignmentMiddle" 4) ("acAlignmentFit" 5)
-     ("acAlignmentTopLeft" 6) ("acAlignmentTopCenter" 7) ("acAlignmentTopRight" 8)
-     ("acAlignmentMiddleLeft" 9) ("acAlignmentMiddleCenter" 10)
-     ("acAlignmentMiddleRight" 11) ("acAlignmentBottomLeft" 12)
-     ("acAlignmentBottomCenter" 13) ("acAlignmentBottomRight" 14))
-    ;; AcAttributeMode -- AddAttribute's Mode argument and Attribute.Mode
-    ;; (DXF ATTDEF group 70 bit flags). Autodesk AddAttribute / Mode pages
-    ;; ("acAttributeModeInvisible + acAttributeModeConstant": additive flags).
-    (:ac-attribute-mode
-     ("acAttributeModeNormal" 0) ("acAttributeModeInvisible" 1)
-     ("acAttributeModeConstant" 2) ("acAttributeModeVerify" 4)
-     ("acAttributeModePreset" 8) ("acAttributeModeLockPosition" 16)
-     ("acAttributeModeMultipleLine" 32))
-    ;; AcColor -- the .Color property of entities and layers. Autodesk
-    ;; "ColorIndex Property (ActiveX)": "a color index number from 0 to 256,
-    ;; or one of the constants" acByBlock acByLayer acRed ... acWhite, i.e.
-    ;; the ACI values (0 BYBLOCK, 1-7 the standard colours, 256 BYLAYER).
-    (:ac-color
-     ("acByBlock" 0) ("acRed" 1) ("acYellow" 2) ("acGreen" 3) ("acCyan" 4)
-     ("acBlue" 5) ("acMagenta" 6) ("acWhite" 7) ("acByLayer" 256))
-    ;; AcLineWeight -- the .Lineweight property (DXF 370). Values verbatim
-    ;; from BricsCAD V26 DevRef vl-vplayer-set-lineweight
-    ;; (developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/
-    ;; vlvplayersetlineweight.htm), copied in the specification draft.
-    (:ac-line-weight
-     ("acLnWt000" 0) ("acLnWt005" 5) ("acLnWt009" 9) ("acLnWt013" 13)
-     ("acLnWt015" 15) ("acLnWt018" 18) ("acLnWt020" 20) ("acLnWt025" 25)
-     ("acLnWt030" 30) ("acLnWt035" 35) ("acLnWt040" 40) ("acLnWt050" 50)
-     ("acLnWt053" 53) ("acLnWt060" 60) ("acLnWt070" 70) ("acLnWt080" 80)
-     ("acLnWt090" 90) ("acLnWt100" 100) ("acLnWt106" 106) ("acLnWt120" 120)
-     ("acLnWt140" 140) ("acLnWt158" 158) ("acLnWt200" 200) ("acLnWt211" 211)
-     ("acLnWtByLayer" -1) ("acLnWtByBlock" -2) ("acLnWtByLwDefault" -3)))
-  "The ActiveX enumeration constants clautolisp binds at (vl-load-com):
-a list of (FAMILY (NAME VALUE)...). Every name of these four families is
-in BricsCAD's list of AC constants and in Autodesk's ActiveX reference, so
-they are bound under every dialect; a family one product lacks would be
-filtered by ACTIVEX-ENUMERATION-CONSTANT-AVAILABLE-P.")
+(defvar *activex-constants-installed* (make-hash-table :test 'eq)
+  "The documents (runtime document namespaces) whose (vl-load-com) has
+installed the ActiveX constants: the second call installs nothing.")
 
-(defun activex-enumeration-constants ()
-  "A fresh list of (NAME VALUE FAMILY) for every ActiveX enumeration
-constant clautolisp knows, in table order."
-  (loop for (family . entries) in *activex-enumeration-constants*
-        nconc (loop for (name value) in entries
-                    collect (list name value family))))
+(defun %activex-constants-product ()
+  "The current dialect's product for the constant table: :AUTOCAD,
+:BRICSCAD, :STRICT (the portable subset) or :CLAUTOLISP (everything)."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect-name)))
+         (product (and dialect (ignore-errors
+                                (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+    (cond ((eq product :autocad) :autocad)
+          ((eq product :bricscad) :bricscad)
+          ((eq name :strict) :strict)
+          (t :clautolisp))))
 
-(defun activex-enumeration-constant-available-p (family)
-  "True when FAMILY is exposed under the current dialect. Every family in
-the table is documented on both AutoCAD and BricsCAD (see
-*ACTIVEX-ENUMERATION-CONSTANTS*), so this is T; it is the one place to
-narrow a family to a product once a measurement says so."
-  (declare (ignore family))
-  t)
+(defun activex-enumeration-constants (&optional (product (%activex-constants-product)))
+  "A fresh list of (NAME VALUE) -- the ActiveX constants PRODUCT binds (see
+the section header)."
+  (loop for (name autocad bricscad) in *activex-measured-constants*
+        for value = (ecase product
+                      (:autocad autocad)
+                      (:bricscad bricscad)
+                      (:strict (and autocad bricscad (= autocad bricscad) autocad))
+                      (:clautolisp (or autocad bricscad)))
+        when value collect (list name value)))
 
 (defun install-activex-enumeration-constants ()
-  "Bind each ActiveX enumeration constant as an AutoLISP global variable in
-the current document's namespace, unless the program already gave that
-name a non-nil value (a user binding is never erased or replaced, so
-\(vl-load-com) is idempotent). Returns the number of names bound."
-  (let ((count 0))
-    (loop for (name value family) in (activex-enumeration-constants)
-          for symbol = (intern-autolisp-symbol (string-upcase name))
-          when (and (activex-enumeration-constant-available-p family)
-                    (null (autolisp-symbol-value symbol)))
-            do (clautolisp.autolisp-runtime:set-autolisp-symbol-value symbol value)
-               (incf count))
+  "Bind the ActiveX enumeration constants of the current dialect's product as
+AutoLISP global variables in the current document -- once per document, and
+never over a name the program has given a non-nil value. Returns the number
+of names bound (0 on a later call)."
+  (let* ((context (clautolisp.autolisp-runtime:current-evaluation-context))
+         (document (or (ignore-errors
+                        (clautolisp.autolisp-runtime:evaluation-context-current-document context))
+                       :global))
+         (count 0))
+    (unless (gethash document *activex-constants-installed*)
+      (setf (gethash document *activex-constants-installed*) t)
+      (loop for (name value) in (activex-enumeration-constants)
+            for symbol = (intern-autolisp-symbol (string-upcase name))
+            when (null (autolisp-symbol-value symbol))
+              do (clautolisp.autolisp-runtime:set-autolisp-symbol-value symbol value)
+                 (incf count)))
     count))
 (defun builtin-vl-load-reactors () (autolisp-true)) ; no reactors yet; success.
 (defun builtin-vl-load-all (filename)

@@ -3187,17 +3187,32 @@ call that received NIL) and on a TEXT."
                                name name name)))
           name))))
 
-(test activex-constants-every-family-bound-under-every-dialect
-  "Table-driven over every constant the runtime binds: each has its value
-after (vl-load-com) under the AutoCAD, BricsCAD and clautolisp dialects."
-  (let ((constants (clautolisp.autolisp-builtins-core:activex-enumeration-constants)))
-    (is (<= 58 (length constants)))
-    (is (equal '(:ac-alignment :ac-attribute-mode :ac-color :ac-line-weight)
-               (remove-duplicates (mapcar #'third constants) :from-end t)))
-    (dolist (dialect '("autocad-2022" "bricscad-v26" "clautolisp"))
-      (let ((values (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com) (list ~{~A~^ ~})"
-                                  dialect (mapcar #'first constants)))))
-        (is (equal (mapcar #'second constants) values) dialect)))))
+(test activex-constants-every-measured-constant-bound-per-product
+  "Table-driven over the MEASURED table (probe-activex-constants on AutoCAD
+2022, BricsCAD V25 / V26): after (vl-load-com) every name the dialect's
+product binds has that product's value -- 832 on AutoCAD, 932 on BricsCAD."
+  (dolist (case '(("autocad-2022" :autocad 832) ("bricscad-v26" :bricscad 932)))
+    (destructuring-bind (dialect product count) case
+      (let ((constants (clautolisp.autolisp-builtins-core:activex-enumeration-constants
+                        product)))
+        (is (= count (length constants)) dialect)
+        (let ((values (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com) (list ~{~A~^ ~})"
+                                    dialect (mapcar #'first constants)))))
+          (is (equal (mapcar #'second constants) values) dialect))))))
+
+(test activex-constants-follow-the-product-where-the-vendors-differ
+  "Measured: 30 names differ between the products -- the AcViewportScale
+family is off by one, acNative 64 / 60. Each vendor dialect has its own;
+strict, the portable subset, has neither; clautolisp takes AutoCAD's."
+  (is (equal '(7 64) (%vla "(setq *AUTOLISP-DIALECT* 'autocad-2022) (vl-load-com) (list acVp1_10 acNative)")))
+  (is (equal '(6 60) (%vla "(setq *AUTOLISP-DIALECT* 'bricscad-v26) (vl-load-com) (list acVp1_10 acNative)")))
+  (is (equal '(nil nil 9) (%vla "(setq *AUTOLISP-DIALECT* 'strict) (vl-load-com) (list acVp1_10 acNative acAlignmentMiddleLeft)")))
+  (is (equal '(7 64) (%vla "(setq *AUTOLISP-DIALECT* 'clautolisp) (vl-load-com) (list acVp1_10 acNative)"))))
+
+(test activex-vl-load-com-answers-per-product
+  "Measured: (vl-load-com) answers NIL on AutoCAD 2022, T on BricsCAD."
+  (is (null (%vla "(setq *AUTOLISP-DIALECT* 'autocad-2022) (vl-load-com)")))
+  (is (%vla "(setq *AUTOLISP-DIALECT* 'bricscad-v26) (vl-load-com)")))
 
 (test activex-constants-pass-through-color-lineweight-and-mode
   "The other families, symbolically through the operations that consume
@@ -3232,9 +3247,11 @@ argument of AddAttribute (additive flags)."
   (is (equal '(42 10)
              (%vla "(setq acAlignmentMiddleLeft 42) (vl-load-com)
                     (list acAlignmentMiddleLeft acAlignmentMiddleCenter)")))
-  ;; Set to nil (= unbound in AutoLISP): the next (vl-load-com) restores it.
-  (is (eql 9 (%vla "(vl-load-com) (setq acAlignmentMiddleLeft nil) (vl-load-com)
-                    acAlignmentMiddleLeft"))))
+  ;; Set to nil after the first (vl-load-com): a later one does NOT restore
+  ;; it -- measured on AutoCAD 2022, BricsCAD V25 and V26: the constants are
+  ;; installed once.
+  (is (null (%vla "(vl-load-com) (setq acAlignmentMiddleLeft nil) (vl-load-com)
+                   acAlignmentMiddleLeft"))))
 
 (test vla-addattribute-passes-the-six-vendor-arguments-through
   "cador-addattribute-argument-order. The AutoLISP façade must hand

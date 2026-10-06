@@ -169,3 +169,31 @@ Branch =fix-cador-activex-enumeration-constants-unbound=.
   =(vl-load-com)= (as acaddoc.lsp code does) -- vendor behaviour unmeasured.
 - SCHME: replay =creation insertion et mise a jour d'un bloc attribue=
   without the conditional fallback.
+
+* Measured, and the full table bound (2026-10-06, pjb: "bind the full measured table")
+
+probe-activex-constants on AutoCAD 2022 (job 16974598250), BricsCAD V25
+Windows (16974598254) and V26 macOS (16978678521):
+- the 58 documented values of AcAlignment / AcAttributeMode / AcColor /
+  AcLineWeight: identical on all three;
+- the inventory of BricsCAD's 934 AC names: 932 integer constants (the two
+  others are functions); AutoCAD binds 832, BricsCAD all 932; both BricsCAD
+  builds agree; 30 names differ between the products (AcViewportScale off by
+  one, acNative 64 / 60);
+- a second (vl-load-com) re-binds NOTHING on all three: (setq acRed 99)
+  stays 99, (setq acRed nil) stays nil;
+- (vl-load-com) answers nil on AutoCAD 2022, T on BricsCAD.
+
+Done: activex-constants-table.lisp is GENERATED from those runs
+(*ACTIVEX-MEASURED-CONSTANTS*: name, AutoCAD value, BricsCAD value). Each
+dialect binds its product's table (strict: the names both bind alike;
+clautolisp / lax: all, AutoCAD's value where they differ), at the FIRST
+(vl-load-com) of a document only, never over a non-nil value; (vl-load-com)
+answers nil under AutoCAD dialects. Tests rewritten to the measured table
+(832 / 932 per product, the differing names per dialect, the answer of
+(vl-load-com), nil stays nil).
+
+Still open: whether the vendors bind the constants BEFORE any (vl-load-com)
+-- the first run measured it after another suite had loaded COM, so the
+probe now runs FIRST in the manifest; the next run settles it. Then the
+SCHME replay without its fallback (downstream).

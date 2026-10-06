@@ -69363,19 +69363,20 @@ Enables the ActiveX/COM extension layer in environments that support it.
 
 *** clautolisp
 Non-normative. Besides enabling the ~vla-*~ accessors, ~(vl-load-com)~
-binds the ActiveX enumeration constants of the families clautolisp's
-ActiveX operations consume -- ~AcAlignment~, ~AcAttributeMode~, ~AcColor~,
-~AcLineWeight~ -- as AutoLISP global variables (~acAlignmentMiddleLeft~ is
-9). Autodesk's Visual LISP examples use these names right after
-~(vl-load-com)~ (e.g. ~(vla-put-Alignment textObj acAlignmentRight)~ on
-the [Alignment Property (ActiveX)](https://help.autodesk.com/cloudhelp/2025/ENU/AutoCAD-LT-ActiveX-Reference/files/GUID-27030E1C-6480-4A64-BE0A-E72C1FFF2023.htm)
-page) and BricsCAD lists them among its
-[AC constants](https://developer.bricsys.com/bricscad/help/en_US/V14/DevRef/source/Lisp_acCONSTANTS.html).
-A name already holding a non-nil value is not rebound, so repeated calls
-never reset a program's binding. Whether the vendors bind them before
-~(vl-load-com)~ (BricsCAD calls it at startup from its own
-~vle-extension.lsp~) and whether a second call re-asserts them is
-recorded by ~probes/sources/probe-activex-constants.lsp~, not yet measured.
+binds the ActiveX enumeration constants as AutoLISP global variables
+(~acAlignmentMiddleLeft~ is 9). Measured by
+~probes/sources/probe-activex-constants.lsp~ on AutoCAD 2022 and BricsCAD
+V25 / V26 for every name of BricsCAD's list of
+[AC constants](https://developer.bricsys.com/bricscad/help/en_US/V14/DevRef/source/Lisp_acCONSTANTS.html):
+AutoCAD binds 832 integer constants, BricsCAD 932 (both BricsCAD builds
+agree); 30 differ between the products (the ~AcViewportScale~ family off
+by one, ~acNative~ 64 / 60). On all three a second ~(vl-load-com)~ re-binds
+nothing -- a name set to nil stays nil, a name set to 99 stays 99 -- and
+~(vl-load-com)~ answers ~nil~ on AutoCAD 2022, ~T~ on BricsCAD. clautolisp
+binds the dialect's product's table (strict: the names both bind alike;
+clautolisp / lax: all, AutoCAD's value where they differ), once per
+document, never over a non-nil value. Whether the vendors bind them before
+any ~(vl-load-com)~ is still to settle (the probe now runs first).
 
 #+LATEX: \newpage
 
