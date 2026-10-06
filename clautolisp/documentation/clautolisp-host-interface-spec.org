@@ -479,7 +479,7 @@ each element is command-line input text; ="" = is the RETURN token and ="\\"=
   option keywords, aliases), shared with =getcname=.
 
 *As built* (clautolisp 2.2.200) [S: =cador/source/command-*.lisp=,
-=define-cador-command=; =viewports.lisp=]: the engine runs 83 commands --
+=define-cador-command=; =viewports.lisp=]: the engine runs 85 commands -- LOAD (a shape file) and SHAPE since 2.2.203,
 -ARRAY, -BLOCK, -BOUNDARY, -HATCH, -HATCHEDIT, -INSERT, -LAYER, -LINETYPE,
 -OVERKILL, -VPORTS, 3DARRAY, 3DPOLY, 3DROTATE, ADDSELECTED, ALIGN, ARC, ARRAY,
 ARRAYPATH, ARRAYPOLAR, ARRAYRECT, BLOCK, BOUNDARY, BREAK, CHAMFER, CHANGE,

@@ -452,7 +452,7 @@ adds to it (localisation, more commands) serves =cador= as well.
 *The engine as built* (clautolisp 2.2.200) [S: =cador/source/command-*.lisp=,
 =define-cador-command=]. =(command …)= and =(command-s …)=:
 
-- *interpret* the normalised tokens: 83 commands (the list is D1 §7's) create
+- *interpret* the normalised tokens: 85 commands (the list is D1 §7's) create
   or change entities, tables, viewports and documents through the same
   drawing model as the entity API; 24 are recognised no-ops; the =.= and =_=
   prefixes are stripped, =-= is part of the name;

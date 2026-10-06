@@ -754,3 +754,39 @@
            (clautolisp.autolisp-host:host-command host '("_.PRBFAIL"))
            (is (string= "" (get-output-stream-string (cador-prompt-output host)))))
       (remhash "PRBFAIL" clautolisp.cador::*cador-commands*))))
+
+;;; --- alref final round: LOAD (a shape file) and SHAPE --------------------------
+
+(test shape-after-load-makes-the-measured-entity
+  (let* ((host (make-cador))
+         (dir (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "cador-shape-~D/" (random 1000000))
+                                (uiop:temporary-directory))))
+         (shx (merge-pathnames "probeshp.shx" dir)))
+    (ensure-directories-exist dir)
+    (unwind-protect
+         (progn
+           (with-open-file (out shx :direction :output :if-exists :supersede)
+             (write-string "*1,1,TRACK1" out))
+           ;; No shape file loaded: SHAPE makes nothing.
+           (clautolisp.autolisp-host:host-command host '("_.SHAPE" "TRACK1" "0,0" "1" "0"))
+           (is (null (clautolisp.autolisp-host:host-entlast host)))
+           (clautolisp.autolisp-host:host-command host (list "_.LOAD" (namestring shx)))
+           (clautolisp.autolisp-host:host-command host '("_.SHAPE" "TRACK1" "0,0" "1" "0"))
+           (let ((data (clautolisp.autolisp-host:host-entget
+                        host (clautolisp.autolisp-host:host-entlast host))))
+             (flet ((g (code)
+                      (let ((v (cdr (assoc code data))))
+                        (if (typep v 'clautolisp.autolisp-runtime:autolisp-string)
+                            (clautolisp.autolisp-runtime:autolisp-string-value v)
+                            v))))
+               (is (equal "SHAPE" (g 0)))
+               (is (equal "0" (g 8)))
+               (is (equal '(0d0 0d0 0d0) (g 10)))
+               (is (= 1 (g 40)))
+               (is (equal "TRACK1" (g 2)))
+               (is (= 0 (g 50)))
+               (is (= 1 (g 41)))
+               (is (= 0 (g 51))))))
+      (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore))))
+

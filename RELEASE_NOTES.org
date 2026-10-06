@@ -37,6 +37,9 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- ~(command "_.LOAD" "file.shx")~ loads a shape file into the drawing and
+  ~(command "_.SHAPE" name point size rotation)~ makes the SHAPE entity, as
+  AutoCAD 2022 and BricsCAD do (identical on both).
 - The blackboard copies: ~(vl-bb-set 'x l)~ stores a copy of the list, as
   AutoCAD 2022 and BricsCAD V25/V26 do -- ~(eq l (vl-bb-ref 'x))~ is now nil
   (~equal~ still T). Under the BricsCAD dialects a symbol does not come back
