@@ -47,6 +47,17 @@ NONBLOCKING = ('.gate-windows-bricscad-hard', '.gate-windows-bricscad-soft')
 AUTOCAD_MARKERS = ('autocad', 'accoreconsole', 'epure')
 BRICSCAD_MARKERS = ('bricscad',)
 
+# Jobs whose NAME says neither vendor, classified by reading their script.
+# 'autocad' = it drives AutoCAD (alone or with BricsCAD): blocking gate.
+EXPLICIT = {
+    # scripts/verify-trustedpaths-secureload2.ps1: SECURELOAD / TRUSTEDPATHS
+    # are AutoCAD's; it runs alfe --autocad.
+    'verify:trustedpaths-secureload2:windows': 'autocad',
+    # scripts/probe-cad-session-state.ps1: {clautolisp, bricscad, autocad} x
+    # {batch, automation, epure}, AutoCAD COM included.
+    'probe:cad-session-state:windows': 'autocad',
+}
+
 document = yaml.safe_load(open(PATH, encoding='utf-8'))
 problems = []
 checked = 0
@@ -71,8 +82,10 @@ for name, job in document.items():
         continue
     checked += 1
     lowered = name.lower()
-    drives_autocad = any(m in lowered for m in AUTOCAD_MARKERS)
-    drives_bricscad = any(m in lowered for m in BRICSCAD_MARKERS)
+    drives_autocad = (EXPLICIT.get(name) == 'autocad'
+                      or any(m in lowered for m in AUTOCAD_MARKERS))
+    drives_bricscad = (EXPLICIT.get(name) == 'bricscad'
+                       or any(m in lowered for m in BRICSCAD_MARKERS))
     if drives_autocad and on_nonblocking:
         problems.append(
             '%s names AutoCAD (or accoreconsole/epure) but sits on a '
