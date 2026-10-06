@@ -917,6 +917,33 @@ only when **genuinely platform-bound** (native macOS/Windows builds, GUI
 BricsCAD/AutoCAD). `release:linux:arm64` is the one lane that could move to
 poseidon but can't yet (needs a qemu arm64 runner).
 
+## CI — build caches (`scripts/ci-build-cache.sh`)
+
+The Lisp lanes on poseidon and the macOS unit lanes reuse the project's ASDF
+fasls across pipelines (`.fasl-cache` in `.gitlab-ci.yml` and
+`.gitlab/native.yml`, ci-cache-tool-builds.issue). Rules for anyone touching
+it or adding a lane:
+
+- **Never trust file times.** A cache is reused only when its KEY file (a
+  content hash of the source tree's git object ids, the Lisps, the Quicklisp
+  releases, the image's packages) equals the checkout's; otherwise it is
+  discarded whole. Reuse after a fresh clone by timestamps alone either
+  rebuilds everything or -- worse -- ships stale code (both measured; see the
+  script header).
+- **A new Lisp lane** gets `extends: .fasl-cache` and, as the LAST line of
+  `script` (never `after_script`: another container on docker),
+  `sh scripts/ci-build-cache.sh save fasl`. A job that leaves the checkout
+  modified is simply not saved.
+- **A file read at compile time outside the hashed tree** (today every
+  top-level entry except `issues/`, `documentation/`, `probe-results/`,
+  `.github/` and the root prose files) must be added to the key in
+  `source_tree`, or a stale fasl becomes possible.
+- **`release:*` never uses a build cache**; a release builds cold from its tag.
+- **Windows is deliberately uncached**: its `-ffd` clean keeps the working
+  tree (and `clautolisp/.cache`) between jobs, which is the one reuse path
+  there; `release-windows.sh` clears it for releases.
+- LibreDWG is not cached anywhere yet: libredwg-version-is-superproject-describe.
+
 ## CI — where to PLAY a manual CAD job, and how long it will wait
 
 Two things cost a whole day of evidence runs on 2026-09-27, both avoidable.

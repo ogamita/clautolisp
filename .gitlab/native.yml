@@ -271,15 +271,40 @@ default:
   variables:
     CAD_SWEEP_NONBLOCKING: "1"
 
+# --- ASDF fasl cache (ci-cache-tool-builds.issue) ---------------------------
+# Same scheme as the parent's .fasl-cache (repeated: a child pipeline does not
+# inherit templates); the reasoning is in scripts/ci-build-cache.sh. Reuse
+# only when a KEY file proves the fasls were compiled from exactly this
+# source tree, Lisp and Quicklisp; otherwise they are discarded whole and the
+# job compiles cold. The save is the last line of each job's script.
+#
+# macOS ONLY. The macOS runner cleans with -ffdx, so today every job there
+# compiles cold, and the cache (stored on the runner's own disk) is the only
+# reuse there is. The Windows runner is deliberately left out: it cleans
+# with -ffd, so its working tree -- clautolisp/.cache included -- already
+# survives between jobs (.windows-clean-vars), and adding a second, cached
+# copy beside it would make two reuse paths, unstated, which is how a stale
+# build gets shipped. Windows release builds clear that surviving cache
+# (scripts/release-windows.sh); what the Windows test lanes reuse stays
+# ASDF's time-based judgement, a known limit recorded in the ticket.
+.fasl-cache:
+  cache:
+    key: fasl-v1-$CI_JOB_NAME_SLUG
+    paths: [.ci-cache/fasl/]
+    when: on_success
+  before_script:
+    - sh scripts/ci-build-cache.sh restore fasl
+
 # --- unit suites on the real OS --------------------------------------------
 test:clautolisp:macos:
-  extends: .gate-macos-hard
+  extends: [.gate-macos-hard, .fasl-cache]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
   script:
     - make -C clautolisp test-sbcl
     - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:windows:
   extends: .gate-windows-hard
@@ -291,12 +316,13 @@ test:clautolisp:windows:
     - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
 test:autolisp-test:macos:
-  extends: .gate-macos-hard
+  extends: [.gate-macos-hard, .fasl-cache]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
   script:
     - make -C autolisp-test test
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:autolisp-test:windows:
   extends: .gate-windows-hard
@@ -307,12 +333,13 @@ test:autolisp-test:windows:
     - make -C autolisp-test test
 
 test:alfe:macos:
-  extends: .gate-macos-hard
+  extends: [.gate-macos-hard, .fasl-cache]
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
   script:
     - make -C autolisp-front-end test-sbcl
+    - sh scripts/ci-build-cache.sh save fasl
 
 # alfe under CCL on macOS (ccl-protocol-write-atomic-file-contention-hangs):
 # MANUAL, a measurement lane -- no other lane runs CCL on macOS, where the
