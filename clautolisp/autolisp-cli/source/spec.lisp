@@ -109,14 +109,14 @@ bare -E/--encoding that sets them all.")
   '((:clautolisp
      ("source"   "settable"        "-Esource / *AUTOLISP-FILE-ENCODING* / LC_*; default UTF-8")
      ("file"     "settable"        "-Efile[-read|-write] -> *AUTOLISP-FILE-READ/WRITE-ENCODING*, OPEN's default")
-     ("console"  "n/a"             "in-process — same stream as terminal")
+     ("console"  "= terminal"      "in-process — same stream as terminal: -Econsole[-in|-out] folds into it; -Eterminal wins")
      ("cadstdio" "n/a"             "no CAD subprocess")
      ("log"      "settable"        "-Elog -> the LOGFILEMODE log; default windows-1252 (AutoCAD dialects), else UTF-8")
      ("terminal" "settable"        "-Eterminal — applied to the REPL's own streams"))
     (:bricscad
      ("source"   "locale/BOM"      "UTF-8 with a BOM / locale; -Esource forwarded to the native load")
      ("file"     "default+ccs"     "default from locale / SYSCODEPAGE; per-open ,ccs=UTF-8/UTF-16LE")
-     ("console"  "product-fixed"   "GUI device: macOS full-Unicode, Windows cp1252")
+     ("console"  "product-fixed"   "GUI device: macOS full-Unicode, Windows cp1252; -Econsole[-out] = drain codec, -Econsole-in warned and ignored")
      ("cadstdio" "auto / -Ecadstdio" "drain auto-detects; -Ecadstdio overrides")
      ("log"      "product-fixed"   "LOGFILEMODE; accented prompts read back whole: windows-1252 or UTF-8+BOM (unsettled)")
      ("terminal" "settable"        "-Eterminal — alfe's own stream"))
@@ -146,8 +146,8 @@ with directions."
        (dolist (row rows)
          (destructuring-bind (name provenance note) row
            (format stream "  -E~11A~18A ~A~%" name provenance note)))
-       (format stream "~%A product-fixed situation (AutoCAD's console) still accepts ~
--E<situation> but warns that it is ignored and keeps the product value; a bare ~
+       (format stream "~%A product-fixed situation (AutoCAD's console, BricsCAD's console ~
+input) still accepts -E<situation> but warns that it is ignored and keeps the product value; a bare ~
 -E does not reach it. Full (os × version) defaults with byte evidence: the alfe ~
 user-manual Encoding section.~%"))
       (t

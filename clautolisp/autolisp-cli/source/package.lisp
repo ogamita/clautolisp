@@ -7,6 +7,7 @@
   (:export
    #:cli-situation-encoding-explicit
    #:terminal-encoding-plan
+   #:terminal-situation-encoding
    #:apply-terminal-encoding
    #:windows-console-code-page
    ;; conditions

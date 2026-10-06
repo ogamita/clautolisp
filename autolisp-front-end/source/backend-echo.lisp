@@ -99,9 +99,20 @@ both after the fact."
                          &key dialect host mock-input bootstrap-phase
                               interactive-p mode dwg
                               load-encoding io-encoding
+                              source-encoding
+                              file-read-encoding file-write-encoding
+                              console-in-encoding console-out-encoding
+                              cadstdio-in-encoding cadstdio-out-encoding
+                              log-encoding
+                              terminal-in-encoding terminal-out-encoding
                               cli-options version-text)
   (declare (ignore host mock-input bootstrap-phase interactive-p mode dwg
-                   load-encoding io-encoding cli-options version-text))
+                   load-encoding io-encoding
+                   source-encoding file-read-encoding file-write-encoding
+                   console-in-encoding console-out-encoding
+                   cadstdio-in-encoding cadstdio-out-encoding
+                   log-encoding terminal-in-encoding terminal-out-encoding
+                   cli-options version-text))
   (let ((session (%make-echo-session :backend backend
                                      :workdir workdir
                                      :dialect dialect)))

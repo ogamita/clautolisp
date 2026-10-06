@@ -357,10 +357,20 @@ resolved at START-ENGINE time."
   (host         nil)
   (output-file  nil)
   (errors-file  nil)
-  ;; User-supplied `-e ENC' string, forwarded as the subprocess
-  ;; argv's `-e ENC' so the spawned engine reads source files in
-  ;; the same encoding. NIL when the user did not pass `-e'.
+  ;; The `source' encoding (-Esource, or the bare -E), forwarded as the
+  ;; subprocess argv's -Esource so the spawned engine reads source files in
+  ;; the same encoding. NIL when none was requested.
   (load-encoding nil)
+  ;; The other situations the spawned clautolisp honours itself, forwarded
+  ;; as -Efile-read / -Efile-write / -Eterminal-in / -Eterminal-out / -Elog
+  ;; (encoding-situations-cli-options, section 6 point 1). The console of a
+  ;; clautolisp engine IS its terminal: an explicit -Econsole arrives here
+  ;; already folded into the terminal pair (alfe.cli:situation-engine-keywords).
+  (file-read-encoding nil)
+  (file-write-encoding nil)
+  (terminal-in-encoding nil)
+  (terminal-out-encoding nil)
+  (log-encoding nil)
   ;; The user's --dribble / --dribble-interactors request, forwarded to
   ;; the spawned engine, which records its OWN REPL (alfe-dribble.issue).
   ;; T = the engine's default timestamped file, a string = that file.
@@ -385,25 +395,43 @@ SHUTDOWN."
                          &key dialect host mock-input
                               bootstrap-phase interactive-p mode dwg
                               load-encoding io-encoding
+                              source-encoding
+                              file-read-encoding file-write-encoding
+                              console-in-encoding console-out-encoding
+                              cadstdio-in-encoding cadstdio-out-encoding
+                              log-encoding
+                              terminal-in-encoding terminal-out-encoding
                               cli-options version-text)
   ;; INTERACTIVE-P is forwarded to start-subprocess-engine below; the
   ;; direct branch doesn't use it (the REPL is opened by EVAL-PLAN
   ;; when the action plan carries an :interactive action). MOCK-INPUT
   ;; and BOOTSTRAP-PHASE are reserved for future tickets.
   ;;
-  ;; LOAD-ENCODING is the user's `-e ENC' string (utf-8 / iso-8859-1
-  ;; / latin-1 / windows-1252 / cp1252). The direct variant installs
-  ;; it on the runtime session so every load — including nested
-  ;; (load …) from a user init file — uses it instead of the dialect
-  ;; default. The subprocess variant forwards it as `-e ENC' to the
-  ;; spawned clautolisp-sbcl binary's CLI.
+  ;; SOURCE-ENCODING (else the legacy LOAD-ENCODING mirror) is the
+  ;; `source' situation, -Esource or the bare -E (utf-8 / iso-8859-1 /
+  ;; latin-1 / windows-1252 / cp1252). The direct variant installs it on
+  ;; the runtime session so every load — including nested (load …) from a
+  ;; user init file — uses it instead of the dialect default. The
+  ;; subprocess variant forwards it as -Esource to the spawned
+  ;; clautolisp-sbcl binary's CLI, together with the file / terminal / log
+  ;; situations (-Efile-read, -Efile-write, -Eterminal-in, -Eterminal-out,
+  ;; -Elog) so the child applies them itself. In the direct variant those
+  ;; are applied elsewhere: file through the *AUTOLISP-FILE-READ/WRITE-
+  ;; ENCODING* transmit variables (CLI-OPTIONS), terminal to alfe's own
+  ;; streams (APPLY-TERMINAL-ENCODING, which folds -Econsole in for this
+  ;; backend). CONSOLE-* is already folded into TERMINAL-* by the caller
+  ;; (the engine's console is its terminal); CADSTDIO-* has no meaning
+  ;; without a CAD subprocess.
   ;;
   ;; CLI-OPTIONS is the alfe-side cli-options struct; the direct
   ;; variant uses it to install the *AUTOLISP-…* globals in the
   ;; freshly created runtime context (transmit-options.issue). The
   ;; subprocess variant ignores it — the spawned clautolisp-sbcl
   ;; installs its own from argv.
-  (declare (ignore mock-input bootstrap-phase io-encoding mode))
+  (declare (ignore mock-input bootstrap-phase mode
+                   console-in-encoding console-out-encoding
+                   cadstdio-in-encoding cadstdio-out-encoding))
+  (setf load-encoding (or source-encoding load-encoding))
   (ecase (clautolisp-backend-variant backend)
     (:direct
      (handler-case
@@ -450,7 +478,7 @@ SHUTDOWN."
                :usage-text (alfe.cli:usage-string)
                :version-text (or version-text "0.0.0"))))
            ;; Effective default source-file encoding precedence:
-           ;;   `-e ENC' (LOAD-ENCODING) > LC_ALL/LC_CTYPE/LANG > NIL.
+           ;;   -Esource or the bare -E (SOURCE-ENCODING / LOAD-ENCODING) > LC_ALL/LC_CTYPE/LANG > NIL.
            ;; NIL falls through to the dialect default at load time.
            (let ((effective
                    (or (and load-encoding (encoding-keyword load-encoding))
@@ -487,6 +515,15 @@ SHUTDOWN."
                               :dwg dwg
                               :interactive-p interactive-p
                               :load-encoding load-encoding
+                              :file-read-encoding file-read-encoding
+                              :file-write-encoding file-write-encoding
+                              ;; the legacy IO-ENCODING mirror stands in for
+                              ;; a caller that passes only it
+                              :terminal-in-encoding (or terminal-in-encoding
+                                                        io-encoding)
+                              :terminal-out-encoding (or terminal-out-encoding
+                                                         io-encoding)
+                              :log-encoding log-encoding
                               ;; Forwarded, not recorded here: the engine's own
                               ;; REPL transcript is the one worth having
                               ;; (alfe-dribble.issue).
@@ -564,7 +601,11 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
          (when value (list (format nil "--dribble-interactors=~A" value))))))))
 
 (defun start-subprocess-engine (backend workdir &key dialect host interactive-p
-                                load-encoding dribble dribble-interactors dwg)
+                                load-encoding
+                                file-read-encoding file-write-encoding
+                                terminal-in-encoding terminal-out-encoding
+                                log-encoding
+                                dribble dribble-interactors dwg)
   ;; The Phase 1 subprocess variant defers the actual fork to
   ;; EVAL-PLAN so we can map every action to a clautolisp-sbcl CLI
   ;; flag and run the engine *once* with the right argv (rather than
@@ -573,8 +614,10 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
   ;; the v2 path). START-ENGINE just stashes the binary path and
   ;; the engine flags it has resolved so far.
   ;;
-  ;; LOAD-ENCODING is stashed in the session so EVAL-PLAN below can
-  ;; forward it as `-e ENC' to the spawned clautolisp-sbcl invocation.
+  ;; LOAD-ENCODING and the file / terminal / log encodings are stashed in
+  ;; the session so EVAL-PLAN below can forward them as -Esource,
+  ;; -Efile-read, -Efile-write, -Eterminal-in, -Eterminal-out and -Elog to
+  ;; the spawned clautolisp-sbcl invocation.
   (declare (ignore interactive-p))
   (let ((binary (clautolisp-backend-executable-path backend)))
     (unless (and binary (probe-file binary))
@@ -593,6 +636,11 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
                     :errors-file (when workdir
                                    (open-output-file workdir "errors.txt"))
                     :load-encoding load-encoding
+                    :file-read-encoding file-read-encoding
+                    :file-write-encoding file-write-encoding
+                    :terminal-in-encoding terminal-in-encoding
+                    :terminal-out-encoding terminal-out-encoding
+                    :log-encoding log-encoding
                     :dribble dribble
                     :dribble-interactors dribble-interactors
                     :dwg dwg)))
@@ -851,6 +899,32 @@ when the engine drains its argv-driven action queue)."
     (:quit
      nil)))
 
+(defun %situation-cli-flags (session)
+  "The argv fragment forwarding SESSION's file / terminal / log encodings to
+the spawned clautolisp: -Efile-read, -Efile-write, -Eterminal-in,
+-Eterminal-out, -Elog, each with its value, only for those requested. The
+child resolves them exactly as alfe did (same option table, autolisp-cli)."
+  (loop for (option value)
+          in (list (list "-Efile-read"
+                         (clautolisp-subprocess-session-file-read-encoding session))
+                   (list "-Efile-write"
+                         (clautolisp-subprocess-session-file-write-encoding session))
+                   (list "-Eterminal-in"
+                         (clautolisp-subprocess-session-terminal-in-encoding session))
+                   (list "-Eterminal-out"
+                         (clautolisp-subprocess-session-terminal-out-encoding session))
+                   (list "-Elog"
+                         (clautolisp-subprocess-session-log-encoding session)))
+        when value append (list option value)))
+
+(defun %subprocess-capture-external-format (session)
+  "The external format alfe decodes the child's CAPTURED stdout / stderr with:
+the forwarded terminal-out encoding (the child writes its streams in it), or
+NIL for the default. Without this, -Eterminal-out cp1252 would have the child
+write cp1252 into a pipe alfe read as UTF-8."
+  (let ((enc (clautolisp-subprocess-session-terminal-out-encoding session)))
+    (and enc (clautolisp.autolisp-cli:encoding-keyword enc "-Eterminal-out"))))
+
 (defun build-subprocess-argv (session plan)
   "Compose the clautolisp-sbcl argv from SESSION's per-engine flags
 plus one flag pair per action in PLAN. Used by EVAL-PLAN on the
@@ -876,6 +950,9 @@ subprocess variant."
             ;; it's in effect from the very first -l/-x in the queue.
             (let ((enc (clautolisp-subprocess-session-load-encoding session)))
               (when enc (list "-Esource" enc)))
+            ;; ... and the other situations the child applies itself
+            ;; (section 6 point 1), each only when one was requested.
+            (%situation-cli-flags session)
             (let ((dwg (clautolisp-subprocess-session-dwg session)))
               (when dwg (list "--dwg" dwg)))
             ;; Forward the dribble request, the same way as -Esource above
@@ -914,10 +991,13 @@ subprocess variant."
                                     :output :interactive
                                     :error-output :interactive
                                     :ignore-error-status t))
-                (uiop:run-program argv
-                                  :output :string
-                                  :error-output :string
-                                  :ignore-error-status t))
+                (let ((external-format (%subprocess-capture-external-format session)))
+                  (apply #'uiop:run-program argv
+                         :output :string
+                         :error-output :string
+                         :ignore-error-status t
+                         (when external-format
+                           (list :external-format external-format)))))
           (log-verbose "backend CLAUTOLISP (subprocess): exit ~A" exit-code)
           (let ((stdout (or stdout ""))
                 (stderr (or stderr "")))

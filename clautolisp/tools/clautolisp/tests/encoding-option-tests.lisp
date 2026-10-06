@@ -38,6 +38,30 @@
     (is (equal '(:output :error) (mapcar #'first plan)))
     (is (null (clautolisp.autolisp-cli:terminal-encoding-plan (%enc-options))))))
 
+(test econsole-folds-into-the-tools-terminal
+  ;; clautolisp's console is in-process: the same stream as its terminal, so
+  ;; an explicit -Econsole[-in|-out] plans the terminal when no -Eterminal is
+  ;; given; an explicit -Eterminal wins; -Econsole wins over the bare -E.
+  (flet ((keys (plan) (mapcar #'first plan))
+         (ext (plan key) (fourth (assoc key plan))))
+    (let ((plan (clautolisp.autolisp-cli:terminal-encoding-plan
+                 (%enc-options "-Econsole-in" "ISO-8859-1"))))
+      (is (equal '(:input) (keys plan)))
+      (is (equal (clautolisp.autolisp-cli:encoding-keyword "ISO-8859-1")
+                 (ext plan :input))))
+    (let ((plan (clautolisp.autolisp-cli:terminal-encoding-plan
+                 (%enc-options "-Econsole" "ISO-8859-1" "-Eterminal-out" "UTF-8"))))
+      (is (equal '(:output :error :input) (keys plan)))
+      (is (equal (clautolisp.autolisp-cli:encoding-keyword "UTF-8") (ext plan :output)))
+      (is (equal (clautolisp.autolisp-cli:encoding-keyword "ISO-8859-1") (ext plan :input))))
+    (let ((plan (clautolisp.autolisp-cli:terminal-encoding-plan
+                 (%enc-options "-E" "UTF-8" "-Econsole-out" "ISO-8859-1"))))
+      (is (equal (clautolisp.autolisp-cli:encoding-keyword "ISO-8859-1") (ext plan :output)))
+      (is (equal (clautolisp.autolisp-cli:encoding-keyword "UTF-8") (ext plan :input))))
+    ;; without the fold (a CAD's console device) -Econsole plans nothing
+    (is (null (clautolisp.autolisp-cli:terminal-encoding-plan
+               (%enc-options "-Econsole" "ISO-8859-1") :fold-console nil)))))
+
 (test efile-directions-are-resolved
   (let ((o (%enc-options "-Efile" "UTF-8" "-Efile-write" "ISO-8859-1")))
     (is (equal "UTF-8" (clautolisp.autolisp-cli:cli-situation-encoding o "file" "read")))

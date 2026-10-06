@@ -65,6 +65,34 @@ SUCCESS at the end of the queue."
       (is (search "main MY-MAIN" output)))
     (shutdown session)))
 
+(test echo-backend-accepts-the-situation-encoding-keywords
+  "START-ENGINE takes one keyword per encoding situation (section 6 point 1)
+next to the legacy :load-encoding / :io-encoding mirrors; the echo backend
+accepts them all (and ignores them), with the plist built by the CLI helper."
+  (let* ((backend (find-backend :echo))
+         (session (apply #'start-engine backend nil
+                         :dialect :strict
+                         :load-encoding "UTF-8"
+                         :io-encoding "UTF-8"
+                         (alfe.cli:situation-engine-keywords
+                          (alfe.cli:parse-arguments
+                           '("-E" "UTF-8" "-Econsole" "cp1252" "-Ecadstdio-in" "latin-1"))))))
+    (is (eq :ready (session-state session)))
+    (let ((session2 (start-engine backend nil
+                                  :source-encoding "UTF-8"
+                                  :file-read-encoding "WINDOWS-1252"
+                                  :file-write-encoding "UTF-8"
+                                  :console-in-encoding nil
+                                  :console-out-encoding "UTF-16LE"
+                                  :cadstdio-in-encoding nil
+                                  :cadstdio-out-encoding nil
+                                  :log-encoding "UTF-8"
+                                  :terminal-in-encoding "UTF-8"
+                                  :terminal-out-encoding "UTF-8")))
+      (is (eq :ready (session-state session2)))
+      (shutdown session2))
+    (shutdown session)))
+
 (test backend-error-carries-structured-payload
   "The condition hierarchy preserves :backend / :phase / :code /
 :message / :details — the CLI relies on them for exit-code mapping

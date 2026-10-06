@@ -1525,6 +1525,56 @@ ignored (the console is fixed by the product), and so is the bare -E."
     (is (eq :iso-8859-1 (alfe.backend.autocad::autocad-console-external-format
                          (parse-arguments '("--autocad")))))))
 
+(test bricscad-console-input-encoding-is-a-warned-no-op
+  "BricsCAD's console device is product-fixed and alfe's input does not go
+through it: an explicit -Econsole-in (or a bare -Econsole, which sets both
+directions) is warned about and ignored, as AutoCAD's -Econsole is; the bare
+-E and -Econsole-out are not warned about. The output half of -Econsole still
+picks the drain codec."
+  (let ((warning (alfe.backend.bricscad::bricscad-console-input-warning
+                  (parse-arguments '("--bricscad" "-Econsole-in" "cp1252")))))
+    (is (stringp warning))
+    (is (search "-Econsole-in WINDOWS-1252 is ignored" warning))
+    (is (search "fixed by the" warning)))
+  (is (stringp (alfe.backend.bricscad::bricscad-console-input-warning
+                (parse-arguments '("--bricscad" "-Econsole" "cp1252")))))
+  (is (null (alfe.backend.bricscad::bricscad-console-input-warning
+             (parse-arguments '("--bricscad" "-Econsole-out" "cp1252")))))
+  (is (null (alfe.backend.bricscad::bricscad-console-input-warning
+             (parse-arguments '("--bricscad" "-E" "UTF-8")))))
+  (is (null (alfe.backend.bricscad::bricscad-console-input-warning nil)))
+  ;; logged once per run
+  (let ((alfe.backend.bricscad::*bricscad-console-input-option-warned* nil)
+        (*error-output* (make-string-output-stream)))
+    (let ((opts (parse-arguments '("--bricscad" "-Econsole-in" "cp1252"))))
+      (is (eq t (alfe.backend.bricscad::%warn-bricscad-console-input opts)))
+      (is (null (alfe.backend.bricscad::%warn-bricscad-console-input opts))))))
+
+(test bricscad-drain-codec-ignores-the-bare-e
+  "RESOLVED-CONSOLE-ENCODING (the BricsCAD drain codec) counts only an option
+naming the console or cadstdio: the bare -E no longer reaches the drain (it
+forced UTF-8 over the auto-detect cascade that reads a cp1252 BricsCAD/Windows
+drain correctly) -- the rule AutoCAD already had."
+  (is (eq :auto (alfe.cli:resolved-console-encoding nil)))
+  (is (eq :auto (alfe.cli:resolved-console-encoding
+                 (parse-arguments '("--bricscad")))))
+  (is (eq :auto (alfe.cli:resolved-console-encoding
+                 (parse-arguments '("--bricscad" "-E" "UTF-8")))))
+  ;; -Econsole-in is the input half only: nothing for the drain
+  (is (eq :auto (alfe.cli:resolved-console-encoding
+                 (parse-arguments '("--bricscad" "-Econsole-in" "cp1252")))))
+  (is (equal "WINDOWS-1252" (alfe.cli:resolved-console-encoding
+                             (parse-arguments '("--bricscad" "-Econsole" "cp1252")))))
+  (is (equal "WINDOWS-1252" (alfe.cli:resolved-console-encoding
+                             (parse-arguments '("--bricscad" "-Econsole-out" "cp1252"
+                                                "-E" "UTF-8")))))
+  ;; console wins over cadstdio
+  (is (equal "UTF-16LE" (alfe.cli:resolved-console-encoding
+                         (parse-arguments '("--bricscad" "-Ecadstdio" "cp1252"
+                                            "-Econsole" "utf-16le")))))
+  (is (equal "WINDOWS-1252" (alfe.cli:resolved-console-encoding
+                             (parse-arguments '("--bricscad" "-Ecadstdio-out" "cp1252"))))))
+
 ;;; --- backend selection: CAD-program denotation parsing --------------
 
 (test cad-program-denotation-parsing

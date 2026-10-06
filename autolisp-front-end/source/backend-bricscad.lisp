@@ -1610,12 +1610,54 @@ $ALFE_NO_CUI_REPAIR. Returns the list of quarantined paths."
                                    (namestring cui) e)
                          nil))))))
 
+;;; --- encoding situations: the console INPUT direction ---------------------
+;;;
+;;; -Econsole[-out] picks the codec the drain decodes BricsCAD's output with
+;;; (ALFE.CLI:RESOLVED-CONSOLE-ENCODING). The INPUT direction has nothing to
+;;; act on: the console device is fixed by the product (GUI console: full
+;;; Unicode on macOS V26, cp1252 on Windows V25 -- encoding-situations section
+;;; 7.2), and alfe's input to BricsCAD does not go through it -- forms travel
+;;; over the file-IPC protocol. Accepting -Econsole-in silently is what the
+;;; situations rule forbids (section 4: a product-fixed situation is warned
+;;; about and ignored), so say so, as the AutoCAD backend does for -Econsole.
+
+(defvar *bricscad-console-input-option-warned* nil
+  "True once the -Econsole-in-is-ignored warning was given this run.")
+
+(defun bricscad-console-input-warning (cli-options)
+  "The warning text for an explicit console INPUT encoding under BricsCAD
+(-Econsole-in, or a bare -Econsole, which sets both directions), or NIL when
+none was given. The bare -E never counts: it does not reach the console."
+  (let ((requested (and cli-options
+                        (clautolisp.autolisp-cli:cli-situation-encoding-explicit
+                         cli-options "console" "in"))))
+    (when requested
+      (format nil "backend BRICSCAD: the console input encoding is fixed by the ~
+product (GUI console: macOS full Unicode, Windows cp1252) and alfe's input does ~
+not go through the console device (forms travel over the file protocol); ~
+-Econsole-in ~A is ignored. -Econsole-out (or -Econsole) still selects the codec ~
+alfe decodes BricsCAD's output with." requested))))
+
+(defun %warn-bricscad-console-input (cli-options)
+  "Log BRICSCAD-CONSOLE-INPUT-WARNING once per run. Returns T when it warned."
+  (let ((text (bricscad-console-input-warning cli-options)))
+    (when (and text (not *bricscad-console-input-option-warned*))
+      (setf *bricscad-console-input-option-warned* t)
+      (log-warn "~A" text)
+      t)))
+
 (defmethod start-engine ((backend bricscad-backend) workdir
                          &key dialect host mock-input bootstrap-phase
                               interactive-p
                               dwg
                               load-encoding
                               io-encoding
+                              source-encoding
+                              file-read-encoding file-write-encoding
+                              console-in-encoding console-out-encoding
+                              cadstdio-in-encoding cadstdio-out-encoding
+                              log-encoding
+                              terminal-in-encoding terminal-out-encoding
                               cli-options version-text
                               (mode :auto)
                               (launcher #'uiop:launch-program)
@@ -1630,15 +1672,26 @@ mock CAD for the real engine; the production code path passes
 UIOP:LAUNCH-PROGRAM. WAIT-FOR-READY can be turned off when the
 test driver is responsible for the state walk.
 
-LOAD-ENCODING is accepted for protocol compatibility but ignored:
-the BricsCAD-resident AutoLISP runtime owns the source-file
-encoding policy; user `-e ENC' over the file-IPC protocol is a
-future ticket."
+The encoding keywords (LOAD-ENCODING / IO-ENCODING and the per-situation
+SOURCE-ENCODING ... TERMINAL-OUT-ENCODING) are accepted but not read here: the
+BricsCAD boundaries resolve their situations from CLI-OPTIONS where they are
+applied -- -Esource rides on each -l action (:encoding, used when the
+source is staged), the drain codec from
+ALFE.CLI:RESOLVED-CONSOLE-ENCODING (explicit -Econsole[-out] / -Ecadstdio only),
+and an explicit -Econsole-in is warned about and ignored
+(%WARN-BRICSCAD-CONSOLE-INPUT: the console device is product-fixed and alfe's
+input does not go through it). The terminal is alfe's own."
   ;; DIALECT is currently irrelevant on the CAD side: the AutoLISP
   ;; dialect lives inside the CAD engine and is not swappable from
   ;; outside. HOST is meaningful only to clautolisp.
-  (declare (ignore host mock-input dialect dwg load-encoding io-encoding))
+  (declare (ignore host mock-input dialect dwg load-encoding io-encoding
+                   source-encoding file-read-encoding file-write-encoding
+                   console-in-encoding console-out-encoding
+                   cadstdio-in-encoding cadstdio-out-encoding
+                   log-encoding terminal-in-encoding terminal-out-encoding))
   (log-verbose "backend BRICSCAD: starting engine (mode ~A)" mode)
+  ;; A product-fixed situation is warned about, never silently ignored.
+  (%warn-bricscad-console-input cli-options)
   (log-debug "backend BRICSCAD: workdir = ~A" workdir)
   ;; Let --timeout / $AUTOLISP_WAIT_SECS raise the READY timeout: a cold
   ;; BricsCAD launch (COM start + license + first document) can take well

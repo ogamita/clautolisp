@@ -16,18 +16,39 @@
 ;;; to fresh fd-streams in that encoding. Unset ⇒ nothing changes (the
 ;;; behaviour-preserving default the phased plan requires).
 
-(defun terminal-encoding-plan (options)
+(defun terminal-situation-encoding (options direction &key (fold-console t))
+  "The resolved `terminal` encoding for DIRECTION (\"in\" / \"out\"), or NIL.
+
+When FOLD-CONSOLE is true the `console` situation is the SAME stream as the
+terminal -- the clautolisp tool, and alfe driving the clautolisp engine, run
+in-process: there is no CAD console device besides the user's terminal
+(*SITUATION-BACKEND-TABLE*, the console row of :CLAUTOLISP). So an explicit
+-Econsole[-in|-out] is folded into the terminal direction. Precedence: an
+explicit -Eterminal[-in|-out] wins, then an explicit -Econsole[-in|-out], then
+the bare -E (every situation). A bare -E therefore never lets a console request
+lose to it: the specific option wins, the usual rule.
+
+With FOLD-CONSOLE NIL (alfe in front of a CAD, whose console is the CAD's own
+device) this is plain CLI-SITUATION-ENCODING."
+  (or (cli-situation-encoding-explicit options "terminal" direction)
+      (and fold-console
+           (cli-situation-encoding-explicit options "console" direction))
+      (cli-situation-encoding options "terminal" direction)))
+
+(defun terminal-encoding-plan (options &key (fold-console t))
   "The stream reconfiguration the resolved `terminal` encoding implies for
 alfe's OWN standard streams, as a list of (KEY FD DIRECTION EXTERNAL-FORMAT)
 entries — KEY one of :OUTPUT / :ERROR / :INPUT, FD the OS descriptor,
 EXTERNAL-FORMAT a CL keyword. NIL when -Eterminal was not given. The bare
 -Eterminal sets both directions; -Eterminal-out drives stdout+stderr,
--Eterminal-in drives stdin. Pure — so tests assert what a CLI would
-reconfigure without touching real process streams. The line-ending suffix is
-accepted-and-ignored here (terminal I/O is line-buffered), matching the
---list-encodings note."
-  (let ((out (cli-situation-encoding options "terminal" "out"))
-        (in  (cli-situation-encoding options "terminal" "in")))
+-Eterminal-in drives stdin. With FOLD-CONSOLE (the default: the clautolisp
+tool's console IS its terminal), an explicit -Econsole[-in|-out] stands in for
+a missing -Eterminal[-in|-out] -- see TERMINAL-SITUATION-ENCODING. Pure — so
+tests assert what a CLI would reconfigure without touching real process
+streams. The line-ending suffix is accepted-and-ignored here (terminal I/O is
+line-buffered), matching the --list-encodings note."
+  (let ((out (terminal-situation-encoding options "out" :fold-console fold-console))
+        (in  (terminal-situation-encoding options "in" :fold-console fold-console)))
     (nconc
      (when out
        (let ((ext (encoding-keyword out)))
@@ -143,13 +164,13 @@ otherwise, NIL when neither is possible."
                               :auto-close nil
                               :name "terminal")))))
 
-(defun apply-terminal-encoding (options &key (tool "clautolisp"))
+(defun apply-terminal-encoding (options &key (tool "clautolisp") (fold-console t))
   "G1 side effect: reconfigure alfe's own *standard-output* / *error-output*
 / *standard-input* per TERMINAL-ENCODING-PLAN. A no-op when -Eterminal was
 not given. Any failure (unsupported host CL, a code page the console
 refuses) degrades to a warning -- it must never abort the run, and the
 un-reconfigured stream simply keeps the locale default."
-  (dolist (entry (terminal-encoding-plan options))
+  (dolist (entry (terminal-encoding-plan options :fold-console fold-console))
     (destructuring-bind (key fd direction ext) entry
       (handler-case
           (let ((stream (%make-terminal-fd-stream fd direction ext)))
