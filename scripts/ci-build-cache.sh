@@ -173,8 +173,16 @@ key() {
 # gitlink, are a miss and are never saved. Changes INSIDE a submodule are
 # ignored: build-libredwg.sh rewrites libredwg's CMakeLists.txt on purpose
 # (the same way every run), and its own build directory lives there.
+# For the fasl kind a submodule's checkout is ignored ALTOGETHER: no Lisp
+# source is compiled from it, its pinned commit is already in the key (the
+# clautolisp/ tree id), and jobs that skip submodule setup reuse a build
+# directory where an earlier job left libredwg at another commit (seen as
+# " M clautolisp/third-party/libredwg" in MR !444's first pipeline, which made
+# build:alfe:sbcl and test:clautolisp:sbcl never save). The libredwg kind
+# checks its submodule's commit explicitly below.
 dirty() {
-  st=$(git status --porcelain --ignore-submodules=dirty --untracked-files=normal) ||
+  if [ "$kind" = libredwg ]; then submodules=dirty; else submodules=all; fi
+  st=$(git status --porcelain --ignore-submodules=$submodules --untracked-files=normal) ||
     { echo "git status failed"; return 0; }
   [ -z "$st" ] || printf '%s\n' "$st" | head -n 5
   if [ "$kind" = libredwg ]; then
