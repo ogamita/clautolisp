@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: ccl-protocol-write-atomic-file-contention-hangs — PROTOCOL-WRITE-ATOMIC-FILE-CONTENTION never returns under CCL on the macOS dev box
-#+STATUS: TODO
+#+STATUS: DONE (2026-10-06)
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -178,3 +178,22 @@ close. Fails naming threads -> a stuck syscall / debugger case, read the
 names. Killed at 1800 s -> the Rosetta runtime freeze: skip the test only
 when running translated (sysctl.proc_translated), as the Windows branch
 records a pass, and leave CCL-on-arm64 to cecil-native-arm64-runner.
+
+* Measured and closed (2026-10-06)
+
+test:alfe:ccl:macos (job 16967831196, thalassa, Apple-silicon arm64;
+/usr/local/bin/ccl is the wrapper script, i.e. the x86-64 dx86cl64 under
+Rosetta 2): the suite ran to THREAD-GUARD-RECORDS-A-CONDITION-FROM-INSIDE-A-
+THREAD at 12:12:42, then nothing -- PROTOCOL-WRITE-ATOMIC-FILE-CONTENTION
+never printed its first check, and the in-Lisp 120 s watchdog never fired;
+the Makefile's TEST_TIMEOUT killed it at 1800 s ("Alarm clock", job failed,
+not hung). The same test passes under native Linux x86-64 CCL (4 checks,
+test:alfe:ccl, and locally today). So: the emulated x86 CCL runtime freezes
+the whole process under this test's 17 allocating threads -- not alfe.
+
+Fix: the test is skipped, with the reason recorded as a pass, ONLY on x86
+CCL under Rosetta (%x86-ccl-under-rosetta-p: an x86-64 CCL on a machine with
+hw.optional.arm64 = 1 -- asked of the machine, since a child sysctl runs
+native); every other implementation and platform still runs it. The outside
+TEST_TIMEOUT stays, so any future freeze fails the lane instead of hanging
+it. A native arm64 CCL (cecil-native-arm64-runner) would run it for real.

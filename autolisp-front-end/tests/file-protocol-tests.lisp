@@ -327,6 +327,18 @@ the condition comes back as DATA, on both hosts, and the thread finishes."
       (is (equal "in-thread" (first seen))
           "and its condition must arrive as data; got ~S" seen))))
 
+(defun %x86-ccl-under-rosetta-p ()
+  "True when this is the x86-64 CCL running translated by Rosetta 2 on an
+Apple-silicon Mac. Asked of the MACHINE (hw.optional.arm64 = 1), not of a
+child process: a child sysctl runs native and reports itself untranslated."
+  #+(and ccl darwin x86-64)
+  (ignore-errors
+   (string= "1" (string-trim '(#\Space #\Newline #\Return)
+                             (uiop:run-program '("sysctl" "-n" "hw.optional.arm64")
+                                               :output :string
+                                               :ignore-error-status t))))
+  #-(and ccl darwin x86-64) nil)
+
 (test protocol-write-atomic-file-contention
   "N=16 concurrent writers publishing distinct integers all complete
 without errors; the final file content is one of the published
@@ -346,6 +358,15 @@ formed value, never a partial one."
       ;; compile-time error ("Argument to IS must be a list, not T"). See
       ;; write-atomic-file-concurrent-rename-macos-windows.issue.
       (pass "skipped on Windows: write-atomic-file rename is non-atomic (UIOP delete+rename); single-writer usage unaffected")
+  ;; The x86 CCL under Rosetta 2 FREEZES -- the whole process, 0 % CPU,
+  ;; the 120 s watchdog below included -- on this test's 17 allocating
+  ;; threads (measured: test:alfe:ccl:macos job 16967831196, killed by the
+  ;; Makefile's TEST_TIMEOUT; ccl-protocol-write-atomic-file-contention-hangs).
+  ;; Every loop in write-atomic-file is bounded and native CCL passes (the
+  ;; Linux test:alfe:ccl lane), so it is the emulated runtime, not alfe:
+  ;; skip only there, with the reason, as on Windows.
+  (if (%x86-ccl-under-rosetta-p)
+      (pass "skipped on x86 CCL under Rosetta 2: the emulated runtime freezes under this many threads (ccl-protocol-write-atomic-file-contention-hangs); native CCL runs it")
   (let* ((workdir (make-test-workdir "contention"))
          (target (merge-pathnames "value.txt" workdir))
          (n-writers 16)
@@ -437,7 +458,7 @@ formed value, never a partial one."
               (is (or (string= final "seed")
                       (find final allowed-values :test #'string=))
                   "Final content ~S is not one of the published values" final))))
-      (delete-workdir workdir))))))
+      (delete-workdir workdir)))))))
 
 ;;; --- status polling ------------------------------------------------
 
