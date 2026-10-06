@@ -36,10 +36,12 @@
 ;; A narrow set of command-line commands whose options show at the first prompt.
 ;; Dialog-prone commands (HATCH, ARRAY) are deliberately excluded: they can open
 ;; a modal dialog that a plain cancel will not clear, wedging the CAD runner.
+;; ZOOM LAST: entering it ended the whole accoreconsole run (job 16981155886,
+;; OPTKW-INCOMPLETE right after SCALE), so it can cost nothing but itself.
 (setq *optkw-cmds*
   (list "OFFSET" "TRIM" "EXTEND" "FILLET" "CHAMFER" "MIRROR"
-        "ROTATE" "SCALE" "ZOOM" "RECTANG" "PLINE"
-        "BREAK" "LENGTHEN"))
+        "ROTATE" "SCALE" "RECTANG" "PLINE"
+        "BREAK" "LENGTHEN" "ZOOM"))
 
 (defun optkw--getvar (name / v)
   (setq v (vl-catch-all-apply 'getvar (list name)))

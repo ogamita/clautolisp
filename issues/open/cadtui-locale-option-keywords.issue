@@ -52,3 +52,60 @@ Viable directions to try instead:
      readable mapping exists there (no command-driving, but vendor-specific).
 The probe + wrapper + converter framework stays (MR !242); the CAPTURE mechanism
 is what needs to change. No data landed (empty/aborted transcripts, not noise).
+
+
+## First fr_FR harvest (2026-10-06, MR !440)
+
+The first version of the probe never worked: it bracketed STDOUT, where a
+command's prompt never arrives (empty blocks on BricsCAD V25 Windows / V26
+macOS, jobs 16979749963 / 16979749962), and AutoCAD 2022's console aborted the
+whole run at (setvar "PROMPTOPTIONTRANSLATEKEYWORDS" 1) even under
+VL-CATCH-ALL-APPLY (job 16979749961). Reworked:
+
+- the probe reads each command's prompt from the CAD's own command-history
+  LOG (one fresh LOGFILEPATH directory per command), restoring the original
+  LOGFILEPATH / LOGFILEMODE before printing; the keyword-translation setvar
+  only when the variable exists; ZOOM last (entering it ended the
+  accoreconsole run);
+- the converter decodes the Windows wrapper's UTF-8-BOM + UTF-16LE
+  transcript, repairs the cp437 mojibake of UTF-8 bytes (an e-acute arriving
+  as U+251C U+2310), skips the log headers, and attributes each prompt to the
+  command whose ECHO precedes it (BricsCAD writes its log lazily: a command's
+  own log file starts with the previous command's tail).
+
+Harvested LOCAL keywords (fr_FR):
+
+AutoCAD 2022 accoreconsole (job 16981155886; the run ended at ZOOM, now last):
+(
+  ("_CHAMFER" ("aNnuler" "Polyligne" "Ecart" "ANgle" "AJuster" "Méthode" "mUltiple"))
+  ("_EXTEND" ("mOde"))
+  ("_FILLET" ("aNnuler" "Polyligne" "Rayon" "Ajuster" "mUltiple"))
+  ("_OFFSET" ("Par" "Effacer" "Calque"))
+  ("_TRIM" ("mOde"))
+)
+
+BricsCAD V25 Windows (job 16981155888):
+(
+  ("_BREAK" ("sélectionner les options (?)"))
+  ("_CHAMFER" ("PAramètres du chanfrein..." "POlyligne" "ANgle" "Distance" "méthodE" "AJuster" "annUler" "Multiple" "sélectionner les options (?)"))
+  ("_EXTEND" ("Mode" "sélectionner les options (?)"))
+  ("_FILLET" ("PAramètres raccord..." "Polyligne" "Rayon" "Ajuster" "annUler" "Multiple" "sélectionner les options (?)"))
+  ("_MIRROR" ("sélectionner les options (?)"))
+  ("_OFFSET" ("Passer par le point" "Effacer" "Calque"))
+  ("_RECTANG" ("Chanfrein" "Raccord" "Pivoté" "CArré" "Elévation" "EPaisseur" "Largeur de ligne" "Aire" "Dimensions"))
+  ("_ROTATE" ("sélectionner les options (?)"))
+  ("_SCALE" ("sélectionner les options (?)"))
+  ("_TRIM" ("Mode" "sélectionner les options (?)"))
+  ("_ZOOM" ("zoom Avant" "zoom aRrière" "TOUt" "Centre" "DYnamique" "étendu (ET)" "Gauche" "Précédent" "Droite" "Échelle (nx" "nxp)" "Fenêtre" "ENtité"))
+)
+
+BricsCAD V26 macOS: empty -- no log in batch mode (measured, probe-logfile).
+
+REMAINS before option-keyword.sexp: the loader's format is (international .
+local) pairs, and both runners are FRENCH installs, so the international
+keyword of each prompt is not measured. Pair them by position against an
+English install's prompts (or the vendors' English documentation for these
+13 commands, cited), and extract the abbreviation letters (the capitals:
+"aNnuler" -> N). Note that the two products' keyword sets differ (OFFSET:
+AutoCAD [Par/Effacer/Calque], BricsCAD [Passer par le point/Effacer/Calque]),
+so the dictionary is per product.
