@@ -149,3 +149,32 @@ green five runs in a row under CCL.
 - [ ] =HEAD~= comparison there is no longer worth its cost: the Linux result
       above says the contention code is not the cause, so "pre-existing" is
       answered for practical purposes.
+
+* Progress -- an outside guard, and a lane to measure on (2026-10-06)
+
+Reading the code again (the test: file-protocol-tests.lisp, 16 writers x 50
+renames + 1 reader, joined by %join-threads-or-name-the-stuck with the 120 s
+watchdog; the code: write-atomic-file, every loop bounded -- 100 rename tries
+x 20 ms, 5 read retries x 10 ms; under CCL uiop's rename is a bare rename(2)):
+nothing in alfe can spin or block forever. Native Linux x86-64 CCL 1.13
+passes (2026-09-26, five runs). What is left fits the RUNTIME stopping: the
+x86 CCL under Rosetta 2 suspending its threads for a GC (signals + Mach
+exceptions, emulated) while 17 threads allocate inside open/write/rename --
+0 % CPU, every thread frozen, the main thread's watchdog poll included, which
+is why even the in-Lisp watchdog never fired. Not proven: no run on macOS
+since 2.2.128.
+
+Done:
+- autolisp-front-end/Makefile: test-ccl runs under TEST_TIMEOUT (default
+  3600 s, 0 = none), a SIGALRM from outside the process (perl alarm + exec;
+  macOS has no GNU timeout) -- a frozen run now FAILS (exit 142) instead of
+  hanging;
+- .gitlab/native.yml: test:alfe:ccl:macos, a manual measurement lane (first
+  CCL found, Rosetta reported, TEST_TIMEOUT 1800) -- no lane ran CCL on
+  macOS before.
+
+Next: play test:alfe:ccl:macos. Passes -> the guard of 2.2.128 was the cure;
+close. Fails naming threads -> a stuck syscall / debugger case, read the
+names. Killed at 1800 s -> the Rosetta runtime freeze: skip the test only
+when running translated (sysctl.proc_translated), as the Windows branch
+records a pass, and leave CCL-on-arm64 to cecil-native-arm64-runner.
