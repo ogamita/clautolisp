@@ -2701,63 +2701,115 @@ write triggers the lint."
      "~A: writing under ~S resolves to the host's SYSCODEPAGE at I/O time; output is not portable across hosts. Use ~S or an explicit CP-NNNN for reproducibility."
      operator-name encoding-string "CP-1252")))
 
+(defun %open-autocad-rejects-encoding-p (dialect)
+  "True when DIALECT's AutoCAD has no third argument to OPEN: before 2021
+(the argument arrived with the Unicode engine), or on Windows at LISPSYS 0
+-- AutoCAD 2022 at LISPSYS 0 answered (open f \"w\" \"utf8\") with \"too
+many arguments\" (probe-triage2 job 16923993438, probe-open-encoding MR
+!432)."
+  (let ((version (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-version dialect))))
+    (or (and (integerp version) (< version 2021))
+        (eq (%character-code-mode) :byte))))
+
+(defun %open-encoding-divergence (form value-string dialect)
+  "What the vendor of DIALECT does with an OPEN encoding FORM, as measured
+(open-third-argument-dialect-divergence.issue): NIL when the call works the
+same there, else (values CODE MESSAGE) for the diagnostic. FORM is
+:POSITIONAL (the third argument, VALUE-STRING) or :CCS-SUFFIX (the
+\",ccs=VALUE-STRING\" mode suffix). Silent under clautolisp and lax (and
+any dialect without a product that is not strict)."
+  (let* ((name (clautolisp.autolisp-reader:autolisp-dialect-name dialect))
+         (product (clautolisp.autolisp-reader:autolisp-dialect-product dialect))
+         (platform (clautolisp.autolisp-reader:autolisp-dialect-platform dialect))
+         (version (clautolisp.autolisp-reader:autolisp-dialect-version dialect))
+         (lispsys (%lispsys-value))
+         (autocad-literal-p (%autocad-encoding-literal-p value-string))
+         (vendor (case product
+                   (:autocad (format nil "AutoCAD~@[ ~D~]" version))
+                   (:bricscad (format nil "BricsCAD~@[ V~D~]" version)))))
+    (flet ((say (control &rest args)
+             (values (if (eq name :strict) :enc-extension-used :enc-foreign-dialect)
+                     (apply #'format nil control args))))
+      (ecase form
+        (:positional
+         (case product
+           (:autocad
+            (cond
+              ((and (integerp version) (< version 2021))
+               (say "OPEN: ~A has no third (encoding) argument (it arrived in ~
+AutoCAD 2021): (open f mode ~S) is \"too many arguments\" there; clautolisp ~
+accepts it." vendor value-string))
+              ((%open-autocad-rejects-encoding-p dialect)
+               (say "OPEN: ~A (LISPSYS ~A) rejects a third argument (too many ~
+arguments, measured on AutoCAD 2022); clautolisp accepts ~S." vendor
+                    (or lispsys 0) value-string))
+              (autocad-literal-p nil)
+              (t
+               (say "OPEN: ~A documents only \"utf8\" and \"utf8-bom\" as the ~
+third argument (LISPSYS 1/2); ~S is a clautolisp encoding name it does not ~
+document; clautolisp accepts it." vendor value-string))))
+           (:bricscad
+            (if autocad-literal-p
+                (say "OPEN: ~A accepts ~S as a third argument but it has no ~
+effect there (measured: V25 Windows, V26 macOS; no BOM, the file keeps the ~
+default encoding); clautolisp honours it." vendor value-string)
+                (say "OPEN: ~A rejects ~S as a third argument (bad argument ~
+type, measured); clautolisp accepts it." vendor value-string)))
+           (t
+            (when (eq name :strict)
+              (say "OPEN: the third (encoding) argument ~S is not portable: ~
+AutoCAD 2022 at LISPSYS 0 rejects it (too many arguments), BricsCAD accepts ~
+only \"utf8\" / \"utf8-bom\" and ignores them, any other name is a bad ~
+argument type there; clautolisp accepts it." value-string)))))
+        (:ccs-suffix
+         (case product
+           (:autocad
+            (say "OPEN: ~A ignores the \",ccs=~A\" mode suffix (measured on ~
+AutoCAD 2022: the file is written in its default encoding); clautolisp ~
+honours it." vendor value-string))
+           (:bricscad
+            (cond
+              ((not (eq platform :windows))
+               (say "OPEN: ~A on ~A ignores the \",ccs=~A\" mode suffix ~
+(measured on V26 macOS: always UTF-8); clautolisp honours it."
+                    vendor (case platform (:macos "macOS") (:linux "Linux") (t platform))
+                    value-string))
+              ((member (clautolisp.autolisp-runtime:squeeze-encoding-name value-string)
+                       '("UTF8" "UTF16LE") :test #'string=)
+               nil)
+              (t
+               (say "OPEN: ~A on Windows honours \",ccs=UTF-8\" and ~
+\",ccs=UTF-16LE\" (measured); \",ccs=~A\" is unmeasured there; clautolisp ~
+honours it." vendor value-string))))
+           (t
+            (when (eq name :strict)
+              (say "OPEN: the \",ccs=~A\" mode suffix is not portable: only ~
+BricsCAD on Windows honours it; AutoCAD and BricsCAD on macOS ignore it; ~
+clautolisp honours it." value-string)))))))))
+
 (defun %dispatch-open-encoding-diagnostic (form value-string)
-  "Emit the encoding-dispatch.issue diagnostic appropriate for an
-OPEN call using FORM, where FORM is one of:
-
-  :positional-autocad    third arg is \"utf8\" / \"utf8-bom\"
-  :positional-clautolisp third arg is the broader clautolisp set
-  :ccs-suffix            mode-string carries \",ccs=ENC\"
-
-Per-dialect dispatch matrix (encoding-dispatch.issue, section
-'Dialect matrix'):
-
-| Dialect    | positional-autocad | positional-clautolisp | ccs-suffix |
-|------------+---------------------+-----------------------+------------|
-| --autocad  | accept              | foreign-dialect       | foreign    |
-| --bricscad | foreign-dialect     | foreign-dialect       | accept     |
-| --clautolisp | foreign-dialect   | accept                | foreign    |
-| --strict   | extension-used      | extension-used        | extension  |
-"
-  (let* ((dialect (current-evaluation-dialect))
-         (name (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect)))
-    (flet ((foreign (sub-tag)
-             (clautolisp.autolisp-runtime:signal-encoding-diagnostic
-              :enc-foreign-dialect
-              "OPEN ~A (~S) is a ~A extension; foreign to --~(~A~)."
-              form value-string sub-tag
-              (case name
-                (:autocad-2026 "autocad")
-                (:bricscad-v26 "bricscad")
-                (:clautolisp   "clautolisp")
-                (t name))))
-           (extension (sub-tag)
-             (clautolisp.autolisp-runtime:signal-encoding-diagnostic
-              :enc-extension-used
-              "OPEN ~A (~S) is a ~A extension; --strict reports every encoding extension."
-              form value-string sub-tag)))
-      (case name
-        (:autocad-2026
-         (case form
-           (:positional-autocad    nil)
-           (:positional-clautolisp (foreign "clautolisp-positional"))
-           (:ccs-suffix            (foreign "bricscad-ccs"))))
-        (:bricscad-v26
-         (case form
-           (:positional-autocad    (foreign "autocad-positional"))
-           (:positional-clautolisp (foreign "clautolisp-positional"))
-           (:ccs-suffix            nil)))
-        (:clautolisp
-         (case form
-           (:positional-autocad    (foreign "autocad-positional"))
-           (:positional-clautolisp nil)
-           (:ccs-suffix            (foreign "bricscad-ccs"))))
-        (:strict
-         (case form
-           (:positional-autocad    (extension "autocad-positional"))
-           (:positional-clautolisp (extension "clautolisp-positional"))
-           (:ccs-suffix            (extension "bricscad-ccs"))))
-        (t nil)))))
+  "Emit the out-of-dialect diagnostic for an OPEN call using an encoding
+FORM -- :POSITIONAL (the third argument; :POSITIONAL-AUTOCAD and
+:POSITIONAL-CLAUTOLISP are accepted as synonyms) or :CCS-SUFFIX (the
+\",ccs=ENC\" mode suffix) -- when the call would not work the same on the
+dialect's vendor (%OPEN-ENCODING-DIVERGENCE, measured). pjb 2026-10-06:
+\"open third argument: lenient, but dialect warn when it's used in other
+dialects or strict.\" So clautolisp always honours the form; only this
+advisory varies: [enc-foreign-dialect] under the vendor dialects,
+[enc-extension-used] under strict, nothing under clautolisp and lax.
+Through SIGNAL-ENCODING-DIAGNOSTIC (per call, pragma-suppressible) and
+silenced by (setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (when (and dialect
+               (clautolisp.autolisp-runtime::%warn-out-of-dialect-p
+                (ignore-errors (current-evaluation-context))))
+      (multiple-value-bind (code message)
+          (%open-encoding-divergence
+           (if (eq form :ccs-suffix) :ccs-suffix :positional)
+           value-string dialect)
+        (when code
+          (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+           code "~A" message))))))
 
 (defun %open-mode-leaf-policy (raw-mode-string)
   "The %RESOLVE-PATH-CASE leaf policy for an OPEN mode string: :must-exist
@@ -2771,22 +2823,6 @@ it never creates under a folded name."
       (#\w :as-written)
       (#\a :prefer-existing)
       (t    :must-exist))))
-
-(defun %check-open-takes-an-encoding ()
-  "Refuse OPEN's third argument where AutoCAD's OPEN takes two: before 2021
-(the argument arrived with the Unicode engine), and under LISPSYS 0 on
-Windows -- AutoCAD 2022 at LISPSYS 0 answered (open f \"w\" \"utf8\") with
-\"too many arguments\" (probe-triage2, job 16923993438); BricsCAD V26
-accepts it."
-  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
-         (product (and dialect (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
-         (version (and dialect (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-version dialect)))))
-    (when (and (eq product :autocad)
-               (or (and (integerp version) (< version 2021))
-                   (eq (%character-code-mode) :byte)))
-      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
-       :wrong-number-of-arguments
-       "OPEN: too many arguments -- this AutoCAD's OPEN takes no encoding (before 2021, or LISPSYS 0)."))))
 
 (defun builtin-open (filename mode &optional encoding)
   ;; Documented to set ERRNO on failure (autolisp-spec §16 ERRNO
@@ -2814,8 +2850,10 @@ accepts it."
          ;; there, create it under the given name if it is not.
          (path (resolve-open-search-pathname
                 path-string "OPEN" (%open-mode-leaf-policy raw-mode-string)))
+         ;; The third argument is ALWAYS taken (pjb 2026-10-06: lenient);
+         ;; where the dialect's vendor refuses or ignores it,
+         ;; %DISPATCH-OPEN-ENCODING-DIAGNOSTIC below says so.
          (encoding-string (when encoding
-                            (%check-open-takes-an-encoding)
                             (autolisp-string-value
                              (require-string encoding "OPEN"))))
          (external-format nil))
@@ -2825,11 +2863,7 @@ accepts it."
       (when ccs-encoding-string
         (%dispatch-open-encoding-diagnostic :ccs-suffix ccs-encoding-string))
       (when encoding-string
-        (%dispatch-open-encoding-diagnostic
-         (if (%autocad-encoding-literal-p encoding-string)
-             :positional-autocad
-             :positional-clautolisp)
-         encoding-string))
+        (%dispatch-open-encoding-diagnostic :positional encoding-string))
       ;; ENC-UNSUPPORTED-TARGET — encoding is foreign to the host's
       ;; expressive range (e.g. UTF-16 under --autocad).
       (let ((effective-encoding-string
@@ -7006,11 +7040,7 @@ Recognised forms:
            (when ccs
              (%dispatch-open-encoding-diagnostic :ccs-suffix ccs))))
        (when encoding
-         (%dispatch-open-encoding-diagnostic
-          (if (%autocad-encoding-literal-p encoding)
-              :positional-autocad
-              :positional-clautolisp)
-          encoding))))
+         (%dispatch-open-encoding-diagnostic :positional encoding))))
     ;; (getvar "LISPSYS") / (setvar "LISPSYS" ...)
     ((or (%lint-form-name-p form "GETVAR")
          (%lint-form-name-p form "SETVAR"))

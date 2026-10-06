@@ -37,6 +37,17 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- OPEN's encoding forms warn out of dialect (2.2.214): ~(open f "w"
+  "utf8")~, ~(open f "w" "cp1252")~ and ~(open f "w,ccs=UTF-8")~ are
+  honoured under every dialect (an AutoCAD dialect at ~LISPSYS~ 0 or
+  before 2021 no longer refuses the third argument), and print an
+  ~[enc-foreign-dialect]~ warning (~[enc-extension-used]~ under ~strict~)
+  saying what the vendor does where it would not do the same -- as measured:
+  AutoCAD 2022 at ~LISPSYS~ 0 says "too many arguments", BricsCAD accepts
+  ~"utf8"~ / ~"utf8-bom"~ with no effect and rejects other names (bad
+  argument type), only BricsCAD on Windows honours ~,ccs=~. Silent under
+  ~clautolisp~ and ~lax~, and for the documented ~"utf8"~ / ~"utf8-bom"~
+  at AutoCAD ~LISPSYS~ 1 / 2; the table is in the user manual.
 - ActiveX enumeration constants (2.2.213): ~(vl-load-com)~ now binds the ActiveX
   enumeration constants (~acAlignmentMiddleLeft~ is 9, ~acByLayer~ 256,
   ~acLnWt025~ 25, ...) -- the full table MEASURED on AutoCAD 2022 and
