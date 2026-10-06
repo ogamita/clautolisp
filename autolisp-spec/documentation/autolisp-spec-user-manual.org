@@ -81,7 +81,12 @@ Then call:
     NAME<TAB>Operator<TAB>[ABC]
     NAME<TAB>Variable<TAB>[ABC]<TAB>VALUE
     NAME<TAB>Variable<TAB>[ABC]<TAB>NIL
+    NAME<TAB>Command
 
+  A CAD command the spec documents (chapter 28: every AutoCAD and
+  BricsCAD command, implemented in clautolisp or not) is listed as
+  =Command=; a name that is also a function or a system variable
+  (LOAD, OPEN, SNAP ...) gets its own line plus a =Command= line.
   The indicator's letters mean: A=spec'd by AutoCAD,
   B=spec'd by BricsCAD, C=implemented in this image (the
   running runtime).
@@ -92,7 +97,14 @@ Then call:
 - =(alref-documentation NAME)= — return the spec page text as a
   string (instead of printing). Returns ="not documented"= for
   image-only symbols and =nil= for names neither in the spec nor
-  in the image.
+  in the image. A name with several pages -- a function and a
+  command, like LOAD -- returns all of them, the function's first;
+  =alref-describe= prints them all. A command's page gives its
+  /Availability/ -- AutoCAD and BricsCAD, with their versions, or
+  "not documented" -- and its clautolisp status (implemented in the
+  cador host, a recognised no-op, or not yet implemented).
+  In Emacs (=alref.el=) the command of such a name completes as
+  =NAME <Command>=.
 - =(alref-help "string")= — search the body of every documented
   page for STRING and return the list of matching page
   basenames.

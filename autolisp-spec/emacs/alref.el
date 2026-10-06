@@ -138,11 +138,19 @@ Used by `alref-reload' to know what to re-read.")
           (when (string-match
                  "^\\([^\t]+\\)\t\\([^\t]+\\)\t\\([^\t]+\\)\\(?:\t\\(.*\\)\\)?$"
                  line)
-            (puthash (match-string 1 line)
-                     (list (match-string 2 line)
-                           (match-string 3 line)
-                           (or (match-string 4 line) ""))
-                     table)))
+            ;; A name documented twice (LOAD: a function and a command)
+            ;; keeps its first page -- the chapters' order puts the
+            ;; function first -- under the bare name, and the others
+            ;; under "NAME <Kind>", so completion offers both.
+            (let ((name (match-string 1 line))
+                  (entry (list (match-string 2 line)
+                               (match-string 3 line)
+                               (or (match-string 4 line) ""))))
+              (puthash (if (gethash name table)
+                           (format "%s <%s>" name (car entry))
+                         name)
+                       entry
+                       table))))
         (forward-line 1)))
     table))
 

@@ -37,6 +37,14 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- alref knows the CAD commands: ~(alref-apropos "CHSPACE")~ lists it as a
+  ~Command~ and ~(alref-documentation "CHSPACE")~ gives its page -- every
+  AutoCAD / BricsCAD command the spec documents (1621), each with its
+  Availability (vendor, versions) and its clautolisp status, now read from
+  cador itself (85 implemented, 24 recognised no-ops). A name that is a
+  function and a command (LOAD, OPEN) shows both; in Emacs the command
+  completes as ~NAME <Command>~. Rebuild / reinstall the spec pages
+  (~make -C autolisp-spec install~) to get them.
 - Encoding options that were parsed but did nothing now act:
   ~-E ENC~ reaches the source encoding (it used to leave it alone);
   ~-Eterminal~ re-encodes clautolisp's own REPL streams (alfe already did);
