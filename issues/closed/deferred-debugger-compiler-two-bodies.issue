@@ -40,3 +40,38 @@ Acceptance (when unblocked)
 - Production (ordinary) code pays zero instrumentation cost; entering a debug
   entry point keeps the whole call chain instrumented; same UI behaviour as
   the interpreter path.
+
+Closed (2026-10-06, clautolisp 2.2.206)
+---------------------------------------
+
+An audit against this scope found it delivered, in a different encoding:
+
+- Two bodies per function: DONE as slots on the usubr (compiled-body,
+  compiled-instrumented-body; compile-usubr / compile-instrumented-usubr),
+  not as named foo/ordinary + foo/debug behind a function-entries vector --
+  AutoLISP resolves a callee by symbol at every call (REPL redefinition), so
+  a call site cannot bind an entry point at compile time anyway.
+- Call-site dispatch and propagation down the call chain: SUPERSEDED by
+  design note DN-2 (clautolisp-debugger-design-notes.org): the body is
+  chosen per callee for the whole session; every function is instrumented on
+  first call under a session, so the whole chain is debuggable, including
+  through uninstrumented library code (test
+  instrumented-callee-debugged-through-uninstrumented-caller).
+- Same UI behaviour compiled or interpreted: DONE (compiler.issue slice 7;
+  make test-debug-compiled runs the debug corpus with every instrumented body
+  compiled -- 603 this run, 0 failures).
+- Ordinary code pays zero instrumentation: DONE (no poll points; one test
+  of *debugging* per call).
+- Interpreter as fallback: DONE.
+
+What this closure added:
+- the debugging body is compiled at (optimize (debug 3)) -- spec 5.2 stated
+  as a policy, and no tail call merged out of the debugger's backtrace
+  (instrumented-fork-lambda-form; test the-debug-fork-is-compiled-at-debug-3);
+- a .lap carries its source positions, registered on load only under
+  source tracking, so a .lap function is debuggable by line (test
+  an-artefact-keeps-the-source-positions-for-the-debugger);
+- the debugger spec: an "as built" note in section 5 and section 13
+  rewritten to the implemented design.
+
+Found and filed separately: debug-lambda-in-a-loop-reinstrumented.

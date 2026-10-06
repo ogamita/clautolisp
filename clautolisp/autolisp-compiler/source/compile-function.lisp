@@ -152,12 +152,27 @@ runtime handles failure by storing :FAILED, so this is free to signal."
   (let ((compiled
           (let ((*transpiler-fallbacks* nil))
             (with-muffled-host-compiler
-              (compile nil `(lambda (%context)
-                              (declare (ignorable %context))
-                              ,(transpile-body
-                                (autolisp-usubr-instrumented-body usubr)
-                                '%context)))))))
+              (compile nil (instrumented-fork-lambda-form usubr))))))
     (setf (autolisp-usubr-compiled-instrumented-body usubr) compiled)))
+
+(defun instrumented-fork-lambda-form (usubr)
+  "The host LAMBDA form of USUBR's compiled instrumented (debug) fork.
+
+Its OPTIMIZE declaration is the debug body's half of the two-bodies
+discipline (debugger spec 5.2): no optimisation may move, merge or drop work
+across a poll point, and every frame must stay on the stack. Most of that
+already follows from the shape -- each woven form is a closure handed to the
+opaque poll hook, so the host compiler cannot see across it, and AutoLISP
+variables live in dynamic frames, so there is nothing to propagate types
+through -- but DEBUG 3 makes it a stated policy rather than an accident of
+the code shape, and it is what stops the host from merging a call in tail
+position into its caller's frame (SBCL does at DEBUG < 3), which would drop
+a frame the debugger's backtrace must show. The ordinary fork gets no such
+declaration: it is the one that pays nothing for debugging."
+  `(lambda (%context)
+     (declare (ignorable %context)
+              (optimize (debug 3)))
+     ,(transpile-body (autolisp-usubr-instrumented-body usubr) '%context)))
 
 (defun autolisp-function-instrumented-compiled-p (usubr)
   "True when USUBR is running a COMPILED INSTRUMENTED body -- debuggable

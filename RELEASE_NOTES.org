@@ -37,6 +37,11 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- A function loaded from a compiled ~.lap~ is debuggable by line: the ~.lap~
+  carries its source positions, registered when it is loaded under a debugger
+  UI (an ordinary load records none). The compiled debugging body is now
+  compiled at ~(debug 3)~, so no frame is merged away from the debugger's
+  backtrace.
 - alref separates the namespaces: ~(alref-apropos "HELLO")~ tags every
   match ~Function~, ~Variable~, ~Sysvar~ or ~Command~ -- with
   ~(defun c:hello ...)~ and ~(defun hello ...)~ it lists ~C:HELLO~ as a

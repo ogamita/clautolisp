@@ -73,13 +73,58 @@ OBJECT — with symbols interned in THAT image's table."
     ;; rebuilt cons is registered in the loading image too, so a nested
     ;; DEFUN or SETQ the interpreter runs from a .lap documents its name
     ;; exactly as it does from the source.
-    (cons (let ((built `(cons ,(externalize-datum (car object))
-                              ,(externalize-datum (cdr object))))
-                (doc (gethash object *preceding-docs*)))
+    ;;
+    ;; Likewise its source positions -- the form's own and, when its car is
+    ;; an atom, that occurrence's -- so a function loaded from a .lap can be
+    ;; debugged by line like one loaded from its source (see
+    ;; CONS-WITH-SOURCE-POSITIONS).
+    (cons (let* ((built `(cons ,(externalize-datum (car object))
+                               ,(externalize-datum (cdr object))))
+                 (doc (gethash object *preceding-docs*))
+                 (position (position->list (clautolisp.source:position-of object)))
+                 (element (position->list
+                           (clautolisp.source:element-position-of object)))
+                 (built (if (or position element)
+                            `(cons-with-source-positions ,built ',position ',element)
+                            built)))
             (if doc
                 `(cons-with-preceding-doc ,built ,doc)
                 built)))
     (t `',object)))
+
+(defun position->list (position)
+  "A SOURCE-POSITION as a printable list (FILE START-LINE START-COLUMN
+END-LINE END-COLUMN), or nil."
+  (and position
+       (list (clautolisp.source:source-position-file position)
+             (clautolisp.source:source-position-start-line position)
+             (clautolisp.source:source-position-start-column position)
+             (clautolisp.source:source-position-end-line position)
+             (clautolisp.source:source-position-end-column position))))
+
+(defun list->position (list)
+  (and list
+       (destructuring-bind (file start-line start-column end-line end-column) list
+         (clautolisp.source:make-source-position
+          :file file :start-line start-line :start-column start-column
+          :end-line end-line :end-column end-column))))
+
+(defun cons-with-source-positions (cons position element)
+  "Record, in the loading image, the source POSITION of the form CONS and the
+ELEMENT position of its car (both lists from POSITION->LIST, or nil); return
+CONS.
+
+Only when positions are being tracked -- a load under a debugger UI -- which
+is the same rule the reader follows: an ordinary load of a .lap stays as
+allocation-free as an ordinary load of its source."
+  (when clautolisp.source:*track-source-positions*
+    (when position
+      (setf (gethash cons clautolisp.source:*source-position-table*)
+            (list->position position)))
+    (when element
+      (setf (gethash cons clautolisp.source:*source-element-position-table*)
+            (list->position element))))
+  cons)
 
 (defun cons-with-preceding-doc (cons doc)
   "Register DOC as the ;|...|; documentation of CONS; return CONS."
@@ -199,11 +244,24 @@ coalesce literals across the sources and resolve forward references
 between them without a warning at each one.
 
 Returns the artefact's truename, or NIL if the host compiler failed."
-  (let ((forms (loop for source in source-pathnames
-                     append (read-runtime-from-file source))))
+  (let ((forms nil)
+        (generated-text nil))
+    ;; Read with positions tracked, into tables of our own, and write the
+    ;; source while they are bound: the .lap carries the positions
+    ;; (EXTERNALIZE-DATUM), but compiling must not leave them in this
+    ;; image's tables, which only a debug load fills.
+    (let ((clautolisp.source:*track-source-positions* t)
+          (clautolisp.source:*source-position-table*
+            (make-hash-table :test 'eq))
+          (clautolisp.source:*source-element-position-table*
+            (make-hash-table :test 'eq)))
+      (setf forms (loop for source in source-pathnames
+                        append (read-runtime-from-file source)))
+      (setf generated-text (with-output-to-string (out)
+                             (write-lap-source forms out))))
     (uiop:with-temporary-file (:stream stream :pathname generated
                                :type "lisp" :keep nil)
-        (write-lap-source forms stream)
+        (write-string generated-text stream)
         :close-stream
       (multiple-value-bind (fasl warningsp failurep)
           ;; NO :OUTPUT-FILE. The host names its own output, and only

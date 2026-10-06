@@ -225,6 +225,16 @@ reached through /its/ debugging entry point. This is what makes the
 system /omnipresent/ in Strandh's sense --- the user never has to decide
 what to compile for debugging and what for production.
 
+*As built* (clautolisp 2.2.206, see §13): the two bodies exist, but the
+selection is not by call-site entry point and debugging-ness does not
+propagate from caller to callee. Design note DN-2
+(=clautolisp-debugger-design-notes.org=) replaced that rule: the body is
+chosen per callee, for the whole debug session -- under a session every
+function is instrumented on its first call and runs its debugging body,
+whoever called it, so an instrumented callee reached through
+uninstrumented library code is still debugged (the case the propagation
+rule loses). The rest of this section is the original design.
+
 *** 5.1 Concrete encoding in CL
 For an AutoLISP definition =(defun FOO (a b) ...)=, the clautolisp
 compiler emits:
@@ -803,23 +813,42 @@ broken-on must remain callable at full speed by every other thread,
 including the debugger thread itself [Strandh2020 §5.1].
 
 ** 13. Compiler implementation status and migration
-clautolisp is currently an interpreter. The full two-bodies discipline
-(§5) becomes available only when the compiler-to-CL is implemented.
-Until then:
+The compiler to CL exists (compiler.issue, from clautolisp 2.0.0), and the
+two-bodies discipline is built on it (deferred-debugger-compiler-two-bodies,
+closed in 2.2.206). How it differs from §5.1 in encoding, not in effect:
 
-- *v1 (interpreter only).* The single AST is shared between debug and
-  non-debug execution; the dispatch is the =*debug-mode*= dynamic flag
-  described in §11.3. Cost: every form evaluation in a debugged thread
-  pays for the flag check, even when nothing is being debugged at that
-  point. This is acceptable --- debugged code is the slow path by
-  definition.
-- *v2 (compiler to CL).* Two CL functions per AutoLISP function as in
-  §5.1. Dispatch is at the call site, via the entries vector. The
-  interpreter remains available as a fallback for code compiled at lower
-  optimization levels or for use during macroexpansion debugging.
+- *Slots, not named functions.* An AutoLISP function is one runtime object
+  (the usubr) holding its bodies side by side: the plain AST, the
+  instrumented AST (§5.3, with its §7 metadata), the compiled ordinary
+  body, the compiled debugging body, and at =(speed 3) (debug 0)= a
+  lexical body. The compiled bodies are anonymous host closures. There is
+  no =function-entries= vector: AutoLISP resolves a callee by symbol at
+  every call (a function may be redefined at the REPL), so a call site
+  cannot be bound to an entry point at compile time anyway.
+- *Selection at the callee, for the session.* Every call goes through one
+  entry (=call-autolisp-function-in-context=), which runs the debugging
+  body while a debug session is active (=*debugging*=) and the ordinary
+  body otherwise, compiled when the function is hot, interpreted until
+  then. DN-2 (§5) is why this is per callee rather than per call site.
+- *The ordinary body pays nothing for debugging*: it has no poll points;
+  the only cost is the one test of =*debugging*= per call.
+- *The debugging body* is compiled from the instrumented AST by the same
+  transpiler, each poll node becoming a call to the debugger's own poll
+  protocol, so compiled and interpreted debugging behave identically (the
+  whole debug corpus runs compiled: =make test-debug-compiled=). It is
+  compiled at =(optimize (debug 3))= -- the §5.2 policy stated, and what
+  stops the host merging a tail call into its caller's frame; each woven
+  form is a closure handed to the opaque poll hook, so the host cannot
+  move or merge work across a poll point.
+- *Metadata* (§7) is built by the debugger's instrumenter when it weaves a
+  function, not by the compiler; a compiled =.lap= keeps the plain body,
+  its source positions and its documentation, from which the instrumenter
+  weaves the debugging body when a session needs it.
+- *The interpreter stays*, as the fallback for any body not (yet)
+  compiled, and for a function whose compilation failed.
 
-The debug protocol (Part III) is identical in both versions. UI code
-(Part V) is unaware of which version is in use.
+The debug protocol (Part III) is identical in every case. UI code (Part V)
+is unaware of which body runs.
 
 * Part IV --- The inspector
 The inspector is a separate library from the debugger. The debugger uses

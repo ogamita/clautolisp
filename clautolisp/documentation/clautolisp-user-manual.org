@@ -3105,7 +3105,10 @@ T
 
 Functions arriving from a ~.lap~ come already compiled — they never pay
 the hotness threshold again — and they keep their source body, so they
-stay debuggable. They keep their documentation too: the ~;| ... |;~ block
+stay debuggable -- by line too: the ~.lap~ carries the source positions,
+so under a debugger UI a breakpoint on a line of the source stops in the
+function loaded from the ~.lap~ (an ordinary load records none, as for a
+source file). They keep their documentation too: the ~;| ... |;~ block
 before a ~defun~ or a ~setq~ is written into the ~.lap~ and installed
 when it is loaded, so ~clautolisp-documentation~ (and alref's
 ~alref-documentation~ / ~alref-describe~) answer the same from the
