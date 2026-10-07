@@ -22,6 +22,7 @@
    #:diagnostic-message
    #:source-decoding-error
    #:source-decoding-error-pathname
+   #:source-is-a-directory
    #:diagnostic-span
    #:token
    #:token-kind

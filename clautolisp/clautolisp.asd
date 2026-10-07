@@ -592,7 +592,10 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :description "Tests for the clautolisp cador data carriers."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/cador" "fiveam")
+  ;; autolisp-builtins-core: registry-native-tests checks the builtins'
+  ;; conversion of native registry values
+  ;; (cador-tests-reference-builtins-core-without-depending-on-it.issue).
+  :depends-on ("clautolisp/cador" "clautolisp/autolisp-builtins-core" "fiveam")
   :serial t
   :components
   ((:file "cador/tests/package")

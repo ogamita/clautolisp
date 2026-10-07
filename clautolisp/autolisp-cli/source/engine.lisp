@@ -174,6 +174,8 @@ there, or it is there but cannot be read."
                    "a file")))
     (format nil "cannot open ~A: ~A" name
             (cond ((null pathname) "file error")
+                  ((ignore-errors (uiop:directory-exists-p pathname))
+                   "is a directory")
                   ;; A failed accessibility check is not evidence of absence.
                   ;; Catch the standard superclass: SBCL and CCL may signal
                   ;; different FILE-ERROR subclasses for inaccessible paths.

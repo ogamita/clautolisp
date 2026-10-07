@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-tests-reference-builtins-core-without-depending-on-it -- clautolisp/cador/tests does not compile unless the builtins were loaded first
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: infra
 #+DEPENDS: -
@@ -45,3 +45,15 @@ its =:depends-on=, or that check belongs in the builtins-core suite.
 
 - =(asdf:test-system "clautolisp/cador")= in a fresh image compiles and
   runs the cador suite.
+
+* Resolution (2026-10-07, clautolisp 2.2.228)
+
+=clautolisp/cador/tests= now depends on ="clautolisp/autolisp-builtins-core"=
+(the test checks the builtins' conversion of native registry values, so it
+needs them; there is no cycle: builtins-core does not depend on cador).
+Reproduced before the fix in a fresh SBCL (=(asdf:load-system
+"clautolisp/cador/tests")= -> COMPILE-FILE-ERROR, "Package
+CLAUTOLISP.AUTOLISP-BUILTINS-CORE does not exist"); after it,
+=(asdf:test-system "clautolisp/cador")= in a fresh image runs the cador suite:
+1574 checks, Fail 0.
+
