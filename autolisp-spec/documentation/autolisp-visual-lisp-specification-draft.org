@@ -7217,6 +7217,9 @@ clautolisp resolves the absent third argument of ~open~ — and the absent ~:ext
 | AutoCAD before 2021        | ~:cp1252~ (ANSI)                            | ~:cp1252~             |
 | ~:bricscad-v26~            | ~:utf-8~                                    | ~:utf-8~              |
 
+(Implementation deviation for the AutoCAD 2021+ row: see /Implementation
+deviation: OPEN's default under the AutoCAD dialects/ below.)
+
 The strict choice is *deliberately permissive at the byte level*: a 1-1 byte coding never raises a decoding error on any input, and existing AutoLISP corpora produced under the legacy ANSI/MBCS engine remain loadable. Source code that needs Unicode characters in literals can either (a) use the explicit ~--dialect autocad-2026~ / ~--bricscad-v26~ flag, or (b) pass ~:external-format :utf-8~ on the call site.
 
 *** Vendor Evidence
@@ -7248,6 +7251,28 @@ code page (windows-1252); 1 or 2, UTF-8. A ~(setvar "LISPSYS" n)~ is saved
 and governs the NEXT session, not the current one. Before 2021 the default
 is the ANSI code page.
 
+*** Implementation deviation: OPEN's default under the AutoCAD dialects
+The Rule above and the Per-Dialect Defaults table are kept as written (pjb,
+2026-10-07: the normative text stays as in the reference documents). What
+AutoCAD 2022 does, measured (experiment E1, job 16980926802, probe
+lispsys-bom-probe.lsp), and what clautolisp implements since 2.2.222, differ
+from them for ~open~ at ~LISPSYS~ 1 / 2:
+
+| ~open~ call, ~LISPSYS~ 1 / 2         | Rule / table                 | AutoCAD 2022, measured = clautolisp 2.2.222   |
+|--------------------------------------+------------------------------+-----------------------------------------------|
+| ~(open f "w")~, no encoding          | UTF-8 ("same as source")     | windows-1252 (MBCS): 3 bytes for "A" e-acute "B" |
+| ~(open f "w" "utf8-bom")~            | UTF-8 with byte-order mark   | BOM + UTF-8 (7 bytes) -- agrees               |
+| ~(open f "r")~, no encoding          | UTF-8                        | reads a windows-1252, a UTF-8 and a BOM+UTF-8 file alike (BOM skipped, cp1252 fallback) |
+| ~(open f "r" "utf8")~                | UTF-8                        | strict: returns U+FEFF of a BOM, stops at the first invalid byte |
+
+So the write default does NOT follow ~LISPSYS~ -- it stays the MBCS code page
+Autodesk's ~open~ page describes for an absent encoding -- while the read
+default does, leniently. At ~LISPSYS~ 0 AutoCAD rejects any third argument
+("too many arguments"); clautolisp accepts it with the dialect warning (pjb,
+2026-10-06). Details, and the points the measurement left open, in the
+~*** clautolisp~ section of Function Entry: OPEN and in
+issues/closed/autocad-open-encoding-lispsys-divergence.issue.
+
 *** clautolisp: LISPSYS, persisted and read at launch
 clautolisp keeps ~LISPSYS~ where the vendor does -- in the host's
 persistent registry store (the Windows registry, the macOS defaults
@@ -7257,7 +7282,10 @@ under =HKEY_CURRENT_USER\Software\clautolisp\Variables\<product>=, value
 a BricsCAD one). ~(setvar "LISPSYS" n)~ writes it; every launch reads it
 back (default 1 for AutoCAD, BricsCAD's measured 0 for BricsCAD) and, under
 the AutoCAD 2021+ dialects, derives the default source and file encoding
-from it, ahead of the POSIX locale (AutoCAD does not consult the locale).
+from it, ahead of the POSIX locale (AutoCAD does not consult the locale) --
+for ~load~ and ~open~'s reads: ~open~'s default WRITE stays windows-1252 at
+every level, as measured on AutoCAD 2022 (clautolisp 2.2.222; see the
+~*** clautolisp~ section of Function Entry: OPEN).
 An explicit ~-Esource~ / ~-e~ still wins: the user asked for that encoding.
 The ~:strict~, ~:clautolisp~, ~:lax~ and BricsCAD dialects keep their
 encoding defaults; BricsCAD's own ~LISPSYS~ (V23.1: "allows to use UTF-8
@@ -7616,16 +7644,38 @@ e-acute "B":
 | ~(open f "w,ccs=UTF-8")~  | accepted, ignored        | accepted, ignored                | honoured (BOM)          |
 | ~(open f "w,ccs=UTF-16LE")~ | accepted, ignored      | accepted, ignored                | honoured (BOM)          |
 
-The documented ~"utf8"~ / ~"utf8-bom"~ at AutoCAD LISPSYS 1 / 2 are not
-measured yet (the runner's AutoCAD is at LISPSYS 0).
+The documented ~"utf8"~ / ~"utf8-bom"~ at AutoCAD LISPSYS 1 / 2 were
+measured by encoding experiment E1, 2026-10-06 (AutoCAD 2022 accoreconsole,
+LISPSYS set in every profile and the engine restarted per level, job
+16980926802, MR !438, probe
+=autolisp-front-end/tests/scenarios/entities/lispsys-bom-probe.lsp=),
+writing "A" e-acute "B" with ~write-char~ and reading it back with
+~read-char~:
+
+| LISPSYS | ~(open f "w")~  | ~(open f "w" "utf8")~     | ~(open f "w" "utf8-bom")~ |
+|---------+-----------------+---------------------------+---------------------------|
+| 0       | 3 bytes, cp1252 | error: too many arguments | error: too many arguments |
+| 1, 2    | 3 bytes, cp1252 | 4 bytes, UTF-8, no BOM    | 7 bytes, BOM + UTF-8      |
+
+| LISPSYS | ~(open f "r")~                          | ~(open f "r" "utf8")~                            |
+|---------+-----------------------------------------+--------------------------------------------------|
+| 0       | cp1252 file: (65 233 66)                | error: too many arguments                        |
+| 1, 2    | cp1252, UTF-8 and BOM + UTF-8 files all | UTF-8: (65 233 66); BOM + UTF-8: (65279 65 233   |
+|         | read (65 233 66)                        | 66), the BOM is a character; cp1252: (65), the   |
+|         |                                         | data ends at the byte that is not UTF-8          |
+
+So LISPSYS changes the default READ (and LOAD), not the default WRITE: with
+no encoding argument AutoCAD 2022 writes cp1252 at every level, as
+Autodesk's page says ("the file is assumed to contain ... (MBCS)").
 
 *** clautolisp
 Non-normative (pjb, 2026-10-06: "open third argument: lenient, but dialect
 warn when it's used in other dialects or strict"). clautolisp's ~open~
 always honours its third argument (~"utf8"~, ~"utf8-bom"~ and the broader
 clautolisp encoding names: ~"UTF-8"~, ~"cp1252"~, ~"ISO-8859-1"~, ...) and
-the ~",ccs=ENC"~ mode suffix, under every dialect; the file it writes does
-not depend on the dialect. Where the dialect's vendor would not do the same,
+the ~",ccs=ENC"~ mode suffix, under every dialect; apart from the AutoCAD
+rules below, the file it writes does not depend on the dialect. Where the
+dialect's vendor would not do the same,
 it emits an out-of-dialect warning (~[enc-foreign-dialect]~; under
 ~strict~ ~[enc-extension-used]~) naming what the vendor does, as measured
 above:
@@ -7645,6 +7695,42 @@ above:
 The warning is printed at each call, through the encoding-diagnostic channel
 (pragma-suppressible; ~(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)~ silences
 it); ~clal-lint-encoding-extensions~ reports the same forms statically.
+
+*AutoCAD dialects: the encoding AutoCAD uses* (clautolisp 2.2.222,
+=autocad-open-encoding-lispsys-divergence=; clautolisp implementation
+deviation -- not part of the normative specification above). Under every
+AutoCAD dialect (any version, any platform) clautolisp reproduces the E1
+measurement above:
+
+- ~(open f "w")~ / ~(open f "a")~ with no encoding argument and no
+  ~,ccs=~ suffix write windows-1252 at every LISPSYS level -- LISPSYS (read
+  at launch into ~*AUTOLISP-FILE-ENCODING*~) governs ~load~ and the default
+  read only. Two clautolisp knobs still override it: the ~file~ situation
+  (~-Efile-write~, ~*AUTOLISP-FILE-WRITE-ENCODING*~) and an explicit
+  ~-Esource~ / ~-e~ (then the write follows ~*AUTOLISP-FILE-ENCODING*~ as
+  in the other dialects). A runtime ~(setq *AUTOLISP-FILE-ENCODING* ...)~
+  does not change the default write under these dialects; set
+  ~*AUTOLISP-FILE-WRITE-ENCODING*~ for that.
+- ~(open f "w" "utf8-bom")~ writes the BOM (EF BB BF) before the UTF-8
+  text; ~"utf8"~ writes UTF-8 without one. Only mode ~"w"~ writes the BOM:
+  ~"a"~ was not measured and appends no BOM.
+- ~(open f "r")~ with no encoding argument, when the default read encoding
+  is UTF-8 (LISPSYS 1 / 2): a UTF-8 BOM is skipped, a well-formed UTF-8
+  file is decoded as UTF-8, any other file as windows-1252 -- the rule
+  AutoCAD's ~load~ follows too. At LISPSYS 0 (windows-1252) the read is
+  plain windows-1252 (only a cp1252 file was measured there; no BOM skip).
+- ~(open f "r" "utf8")~ is strict: a BOM is returned as the character
+  U+FEFF (65279), and the data ends -- ~read-char~ / ~read-line~ return
+  ~nil~ -- at the first byte that does not continue well-formed UTF-8.
+  ~"utf8-bom"~ for reading was not measured and decodes as before (UTF-8,
+  the BOM returned as a character, no truncation).
+
+At LISPSYS 0 AutoCAD refuses the third argument altogether; clautolisp still
+honours it as at LISPSYS 1 / 2 (and warns, as above). The BricsCAD,
+~strict~, ~clautolisp~ and ~lax~ dialects keep their behaviour: no BOM for
+~"utf8-bom"~ (BricsCAD was measured to write none), the default read and
+write follow ~*AUTOLISP-FILE-ENCODING*~ / the dialect default, and
+~"utf8"~ decodes with the host's UTF-8 decoder.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).

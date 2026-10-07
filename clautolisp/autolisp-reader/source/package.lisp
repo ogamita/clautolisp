@@ -177,4 +177,8 @@
    #:external-format-newline
    #:host-external-format-supported-p
    #:single-octet-tables
-   #:unencodable-character-error))
+   #:unencodable-character-error
+   ;; OPEN under the AutoCAD dialects (autocad-open-encoding-lispsys).
+   #:utf-8-valid-prefix-length
+   #:autocad-open-read-encoding
+   #:autocad-strict-utf-8-text))

@@ -942,9 +942,13 @@ operator under its ~*** clautolisp~ note.
   (measured) are silent; another ~ccs~ name warns as unmeasured. The
   warning is printed at each call (the ~clal-lint-encoding-extensions~
   lint reports the same); ~(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)~
-  silences it. ~"utf8"~ / ~"utf8-bom"~ at AutoCAD ~LISPSYS~ 1 / 2 are
-  documented by Autodesk but not yet measured. The file clautolisp writes
-  is the same under every dialect.
+  silences it. The file clautolisp writes is the same under every dialect,
+  except that the AutoCAD dialects do what AutoCAD 2022 was measured to do
+  (E1, 2026-10-06; clautolisp 2.2.222): ~(open f "w" "utf8-bom")~ writes a
+  byte-order mark, ~(open f "r" "utf8")~ returns a BOM as the character
+  65279 and stops at the first byte that is not UTF-8, and the default
+  (no encoding argument) read and write follow AutoCAD -- see /Under the
+  AutoCAD dialects, LISPSYS decides/.
 - ~vl-file-systime~ — the day-of-week element (third position) is
   ~0~ for Sunday under ~strict~, ~clautolisp~, ~lax~ and the
   ~autocad-*~ dialects, and ~7~ under ~bricscad-v25~ /
@@ -1709,17 +1713,41 @@ no probing:
 
 *** Under the AutoCAD dialects, LISPSYS decides
 As on AutoCAD 2021 and later, the default encoding of the source files
-~load~ reads -- and of the files ~open~ opens without an encoding argument
--- is the one ~LISPSYS~ selects: ~1~ or ~2~ (a new installation's value),
-UTF-8; ~0~, the ANSI code page windows-1252, for code bases written in it.
-Before 2021 (~--dialect autocad-2020~ and earlier) there is no ~LISPSYS~
-and the default is windows-1252.
+~load~ reads -- and of the files ~open~ opens for *reading* without an
+encoding argument -- is the one ~LISPSYS~ selects: ~1~ or ~2~ (a new
+installation's value), UTF-8; ~0~, the ANSI code page windows-1252, for
+code bases written in it. Before 2021 (~--dialect autocad-2020~ and
+earlier) there is no ~LISPSYS~ and the default is windows-1252.
 
 Two details are AutoCAD's, measured on AutoCAD 2022: at UTF-8 a source file
 that is *not* valid UTF-8 -- an old windows-1252 file -- is read as
 windows-1252 instead of failing, and at windows-1252 a UTF-8 byte-order mark
 is skipped (the rest is still read as windows-1252). Both hold for ~load~
 without an encoding argument; ~(load "x" nil "utf-8")~ means exactly UTF-8.
+
+~open~ follows AutoCAD 2022 too (measured, E1, 2026-10-06; clautolisp
+2.2.222):
+
+| at ~LISPSYS~ 1 / 2         | clautolisp under the AutoCAD dialects                                 |
+|----------------------------+-----------------------------------------------------------------------|
+| ~(open f "w")~             | writes windows-1252 -- at *every* ~LISPSYS~ level, 0 included         |
+| ~(open f "w" "utf8")~      | writes UTF-8, no byte-order mark                                      |
+| ~(open f "w" "utf8-bom")~  | writes a byte-order mark (EF BB BF), then UTF-8                       |
+| ~(open f "r")~             | BOM skipped; UTF-8 if the file is valid UTF-8, else windows-1252      |
+| ~(open f "r" "utf8")~      | strict: a BOM reads as the character 65279, and the data ends at the |
+|                            | first byte that is not UTF-8 (~read-char~ / ~read-line~ return ~nil~) |
+
+So ~LISPSYS~ changes what ~open~ *reads* by default, never what it
+*writes*: AutoCAD writes windows-1252 unless the program asks for ~"utf8"~
+or ~"utf8-bom"~. Under these dialects only ~-Efile-write~ (or ~(setq
+*AUTOLISP-FILE-WRITE-ENCODING* "UTF-8")~) or an explicit ~-Esource~
+change the default write; ~(setq *AUTOLISP-FILE-ENCODING* ...)~ does not.
+At ~LISPSYS~ 0 the default read is plain windows-1252, and AutoCAD rejects
+the encoding argument ("too many arguments"); clautolisp still honours it
+as at 1 / 2, with a warning. ~"utf8-bom"~ writes its mark only with mode
+~"w"~ (an append was not measured). The other dialects (BricsCAD,
+~strict~, ~clautolisp~, ~lax~) are unchanged: no mark for ~"utf8-bom"~,
+and the default read and write follow ~*AUTOLISP-FILE-ENCODING*~.
 
 And as on AutoCAD, ~LISPSYS~ is *persisted*: ~(setvar "LISPSYS" 0)~ saves
 it in the registry -- the Windows registry, the macOS defaults database, or

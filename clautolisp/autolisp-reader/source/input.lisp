@@ -77,6 +77,71 @@ not valid UTF-8 read as windows-1252 instead (a fallback, not an error)."
          (babel-encodings:character-decoding-error ()
            (babel:octets-to-string body :encoding :cp1252 :errorp nil)))))))
 
+;;; --- OPEN under the AutoCAD dialects (autocad-open-encoding-lispsys) ------
+;;; Measured on AutoCAD 2022 (E1, job 16980926802): at LISPSYS 1 / 2 a
+;;; default (open f "r") reads a windows-1252, a UTF-8 and a UTF-8+BOM file
+;;; alike (the BOM is not returned); (open f "r" "utf8") returns the BOM as
+;;; U+FEFF and stops -- end of data -- at the first byte that is not UTF-8.
+
+(defun utf-8-valid-prefix-length (octets)
+  "The length of the longest prefix of OCTETS that is well-formed UTF-8
+(RFC 3629: no overlong forms, no surrogates, nothing above U+10FFFF). A
+sequence cut short by the end of OCTETS is not part of the prefix."
+  (let ((length (length octets))
+        (i 0))
+    (flet ((continuation-p (k &optional (low #x80) (high #xBF))
+             (and (< k length) (<= low (aref octets k) high))))
+      (loop
+        (when (>= i length) (return i))
+        (let ((b (aref octets i)))
+          (cond
+            ((< b #x80) (incf i))
+            ((<= #xC2 b #xDF)
+             (if (continuation-p (+ i 1)) (incf i 2) (return i)))
+            ((<= #xE0 b #xEF)
+             (if (and (continuation-p (+ i 1)
+                                      (if (= b #xE0) #xA0 #x80)
+                                      (if (= b #xED) #x9F #xBF))
+                      (continuation-p (+ i 2)))
+                 (incf i 3)
+                 (return i)))
+            ((<= #xF0 b #xF4)
+             (if (and (continuation-p (+ i 1)
+                                      (if (= b #xF0) #x90 #x80)
+                                      (if (= b #xF4) #x8F #xBF))
+                      (continuation-p (+ i 2))
+                      (continuation-p (+ i 3)))
+                 (incf i 4)
+                 (return i)))
+            (t (return i))))))))
+
+(defun autocad-open-read-encoding (path)
+  "How AutoCAD 2022 at LISPSYS 1 / 2 decodes PATH for a default (open f
+\"r\"): (values EXTERNAL-FORMAT SKIP-BOM-P). A UTF-8 BOM -> :UTF-8, the BOM
+skipped; well-formed UTF-8 -> :UTF-8; anything else -> :CP1252 (the same
+rule as its LOAD, DECODE-AUTOCAD-SOURCE-OCTETS :UNICODE). An unreadable
+PATH -> :UTF-8 (the open that follows reports the failure)."
+  (let ((octets (ignore-errors (%read-file-octets path))))
+    (cond
+      ((null octets) (values :utf-8 nil))
+      ((and (>= (length octets) 3)
+            (= (aref octets 0) #xEF) (= (aref octets 1) #xBB) (= (aref octets 2) #xBF))
+       (values :utf-8 t))
+      ((= (utf-8-valid-prefix-length octets) (length octets))
+       (values :utf-8 nil))
+      (t (values :cp1252 nil)))))
+
+(defun autocad-strict-utf-8-text (path)
+  "For AutoCAD's (open f \"r\" \"utf8\"): NIL when PATH is well-formed
+UTF-8 (or unreadable) -- a plain :UTF-8 stream then does what AutoCAD does,
+U+FEFF included -- else the text of its well-formed prefix, where AutoCAD's
+reading stops."
+  (let ((octets (ignore-errors (%read-file-octets path))))
+    (when octets
+      (let ((end (utf-8-valid-prefix-length octets)))
+        (when (< end (length octets))
+          (babel:octets-to-string octets :end end :encoding :utf-8))))))
+
 (defun decode-and-normalize-file (path &key external-format source-policy)
   (when source-policy
     (return-from decode-and-normalize-file

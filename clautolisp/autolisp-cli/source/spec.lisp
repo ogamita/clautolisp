@@ -122,7 +122,7 @@ bare -E/--encoding that sets them all.")
      ("terminal" "settable"        "-Eterminal — alfe's own stream"))
     (:autocad
      ("source"   "LISPSYS"         "LISPSYS 0=cp1252, 1/2=UTF-8 (restart); -Esource forwarded at 1/2")
-     ("file"     "LISPSYS / MBCS"  "cp1252 at LISPSYS 0, OPEN takes no encoding; -Efile[-read|-write] warned, not forwarded")
+     ("file"     "LISPSYS / MBCS"  "writes cp1252 at every LISPSYS; reads cp1252 at 0, UTF-8 else cp1252 at 1/2; OPEN takes no encoding at 0; -Efile[-read|-write] warned, not forwarded")
      ("console"  "product-fixed"   "accoreconsole UTF-16LE; -Econsole warned and ignored")
      ("cadstdio" "-Ecadstdio"      "drain: the CAD's file bytes (cp1252, E3), auto-detected; -Ecadstdio forces")
      ("log"      "product-fixed"   "LOGFILEMODE: windows-1252 (measured, AutoCAD 2022)")
