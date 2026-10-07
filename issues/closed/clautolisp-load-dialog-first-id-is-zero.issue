@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: clautolisp-load-dialog-first-id-is-zero -- (load_dialog f) returns 0 for the first dialog file
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: fix-load-dialog-first-id
 #+DATE: 2026-10-06
 
 * Symptom
@@ -42,3 +42,26 @@ host semantics" today.
 Found while writing the DCL rows of the alfe parity table
 (alfe-clautolisp-backend-semantic-parity.issue): the rows test
 =(numberp id)= instead of =(> id 0)= because of this.
+
+* Resolution (2026-10-07, clautolisp 2.2.223)
+
+=*next-dcl-id*= starts at 1 (autolisp-dcl/source/runtime.lisp), so the first
+=load_dialog= of a fresh process returns 1; failures still return -1. The
+counter is shared with =new_dialog= instance ids; nothing relied on 0 (the
+literal 0s in the DCL tests are wire-message fields and list indices, and the
+cadtui bridge and the subprocess renderer pass handles through unchanged).
+
+Tests: the alfe parity table's two DCL rows now print =(> id 0)= instead of
+=(numberp id)= -- they run fresh clautolisp processes in both variants, so
+they fail with the old counter; a runtime unit test checks successive handles
+are positive and increasing.
+
+Spec (pjb, 2026-10-07: keep the normative text as in the reference documents,
+deviations in their own section): LOAD_DIALOG's Return Values now quote both
+vendor references -- AutoCAD "a positive integer value (dcl_id) if
+successful, or a negative integer if load_dialog cannot open the file";
+BricsCAD (DCL usage page) "return value 1 / If the return value is 0 or
+less, then the file could not be loaded" -- and note the difference (BricsCAD
+reads 0 as failure; AutoCAD only says negative). The =*** clautolisp
+(implementation deviation)= section records the pre-2.2.223 0 handle.
+

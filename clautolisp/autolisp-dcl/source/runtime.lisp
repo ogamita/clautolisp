@@ -109,7 +109,11 @@ state machine.")
 
 ;;; --- Source / dialog tables ------------------------------------
 
-(defparameter *next-dcl-id* 0)
+(defparameter *next-dcl-id* 1
+  "The next DCL handle. Starts at 1: Autodesk documents load_dialog as
+returning \"a positive integer value (dcl_id) if successful, or a negative
+integer\" on failure, so 0 must never be a handle
+(clautolisp-load-dialog-first-id-is-zero.issue).")
 (defparameter *loaded-sources* (make-hash-table :test #'eql))
 (defparameter *active-dialogs* (make-hash-table :test #'eql))
 
