@@ -114,8 +114,10 @@ Write-Host ("LogonUI present    : {0}  ({1})" -f $logonUi.Count,
 $comReady = ($wts.ConnectState -eq 'Active' -and -not $locked)
 $verdict  =
     if ($comReady)                          { 'DESKTOP-LIVE (COM/GUI CAD should work)' }
-    elseif ($locked)                        { 'LOCKED (COM/GUI CAD expected to FAIL; headless batch ok)' }
-    elseif ($wts.ConnectState -eq 'Disconnected') { 'DISCONNECTED (COM/GUI CAD expected to FAIL; headless batch ok)' }
+    # Disconnected first: a switched-user / detached-RDP session is usually ALSO
+    # at the login screen (LogonUI up), and it is the state that matters.
+    elseif ($wts.ConnectState -eq 'Disconnected') { 'DISCONNECTED (COM/GUI CAD expected to FAIL; headless batch ok -- not yet measured)' }
+    elseif ($locked)                        { 'LOCKED (console session still Active: COM/GUI CAD measured OK, job 16984618487)' }
     else                                    { ('connect-state=' + $wts.ConnectState + ' (COM/GUI CAD uncertain)') }
 
 # The one-line summary a job's log can be grepped for.

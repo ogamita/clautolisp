@@ -127,3 +127,34 @@ autocad 9 / 34 / 23 s). This is the control row; the disconnected / locked
 row is still to run (two attempts on 2026-10-05 were cancelled by master
 pipelines, then the runner slept). Play the job again with the session
 locked.
+
+* Locked run, screen LOCKED with Win-L (2026-10-07, job 16984618487)
+
+pjb locked PF5S26B (Win-L) with the runner still running in the GUI
+session, then the job was played. The detector saw it: "SESSION-STATE:
+transport=console connect=Active locked=yes on-console=yes => LOCKED"
+(LogonUI present). All nine cells OK, marker printed, exit 0:
+
+| engine     | batch | automation (COM) | epure |
+|------------+-------+------------------+-------|
+| clautolisp | 1 s   | 0 s              | 0 s   |
+| bricscad   | 16 s  | 1 s              | 23 s  |
+| autocad    | 14 s  | 31 s             | 25 s  |
+
+So the hypothesis is REFUTED for the lock screen: a locked console session
+keeps its window station and desktop (WTS state stays Active), and COM
+automation of AutoCAD and BricsCAD works in it. The detector's LOCKED verdict
+said "COM/GUI CAD expected to FAIL"; it now says what was measured, and it
+tests Disconnected BEFORE locked (a switched-user session is usually both,
+and Disconnected is the state that matters).
+
+What remains unmeasured is the state pjb first described: "back to the login
+window / CHANGE USER". Switching user (or detaching an RDP client) leaves the
+runner's session Disconnected, which is a different thing from locked. To
+measure it: from the runner's session, disconnect it (Win-L then "Switch
+user", or run tsdiscon in a terminal of that session), then play
+probe:cad-session-state:windows. If that row is also all OK, the 2026-09-28
+benchmark:autocad:windows death needs another explanation -- note that that
+job runs --mode batch (accoreconsole), which this ticket's own analysis
+already flagged.
+
