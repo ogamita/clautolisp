@@ -25,6 +25,24 @@ it; loading a non-existent file returns nil."
       (ignore-errors (delete-file path))))
   (is (null (dcl-runtime-load-dialog "/no/such/file.dcl"))))
 
+(test runtime-load-dialog-handles-are-positive-from-the-first
+  "Autodesk: load_dialog returns \"a positive integer value (dcl_id) if
+successful\". The handle counter starts at 1, so even the first file of a
+fresh process passes (> dcl_id 0) (clautolisp-load-dialog-first-id-is-zero).
+The counter is rebound to its initial value here because other tests (and
+FiveAM's second run) advance the global one; the fresh-process check is the
+alfe parity table's DCL rows, which test (> id 0)."
+  (let ((path (write-temp-dcl "g" "")))
+    (unwind-protect
+         (let ((clautolisp.autolisp-dcl::*next-dcl-id* 1))
+           (let ((first (dcl-runtime-load-dialog path))
+                 (second (dcl-runtime-load-dialog path)))
+             (is (eql 1 first))
+             (is (< 0 first second))
+             (dcl-runtime-unload-dialog first)
+             (dcl-runtime-unload-dialog second)))
+      (ignore-errors (delete-file path)))))
+
 (test runtime-new-dialog-creates-instance
   "new_dialog returns an integer dialog handle whose tile tree
 mirrors the loaded source."

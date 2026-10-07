@@ -988,11 +988,11 @@ names the native library candidates, which may legitimately differ."
        :expect-stdout "1")
       ("dcl tui"
        ("--dcl" "tui"
-        "-x" ,(format nil "(setq id (load_dialog ~S)) (princ (numberp id)) (princ (new_dialog \"parity\" id)) (unload_dialog id)"
+        "-x" ,(format nil "(setq id (load_dialog ~S)) (princ (> id 0)) (princ (new_dialog \"parity\" id)) (unload_dialog id)"
                       dcl))
        :expect-stdout "TT")
       ("dcl default"
-       ("-x" ,(format nil "(setq id (load_dialog ~S)) (princ (numberp id)) (unload_dialog id)"
+       ("-x" ,(format nil "(setq id (load_dialog ~S)) (princ (> id 0)) (unload_dialog id)"
                       dcl))
        :expect-stdout "T")
       ;; The line renderer reads the user's answer on standard input: the

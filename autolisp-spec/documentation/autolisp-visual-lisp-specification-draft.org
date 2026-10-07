@@ -68646,13 +68646,32 @@ DCL Function
 #+end_example
 
 *** Arguments and Values
-- `dclfile`: DCL pathname string
+- `dclfile`: DCL pathname string. AutoCAD: "DCL file to load. If the
+  dclfile argument does not specify a file extension, .dcl is assumed."
 
 *** Description
 Loads a DCL file and returns a dialog-resource identifier.
 
 *** Return Values
-Dialog-resource identifier, or failure indicator under host semantics.
+An integer: a positive dialog-resource identifier (dcl_id) on success, the
+handle later passed to NEW_DIALOG and UNLOAD_DIALOG; on failure, an integer
+that is not positive.
+
+The two vendor references, verbatim:
+
+- AutoCAD (load_dialog reference page): "Type: Integer -- A positive integer
+  value (dcl_id) if successful, or a negative integer if load_dialog cannot
+  open the file."
+- BricsCAD (DCL "Typical usage sequence" page; its LISP function table only
+  says "Load a DCL file"): "by calling load_dialog with the path to a dcl
+  file as argument (load_dialog "c:/my_dialog.dcl") -> return value 1 If the
+  return value is 0 or less, then the file could not be loaded."
+
+Difference: they agree that success is a positive integer. For failure,
+AutoCAD says NEGATIVE, while BricsCAD says "0 or less" -- BricsCAD treats 0
+as a failure, AutoCAD never mentions 0. A portable program tests
+=(> dcl_id 0)= for success; an implementation returns a negative integer on
+failure, which satisfies both.
 
 *** Side Effects
 Loads external dialog definitions into the host dialog subsystem.
@@ -68664,7 +68683,21 @@ Loads external dialog definitions into the host dialog subsystem.
 
 *** Source Notes
 - [Function Sequence to Display and Work with a Dialog](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-FD32ADB3-F16E-42AA-BD37-53259B824AAB.htm)
+- [load_dialog (AutoLISP/DCL), AutoCAD 2026](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-B5E4E72B-BD59-4E5E-8FBF-345DFC45A7EC.htm)
+  -- the return-value wording quoted above.
+- [Typical usage sequence, BricsCAD V25 DevRef](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/dcl_usage.htm)
+  -- the BricsCAD wording quoted above (same text since V14).
+- [Supported LISP functions, BricsCAD V25 DevRef](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/LISP_Functions.htm)
+  -- "Load a DCL file", no return value.
 - Status: documented in the DCL workflow documentation.
+
+*** clautolisp (implementation deviation)
+clautolisp returns a positive integer for every successfully loaded file,
+starting at 1 in a fresh process, and -1 when the file cannot be opened or
+parsed -- within both vendors' rules. Deviation, until clautolisp 2.2.222:
+the first successful call of a process returned 0, which AutoCAD's rule does
+not allow for a success and BricsCAD's reads as a failure; fixed in 2.2.223
+(clautolisp-load-dialog-first-id-is-zero).
 
 #+LATEX: \newpage
 

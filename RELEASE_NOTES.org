@@ -37,6 +37,10 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- =load_dialog= returns a positive handle from the first file on (2.2.223):
+  the first successful call of a fresh process used to return 0, which the
+  usual =(> dcl_id 0)= test rejects; Autodesk documents a positive integer
+  on success and a negative one on failure (still -1).
 - OPEN's encoding under the AutoCAD dialects follows AutoCAD 2022 (2.2.222,
   measured at LISPSYS 0, 1 and 2): ~(open f "w")~ now writes windows-1252
   at every LISPSYS level (it wrote UTF-8 at 1 / 2 -- LISPSYS governs the
