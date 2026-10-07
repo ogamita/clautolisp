@@ -5,14 +5,35 @@
 # www tree); make-gitlab-release.py then points the GitLab Release links here.
 #
 #   GITLAB_TOKEN=<api token> bash scripts/deploy-release-to-poseidon.sh release-1.9.3
+#   bash scripts/deploy-release-to-poseidon.sh release-2.3.0 --from DIR
+#
+# --from DIR mirrors an already collected set (DIR = a dist/combined holding
+# manifest-release-assets.txt) instead of downloading collect:release's
+# artefact -- for a release whose collect ran but could not STORE its
+# artefact (GitLab 413 above its size limit; release-2.3.0, ~1.07 GB). Build
+# DIR by running `make collect-artefacts` on the tag's release-job artefacts
+# plus the GitHub Windows run, as collect:release does.
 #
 # Env: GITLAB_TOKEN (api scope; falls back to ~claude/.authinfo port claude),
 #      WEBROOT (default /var/www/poseidon/public_html/ogamita/clautolisp/releases).
 set -euo pipefail
-TAG="${1:?usage: $0 release-X.Y.Z}"; VER="${TAG#release-}"
+TAG="${1:?usage: $0 release-X.Y.Z [--from DIR]}"; VER="${TAG#release-}"
+FROM=""
+if [ "${2:-}" = "--from" ]; then FROM="${3:?--from needs a directory}"; fi
 API=https://gitlab.com/api/v4; PID=80415300
 WEBROOT="${WEBROOT:-/var/www/poseidon/public_html/ogamita/clautolisp/releases}"
 GEN="$(cd "$(dirname "$0")" && pwd)/gen-release-index.py"
+if [ -n "$FROM" ]; then
+  src="$(cd "$FROM" && pwd)"
+  [ -f "$src/manifest-release-assets.txt" ] || { echo "no manifest-release-assets.txt in $src"; exit 1; }
+  echo "archives (local set $src):"; ls -1 "$src" | sed 's/^/  /'
+  sudo install -d -o www-data -g www-data "$WEBROOT/$VER"
+  sudo rsync -a --delete --chown=www-data:www-data "$src"/ "$WEBROOT/$VER"/
+  sudo python3 "$GEN" "$WEBROOT"
+  sudo chown -R www-data:www-data "$WEBROOT"
+  echo "mirrored -> https://poseidon.informatimago.com/ogamita/clautolisp/releases/$VER/"
+  exit 0
+fi
 T="${GITLAB_TOKEN:-$(awk '{p=pw="";for(i=1;i<=NF;i++){if($i=="port")p=$(i+1);if($i=="password")pw=$(i+1)} if(p=="claude")print pw}' ~claude/.authinfo 2>/dev/null || true)}"
 [ -n "$T" ] || { echo "no GITLAB_TOKEN"; exit 1; }
 gl(){ curl -fsSL --header "PRIVATE-TOKEN: $T" "$@"; }  # -L: the artefacts endpoint 302s to the CDN

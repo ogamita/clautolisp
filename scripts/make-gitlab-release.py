@@ -145,6 +145,14 @@ def main():
                     help="replace the assets of an existing release")
     ap.add_argument("--description-file",
                     help="file holding the release description (markdown)")
+    ap.add_argument("--manifest",
+                    help="read the asset names from this local "
+                         "manifest-release-assets.txt (a set collected outside "
+                         "CI, e.g. when collect:release could not store its "
+                         "artefact: GitLab answers 413 above its size limit). "
+                         "Only with --links poseidon, whose links do not need "
+                         "the GitLab artefacts; every link is still fetched "
+                         "before anything is published.")
     ap.add_argument("--links", choices=["poseidon", "gitlab"], default="poseidon",
                     help="where asset links point: the poseidon mirror (default, "
                          "durable) or the GitLab job artefacts (quota-bound). "
@@ -156,10 +164,20 @@ def main():
         sys.exit(f"error: {tag} is not a release tag (expected release-M.m.d)")
     version = tag[len("release-"):]
 
-    pipeline_id, job_id = collect_job(tag)
-    print(f"pipeline {pipeline_id}, collect:release job {job_id}")
-
-    names = assets(job_id, tag)
+    if args.manifest:
+        if args.links != "poseidon":
+            sys.exit("error: --manifest needs --links poseidon: a locally "
+                     "collected set has no GitLab artefacts to link to")
+        job_id = None
+        with open(args.manifest, encoding="utf-8") as f:
+            names = [n.strip() for n in f if n.strip()]
+        if not names:
+            sys.exit(f"error: {args.manifest} is empty")
+        print(f"assets from local manifest {args.manifest}")
+    else:
+        pipeline_id, job_id = collect_job(tag)
+        print(f"pipeline {pipeline_id}, collect:release job {job_id}")
+        names = assets(job_id, tag)
     print(f"{len(names)} asset(s) to attach")
 
     print(f"asset links point at: {args.links}")
