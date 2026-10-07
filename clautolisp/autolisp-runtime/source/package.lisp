@@ -276,6 +276,7 @@
    #:*com-point-wrap-hook*
    #:*com-point-unwrap-hook*
    #:*com-objects-wrap-hook*
+   #:without-builtin-layer-hooks
    #:set-autolisp-errno
    #:autolisp-exit-status
    #:set-autolisp-exit-status

@@ -1,0 +1,47 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-tests-reference-builtins-core-without-depending-on-it -- clautolisp/cador/tests does not compile unless the builtins were loaded first
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-cador-tests-reference-builtins-core-without-depending-on-it
+
+* Context
+
+Found 2026-10-07 while reproducing
+install-core-builtins-leaks-com-hooks-across-suites (closed).
+
+* Symptom
+
+In a fresh SBCL, loading the cador test system before the builtins:
+
+#+begin_src lisp
+(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))
+(asdf:load-system "clautolisp/tests")   ; or (asdf:test-system "clautolisp/cador")
+#+end_src
+
+fails with a COMPILE-FILE-ERROR on =cador/tests/registry-native-tests.lisp=:
+
+#+begin_example
+READ error during COMPILE-FILE:
+  Package CLAUTOLISP.AUTOLISP-BUILTINS-CORE does not exist.
+  Line: 61, Column: 81
+#+end_example
+
+=make test-sbcl= does not see it because it runs
+=(asdf:test-system "clautolisp")=, which loads the aggregate system (and so
+the builtins) before the test systems.
+
+* Cause
+
+=cador/tests/registry-native-tests.lisp= lines 61-66 call
+=clautolisp.autolisp-builtins-core::%registry-value->autolisp=, but the
+=clautolisp/cador/tests= system depends only on ="clautolisp/cador"= and
+="fiveam"=. The test exercises the builtins' conversion of native registry
+values, so either the system needs ="clautolisp/autolisp-builtins-core"= in
+its =:depends-on=, or that check belongs in the builtins-core suite.
+
+* Acceptance criteria
+
+- =(asdf:test-system "clautolisp/cador")= in a fresh image compiles and
+  runs the cador suite.

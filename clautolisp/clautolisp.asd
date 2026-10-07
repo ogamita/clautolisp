@@ -733,6 +733,10 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-builtins-core"
                "clautolisp/cador"
+               ;; builtin-hooks-isolation-tests drives the cador suite's
+               ;; own environment (install-core-builtins-leaks-com-hooks-
+               ;; across-suites).
+               "clautolisp/cador/tests"
                "clautolisp/cadtui"
                "fiveam")
   :serial t
@@ -755,6 +759,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-builtins-core/tests/case-insensitive-paths-tests")
    (:file "autolisp-builtins-core/tests/source-file-tests")
    (:file "autolisp-builtins-core/tests/multidocument-tests")
+   (:file "autolisp-builtins-core/tests/builtin-hooks-isolation-tests")
    (:file "autolisp-builtins-core/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
