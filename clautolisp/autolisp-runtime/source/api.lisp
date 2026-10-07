@@ -2171,6 +2171,25 @@ that object-array-valued COM methods hand back — GetAttributes et al.
 Set by the builtins layer alongside *COM-POINT-WRAP-HOOK*; when nil the
 values pass through as a plain list.")
 
+(defmacro without-builtin-layer-hooks (&body body)
+  "Run BODY in the bare-runtime hook state: every hook a layer above the
+runtime installs here (INSTALL-CORE-BUILTINS sets them all, process-wide)
+bound to NIL for BODY's dynamic extent, and restored afterwards.
+
+The hooks are global because the builtins layer, once installed, is the
+whole program's; but a caller that exercises the layers BELOW the builtins
+(the cador host suite: COM points as plain lists, no vla-* facade) has to
+establish that state itself rather than rely on nobody having installed
+the builtins earlier in the same process -- otherwise its results depend on
+what ran before it (install-core-builtins-leaks-com-hooks-across-suites).
+This is the one list of those hooks: a new one gets added here too."
+  `(let ((*resolve-unbound-function-hook* nil)
+         (*vlax-collection-items-hook* nil)
+         (*com-point-wrap-hook* nil)
+         (*com-point-unwrap-hook* nil)
+         (*com-objects-wrap-hook* nil))
+     ,@body))
+
 (defparameter *debug-define-command-hook* nil
   "When non-nil, a function (NAMES FUNCTION DOC) the CLAL-DEFINE-DEBUGGER-COMMAND
 builtin calls to register an AutoLISP-defined debugger command (command

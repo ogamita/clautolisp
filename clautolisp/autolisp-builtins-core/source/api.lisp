@@ -12190,6 +12190,11 @@ variable convention below."
   (apply-clal-optimization)
   ;; Fresh builtin world: COM is not loaded yet, and the runtime's
   ;; unbound-function hook resolves the dynamic vla-* accessor façade.
+  ;; The hooks set below are process-wide on purpose (the installed
+  ;; builtins are the whole program's); code that needs the bare
+  ;; runtime/host state below them binds it with
+  ;; WITHOUT-BUILTIN-LAYER-HOOKS, which lists every one of them -- keep
+  ;; that list in step with this function.
   (setf *com-loaded-p* nil)
   (setf clautolisp.autolisp-runtime:*resolve-unbound-function-hook*
         #'resolve-vla-accessor)

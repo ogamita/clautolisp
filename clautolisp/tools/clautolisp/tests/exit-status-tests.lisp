@@ -14,39 +14,20 @@
 
 (defun %exit-status-context ()
   "A fresh context with the core builtins and no host, reading sources as
-UTF-8. Call it inside WITH-ISOLATED-BUILTIN-HOOKS."
+UTF-8. It installs the core builtins, whose hooks stay set process-wide;
+the cador suite, which runs later in the same process, establishes its own
+bare-host hook state (install-core-builtins-leaks-com-hooks-across-suites)."
   (let ((context (clautolisp.autolisp-runtime:make-default-runtime-context)))
     (clautolisp.tools.clautolisp::setup-context context nil)
     (clautolisp.tools.clautolisp::set-default-source-encoding context :utf-8)
     context))
-
-(defmacro with-isolated-builtin-hooks (&body body)
-  "Run BODY with the process-wide hooks INSTALL-CORE-BUILTINS sets rebound,
-so that installing the builtins here does not leak into the suites that run
-later: the cador suite runs after this one and expects COM points as plain
-lists, which is what it gets until the builtins' wrap hooks are installed
-(install-core-builtins-leaks-com-hooks-across-suites.issue)."
-  `(let ((clautolisp.autolisp-builtins-core::*com-loaded-p*
-           clautolisp.autolisp-builtins-core::*com-loaded-p*)
-         (clautolisp.autolisp-runtime:*resolve-unbound-function-hook*
-           clautolisp.autolisp-runtime:*resolve-unbound-function-hook*)
-         (clautolisp.autolisp-runtime:*vlax-collection-items-hook*
-           clautolisp.autolisp-runtime:*vlax-collection-items-hook*)
-         (clautolisp.autolisp-runtime:*com-point-wrap-hook*
-           clautolisp.autolisp-runtime:*com-point-wrap-hook*)
-         (clautolisp.autolisp-runtime:*com-point-unwrap-hook*
-           clautolisp.autolisp-runtime:*com-point-unwrap-hook*)
-         (clautolisp.autolisp-runtime:*com-objects-wrap-hook*
-           clautolisp.autolisp-runtime:*com-objects-wrap-hook*))
-     ,@body))
 
 (defun %status-of-action (action)
   "Run ACTION (:FILE . PATH) / (:EXPRESSION . TEXT) the way RUN-WITH-INPUT
 does and return (values STATUS CONDITION REPORT): the exit status the
 condition it signalled maps to (0 when none), the condition, and the
 engine's report of it."
-  (with-isolated-builtin-hooks
-   (let ((context (%exit-status-context)))
+  (let ((context (%exit-status-context)))
     (handler-case
         (progn
           (clautolisp.tools.clautolisp::eval-action-in-context
@@ -59,7 +40,7 @@ engine's report of it."
                 condition
                 (with-output-to-string (out)
                   (clautolisp.autolisp-cli:report-engine-error
-                   condition :stream out))))))))
+                   condition :stream out)))))))
 
 (defun %exit-status-fixture (name octets)
   "Write OCTETS (a list of bytes) to a fresh temporary file; return its path."
