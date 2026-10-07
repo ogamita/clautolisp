@@ -483,7 +483,14 @@ test:alfe:sbcl:
     - *not-on-schedule
     - when: on_success
   stage: test
+  variables:
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
   script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end test-sbcl
     - sh scripts/ci-build-cache.sh save fasl
 
@@ -493,7 +500,16 @@ test:alfe:ccl:
     - *not-on-schedule
     - when: on_success
   stage: test
+  variables:
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
   script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    # (The child is the SBCL program; the CCL alfe drives it -- the
+    # cross-Lisp parity a mixed installation has.)
+    - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end test-ccl
     - sh scripts/ci-build-cache.sh save fasl
 

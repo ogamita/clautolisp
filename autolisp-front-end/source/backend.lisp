@@ -36,6 +36,7 @@
            #:prepare-workdir
            #:start-engine
            #:eval-plan
+           #:eval-plan-with-action-hooks
            #:read-output
            #:send-input
            #:request-control
@@ -199,6 +200,20 @@ own *AUTOLISP-…* globals from its own argv."))
    "Execute an action PLAN (list of action records built by
 ALFE.BACKEND:MAKE-ACTION) against SESSION. Returns an EVAL-RESULT."))
 
+(defgeneric eval-plan-with-action-hooks (session plan before-action after-action)
+  (:documentation
+   "Execute PLAN against SESSION as EVAL-PLAN does, calling BEFORE-ACTION with
+(ACTION INDEX) before each action and AFTER-ACTION with (ACTION INDEX RESULT)
+after it, INDEX counting the actions of PLAN from 1 and RESULT the action's own
+EVAL-RESULT. Returns the EVAL-RESULT of the whole plan. alfe's :PRE-ACTION and
+:POST-ACTION plug-in hooks are called through it.
+
+The default method evaluates PLAN one action at a time (one EVAL-PLAN call per
+action) and stops at the first action that does not succeed. A backend that can
+stop at the action boundaries of ONE run specialises it, so that the run is the
+one EVAL-PLAN would make -- the clautolisp backend does, in both of its
+variants (alfe-clautolisp-backend-semantic-parity.issue)."))
+
 (defgeneric read-output (session &key timeout)
   (:documentation
    "Drain stdout and stderr captured since the previous call. Returns
@@ -356,3 +371,24 @@ non-NIL, is the originating ALFE.ERROR:BACKEND-ERROR."
   ;; clautolisp program exits with (alfe-clautolisp-backend-semantic-
   ;; parity.issue).
   (exit-code     nil))
+
+(defmethod eval-plan-with-action-hooks (session plan before-action after-action)
+  (let ((results '()))
+    (loop for action in plan
+          for index from 1
+          do (funcall before-action action index)
+             (let ((result (eval-plan session (list action))))
+               (push result results)
+               (funcall after-action action index result)
+               (unless (eq (eval-result-status result) :success)
+                 (return))))
+    (setf results (nreverse results))
+    (let ((last (car (last results))))
+      (make-eval-result
+       :status (if last (eval-result-status last) :success)
+       :value (and last (eval-result-value last))
+       :output (apply #'concatenate 'string (mapcar #'eval-result-output results))
+       :error-output (apply #'concatenate 'string
+                            (mapcar #'eval-result-error-output results))
+       :condition (and last (eval-result-condition last))
+       :exit-code (and last (eval-result-exit-code last))))))

@@ -416,3 +416,24 @@ file just opened, or NIL when it just stopped dribbling."
        (dribble-stop))
       (t
        (dribble-start nil names)))))
+
+(defun call-with-engine-dribble (function)
+  "Call FUNCTION -- the work of one engine run: its actions and its REPL --
+with the standard streams behind the dribble tees and the CLAL-DRIBBLE builtin
+attached, and close a dribble the run left open when it ends (flushing a
+pending partial output line), however it ends. The tees are pure
+pass-throughs while no dribble is active, so (clal-dribble) can start
+recording at any time, from a REPL or from a batch -l / -x.
+
+ONE function for the clautolisp program (RUN-WITH-INPUT) and alfe's
+in-process engine, so that (clal-dribble FILE) called from a batch script
+records the same file whichever runs it
+(alfe-clautolisp-backend-semantic-parity.issue). Before, the in-process engine
+had no dribble at all, and the program lost a batch run's last, unterminated
+line: nothing closed the file before the process exited."
+  (let ((clautolisp.autolisp-runtime:*dribble-hook* #'clal-dribble)
+        (*standard-output* (make-dribble-output-tee *standard-output* "O"))
+        (*error-output*    (make-dribble-output-tee *error-output*    "E"))
+        (*standard-input*  (make-dribble-input-echo *standard-input*)))
+    (unwind-protect (funcall function)
+      (dribble-stop))))

@@ -365,3 +365,134 @@ missing (EX_NOINPUT) or malformed (EX_DATAERR)."
              :status (if (typep condition 'file-error)
                          clautolisp.sysexits:+ex-noinput+
                          clautolisp.sysexits:+ex-dataerr+)))))
+
+;;; --- action boundaries: a child engine and its front end's hooks ------
+;;;
+;;; A front end may observe each action of a run: alfe's plug-ins have
+;;; :PRE-ACTION and :POST-ACTION hooks, called before and after every action,
+;;; that may print, inspect the result, or prepare a file the next action
+;;; reads. In alfe's in-process engine they run between two actions of ONE
+;;; run. The clautolisp program running as alfe's engine (--backend
+;;; subprocess) is one process for the whole run too -- so that AutoLISP state
+;;; carries from one action to the next exactly as in-process -- and it stops
+;;; at each action boundary, tells the front end, and waits for it:
+;;;
+;;;   1. before action N it flushes its output streams, publishes the marker
+;;;      DIR/000N-pre.sexp and waits until DIR/000N-pre.go exists;
+;;;   2. after it, likewise DIR/000N-post.sexp (the value, rendered, and the
+;;;      exit status recorded so far) and DIR/000N-post.go.
+;;;
+;;; An action that does not return (a runtime error, (exit N)) has no post
+;;; marker: the front end learns its end from the child's exit. The front end
+;;; reads the output the action wrote from the child's captured streams --
+;;; flushed before each marker -- runs its hooks, then writes the reply. Plain
+;;; files and polling: nothing to install, nothing a firewall can block, the
+;;; same code on POSIX and MS-Windows. A marker is written under a temporary
+;;; name and renamed, so a reader never sees half of one.
+;;;
+;;; The child gives up waiting when the directory disappears (the front end
+;;; is gone and cleaned up); a front end that dies without cleaning up leaves
+;;; the child waiting until it is killed.
+;;; (alfe-clautolisp-backend-semantic-parity.issue.)
+
+(defparameter *action-boundaries-format* 1
+  "Version of the --front-end-action-boundaries marker format.")
+
+(defvar *action-boundary-poll-interval* 0.002
+  "Seconds between two looks at the boundary directory, on either side.")
+
+(defun render-action-value (value)
+  "The value of an action as the front end reports it: NIL for NIL, else the
+AutoLISP printer's text. One function, so alfe's in-process engine and the
+child report the same text."
+  (and value (%render-value-safely value)))
+
+(defun action-boundary-pathname (directory index phase &key reply)
+  "The marker of PHASE (:PRE or :POST) of action INDEX in DIRECTORY, or with
+REPLY its acknowledgement."
+  (merge-pathnames (make-pathname :name (format nil "~4,'0D-~(~A~)" index phase)
+                                  :type (if reply "go" "sexp"))
+                   (uiop:ensure-directory-pathname directory)))
+
+(defun write-action-boundary (directory index phase &key kind value status)
+  "Publish the marker of PHASE of action INDEX: KIND is the action's kind
+(:FILE, :EXPRESSION, :INTERACTIVE, ...), VALUE its rendered value (a string or
+NIL) and STATUS the exit status recorded so far (post only). Returns its
+pathname."
+  (let* ((final (action-boundary-pathname directory index phase))
+         (temporary (make-pathname :type "tmp" :defaults final)))
+    (with-open-file (out temporary :direction :output :if-exists :supersede
+                                   :if-does-not-exist :create
+                                   :external-format :utf-8)
+      (with-standard-io-syntax
+        (let ((*package* (find-package "KEYWORD")))
+          (prin1 (list :clautolisp-action-boundary *action-boundaries-format*
+                       :index index :phase phase :kind kind
+                       ;; A CHARACTER string: *PRINT-READABLY* would write
+                       ;; an SBCL base-string as #A(...), which CCL cannot
+                       ;; read back.
+                       :value (and value
+                                   (coerce value '(simple-array character (*))))
+                       :status status)
+                 out)
+          (terpri out))))
+    (rename-file temporary final)
+    final))
+
+(defun read-action-boundary (path)
+  "The plist (:INDEX :PHASE :KIND :VALUE :STATUS) of the marker at PATH."
+  (with-open-file (in path :direction :input :external-format :utf-8)
+    (let ((form (with-standard-io-syntax
+                  (let ((*read-eval* nil)
+                        (*package* (find-package "KEYWORD")))
+                    (read in)))))
+      (unless (and (consp form)
+                   (eq (first form) :clautolisp-action-boundary)
+                   (eql (second form) *action-boundaries-format*))
+        (error "~A is not a format-~D action boundary marker"
+               path *action-boundaries-format*))
+      (cddr form))))
+
+(defun acknowledge-action-boundary (directory index phase)
+  "Let the child waiting at PHASE of action INDEX go on."
+  (with-open-file (out (action-boundary-pathname directory index phase :reply t)
+                       :direction :output :if-exists :supersede
+                       :if-does-not-exist :create)
+    (declare (ignorable out)))
+  t)
+
+(defun report-action-boundary (directory index phase &key kind value status)
+  "Child side: flush the output streams, publish the marker, and wait for the
+front end's reply. T when it came; NIL when DIRECTORY disappeared meanwhile."
+  (finish-output *standard-output*)
+  (finish-output *error-output*)
+  (write-action-boundary directory index phase
+                         :kind kind :value value :status status)
+  (wait-for-action-boundary-reply directory index phase))
+
+(defun wait-for-action-boundary-reply (directory index phase)
+  "Child side: wait until the front end replied to PHASE of action INDEX in
+DIRECTORY (T), or DIRECTORY no longer exists (NIL)."
+  (let ((reply (action-boundary-pathname directory index phase :reply t))
+        (directory (uiop:ensure-directory-pathname directory)))
+    (loop
+      (when (probe-file reply)
+        (return t))
+      (unless (uiop:directory-exists-p directory)
+        (return nil))
+      (sleep *action-boundary-poll-interval*))))
+
+(defun call-at-action-boundaries (directory index kind context thunk)
+  "Child side: run THUNK, action INDEX of kind KIND, between its two
+boundaries in DIRECTORY (none when DIRECTORY is NIL). Returns THUNK's value."
+  (if (null directory)
+      (funcall thunk)
+      (progn
+        (report-action-boundary directory index :pre :kind kind)
+        (let ((value (funcall thunk)))
+          (report-action-boundary
+           directory index :post
+           :kind kind
+           :value (render-action-value value)
+           :status (clautolisp.autolisp-runtime:autolisp-exit-status context))
+          value))))

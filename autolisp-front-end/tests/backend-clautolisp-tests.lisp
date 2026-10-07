@@ -368,6 +368,16 @@ spawn exists at one of the documented search paths."
         (progn (alfe.backend:detect backend) t)
       (alfe.error:backend-not-available () nil))))
 
+(defun clautolisp-binary-required-p ()
+  "True when $ALFE_TEST_REQUIRE_CLAUTOLISP is set (non-empty): the CI lanes
+that build clautolisp-sbcl before the suite set it, so that a test which would
+otherwise SKIP for want of the binary -- the parity table above all -- FAILS
+instead. Without it the skip is silent, and a lane that never built the binary
+looked green while never running the table
+(alfe-clautolisp-backend-semantic-parity.issue)."
+  (let ((value (uiop:getenv "ALFE_TEST_REQUIRE_CLAUTOLISP")))
+    (and value (plusp (length value)))))
+
 (test clautolisp-subprocess-detect-finds-binary-when-built
   "When clautolisp-sbcl is on disk the subprocess variant detects it;
 when not, DETECT signals BACKEND-NOT-AVAILABLE."
@@ -377,8 +387,11 @@ when not, DETECT signals BACKEND-NOT-AVAILABLE."
       ;; Without the binary, the subprocess variant must refuse to
       ;; start — but it must refuse with a structured error, not a
       ;; raw lisp condition.
-      (signals alfe.error:backend-not-available
-        (alfe.backend:detect (make-fresh-clautolisp-backend :subprocess)))))
+      (progn
+        (is (not (clautolisp-binary-required-p))
+            "clautolisp-sbcl not found, but $ALFE_TEST_REQUIRE_CLAUTOLISP is set")
+        (signals alfe.error:backend-not-available
+          (alfe.backend:detect (make-fresh-clautolisp-backend :subprocess))))))
 
 ;;; --- installed engine discovery (alfe-installed-subprocess-binary-
 ;;; not-discovered) ----------------------------------------------------
@@ -578,7 +591,7 @@ isn't on disk (a fresh checkout's `make test` runs before
      ;; assertion explaining the skip. The point of this test is to
      ;; surface a regression once the binary IS built — when it
      ;; isn't, we just note we didn't run.
-     (is (not (subprocess-binary-available-p))
+     (is (not (clautolisp-binary-required-p))
          "clautolisp-sbcl not present; subprocess parity test skipped."))
     (t
      (let* ((backend (alfe.backend:detect
@@ -812,15 +825,45 @@ name it."
         (is (= 1 (occurrences option)) "~A occurs ~D times in ~S"
             option (occurrences option) argv))
       (is (equal '("-x" "(princ)") (last argv 2))))
-    ;; the defaults forward nothing optional
+    ;; the defaults forward nothing optional; a plan with no action for the
+    ;; child is the no-op -x "" (an empty command line would be a REPL)
     (let ((argv (alfe.backend.clautolisp::build-subprocess-argv
                  (alfe.backend.clautolisp::%make-subprocess-session
                   :backend backend :dialect nil :dcl :auto)
                  nil)))
       (is (equal '("/x/clautolisp-sbcl" "--quiet" "--no-init"
-                   "--dialect" "strict" "--host" "cador")
+                   "--dialect" "strict" "--host" "cador" "-x" "")
                  argv)
           "~S" argv))))
+
+(test clautolisp-subprocess-argv-stops-at-quit-and-forwards-the-boundaries
+  "The child is handed the actions before the plan's first :QUIT only (the
+in-process engine stops there; clautolisp has no --quit), the no-op -x \"\"
+when that leaves none, and --front-end-action-boundaries DIR, before the
+actions, when alfe calls per-action hooks."
+  (let* ((backend (alfe.backend.clautolisp:make-clautolisp-backend
+                   :variant :subprocess :executable-path "/x/clautolisp-sbcl"))
+         (session (alfe.backend.clautolisp::%make-subprocess-session
+                   :backend backend :dialect nil :dcl :auto))
+         (prefix '("/x/clautolisp-sbcl" "--quiet" "--no-init"
+                   "--dialect" "strict" "--host" "cador")))
+    (flet ((argv (plan &rest keys)
+             (apply #'alfe.backend.clautolisp::build-subprocess-argv
+                    session plan keys)))
+      (is (equal (append prefix '("-x" "(a)"))
+                 (argv (list (alfe.backend:action-eval "(a)")
+                             (alfe.backend:action-quit)
+                             (alfe.backend:action-eval "(b)")))))
+      (is (equal (append prefix '("-x" ""))
+                 (argv (list (alfe.backend:action-quit)))))
+      (is (equal (append prefix '("-i"))
+                 (argv (list (alfe.backend:action-interactive)))))
+      (is (equal (append prefix '("--front-end-action-boundaries" "/tmp/b/"
+                                  "-l" "/f.lsp" "-x" "(c)"))
+                 (argv (list (alfe.backend:action-load "/f.lsp")
+                             (alfe.backend:action-main "c")
+                             (alfe.backend:action-quit))
+                       :action-boundaries #P"/tmp/b/"))))))
 
 (defun %parity-fixture (name content &key (external-format :utf-8))
   "Write CONTENT to a fresh temporary file named after NAME; return its
@@ -936,6 +979,12 @@ names the native library candidates, which may legitimately differ."
        :expect-exit 1)
       ("exit status" ("-x" "(princ \"a\")" "-x" "(exit 3)") :expect-exit 3)
       ("recorded status" ("-x" "(autolisp-set-status 5)") :expect-exit 5)
+      ;; --quit ends the plan: nothing after it runs, and a plan of --quit
+      ;; alone is no REPL (the child used to get an empty command line).
+      ("quit alone" ("--quit") :expect-exit 0)
+      ("nothing after quit runs"
+       ("-x" "(princ 1)" "--quit" "-x" "(princ 2)")
+       :expect-exit 0)
       ("missing load file" ("-l" "/nonexistent/parity-missing.lsp")
        :expect-exit ,clautolisp.sysexits:+ex-noinput+)
       ("load file the reader refuses" ("-l" ,unbalanced)
@@ -997,6 +1046,22 @@ names the native library candidates, which may legitimately differ."
        :side-effect ,dribble-file
        :expect-file :absent
        :expect-stdout "1")
+      ;; (clal-dribble FILE) called from a batch script: the same recorder
+      ;; in both variants, closed at the end of the run with its last,
+      ;; unterminated line.
+      ("clal-dribble from a batch run"
+       ("-x" ,(format nil "(clal-dribble ~S) (princ \"a\") (terpri) (princ \"b\")"
+                      dribble-file)
+        "-x" "(princ \"c\")")
+       :side-effect ,dribble-file
+       :expect-file ,(concatenate 'string ";; O: a" nl ";; O: bc" nl)
+       :expect-stdout "a")
+      ("clal-dribble from a batch run that fails"
+       ("-x" ,(format nil "(clal-dribble ~S) (princ \"a\")" dribble-file)
+        "-x" "(car 1)")
+       :side-effect ,dribble-file
+       :expect-file ,(concatenate 'string ";; O: a" nl)
+       :expect-exit 1)
       ("dcl tui"
        ("--dcl" "tui"
         "-x" ,(format nil "(setq id (load_dialog ~S)) (princ (> id 0)) (princ (new_dialog \"parity\" id)) (unload_dialog id)"
@@ -1052,7 +1117,7 @@ subprocess, or the default and --backend subprocess for a run that is the
 clautolisp program's). Skipped when no clautolisp-sbcl is built (the
 subprocess variant needs it)."
   (if (not (subprocess-binary-available-p))
-      (is (not (subprocess-binary-available-p))
+      (is (not (clautolisp-binary-required-p))
           "clautolisp-sbcl not present; parity table skipped.")
       (dolist (row (%parity-scenarios))
         (destructuring-bind (name arguments &key side-effect expect-file expect-stdout

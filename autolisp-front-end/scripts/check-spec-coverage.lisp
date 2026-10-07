@@ -62,8 +62,10 @@
     "-P"   ; BricsCAD's profile flag passed through to the engine.
     "/i"   ; accoreconsole.exe input flag (Windows).
     "/s"   ; accoreconsole.exe script flag (Windows).
-    "--front-end-bindings") ; clautolisp's option on the subprocess engine's
-                            ; command line (alfe passes it), not alfe's own.
+    ;; clautolisp's options on the subprocess engine's command line (alfe
+    ;; passes them), not alfe's own.
+    "--front-end-bindings"
+    "--front-end-action-boundaries")
   "Option-shaped tokens the spec mentions because they appear in the
 emitted *engine-side* command line — not alfe's own CLI. The
 spec-coverage check skips these so they don't show up as

@@ -896,6 +896,17 @@ macOS (thalassa) and Windows (PF5S26BT) GitLab runners
   `glab api projects/ogamita%2Fclautolisp/pipelines/<id>/jobs` then
   `/jobs/<jid>/trace`.
 
+## CI — the alfe lanes need clautolisp-sbcl
+
+Every alfe test of the `--backend subprocess` variant (the direct/subprocess
+parity table, the per-action hook rows) SKIPS as a passing assertion when no
+`clautolisp-sbcl` is built -- and until alfe 2.2.232 no CI lane built it, so
+the table never ran in CI. A lane running the alfe suite builds it first
+(`make -C clautolisp build-clautolisp-sbcl`) and sets
+`ALFE_TEST_REQUIRE_CLAUTOLISP=1`, which turns that skip into a failure
+(`clautolisp-binary-required-p` in `tests/backend-clautolisp-tests.lisp`). A
+new skip-when-absent test uses the same predicate.
+
 ## CI — adding a Quicklisp dependency
 
 A new **quicklisp** dep breaks the alfe SBCL/CCL lanes with

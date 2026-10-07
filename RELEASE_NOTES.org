@@ -162,6 +162,19 @@ separate binary for tool integrators.
   with the engine's status -- =(exit N)= / =autolisp-set-status= give
   =N=, a =-l= file that cannot be opened gives 2 (it was 1 in-process).
   See the alfe user manual, /One engine, two transports/.
+- alfe 2.2.232 / clautolisp 2.2.232: the last differences between the two
+  =alfe --clautolisp= variants are gone. A plug-in with =:pre-action= /
+  =:post-action= hooks no longer splits the run: both variants run the plan
+  as one run and call the hooks at its action boundaries -- the child
+  stops at each one, through the new clautolisp option
+  =--front-end-action-boundaries DIR= -- so state carries from one action
+  to the next under =--backend subprocess= too, and a status recorded with
+  =autolisp-set-status= no longer stops a watched run early. =alfe -x A
+  --quit -x B= no longer runs =B= in the child, and =alfe --backend
+  subprocess --quit= no longer starts a REPL. =(clal-dribble FILE)= called
+  from a =-l= / =-x= action now records in-process too, and clautolisp
+  closes such a dribble at the end of the run instead of losing its last,
+  unterminated line.
 - An installed ~alfe --clautolisp --backend subprocess~ (and ~--host
   cadtui~) finds the ~clautolisp-sbcl[.exe]~ installed with it, in
   ~PREFIX/libexec/clautolisp/binaries/OS/CPU/~, from where the running alfe
@@ -2061,6 +2074,11 @@ file or COM), and forwards the workload.
   alfe's own, and the root Makefile's ~stage-programs~ / ~release-programs~ —
   instead of needing a separate ~install-plugins~ step (§ /Installing never
   builds as root/ below).
+- ~:pre-action~ / ~:post-action~ under ~--clautolisp~ (2.2.232): the hooks
+  watch the run without changing it -- one run, in-process or in one child
+  that waits at each action boundary; the run ends where it would end
+  without the plug-in, and the ~:post-action~ result carries that action's
+  output, value and recorded status in both variants.
 
 ** Hosts: cador, cadtui, nihil (alfe-user-manual § /Host selection/)
 

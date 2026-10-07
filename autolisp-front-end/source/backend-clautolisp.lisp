@@ -33,6 +33,7 @@
                 #:prepare-workdir
                 #:start-engine
                 #:eval-plan
+                #:eval-plan-with-action-hooks
                 #:read-output
                 #:send-input
                 #:request-control
@@ -976,106 +977,219 @@ runs RUN-ACTIONS plain, with no debugger, as before."
                        break)
                       (funcall run-actions debug-session break)))))))))))
 
+;;; --- per-action hooks, both variants --------------------------------
+;;;
+;;; alfe's :pre-action / :post-action plug-in hooks run at the action
+;;; boundaries of the ONE run EVAL-PLAN makes -- in-process here, in the child
+;;; through --front-end-action-boundaries below -- so a plug-in changes nothing
+;;; about the run itself: AutoLISP state carries from one action to the next,
+;;; the run stops where it would stop anyway (an error, (exit N)), and its
+;;; output and status are the same (alfe-clautolisp-backend-semantic-
+;;; parity.issue). Before, alfe made one EVAL-PLAN per action, and the
+;;; subprocess variant one child per action.
+
+(defun %action-result (exit-code value output error-output &key (status :success))
+  "The EVAL-RESULT a :post-action hook receives for one action, built the same
+way by both variants: EXIT-CODE is the status the engine had recorded when the
+action ended (its (exit N), its error's status), VALUE the action's value as
+CLAUTOLISP.AUTOLISP-CLI:RENDER-ACTION-VALUE renders it, OUTPUT and ERROR-OUTPUT
+what the action wrote. A non-zero EXIT-CODE fails the action, as it fails the
+whole run."
+  (make-eval-result
+   :status (if (and (integerp exit-code) (/= 0 exit-code)) :failed status)
+   :exit-code exit-code
+   :value value
+   :output (or output "")
+   :error-output (or error-output "")))
+
+(defun %call-action-hook (function &rest arguments)
+  "Call the action hook FUNCTION. An error in it is not the ENGINE's: it must
+neither be reported as a runtime error, nor break into aldo, nor be taken for
+a failure of the child; it leaves the run through the catch tag
+%ACTION-HOOK-FAILED, and the variant re-signals it once the engine is stopped,
+so it reaches alfe's own error handling as it did when the hooks were called
+from alfe.cli."
+  (handler-case (apply function arguments)
+    (error (condition)
+      (throw '%action-hook-failed condition))))
+
+(defmacro %with-action-hook-failures ((failure) &body body)
+  "Run BODY; if an action hook failed in it, set FAILURE to its condition."
+  (let ((condition (gensym "CONDITION")))
+    `(let ((,condition (catch '%action-hook-failed
+                         ,@body
+                         nil)))
+       (when ,condition (setf ,failure ,condition)))))
+
 (defmethod eval-plan ((session clautolisp-direct-session) plan)
+  (%direct-eval-plan session plan nil nil))
+
+(defmethod eval-plan-with-action-hooks ((session clautolisp-direct-session) plan
+                                        before-action after-action)
+  (%direct-eval-plan session plan before-action after-action))
+
+(defun %direct-eval-plan (session plan before-action after-action)
+  "EVAL-PLAN of the direct variant; with BEFORE-ACTION / AFTER-ACTION (see
+EVAL-PLAN-WITH-ACTION-HOOKS), called around each action of the same run. The
+hooks run with alfe's own streams, not the engine's: what they print is not
+the engine's output, as in the subprocess variant."
   ;; Tee live stdout/stderr into the workdir mirror files when a
   ;; workdir is present (i.e. when the CLI passed one). With no
   ;; workdir we leave the streams untouched, which is the case
   ;; FiveAM exercises.
   (session-state-set session :running)
-  (let ((effective-stdout *standard-output*)
-        (effective-stderr *error-output*)
-        (final-value nil)
-        (status :success)
-        (exit-code nil)
-        (captured-stdout-stream
-          (or (clautolisp-direct-session-captured-stdout-stream session)
-              (make-string-output-stream)))
-        (captured-stderr-stream
-          (or (clautolisp-direct-session-captured-stderr-stream session)
-              (make-string-output-stream)))
-        (output-file (clautolisp-direct-session-output-file session))
-        (errors-file (clautolisp-direct-session-errors-file session)))
-    (setf effective-stdout
-          (apply #'make-tee-stream
-                 (remove nil (list *standard-output*
-                                   captured-stdout-stream
-                                   output-file)))
-          effective-stderr
-          (apply #'make-tee-stream
-                 (remove nil (list *error-output*
-                                   captured-stderr-stream
-                                   errors-file))))
-    (let ((*standard-output* effective-stdout)
-          (*error-output*    effective-stderr)
-          (context (clautolisp-direct-session-context session)))
-      ;; The outcome is reported, and the exit status chosen, exactly as the
-      ;; clautolisp program does in RUN-WITH-INPUT / MAIN -- the subprocess
-      ;; variant IS that program, and the two variants must not differ in
-      ;; diagnostics or status (alfe-clautolisp-backend-semantic-parity.issue).
-      (handler-case
-          (progn
-            (let ((startup-error (clautolisp-direct-session-startup-error session)))
-              (when startup-error
-                (error startup-error)))
-            (flet ((run-actions (debug-session break)
-                     (declare (ignore debug-session break))
-                     (dolist (action plan)
-                       (when (clautolisp-direct-session-interrupt-requested-p session)
-                         ;; Interrupted: the status of a Control-C under the quit
-                         ;; policy, as the clautolisp program gives it.
-                         (setf status :aborted
-                               exit-code clautolisp.sysexits:+exit-interrupted+)
-                         (return))
-                       ;; Each action is a top-level read: a document switch the
-                       ;; previous one requested (NEW / OPEN ...) takes effect here.
-                       (when (member (action-kind action) '(:load :eval :main))
-                         (clautolisp.autolisp-runtime:apply-pending-document-switch context))
-                       (case (action-kind action)
-                         (:load        (setf final-value (direct-load session action)))
-                         (:eval        (setf final-value (direct-eval session action)))
-                         (:main        (setf final-value (direct-main session action)))
-                         (:interactive (direct-interactive-refused))
-                         (:quit        (return))))))
-              (call-with-direct-debugger session plan #'run-actions))
-            ;; Normal completion: the status a script recorded with
-            ;; (autolisp-set-status N), 0 when it never did.
-            (unless (eq status :aborted)
-              (setf exit-code (clautolisp.autolisp-runtime:autolisp-exit-status
-                               context))))
-        ;; Every status comes from the table the clautolisp program uses
-        ;; (CLAUTOLISP.AUTOLISP-CLI:ENGINE-EXIT-STATUS;
-        ;; sysexits-exit-statuses.issue).
-        (autolisp-runtime-error (condition)
-          (setf status :failed
-                final-value nil
-                exit-code (clautolisp.autolisp-cli:engine-exit-status condition))
-          ;; No host-Lisp backtrace: the child engine never prints one
-          ;; either (alfe spawns it --quiet, never --debug).
-          (clautolisp.autolisp-cli:report-autolisp-runtime-error condition))
-        (autolisp-termination (condition)
-          ;; (quit [N]) / (exit [N]): reported, and N is the status.
-          (clautolisp.autolisp-cli:report-autolisp-termination condition)
-          (setf exit-code (clautolisp.autolisp-runtime:autolisp-termination-status
-                           condition)))
-        (backend-eval-error (condition)
-          (setf status :failed)
-          (format *error-output* "~&alfe: ~A~%" condition))
-        ;; A file that cannot be opened (EX_NOINPUT), a source the reader
-        ;; refuses (EX_DATAERR), a --dwg drawing (its CLI-ERROR status), an
-        ;; internal error (EX_SOFTWARE).
-        (error (condition)
-          (setf status :failed
-                exit-code (clautolisp.autolisp-cli:engine-exit-status condition))
-          (clautolisp.autolisp-cli:report-engine-error condition))))
-    (when (and (integerp exit-code) (/= 0 exit-code))
-      (setf status :failed))
-    (session-state-set session :done)
-    (make-eval-result
-     :status status
-     :exit-code exit-code
-     :value  (and final-value (render-runtime-value-safely final-value))
-     :output (get-output-stream-string captured-stdout-stream)
-     :error-output (get-output-stream-string captured-stderr-stream))))
+  (let* ((hooks-p (or before-action after-action))
+         (alfe-stdout *standard-output*)
+         (alfe-stderr *error-output*)
+         (final-value nil)
+         (status :success)
+         (exit-code nil)
+         (hook-failure nil)
+         ;; The action in progress, for the :post-action of one that does not
+         ;; return (an error, (exit N)): (ACTION . INDEX).
+         (current nil)
+         (captured-stdout-stream
+           (or (clautolisp-direct-session-captured-stdout-stream session)
+               (make-string-output-stream)))
+         (captured-stderr-stream
+           (or (clautolisp-direct-session-captured-stderr-stream session)
+               (make-string-output-stream)))
+         ;; What the current action wrote, for its :post-action result.
+         (action-stdout (and hooks-p (make-string-output-stream)))
+         (action-stderr (and hooks-p (make-string-output-stream)))
+         (output-file (clautolisp-direct-session-output-file session))
+         (errors-file (clautolisp-direct-session-errors-file session))
+         (context (clautolisp-direct-session-context session))
+         (effective-stdout
+           (apply #'make-tee-stream
+                  (remove nil (list *standard-output*
+                                    captured-stdout-stream
+                                    action-stdout
+                                    output-file))))
+         (effective-stderr
+           (apply #'make-tee-stream
+                  (remove nil (list *error-output*
+                                    captured-stderr-stream
+                                    action-stderr
+                                    errors-file)))))
+    (labels ((action-output ()
+               (values (if action-stdout (get-output-stream-string action-stdout) "")
+                       (if action-stderr (get-output-stream-string action-stderr) "")))
+             (call-hook (function &rest arguments)
+               (when function
+                 (let ((*standard-output* alfe-stdout)
+                       (*error-output* alfe-stderr))
+                   (apply #'%call-action-hook function arguments)))))
+      (let ((*standard-output* effective-stdout)
+            (*error-output*    effective-stderr))
+        ;; The outcome is reported, and the exit status chosen, exactly as the
+        ;; clautolisp program does in RUN-WITH-INPUT / MAIN -- the subprocess
+        ;; variant IS that program, and the two variants must not differ in
+        ;; diagnostics or status (alfe-clautolisp-backend-semantic-parity.issue).
+        (handler-case
+            (%with-action-hook-failures (hook-failure)
+              (let ((startup-error (clautolisp-direct-session-startup-error session)))
+                (when startup-error
+                  (error startup-error)))
+              (flet ((run-actions (debug-session break)
+                       (declare (ignore debug-session break))
+                       (loop for action in plan
+                             for index from 1
+                             for kind = (action-kind action)
+                             do (when (clautolisp-direct-session-interrupt-requested-p session)
+                                  ;; Interrupted: the status of a Control-C under the quit
+                                  ;; policy, as the clautolisp program gives it.
+                                  (setf status :aborted
+                                        exit-code clautolisp.sysexits:+exit-interrupted+)
+                                  (return))
+                                (action-output) ; drop what came before the action
+                                (call-hook before-action action index)
+                                (setf current (cons action index))
+                                ;; Each action is a top-level read: a document switch the
+                                ;; previous one requested (NEW / OPEN ...) takes effect here.
+                                (when (member kind '(:load :eval :main))
+                                  (clautolisp.autolisp-runtime:apply-pending-document-switch context))
+                                (let ((value (case kind
+                                               (:load        (direct-load session action))
+                                               (:eval        (direct-eval session action))
+                                               (:main        (direct-main session action))
+                                               (:interactive (direct-interactive-refused))
+                                               (:quit        nil))))
+                                  (when (member kind '(:load :eval :main))
+                                    (setf final-value value))
+                                  (setf current nil)
+                                  (when after-action
+                                    (multiple-value-bind (out err) (action-output)
+                                      (call-hook after-action action index
+                                                 (%action-result
+                                                  (clautolisp.autolisp-runtime:autolisp-exit-status
+                                                   context)
+                                                  (clautolisp.autolisp-cli:render-action-value value)
+                                                  out err)))))
+                                (when (eq kind :quit)
+                                  (return)))))
+                ;; The run's dribble streams, as the clautolisp program installs
+                ;; them around its run: (clal-dribble FILE) from an action
+                ;; records the same file in both variants. Not for a session
+                ;; started without CLI options (a test driving the backend),
+                ;; which never had a recorder.
+                (if (clautolisp-direct-session-cli-options session)
+                    (clautolisp.tools.clautolisp:call-with-engine-dribble
+                     (lambda ()
+                       (call-with-direct-debugger session plan #'run-actions)))
+                    (call-with-direct-debugger session plan #'run-actions)))
+              ;; Normal completion: the status a script recorded with
+              ;; (autolisp-set-status N), 0 when it never did.
+              (unless (eq status :aborted)
+                (setf exit-code (clautolisp.autolisp-runtime:autolisp-exit-status
+                                 context))))
+          ;; Every status comes from the table the clautolisp program uses
+          ;; (CLAUTOLISP.AUTOLISP-CLI:ENGINE-EXIT-STATUS;
+          ;; sysexits-exit-statuses.issue).
+          (autolisp-runtime-error (condition)
+            (setf status :failed
+                  final-value nil
+                  exit-code (clautolisp.autolisp-cli:engine-exit-status condition))
+            ;; No host-Lisp backtrace: the child engine never prints one
+            ;; either (alfe spawns it --quiet, never --debug).
+            (clautolisp.autolisp-cli:report-autolisp-runtime-error condition))
+          (autolisp-termination (condition)
+            ;; (quit [N]) / (exit [N]): reported, and N is the status.
+            (clautolisp.autolisp-cli:report-autolisp-termination condition)
+            (setf exit-code (clautolisp.autolisp-runtime:autolisp-termination-status
+                             condition)))
+          (backend-eval-error (condition)
+            (setf status :failed)
+            (format *error-output* "~&alfe: ~A~%" condition))
+          ;; A file that cannot be opened (EX_NOINPUT), a source the reader
+          ;; refuses (EX_DATAERR), a --dwg drawing (its CLI-ERROR status), an
+          ;; internal error (EX_SOFTWARE).
+          (error (condition)
+            (setf status :failed
+                  exit-code (clautolisp.autolisp-cli:engine-exit-status condition))
+            (clautolisp.autolisp-cli:report-engine-error condition))))
+      (when (and (integerp exit-code) (/= 0 exit-code))
+        (setf status :failed))
+      (session-state-set session :done)
+      ;; An action that did not return -- the run ended in it -- still has its
+      ;; :post-action, with the run's outcome, as in the subprocess variant
+      ;; (whose child exits in it).
+      (when (and current after-action (not hook-failure))
+        (multiple-value-bind (out err) (action-output)
+          (%with-action-hook-failures (hook-failure)
+            (call-hook after-action (car current) (cdr current)
+                       (%action-result exit-code nil out err
+                                       :status (if (eq status :failed)
+                                                   :failed
+                                                   :success))))))
+      (when hook-failure
+        (error hook-failure))
+      (make-eval-result
+       :status status
+       :exit-code exit-code
+       :value  (and final-value (render-runtime-value-safely final-value))
+       :output (get-output-stream-string captured-stdout-stream)
+       :error-output (get-output-stream-string captured-stderr-stream)))))
 
 ;;; --- EVAL-PLAN: subprocess variant --------------------------------
 
@@ -1158,19 +1272,35 @@ spelled as the child's parser reads them back
 The child applies its own defaults to the others, as the direct variant does."
   (clautolisp-subprocess-session-debugger-arguments session))
 
-(defun build-subprocess-argv (session plan &key front-end-bindings-file)
+(defun %child-plan (plan)
+  "The part of PLAN the child runs: the actions before the first :QUIT. The
+in-process engine stops at a :QUIT (alfe ... -x A --quit -x B never runs B),
+and the clautolisp program has no --quit, so the actions after it are simply
+not handed over."
+  (ldiff plan (member :quit plan :key #'action-kind)))
+
+(defun build-subprocess-argv (session plan &key front-end-bindings-file
+                                                action-boundaries)
   "Compose the clautolisp-sbcl argv for SESSION and PLAN. Used by EVAL-PLAN on
 the subprocess variant. FRONT-END-BINDINGS-FILE, when given, is passed as
---front-end-bindings so the child installs alfe's *AUTOLISP-...* values.
+--front-end-bindings so the child installs alfe's *AUTOLISP-...* values;
+ACTION-BOUNDARIES, when given, as --front-end-action-boundaries, so the child
+stops at each action boundary for alfe's per-action hooks.
 
 The options come from the option contract, not from a list kept here: every
 argv-fragment function an :ENGINE / :PROGRAM entry of
 *CLAUTOLISP-OPTION-CONTRACT* names under :FORWARD, once each, in table order
 (dialect, host, drawing, encodings, dribble, DCL) -- so an option is forwarded
 exactly when the contract says so (alfe-clautolisp-backend-semantic-parity.issue).
-Then the front-end bindings, then one flag pair per action of PLAN, last, so
-every option is in effect from the first -l / -x."
-  (let ((binary (clautolisp-backend-executable-path (session-backend session))))
+Then the front-end bindings and the boundaries, then one flag pair per action
+of the plan up to its first :QUIT (%CHILD-PLAN), last, so every option is in
+effect from the first -l / -x. A plan with no action for the child (alfe
+--quit) is the no-op -x \"\": the clautolisp program would take an empty
+command line for a REPL, which the in-process engine never starts."
+  (let ((binary (clautolisp-backend-executable-path (session-backend session)))
+        (action-flags (loop for action in (%child-plan plan)
+                            for flags = (action-to-cli-flags action)
+                            when flags append flags)))
     (append (list binary
                   "--quiet"
                   ;; The front-end owns bootstrap/init policy.  Loading the
@@ -1182,9 +1312,10 @@ every option is in effect from the first -l / -x."
             (when front-end-bindings-file
               (list "--front-end-bindings"
                     (namestring front-end-bindings-file)))
-            (loop for action in plan
-                  for flags = (action-to-cli-flags action)
-                  when flags append flags))))
+            (when action-boundaries
+              (list "--front-end-action-boundaries"
+                    (namestring action-boundaries)))
+            (or action-flags (list "-x" "")))))
 
 (defun %front-end-bindings-pathname (session)
   "Where EVAL-PLAN writes SESSION's front-end bindings for the child: in the
@@ -1201,17 +1332,31 @@ the run)."
                                   (uiop:temporary-directory)))
                 t))))
 
-(defmethod eval-plan ((session clautolisp-subprocess-session) plan)
+(defun %call-with-front-end-bindings (session function)
+  "Call FUNCTION with the pathname of the file holding SESSION's front-end
+bindings (NIL when it has none), written for the duration of the call."
   (let ((bindings (clautolisp-subprocess-session-front-end-bindings session)))
     (if (null bindings)
-        (%subprocess-eval-plan session plan nil)
+        (funcall function nil)
         (multiple-value-bind (file temporary-p) (%front-end-bindings-pathname session)
           (unwind-protect
                (progn
                  (clautolisp.autolisp-cli:write-transmit-bindings-file file bindings)
-                 (%subprocess-eval-plan session plan file))
+                 (funcall function file))
             (when temporary-p
               (ignore-errors (delete-file file))))))))
+
+(defmethod eval-plan ((session clautolisp-subprocess-session) plan)
+  (%call-with-front-end-bindings
+   session
+   (lambda (file) (%subprocess-eval-plan session plan file nil nil))))
+
+(defmethod eval-plan-with-action-hooks ((session clautolisp-subprocess-session) plan
+                                        before-action after-action)
+  (%call-with-front-end-bindings
+   session
+   (lambda (file)
+     (%subprocess-eval-plan session plan file before-action after-action))))
 
 (defun %process-stream-p (stream)
   "True when STREAM (synonym streams followed) is one of this process's own
@@ -1243,15 +1388,18 @@ terminal (ncurses) or talks to a GUI driver (gui)."
       ;; The debugger options start a debugger in the child (a DBG> prompt,
       ;; the aldb connect prompt, stdio RPC): it talks to the user.
       (clautolisp-subprocess-session-debugger-session-p session)))
-(defun %wait-for-engine-child (session process)
-  "Wait for the engine child PROCESS of SESSION to exit; return its status.
-While it runs, Control-C belongs to the CHILD, which applies its own
---on-interrupt policy (the subprocess variant forwards that option): alfe's
-handler does not die of it, and passes the signal on only when the terminal
-did not deliver it -- the child is in another process group (its input is not
-alfe's terminal); a child sharing alfe's group got it already, and a second one
-would read as a second Control-C. PROCESS is the session's PROCESS-INFO
-meanwhile, so a :INTERRUPT control request reaches it."
+
+(defun %wait-for-engine-child (session process &optional (wait #'uiop:wait-process))
+  "Wait for the engine child PROCESS of SESSION to exit -- by calling WAIT on
+it, UIOP:WAIT-PROCESS by default -- and return its status. While it runs,
+Control-C belongs to the CHILD, which applies its own --on-interrupt policy
+(the subprocess variant forwards that option): alfe's handler does not die of
+it, and passes the signal on only when the terminal did not deliver it -- the
+child is in another process group (its input is not alfe's terminal); a child
+sharing alfe's group got it already, and a second one would read as a second
+Control-C. PROCESS is the session's PROCESS-INFO meanwhile, so a :INTERRUPT
+control request reaches it. A child still running when the wait is left
+non-locally (a plug-in hook failed at an action boundary) is terminated."
   (let ((pid (ignore-errors (uiop:process-info-pid process))))
     (setf (clautolisp-subprocess-session-process-info session) process)
     (unwind-protect
@@ -1259,8 +1407,38 @@ meanwhile, so a :INTERRUPT control request reaches it."
           (lambda ()
             (when pid
               (ignore-errors (clautolisp.autolisp-cli:forward-sigint pid))))
-          (lambda () (uiop:wait-process process)))
+          (lambda () (funcall wait process)))
+      (when (ignore-errors (uiop:process-alive-p process))
+        (ignore-errors (uiop:terminate-process process :urgent t))
+        (ignore-errors (uiop:wait-process process)))
       (setf (clautolisp-subprocess-session-process-info session) nil))))
+
+(defun %wait-at-action-boundaries (process directory on-boundary)
+  "Wait for the child PROCESS, run with --front-end-action-boundaries
+DIRECTORY, to exit; return its status. Each boundary marker it publishes, in
+order -- action 1 :pre, action 1 :post, action 2 :pre, ... -- is read and
+handed to ON-BOUNDARY (its plist), then acknowledged, which lets the child go
+on (CLAUTOLISP.AUTOLISP-CLI:REPORT-ACTION-BOUNDARY is the other side)."
+  (let ((index 1)
+        (phase :pre))
+    (loop
+      (let ((marker (clautolisp.autolisp-cli:action-boundary-pathname
+                     directory index phase)))
+        (cond ((probe-file marker)
+               (funcall on-boundary
+                        (clautolisp.autolisp-cli:read-action-boundary marker))
+               (clautolisp.autolisp-cli:acknowledge-action-boundary
+                directory index phase)
+               (if (eq phase :pre)
+                   (setf phase :post)
+                   (setf phase :pre
+                         index (1+ index))))
+              ;; A child waits at each marker for its reply, so one that has
+              ;; exited left none unanswered.
+              ((not (uiop:process-alive-p process))
+               (return (uiop:wait-process process)))
+              (t
+               (sleep clautolisp.autolisp-cli:*action-boundary-poll-interval*)))))))
 
 (defun %temporary-file (name)
   (uiop:tmpize-pathname (merge-pathnames name (uiop:temporary-directory))))
@@ -1271,16 +1449,34 @@ meanwhile, so a :INTERRUPT control request reaches it."
     (loop for line = (read-line stream nil nil)
           while line do (write-line line out))))
 
-(defun %run-engine-child (session argv &key terminal external-format)
+(defun %file-text-from (path start external-format)
+  "The text of the file at PATH from character START on (\"\" when there is no
+such file)."
+  (let ((text (if (probe-file path)
+                  (uiop:read-file-string path :external-format external-format)
+                  "")))
+    (if (< start (length text)) (subseq text start) "")))
+
+(defun %run-engine-child (session argv &key terminal external-format
+                                            action-boundaries on-boundary)
   "Run the engine ARGV to completion, the way uiop:run-program would, but
 through LAUNCH-PROGRAM, so alfe knows the child while it runs (Control-C, see
 %WAIT-FOR-ENGINE-CHILD). The child reads alfe's standard input -- the
 descriptor itself when it is a process stream, else a copy of what the stream
 holds. TERMINAL: the child writes to alfe's own output and error streams
-(inherited when they are process streams, copied when the run ends otherwise)
-and nothing is captured. Otherwise its output and error output are captured in
-EXTERNAL-FORMAT (the default when NIL). Returns (VALUES STDOUT STDERR
-EXIT-CODE), STDOUT / STDERR NIL under TERMINAL."
+(inherited when they are process streams) and nothing is captured. Otherwise
+its output and error output are captured in EXTERNAL-FORMAT (the default when
+NIL). What the child writes to a stream it does not inherit is echoed to
+alfe's: at each action boundary and when it exits.
+
+ACTION-BOUNDARIES is the directory ARGV passes as --front-end-action-
+boundaries, or NIL. ON-BOUNDARY is then called at each boundary, before the
+child goes on, with the marker's plist and what the child wrote to its output
+and error output since the previous boundary.
+
+Returns (VALUES STDOUT STDERR EXIT-CODE STDOUT-TAIL STDERR-TAIL): STDOUT /
+STDERR the whole text (NIL under TERMINAL), the tails what came after the last
+boundary."
   (finish-output *standard-output*)
   (finish-output *error-output*)
   (let* ((format (or external-format uiop:*utf-8-external-format*))
@@ -1292,71 +1488,178 @@ EXIT-CODE), STDOUT / STDERR NIL under TERMINAL."
          (out-file (%temporary-file "alfe-engine-stdout.txt"))
          (err-file (%temporary-file "alfe-engine-stderr.txt"))
          (out-inherit (and terminal (%process-stream-p *standard-output*)))
-         (err-inherit (and terminal (%process-stream-p *error-output*))))
-    (unwind-protect
-         (let ((code (%wait-for-engine-child
-                      session
-                      (uiop:launch-program
-                       argv
-                       :input input
-                       :output (if out-inherit :interactive out-file)
-                       :if-output-exists :supersede
-                       :error-output (if err-inherit :interactive err-file)
-                       :if-error-output-exists :supersede
-                       :external-format format)))
-               (out (unless out-inherit
-                      (uiop:read-file-string out-file :external-format format)))
-               (err (unless err-inherit
-                      (uiop:read-file-string err-file :external-format format))))
-           (if terminal
-               (progn
-                 ;; A non-process stream (an embedding caller's, a test's)
-                 ;; receives what the child wrote, as uiop:run-program did.
-                 (when out (write-string out *standard-output*))
-                 (when err (write-string err *error-output*))
-                 (values nil nil code))
-               (values out err code)))
-      (dolist (file (list in-file out-file err-file))
-        (when file (ignore-errors (delete-file file)))))))
+         (err-inherit (and terminal (%process-stream-p *error-output*)))
+         (out-seen 0)
+         (err-seen 0))
+    (flet ((take-new-output ()
+             ;; What the child wrote since the last call, echoed to alfe's
+             ;; streams.
+             (let ((out (if out-inherit "" (%file-text-from out-file out-seen format)))
+                   (err (if err-inherit "" (%file-text-from err-file err-seen format))))
+               (incf out-seen (length out))
+               (incf err-seen (length err))
+               (write-string out *standard-output*)
+               (write-string err *error-output*)
+               (finish-output *standard-output*)
+               (finish-output *error-output*)
+               (values out err))))
+      (unwind-protect
+           (let ((code (%wait-for-engine-child
+                        session
+                        (uiop:launch-program
+                         argv
+                         :input input
+                         :output (if out-inherit :interactive out-file)
+                         :if-output-exists :supersede
+                         :error-output (if err-inherit :interactive err-file)
+                         :if-error-output-exists :supersede
+                         :external-format format)
+                        (if action-boundaries
+                            (lambda (process)
+                              (%wait-at-action-boundaries
+                               process action-boundaries
+                               (lambda (marker)
+                                 (multiple-value-bind (out err) (take-new-output)
+                                   (funcall on-boundary marker out err)))))
+                            #'uiop:wait-process))))
+             (multiple-value-bind (out-tail err-tail) (take-new-output)
+               (values (unless (or terminal out-inherit)
+                         (uiop:read-file-string out-file :external-format format))
+                       (unless (or terminal err-inherit)
+                         (uiop:read-file-string err-file :external-format format))
+                       code
+                       out-tail
+                       err-tail)))
+        (dolist (file (list in-file out-file err-file))
+          (when file (ignore-errors (delete-file file))))))))
 
+(defun %make-action-boundaries-directory (session)
+  "A fresh, empty directory for the action boundaries of one run of SESSION:
+in its workdir when it has one, else a temporary one."
+  (let* ((workdir (session-workdir session))
+         (directory
+           (uiop:ensure-directory-pathname
+            (if workdir
+                (merge-pathnames "action-boundaries/"
+                                 (uiop:ensure-directory-pathname workdir))
+                (merge-pathnames
+                 (format nil "alfe-action-boundaries-~36R/"
+                         (random (expt 36 10) (make-random-state t)))
+                 (uiop:temporary-directory))))))
+    (uiop:delete-directory-tree directory :validate t :if-does-not-exist :ignore)
+    (ensure-directories-exist directory)
+    directory))
 
-(defun %subprocess-eval-plan (session plan front-end-bindings-file)
+(defun %subprocess-eval-plan (session plan front-end-bindings-file
+                              before-action after-action)
+  "EVAL-PLAN of the subprocess variant; with BEFORE-ACTION / AFTER-ACTION (see
+EVAL-PLAN-WITH-ACTION-HOOKS), called at the action boundaries the child
+reports (--front-end-action-boundaries), while it waits: one child for the
+whole plan, so the run is the one EVAL-PLAN makes without them.
+
+The child's boundaries are its own actions, in the order it runs them: the
+-l / -x of %CHILD-PLAN, then its REPL. They are mapped back onto the plan's
+actions (a -l / -x / --main in plan order, the :INTERACTIVE), the no-op -x \"\"
+of an action-less plan onto none. A :QUIT has no counterpart in the child: its
+hooks are called when the child has run every action it was given, as the
+in-process engine reaches the :QUIT after the last one."
   (session-state-set session :running)
-  (let* ((argv (build-subprocess-argv session plan
+  (let* ((hooks-p (or before-action after-action))
+         (boundaries (and hooks-p (%make-action-boundaries-directory session)))
+         (argv (build-subprocess-argv session plan
                                       :front-end-bindings-file
-                                      front-end-bindings-file))
+                                      front-end-bindings-file
+                                      :action-boundaries boundaries))
+         (child-plan (%child-plan plan))
+         ;; (ACTION . INDEX) of the plan's actions the child runs as -l / -x.
+         (queue (loop for action in child-plan
+                      for index from 1
+                      when (member (action-kind action) '(:load :eval :main))
+                        collect (cons action index)))
+         (repl (loop for action in child-plan
+                     for index from 1
+                     when (eq (action-kind action) :interactive)
+                       return (cons action index)))
+         ;; How many actions the child runs: its -l / -x (or the no-op -x
+         ;; ""), then the REPL.
+         (child-action-count (+ (max 1 (length queue)) (if repl 1 0)))
+         (quit (let ((position (position :quit plan :key #'action-kind)))
+                 (and position (cons (nth position plan) (1+ position)))))
+         (posts 0)
+         (current nil)
+         (hook-failure nil)
          (captured-stdout (make-string-output-stream))
          (captured-stderr (make-string-output-stream))
          (status :success)
          (exit-status nil))
-    (log-debug "backend CLAUTOLISP (subprocess): launching: ~{~A~^ ~}" argv)
-    (handler-case
-        (multiple-value-bind (stdout stderr exit-code)
-            (%run-engine-child
-             session argv
-             :terminal (%subprocess-needs-terminal-p session plan)
-             :external-format (%subprocess-capture-external-format session))
-          (log-verbose "backend CLAUTOLISP (subprocess): exit ~A" exit-code)
-          (let ((stdout (or stdout ""))
-                (stderr (or stderr "")))
-            (write-string stdout captured-stdout)
-            (write-string stderr captured-stderr)
-            ;; Echo live, same contract as the direct variant.
-            (write-string stdout *standard-output*)
-            (write-string stderr *error-output*))
-          ;; The child's status is the engine's: (exit N), a file error's
-          ;; EX_NOINPUT -- passed on, as the direct variant does.
-          (setf exit-status exit-code)
-          (unless (zerop exit-code)
-            (setf status :failed)))
-      ;; The child could not be started: an operating-system failure
-      ;; (cannot fork / exec), EX_OSERR.
-      (error (probe)
-        (setf status :failed
-              exit-status clautolisp.sysexits:+ex-oserr+)
-        (format captured-stderr "subprocess launch failed: ~A~%" probe)
-        (format *error-output* "alfe: subprocess launch failed: ~A~%" probe)))
+    (when (and repl (null queue))
+      ;; -i alone: no no-op -x "" was added.
+      (setf child-action-count 1))
+    (labels ((call-hook (function &rest arguments)
+               (when function
+                 (apply #'%call-action-hook function arguments)))
+             (on-boundary (marker out err)
+               (ecase (getf marker :phase)
+                 (:pre
+                  ;; What came before the action is not the action's.
+                  (setf current (case (getf marker :kind)
+                                  ((:file :expression) (pop queue))
+                                  (:interactive repl)
+                                  (t nil)))
+                  (when current
+                    (call-hook before-action (car current) (cdr current))))
+                 (:post
+                  (incf posts)
+                  (when current
+                    (call-hook after-action (car current) (cdr current)
+                               (%action-result (getf marker :status)
+                                               (getf marker :value)
+                                               out err)))
+                  (setf current nil)))))
+      (log-debug "backend CLAUTOLISP (subprocess): launching: ~{~A~^ ~}" argv)
+      (unwind-protect
+           (handler-case
+               (%with-action-hook-failures (hook-failure)
+                 (multiple-value-bind (stdout stderr exit-code out-tail err-tail)
+                     (%run-engine-child
+                      session argv
+                      :terminal (%subprocess-needs-terminal-p session plan)
+                      :external-format (%subprocess-capture-external-format session)
+                      :action-boundaries boundaries
+                      :on-boundary #'on-boundary)
+                   (log-verbose "backend CLAUTOLISP (subprocess): exit ~A" exit-code)
+                   ;; Already echoed live by %RUN-ENGINE-CHILD.
+                   (write-string (or stdout "") captured-stdout)
+                   (write-string (or stderr "") captured-stderr)
+                   ;; The child's status is the engine's: (exit N), a file error's
+                   ;; EX_NOINPUT -- passed on, as the direct variant does.
+                   (setf exit-status exit-code)
+                   (unless (zerop exit-code)
+                     (setf status :failed))
+                   (cond
+                     ;; The child ended inside an action (an error, (exit N)).
+                     (current
+                      (call-hook after-action (car current) (cdr current)
+                                 (%action-result exit-code nil out-tail err-tail)))
+                     ;; It ran every action it was given: the plan's :QUIT.
+                     ((and hooks-p quit (= posts child-action-count))
+                      (call-hook before-action (car quit) (cdr quit))
+                      (call-hook after-action (car quit) (cdr quit)
+                                 (%action-result exit-code nil out-tail err-tail))))))
+             ;; The child could not be started: an operating-system failure
+             ;; (cannot fork / exec), EX_OSERR.
+             (error (probe)
+               (setf status :failed
+                     exit-status clautolisp.sysexits:+ex-oserr+)
+               (format captured-stderr "subprocess launch failed: ~A~%" probe)
+               (format *error-output* "alfe: subprocess launch failed: ~A~%" probe)))
+        (when boundaries
+          (ignore-errors
+           (uiop:delete-directory-tree boundaries :validate t
+                                                  :if-does-not-exist :ignore)))))
     (session-state-set session :done)
+    (when hook-failure
+      (error hook-failure))
     (let ((stdout-text (get-output-stream-string captured-stdout))
           (stderr-text (get-output-stream-string captured-stderr)))
       ;; Mirror into workdir/output.txt and errors.txt if requested.

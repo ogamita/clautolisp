@@ -112,6 +112,16 @@ deriving them from this command line.
 .B "alfe \-\-clautolisp \-\-backend subprocess"
 passes it, so a program sees the same values as under alfe's in-process
 engine.
+.TP
+.BR \-\-front-end-action-boundaries " " \fIDIR\fR
+Stop before and after each action (each
+.BR \-l ,
+.BR \-x ,
+and the REPL) and wait for the driving front end, which talks to the
+program through files in DIR.
+.B "alfe \-\-clautolisp \-\-backend subprocess"
+passes it when a plug-in has per-action hooks, so the hooks run between
+two actions of one run, as under alfe's in-process engine.
 .SS Debugger (aldo)
 .TP
 .BR \-\-on-error " " \fIPOLICY\fR

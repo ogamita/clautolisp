@@ -37,6 +37,7 @@
                 #:prepare-workdir
                 #:start-engine
                 #:eval-plan
+                #:eval-plan-with-action-hooks
                 #:shutdown
                 #:cleanup-workdir
                 #:make-action
@@ -1553,32 +1554,23 @@ outcome must not be replaced by a plug-in's teardown failure."
       nil)))
 
 (defun %eval-plan-with-hooks (session plan)
-  "Evaluate PLAN one action at a time so that :pre-action and :post-action
-can see each. Stops at the first action that does not succeed, as the
-backends do inside one EVAL-PLAN call. Used only when an active plug-in
-registered one of the two hooks."
-  (let ((count (length plan))
-        (results '()))
-    (loop for action in plan
-          for index from 1
-          do (run-hook :pre-action action :index index :count count
-                                          :session session)
-             (let ((result (eval-plan session (list action))))
-               (push result results)
-               (run-hook :post-action action :index index :count count
-                                             :session session :result result)
-               (unless (eq (eval-result-status result) :success)
-                 (return))))
-    (setf results (nreverse results))
-    (let ((last (car (last results))))
-      (make-eval-result
-       :status (if last (eval-result-status last) :success)
-       :value (and last (eval-result-value last))
-       :output (apply #'concatenate 'string (mapcar #'eval-result-output results))
-       :error-output (apply #'concatenate 'string
-                            (mapcar #'eval-result-error-output results))
-       :condition (and last (eval-result-condition last))
-       :exit-code (and last (eval-result-exit-code last))))))
+  "Evaluate PLAN through EVAL-PLAN-WITH-ACTION-HOOKS, calling :pre-action and
+:post-action around each action. Used only when an active plug-in registered
+one of the two hooks. How the actions are separated is the backend's business:
+the CAD backends evaluate the plan one action at a time and stop at the first
+that fails; the clautolisp backend, in both variants, stops at the action
+boundaries of the ONE run it would make without hooks, so the run -- its state,
+output, stopping point and exit status -- is the same with or without a
+plug-in (alfe-clautolisp-backend-semantic-parity.issue)."
+  (let ((count (length plan)))
+    (eval-plan-with-action-hooks
+     session plan
+     (lambda (action index)
+       (run-hook :pre-action action :index index :count count
+                                    :session session))
+     (lambda (action index result)
+       (run-hook :post-action action :index index :count count
+                                     :session session :result result)))))
 
 (defun %prepare-workdir-or-fail (backend workdir-root)
   "PREPARE-WORKDIR, with a workdir that cannot be created reported as a

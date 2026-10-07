@@ -168,6 +168,18 @@ The child reads alfe's standard input in every run, as the in-process
 engine does, so =printf '(princ 42)\n' | alfe -i= and a =GETSTRING= in a
 batch run see the same input under both variants.
 
+Three more things are the same in both variants. A plug-in with
+=:pre-action= / =:post-action= hooks watches the run without changing it:
+the child is one process for the whole plan that stops at each action
+boundary until alfe has called the hooks (alfe starts it with
+=--front-end-action-boundaries DIR=, a directory of small marker files
+through which the two wait for each other; see /Plug-ins/), so a variable
+set by one =-x= is there for the next, as in-process. =--quit= ends the
+plan: =alfe -x A --quit -x B= never runs =B=, and =alfe --quit= runs
+nothing (it does not start the child's REPL). =(clal-dribble FILE)= called
+from a =-l= / =-x= action records the run into FILE in both, the last,
+unterminated line included.
+
 The treatment of every option is written down once, in
 =alfe.backend.clautolisp:*clautolisp-option-contract*=, and the test
 suite fails when an option alfe accepts is missing from it; a table of
@@ -1593,10 +1605,15 @@ to its environment, as =(NAME . VALUE)= pairs, VALUE NIL to unset.
 The keyword details each hook receives (=:backend=, =:variant=, =:index=,
 =:result=, …) are listed in the specification, chapter /Plug-ins/.
 
-=:pre-action= and =:post-action= make alfe evaluate the plan one action
-at a time and stop at the first failed action — but only when an active
-plug-in registered one of them. Otherwise the whole plan goes to the
-backend in one call. =:launcher-lines=, =:launcher-script=,
+=:pre-action= and =:post-action= are called around each action, but only
+when an active plug-in registered one of them; otherwise the whole plan
+goes to the backend in one call. A CAD backend then evaluates the plan one
+action at a time and stops at the first failed action. The clautolisp
+backend runs the plan as the same single run it makes without the hooks --
+in-process, and in one clautolisp child that stops at each action boundary
+under =--backend subprocess= -- so AutoLISP state carries from one action
+to the next and the run ends where it would end anyway (a runtime error,
+=(exit N)=), whichever transport runs it. =:launcher-lines=, =:launcher-script=,
 =:launch-argv= and =:launch-options= are called by the CAD backends only:
 the clautolisp backend has no launch step.
 
