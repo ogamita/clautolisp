@@ -158,3 +158,54 @@ benchmark:autocad:windows death needs another explanation -- note that that
 job runs --mode batch (accoreconsole), which this ticket's own analysis
 already flagged.
 
+* Disconnected run, user SWITCHED (2026-10-07, job 16990501680)
+
+pjb switched user on PF5S26B, leaving the runner's session disconnected, then
+the job was replayed. Detector: "SESSION-STATE: transport=unknown
+connect=Disconnected locked=yes on-console=no" -- the old verdict text named
+it LOCKED, the ordering bug fixed above.
+
+| engine     | batch                 | automation (COM)       | epure                 |
+|------------+-----------------------+------------------------+-----------------------|
+| clautolisp | OK 2 s                | OK 0 s                 | OK 0 s                |
+| bricscad   | TIMEOUT 302 s, exit 75 | OK 2 s (see below)    | TIMEOUT 301 s, exit 75 |
+| autocad    | OK 14 s               | TIMEOUT 191 s, exit 75 | TIMEOUT 190 s, exit 75 |
+
+Every timeout is alfe's READY-TIMEOUT with last status "BOOTING": the engine
+was launched (AutoCAD by the cscript COM bridge, BricsCAD as =bricscad.exe
+/Automation /b run.scr=) and never evaluated alfe's bootstrap. (The probe's
+table labelled these REACHED-READY-THEN-FAILED because it matched the bare
+word READY, which alfe's timeout messages contain; it now matches "READY
+after".)
+
+The BricsCAD automation OK is not a fresh launch: it reached READY 0.79 s
+after the bridge started, against 10-23 s for a cold BricsCAD start in every
+other run. The bridge attached to the BricsCAD the timed-out batch run had
+launched -- that process answered COM (and evaluated alfe's files) while
+disconnected, though it never ran its /b script. A cold BricsCAD COM launch
+in a disconnected session is therefore not established either way.
+
+* Conclusion
+
+The hypothesis holds for the DISCONNECTED state and not for the lock screen:
+
+- locked (Win-L, console session still Active): everything works, COM
+  included (job 16984618487);
+- disconnected (switch user; detached RDP is the same WTS state): AutoCAD
+  COM -- automation and epure -- never starts; BricsCAD's GUI launch
+  (batch /b, epure) never starts; only headless paths work: clautolisp and
+  AutoCAD --mode batch (accoreconsole).
+
+Operational rule for the CAD runner: lock the screen, never switch user or
+leave an RDP client detached while CAD jobs may run; unattended CAD
+verification that must survive a disconnected session uses AutoCAD
+--mode batch. Each Windows CAD job's log carries the SESSION-STATE line, so a
+CAD job that dies with READY-TIMEOUT "BOOTING" under connect=Disconnected is
+this, not a code defect.
+
+The 2026-09-28 benchmark:autocad:windows death is NOT explained by this: it
+ran --mode batch (accoreconsole), which survives a disconnected session.
+
+Remaining for acceptance: the rdp-tcp transport report under RDP (criterion
+3) has not been seen on the machine.
+

@@ -116,7 +116,7 @@ $verdict  =
     if ($comReady)                          { 'DESKTOP-LIVE (COM/GUI CAD should work)' }
     # Disconnected first: a switched-user / detached-RDP session is usually ALSO
     # at the login screen (LogonUI up), and it is the state that matters.
-    elseif ($wts.ConnectState -eq 'Disconnected') { 'DISCONNECTED (COM/GUI CAD expected to FAIL; headless batch ok -- not yet measured)' }
+    elseif ($wts.ConnectState -eq 'Disconnected') { 'DISCONNECTED (COM/GUI CAD measured to FAIL, job 16990501680; headless batch ok)' }
     elseif ($locked)                        { 'LOCKED (console session still Active: COM/GUI CAD measured OK, job 16984618487)' }
     else                                    { ('connect-state=' + $wts.ConnectState + ' (COM/GUI CAD uncertain)') }
 
