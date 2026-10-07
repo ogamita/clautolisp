@@ -47,6 +47,11 @@ a fresh temporary directory, removed afterwards."
 (defun %file-text (path)
   (map 'string #'code-char (%file-octets path)))
 
+(defun %log-path-for-comparison (path)
+  "Compare log paths independently of the native directory separator.
+Keep the original path for opening the actual file."
+  (substitute #\/ #\\ path))
+
 (test command-log-autocad-name-header-content-and-encoding
   "AutoCAD: <path>/<drawing>_1<8 hex>.log, a header per opening, the whole
 command line, windows-1252; a toggle keeps the file, a new path makes another."
@@ -59,7 +64,9 @@ command line, windows-1252; a toggle keeps the file, a new path makes another."
             "AutoCAD stores LOGFILEPATH as given")
         (%log-setvar host "LOGFILEMODE" 1)
         (let ((name (%log-getvar host "LOGFILENAME")))
-          (is (eql 0 (search (concatenate 'string dir "logs/Drawing1_1") name)))
+          (is (eql 0 (search (concatenate 'string (%log-path-for-comparison dir)
+                                         "logs/Drawing1_1")
+                             (%log-path-for-comparison name))))
           (is (= (length (concatenate 'string dir "logs/Drawing1_1xxxxxxxx.log"))
                  (length name)))
           (is (probe-file name) "the log exists as soon as logging is on")
@@ -93,10 +100,13 @@ its own header, and the command channel only (not the REPL's PRINC output)."
                (set-runtime-session-host session host)
                (clautolisp.cador:apply-command-log-preferences host)
                (%log-setvar host "LOGFILEPATH" (concatenate 'string dir "logs"))
-               (is (equal (concatenate 'string dir "logs/") (%log-getvar host "LOGFILEPATH")))
+               (is (equal (concatenate 'string (%log-path-for-comparison dir) "logs/")
+                          (%log-path-for-comparison (%log-getvar host "LOGFILEPATH"))))
                (%log-setvar host "LOGFILEMODE" 1)
                (let ((name (%log-getvar host "LOGFILENAME")))
-                 (is (eql 0 (search (concatenate 'string dir "logs/Drawing1_") name)))
+                 (is (eql 0 (search (concatenate 'string (%log-path-for-comparison dir)
+                                                "logs/Drawing1_")
+                                    (%log-path-for-comparison name))))
                  (is (= (length (concatenate 'string dir "logs/Drawing1_2026-10-06_13-11-05.log"))
                         (length name)))
                  (clautolisp.cador::cador-write-prompt host "Start point: ")
