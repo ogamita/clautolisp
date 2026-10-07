@@ -435,8 +435,10 @@ Side effects:
     (and (member n '(0 1 2)) n)))
 
 (defun %autocad-default-file-encoding (version lispsys)
-  "The AutoCAD source / file default: before 2021 the ANSI code page;
-from 2021 the one LISPSYS selects (0: ANSI, 1 / 2: UTF-8)."
+  "The AutoCAD source / file-READ default: before 2021 the ANSI code page;
+from 2021 the one LISPSYS selects (0: ANSI, 1 / 2: UTF-8). OPEN's default
+WRITE is windows-1252 at every level (measured on AutoCAD 2022, E1 job
+16980926802); OPEN-DEFAULT-EXTERNAL-FORMAT applies that, not this."
   (if (or (not (integerp version)) (< version 2021) (eql lispsys 0))
       "WINDOWS-1252"
       "UTF-8"))
@@ -452,8 +454,9 @@ Returns the value, or NIL when none is saved."
 (defun apply-persisted-lispsys (context bindings)
   "Install the persisted LISPSYS (when one is saved for this product) and,
 under the AutoCAD dialects with no explicit -Esource / -e, make the
-encoding it selects the session's default for LOAD and OPEN -- ahead of the
-POSIX locale, which AutoCAD does not consult."
+encoding it selects the session's default for LOAD and OPEN's reads -- ahead
+of the POSIX locale, which AutoCAD does not consult. (OPEN's default write
+stays windows-1252 whatever LISPSYS says: OPEN-DEFAULT-EXTERNAL-FORMAT.)"
   (when context
     (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context))
           (dialect (ignore-errors (clautolisp.autolisp-reader:find-autolisp-dialect

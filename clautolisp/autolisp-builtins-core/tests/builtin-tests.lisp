@@ -8087,3 +8087,154 @@ The same table AutoCAD 2022 returned for (strlen / vl-string->list) of AéZ."
                                                   (vl-prin1-to-string (vl-string->list *e1-value*)))"
                                       utf8))))))
         (uiop:delete-directory-tree dir :validate t)))))
+
+;;; --- OPEN's encoding under the AutoCAD dialects, per LISPSYS ------------
+;;; autocad-open-encoding-lispsys-divergence: AutoCAD 2022 (E1, job
+;;; 16980926802, autolisp-front-end/tests/scenarios/entities/
+;;; lispsys-bom-probe.lsp) wrote and read "A" e-acute "B" at LISPSYS 0, 1, 2.
+;;; The LISPSYS a launch reads selects *AUTOLISP-FILE-ENCODING*
+;;; (apply-persisted-lispsys: 0 -> WINDOWS-1252, 1 / 2 -> UTF-8); the
+;;; helpers below lay down the same two values.
+
+(defun %e1-lispsys-prelude (lispsys)
+  (format nil "(setvar \"LISPSYS\" ~D) (setq *AUTOLISP-FILE-ENCODING* ~S)"
+          lispsys (if (eql lispsys 0) "WINDOWS-1252" "UTF-8")))
+
+(defun %e1-file-octets (path)
+  (with-open-file (in path :element-type '(unsigned-byte 8))
+    (loop :for b := (read-byte in nil) :while b :collect b)))
+
+(defun %e1-write (dialect prelude open-arguments)
+  "Write A e-acute B with WRITE-CHAR (as the probe does) through (open PATH
+OPEN-ARGUMENTS...) under DIALECT after PRELUDE; the file's octets."
+  (let ((path (namestring (merge-pathnames (format nil "clautolisp-e1w-~D.txt" (random 1000000))
+                                           (uiop:temporary-directory)))))
+    (unwind-protect
+         (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* (make-broadcast-stream)))
+           (reset-autolisp-symbol-table)
+           (%al (format nil "(progn (setq *AUTOLISP-DIALECT* '~A) ~A
+                                    (setq f (open ~S ~A))
+                                    (write-char 65 f) (write-char 233 f) (write-char 66 f)
+                                    (close f) 0)"
+                        dialect prelude path open-arguments))
+           (%e1-file-octets path))
+      (ignore-errors (delete-file path)))))
+
+(defun %e1-read (dialect prelude octets open-arguments)
+  "The READ-CHAR codes of a file holding OCTETS, opened with (open PATH
+OPEN-ARGUMENTS...) under DIALECT after PRELUDE, as a printed list."
+  (let ((path (namestring (merge-pathnames (format nil "clautolisp-e1r-~D.txt" (random 1000000))
+                                           (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (with-open-file (out path :direction :output :if-exists :supersede
+                                     :element-type '(unsigned-byte 8))
+             (write-sequence (coerce octets '(vector (unsigned-byte 8))) out))
+           (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* (make-broadcast-stream)))
+             (reset-autolisp-symbol-table)
+             (autolisp-string-value
+              (%al (format nil "(progn (setq *AUTOLISP-DIALECT* '~A) ~A
+                                       (setq f (open ~S ~A) acc nil)
+                                       (while (setq c (read-char f)) (setq acc (cons c acc)))
+                                       (close f)
+                                       (vl-prin1-to-string (reverse acc)))"
+                           dialect prelude path open-arguments)))))
+      (ignore-errors (delete-file path)))))
+
+(defparameter *e1-cp1252-octets* '(65 #xE9 66))
+(defparameter *e1-utf8-octets* '(65 #xC3 #xA9 66))
+(defparameter *e1-utf8-bom-octets* '(#xEF #xBB #xBF 65 #xC3 #xA9 66))
+
+(test autocad-open-writes-as-autocad-2022-does
+  ;; | LISPSYS | (open f "w") | (open f "w" "utf8") | (open f "w" "utf8-bom") |
+  ;; | 1, 2    | 3 B cp1252   | 4 B UTF-8, no BOM   | 7 B BOM + UTF-8         |
+  ;; | 0       | 3 B cp1252   | too many arguments  | too many arguments      |
+  (dolist (lispsys '(0 1 2))
+    (let ((prelude (%e1-lispsys-prelude lispsys)))
+      (is (equal *e1-cp1252-octets* (%e1-write "autocad-2022" prelude "\"w\""))
+          "LISPSYS ~D default write is not cp1252" lispsys)
+      ;; At LISPSYS 0 AutoCAD refuses the argument; clautolisp takes it
+      ;; (lenient, warned -- open-encoding-third-argument-warns-per-dialect)
+      ;; and writes what AutoCAD writes at 1 / 2.
+      (is (equal *e1-utf8-octets* (%e1-write "autocad-2022" prelude "\"w\" \"utf8\""))
+          "LISPSYS ~D (open f \"w\" \"utf8\") is not BOM-less UTF-8" lispsys)
+      (is (equal *e1-utf8-bom-octets* (%e1-write "autocad-2022" prelude "\"w\" \"utf8-bom\""))
+          "LISPSYS ~D (open f \"w\" \"utf8-bom\") wrote no BOM" lispsys)))
+  ;; The 2026 behavioural template (dialect default UTF-8, no LISPSYS set):
+  ;; Autodesk's OPEN page -- no argument, "MBCS".
+  (is (equal *e1-cp1252-octets* (%e1-write "autocad-2026" "" "\"w\"")))
+  (is (equal *e1-utf8-bom-octets* (%e1-write "autocad" "" "\"w\" \"utf8-bom\"")))
+  ;; The write default is cp1252 even after a runtime *AUTOLISP-FILE-ENCODING*
+  ;; ... but the file situation (-Efile-write) and an explicit -Esource / -e
+  ;; still win.
+  (is (equal *e1-utf8-octets*
+             (%e1-write "autocad-2022"
+                        "(setq *AUTOLISP-FILE-WRITE-ENCODING* \"UTF-8\")" "\"w\"")))
+  (is (equal *e1-utf8-octets*
+             (%e1-write "autocad-2022"
+                        "(setq *AUTOLISP-CAD-LOAD-ENCODING* \"UTF-8\" *AUTOLISP-FILE-ENCODING* \"UTF-8\")"
+                        "\"w\"")))
+  ;; Append mode keeps the default too.
+  (is (equal *e1-cp1252-octets* (%e1-write "autocad-2022" (%e1-lispsys-prelude 1) "\"a\""))))
+
+(test open-utf8-bom-and-default-write-unchanged-outside-autocad
+  ;; BricsCAD was measured to write no BOM (probe-open-encoding); the
+  ;; clautolisp / lax / strict dialects keep their behaviour.
+  (dolist (dialect '("bricscad-v26" "bricscad-mac" "clautolisp" "lax" "strict"))
+    (is (equal *e1-utf8-octets* (%e1-write dialect "" "\"w\" \"utf8-bom\""))
+        "~A (open f \"w\" \"utf8-bom\") changed" dialect))
+  (dolist (dialect '("clautolisp" "strict" "bricscad-v26"))
+    (is (equal *e1-utf8-octets*
+               (%e1-write dialect "(setq *AUTOLISP-FILE-ENCODING* \"UTF-8\")" "\"w\""))
+        "~A default write no longer follows *AUTOLISP-FILE-ENCODING*" dialect)))
+
+(test autocad-open-reads-as-autocad-2022-does
+  (dolist (lispsys '(1 2))
+    (let ((prelude (%e1-lispsys-prelude lispsys)))
+      ;; (open f "r"): all three files read back (65 233 66).
+      (dolist (octets (list *e1-cp1252-octets* *e1-utf8-octets* *e1-utf8-bom-octets*))
+        (is (equal "(65 233 66)" (%e1-read "autocad-2022" prelude octets "\"r\""))
+            "LISPSYS ~D (open f \"r\") misread ~S" lispsys octets))
+      ;; (open f "r" "utf8"): strict UTF-8.
+      (is (equal "(65 233 66)" (%e1-read "autocad-2022" prelude *e1-utf8-octets* "\"r\" \"utf8\"")))
+      (is (equal "(65279 65 233 66)"
+                 (%e1-read "autocad-2022" prelude *e1-utf8-bom-octets* "\"r\" \"utf8\""))
+          "LISPSYS ~D (open f \"r\" \"utf8\") hid the BOM" lispsys)
+      (is (equal "(65)" (%e1-read "autocad-2022" prelude *e1-cp1252-octets* "\"r\" \"utf8\""))
+          "LISPSYS ~D (open f \"r\" \"utf8\") did not stop at the invalid byte" lispsys)))
+  ;; LISPSYS 0: the cp1252 file reads (65 233 66).
+  (is (equal "(65 233 66)"
+             (%e1-read "autocad-2022" (%e1-lispsys-prelude 0) *e1-cp1252-octets* "\"r\"")))
+  ;; The data after the invalid byte is not read, whatever follows it.
+  (is (equal "(65 66)"
+             (%e1-read "autocad-2022" (%e1-lispsys-prelude 1)
+                       '(65 66 #xE9 67 #xC3 #xA9 10 68) "\"r\" \"utf8\"")))
+  ;; An explicit file-read encoding (-Efile-read) is honoured as given.
+  (is (equal "(65 195 169 66)"
+             (%e1-read "autocad-2022"
+                       (format nil "~A (setq *AUTOLISP-FILE-READ-ENCODING* \"WINDOWS-1252\")"
+                               (%e1-lispsys-prelude 1))
+                       *e1-utf8-octets* "\"r\""))))
+
+(test open-default-read-unchanged-outside-autocad
+  ;; Outside the AutoCAD dialects a default read decodes per
+  ;; *AUTOLISP-FILE-ENCODING* with no BOM skip and no fallback.
+  (is (equal "(65279 65 233 66)"
+             (%e1-read "clautolisp" "(setq *AUTOLISP-FILE-ENCODING* \"UTF-8\")"
+                       *e1-utf8-bom-octets* "\"r\"")))
+  (is (equal "(65279 65 233 66)"
+             (%e1-read "lax" "" *e1-utf8-bom-octets* "\"r\" \"utf8\""))))
+
+(test utf-8-valid-prefix-length-follows-rfc-3629
+  (flet ((len (&rest octets)
+           (clautolisp.autolisp-reader.internal:utf-8-valid-prefix-length
+            (coerce octets '(vector (unsigned-byte 8))))))
+    (is (= 0 (len)))
+    (is (= 4 (len 65 #xC3 #xA9 66)))
+    (is (= 1 (len 65 #xE9 66)))                 ; cp1252 e-acute
+    (is (= 1 (len 65 #xC0 #xAF)))               ; overlong
+    (is (= 1 (len 65 #xED #xA0 #x80)))          ; surrogate
+    (is (= 1 (len 65 #xF4 #x90 #x80 #x80)))     ; above U+10FFFF
+    (is (= 1 (len 65 #xE2 #x82)))               ; cut short
+    (is (= 5 (len 65 #xF0 #x9F #x98 #x80)))
+    (is (= 4 (len #xEF #xBB #xBF 65)))))

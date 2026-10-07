@@ -37,6 +37,17 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- OPEN's encoding under the AutoCAD dialects follows AutoCAD 2022 (2.2.222,
+  measured at LISPSYS 0, 1 and 2): ~(open f "w")~ now writes windows-1252
+  at every LISPSYS level (it wrote UTF-8 at 1 / 2 -- LISPSYS governs the
+  default read and ~load~, not the default write); ~(open f "w"
+  "utf8-bom")~ writes the byte-order mark; ~(open f "r")~ at LISPSYS 1 / 2
+  reads a windows-1252, a UTF-8 and a BOM + UTF-8 file alike (BOM skipped,
+  windows-1252 when the file is not UTF-8); ~(open f "r" "utf8")~ is strict:
+  a BOM reads as the character 65279 and the data ends at the first byte
+  that is not UTF-8. =-Efile-write= and an explicit =-Esource= still set
+  the default write. The BricsCAD, =strict=, =clautolisp= and =lax=
+  dialects are unchanged.
 - ncurses debugger windows (2.2.219): every Lisp REPL and aldo window is
   now an instance of its own over the one Lisp image -- ~M-x
   make-lisp-window~ twice gives =Lisp REPL= and =Lisp REPL<2>=, each with

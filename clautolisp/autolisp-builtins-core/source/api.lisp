@@ -2587,15 +2587,51 @@ under the same encoding round-trips:
 
 Before this consulted only tiers 2-3, so OPEN-for-write ignored
 *AUTOLISP-FILE-ENCODING* / -e and always wrote ANSI bytes while the
-read path honoured them — see open-write-ignores-file-encoding.issue."
-  (let ((dialect (ignore-errors (current-evaluation-dialect))))
-    (or (clautolisp.autolisp-runtime:lookup-autolisp-encoding-variable
-         (if (eq direction :input) "*AUTOLISP-FILE-READ-ENCODING*" "*AUTOLISP-FILE-WRITE-ENCODING*"))
-        (ignore-errors (clautolisp.autolisp-runtime:lookup-autolisp-file-encoding))
-        (and dialect
-             (clautolisp.autolisp-reader:autolisp-dialect-default-file-encoding
-              dialect))
-        :iso-8859-1)))
+read path honoured them — see open-write-ignores-file-encoding.issue.
+
+Under the AutoCAD dialects (autocad-open-encoding-lispsys-divergence,
+measured on AutoCAD 2022, E1 job 16980926802; Autodesk's OPEN page: with no
+encoding argument \"the file is assumed to contain ... MBCS\"):
+
+  - WRITE (DIRECTION not :input): windows-1252 at every LISPSYS level,
+    after tier 0 -- LISPSYS governs LOAD and the default READ, not OPEN's
+    default write. Only an explicit -Esource / -e (the non-empty
+    *AUTOLISP-CAD-LOAD-ENCODING*) keeps tiers 1-3, the user having asked
+    for that encoding.
+  - READ: tiers 1-3 as above; when they give UTF-8 (LISPSYS 1 / 2) the
+    second value is :UNICODE, telling OPEN to decode as AutoCAD does: a BOM
+    skipped, UTF-8 when the file is well-formed, windows-1252 otherwise.
+
+Returns (values EXTERNAL-FORMAT READ-POLICY)."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (autocad-p (and dialect
+                         (eq :autocad (ignore-errors
+                                       (clautolisp.autolisp-reader:autolisp-dialect-product
+                                        dialect)))))
+         (situation (clautolisp.autolisp-runtime:lookup-autolisp-encoding-variable
+                     (if (eq direction :input)
+                         "*AUTOLISP-FILE-READ-ENCODING*"
+                         "*AUTOLISP-FILE-WRITE-ENCODING*"))))
+    (cond
+      (situation situation)
+      ((and autocad-p
+            (not (eq direction :input))
+            (not (clautolisp.autolisp-runtime:lookup-autolisp-encoding-variable
+                  "*AUTOLISP-CAD-LOAD-ENCODING*")))
+       :cp1252)
+      (t
+       (let ((external-format
+               (or (ignore-errors (clautolisp.autolisp-runtime:lookup-autolisp-file-encoding))
+                   (and dialect
+                        (clautolisp.autolisp-reader:autolisp-dialect-default-file-encoding
+                         dialect))
+                   :iso-8859-1)))
+         (values external-format
+                 (and autocad-p
+                      (eq direction :input)
+                      (eq :unicode (clautolisp.autolisp-runtime::%autocad-source-policy
+                                    external-format))
+                      :unicode)))))))
 
 (defun %split-bricscad-mode-suffix (mode-string)
   "Parse BricsCAD's `,ccs=ENC' mode-suffix syntax from a MODE
@@ -2802,7 +2838,7 @@ silenced by (setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)."
   (let ((dialect (ignore-errors (current-evaluation-dialect))))
     (when (and dialect
                (clautolisp.autolisp-runtime::%warn-out-of-dialect-p
-                (ignore-errors (current-evaluation-context))))
+                (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-context))))
       (multiple-value-bind (code message)
           (%open-encoding-divergence
            (if (eq form :ccs-suffix) :ccs-suffix :positional)
@@ -2823,6 +2859,67 @@ it never creates under a folded name."
       (#\w :as-written)
       (#\a :prefer-existing)
       (t    :must-exist))))
+
+(defun %autocad-dialect-p ()
+  "True when the current dialect is an AutoCAD one (any version / platform)."
+  (eq :autocad (ignore-errors
+                (clautolisp.autolisp-reader:autolisp-dialect-product
+                 (current-evaluation-dialect)))))
+
+(defun %open-file-stream (path direction if-exists if-does-not-exist
+                          external-format read-policy encoding-string mode-string)
+  "The host stream OPEN hands back, or NIL. Plain
+OPEN-WITH-EXTERNAL-FORMAT, except under the AutoCAD dialects where three
+measured behaviours of AutoCAD 2022 (LISPSYS 1 / 2; E1 job 16980926802,
+autocad-open-encoding-lispsys-divergence) are reproduced:
+
+  - READ-POLICY :UNICODE (a default (open f \"r\") at UTF-8): decode the
+    file as AutoCAD does -- a UTF-8 BOM skipped, UTF-8 when well-formed,
+    windows-1252 otherwise (AUTOCAD-OPEN-READ-ENCODING);
+  - (open f \"r\" \"utf8\"): strict UTF-8 -- a BOM is an ordinary U+FEFF
+    character, and the data ends at the first byte that is not UTF-8;
+  - (open f \"w\" \"utf8-bom\"): a BOM (EF BB BF) first.
+
+The other dialects keep the plain open: BricsCAD was measured not to write
+the BOM (probe-open-encoding), and the clautolisp / lax / strict behaviour
+is unchanged."
+  (flet ((plain (format)
+           (clautolisp.autolisp-reader:open-with-external-format
+            path
+            :direction direction
+            :if-exists if-exists
+            :if-does-not-exist if-does-not-exist
+            :external-format format)))
+    (cond
+      ((and (eq read-policy :unicode) (eq direction :input))
+       (multiple-value-bind (format skip-bom-p)
+           (clautolisp.autolisp-reader.internal:autocad-open-read-encoding path)
+         (let ((stream (plain format)))
+           (when (and stream skip-bom-p)
+             (let ((first (read-char stream nil nil)))
+               (when (and first (/= (char-code first) #xFEFF))
+                 (unread-char first stream))))
+           stream)))
+      ((and encoding-string
+            (eq direction :input)
+            (string-equal encoding-string "utf8")
+            (%autocad-dialect-p))
+       (let ((stream (plain external-format)))
+         (when stream
+           (let ((prefix (clautolisp.autolisp-reader.internal:autocad-strict-utf-8-text path)))
+             (if prefix
+                 (progn (close stream) (make-string-input-stream prefix))
+                 stream)))))
+      ((and encoding-string
+            (eq direction :output)
+            (string= mode-string "w")
+            (string-equal encoding-string "utf8-bom")
+            (%autocad-dialect-p))
+       (let ((stream (plain external-format)))
+         (when stream
+           (write-char (code-char #xFEFF) stream))
+         stream))
+      (t (plain external-format)))))
 
 (defun builtin-open (filename mode &optional encoding)
   ;; Documented to set ERRNO on failure (autolisp-spec §16 ERRNO
@@ -2856,7 +2953,10 @@ it never creates under a folded name."
          (encoding-string (when encoding
                             (autolisp-string-value
                              (require-string encoding "OPEN"))))
-         (external-format nil))
+         (external-format nil)
+         ;; :UNICODE when the default read decodes as AutoCAD at LISPSYS
+         ;; 1 / 2 does (OPEN-DEFAULT-EXTERNAL-FORMAT's second value).
+         (read-policy nil))
     (emit-dotdot-path-portability-warning path-string "OPEN")
     (multiple-value-bind (mode-string ccs-encoding-string)
         (%split-bricscad-mode-suffix raw-mode-string)
@@ -2870,20 +2970,20 @@ it never creates under a folded name."
              (or encoding-string ccs-encoding-string)))
         (when effective-encoding-string
           (%check-open-encoding-supported effective-encoding-string "OPEN")))
-      (setf external-format
-            (cond
-              ;; Positional wins over CCS when both supplied — more
-              ;; explicit form. Document for users via the
-              ;; foreign-dialect diagnostic the ccs= already emitted.
-              (encoding-string
-               (parse-open-external-format encoding-string))
-              (ccs-encoding-string
-               (parse-open-external-format ccs-encoding-string))
-              (t (open-default-external-format
-                  (if (and (plusp (length mode-string))
-                           (char-equal #\r (char mode-string 0)))
-                      :input
-                      :output)))))
+      (multiple-value-setq (external-format read-policy)
+        (cond
+          ;; Positional wins over CCS when both supplied — more
+          ;; explicit form. Document for users via the
+          ;; foreign-dialect diagnostic the ccs= already emitted.
+          (encoding-string
+           (parse-open-external-format encoding-string))
+          (ccs-encoding-string
+           (parse-open-external-format ccs-encoding-string))
+          (t (open-default-external-format
+              (if (and (plusp (length mode-string))
+                       (char-equal #\r (char mode-string 0)))
+                  :input
+                  :output)))))
       (multiple-value-bind (direction if-exists if-does-not-exist)
           (open-direction-and-options mode-string)
         ;; ENC-HOST-DEPENDENT — writing under ANSI / MBCS yields
@@ -2911,12 +3011,9 @@ it never creates under a folded name."
 location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
                   path-string))))))
         (handler-case
-            (let ((stream (clautolisp.autolisp-reader:open-with-external-format
-                           path
-                           :direction direction
-                           :if-exists if-exists
-                           :if-does-not-exist if-does-not-exist
-                           :external-format external-format)))
+            (let ((stream (%open-file-stream path direction if-exists if-does-not-exist
+                                             external-format read-policy
+                                             encoding-string mode-string)))
               (if stream
                   (errno-and-return 0 (make-autolisp-file stream path-string raw-mode-string))
                   (errno-and-return 22 nil)))
