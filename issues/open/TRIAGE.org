@@ -442,8 +442,15 @@ headless):
 - PARTIAL =cadtui-locale-probe-pgp-aliases= — MAJ 2026-09-29 : fr_FR fait (2.2.62,
   alias.sexp) ; autres locales comme ci-dessus. P3/machine: harvest keyboard aliases
   from acad.pgp/default.pgp (the third, distinct dictionary; never =_=-prefixed).
-- TODO =cadtui-locale-option-keywords= — P3/machine: harvest localised command
+- PARTIAL =cadtui-locale-option-keywords= — P3/machine: harvest localised command
   option keywords + abbreviations (hardest; narrow to common commands first).
+  MAJ 2026-10-06 : premières récoltes fr_FR (AutoCAD 2022, BricsCAD V25 Windows ;
+  MR !440). MAJ 2026-10-07 : 57 paires (international . local) PAR PRODUIT
+  appariées sur les références anglaises citées, livrées (2.2.229,
+  fr_FR/option-keyword.sexp + local-option-keyword / international-option-keyword).
+  Reste : « sélectionner les options (?) » de BricsCAD (8 commandes) à mesurer sur
+  une installation ANGLAISE ; AutoCAD RECTANG/PLINE/BREAK/LENGTHEN/ZOOM et
+  BricsCAD PLINE/LENGTHEN non récoltés.
 
 ** Re-examine (block lifted 2026-08-15; await pjb confirm-close)
 - =drawing-data-structures-parity=, =selection-and-snapshot-parity= — headless work done

@@ -44,6 +44,14 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- cadtui French option keywords (2.2.229): ~--host cadtui~ now ships an
+  fr_FR option-keyword dictionary, per product -- the French keywords
+  measured on French AutoCAD 2022 and BricsCAD V25 installs (OFFSET, TRIM,
+  EXTEND, FILLET, CHAMFER; plus RECTANG and ZOOM on BricsCAD), each paired
+  with its international keyword from the vendor's English command
+  reference: a French keyword, whole or abbreviated (~N~ for ~aNnuler~),
+  resolves to the international one. user-manual § /cadtui localisation
+  dictionaries/.
 - =load_dialog= returns a positive handle from the first file on (2.2.223):
   the first successful call of a fresh process used to return 0, which the
   usual =(> dcl_id 0)= test rejects; Autodesk documents a positive integer

@@ -109,3 +109,120 @@ English install's prompts (or the vendors' English documentation for these
 "aNnuler" -> N). Note that the two products' keyword sets differ (OFFSET:
 AutoCAD [Par/Effacer/Calque], BricsCAD [Passer par le point/Effacer/Calque]),
 so the dictionary is per product.
+
+
+## Pairing with the international keywords (2026-10-07, clautolisp 2.2.229)
+
+The harvested local keywords are now PAIRED with their international keywords,
+per product, and shipped: clautolisp/cadtui/data/locale/fr_FR/option-keyword.sexp
+(57 pairs), loaded by cadtui like the other locale files.
+
+How
+- The two first-cut harvests are committed (re-generated from the job
+  artifacts 16981155886 / 16981155888 with the converter):
+  probe-results/optkw/fr_FR/autocad-2022-windows.sexp and
+  bricscad-v25-windows.sexp. The converter now splits an option list only on
+  the slashes OUTSIDE parentheses, so BricsCAD ZOOM's "Échelle (nx/nxp)" is
+  one keyword (it was cut in two in the 2026-10-06 list above).
+- probe-results/optkw/fr_FR/international-en.json is the pairing table: per
+  product, per command, the English reference URL, the harvested local list
+  (the converter REFUSES the pairing if the harvest no longer matches it) and
+  the aligned international list (null = not paired).
+- `scripts/cadtui-optkw-to-sexp.py --pair probe-results/optkw/fr_FR/international-en.json
+  -o clautolisp/cadtui/data/locale/fr_FR/option-keyword.sexp` writes the
+  dictionary: ((:AUTOCAD ("_CMD" (international . local) ...) ...) (:BRICSCAD ...)).
+  The URL of each command is written above it in the data file.
+- Pairing rule: position AND meaning against the vendor's English command
+  reference; every settled pair below agrees on both (same count, same order,
+  same meaning). The international string is the documented option label
+  (BricsCAD's reference shows the prompt capitals, e.g. mEthod; Autodesk's
+  pages show plain headings, e.g. Method) -- not a measured English prompt, so
+  the English abbreviation letters are NOT claimed.
+- The local abbreviation is not stored: OPTION-KEYWORD-ABBREVIATION reads it
+  off the local keyword (its capitals: aNnuler -> N, ANgle -> AN; or its
+  parenthesised capitals: "étendu (ET)" -> ET).
+
+cadtui API (exported from clautolisp.cadtui):
+  (local-option-keyword "_OFFSET" "Through" "fr_FR" :product :autocad) => "Par"
+  (international-option-keyword "_CHAMFER" "N" "fr_FR" :product :autocad) => "Undo"
+  (international-option-keyword "_OFFSET" "P" "fr_FR" :product :bricscad-v25) => "Through point"
+  A whole local keyword or its abbreviation resolves; "_kw" forces the
+  international form; a dialect name folds onto its product; anything unknown
+  passes through (identity fallback). Tests: 5 FiveAM tests (45 checks) in
+  cadtui/tests/locale-tests.lisp.
+
+Sources
+AutoCAD 2022 (accoreconsole fr harvest, job 16981155886); the same GUIDs serve
+the 2026 reference (cloudhelp/2026/...):
+- OFFSET  https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-C0E4246D-C420-42BD-A6FC-8B1852EFD005.htm
+- TRIM    https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-B1A185EF-07C6-4C53-A76F-05ADE11F5C32.htm
+- EXTEND  https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-89DD7B0F-F4F1-410D-9A3A-5847CA5F8744.htm
+- FILLET  https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-64F8B700-23B3-4BD6-8C03-66121AA13E8F.htm
+- CHAMFER https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-B1DCF991-90A7-4DB0-96FC-BDA3FB76337C.htm
+BricsCAD V25 (Windows fr_FR harvest, job 16981155888):
+- OFFSET  https://help.bricsys.com/en-us/document/command-reference/o/offset-command?version=V25
+- TRIM    https://help.bricsys.com/en-us/document/command-reference/t/trim-command?version=V25
+- EXTEND  https://help.bricsys.com/en-us/document/command-reference/e/extend-command?version=V25
+- FILLET  https://help.bricsys.com/en-us/document/command-reference/f/fillet-command?version=V25
+- CHAMFER https://help.bricsys.com/en-us/document/command-reference/c/chamfer-command?version=V25
+- RECTANG https://help.bricsys.com/en-us/document/command-reference/r/rectang-command?version=V25
+- ZOOM    https://help.bricsys.com/en-us/document/command-reference/z/zoom-command?version=V25
+- MIRROR / ROTATE / SCALE / BREAK: .../m/mirror-command, .../r/rotate-command,
+  .../s/scale-command, .../b/break-command (?version=V25) -- none documents "(?)".
+
+Pairing table (international <- local [local abbreviation]); SETTLED unless marked
+
+AutoCAD 2022
+  _OFFSET   Through <- Par [P]; Erase <- Effacer [E]; Layer <- Calque [C]
+  _TRIM     Mode <- mOde [O]
+  _EXTEND   Mode <- mOde [O]
+  _FILLET   Undo <- aNnuler [N]; Polyline <- Polyligne [P]; Radius <- Rayon [R];
+            Trim <- Ajuster [A]; Multiple <- mUltiple [U]
+  _CHAMFER  Undo <- aNnuler [N]; Polyline <- Polyligne [P]; Distance <- Ecart [E];
+            Angle <- ANgle [AN]; Trim <- AJuster [AJ]; Method <- Méthode [M];
+            Multiple <- mUltiple [U]
+
+BricsCAD V25
+  _OFFSET   Through point <- Passer par le point [P]; Erase <- Effacer [E];
+            Layer <- Calque [C]
+  _TRIM     mOde <- Mode [M];   TO MEASURE: "sélectionner les options (?)"
+  _EXTEND   mOde <- Mode [M];   TO MEASURE: "sélectionner les options (?)"
+  _FILLET   fillet Settings <- PAramètres raccord... [PA]; Polyline <- Polyligne [P];
+            Radius <- Rayon [R]; Trim <- Ajuster [A]; Undo <- annUler [U];
+            Multiple <- Multiple [M];   TO MEASURE: "sélectionner les options (?)"
+  _CHAMFER  chamfer Settings <- PAramètres du chanfrein... [PA]; Polyline <- POlyligne [PO];
+            Angle <- ANgle [AN]; Distance <- Distance [D]; mEthod <- méthodE [E];
+            Trim <- AJuster [AJ]; Undo <- annUler [U]; Multiple <- Multiple [M];
+            TO MEASURE: "sélectionner les options (?)"
+  _RECTANG  Chamfer <- Chanfrein [C]; Fillet <- Raccord [R]; Rotated <- Pivoté [P];
+            Square <- CArré [CA]; Elevation <- Elévation [E]; Thickness <- EPaisseur [EP];
+            Width of line <- Largeur de ligne [L]; Area <- Aire [A];
+            Dimensions <- Dimensions [D]
+  _ZOOM     In <- zoom Avant [A]; Out <- zoom aRrière [R]; All <- TOUt [TOU];
+            Center <- Centre [C]; Dynamic <- DYnamique [DY]; Extents <- étendu (ET) [ET];
+            Left <- Gauche [G]; Previous <- Précédent [P]; Right <- Droite [D];
+            Scale <- Échelle (nx/nxp) [É]; Window <- Fenêtre [F]; ENtity <- ENtité [EN]
+            (the reference lists Scale, nx and Nxp as three headings; the prompt
+            offers them as the one keyword "Échelle (nx/nxp)", paired with Scale)
+  _MIRROR / _ROTATE / _SCALE / _BREAK   TO MEASURE: "sélectionner les options (?)"
+            (the only keyword in their first prompt)
+
+REMAINS (the ticket stays open)
+1. TO MEASURE on an ENGLISH BricsCAD install: the international keyword of
+   "sélectionner les options (?)" -- offered by BricsCAD V25 at TRIM, EXTEND,
+   FILLET, CHAMFER, MIRROR, ROTATE, SCALE, BREAK, and documented on none of
+   those reference pages. Left out of the dictionary (falls back), not guessed.
+   The probe (autolisp-front-end/tests/scenarios/entities/optkw-probe.lsp, CI
+   jobs optkw:probe:*) is ready, but both runners are FRENCH installs; an
+   English install (or an English language pack on the Windows runner) is
+   needed. The same run would replace the documented labels with the
+   measured English keywords and their English abbreviations.
+2. NOT HARVESTED yet (no local keyword to pair):
+   - AutoCAD 2022: MIRROR, ROTATE, SCALE gave no bracketed prompt in the log
+     (their first prompt is a plain object selection); RECTANG, PLINE, BREAK,
+     LENGTHEN, ZOOM were not reached by job 16981155886 (the run ended there;
+     ZOOM has since been moved last) -- re-run optkw:probe:accoreconsole:windows.
+   - BricsCAD V25: PLINE and LENGTHEN gave no bracketed prompt in the log.
+   - BricsCAD V26 macOS: no log in batch mode (measured, probe-logfile).
+   Deeper prompts (the options offered after the first answer) are not driven.
+3. Other locales: like the getcname/pgp harvests, need localised installs.
