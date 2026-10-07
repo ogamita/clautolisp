@@ -1521,6 +1521,7 @@ this order, and runs the first that exists:
    =dispatch.cmd=. A development image (running as =sbcl= or =ccl=)
    claims no installation;
 3. the =clautolisp/tools/clautolisp/bin/clautolisp-sbcl= of the checkout
+   (=clautolisp-sbcl.exe= on MS-Windows)
    alfe was compiled from, only when that file exists;
 4. =clautolisp-sbcl[.exe]= on =$PATH= (split on =;= on MS-Windows, on
    =:= elsewhere);

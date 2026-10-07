@@ -498,7 +498,7 @@ MS-Windows), is looked for in this order, by =--host cadtui= and by
    included, after being moved, from any current directory, without
    =$PATH= entries for =libexec= and without =$ALFE_CLAUTOLISP_BIN=;
 3. the =tools/clautolisp/bin/clautolisp-sbcl= of the checkout alfe was
-   built from, only when that file still exists;
+   built from (=clautolisp-sbcl.exe= on MS-Windows), only when that file still exists;
 4. =clautolisp-sbcl= on =$PATH=;
 5. =/usr/local/bin/clautolisp-sbcl= (not on MS-Windows).
 

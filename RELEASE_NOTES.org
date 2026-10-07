@@ -1696,6 +1696,9 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
+- Windows checkout discovery now finds =clautolisp-sbcl.exe= before falling
+  back to PATH. See the user manual's engine discovery search order.
+
 alfe is the multi-backend driver: it speaks the AutoLISP CLI surface,
 resolves a backend (in-process clautolisp, or a CAD-host bridge via
 file or COM), and forwards the workload.

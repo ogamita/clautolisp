@@ -1,0 +1,23 @@
+#+TITLE: Remaining alfe test portability failures on Windows
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS:
+#+BRANCH:
+
+* Observations (2026-10-07)
+Running autolisp-front-end/tests on SBCL on Windows exposed three failures
+outside the backend discovery and parity fixes:
+- actions-load-missing-file expects a drive-less POSIX path in stderr.
+- kill-engine-process-is-bounded-not-blocking cannot launch sh when MSYS
+  executables are absent from PATH in a native PowerShell session.
+- autocad-build-launch-argv-batch-discovers-template-and-still-requires-accoreconsole
+  compares a drive-qualified drawing path against a drive-less workdir.
+
+* Reproduction
+Load the clautolisp and autolisp-front-end ASDF definitions, then run
+asdf:test-system on autolisp-front-end under native SBCL on Windows.
+
+* Work
+Make pathname expectations portable without weakening their checks. Review
+the process fixture's shell dependency and document or replace it.

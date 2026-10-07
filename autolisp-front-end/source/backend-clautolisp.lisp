@@ -203,7 +203,9 @@ the build checkout (when it still exists), $PATH, /usr/local/bin."))
                                :name nil :type nil :version nil
                                :defaults self))
                   (sibling (merge-pathnames
-                            #P"../../clautolisp/tools/clautolisp/bin/clautolisp-sbcl"
+                            (if (uiop:os-windows-p)
+                                #P"../../clautolisp/tools/clautolisp/bin/clautolisp-sbcl.exe"
+                                #P"../../clautolisp/tools/clautolisp/bin/clautolisp-sbcl")
                             source-dir)))
              (namestring sibling))))
   "Best-guess absolute path of the clautolisp-sbcl binary inside this

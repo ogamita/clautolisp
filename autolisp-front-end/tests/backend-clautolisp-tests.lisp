@@ -458,6 +458,13 @@ about where the engine is, so nothing is proposed from it."
              (%disc-candidates :exe #P"/usr/local/bin/sbcl")))
   (is (equal '("/usr/local/bin/clautolisp-sbcl") (%disc-candidates :exe nil))))
 
+(test clautolisp-checkout-engine-has-native-executable-suffix
+  "The checkout candidate must name the executable built on this host."
+  (let ((path alfe.backend.clautolisp::*checkout-sibling-clautolisp*))
+    (is (stringp path))
+    (is (equal (if (uiop:os-windows-p) "exe" nil)
+               (pathname-type (pathname path))))))
+
 (test clautolisp-stale-checkout-path-is-ignored-when-absent
   "The checkout path captured at compile time is tried only when the
 file exists; a vanished build tree neither shadows the installed engine
@@ -494,14 +501,18 @@ installed engine; empty means unset."
 letter) and on `:' elsewhere; the engine is looked for under its
 platform name."
   (let* ((root (%disc-scratch-root "path"))
-         (bin (merge-pathnames "b i n/" root)))
+         (bin (merge-pathnames "b i n/" root))
+         ;; The simulated POSIX PATH cannot contain a Windows drive colon:
+         ;; it would be interpreted as a list separator. The Windows case
+         ;; below deliberately retains it to exercise semicolon splitting.
+         (posix-bin (make-pathname :device nil :defaults bin)))
     (unwind-protect
          (progn
            (%disc-touch (merge-pathnames "clautolisp-sbcl" bin))
            (%disc-touch (merge-pathnames "clautolisp-sbcl.exe" bin))
-           (is (equal (namestring (merge-pathnames "clautolisp-sbcl" bin))
+           (is (equal (namestring (merge-pathnames "clautolisp-sbcl" posix-bin))
                       (first (%disc-candidates
-                              :path (format nil "/nonexistent:~A" (namestring bin))))))
+                              :path (format nil "/nonexistent:~A" (namestring posix-bin))))))
            (is (equal (namestring (merge-pathnames "clautolisp-sbcl.exe" bin))
                       (first (%disc-candidates
                               :os :windows
