@@ -94,6 +94,12 @@ someone is RDP'd in and fails after they disconnect is this, not flakiness.
 - Every Windows CAD job's log contains the =SESSION-STATE:= line.
 - The detector correctly reports =locked= at the login screen and the
   =rdp-tcp= transport under RDP (confirmed on the machine).
+- (added 2026-10-07, pjb) The disconnected matrix is measured in BOTH
+  network contexts: with the VPN dropping with the session (PF5S26B, job
+  16990501680 -- done) AND with NO VPN, license servers still reachable while
+  the session is disconnected (the Windows Server runner), so that the
+  desktop is the only variable. No license dialog may be waiting on
+  reconnection for a no-VPN row to count.
 
 * Note
 
@@ -185,7 +191,7 @@ launched -- that process answered COM (and evaluated alfe's files) while
 disconnected, though it never ran its /b script. A cold BricsCAD COM launch
 in a disconnected session is therefore not established either way.
 
-* CONFOUNDED: the VPN went down with the session (pjb, 2026-10-07)
+* Conclusion, for a runner whose VPN drops with the session (pjb, 2026-10-07)
 
 When pjb reconnected after the run, two dialogs were waiting on the desktop:
 
@@ -197,37 +203,37 @@ When pjb reconnected after the run, two dialogs were waiting on the desktop:
   find the licensing data it needs" (specify the license server / file).
 
 On PF5S26B the license servers (the FlexNet one EPURE uses, on the
-enterprise LAN) are reached through a VPN, and the VPN dropped when the
-session was disconnected (it tried to reconnect as the new user). So during
-job 16990501680 the CADs had NO LICENSE SERVER as well as no desktop, and the
-run cannot tell the two apart:
-
-- the BricsCAD batch / epure timeouts coincide with BricsCAD's own "license no
-  longer valid" dialog -- a modal dialog on a desktop nobody sees is exactly a
-  launch stuck at BOOTING;
-- the epure FlexNet license was certainly unavailable;
-- AutoCAD --mode automation / --epure: not attributable either; that
-  AutoCAD --mode batch (accoreconsole) still ran shows only that ITS license
-  path worked.
-
-What the two runs DO establish:
+enterprise LAN) are reached through a VPN, and disconnecting the user
+disconnects the VPN too (it tries to reconnect as the new user). So on this
+runner a disconnected session means no desktop AND no license server, and
+pjb's ruling is to keep the conclusion in that context:
 
 - locked console session (Win-L, VPN up): everything works, COM included
-  (job 16984618487) -- the lock screen is not a problem;
-- headless paths (clautolisp, AutoCAD accoreconsole) survive a disconnected
-  session even without the VPN.
+  (job 16984618487) -- locking is safe;
+- disconnected session (switch user; a detached RDP client is the same WTS
+  state), VPN dropping with it: AutoCAD COM (automation, epure) and BricsCAD's
+  GUI launches (batch /b, epure) never get past BOOTING; only the headless
+  paths work -- clautolisp and AutoCAD --mode batch (accoreconsole)
+  (job 16990501680). The BricsCAD timeouts coincide with its "license no
+  longer valid" dialog, a modal dialog on a desktop nobody sees.
 
-What is NOT established: whether a disconnected session, with its license
-servers still reachable, breaks COM / GUI CAD launches.
+Operational rule for PF5S26B: lock the screen; never switch user or leave an
+RDP client detached while CAD jobs may run. Unattended CAD verification that
+must survive a disconnect uses AutoCAD --mode batch. A Windows CAD job that
+dies with READY-TIMEOUT "BOOTING" under connect=Disconnected is this, not a
+code defect.
 
-* Next: redo on the Windows Server runner (no VPN)
+Which of the two causes -- the missing desktop or the missing license server
+-- breaks the COM / GUI launches is NOT separated by this run.
+
+The 2026-09-28 benchmark:autocad:windows death is not explained by this: it
+ran --mode batch (accoreconsole), which survives a disconnected session.
+
+* Next: the NO-VPN case, on the Windows Server runner (required, see the acceptance criteria)
 
 Replay probe:cad-session-state:windows in a disconnected session on the
 Windows Server machine, whose license servers are reachable without a VPN,
-so that the desktop is the only variable. Before trusting a row, check on
-reconnection that no license dialog is waiting (and that the session-state
-line says connect=Disconnected). Until then, the operational rule is only
-"locking is safe"; keep the runner's session connected (no switch user, no
-detached RDP), if only because on PF5S26B that also drops the VPN.
+so that the desktop is the only variable. On reconnection, check that no
+license dialog is waiting before trusting the rows.
 
 Remaining for acceptance, as before: the rdp-tcp transport report under RDP.
