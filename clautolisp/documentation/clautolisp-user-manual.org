@@ -1169,6 +1169,26 @@ a per-session log; ~command~ returns ~nil~. Read the log back with
 signals ~:host-not-supported~ (~vl-cmdf~ instead returns ~nil~, per
 its T / nil success contract).
 
+*** cadtui localisation dictionaries
+
+Under ~--host cadtui~ the interaction language and the CAD vocabulary are
+localisable (cadtui spec § /Localisation/): the dictionaries are data files
+under ~cadtui/data/locale/<locale>/~, baked into the executable. fr_FR ships
+four: ~verb~ / ~keyword~ (the interaction language: ~=activer(dessins[2])~),
+~command~ (command names, measured with ~getcname~: ~LIGNE~ = ~_LINE~),
+~alias~ (the French ~acad.pgp~), and, since 2.2.229, ~option-keyword~: the
+French option keywords of OFFSET, TRIM, EXTEND, FILLET and CHAMFER on AutoCAD
+and of OFFSET, TRIM, EXTEND, FILLET, CHAMFER, RECTANG and ZOOM on BricsCAD,
+each paired with its international keyword *per product* (the two products
+offer different keyword sets: OFFSET's ~Par~ on AutoCAD is ~Passer par le
+point~ on BricsCAD). A French keyword, whole or abbreviated by its capitals
+(~aNnuler~ or ~N~ at an AutoCAD CHAMFER), resolves to the international one
+(~Undo~); a leading ~_~ forces the international form; anything the dictionary
+does not hold passes through unchanged. The French side was measured on
+French installs; the English side comes from the vendors' English command
+references, and the keywords those do not settle (BricsCAD's
+~sélectionner les options (?)~) are left out until measured.
+
 *** The ActiveX / COM object model (~vla-*~ / ~vlax-*~)
 
 Visual LISP exposes the CAD object model through ActiveX. clautolisp

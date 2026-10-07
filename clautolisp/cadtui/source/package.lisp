@@ -243,6 +243,9 @@ documentation/cadtui-specifications.org (normative).")
    #:register-locale-dictionary
    #:local-name
    #:international-name
+   #:local-option-keyword
+   #:international-option-keyword
+   #:option-keyword-abbreviation
    #:resolve-locale
    #:set-current-locale
    #:init-locale-from-environment

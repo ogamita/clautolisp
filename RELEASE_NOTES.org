@@ -35,12 +35,23 @@ refactors with no user-visible effect do not require an entry.
 
 - Missing and inaccessible input files retain status 66 across host Lisps;
   failed pathname access checks no longer report a missing file.
-  See the user manual's /Exit Codes/ section.
+  See the user manual's /Exit Codes/ section. A =-l= DIRECTORY is refused as
+  such ("cannot open DIR: is a directory", status 66) on every host -- SBCL
+  on Linux used to open it and fail on the first read with status 74
+  (clautolisp 2.2.228).
 
 clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- cadtui French option keywords (2.2.229): ~--host cadtui~ now ships an
+  fr_FR option-keyword dictionary, per product -- the French keywords
+  measured on French AutoCAD 2022 and BricsCAD V25 installs (OFFSET, TRIM,
+  EXTEND, FILLET, CHAMFER; plus RECTANG and ZOOM on BricsCAD), each paired
+  with its international keyword from the vendor's English command
+  reference: a French keyword, whole or abbreviated (~N~ for ~aNnuler~),
+  resolves to the international one. user-manual § /cadtui localisation
+  dictionaries/.
 - =load_dialog= returns a positive handle from the first file on (2.2.223):
   the first successful call of a fresh process used to return 0, which the
   usual =(> dcl_id 0)= test rejects; Autodesk documents a positive integer

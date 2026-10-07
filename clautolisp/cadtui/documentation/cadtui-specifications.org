@@ -745,6 +745,35 @@ tâche de données et non de développement. Une locale *incomplète*
 (dictionnaire partiel) doit pouvoir coexister : toute entrée absente
 retombe sur la forme internationale plutôt que d'échouer.
 
+*Mots-clés d'option : un dictionnaire par produit* (clautolisp 2.2.229,
+=cadtui-locale-option-keywords.issue=). AutoCAD et BricsCAD n'offrent
+pas les mêmes mots-clés pour une même commande (DECALER : AutoCAD
+=[Par/Effacer/Calque]=, BricsCAD =[Passer par le point/Effacer/Calque]=),
+donc le fichier =<locale>/option-keyword.sexp= est indexé par produit
+puis par commande internationale :
+
+#+begin_example
+((:AUTOCAD  ("_OFFSET" ("Through" . "Par") ("Erase" . "Effacer") ...) ...)
+ (:BRICSCAD ("_OFFSET" ("Through point" . "Passer par le point") ...) ...))
+#+end_example
+
+La lettre-clé locale n'est pas stockée : c'est la partie en capitales du
+mot-clé tel que l'invite l'affiche (=aNnuler= → =N=, =ANgle= → =AN=), ou
+les capitales entre parenthèses (=étendu (ET)= → =ET=). Les fonctions
+=local-option-keyword= / =international-option-keyword= (=&key product=,
+=:autocad= par défaut, un nom de dialecte est replié sur son produit)
+font la traduction dans les deux sens ; la seconde accepte le mot-clé
+local entier ou son abréviation, et un =_= initial force la forme
+internationale. Le côté local est *mesuré* (sonde optkw sur des
+installations françaises), le côté international est apparié par
+position et par sens avec la référence de commandes anglaise de
+l'éditeur (URL citée par commande dans le fichier) — jamais deviné : un
+mot-clé que la documentation ne tranche pas reste hors du dictionnaire
+(repli sur la forme internationale) jusqu'à une mesure sur une
+installation anglaise. Le fichier est généré par
+=scripts/cadtui-optkw-to-sexp.py --pair
+probe-results/optkw/fr_FR/international-en.json=.
+
 ** Sources pour peupler les dictionnaires
 
 Pour les *commandes CAD*, plusieurs pistes, à trier avec prudence

@@ -62,6 +62,9 @@
                 #:register-locale-dictionary
                 #:local-name
                 #:international-name
+                #:local-option-keyword
+                #:international-option-keyword
+                #:option-keyword-abbreviation
                 #:resolve-locale
                 #:load-locale-data-from-directory
                 #:localise-meta-line

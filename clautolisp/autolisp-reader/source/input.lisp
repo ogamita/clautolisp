@@ -142,7 +142,21 @@ reading stops."
         (when (< end (length octets))
           (babel:octets-to-string octets :end end :encoding :utf-8))))))
 
+(define-condition clautolisp.autolisp-reader:source-is-a-directory (file-error)
+  ()
+  (:report (lambda (condition stream)
+             (format stream "~A is a directory, not a source file"
+                     (file-error-pathname condition))))
+  (:documentation
+   "PATH names a directory. Signalled before opening it: SBCL on Linux opens
+a directory without complaint and only fails on the first read, with a
+STREAM-ERROR rather than a FILE-ERROR, so a -l DIRECTORY exited EX_IOERR (74)
+there instead of EX_NOINPUT (66) (exit-status-directory-load-file-is-noinput,
+added by clautolisp 2.2.224)."))
+
 (defun decode-and-normalize-file (path &key external-format source-policy)
+  (when (ignore-errors (uiop:directory-exists-p path))
+    (error 'clautolisp.autolisp-reader:source-is-a-directory :pathname path))
   (when source-policy
     (return-from decode-and-normalize-file
       (normalize-line-endings

@@ -1,0 +1,106 @@
+{
+  "_comment": [
+    "cadtui-locale-option-keywords.issue: the INTERNATIONAL (English) keyword of",
+    "each LOCAL (fr_FR) option keyword harvested by the optkw probe. Both runners",
+    "are French installs, so the English side is taken from the vendors' English",
+    "command reference (url, per command), paired by POSITION and MEANING with",
+    "the harvested prompt. 'local' repeats the harvest so the converter can refuse",
+    "a pairing whose harvest has moved; 'international' is aligned with it, and",
+    "null means NOT paired: the English documentation does not settle it, so it",
+    "is left to measure on an English install (never guessed).",
+    "The international strings are the documented option labels as the reference",
+    "writes them (BricsCAD's reference shows the prompt's capitals, e.g. mEthod;",
+    "Autodesk's shows plain headings, e.g. Method) -- not a measured English prompt.",
+    "Used by: scripts/cadtui-optkw-to-sexp.py --pair (see its docstring)."
+  ],
+  "autocad": {
+    "harvest": "probe-results/optkw/fr_FR/autocad-2022-windows.sexp",
+    "commands": {
+      "_OFFSET": {
+        "url": "https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-C0E4246D-C420-42BD-A6FC-8B1852EFD005.htm",
+        "local":         ["Par",     "Effacer", "Calque"],
+        "international": ["Through", "Erase",   "Layer"]
+      },
+      "_TRIM": {
+        "url": "https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-B1A185EF-07C6-4C53-A76F-05ADE11F5C32.htm",
+        "local":         ["mOde"],
+        "international": ["Mode"]
+      },
+      "_EXTEND": {
+        "url": "https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-89DD7B0F-F4F1-410D-9A3A-5847CA5F8744.htm",
+        "local":         ["mOde"],
+        "international": ["Mode"]
+      },
+      "_FILLET": {
+        "url": "https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-64F8B700-23B3-4BD6-8C03-66121AA13E8F.htm",
+        "local":         ["aNnuler", "Polyligne", "Rayon",  "Ajuster", "mUltiple"],
+        "international": ["Undo",    "Polyline",  "Radius", "Trim",    "Multiple"]
+      },
+      "_CHAMFER": {
+        "url": "https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-B1DCF991-90A7-4DB0-96FC-BDA3FB76337C.htm",
+        "local":         ["aNnuler", "Polyligne", "Ecart",    "ANgle", "AJuster", "Méthode", "mUltiple"],
+        "international": ["Undo",    "Polyline",  "Distance", "Angle", "Trim",    "Method",       "Multiple"]
+      }
+    }
+  },
+  "bricscad": {
+    "harvest": "probe-results/optkw/fr_FR/bricscad-v25-windows.sexp",
+    "commands": {
+      "_OFFSET": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/o/offset-command?version=V25",
+        "local":         ["Passer par le point", "Effacer", "Calque"],
+        "international": ["Through point",       "Erase",   "Layer"]
+      },
+      "_TRIM": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/t/trim-command?version=V25",
+        "local":         ["Mode", "sélectionner les options (?)"],
+        "international": ["mOde", null]
+      },
+      "_EXTEND": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/e/extend-command?version=V25",
+        "local":         ["Mode", "sélectionner les options (?)"],
+        "international": ["mOde", null]
+      },
+      "_FILLET": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/f/fillet-command?version=V25",
+        "local":         ["PAramètres raccord...", "Polyligne", "Rayon",  "Ajuster", "annUler", "Multiple", "sélectionner les options (?)"],
+        "international": ["fillet Settings",            "Polyline",  "Radius", "Trim",    "Undo",    "Multiple", null]
+      },
+      "_CHAMFER": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/c/chamfer-command?version=V25",
+        "local":         ["PAramètres du chanfrein...", "POlyligne", "ANgle", "Distance", "méthodE", "AJuster", "annUler", "Multiple", "sélectionner les options (?)"],
+        "international": ["chamfer Settings",                "Polyline",  "Angle", "Distance", "mEthod",       "Trim",    "Undo",    "Multiple", null]
+      },
+      "_MIRROR": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/m/mirror-command?version=V25",
+        "local":         ["sélectionner les options (?)"],
+        "international": [null]
+      },
+      "_ROTATE": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/r/rotate-command?version=V25",
+        "local":         ["sélectionner les options (?)"],
+        "international": [null]
+      },
+      "_SCALE": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/s/scale-command?version=V25",
+        "local":         ["sélectionner les options (?)"],
+        "international": [null]
+      },
+      "_BREAK": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/b/break-command?version=V25",
+        "local":         ["sélectionner les options (?)"],
+        "international": [null]
+      },
+      "_RECTANG": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/r/rectang-command?version=V25",
+        "local":         ["Chanfrein", "Raccord", "Pivoté", "CArré", "Elévation", "EPaisseur", "Largeur de ligne", "Aire", "Dimensions"],
+        "international": ["Chamfer",   "Fillet",  "Rotated",     "Square",      "Elevation",      "Thickness", "Width of line",    "Area", "Dimensions"]
+      },
+      "_ZOOM": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/z/zoom-command?version=V25",
+        "local":         ["zoom Avant", "zoom aRrière", "TOUt", "Centre", "DYnamique", "étendu (ET)", "Gauche", "Précédent", "Droite", "Échelle (nx/nxp)", "Fenêtre", "ENtité"],
+        "international": ["In",         "Out",              "All",  "Center", "Dynamic",   "Extents",           "Left",   "Previous",           "Right",  "Scale",                  "Window",       "ENtity"]
+      }
+    }
+  }
+}

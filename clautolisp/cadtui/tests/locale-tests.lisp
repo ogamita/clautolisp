@@ -122,3 +122,82 @@
      (lambda ()
        (interpret-line "=locale(zz_ZZ)" (make-application-tree))))
     (is (string= "en" *current-locale*))))
+
+;;;; The :option-keyword dictionary (cadtui-locale-option-keywords.issue): the
+;;;; fr_FR harvest off a French AutoCAD 2022 and a French BricsCAD V25, paired
+;;;; with the vendors' English command references, PER PRODUCT.
+
+(test option-keyword-abbreviation-reads-the-prompt-capitals
+  (is (string= "N"   (option-keyword-abbreviation "aNnuler")))
+  (is (string= "AN"  (option-keyword-abbreviation "ANgle")))
+  (is (string= "O"   (option-keyword-abbreviation "mOde")))
+  (is (string= "R"   (option-keyword-abbreviation "zoom aRrière")))
+  (is (string= "PA"  (option-keyword-abbreviation "PAramètres raccord...")))
+  ;; a parenthesised all-capitals abbreviation wins over the word's capitals.
+  (is (string= "ET"  (option-keyword-abbreviation "étendu (ET)")))
+  (is (string= "?"   (option-keyword-abbreviation "sélectionner les options (?)")))
+  ;; a lower-case parenthesis is not an abbreviation.
+  (is (string= "É"   (option-keyword-abbreviation "Échelle (nx/nxp)")))
+  ;; no capital: the keyword must be typed whole.
+  (is (string= "nx"  (option-keyword-abbreviation "nx"))))
+
+(test fr-option-keywords-resolve-per-product-autocad
+  ;; AutoCAD 2022 fr: OFFSET [Par/Effacer/Calque], CHAMFER [aNnuler/.../mUltiple].
+  (is (string= "Through" (international-option-keyword "_OFFSET" "Par" "fr_FR" :product :autocad)))
+  (is (string= "Erase"   (international-option-keyword "_OFFSET" "effacer" "fr_FR" :product :autocad)))
+  (is (string= "Layer"   (international-option-keyword "OFFSET" "Calque" "fr_FR" :product :autocad)))
+  (is (string= "Undo"    (international-option-keyword "_CHAMFER" "aNnuler" "fr_FR" :product :autocad)))
+  (is (string= "Distance" (international-option-keyword "_CHAMFER" "Ecart" "fr_FR" :product :autocad)))
+  (is (string= "Trim"    (international-option-keyword "_FILLET" "Ajuster" "fr_FR" :product :autocad)))
+  (is (string= "Mode"    (international-option-keyword "_TRIM" "mOde" "fr_FR" :product :autocad)))
+  ;; abbreviations: the capitals of the local keyword.
+  (is (string= "Undo"     (international-option-keyword "_CHAMFER" "N" "fr_FR" :product :autocad)))
+  (is (string= "Angle"    (international-option-keyword "_CHAMFER" "an" "fr_FR" :product :autocad)))
+  (is (string= "Trim"     (international-option-keyword "_CHAMFER" "AJ" "fr_FR" :product :autocad)))
+  (is (string= "Multiple" (international-option-keyword "_FILLET" "U" "fr_FR" :product :autocad)))
+  ;; and the other way.
+  (is (string= "Par"      (local-option-keyword "_OFFSET" "Through" "fr_FR" :product :autocad)))
+  (is (string= "mUltiple" (local-option-keyword "_CHAMFER" "multiple" "fr_FR" :product :autocad))))
+
+(test fr-option-keywords-resolve-per-product-bricscad
+  ;; BricsCAD V25 fr: OFFSET [Passer par le point/Effacer/Calque].
+  (is (string= "Through point"
+               (international-option-keyword "_OFFSET" "Passer par le point" "fr_FR" :product :bricscad)))
+  (is (string= "Through point"
+               (international-option-keyword "_OFFSET" "P" "fr_FR" :product :bricscad)))
+  (is (string= "Square"  (international-option-keyword "_RECTANG" "CA" "fr_FR" :product :bricscad)))
+  (is (string= "Chamfer" (international-option-keyword "_RECTANG" "C" "fr_FR" :product :bricscad)))
+  (is (string= "Extents" (international-option-keyword "_ZOOM" "ET" "fr_FR" :product :bricscad)))
+  (is (string= "Out"     (international-option-keyword "_ZOOM" "R" "fr_FR" :product :bricscad)))
+  (is (string= "fillet Settings"
+               (international-option-keyword "_FILLET" "PA" "fr_FR" :product :bricscad)))
+  (is (string= "Polyline" (international-option-keyword "_FILLET" "P" "fr_FR" :product :bricscad)))
+  (is (string= "Passer par le point"
+               (local-option-keyword "_OFFSET" "Through point" "fr_FR" :product :bricscad)))
+  ;; a dialect name folds onto its product.
+  (is (string= "Through point"
+               (international-option-keyword "_OFFSET" "P" "fr_FR" :product :bricscad-v25)))
+  (is (string= "Through"
+               (international-option-keyword "_OFFSET" "P" "fr_FR" :product :autocad-2022))))
+
+(test fr-option-keywords-differ-between-products
+  ;; the two products' keyword sets differ (OFFSET's Through is a BricsCAD
+  ;; Through point; the capitals of MODE swap): the dictionary is per product.
+  (is (string= "Par" (local-option-keyword "_OFFSET" "Through" "fr_FR" :product :autocad)))
+  (is (string= "Through" (local-option-keyword "_OFFSET" "Through" "fr_FR" :product :bricscad)))
+  (is (string= "mOde" (local-option-keyword "_TRIM" "Mode" "fr_FR" :product :autocad)))
+  (is (string= "Mode" (local-option-keyword "_TRIM" "mOde" "fr_FR" :product :bricscad)))
+  ;; AutoCAD's CHAMFER Distance is Ecart, BricsCAD's is Distance.
+  (is (string= "Ecart" (local-option-keyword "_CHAMFER" "Distance" "fr_FR" :product :autocad)))
+  (is (string= "Distance" (local-option-keyword "_CHAMFER" "Distance" "fr_FR" :product :bricscad))))
+
+(test option-keywords-fall-back-and-force-the-international-form
+  ;; _ forces the international form, canonicalised against the dictionary.
+  (is (string= "Undo"  (international-option-keyword "_CHAMFER" "_undo" "fr_FR" :product :autocad)))
+  (is (string= "Bogus" (international-option-keyword "_CHAMFER" "_Bogus" "fr_FR" :product :autocad)))
+  ;; unknown keyword / command / locale: identity.
+  (is (string= "Zzz"   (international-option-keyword "_CHAMFER" "Zzz" "fr_FR" :product :autocad)))
+  (is (string= "Par"   (international-option-keyword "_PLINE" "Par" "fr_FR" :product :autocad)))
+  (is (string= "Through" (local-option-keyword "_OFFSET" "Through" "xx_XX" :product :autocad)))
+  ;; the "(?)" keyword is left to measure: not in the dictionary.
+  (is (string= "?" (international-option-keyword "_TRIM" "?" "fr_FR" :product :bricscad))))
