@@ -11,16 +11,21 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 2.2.1 / alfe 2.2.1 /
-read-autolisp 1.9.0). alfe tracks clautolisp's version: because
+master at the top of the file (clautolisp 2.3.0 / alfe 2.3.0 /
+read-autolisp 1.10.0). alfe tracks clautolisp's version: because
 =alfe --clautolisp= embeds essentially the whole clautolisp engine, a
 change to clautolisp's sources bumps alfe too — and alfe's own changes
 (the AutoCAD start-engine PROBE fix, =--on-error=) bump it independently.
 The 2.x series opens with the aldo debugger's three interchangeable UIs
 and the sedit structural editor (below); alfe ships the whole engine, so
-it carries the 2.1 stamp too. read-autolisp has not changed since 1.9.0
-(its reader library is untouched), and version-rules lets an unchanged
-program keep its stamp. For the chronology and the issue-by-issue
+it carries the 2.1 stamp too. The 2.3 series adds, among others, the
+<sysexits.h> exit statuses on every system, the AutoCAD-measured OPEN and
+LOAD encodings per LISPSYS, alfe's =--cad-log=, the debugger options
+shared by alfe, per-instance ncurses interactor windows, cadtui's fr_FR
+option keywords, and a LibreDWG that reports its own version (0.14).
+read-autolisp moves to 1.10.0: its reader library changed since 1.9.0
+(the sysexits exit statuses, refused undecodable sources on every host).
+For the chronology and the issue-by-issue
 history, see ~git log~ on master and the issues under ~issues/closed/~.
 
 A standing rule lives in ~AGENTS.md~ § /Release notes/: this file
