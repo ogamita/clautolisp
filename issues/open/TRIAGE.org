@@ -778,7 +778,7 @@ opendcl-conformance. All =TODO=.
 ** Windows test portability
 | Issue | Status | Notes |
 |-------+--------+-------|
-| alfe-windows-test-portability-remainder | TODO | P3: conformance missing-file path, native shell fixture, and AutoCAD workdir pathname comparison. |
+| alfe-windows-test-portability-remainder | TODO | P3: native shell fixture and AutoCAD workdir pathname comparison remain; conformance missing-file path fixed in 2.2.227. |
 
 * Companion non-issue files (keep, do not process as issues)
 =alfe.plan=, =opendcl.plan=, =missing-functions-plan.md=,

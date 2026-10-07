@@ -6,9 +6,8 @@
 #+BRANCH:
 
 * Observations (2026-10-07)
-Running autolisp-front-end/tests on SBCL on Windows exposed three failures
+Running autolisp-front-end/tests on SBCL on Windows exposed these remaining failures
 outside the backend discovery and parity fixes:
-- actions-load-missing-file expects a drive-less POSIX path in stderr.
 - kill-engine-process-is-bounded-not-blocking cannot launch sh when MSYS
   executables are absent from PATH in a native PowerShell session.
 - autocad-build-launch-argv-batch-discovers-template-and-still-requires-accoreconsole
@@ -21,3 +20,8 @@ asdf:test-system on autolisp-front-end under native SBCL on Windows.
 * Work
 Make pathname expectations portable without weakening their checks. Review
 the process fixture's shell dependency and document or replace it.
+
+* Resolved
+2.2.227: actions-load-missing-file now accepts a Windows drive prefix,
+while retaining EX_NOINPUT (66), the full pathname suffix, and the missing
+file reason in its expectations.

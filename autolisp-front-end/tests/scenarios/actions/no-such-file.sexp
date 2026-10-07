@@ -9,5 +9,8 @@ the engine's own message, whatever the host Lisp
  :classification :clautolisp-only
  :argv ("--clautolisp" "-l" "/nonexistent/path/that/does/not/exist.lsp")
  :expected-exit 66
- :expected-stderr-includes ("cannot open /nonexistent/path/that/does/not/exist.lsp: no such file or directory")
+ ;; Windows may qualify the rooted pathname with its drive. Check the
+ ;; opening failure and full pathname suffix without requiring no drive.
+ :expected-stderr-includes ("cannot open "
+                            "/nonexistent/path/that/does/not/exist.lsp: no such file or directory")
  :covers-options ("--clautolisp" "-l"))
