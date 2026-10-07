@@ -372,7 +372,19 @@ check-probe-families:  ## Fail if a probe file is in no family, or a family is g
 	python3 scripts/ci-detect-probe-changes.py check
 	python3 scripts/tests/test-ci-detect-probe-changes.py
 
-check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep  ## Every release-packaging check.
+# clautolisp follows LibreDWG's STABLE releases (prerelease=false on GitHub),
+# recorded in clautolisp/third-party/libredwg.release, whose version is what
+# the shipped libredwg reports (libredwg-version-is-superproject-describe).
+# The offline half -- the recorded commit is the submodule's gitlink -- is a
+# release check. The network half is manual/periodic, in no CI lane: a
+# pipeline must not go red because upstream published something.
+check-libredwg-release:  ## Fail if clautolisp/third-party/libredwg.release disagrees with the libredwg submodule's gitlink (offline).
+	python3 scripts/check-libredwg-stable-release.py --offline
+
+check-libredwg-stable-release:  ## Ask GitHub whether LibreDWG has a newer STABLE release than the one we follow (network; manual/periodic).
+	python3 scripts/check-libredwg-stable-release.py
+
+check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep check-libredwg-release  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
 # (no PowerShell, pjb 2026-08-16: do not install it). A container gives the

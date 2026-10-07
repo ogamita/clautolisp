@@ -79,6 +79,24 @@ lanes at once (so the cold column is inflated by contention):
 `build:alfe:sbcl` alone, not contended: 131 s cold, 5 s hit. Add a second
 or two for the runner to unpack/pack the ~8 MB cache.
 
+### With the LibreDWG cache (2026-10-07)
+
+`verify:packaged-dwg:linux` (manual) carries the `libredwg` kind of the same
+script. Its key is the libredwg submodule commit + `clautolisp/drawing-dwg` +
+the toolchain, so unlike the fasls it also hits across clautolisp commits
+that change other sources -- possible only since LibreDWG stopped carrying
+clautolisp's `git describe` in `config.h`
+(libredwg-version-is-superproject-describe). Measured in the CI image, the
+job's script on two fresh clones (the second at another clautolisp commit,
+with a changed `version.lisp`), the cache restored with its saved times:
+
+| step | cold | cache hit |
+|---|---|---|
+| `make build-libraries` | 164 s (27 C objects) | 1 s (0 objects) |
+
+The cache is ~60 MB (468 files). `make build-programs` (~2 min) is not
+cached in this job.
+
 ## Native Windows lanes (no CAD)
 
 | job | median | range | n |

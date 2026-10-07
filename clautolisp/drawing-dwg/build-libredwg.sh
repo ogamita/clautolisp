@@ -159,6 +159,69 @@ fi
 # libredwg's own submodule (jsmn).
 git -C "$lr" submodule update --init
 
+# GIVE LIBREDWG ITS OWN VERSION (libredwg-version-is-superproject-describe).
+#
+# LibreDWG's CMakeLists takes PACKAGE_VERSION from a `.version' file, else
+# from `git describe', and BOTH are evaluated in cmake's WORKING DIRECTORY,
+# not in the source directory. This script used to run cmake from wherever
+# make ran it -- inside the CLAUTOLISP checkout -- so the library we shipped
+# called itself "LibreDWG release-2.2.1-781-g9fae492b", and config.h, which
+# every object includes, changed on every clautolisp commit: a full rebuild
+# each time, and no build cache could ever hit.
+#
+# The version is now RECORDED, not discovered: third-party/libredwg.release
+# names the stable release the submodule is pinned to and the commit that
+# release tag names. It is written to the submodule's .version (gitignored
+# upstream; no trailing newline -- file(READ) keeps one), and cmake runs from
+# inside the submodule (below), so both of upstream's branches see LibreDWG.
+# git describe is NOT used to produce it: CI fetches the submodule shallow,
+# without tags, where describe answers a bare commit id -- the version would
+# then depend on how the checkout was made.
+#
+# The cross-checks FAIL rather than warn. A wrong version string in a
+# shipped library is the very bug this fixes; a build stop whose message
+# names the one-line fix is cheaper than a mislabelled release. Each check
+# runs only where its evidence exists: a source tarball has no .git in the
+# submodule, and a shallow clone has no tags -- then the file is trusted.
+release_file="$root/third-party/libredwg.release"
+if [ ! -f "$release_file" ]; then
+  echo "error: $release_file is missing; it names the LibreDWG release we build" >&2
+  exit 1
+fi
+lr_version="$(sed -n 's/^version[ 	][ 	]*\([^ 	]*\).*$/\1/p' "$release_file" | head -n 1)"
+lr_commit="$(sed -n 's/^commit[ 	][ 	]*\([^ 	]*\).*$/\1/p' "$release_file" | head -n 1)"
+if [ -z "$lr_version" ] || [ -z "$lr_commit" ]; then
+  echo "error: $release_file needs a 'version <tag>' and a 'commit <sha>' line" >&2
+  exit 1
+fi
+if [ -e "$lr/.git" ]; then
+  lr_head="$(git -C "$lr" rev-parse HEAD)"
+  if [ "$lr_head" != "$lr_commit" ]; then
+    echo "error: the libredwg submodule is at $lr_head," >&2
+    echo "       but $release_file records LibreDWG $lr_version at $lr_commit." >&2
+    echo "       Either 'git submodule update' (a stale checkout), or, when moving to a" >&2
+    echo "       new stable release, update that file with the submodule (AGENTS.md," >&2
+    echo "       \"CI -- following LibreDWG stable releases\")." >&2
+    exit 1
+  fi
+  lr_tags="$(git -C "$lr" tag --points-at HEAD 2>/dev/null || true)"
+  if [ -n "$lr_tags" ]; then
+    if ! printf '%s\n' "$lr_tags" | grep -qxF "$lr_version"; then
+      echo "error: $release_file records version $lr_version, but commit $lr_commit" >&2
+      echo "       is tagged: $(printf '%s' "$lr_tags" | tr '\n' ' ')" >&2
+      exit 1
+    fi
+    echo "LibreDWG $lr_version: submodule commit and tag agree with $release_file"
+  else
+    echo "LibreDWG $lr_version: submodule commit agrees with $release_file (no tags fetched to cross-check the name)"
+  fi
+else
+  echo "LibreDWG $lr_version: no git metadata in the submodule; trusting $release_file"
+fi
+if [ "$(cat "$lr/.version" 2>/dev/null || true)" != "$lr_version" ]; then
+  printf '%s' "$lr_version" > "$lr/.version"
+fi
+
 # GCC can print its version while cc1.exe still fails to start when a MinGW
 # runtime DLL is absent from PATH.  Probe the actual compilation pipeline so
 # the failure is actionable instead of appearing later as silent Error 1s.
@@ -221,10 +284,18 @@ case "$host_uname" in
   MINGW*|MSYS*|CYGWIN*) cmake_cc="$(basename "$compiler_path")" ;;
 esac
 echo "cmake -DCMAKE_C_COMPILER=[$cmake_cc]"
-cmake -S "$lr" -B "$build" \
-      -DCMAKE_C_COMPILER="$cmake_cc" \
-      -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DDISABLE_WERROR=ON \
-      -DCMAKE_C_FLAGS="-w -Wno-unused-command-line-argument -D_DARWIN_C_SOURCE"
+# From INSIDE the submodule: upstream resolves `.version' (and, without it,
+# runs git describe) relative to cmake's working directory -- see above.
+( cd "$lr" &&
+  cmake -S . -B "$build" \
+        -DCMAKE_C_COMPILER="$cmake_cc" \
+        -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DDISABLE_WERROR=ON \
+        -DCMAKE_C_FLAGS="-w -Wno-unused-command-line-argument -D_DARWIN_C_SOURCE" )
+if ! grep -qF "#define PACKAGE_VERSION \"$lr_version\"" "$build/src/config.h"; then
+  echo "error: $build/src/config.h does not carry PACKAGE_VERSION \"$lr_version\":" >&2
+  grep 'PACKAGE_VERSION' "$build/src/config.h" >&2 || true
+  exit 1
+fi
 # Build parallelism is capped on Windows, and that is about MEMORY, not
 # speed. libredwg's generated sources (in_dxf.c, decode.c, encode2.c) are
 # enormous, and one cc1 on them can take well over a gigabyte; -j<ncores>

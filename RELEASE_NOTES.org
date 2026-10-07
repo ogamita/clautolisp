@@ -44,6 +44,14 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *The shipped LibreDWG reports its own version* (2.2.230): =LibreDWG
+  0.14= (its =PACKAGE_VERSION=, =dwg_api_version_string()=, and the
+  =999= comment of the DXF it writes), where it used to report
+  clautolisp's =git describe= (=release-2.2.1-781-g9fae492b=). The DWG
+  files clautolisp writes are unchanged: they carry no version stamp.
+  clautolisp follows LibreDWG's *stable* releases (not the per-commit
+  prerelease snapshots); the followed release is recorded in
+  =clautolisp/third-party/libredwg.release=.
 - cadtui French option keywords (2.2.229): ~--host cadtui~ now ships an
   fr_FR option-keyword dictionary, per product -- the French keywords
   measured on French AutoCAD 2022 and BricsCAD V25 installs (OFFSET, TRIM,

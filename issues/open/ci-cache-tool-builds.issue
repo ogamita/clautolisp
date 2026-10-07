@@ -222,3 +222,22 @@ pjb's call. Criterion 4 (measured before/after on Windows) is NOT met.
 - Watch the first master pipelines after merge for HIT/MISS lines and the
   runner's local cache sharing (two poseidon runner registrations, each
   with its own local cache, so hits are per registration).
+
+* Progress 2026-10-07 (clautolisp 2.2.230) -- piece 1 (LibreDWG) UNBLOCKED and wired on Linux
+
+libredwg-version-is-superproject-describe is closed: LibreDWG now carries
+its own version (0.14, from clautolisp/third-party/libredwg.release), so
+config.h no longer changes with the clautolisp commit. The libredwg kind of
+scripts/ci-build-cache.sh is wired on verify:packaged-dwg:linux, the only
+non-release Linux lane that builds LibreDWG (GIT_SUBMODULE_STRATEGY
+recursive added: the restore runs before `make submodules', and a missing
+submodule is a miss that is never saved). Measured in the CI image, two
+fresh clones at two clautolisp commits, cache restored with its saved
+times: make build-libraries 164 s / 27 objects cold, 1 s / 0 objects on the
+HIT; the whole job (build-programs, verify-packaged-dwg.sh) left the
+checkout clean and saved both times (~60 MB, 468 files).
+
+Criterion 1 is met for that lane only; release:* lanes stay cold by policy;
+Windows is unchanged (its surviving -ffd tree), so criterion 4 stays open --
+though that surviving tree should now also stop recompiling LibreDWG on
+every clautolisp commit, for the same reason (not measured there).
