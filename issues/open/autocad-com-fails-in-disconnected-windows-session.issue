@@ -94,6 +94,12 @@ someone is RDP'd in and fails after they disconnect is this, not flakiness.
 - Every Windows CAD job's log contains the =SESSION-STATE:= line.
 - The detector correctly reports =locked= at the login screen and the
   =rdp-tcp= transport under RDP (confirmed on the machine).
+- (added 2026-10-07, pjb) The disconnected matrix is measured in BOTH
+  network contexts: with the VPN dropping with the session (PF5S26B, job
+  16990501680 -- done) AND with NO VPN, license servers still reachable while
+  the session is disconnected (the Windows Server runner), so that the
+  desktop is the only variable. No license dialog may be waiting on
+  reconnection for a no-VPN row to count.
 
 * Note
 
@@ -127,3 +133,107 @@ autocad 9 / 34 / 23 s). This is the control row; the disconnected / locked
 row is still to run (two attempts on 2026-10-05 were cancelled by master
 pipelines, then the runner slept). Play the job again with the session
 locked.
+
+* Locked run, screen LOCKED with Win-L (2026-10-07, job 16984618487)
+
+pjb locked PF5S26B (Win-L) with the runner still running in the GUI
+session, then the job was played. The detector saw it: "SESSION-STATE:
+transport=console connect=Active locked=yes on-console=yes => LOCKED"
+(LogonUI present). All nine cells OK, marker printed, exit 0:
+
+| engine     | batch | automation (COM) | epure |
+|------------+-------+------------------+-------|
+| clautolisp | 1 s   | 0 s              | 0 s   |
+| bricscad   | 16 s  | 1 s              | 23 s  |
+| autocad    | 14 s  | 31 s             | 25 s  |
+
+So the hypothesis is REFUTED for the lock screen: a locked console session
+keeps its window station and desktop (WTS state stays Active), and COM
+automation of AutoCAD and BricsCAD works in it. The detector's LOCKED verdict
+said "COM/GUI CAD expected to FAIL"; it now says what was measured, and it
+tests Disconnected BEFORE locked (a switched-user session is usually both,
+and Disconnected is the state that matters).
+
+What remains unmeasured is the state pjb first described: "back to the login
+window / CHANGE USER". Switching user (or detaching an RDP client) leaves the
+runner's session Disconnected, which is a different thing from locked. To
+measure it: from the runner's session, disconnect it (Win-L then "Switch
+user", or run tsdiscon in a terminal of that session), then play
+probe:cad-session-state:windows. If that row is also all OK, the 2026-09-28
+benchmark:autocad:windows death needs another explanation -- note that that
+job runs --mode batch (accoreconsole), which this ticket's own analysis
+already flagged.
+
+* Disconnected run, user SWITCHED (2026-10-07, job 16990501680)
+
+pjb switched user on PF5S26B, leaving the runner's session disconnected, then
+the job was replayed. Detector: "SESSION-STATE: transport=unknown
+connect=Disconnected locked=yes on-console=no" -- the old verdict text named
+it LOCKED, the ordering bug fixed above.
+
+| engine     | batch                 | automation (COM)       | epure                 |
+|------------+-----------------------+------------------------+-----------------------|
+| clautolisp | OK 2 s                | OK 0 s                 | OK 0 s                |
+| bricscad   | TIMEOUT 302 s, exit 75 | OK 2 s (see below)    | TIMEOUT 301 s, exit 75 |
+| autocad    | OK 14 s               | TIMEOUT 191 s, exit 75 | TIMEOUT 190 s, exit 75 |
+
+Every timeout is alfe's READY-TIMEOUT with last status "BOOTING": the engine
+was launched (AutoCAD by the cscript COM bridge, BricsCAD as =bricscad.exe
+/Automation /b run.scr=) and never evaluated alfe's bootstrap. (The probe's
+table labelled these REACHED-READY-THEN-FAILED because it matched the bare
+word READY, which alfe's timeout messages contain; it now matches "READY
+after".)
+
+The BricsCAD automation OK is not a fresh launch: it reached READY 0.79 s
+after the bridge started, against 10-23 s for a cold BricsCAD start in every
+other run. The bridge attached to the BricsCAD the timed-out batch run had
+launched -- that process answered COM (and evaluated alfe's files) while
+disconnected, though it never ran its /b script. A cold BricsCAD COM launch
+in a disconnected session is therefore not established either way.
+
+* Conclusion, for a runner whose VPN drops with the session (pjb, 2026-10-07)
+
+When pjb reconnected after the run, two dialogs were waiting on the desktop:
+
+- Bricsys license manager: "La licence n'est plus valide. L'application va
+  maintenant s'arreter." (the license is no longer valid; the application
+  will now stop);
+- FlexNet License Finder: "Your application was not able to obtain a license
+  because the FlexNet license server manager could not determine where to
+  find the licensing data it needs" (specify the license server / file).
+
+On PF5S26B the license servers (the FlexNet one EPURE uses, on the
+enterprise LAN) are reached through a VPN, and disconnecting the user
+disconnects the VPN too (it tries to reconnect as the new user). So on this
+runner a disconnected session means no desktop AND no license server, and
+pjb's ruling is to keep the conclusion in that context:
+
+- locked console session (Win-L, VPN up): everything works, COM included
+  (job 16984618487) -- locking is safe;
+- disconnected session (switch user; a detached RDP client is the same WTS
+  state), VPN dropping with it: AutoCAD COM (automation, epure) and BricsCAD's
+  GUI launches (batch /b, epure) never get past BOOTING; only the headless
+  paths work -- clautolisp and AutoCAD --mode batch (accoreconsole)
+  (job 16990501680). The BricsCAD timeouts coincide with its "license no
+  longer valid" dialog, a modal dialog on a desktop nobody sees.
+
+Operational rule for PF5S26B: lock the screen; never switch user or leave an
+RDP client detached while CAD jobs may run. Unattended CAD verification that
+must survive a disconnect uses AutoCAD --mode batch. A Windows CAD job that
+dies with READY-TIMEOUT "BOOTING" under connect=Disconnected is this, not a
+code defect.
+
+Which of the two causes -- the missing desktop or the missing license server
+-- breaks the COM / GUI launches is NOT separated by this run.
+
+The 2026-09-28 benchmark:autocad:windows death is not explained by this: it
+ran --mode batch (accoreconsole), which survives a disconnected session.
+
+* Next: the NO-VPN case, on the Windows Server runner (required, see the acceptance criteria)
+
+Replay probe:cad-session-state:windows in a disconnected session on the
+Windows Server machine, whose license servers are reachable without a VPN,
+so that the desktop is the only variable. On reconnection, check that no
+license dialog is waiting before trusting the rows.
+
+Remaining for acceptance, as before: the rdp-tcp transport report under RDP.
