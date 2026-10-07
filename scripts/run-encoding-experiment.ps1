@@ -130,4 +130,70 @@ if ($Backend -ne "clautolisp") {
   }
 }
 
+# --- LOG: the CAD's own command-history log, read back by alfe --cad-log ------
+# (encoding-situations-cli-options, the `log' situation). The CAD logs a
+# native PRINC of e-acute + euro (AutoCAD logs it; BricsCAD V25 logs only the
+# command channel) and a LINE command (its prompts are accented on a French
+# install). Reported: what --cad-log decoded (the code points of every line
+# holding a character above 127) and the RAW bytes of the log file alfe read
+# -- its size, its first 16 bytes (a BOM?), and 8 bytes around its first byte
+# above 127 -- which settles BricsCAD's log encoding (windows-1252 or UTF-8
+# with a BOM, left open by probe-logfile).
+if ($Backend -ne "clautolisp") {
+  $logLsp = Join-Path $outDir "log-probe.lsp"
+  $logForm = '(progn (apply (quote princ) (list (strcat "\nLOG-MARKER caf" (chr 233) " eur" (chr 8364) "\n"))) ' +
+             '(vl-catch-all-apply (function (lambda () (command "_.LINE" "0,0" "1,1" ""))) nil) ' +
+             '(princ "\nLOG WRITTEN\n") (princ))'
+  # A file, not -x (see E3 above).
+  Set-Content -Encoding ascii $logLsp $logForm
+  $cadLog = Join-Path $outDir "cad-log-$Backend.txt"
+  $wdFile = Join-Path $outDir "cad-log-workdir.txt"
+  foreach ($f in @($cadLog, $wdFile)) { if (Test-Path $f) { Remove-Item -Force $f } }
+  $logArgs = @($bargs | Where-Object { $_ -ne "-l" -and $_ -ne $probe }) +
+             @("--keep-workdir", "--write-workdir-path", $wdFile,
+               "--cad-log", $cadLog, "-l", ($logLsp -replace '\\','/'))
+  "########## LOG: --cad-log ##########" | Tee-Object -FilePath $report -Append
+  try {
+    (& $alfe @logArgs 2>&1) |
+      Where-Object { "$_" -match 'LOG |cad-log|BOOTSTRAP-FAILED|FAILED' } |
+      ForEach-Object { "[LOG] $_" } |
+      Tee-Object -FilePath $report -Append
+  } catch { "[LOG] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+  if (Test-Path $cadLog) {
+    $lines = [System.IO.File]::ReadAllLines($cadLog, [System.Text.Encoding]::UTF8)
+    ("[LOG] decoded: {0} lines" -f $lines.Count) | Tee-Object -FilePath $report -Append
+    $lines | Where-Object { $_ -match '[^\x00-\x7F]' } | Select-Object -First 8 | ForEach-Object {
+      $chars = $_.ToCharArray()
+      $high = ($chars | Where-Object { [int]$_ -gt 127 } | ForEach-Object { [int]$_ }) -join ' '
+      $ascii = ($chars | ForEach-Object { if ([int]$_ -lt 128) { $_ } else { '?' } }) -join ''
+      ("[LOG] decoded line: {0} | high code points: {1}" -f $ascii, $high) | Tee-Object -FilePath $report -Append
+    }
+  } else {
+    "[LOG] NO --cad-log FILE: $cadLog" | Tee-Object -FilePath $report -Append
+  }
+  if (Test-Path $wdFile) {
+    $wd = (Get-Content $wdFile -TotalCount 1).Trim()
+    $logsDir = Join-Path $wd "logs"
+    if (Test-Path $logsDir) {
+      Get-ChildItem -File $logsDir | Where-Object { $_.Name -ne "debug.log" } | ForEach-Object {
+        $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+        $head = ($bytes | Select-Object -First 16 | ForEach-Object { '{0:X2}' -f $_ }) -join ' '
+        $i = 0
+        while ($i -lt $bytes.Length -and $bytes[$i] -lt 0x80) { $i++ }
+        $around = "none"
+        if ($i -lt $bytes.Length) {
+          $from = [Math]::Max(0, $i - 3)
+          $to = [Math]::Min($bytes.Length - 1, $from + 7)
+          $around = ($bytes[$from..$to] | ForEach-Object { '{0:X2}' -f $_ }) -join ' '
+        }
+        ("[LOG] raw {0}: {1} bytes; first 16: {2}; first byte above 7F at offset {3}: {4}" -f $_.Name, $bytes.Length, $head, $i, $around) |
+          Tee-Object -FilePath $report -Append
+      }
+    } else {
+      "[LOG] NO logs/ in $wd" | Tee-Object -FilePath $report -Append
+    }
+    Remove-Item -Recurse -Force $wd -ErrorAction SilentlyContinue
+  }
+}
+
 Write-Host "encoding experiment ($Backend) -> $report"

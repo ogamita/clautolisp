@@ -289,6 +289,14 @@ produces a dribble file =trace.sexp=:
 Nothing after the ~(clal-dribble)~ line: the toggle closed the file
 before its own result was printed.
 
+~(clal-dribble FILE)~ also works from a batch run (~-l~ / ~-x~, no
+REPL): it records what the following actions write, and a dribble still
+open when the run ends is closed then, its last, unterminated line
+included (before clautolisp 2.2.232 that line was lost). The error
+report of a run that ends in an error comes after the end of the run,
+so it is not recorded. ~alfe --clautolisp~ records the same file
+whether it runs the engine in-process or as this program.
+
 * Debugger
 
 Clautolisp ships an interactive source-level debugger, *aldo*. It steps
@@ -1150,6 +1158,20 @@ Both axes are independent.
                             The file is written by the front end;
                             its format is internal. A missing or
                             malformed FILE is a usage error.
+- ~--front-end-action-boundaries DIR~ :: For the same front end,
+                            when it observes each action: clautolisp
+                            stops before and after every action (each
+                            ~-l~, ~-x~, and the REPL), tells the front
+                            end through a file in DIR, and waits for
+                            its answer there. ~alfe --clautolisp
+                            --backend subprocess~ passes it when a
+                            plug-in has ~:pre-action~ / ~:post-action~
+                            hooks, so those hooks run between two
+                            actions of ONE run -- state carries from
+                            one action to the next -- as under alfe's
+                            in-process engine. The files are internal;
+                            clautolisp stops waiting when DIR
+                            disappears.
 
 The ~command~ special form (and ~command-s~ / ~vl-cmdf~) routes its
 token sequence through the selected backend's command channel. cador

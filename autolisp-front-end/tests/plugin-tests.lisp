@@ -935,3 +935,233 @@ run stops at the first that does not succeed."
               (alfe.plugin:*context* (alfe.plugin:make-context :options options)))
           (is (= 1 (alfe.cli::run-plan options backend)))
           (is (equal '(1) (counting-backend-calls backend))))))))
+
+;;; --- per-action hooks: the same run in both clautolisp variants ------
+;;;
+;;; alfe-clautolisp-backend-semantic-parity.issue, item 4: the :pre-action /
+;;; :post-action hooks run at the action boundaries of the ONE run the backend
+;;; makes without them -- in-process, and in ONE clautolisp child that stops
+;;; at each boundary (--front-end-action-boundaries). Before, the subprocess
+;;; variant ran one child per action, so nothing carried from one action to
+;;; the next.
+
+(defvar *parity-hook-events* nil
+  "What the parity-hooks plug-in saw, most recent first.")
+
+(defun %register-parity-hooks-plugin (&key fail-at)
+  "Register the plug-in `parity-hooks' (flag --parity-hooks): it prints a
+marker around each action on alfe's standard output, and records each call --
+with the whole :post-action result -- in *PARITY-HOOK-EVENTS*. FAIL-AT, an
+index, makes its :pre-action fail there."
+  (alfe.plugin:register-plugin "parity-hooks"
+                               :options '((:flag "--parity-hooks" :activates t)))
+  (alfe.plugin:register-hook
+   "parity-hooks" :pre-action
+   (lambda (ctx action &key index count &allow-other-keys)
+     (declare (ignore ctx))
+     (when (eql index fail-at)
+       (error "parity hook fails at ~D" index))
+     (format t "<pre ~D/~D ~(~A~)>" index count (alfe.backend:action-kind action))
+     (push (list :pre index (alfe.backend:action-kind action))
+           *parity-hook-events*)))
+  (alfe.plugin:register-hook
+   "parity-hooks" :post-action
+   (lambda (ctx action &key index result &allow-other-keys)
+     (declare (ignore ctx))
+     (format t "<post ~D ~(~A~) ~S>" index
+             (alfe.backend:eval-result-status result)
+             (alfe.backend:eval-result-exit-code result))
+     (push (list :post index (alfe.backend:action-kind action)
+                 (alfe.backend:eval-result-status result)
+                 (alfe.backend:eval-result-exit-code result)
+                 (alfe.backend:eval-result-value result)
+                 (alfe.backend:eval-result-output result)
+                 (alfe.backend:eval-result-error-output result))
+           *parity-hook-events*))))
+
+(defun %run-alfe-with-hooks (variant arguments &key input (hooks t))
+  "Run alfe in-process as %RUN-ALFE-VARIANT does, but with the parity-hooks
+plug-in active (unless HOOKS is NIL). Returns its plist plus :EVENTS, the hook
+calls in order."
+  (let ((*parity-hook-events* '())
+        (out (make-string-output-stream))
+        (err (make-string-output-stream)))
+    (let ((code (let ((*standard-output* out)
+                      (*error-output* err)
+                      (*standard-input* (make-string-input-stream (or input ""))))
+                  (alfe.cli:run (append (list "--no-init" "--clautolisp")
+                                        (when hooks (list "--parity-hooks"))
+                                        (unless (eq variant :default)
+                                          (list "--backend" (string-downcase variant)))
+                                        arguments)
+                                :version "9.9.9"))))
+      (list :exit code
+            :stdout (get-output-stream-string out)
+            :stderr (get-output-stream-string err)
+            :events (reverse *parity-hook-events*)))))
+
+(defun %action-hook-scenarios ()
+  "(NAME ARGUMENTS &key EVENTS EXPECT-STDOUT EXPECT-EXIT INPUT VARIANTS):
+EVENTS is the expected (:PRE INDEX KIND) / (:POST INDEX KIND STATUS EXIT)
+sequence -- the first five elements of each recorded event."
+  (let* ((nl (string #\Newline))
+         (loaded (%parity-fixture
+                  "parity-hooks-load.lsp"
+                  (concatenate 'string
+                               "(defun c:hello () (princ \"hello\"))" nl
+                               "(princ \"loaded\")" nl))))
+    `(("state carries from one action to the next"
+       ("-x" "(setq parity-a 41)" "-x" "(princ (1+ parity-a))")
+       :expect-stdout "<pre 2/3 eval>42<post 2 success 0>"
+       :events ((:pre 1 :eval) (:post 1 :eval :success 0)
+                (:pre 2 :eval) (:post 2 :eval :success 0)
+                (:pre 3 :quit) (:post 3 :quit :success 0)))
+      ("load, then main"
+       ("-l" ,loaded "--main" "c:hello")
+       :expect-stdout "<pre 1/3 load>loaded<post 1 success 0><pre 2/3 main>hello"
+       :events ((:pre 1 :load) (:post 1 :load :success 0)
+                (:pre 2 :main) (:post 2 :main :success 0)
+                (:pre 3 :quit) (:post 3 :quit :success 0)))
+      ("a runtime error ends the run in its action"
+       ("-x" "(princ \"a\")" "-x" "(car 1)" "-x" "(princ \"b\")")
+       :expect-exit 1
+       :events ((:pre 1 :eval) (:post 1 :eval :success 0)
+                (:pre 2 :eval) (:post 2 :eval :failed 1)))
+      ("exit ends the run in its action"
+       ("-x" "(princ 1)" "-x" "(exit 3)" "-x" "(princ 2)")
+       :expect-exit 3
+       :events ((:pre 1 :eval) (:post 1 :eval :success 0)
+                (:pre 2 :eval) (:post 2 :eval :failed 3)))
+      ("exit 0 ends the run too"
+       ("-x" "(exit 0)" "-x" "(princ 2)")
+       :expect-exit 0
+       :events ((:pre 1 :eval) (:post 1 :eval :success 0)))
+      ("a recorded status does not stop the run"
+       ("-x" "(autolisp-set-status 5)" "-x" "(princ 'after)")
+       :expect-exit 5 :expect-stdout "AFTER"
+       :events ((:pre 1 :eval) (:post 1 :eval :failed 5)
+                (:pre 2 :eval) (:post 2 :eval :failed 5)
+                (:pre 3 :quit) (:post 3 :quit :failed 5)))
+      ("quit alone"
+       ("--quit")
+       :expect-exit 0
+       :events ((:pre 1 :quit) (:post 1 :quit :success 0)))
+      ("nothing after quit runs"
+       ("-x" "(princ 1)" "--quit" "-x" "(princ 2)")
+       :expect-exit 0
+       :events ((:pre 1 :eval) (:post 1 :eval :success 0)
+                (:pre 2 :quit) (:post 2 :quit :success 0)))
+      ("a drawing that cannot be opened runs no action"
+       ("--host" "cador" "--dwg" "/nonexistent/parity-hooks.dwg" "-x" "(princ 1)")
+       :expect-exit ,clautolisp.sysexits:+ex-noinput+
+       :events ())
+      ;; A REPL is the clautolisp program's: the default runs it in the child
+      ;; too, whose REPL is its last action.
+      ("actions then REPL"
+       ("-x" "(setq parity-a 7)" "-i")
+       :input ,(concatenate 'string "(princ parity-a)" nl)
+       :variants (:default :subprocess)
+       :expect-stdout "7"
+       :events ((:pre 1 :eval) (:post 1 :eval :success 0)
+                (:pre 2 :interactive) (:post 2 :interactive :success 0))))))
+
+(test clautolisp-action-hooks-run-in-one-run-in-both-variants
+  "With a plug-in's :pre-action / :post-action hooks active, both clautolisp
+variants run the plan as ONE run -- state carries, the run ends where it ends
+without the plug-in -- and give the same stdout (the hooks' own output
+interleaved at the same places), stderr, exit status and hook calls, the
+:post-action results included. The exit status is also the one the same run
+has without the plug-in. Skipped when no clautolisp-sbcl is built."
+  (if (not (subprocess-binary-available-p))
+      (is (not (clautolisp-binary-required-p))
+          "clautolisp-sbcl not present; action-hook parity skipped.")
+      (with-clean-plugins ()
+        (%register-parity-hooks-plugin)
+        (dolist (row (%action-hook-scenarios))
+          (destructuring-bind (name arguments &key events expect-stdout expect-exit
+                                                   input
+                                                   (variants '(:direct :subprocess)))
+              row
+            (destructuring-bind (first-variant second-variant) variants
+              (let ((first (%run-alfe-with-hooks first-variant arguments :input input))
+                    (second (%run-alfe-with-hooks second-variant arguments :input input))
+                    (plain (%run-alfe-with-hooks first-variant arguments
+                                                 :input input :hooks nil)))
+                (is (eql (getf first :exit) (getf second :exit))
+                    "~A: exit ~S vs ~S; stderr ~S vs ~S" name
+                    (getf first :exit) (getf second :exit)
+                    (getf first :stderr) (getf second :stderr))
+                (is (eql (getf first :exit) (getf plain :exit))
+                    "~A: exit ~S with the hooks, ~S without" name
+                    (getf first :exit) (getf plain :exit))
+                (is (string= (getf first :stdout) (getf second :stdout))
+                    "~A: stdout ~S (~(~A~)) vs ~S (~(~A~))" name
+                    (getf first :stdout) first-variant
+                    (getf second :stdout) second-variant)
+                (is (string= (getf first :stderr) (getf second :stderr))
+                    "~A: stderr ~S vs ~S" name
+                    (getf first :stderr) (getf second :stderr))
+                (is (equal (getf first :events) (getf second :events))
+                    "~A: hook calls ~S (~(~A~)) vs ~S (~(~A~))" name
+                    (getf first :events) first-variant
+                    (getf second :events) second-variant)
+                (is (equal events
+                           (mapcar (lambda (event) (subseq event 0 (min 5 (length event))))
+                                   (getf first :events)))
+                    "~A: hook calls ~S, expected ~S" name
+                    (getf first :events) events)
+                (when expect-exit
+                  (is (eql expect-exit (getf first :exit))
+                      "~A: exit ~S, expected ~S" name (getf first :exit) expect-exit))
+                (when expect-stdout
+                  (is (search expect-stdout (getf first :stdout))
+                      "~A: expected ~S in ~S" name expect-stdout
+                      (getf first :stdout))))))))))
+
+(test clautolisp-action-hook-results-carry-the-action-output-and-value
+  "A :post-action result holds what that action wrote and its value, the same
+in both variants."
+  (if (not (subprocess-binary-available-p))
+      (is (not (clautolisp-binary-required-p))
+          "clautolisp-sbcl not present; skipped.")
+      (with-clean-plugins ()
+        (%register-parity-hooks-plugin)
+        (dolist (variant '(:direct :subprocess))
+          (let* ((run (%run-alfe-with-hooks
+                       variant '("-x" "(princ \"one\") (+ 1 2)"
+                                 "-x" "(princ \"two\") (car 1)")))
+                 (posts (remove :pre (getf run :events) :key #'first)))
+            (is (equal '(:post 1 :eval :success 0 "3" "one" "")
+                       (first posts))
+                "~(~A~): ~S" variant (first posts))
+            (let ((second (second posts)))
+              (is (equal '(:post 2 :eval :failed 1 nil "two")
+                         (subseq second 0 7))
+                  "~(~A~): ~S" variant second)
+              (is (search "car" (string-downcase (eighth second)))
+                  "~(~A~): the error report in ~S" variant (eighth second))))))))
+
+(test clautolisp-action-hook-failure-is-alfe-s-in-both-variants
+  "An error in a :pre-action hook is the plug-in's, not the engine's: the same
+exit status and report in both variants, the child stopped, no further action
+run."
+  (if (not (subprocess-binary-available-p))
+      (is (not (clautolisp-binary-required-p))
+          "clautolisp-sbcl not present; skipped.")
+      (with-clean-plugins ()
+        (%register-parity-hooks-plugin :fail-at 2)
+        (let ((direct (%run-alfe-with-hooks
+                       :direct '("-x" "(princ 1)" "-x" "(princ 2)")))
+              (subprocess (%run-alfe-with-hooks
+                           :subprocess '("-x" "(princ 1)" "-x" "(princ 2)"))))
+          (is (eql clautolisp.sysexits:+ex-software+ (getf direct :exit))
+              "~S" direct)
+          (is (eql (getf direct :exit) (getf subprocess :exit)))
+          (is (string= (getf direct :stdout) (getf subprocess :stdout))
+              "~S vs ~S" (getf direct :stdout) (getf subprocess :stdout))
+          (is (string= (getf direct :stderr) (getf subprocess :stderr))
+              "~S vs ~S" (getf direct :stderr) (getf subprocess :stderr))
+          (is (search "parity hook fails at 2" (getf direct :stderr)))
+          ;; Action 2 never ran, nor its hooks past the failing one.
+          (is (string= "<pre 1/3 eval>1<post 1 success 0>" (getf direct :stdout))
+              "~S" (getf direct :stdout))))))

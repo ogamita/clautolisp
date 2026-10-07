@@ -76,6 +76,7 @@ FAMILIES = {
     "encoding": [f"{ENTITIES}/encoding-probe.lsp",
                  "scripts/run-encoding-experiment.*"],
     "lispsys-bom": [f"{ENTITIES}/lispsys-bom-probe.lsp",
+                    f"{ENTITIES}/lispsys-forward-probe.lsp",
                     "scripts/run-lispsys-bom-probe.*"],
     "path-sysvars": [f"{ENTITIES}/path-sysvars-probe.lsp",
                      "scripts/run-path-sysvars-probe.*"],

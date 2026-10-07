@@ -1539,8 +1539,9 @@ is the clautolisp executable's — its UI-tree layer is installed by that tool
 — so =--host cadtui= selects the subprocess mode by itself, and combined
 with an explicit =--backend direct= is a usage error. In the subprocess mode
 the engine is started with =--quiet --no-init --dialect D --host H=, the
-encodings, =--dwg=, the dribble request, =--front-end-bindings FILE= and
-one flag per action; the CAD backends ignore =--host=,
+encodings, =--dwg=, the dribble request, =--front-end-bindings FILE=,
+=--front-end-action-boundaries DIR= when a plug-in has per-action hooks,
+and one flag per action of the plan up to its first =:quit=; the CAD backends ignore =--host=,
 the CAD being the host. In a batch run the child's output is captured and
 replayed when it exits; when the plan holds an =:interactive= action the
 child is given alfe's own terminal (input, output and error), so that a
@@ -1606,11 +1607,42 @@ same file and drawing side effects.
    table of option combinations under both modes -- REPL, dribble and DCL
    runs included -- comparing the results.
 8. *Plug-in action hooks.* With a =:pre-action= or =:post-action= hook
-   active, alfe evaluates the plan one action at a time. The subprocess
-   mode runs each such evaluation in a new child, so AutoLISP state does
-   not carry from one action to the next there, while it does in-process.
-   This is the one known difference left; it needs a persistent child
-   (actions sent to one engine over a framed stream) to be removed.
+   active, both modes run the plan as the ONE run they make without it,
+   and call the hooks at its action boundaries: AutoLISP state carries
+   from one action to the next, the run ends where it ends without the
+   plug-in (a runtime error, =(exit N)= -- a status recorded with
+   =autolisp-set-status= does not stop it), and the output and exit status
+   are the same. The in-process engine calls them between two of its
+   actions, with alfe's own streams (what a hook prints is not the
+   engine's output). The child is started with
+   =--front-end-action-boundaries DIR=: before and after each of its
+   actions (each =-l= / =-x=, then the REPL) it flushes its output,
+   publishes a marker file in DIR (=000N-pre.sexp=, =000N-post.sexp=: the
+   action's kind, its value rendered by the engine's printer, the exit
+   status recorded so far) and waits for alfe's reply file (=000N-pre.go=,
+   =000N-post.go=); alfe replays what the child wrote since the last
+   marker, calls the hooks, then replies. The child's actions are mapped
+   back onto the plan's (a =--main FN= is the child's =-x "(FN)"=). An
+   action that does not return gets its =:post-action= when the child
+   exits, with the child's status; the plan's =:quit= gets its hooks when
+   the child has run every action it was given, as the in-process engine
+   reaches it after the last one. The =:post-action= result is built the
+   same way in both modes: the action's output and error output, its
+   value, the exit status recorded so far, =:failed= when that status is
+   not 0. An error in a hook is the plug-in's: the engine is stopped (the
+   child terminated) and the error reaches alfe's own handling (=:error=
+   hook, exit 70). Files and polling, not a socket: nothing to install or
+   for a firewall to block, the same code on POSIX and MS-Windows.
+9. *--quit.* The in-process engine stops at the plan's first =:quit=;
+   the child is handed only the actions before it (the =clautolisp=
+   program has no =--quit=), and a plan with no action for it (=alfe
+   --quit=) is the no-op =-x ""= -- an empty command line would start
+   the program's REPL.
+10. *The recorder of a batch run.* =(clal-dribble FILE)= called from a
+    =-l= / =-x= action records the same file in both modes: the
+    in-process engine installs the =clautolisp= program's dribble streams
+    around its run (=clautolisp.tools.clautolisp:call-with-engine-dribble=),
+    and both close a dribble still open when the run ends.
 
 ** Debugger options
 
@@ -1688,6 +1720,19 @@ e.g. -Eterminal-in / -Eterminal-out), and a bare -E ENC /
 --encoding ENC sets them all at once. The full situation list,
 directions, and resolution order live in the =clautolisp= CLI spec
 (=*encoding-situations*=).
+
+On the CAD backends two of them reach the CAD only where it was measured to
+honour them. =file=: a write encoding becomes, in code loaded with
+=alfe-load=, a ~,ccs=~ suffix on a plain ="w"= / ="a"= on BricsCAD/Windows
+(=*ALFE-OPEN-WRITE-CCS*=), and on AutoCAD the third argument ="utf8"= of a
+plain ="w"= (=*ALFE-OPEN-WRITE-ARG*=), passed by the CAD-side =alfe-open*=
+only when =LISPSYS= is 1 or 2 and warned about otherwise. =log=: the CAD
+writes its =LOGFILEMODE= log into the workdir's =logs/= in its own encoding;
+=--cad-log FILE= has alfe read it after the run
+(=ALFE.BACKEND:COLLECT-ENGINE-LOG=) and copy it to FILE in UTF-8, decoding
+it per the explicit =-Elog= (the bare =-E= does not reach it), else a BOM's
+encoding, else =windows-1252= on MS-Windows and the auto-detect cascade
+elsewhere.
 
 *** Default source-file encoding — precedence
 
@@ -1989,10 +2034,14 @@ reported).
 | =:exit-code=            | filter  | integer              | =:result=                              | the exit code of a run that reached the end of its plan          |
 | =:error=                | event   | the condition        | =:phase=                               | an error is about to be reported and turned into an exit code    |
 
-=:pre-action= and =:post-action= make alfe evaluate the plan one action at
-a time and stop at the first failed action, /but only when an active plug-in
-registered one of them/. Otherwise the whole plan goes to the backend in
-one call, as it always did. =:launcher-lines=, =:launcher-script=,
+=:pre-action= and =:post-action= are called around each action /only when
+an active plug-in registered one of them/; otherwise the whole plan goes to
+the backend in one call, as it always did. The CAD backends then evaluate
+the plan one action at a time and stop at the first failed action. The
+clautolisp backend, in both modes, runs the plan as the one run it makes
+without the hooks and calls them at its action boundaries (see /Semantic
+parity of the two modes/, point 8): the run, its state and its exit status
+do not depend on whether a plug-in watches it. =:launcher-lines=, =:launcher-script=,
 =:launch-argv= and =:launch-options= are called by the CAD backends only;
 the clautolisp backend has no launch step.
 

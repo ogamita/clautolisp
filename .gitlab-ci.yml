@@ -342,11 +342,32 @@ verify:packaged-dwg:linux:
       allow_failure: true
   stage: test
   timeout: 45m
+  # The LibreDWG build cache (scripts/ci-build-cache.sh, kind libredwg): the
+  # vendored LibreDWG + shim are reused whenever the libredwg submodule
+  # commit, clautolisp/drawing-dwg and the toolchain are the same -- whatever
+  # else the clautolisp commit changed, since LibreDWG now carries ITS OWN
+  # version (third-party/libredwg.release) instead of clautolisp's git
+  # describe (libredwg-version-is-superproject-describe). Measured in the CI
+  # image: make build-libraries 164 s cold (27 objects), 1 s and 0 objects on
+  # a hit from another clautolisp commit (cache ~60 MB). The submodule must
+  # be checked out by the runner (recursive), not by `make submodules' later:
+  # the restore runs first and a missing submodule is a MISS that is never
+  # saved. Restore in before_script, save as the LAST script line (as
+  # .fasl-cache); never on release:* lanes, which build cold from their tag.
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive   # libredwg (+ jsmn), before the restore
+  cache:
+    key: libredwg-v1-$CI_JOB_NAME_SLUG
+    paths: [.ci-cache/libredwg/]
+    when: on_success
+  before_script:
+    - sh scripts/ci-build-cache.sh restore libredwg
   script:
     - *pre-warm-quicklisp-sbcl
     - make build-libraries          # vendored libredwg + the CFFI shim
     - make build-programs           # the standalone images
     - bash scripts/verify-packaged-dwg.sh
+    - sh scripts/ci-build-cache.sh save libredwg
 
 test:clautolisp:sbcl:
   extends: .fasl-cache
@@ -462,7 +483,14 @@ test:alfe:sbcl:
     - *not-on-schedule
     - when: on_success
   stage: test
+  variables:
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
   script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end test-sbcl
     - sh scripts/ci-build-cache.sh save fasl
 
@@ -472,7 +500,16 @@ test:alfe:ccl:
     - *not-on-schedule
     - when: on_success
   stage: test
+  variables:
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
   script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    # (The child is the SBCL program; the CCL alfe drives it -- the
+    # cross-Lisp parity a mixed installation has.)
+    - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end test-ccl
     - sh scripts/ci-build-cache.sh save fasl
 

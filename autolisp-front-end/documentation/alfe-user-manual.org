@@ -168,6 +168,18 @@ The child reads alfe's standard input in every run, as the in-process
 engine does, so =printf '(princ 42)\n' | alfe -i= and a =GETSTRING= in a
 batch run see the same input under both variants.
 
+Three more things are the same in both variants. A plug-in with
+=:pre-action= / =:post-action= hooks watches the run without changing it:
+the child is one process for the whole plan that stops at each action
+boundary until alfe has called the hooks (alfe starts it with
+=--front-end-action-boundaries DIR=, a directory of small marker files
+through which the two wait for each other; see /Plug-ins/), so a variable
+set by one =-x= is there for the next, as in-process. =--quit= ends the
+plan: =alfe -x A --quit -x B= never runs =B=, and =alfe --quit= runs
+nothing (it does not start the child's REPL). =(clal-dribble FILE)= called
+from a =-l= / =-x= action records the run into FILE in both, the last,
+unterminated line included.
+
 The treatment of every option is written down once, in
 =alfe.backend.clautolisp:*clautolisp-option-contract*=, and the test
 suite fails when an option alfe accepts is missing from it; a table of
@@ -573,6 +585,7 @@ neither a launch nor a workdir handshake.
 | =--backend attach\vert{}launch=      | Attach to an already-running CAD, or launch a fresh one. |
 | =--workdir DIR=               | Override the exchange directory (default: =$AUTOLISP_WORKDIR=). |
 | =--bootstrap-phase PHASE=     | Truncate the bootstrap at =marker=, =core=, =log= or =full=. |
+| =--cad-log FILE=              | After the run, copy the CAD's own command-history log to FILE, in UTF-8 (see [[#cad-log][The CAD's log: =--cad-log=]]). |
 | =--epure=                     | Run BricsCAD or AutoCAD under the EPURE profile (MS-Windows only). Defined by the =epure= plug-in, not by alfe itself: see [[#plugin-epure][The EPURE plug-in]]. |
 
 =--workdir= names the directory through which alfe and the CAD engine
@@ -598,6 +611,40 @@ Two consequences worth knowing before you use a truncated phase: under
 =core= a script that prints its results looks silent because the capture
 is not installed. =--interactive= requires =full= — combined with any
 other phase, alfe exits with code =2=.
+
+** The CAD's log: =--cad-log=
+:PROPERTIES:
+:CUSTOM_ID: cad-log
+:END:
+
+In the =log= and =full= phases the engine-side bootstrap points the CAD's
+=LOGFILEPATH= at the workdir's =logs/= directory and sets =LOGFILEMODE= to
+1, so AutoCAD and BricsCAD write their command-history log there (alfe's
+own =debug.log= sits beside it). That log carries what the CAD prints to
+its command line — command prompts, and on AutoCAD a native =princ= — which
+alfe's captured output does not.
+
+=--cad-log FILE= makes alfe read that log once the engine has shut down,
+and write it to =FILE= (replaced if it exists) in UTF-8 with LF line ends.
+When the CAD wrote several log files (one per drawing), each is preceded by
+a ~==> NAME <==~ line. The CAD writes the log in its own encoding, which
+alfe decodes as follows:
+
+- with =-Elog ENC= (or =--log-encoding ENC=): as =ENC= — =utf-8=,
+  =utf-16le=, =iso-8859-1=, =windows-1252= or =us-ascii=; any other name is
+  warned about and the log is auto-detected. A bare =-E= does *not* reach
+  the log: the CAD does not change its encoding for it;
+- otherwise, as measured: a byte-order mark names the encoding (UTF-8,
+  UTF-16LE); without one, =windows-1252= on MS-Windows (measured on AutoCAD
+  2022; BricsCAD V25 writes either =windows-1252= or UTF-8 with a BOM, and
+  this rule reads both right) and auto-detection elsewhere.
+
+No log, no file: alfe warns instead — BricsCAD on macOS writes none in
+batch mode (measured), and =--bootstrap-phase marker= / =core= do not turn
+logging on. =--cad-log= concerns the CAD backends only; under
+=--clautolisp= it is warned about and ignored (clautolisp writes its own
+=LOGFILEMODE= log where =LOGFILEPATH= points, and =-Elog= sets its
+encoding — see the clautolisp user manual).
 
 =--epure= is not one of alfe's own options: the =epure= plug-in, which
 ships with alfe, defines it ([[#plugin-epure][The EPURE plug-in]]). Before the plug-in system
@@ -801,7 +848,7 @@ and a short form =-ES ENC=; bidirectional situations also accept a
 | file       | =-Efile ENC=          | =(open …)= file I/O default.                         |
 | console    | =-Econsole ENC=       | CAD GUI console device I/O.                          |
 | cadstdio   | =-Ecadstdio ENC=      | CAD subprocess stdin/stdout pipes.                  |
-| log        | =-Elog ENC=           | alfe's log/diagnostic stream.                        |
+| log        | =-Elog ENC=           | The CAD's command-history log (=LOGFILEMODE=).       |
 | (all)      | =-E ENC=              | Every situation at once.                            |
 
 Accepted ENC values: =utf-8=, =iso-8859-1= (= =latin-1=),
@@ -857,21 +904,33 @@ still an error, but a fixed boundary is never silently wrong).
   | BricsCAD V25 / Windows    | cp1252         | 3rd argument ignored; ~w,ccs=UTF-8~ and ~w,ccs=UTF-16LE~ honoured, with a BOM | raw octets |
   | BricsCAD V26 / macOS      | UTF-8, no BOM  | ignored (always UTF-8)                              | raw octets     |
 
-  So alfe forwards the WRITE direction on BricsCAD/Windows only: with
-  =-Efile-write= (or =-Efile=, or the bare =-E=) =UTF-8= or =UTF-16LE=, a
-  plain =(open f "w")= / =(open f "a")= in code loaded with =alfe-load=
-  becomes ~(open f "w,ccs=UTF-8")~ (or =UTF-16LE=), so the file is written
-  in that encoding *with a byte-order mark*; if BricsCAD refuses the mode,
-  the plain one is used. A call that already names an encoding (a ~,ccs=~
-  of its own, a third argument) or a read mode is left alone, and so is code
-  that is not loaded with =alfe-load= (the native =load=, =-x= forms).
-  =cp1252= / =windows-1252= is BricsCAD/Windows' default and needs nothing.
-  Every other request is warned about, once per run, with the measured
-  reason, and not forwarded: any other write encoding on BricsCAD/Windows,
-  any write encoding on AutoCAD except cp1252 (its documented ="utf8"=
-  argument at =LISPSYS= 1/2 is unmeasured), any write encoding on
-  BricsCAD/macOS except UTF-8, and any read encoding (the CADs' =open=
-  never decodes on read; cp1252 on AutoCAD is what it reads anyway).
+  At =LISPSYS= 1 or 2, AutoCAD 2022's =open= does take a third argument
+  (measured, the =LISPSYS= probe): =(open f "w" "utf8")= writes UTF-8
+  without a BOM, ="utf8-bom"= with one, and a plain ="w"= still writes
+  cp1252; a plain read decodes UTF-8, falling back to cp1252.
+
+  So alfe forwards the WRITE direction in two cases, in code loaded with
+  =alfe-load=, when =-Efile-write= (or =-Efile=, or the bare =-E=) asks for:
+  - BricsCAD/Windows, =UTF-8= or =UTF-16LE=: a plain =(open f "w")= /
+    =(open f "a")= becomes ~(open f "w,ccs=UTF-8")~ (or =UTF-16LE=), so the
+    file is written in that encoding *with a byte-order mark*; if BricsCAD
+    refuses the mode, the plain one is used;
+  - AutoCAD, =UTF-8=: a plain =(open f "w")= becomes =(open f "w" "utf8")=
+    (UTF-8, no BOM) — but only when the running AutoCAD's =LISPSYS= is 1 or
+    2, which alfe checks in the CAD at the call, since =LISPSYS= is set when
+    AutoCAD starts. At =LISPSYS= 0 the plain mode is used and a warning
+    says why, once per run; so is an =(open f "a")=, whose behaviour with
+    an encoding argument is not yet measured.
+  A call that already names an encoding (a ~,ccs=~ of its own, a third
+  argument) or a read mode is left alone, and so is code that is not loaded
+  with =alfe-load= (the native =load=, =-x= forms). =cp1252= /
+  =windows-1252= is both Windows CADs' default and needs nothing. Every
+  other request is warned about, once per run, with the measured reason,
+  and not forwarded: any other write encoding on BricsCAD/Windows or on
+  AutoCAD, any write encoding on BricsCAD/macOS except UTF-8, and any read
+  encoding (the CADs' =open= reads in its own default whatever it is asked:
+  cp1252 on AutoCAD at =LISPSYS= 0, UTF-8 then cp1252 at 1/2, octets on
+  BricsCAD).
 - =console= / =cadstdio= — how alfe DECODES the CAD's console/pipe output.
   accoreconsole is UTF-16LE, *fixed by the product* — =-Econsole= is warned
   and ignored under =--autocad=; =-Ecadstdio= forces the codec alfe decodes
@@ -883,7 +942,11 @@ still an error, but a fixed boundary is never silently wrong).
   cascade (UTF-16LE / UTF-8 / lenient) unless you name a codec. In front of
   clautolisp the console IS the terminal: =-Econsole[-in|-out]= applies to
   the terminal unless =-Eterminal[-in|-out]= is given.
-- =log= — the command-history log file (=LOGFILEMODE=) on clautolisp.
+- =log= — the command-history log file (=LOGFILEMODE=). On clautolisp,
+  =-Elog= is the encoding clautolisp writes it in. On AutoCAD and BricsCAD
+  the CAD writes it in its own encoding, and =-Elog= is how alfe *decodes*
+  it when =--cad-log FILE= asks for a copy (see [[#cad-log][The CAD's log:
+  =--cad-log=]]); a bare =-E= does not reach it.
 
 ** Per-target defaults (measured 2026-07)
 
@@ -1542,10 +1605,15 @@ to its environment, as =(NAME . VALUE)= pairs, VALUE NIL to unset.
 The keyword details each hook receives (=:backend=, =:variant=, =:index=,
 =:result=, …) are listed in the specification, chapter /Plug-ins/.
 
-=:pre-action= and =:post-action= make alfe evaluate the plan one action
-at a time and stop at the first failed action — but only when an active
-plug-in registered one of them. Otherwise the whole plan goes to the
-backend in one call. =:launcher-lines=, =:launcher-script=,
+=:pre-action= and =:post-action= are called around each action, but only
+when an active plug-in registered one of them; otherwise the whole plan
+goes to the backend in one call. A CAD backend then evaluates the plan one
+action at a time and stops at the first failed action. The clautolisp
+backend runs the plan as the same single run it makes without the hooks --
+in-process, and in one clautolisp child that stops at each action boundary
+under =--backend subprocess= -- so AutoLISP state carries from one action
+to the next and the run ends where it would end anyway (a runtime error,
+=(exit N)=), whichever transport runs it. =:launcher-lines=, =:launcher-script=,
 =:launch-argv= and =:launch-options= are called by the CAD backends only:
 the clautolisp backend has no launch step.
 

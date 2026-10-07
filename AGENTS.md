@@ -896,6 +896,17 @@ macOS (thalassa) and Windows (PF5S26BT) GitLab runners
   `glab api projects/ogamita%2Fclautolisp/pipelines/<id>/jobs` then
   `/jobs/<jid>/trace`.
 
+## CI — the alfe lanes need clautolisp-sbcl
+
+Every alfe test of the `--backend subprocess` variant (the direct/subprocess
+parity table, the per-action hook rows) SKIPS as a passing assertion when no
+`clautolisp-sbcl` is built -- and until alfe 2.2.232 no CI lane built it, so
+the table never ran in CI. A lane running the alfe suite builds it first
+(`make -C clautolisp build-clautolisp-sbcl`) and sets
+`ALFE_TEST_REQUIRE_CLAUTOLISP=1`, which turns that skip into a failure
+(`clautolisp-binary-required-p` in `tests/backend-clautolisp-tests.lisp`). A
+new skip-when-absent test uses the same predicate.
+
 ## CI — adding a Quicklisp dependency
 
 A new **quicklisp** dep breaks the alfe SBCL/CCL lanes with
@@ -942,7 +953,53 @@ it or adding a lane:
 - **Windows is deliberately uncached**: its `-ffd` clean keeps the working
   tree (and `clautolisp/.cache`) between jobs, which is the one reuse path
   there; `release-windows.sh` clears it for releases.
-- LibreDWG is not cached anywhere yet: libredwg-version-is-superproject-describe.
+- **LibreDWG** (kind `libredwg`, since clautolisp 2.2.230) is cached on the one
+  non-release Linux lane that builds it, `verify:packaged-dwg:linux`. Its key
+  is the submodule commit + `clautolisp/drawing-dwg` + the toolchain, NOT the
+  whole tree, so another clautolisp commit still hits and compiles 0 objects.
+  That only holds because LibreDWG's `config.h` no longer carries clautolisp's
+  `git describe` (next section). A lane that wants it needs
+  `GIT_SUBMODULE_STRATEGY: recursive`: the restore runs before any `make
+  submodules`, and a missing submodule is a miss that is never saved.
+
+## CI -- following LibreDWG stable releases
+
+clautolisp follows LibreDWG's **stable** releases (pjb, 2026-10-07): the GitHub
+releases of `LibreDWG/libredwg` with `prerelease=false` (`0.13.4`, `0.14`).
+The per-commit snapshots upstream also publishes as releases (`0.14.8590`,
+...) are prereleases and are NOT followed.
+
+`clautolisp/third-party/libredwg.release` records the followed release
+(`version 0.14`) and the commit its tag names. `build-libredwg.sh` writes that
+version to the submodule's `.version` and runs cmake from inside the
+submodule, so the shipped library reports `LibreDWG 0.14` (before 2.2.230 it
+reported clautolisp's `git describe`, because upstream's CMakeLists resolves
+`.version` / `git describe` in cmake's working directory --
+`issues/closed/libredwg-version-is-superproject-describe.issue`). The build
+FAILS if the submodule is not at the recorded commit, or if that commit's tags
+(when fetched) do not include the recorded version; `make check-libredwg-release`
+(part of `make check-release`, offline) fails if the gitlink disagrees with the
+file.
+
+`make check-libredwg-stable-release` (network: GitHub API + `git ls-remote`;
+manual or periodic, deliberately in no CI lane) says whether upstream has a
+newer stable release, and prints its commit. To follow one:
+
+1. `git -C clautolisp/third-party/libredwg fetch --tags origin` and
+   `git -C clautolisp/third-party/libredwg checkout <tag>`;
+2. set `version <tag>` and `commit <sha>` in
+   `clautolisp/third-party/libredwg.release`;
+3. `git add clautolisp/third-party/libredwg clautolisp/third-party/libredwg.release`;
+4. `make -C clautolisp build-libredwg` (the configure log says
+   `PACKAGE_VERSION: <tag>`), then the DWG tests
+   (`make -C clautolisp test-sbcl TEST_SYSTEM=clautolisp/drawing-dwg`), the
+   usual suites and the native Windows/macOS lanes (a LibreDWG change has broken
+   the MinGW build before -- see the notes in `build-libredwg.sh`);
+5. bump clautolisp (a shipped artefact changed) and add a RELEASE_NOTES bullet
+   naming the new LibreDWG release.
+
+The first build after a move recompiles every object (a new `config.h`); the
+libredwg build cache misses by key, as it must.
 
 ## CI — where to PLAY a manual CAD job, and how long it will wait
 

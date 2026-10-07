@@ -162,7 +162,7 @@ the divergences listed under /Remaining/.
 | --dry-run --print-command                         | front-end   | alfe; --print-command is a usage error          | same                                        |
 | --clautolisp --autocad --bricscad --cad --backend | front-end   | backend / variant selection                     | same                                        |
 | --workdir --keep-workdir --write-workdir-path     | front-end   | alfe workdir; *AUTOLISP-WORKDIR* via bindings   | same                                        |
-| --plugin --plugin-path --no-plugins               | front-end   | alfe plug-ins                                   | same (but see per-action hooks below)       |
+| --plugin --plugin-path --no-plugins               | front-end   | alfe plug-ins; per-action hooks in ONE run      | same (one child, --front-end-action-boundaries, alfe 2.2.232) |
 | --on-error                                        | front-end   | alfe's own conditions                           | same                                        |
 | -q -v -d                                          | front-end   | alfe log level; *AUTOLISP-QUIET* ... via bindings | child always --quiet; same bindings       |
 | --no-init                                         | front-end   | alfe init files become -l actions               | same; child always --no-init                |
@@ -322,3 +322,132 @@ first =load_dialog= returns 0, not a positive handle).
    no-op in-process (the recorder is the program's), recording in the
    subprocess variant. Cannot be routed statically; it would need the
    recorder in a library both load, or every run in the child.
+
+
+* Progress (2026-10-07, alfe 2.2.232 / clautolisp 2.2.232, branch alfe-parity-remainder)
+
+** Item 4 done: per-action hooks run at the boundaries of ONE run, in both variants
+
+Design. The ticket offered two shapes: a persistent child fed actions over a
+framed channel, or the child reporting action boundaries on a side channel.
+The second is enough, and much smaller: the child already runs the whole
+plan from its argv; it only has to STOP at each boundary until alfe has
+called the hooks. The framed-channel design would have had to re-create the
+REPL's value echo and the per-action output framing that the program's own
+run already gets right.
+
+- New clautolisp option =--front-end-action-boundaries DIR= (internal,
+  for a driving front end, like =--front-end-bindings=). Before and after
+  each of its actions (each -l / -x, then the REPL) the program flushes its
+  output, publishes =DIR/000N-pre.sexp= / =000N-post.sexp= (kind; post:
+  value rendered by the engine's printer, exit status recorded so far) and
+  waits for =000N-pre.go= / =000N-post.go=; it stops waiting if DIR
+  disappears. The protocol lives in =clautolisp/autolisp-cli/source/
+  engine.lisp= (=call-at-action-boundaries=, =report-action-boundary=,
+  =read-action-boundary=, =acknowledge-action-boundary=), shared by both
+  sides. Plain files + polling (2 ms): no socket, nothing a firewall or a
+  Windows console can break, the same code on POSIX and MS-Windows. A
+  marker is written under a temporary name and renamed (a reader never
+  sees half of one), its value coerced to a CHARACTER string (an SBCL
+  base-string would print as #A(...), unreadable by CCL).
+- alfe: new generic =alfe.backend:eval-plan-with-action-hooks (session plan
+  before after)=; the default method is the old one-EVAL-PLAN-per-action
+  loop (the CAD backends keep it). alfe.cli's =%eval-plan-with-hooks= calls
+  it. The clautolisp methods:
+  - direct: the ordinary run (=%direct-eval-plan=) with the hooks called
+    between two actions, with alfe's own streams (what a hook prints is not
+    the engine's output); an action that does not return (error, (exit N))
+    gets its :post-action after the run's outcome is known;
+  - subprocess: ONE child with =--front-end-action-boundaries=;
+    =%wait-at-action-boundaries= reads each marker, =%run-engine-child=
+    replays what the child wrote since the previous marker, the hooks run,
+    then the reply. The child's actions map back to the plan's (-l / -x /
+    --main in order, then the :interactive); the plan's :quit gets its hooks
+    when the child ran every action it was given; an action the child dies
+    in gets its :post-action with the child's status.
+  - The :post-action result is built by one function for both
+    (=%action-result=): the action's output and error output, its value,
+    the status recorded so far, :failed when it is not 0.
+  - An error in a hook is the plug-in's: it leaves the run through a catch
+    tag (not the engine's error handlers, not aldo), the child is
+    terminated, and it is re-signalled to alfe's :error / exit 70 handling,
+    as before.
+- Behaviour change, deliberate: a watched clautolisp run is now the run an
+  unwatched one is. Before, a hooked run stopped at the first action whose
+  RESULT was not :success, so a script calling =(autolisp-set-status 5)=
+  stopped the plan in-process when a plug-in watched it, and not otherwise.
+
+** Found and fixed on the way (parity rows added)
+
+- =alfe --clautolisp --backend subprocess --quit= started the child's REPL
+  (an empty argv is a REPL for the clautolisp program; the in-process
+  engine did nothing), and =-x A --quit -x B= ran B in the child only. The
+  child now gets the actions before the plan's first :quit, and the no-op
+  =-x ""= when that leaves none (=%child-plan=, =build-subprocess-argv=).
+- Item 9: =(clal-dribble FILE)= from a batch action recorded in the child
+  and did nothing in-process; and the child lost the last, unterminated line
+  of such a dribble (nothing closed it before exit). Both variants now use
+  =clautolisp.tools.clautolisp:call-with-engine-dribble= (the program's
+  RUN-WITH-INPUT too): the dribble tees + CLAL-DRIBBLE around the run, and a
+  dribble still open at the end is closed with its pending line.
+- CI never ran the parity table: no lane (GitLab test:alfe:{sbcl,ccl}, the
+  GitHub mirror, test:alfe:{macos,windows}) built clautolisp-sbcl before
+  the alfe suite, so every subprocess-variant test SKIPPED as a passing
+  assertion. Those lanes now build it first and set
+  =ALFE_TEST_REQUIRE_CLAUTOLISP=1=, which turns the skip into a failure
+  (=clautolisp-binary-required-p=). Not yet seen run in CI: the next
+  pipeline is the first.
+
+** Tests
+
+- =clautolisp-action-hooks-run-in-one-run-in-both-variants=: 10 rows (state
+  carries; load then main; runtime error; (exit 3); (exit 0); recorded status
+  does not stop; --quit alone; nothing after --quit; unopenable drawing: no
+  hooks; actions then REPL), each compared direct vs subprocess (default vs
+  subprocess for the REPL) on stdout -- the hooks' output interleaved --,
+  stderr, exit, the full hook-call list with every :post-action result, and
+  the exit status against the same run WITHOUT the plug-in. Seen RED with
+  the old one-child-per-action method (19 of 71 checks).
+- =clautolisp-action-hook-results-carry-the-action-output-and-value=,
+  =clautolisp-action-hook-failure-is-alfe-s-in-both-variants=.
+- Parity table rows: quit alone, nothing after quit, clal-dribble from a
+  batch run, clal-dribble from a batch run that fails.
+- argv unit test (=...-stops-at-quit-and-forwards-the-boundaries=);
+  autolisp-cli marker round trip, reply wait, directory-gone.
+- Item 6, CCL: =make -C autolisp-front-end test-ccl= is green with the
+  whole parity table, the hook rows included (CCL alfe, SBCL child); the
+  "missing load file" row was fixed by alfe-ccl-parity-missing-load-file-
+  message (clautolisp 2.2.217 / alfe 2.2.161).
+
+** Item 7: settled
+
+The exit status of an unopenable -l file is EX_NOINPUT (66) in both
+variants, by the sysexits ruling (sysexits-exit-statuses.issue, clautolisp
+2.2.215 / alfe 2.2.159); the parity table asserts it. Nothing left to decide.
+
+** Still open: needs a runner or a downstream consumer
+
+6. Native and installed verification. What a run must show:
+   - test:alfe:macos and test:alfe:windows (now: build clautolisp-sbcl, then
+     the suite with ALFE_TEST_REQUIRE_CLAUTOLISP=1): Fail 0, and the log
+     shows CLAUTOLISP-BACKEND-VARIANTS-ARE-SEMANTICALLY-IDENTICAL and
+     CLAUTOLISP-ACTION-HOOKS-RUN-IN-ONE-RUN-IN-BOTH-VARIANTS with their
+     dots (about 180 and 70 checks), not a single skip dot. On Windows
+     watch for: the boundary polling over NTFS (rename-into-place of the
+     marker, the .go probe), clautolisp-sbcl.exe found as the checkout
+     sibling, the "/nonexistent/..." rows (a drive-relative path there),
+     and CRLF in captured output (rows compare the two variants, so a
+     CRLF in both is fine; a CRLF in one is the bug).
+   - An INSTALLED alfe (release layout, PREFIX/libexec/clautolisp/binaries/
+     OS/CPU/): the suite runs against the checkout, so it cannot show this.
+     By hand, with the installed =alfe=, for both =--backend direct= and
+     =--backend subprocess=: =--host cador --dwg empty.dwg -x '(princ
+     (getvar "DWGNAME"))'= prints the same (the DWG shim is found from
+     alfe's prefix in-process and from clautolisp's in the child); a
+     plug-in with a :post-action hook printing its index around =-x
+     "(setq a 1)" -x "(princ a)"= prints =1= between the same markers;
+     =--quit= alone exits 0 with no output.
+8. SCHME: drop =--backend subprocess= from the cador suites once a release
+   containing alfe 2.2.158+ (2.2.232+ for the hook behaviour) is consumed
+   there. Downstream; nothing to do in this repository.
+

@@ -65,6 +65,27 @@
                         (if (vl-catch-all-error-p r)
                           (strcat "ERR " (vl-catch-all-error-message r))
                           (vl-prin1-to-string r))))))
+  ;; APPEND with the third argument (unmeasured; alfe does not forward
+  ;; -Efile-write to an "a" until it is): write "A" e-acute "B" with
+  ;; (open f "w" ENC), append one e-acute with (open f "a" ENC), report both
+  ;; sizes -- "utf8": 4 then 6; "utf8-bom": 7 then 9 (no second BOM) or 12.
+  (foreach e1--enc '("utf8" "utf8-bom")
+    (setq e1--path (strcat dir "/e1-append-" e1--enc ".txt"))
+    (setq r (vl-catch-all-apply
+             '(lambda ( / f s1)
+                (setq f (open e1--path "w" e1--enc))
+                (write-char 65 f) (write-char 233 f) (write-char 66 f)
+                (close f)
+                (setq s1 (vl-file-size e1--path))
+                (setq f (open e1--path "a" e1--enc))
+                (write-char 233 f)
+                (close f)
+                (list s1 (vl-file-size e1--path)))
+             '()))
+    (e1--line (strcat "open-a-" e1--enc " "
+                      (if (vl-catch-all-error-p r)
+                        (strcat "ERR " (vl-catch-all-error-message r))
+                        (strcat "SIZES " (vl-prin1-to-string r))))))
   (princ "\nENC-PROBE DONE\n")
   (princ))
 

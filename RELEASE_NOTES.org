@@ -44,6 +44,14 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *The shipped LibreDWG reports its own version* (2.2.230): =LibreDWG
+  0.14= (its =PACKAGE_VERSION=, =dwg_api_version_string()=, and the
+  =999= comment of the DXF it writes), where it used to report
+  clautolisp's =git describe= (=release-2.2.1-781-g9fae492b=). The DWG
+  files clautolisp writes are unchanged: they carry no version stamp.
+  clautolisp follows LibreDWG's *stable* releases (not the per-commit
+  prerelease snapshots); the followed release is recorded in
+  =clautolisp/third-party/libredwg.release=.
 - cadtui French option keywords (2.2.229): ~--host cadtui~ now ships an
   fr_FR option-keyword dictionary, per product -- the French keywords
   measured on French AutoCAD 2022 and BricsCAD V25 installs (OFFSET, TRIM,
@@ -154,6 +162,19 @@ separate binary for tool integrators.
   with the engine's status -- =(exit N)= / =autolisp-set-status= give
   =N=, a =-l= file that cannot be opened gives 2 (it was 1 in-process).
   See the alfe user manual, /One engine, two transports/.
+- alfe 2.2.232 / clautolisp 2.2.232: the last differences between the two
+  =alfe --clautolisp= variants are gone. A plug-in with =:pre-action= /
+  =:post-action= hooks no longer splits the run: both variants run the plan
+  as one run and call the hooks at its action boundaries -- the child
+  stops at each one, through the new clautolisp option
+  =--front-end-action-boundaries DIR= -- so state carries from one action
+  to the next under =--backend subprocess= too, and a status recorded with
+  =autolisp-set-status= no longer stops a watched run early. =alfe -x A
+  --quit -x B= no longer runs =B= in the child, and =alfe --backend
+  subprocess --quit= no longer starts a REPL. =(clal-dribble FILE)= called
+  from a =-l= / =-x= action now records in-process too, and clautolisp
+  closes such a dribble at the end of the run instead of losing its last,
+  unterminated line.
 - An installed ~alfe --clautolisp --backend subprocess~ (and ~--host
   cadtui~) finds the ~clautolisp-sbcl[.exe]~ installed with it, in
   ~PREFIX/libexec/clautolisp/binaries/OS/CPU/~, from where the running alfe
@@ -1906,6 +1927,16 @@ file or COM), and forwards the workload.
 
 ** Encoding (alfe-user-manual § /Encoding/)
 
+- ~--cad-log FILE~ (alfe 2.2.231): after an =--autocad= / =--bricscad= run,
+  alfe copies the CAD's own command-history log (=LOGFILEMODE=, which it
+  directs into its workdir) to FILE in UTF-8, decoded per ~-Elog~, else as
+  measured (a BOM's encoding; windows-1252 on MS-Windows). No log, or
+  =--clautolisp=: a warning and no file. § /The CAD's log: --cad-log/.
+- ~-Efile-write UTF-8~ now reaches AutoCAD (alfe 2.2.231): in code loaded
+  with =alfe-load=, a plain ~(open f "w")~ becomes ~(open f "w" "utf8")~
+  when the running AutoCAD's =LISPSYS= is 1 or 2 (measured: UTF-8 without a
+  BOM); at =LISPSYS= 0, and for ~"a"~ (unmeasured), it is warned about once
+  and the plain mode is used.
 - Per-*situation* encoding CLI: ~-E<situation>[-<dir>] ENC~ /
   ~--<situation>-encoding ENC~ for ~source~ / ~file~ / ~console~ /
   ~cadstdio~ / ~log~ / ~terminal~, plus a bare ~-E ENC~ that sets them
@@ -2043,6 +2074,11 @@ file or COM), and forwards the workload.
   alfe's own, and the root Makefile's ~stage-programs~ / ~release-programs~ —
   instead of needing a separate ~install-plugins~ step (§ /Installing never
   builds as root/ below).
+- ~:pre-action~ / ~:post-action~ under ~--clautolisp~ (2.2.232): the hooks
+  watch the run without changing it -- one run, in-process or in one child
+  that waits at each action boundary; the run ends where it would end
+  without the plug-in, and the ~:post-action~ result carries that action's
+  output, value and recorded status in both variants.
 
 ** Hosts: cador, cadtui, nihil (alfe-user-manual § /Host selection/)
 

@@ -1991,6 +1991,13 @@ own."
     (session-state-set session :stopped))
   session)
 
+;;; The CAD's own command-history log, which the bootstrap directs into the
+;;; workdir's logs/ (--cad-log; ALFE.BACKEND.CAD-COMMON:COLLECT-CAD-LOG).
+(defmethod alfe.backend:collect-engine-log ((backend bricscad-backend) workdir &key cli-options)
+  (if workdir
+      (alfe.backend.cad-common:collect-cad-log :bricscad workdir cli-options)
+      (values '() :none)))
+
 (defmethod cleanup-workdir ((backend bricscad-backend) workdir &key keep-p)
   (when workdir
     (remove-workdir workdir :keep-p keep-p))

@@ -54,6 +54,9 @@
   (format t "  --front-end-bindings FILE  Install the *AUTOLISP-...* values a driving front end~%")
   (format t "                         resolved (alfe --backend subprocess passes it), instead of~%")
   (format t "                         deriving them from this command line.~%")
+  (format t "  --front-end-action-boundaries DIR  Stop before and after each action and wait~%")
+  (format t "                         for the driving front end in DIR (alfe --backend subprocess~%")
+  (format t "                         passes it when a plug-in has per-action hooks).~%")
   (format t "Optimization:~%")
   (format t "  -O SPEC, --optimize SPEC   Set the optimization qualities before anything is~%")
   (format t "                         loaded — the command-line spelling of (clal-optimize '(...)).~%")
@@ -303,6 +306,19 @@ front-end."
              :handler (lambda (opts value name)
                         (declare (ignore name))
                         (setf (clautolisp.autolisp-cli:cli-options-front-end-bindings opts)
+                              value)))
+            ;; --front-end-action-boundaries DIR: for the same front end,
+            ;; when it calls hooks around each action (alfe's :pre-action /
+            ;; :post-action plug-in hooks). The program stops at each action
+            ;; boundary and waits for the front end there (CALL-AT-ACTION-
+            ;; BOUNDARIES), so the hooks run between two actions of this ONE
+            ;; run, as in alfe's in-process engine.
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--front-end-action-boundaries") :shorts nil :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (declare (ignore name))
+                        (setf (clautolisp.autolisp-cli:cli-options-front-end-action-boundaries
+                               opts)
                               value)))
             (clautolisp.autolisp-cli:make-option-spec
              :longs '("--trace") :shorts nil :takes-arg-p nil
@@ -2094,17 +2110,17 @@ machinery, not user intent)."
                               :backend "CLAUTOLISP"
                               :frontend "CLAUTOLISP"
                               :usage-text (usage-string)
-                              :version-text *version*))))
-             ;; The dribble tee/echo streams (dribble.issue) are
-             ;; installed UNCONDITIONALLY — pure pass-throughs while no
-             ;; dribble is active, so (clal-dribble) can start recording
-             ;; at any time. Installed HERE, before the debug session is
-             ;; started, because the session's UI captures the ambient
-             ;; streams at creation — this is what lets a DBG>/NAV>
-             ;; interaction be recorded under --dribble-interactors=t.
-             (*standard-output* (make-dribble-output-tee *standard-output* "O"))
-             (*error-output*    (make-dribble-output-tee *error-output*    "E"))
-             (*standard-input*  (make-dribble-input-echo *standard-input*)))
+                              :version-text *version*)))))
+        ;; The dribble tee/echo streams (dribble.issue) are installed
+        ;; UNCONDITIONALLY -- pure pass-throughs while no dribble is active,
+        ;; so (clal-dribble) can start recording at any time -- and a dribble
+        ;; still open when the run ends is closed. Installed HERE, before the
+        ;; debug session is started, because the session's UI captures the
+        ;; ambient streams at creation -- this is what lets a DBG>/NAV>
+        ;; interaction be recorded under --dribble-interactors=t. Shared with
+        ;; alfe's in-process engine (CALL-WITH-ENGINE-DRIBBLE).
+        (call-with-engine-dribble
+         (lambda ()
         (clautolisp.autolisp-cli:install-transmit-variables context bindings)
         ;; --optimize / -O (compiler.issue). Applied HERE for two reasons,
         ;; both of them the whole reason the option exists:
@@ -2130,11 +2146,18 @@ machinery, not user intent)."
                             (intern-autolisp-symbol "T")
                             (mapcar #'make-autolisp-string dribble-interactors))
                         context))
+        (let ((boundaries (clautolisp.autolisp-cli:cli-options-front-end-action-boundaries
+                           cli-options))
+              (index 0))
         (flet ((run-actions ()
                  (dolist (action actions)
                    (unless (eq :interactive (car action))
                      (let ((start (get-internal-real-time)))
-                       (eval-action-in-context context action dialect)
+                       ;; A driving front end's per-action hooks run at the
+                       ;; boundaries (--front-end-action-boundaries).
+                       (clautolisp.autolisp-cli:call-at-action-boundaries
+                        boundaries (incf index) (car action) context
+                        (lambda () (eval-action-in-context context action dialect)))
                        (maybe-summarise-action (car action) (cdr action) start))))))
           ;; --on-error debug / --debugger-ui attach ONE debugger
           ;; session (debugger §10) for the whole program:
@@ -2153,21 +2176,27 @@ machinery, not user intent)."
                  (run-under-session-debugging session #'run-actions break)
                  (run-actions))
              (when interactive-p
-               (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
-                context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")
+               ;; The REPL is the last action, between its own boundaries.
+               (clautolisp.autolisp-cli:call-at-action-boundaries
+                boundaries (incf index) :interactive context
                 (lambda ()
-                  (repl-loop dialect context
-                             :quiet-p quiet-p
-                             :mock-input mock-input
-                             :gui gui
-                             :trace-p trace-p
-                             :session session
-                             :break-on-error break
-                             :dribble dribble
-                             :dribble-interactors dribble-interactors)))))))
+                  (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
+                   context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")
+                   (lambda ()
+                     (repl-loop dialect context
+                                :quiet-p quiet-p
+                                :mock-input mock-input
+                                :gui gui
+                                :trace-p trace-p
+                                :session session
+                                :break-on-error break
+                                :dribble dribble
+                                :dribble-interactors dribble-interactors)
+                     ;; The REPL has no value of its own.
+                     nil)))))))))
         ;; Normal completion: exit with the status a script recorded via
         ;; (autolisp-set-status N) — 0 when it never touched the channel.
-        (autolisp-exit-status context))
+        (autolisp-exit-status context))))
     ;; The statuses are the shared table's (ENGINE-EXIT-STATUS, the same
     ;; one alfe's in-process engine uses; sysexits-exit-statuses.issue).
     (autolisp-runtime-error (condition)

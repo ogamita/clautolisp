@@ -72,6 +72,9 @@
                                       ;     workdir is prepared, write its
                                       ;     absolute path to FILE (for CI to
                                       ;     locate a --keep-workdir workdir).
+  (cad-log          nil)              ; A   --cad-log FILE: after the run, the CAD's
+                                      ;     own command-history log (LOGFILEMODE),
+                                      ;     decoded per -Elog, copied to FILE.
   ;; Clautolisp-only
   (mock-input       nil)              ; C   --mock-input PATH (string)
   (gui              nil)              ; C   --gui CMD          (string)
@@ -97,7 +100,13 @@
   ;; end (alfe --backend subprocess) resolved, to install INSTEAD of the ones
   ;; this program would derive from its own argv
   ;; (alfe-clautolisp-backend-semantic-parity.issue).
-  (front-end-bindings nil))           ; C   --front-end-bindings FILE → FILE (string)
+  (front-end-bindings nil)            ; C   --front-end-bindings FILE → FILE (string)
+  ;; --front-end-action-boundaries DIR: the directory through which the
+  ;; program tells a driving front end where each action begins and ends, and
+  ;; waits for it there, so the front end's per-action plug-in hooks run at the
+  ;; same points of the run as in its in-process engine
+  ;; (alfe-clautolisp-backend-semantic-parity.issue).
+  (front-end-action-boundaries nil))  ; C   --front-end-action-boundaries DIR → DIR (string)
 
 ;;; --- value parsers ----------------------------------------------------
 ;;;

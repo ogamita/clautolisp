@@ -69,4 +69,40 @@ run_knob "LC_ALL=fr_FR.ISO8859-1" LC_ALL=fr_FR.ISO8859-1 LANG= LC_CTYPE=
 run_knob "LC_CTYPE=en_US.UTF-8"   LC_CTYPE=en_US.UTF-8 LANG= LC_ALL=
 run_knob "LC_CTYPE=ISO-8859-1"    LC_CTYPE=ISO-8859-1 LANG= LC_ALL=
 
+# --- LOG: the CAD's own command-history log, read back by alfe --cad-log ------
+# (encoding-situations-cli-options, the `log' situation; the .ps1 twin has the
+# full rationale). BricsCAD V26 on macOS wrote no log in batch mode
+# (probe-logfile); this records whether that still holds and, if a log
+# appears, what --cad-log decoded and the log's raw first bytes.
+if [ "$backend" != "clautolisp" ]; then
+  log_lsp="$out_dir/log-probe.lsp"
+  cad_log="$out_dir/cad-log-$backend.txt"
+  wd_file="$out_dir/cad-log-workdir.txt"
+  rm -f "$cad_log" "$wd_file"
+  printf '%s\n' '(progn (apply (quote princ) (list (strcat "\nLOG-MARKER caf" (chr 233) " eur" (chr 8364) "\n"))) (vl-catch-all-apply (function (lambda () (command "_.LINE" "0,0" "1,1" ""))) nil) (princ "\nLOG WRITTEN\n") (princ))' > "$log_lsp"
+  declare -a largs=()
+  for a in "${bargs[@]}"; do
+    [ "$a" = "-l" ] || [ "$a" = "$probe" ] || largs+=("$a")
+  done
+  largs+=("--keep-workdir" "--write-workdir-path" "$wd_file" "--cad-log" "$cad_log" "-l" "$log_lsp")
+  echo "########## LOG: --cad-log ##########" | tee -a "$report"
+  "$alfe" "${largs[@]}" 2>&1 | grep -aE "LOG |cad-log|BOOTSTRAP-FAILED|FAILED" \
+    | sed "s|^|[LOG] |" | tee -a "$report"
+  if [ -f "$cad_log" ]; then
+    echo "[LOG] decoded: $(wc -l < "$cad_log") lines" | tee -a "$report"
+    grep -a 'LOG-MARKER' "$cad_log" | head -3 | od -An -tx1 | sed "s|^|[LOG] decoded marker bytes (UTF-8):|" | tee -a "$report"
+  else
+    echo "[LOG] NO --cad-log FILE: $cad_log" | tee -a "$report"
+  fi
+  if [ -f "$wd_file" ]; then
+    wd="$(head -1 "$wd_file")"
+    for f in "$wd"/logs/*; do
+      [ -f "$f" ] || continue
+      [ "$(basename "$f")" = "debug.log" ] && continue
+      echo "[LOG] raw $(basename "$f"): $(wc -c < "$f") bytes; first 16: $(head -c 16 "$f" | od -An -tx1 | tr -s ' ')" | tee -a "$report"
+    done
+    rm -rf "$wd"
+  fi
+fi
+
 echo "encoding experiment ($backend) -> $report"

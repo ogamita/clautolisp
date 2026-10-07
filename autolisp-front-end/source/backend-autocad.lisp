@@ -1305,7 +1305,8 @@ started is what ATTACHED/CREATED say.")
   ;; applied (-Esource on each -l action for source staging,
   ;; %AUTOCAD-REQUESTED-STDIO-ENCODING for the
   ;; console/cadstdio codecs, with the -Econsole warning; CAD-OPEN-WRITE-CCS
-  ;; for -Efile, only warned: OPEN takes no encoding at LISPSYS 0), and the
+  ;; for -Efile: UTF-8 written through OPEN's "utf8" at LISPSYS 1/2, the
+  ;; rest warned), and the
   ;; terminal is alfe's own (APPLY-TERMINAL-ENCODING).
   (declare (ignore dialect host mock-input load-encoding io-encoding
                    source-encoding file-read-encoding file-write-encoding
@@ -1355,10 +1356,11 @@ started is what ATTACHED/CREATED say.")
                 :version-text version-text
                 :backend-name "AUTOCAD"
                 :variant variant
-                ;; -Efile-write/-read: AutoCAD's OPEN takes no encoding at
-                ;; LISPSYS 0, so this only warns (CAD-FILE-ENCODING-PLAN).
-                :open-write-ccs (alfe.backend.cad-common:cad-open-write-ccs
-                                 :autocad cli-options))))
+                ;; -Efile-write UTF-8: OPEN's third argument "utf8", which
+                ;; the CAD side passes only at LISPSYS 1/2 (it warns at 0);
+                ;; anything else only warns (CAD-FILE-ENCODING-PLAN).
+                :open-write-arg (nth-value 1 (alfe.backend.cad-common:cad-open-write-ccs
+                                              :autocad cli-options)))))
         ;; G2: how the drain decodes AutoCAD's console output. accoreconsole
         ;; (batch) is UTF-16LE, product-fixed (conflicting -Econsole warned +
         ;; ignored); the GUI path honours the user's request, else :AUTO.
@@ -1677,6 +1679,13 @@ not create it)")
       (setf (autocad-session-trusted session) nil))
     (session-state-set session :stopped))
   session)
+
+;;; The CAD's own command-history log, which the bootstrap directs into the
+;;; workdir's logs/ (--cad-log; ALFE.BACKEND.CAD-COMMON:COLLECT-CAD-LOG).
+(defmethod alfe.backend:collect-engine-log ((backend autocad-backend) workdir &key cli-options)
+  (if workdir
+      (alfe.backend.cad-common:collect-cad-log :autocad workdir cli-options)
+      (values '() :none)))
 
 (defmethod cleanup-workdir ((backend autocad-backend) workdir &key keep-p)
   (when workdir

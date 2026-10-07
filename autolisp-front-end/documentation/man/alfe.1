@@ -151,6 +151,16 @@ denotation, and exit.
 Stage the workdir for real, print the CAD command line that would be
 launched, and launch nothing. CAD backends only.
 .TP
+.BR \-\-cad-log " " \fIFILE\fR
+.BR \-\-autocad " / " \-\-bricscad :
+after the run, copy the CAD's own command-history log
+.RB ( LOGFILEMODE ,
+which alfe directs into its workdir) to FILE in UTF-8, decoded per
+.BR \-Elog ,
+else as measured: a byte-order mark's encoding, windows-1252 on
+MS-Windows, auto-detected elsewhere. No log (BricsCAD on macOS in batch
+mode), or the clautolisp backend: a warning, and no file.
+.TP
 .BR \-\-write-workdir-path " " \fIFILE\fR
 After the workdir is prepared, write its absolute path to FILE, one
 line. Lets a caller locate a

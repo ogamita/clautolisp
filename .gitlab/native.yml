@@ -337,7 +337,15 @@ test:alfe:macos:
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
   script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    # Here it is the native verification of that table (file polling of the
+    # action boundaries, process streams, paths) on macOS.
+    - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end test-sbcl
     - sh scripts/ci-build-cache.sh save fasl
 
@@ -370,7 +378,16 @@ test:alfe:windows:
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
   script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    # Here it is the native verification of that table on MS-Windows
+    # (clautolisp-sbcl.exe, file polling of the action boundaries, process
+    # streams, drive-letter paths).
+    - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end test-sbcl
 
 # --- W4 pathname-mapping conformance (real frames) -------------------------

@@ -37,6 +37,7 @@
                 #:prepare-workdir
                 #:start-engine
                 #:eval-plan
+                #:eval-plan-with-action-hooks
                 #:shutdown
                 #:cleanup-workdir
                 #:make-action
@@ -64,7 +65,8 @@
                 #:set-level
                 #:log-debug
                 #:log-verbose
-                #:log-info)
+                #:log-info
+                #:log-warn)
   ;; The plug-in system. alfe.cli drives it (loading, option parsing,
   ;; hook call sites); alfe.plugin never depends on alfe.cli.
   (:import-from #:alfe.plugin
@@ -132,6 +134,7 @@
                 #:cli-options-no-color-p
                 #:cli-options-keep-workdir-p
                 #:cli-options-write-workdir-path
+                #:cli-options-cad-log
                 #:cli-options-main
                 #:cli-options-positional
                 #:make-option-spec
@@ -367,6 +370,11 @@ Bootstrap and runtime:
                          to FILE (one line). Lets a caller (e.g. a CI script)
                          locate a --keep-workdir workdir without scraping stdout.
                          Mirrors $AUTOLISP_WRITE_WORKDIR_PATH.
+  --cad-log FILE         --autocad / --bricscad: after the run, copy the CAD's own
+                         command-history log (LOGFILEMODE, which alfe directs
+                         into its workdir) to FILE in UTF-8, decoded per -Elog,
+                         else as measured (a BOM's encoding; windows-1252 on
+                         MS-Windows; auto-detected elsewhere).
   --dribble              Record the session (forms sent, output `;; O:', error
                          output `;; E:', conditions `;; C:') into
                          $XDG_STATE_HOME/alfe/dribbles/BACKEND/TIMESTAMP.log.
@@ -681,6 +689,13 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (declare (ignore name))
                (setf (cli-options-write-workdir-path opts) value)))
+   ;; --cad-log FILE: the `log' encoding situation read back
+   ;; (encoding-situations-cli-options). WRITE-CAD-LOG-IF-ASKED.
+   (make-option-spec
+    :longs '("--cad-log") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-cad-log opts) value)))
    ;; --- dribble (alfe-dribble.issue) -------------------------------
    ;; The slots live in the SHARED cli-options struct, which already
    ;; carried them ("clautolisp today, alfe planned"); only the specs
@@ -1539,32 +1554,23 @@ outcome must not be replaced by a plug-in's teardown failure."
       nil)))
 
 (defun %eval-plan-with-hooks (session plan)
-  "Evaluate PLAN one action at a time so that :pre-action and :post-action
-can see each. Stops at the first action that does not succeed, as the
-backends do inside one EVAL-PLAN call. Used only when an active plug-in
-registered one of the two hooks."
-  (let ((count (length plan))
-        (results '()))
-    (loop for action in plan
-          for index from 1
-          do (run-hook :pre-action action :index index :count count
-                                          :session session)
-             (let ((result (eval-plan session (list action))))
-               (push result results)
-               (run-hook :post-action action :index index :count count
-                                             :session session :result result)
-               (unless (eq (eval-result-status result) :success)
-                 (return))))
-    (setf results (nreverse results))
-    (let ((last (car (last results))))
-      (make-eval-result
-       :status (if last (eval-result-status last) :success)
-       :value (and last (eval-result-value last))
-       :output (apply #'concatenate 'string (mapcar #'eval-result-output results))
-       :error-output (apply #'concatenate 'string
-                            (mapcar #'eval-result-error-output results))
-       :condition (and last (eval-result-condition last))
-       :exit-code (and last (eval-result-exit-code last))))))
+  "Evaluate PLAN through EVAL-PLAN-WITH-ACTION-HOOKS, calling :pre-action and
+:post-action around each action. Used only when an active plug-in registered
+one of the two hooks. How the actions are separated is the backend's business:
+the CAD backends evaluate the plan one action at a time and stop at the first
+that fails; the clautolisp backend, in both variants, stops at the action
+boundaries of the ONE run it would make without hooks, so the run -- its state,
+output, stopping point and exit status -- is the same with or without a
+plug-in (alfe-clautolisp-backend-semantic-parity.issue)."
+  (let ((count (length plan)))
+    (eval-plan-with-action-hooks
+     session plan
+     (lambda (action index)
+       (run-hook :pre-action action :index index :count count
+                                    :session session))
+     (lambda (action index result)
+       (run-hook :post-action action :index index :count count
+                                     :session session :result result)))))
 
 (defun %prepare-workdir-or-fail (backend workdir-root)
   "PREPARE-WORKDIR, with a workdir that cannot be created reported as a
@@ -1688,6 +1694,9 @@ engine."
       (%safe-hook :pre-shutdown session :reason :cli-exit)
       (ignore-errors (shutdown session :reason :cli-exit))
       (%safe-hook :post-shutdown session :workdir workdir)
+      ;; The engine is down, so its log is closed; the workdir that holds it
+      ;; is still there.
+      (ignore-errors (write-cad-log-if-asked options backend workdir))
       ;; Close the transcript before the workdir goes: the dribble lives outside
       ;; it (a run that cleans up must still leave its record behind), but the
       ;; open line is flushed here rather than at process exit, so a killed alfe
@@ -1695,6 +1704,51 @@ engine."
       (ignore-errors (alfe.dribble:stop-dribble))
       (ignore-errors (cleanup-workdir backend workdir
                                       :keep-p (cli-options-keep-workdir-p options))))))
+
+(defun write-cad-log-if-asked (options backend workdir)
+  "--cad-log FILE: write the CAD's own command-history log of this run
+(ALFE.BACKEND:COLLECT-ENGINE-LOG) to FILE, in UTF-8 with LF line ends. Several
+log files (one per drawing) are written one after the other, each under a
+`==> NAME <==' line. A backend without a CAD log (clautolisp), or a CAD that
+wrote none, is warned about and FILE is not created. Returns FILE's pathname
+when it was written, else NIL."
+  (let ((file (cli-options-cad-log options)))
+    (when file
+      (multiple-value-bind (entries status)
+          (alfe.backend:collect-engine-log backend workdir :cli-options options)
+        (case status
+          (:unsupported
+           (log-warn "cli: --cad-log ~A ignored: the ~(~A~) backend has no CAD log ~
+to collect (clautolisp writes its own LOGFILEMODE log where LOGFILEPATH points; ~
+-Elog sets its encoding)."
+                     file (alfe.backend:backend-name backend))
+           nil)
+          (:none
+           (log-warn "cli: --cad-log ~A: the CAD wrote no log (none in ~A logs/; ~
+BricsCAD on macOS writes none in batch mode, and --bootstrap-phase marker / core ~
+do not turn it on)."
+                     file workdir)
+           nil)
+          (t
+           (handler-case
+               (with-open-file (out file :direction :output
+                                         :if-exists :supersede
+                                         :if-does-not-exist :create
+                                         :external-format :utf-8)
+                 (dolist (entry entries)
+                   (when (rest entries)
+                     (format out "==> ~A <==~%" (car entry)))
+                   (write-string (cdr entry) out)
+                   (unless (or (zerop (length (cdr entry)))
+                               (char= #\Newline
+                                      (char (cdr entry) (1- (length (cdr entry))))))
+                     (terpri out)))
+                 (log-verbose "cli: --cad-log: ~D CAD log file~:P written to ~A"
+                              (length entries) file)
+                 (pathname file))
+             (error (e)
+               (log-warn "cli: --cad-log ~A cannot be written: ~A" file e)
+               nil))))))))
 
 (defun %start-dribble-if-asked (options version-text)
   "Start alfe's own recording when --dribble was given AND the selected backend

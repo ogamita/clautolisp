@@ -53,15 +53,19 @@
 # THE KINDS
 #   fasl      the project's ASDF fasls. WIRED on the Linux docker lanes and
 #             the macOS unit lanes (.gitlab-ci.yml, .gitlab/native.yml).
-#   libredwg  the vendored LibreDWG build + the CFFI shim. Its key and its
-#             hit/miss logic work (a moved submodule or another CC miss), but
-#             it is NOT WIRED anywhere, because a hit still recompiles all 27
-#             objects: LibreDWG's CMakeLists runs `git describe' in cmake's
-#             working directory, which build-libredwg.sh leaves in the
-#             SUPERPROJECT, so config.h -- included by every object --
-#             carries clautolisp's commit id and changes on every commit. See
-#             issues/open/libredwg-version-is-superproject-describe.issue;
-#             once that is fixed, wiring this kind is the remaining step.
+#   libredwg  the vendored LibreDWG build + the CFFI shim. WIRED on
+#             verify:packaged-dwg:linux (since clautolisp 2.2.230), the one
+#             non-release Linux lane that builds it; such a lane needs
+#             GIT_SUBMODULE_STRATEGY: recursive, since a submodule not
+#             checked out at restore time is a miss. It was held back until
+#             LibreDWG stopped carrying clautolisp's `git describe' as its
+#             version: config.h, included by every object, changed on every
+#             clautolisp commit, so a hit still recompiled all 27 objects.
+#             build-libredwg.sh now stamps the release recorded in
+#             clautolisp/third-party/libredwg.release and runs cmake inside
+#             the submodule (issues/closed/
+#             libredwg-version-is-superproject-describe.issue), and a hit
+#             from another clautolisp commit compiles 0 objects.
 
 set -u
 

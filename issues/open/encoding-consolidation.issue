@@ -243,3 +243,36 @@ encoding-situations-cli-options + accoreconsole-deported-load-highbyte.
 6. =open-default-external-format= fallback =:iso-8859-1= + read/write precedence symmetry — =CL/…/api.lisp:1989= (re-breaks =open-write-ignores-file-encoding= if changed).
 7. =*enc-diagnostic-codes*= closed set — adding a code requires updating :2983.
 8. reverse direction (=-x '(… é …)'= → BricsCAD as code 233) is CORRECT and must not regress (situations §1).
+
+* Progress 2026-10-07 (clautolisp 2.2.231 / alfe 2.2.231)
+
+Status of what this umbrella still listed as open ("real-runner CONFIRMATION
+of the CAD-side pieces" and "the still-open experiments"):
+
+- E1 (AutoCAD LISPSYS x BOM, load and OPEN): MEASURED (jobs 16931781178 and
+  16980926802; encoding-situations-cli-options, autocad-open-encoding-lispsys-
+  divergence). The /isolate premise was wrong (alfe never passed it).
+- E2 (log-file encoding): MEASURED for AutoCAD 2022 (windows-1252); BricsCAD V25
+  still windows-1252 OR UTF-8 with a BOM; BricsCAD V26 macOS writes no log in
+  batch. alfe now READS the CAD log (--cad-log FILE, decoded per -Elog / BOM /
+  windows-1252 on Windows) -- the `log' row of the code map has a reader at
+  last. Probes added to settle BricsCAD (probe-logfile size line; the LOG step
+  of run-encoding-experiment) -- see the situations ticket.
+- E3, E4, E5: done (situations ticket).
+- G3 (B5, the deported loader honouring an explicit -Esource): on AutoCAD the
+  "r" "utf8" open it used is now known (E1) to be never better than a plain
+  "r" and worse at LISPSYS 1 / 2 (BOM returned as U+FEFF, read stops at a
+  cp1252 byte), so AutoCAD gets the plain "r" (alfe 2.2.231). The alfe-load
+  path itself was confirmed on the Windows AutoCAD runner earlier
+  (accoreconsole-deported-load-highbyte, closed: A e-acute Z read back right).
+  BricsCAD keeps "r,ccs=ENC".
+- G2 accoreconsole UTF-16LE flip: in production since 1.6.18 and every AutoCAD
+  CI run since drains through it (E3 measured the drain bytes): confirmed in
+  use.
+- -Efile-write: now also reaches AutoCAD ("utf8" third argument at LISPSYS 1/2).
+
+Remaining, all measurements (probes written, nothing to implement until they
+report): the BricsCAD V25 log encoding; OPEN in append mode with an encoding
+(BricsCAD ",ccs=", AutoCAD "utf8"/"utf8-bom"); the end-to-end check of the
+AutoCAD "utf8" forwarding (lispsys-forward-probe). This umbrella closes with
+encoding-situations-cli-options once those are read and acted on.

@@ -59,6 +59,7 @@
    #:cli-options-no-color-p      ; AC
    #:cli-options-keep-workdir-p  ; A
    #:cli-options-write-workdir-path ; A — --write-workdir-path FILE
+   #:cli-options-cad-log         ; A — --cad-log FILE
    #:cli-options-main            ; A — symbol name (string)
    #:cli-options-mock-input      ; C — clautolisp cador prompt-stream
    #:cli-options-gui             ; C — clautolisp DCL subprocess renderer
@@ -76,6 +77,7 @@
    #:cli-options-dribble-interactors ; C — --dribble-interactors=IS (:all / names)
    #:cli-options-positional      ; both — positional FILE arguments
    #:cli-options-front-end-bindings ; C — --front-end-bindings FILE (alfe subprocess)
+   #:cli-options-front-end-action-boundaries ; C — --front-end-action-boundaries DIR (alfe subprocess)
 
    ;; value parsers (one per option-value vocabulary)
    #:parse-mode
@@ -136,6 +138,15 @@
    ;; in-process engine (alfe-clautolisp-backend-semantic-parity.issue)
    #:write-transmit-bindings-file
    #:read-transmit-bindings-file
+   #:render-action-value
+   #:action-boundary-pathname
+   #:write-action-boundary
+   #:read-action-boundary
+   #:acknowledge-action-boundary
+   #:report-action-boundary
+   #:wait-for-action-boundary-reply
+   #:call-at-action-boundaries
+   #:*action-boundary-poll-interval*
    #:report-autolisp-runtime-error
    #:report-autolisp-termination
    #:report-engine-error

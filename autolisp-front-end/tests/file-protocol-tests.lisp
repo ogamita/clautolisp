@@ -1290,6 +1290,7 @@ never signals."
 (defun emit-run-common-with-real-runtime (workdir &key assume-no-rest-p
                                                        dialect
                                                        open-write-ccs
+                                                       open-write-arg
                                                        (explicit-no-rest-p t))
   "Emit run-common.lsp into WORKDIR with the REAL vendored bootstrap
 and runtime staged (the emit tests above use fakes). Returns the
@@ -1298,8 +1299,8 @@ AutoCAD takes instead of the one BricsCAD takes; with
 EXPLICIT-NO-REST-P NIL the keyword is not passed at all, so the
 emitter's target-derived default decides. DIALECT, a --dialect name,
 is stamped into the emitted file and is what the engine's
-portability warnings are judged against. OPEN-WRITE-CCS is passed to
-the emitter (*ALFE-OPEN-WRITE-CCS*)."
+portability warnings are judged against. OPEN-WRITE-CCS / OPEN-WRITE-ARG
+are passed to the emitter (*ALFE-OPEN-WRITE-CCS* / *ALFE-OPEN-WRITE-ARG*)."
   (let ((session (alfe.protocol.file:init-session
                   workdir
                   :bootstrap-lsp-source (%vendored-runtime-source
@@ -1315,10 +1316,12 @@ the emitter (*ALFE-OPEN-WRITE-CCS*)."
                 (alfe.protocol.file:emit-run-common-lsp
                  session :cli-options options
                          :open-write-ccs open-write-ccs
+                         :open-write-arg open-write-arg
                          :assume-no-rest-p assume-no-rest-p)
                 (alfe.protocol.file:emit-run-common-lsp
                  session :cli-options options
-                         :open-write-ccs open-write-ccs)))))
+                         :open-write-ccs open-write-ccs
+                         :open-write-arg open-write-arg)))))
 
 (defun clautolisp-engine-binary ()
   "First existing clautolisp-sbcl among the documented search paths,
@@ -1470,6 +1473,7 @@ before `make build-clautolisp-sbcl`)."
 (defun drive-hosted-engine (binary forms &key assume-no-rest-p dialect
                                               (explicit-no-rest-p t)
                                               open-write-ccs
+                                              open-write-arg
                                               forms-fn)
   "Host the emitted run-common.lsp in a clautolisp subprocess, send
 FORMS one at a time, and return (values statuses stdout stderr
@@ -1483,7 +1487,8 @@ emitter's own default — the target — decides the shadow path.
 FORMS-FN, a function of the workdir called once the session exists and
 before the engine starts, returns the forms to send instead of FORMS —
 for a test that has to stage files of its own next to the session.
-OPEN-WRITE-CCS is emitted as *ALFE-OPEN-WRITE-CCS*."
+OPEN-WRITE-CCS is emitted as *ALFE-OPEN-WRITE-CCS*, OPEN-WRITE-ARG as
+*ALFE-OPEN-WRITE-ARG*."
   (let ((workdir (make-test-workdir (if assume-no-rest-p
                                         "hosted-norest"
                                         "hosted-rest")))
@@ -1495,6 +1500,7 @@ OPEN-WRITE-CCS is emitted as *ALFE-OPEN-WRITE-CCS*."
               workdir
               :dialect dialect
               :open-write-ccs open-write-ccs
+              :open-write-arg open-write-arg
               :assume-no-rest-p assume-no-rest-p
               :explicit-no-rest-p explicit-no-rest-p)
            ;; Declare alfe's own staged runtime trusted before starting
@@ -1923,6 +1929,140 @@ clautolisp-sbcl is not on disk."
                    (is (search "UNTOUCHED" (without-returns stdout)) "stdout ~S" stdout)
                    (is (search "SAME" (without-returns stdout)) "stdout ~S" stdout)))
             (delete-workdir outdir))))))
+
+;;; AutoCAD's half of -Efile-write: OPEN's third argument "utf8" (measured,
+;;; AutoCAD 2022 at LISPSYS 1/2: UTF-8 without a BOM; at LISPSYS 0 any third
+;;; argument is an error). alfe emits *ALFE-OPEN-WRITE-ARG*; alfe-open* passes
+;;; it to a plain "w" only when alfe-lispsys-unicode-p, and warns once on the
+;;; error channel otherwise -- and on "a", which is unmeasured.
+
+(test protocol-emit-run-common-lsp-open-write-arg
+  "run-common.lsp carries (setq *ALFE-OPEN-WRITE-ARG* \"utf8\") when an arg is
+given, and does not mention the variable otherwise."
+  (let ((workdir (make-test-workdir "emit-open-arg")))
+    (unwind-protect
+         (let ((session (alfe.protocol.file:init-session workdir)))
+           (is (search "(setq *ALFE-OPEN-WRITE-ARG* \"utf8\")"
+                       (alfe.protocol.file:read-file-as-string
+                        (alfe.protocol.file:emit-run-common-lsp
+                         session :open-write-arg "utf8"))))
+           (dolist (arg '(nil ""))
+             (is (not (search "ALFE-OPEN-WRITE-ARG"
+                              (alfe.protocol.file:read-file-as-string
+                               (alfe.protocol.file:emit-run-common-lsp
+                                session :open-write-arg arg))))
+                 "no arg (~S) must emit no *ALFE-OPEN-WRITE-ARG*" arg)))
+      (delete-workdir workdir))))
+
+(defun %drive-open-arg (binary unicode-p outdir)
+  "Host the real runtime with *ALFE-OPEN-WRITE-ARG* \"utf8\" and
+alfe-lispsys-unicode-p answering UNICODE-P, then alfe-load a file that writes
+\"A\" e-acute with a plain (open P \"w\") into OUTDIR/plain.txt, the same with
+an unrewritten (apply 'open ...) into OUTDIR/ref.txt, and an e-acute with
+(open P \"a\") into OUTDIR/app.txt. Returns (values statuses stdout stderr)."
+  (drive-hosted-engine
+   binary nil
+   :open-write-arg "utf8"
+   :forms-fn
+   (lambda (workdir)
+     (let ((user (merge-pathnames "user-open-arg.lsp" workdir)))
+       (with-open-file (out user :direction :output
+                                 :if-exists :supersede
+                                 :if-does-not-exist :create
+                                 :external-format :utf-8)
+         (format out "(setq f (open ~S \"w\"))~%(write-char 65 f)~%(write-char 233 f)~%(close f)~%"
+                 (namestring (merge-pathnames "plain.txt" outdir)))
+         (format out "(setq h (apply 'open (list ~S \"w\")))~%(write-char 65 h)~%(write-char 233 h)~%(close h)~%"
+                 (namestring (merge-pathnames "ref.txt" outdir)))
+         (format out "(setq g (open ~S \"a\"))~%(write-char 233 g)~%(close g)~%"
+                 (namestring (merge-pathnames "app.txt" outdir))))
+       (list (if unicode-p
+                 "(defun alfe-lispsys-unicode-p () T)"
+                 "(defun alfe-lispsys-unicode-p () nil)")
+             (format nil "(alfe-load ~S)" (namestring user)))))))
+
+(test protocol-alfe-load-forwards-open-write-arg
+  "Acceptance with the real bootstrap under a hosted clautolisp (which honours
+OPEN's third argument): at LISPSYS 1/2 a loaded (open P \"w\") becomes
+(open P \"w\" \"utf8\") and writes A e-acute as 41 C3 A9; an (open P \"a\") is
+left in the default encoding with a warning. At LISPSYS 0 nothing is forwarded
+and the warning names LISPSYS. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; OPEN third-argument forwarding test skipped.")
+        (let ((outdir (make-test-workdir "open-arg-out")))
+          (unwind-protect
+               (progn
+                 ;; 1. LISPSYS 1/2: forwarded on "w", warned on "a"
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-arg binary t outdir)
+                   (declare (ignore stdout))
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (let ((plain (%file-octets (merge-pathnames "plain.txt" outdir)))
+                         (ref (%file-octets (merge-pathnames "ref.txt" outdir)))
+                         (app (%file-octets (merge-pathnames "app.txt" outdir))))
+                     (is (equal '(65 195 169) plain)
+                         "(open P \"w\") must write UTF-8 through \"utf8\": ~S" plain)
+                     (is (equal (rest ref) app)
+                         "(open P \"a\") must keep the default encoding: ~S vs ~S" app ref))
+                   (is (search "is not given \"utf8\"" stderr) "stderr ~S" stderr)
+                   (is (not (search "LISPSYS is" stderr)) "stderr ~S" stderr))
+                 ;; 2. LISPSYS 0: nothing forwarded, warned once
+                 (delete-file (merge-pathnames "app.txt" outdir))
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-arg binary nil outdir)
+                   (declare (ignore stdout))
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (is (equal (%file-octets (merge-pathnames "ref.txt" outdir))
+                              (%file-octets (merge-pathnames "plain.txt" outdir)))
+                       "at LISPSYS 0 (open P \"w\") must write the default")
+                   (is (search "-Efile-write: not forwarded, LISPSYS is" stderr)
+                       "stderr ~S" stderr)
+                   (is (= 1 (loop with start = 0
+                                  for hit = (search "LISPSYS is" stderr :start2 start)
+                                  while hit
+                                  count t
+                                  do (setf start (1+ hit))))
+                       "the warning is given once: ~S" stderr)))
+            (delete-workdir outdir))))))
+
+(test protocol-autocad-source-open-takes-no-third-argument
+  "G3 on AutoCAD: the deported loader opens a source with a plain (open P \"r\"),
+never (open P \"r\" \"utf8\") -- measured on AutoCAD 2022: the third argument is
+an error at LISPSYS 0 and, at LISPSYS 1 / 2, returns the BOM as a character and
+stops at a byte that is not UTF-8, where the plain read decodes UTF-8 with a
+cp1252 fallback. Checked under a hosted clautolisp whose OPEN is replaced by a
+two-argument one: AUTOLISP-SOURCE-OPEN-ENCODED-TRY must not call it with three.
+Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; AutoCAD source-open test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :forms-fn
+             (lambda (workdir)
+               (let ((src (merge-pathnames "g3-src.lsp" workdir)))
+                 (with-open-file (out src :direction :output
+                                          :if-exists :supersede
+                                          :if-does-not-exist :create
+                                          :external-format :utf-8)
+                   (format out "(setq g3 1)~%"))
+                 (list "(setq g3--real-open open)"
+                       "(defun open (g3--p g3--m) (g3--real-open g3--p g3--m))"
+                       (format nil "(progn (setq g3--r (vl-catch-all-apply ~
+'autolisp-source-open-encoded-try (list ~S \"UTF-8\" \"AUTOCAD\"))) ~
+(if (vl-catch-all-error-p g3--r) (princ \" THREE-ARGS\") ~
+(progn (close g3--r) (princ \" TWO-ARGS\"))) (setq open g3--real-open) (princ))"
+                               (namestring src))))))
+          (is (every (lambda (s) (search " OK" s)) statuses)
+              "every request must succeed: ~S~%~A" statuses stderr)
+          (is (search "TWO-ARGS" (without-returns stdout))
+              "AutoCAD's source open must take two arguments: ~S" stdout)))))
 
 (test protocol-a-loaded-file-may-setq-the-loaders-names
   "alfe-load-user-setq-clobbers-loader-locals. AutoLISP is dynamically scoped

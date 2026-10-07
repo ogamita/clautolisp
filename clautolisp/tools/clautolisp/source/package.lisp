@@ -106,4 +106,7 @@
            #:repl-eval-turn
            #:install-interrupt-handler
            #:restore-interrupt-handler
-           #:handle-interrupt))
+           #:handle-interrupt
+           ;; The run's dribble streams and CLAL-DRIBBLE, shared with the
+           ;; same engine (alfe-clautolisp-backend-semantic-parity.issue).
+           #:call-with-engine-dribble))

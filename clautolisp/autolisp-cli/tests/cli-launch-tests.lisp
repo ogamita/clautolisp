@@ -258,3 +258,54 @@ alongside tui/gui/auto; a typo is a usage error (dcl-ncurses-renderer.issue)."
                       (clautolisp.autolisp-cli:cli-error (c)
                         (clautolisp.autolisp-cli:cli-error-status c))))))
       (ignore-errors (delete-file path)))))
+
+;;; --- action boundaries (alfe-clautolisp-backend-semantic-parity) -------
+;;;
+;;; --front-end-action-boundaries DIR: the child engine publishes a marker
+;;; before and after each action and waits for the front end's reply, so
+;;; alfe's per-action plug-in hooks run between two actions of ONE run.
+
+(defun %fresh-boundary-directory ()
+  (let ((directory (merge-pathnames
+                    (format nil "action-boundaries-test-~36R/"
+                            (random (expt 36 10) (make-random-state t)))
+                    (uiop:temporary-directory))))
+    (ensure-directories-exist directory)
+    directory))
+
+(test action-boundary-marker-round-trips
+  (let ((directory (%fresh-boundary-directory)))
+    (unwind-protect
+         (let ((marker (clautolisp.autolisp-cli:write-action-boundary
+                        directory 3 :post :kind :expression
+                        ;; a base-string, which *PRINT-READABLY* would write
+                        ;; in SBCL's own #A syntax
+                        :value (coerce "\"caf\"" 'base-string)
+                        :status 5)))
+           (is (equal (namestring marker)
+                      (namestring (clautolisp.autolisp-cli:action-boundary-pathname
+                                   directory 3 :post))))
+           (is (string= "0003-post" (pathname-name marker)))
+           (is (equal '(:index 3 :phase :post :kind :expression :value "\"caf\"" :status 5)
+                      (clautolisp.autolisp-cli:read-action-boundary marker)))
+           (is (not (search "#A" (uiop:read-file-string marker)))))
+      (uiop:delete-directory-tree directory :validate t :if-does-not-exist :ignore))))
+
+(test action-boundary-report-waits-for-the-reply
+  (let ((directory (%fresh-boundary-directory)))
+    (unwind-protect
+         (progn
+           ;; The reply is already there: the child goes on at once.
+           (clautolisp.autolisp-cli:acknowledge-action-boundary directory 1 :pre)
+           (is (eq t (clautolisp.autolisp-cli:report-action-boundary
+                      directory 1 :pre :kind :file)))
+           (is (probe-file (clautolisp.autolisp-cli:action-boundary-pathname
+                            directory 1 :pre))))
+      (uiop:delete-directory-tree directory :validate t :if-does-not-exist :ignore))
+    ;; The front end is gone (its directory with it): the child stops waiting.
+    (is (null (clautolisp.autolisp-cli:wait-for-action-boundary-reply
+               (merge-pathnames "gone/" directory) 1 :pre)))))
+
+(test action-boundaries-off-run-the-action-plain
+  (is (eql 42 (clautolisp.autolisp-cli:call-at-action-boundaries
+               nil 1 :expression nil (lambda () 42)))))
