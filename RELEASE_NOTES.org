@@ -33,6 +33,10 @@ refactors with no user-visible effect do not require an entry.
 
 * clautolisp / read-autolisp (=clautolisp/documentation/clautolisp-user-manual.org=)
 
+- Missing and inaccessible input files retain status 66 across host Lisps;
+  failed pathname access checks no longer report a missing file.
+  See the user manual's /Exit Codes/ section.
+
 clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.

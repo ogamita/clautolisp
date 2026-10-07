@@ -174,7 +174,11 @@ there, or it is there but cannot be read."
                    "a file")))
     (format nil "cannot open ~A: ~A" name
             (cond ((null pathname) "file error")
-                  ((null (ignore-errors (probe-file pathname)))
+                  ;; A failed accessibility check is not evidence of absence.
+                  ;; Catch the standard superclass: SBCL and CCL may signal
+                  ;; different FILE-ERROR subclasses for inaccessible paths.
+                  ((null (handler-case (probe-file pathname)
+                           (file-error () :inaccessible)))
                    "no such file or directory")
                   (t "permission denied")))))
 
@@ -267,6 +271,8 @@ clautolisp variants."
     ((typep condition 'cli-error)
      (cli-error-status condition))
     ((typep condition 'file-error)
+     ;; Include implementation-specific subclasses, not just FILE-ERROR
+     ;; itself (e.g. SBCL's SIMPLE-FILE-ERROR).
      clautolisp.sysexits:+ex-noinput+)
     ((reader-diagnostic-error-p condition)
      clautolisp.sysexits:+ex-dataerr+)

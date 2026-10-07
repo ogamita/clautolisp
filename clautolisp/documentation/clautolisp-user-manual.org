@@ -2165,6 +2165,12 @@ semi-standard codes of ~<sysexits.h>~ (see ~sysexits.h(3head)~), used
 with the same values on *every* system, MS-Windows included -- a script
 that tests for 66 works everywhere.
 
+Missing and inaccessible input files both return ~EX_NOINPUT~ (66),
+including host Lisp subclasses of the standard ~file-error~ condition.
+An access error while checking the pathname is reported as permission
+denied, rather than as a missing file. On Windows, diagnostics may include
+the drive added by the host Lisp when resolving a rooted pathname.
+
 | Status | Name             | When                                                                                  |
 |--------+------------------+---------------------------------------------------------------------------------------|
 |    ~0~ | ~EX_OK~          | Success: every ~-l~ / ~-x~ ran; the REPL ended at end of input; ~--help~, ~--version~, the ~--list-...~ options. |

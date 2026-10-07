@@ -59,11 +59,24 @@ engine's report of it."
 words, the same on every host Lisp (alfe-ccl-parity-missing-load-file-message.issue)."
   (multiple-value-bind (status condition report)
       (%status-of-action '(:file . "/nonexistent/sysexits-missing.lsp"))
-    (declare (ignore condition))
+    (is (typep condition 'file-error))
     (is (= clautolisp.sysexits:+ex-noinput+ status))
-    (is (search "clautolisp: cannot open /nonexistent/sysexits-missing.lsp: no such file or directory"
+    ;; A rooted pathname acquires a drive on Windows. Assert the pathname
+    ;; carried by the condition, rather than a POSIX-only spelling.
+    (is (search (format nil "clautolisp: cannot open ~A: no such file or directory"
+                        (namestring (file-error-pathname condition)))
                 report)
         "report ~S" report)))
+
+(test exit-status-directory-load-file-is-noinput
+  "An existing directory cannot be opened as a source file: EX_NOINPUT.
+The host's specific condition class must be handled through FILE-ERROR."
+  (multiple-value-bind (status condition report)
+      (%status-of-action (cons :file (namestring (uiop:temporary-directory))))
+    (is (typep condition 'file-error))
+    (is (= clautolisp.sysexits:+ex-noinput+ status))
+    (is (search "cannot open " report) "report ~S" report)
+    (is (not (search "no such file or directory" report)) "report ~S" report)))
 
 (test exit-status-unreadable-load-file-is-noinput
   "-l FILE that exists but cannot be read (mode 000): EX_NOINPUT (66).
