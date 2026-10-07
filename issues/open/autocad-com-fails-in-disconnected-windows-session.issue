@@ -185,27 +185,49 @@ launched -- that process answered COM (and evaluated alfe's files) while
 disconnected, though it never ran its /b script. A cold BricsCAD COM launch
 in a disconnected session is therefore not established either way.
 
-* Conclusion
+* CONFOUNDED: the VPN went down with the session (pjb, 2026-10-07)
 
-The hypothesis holds for the DISCONNECTED state and not for the lock screen:
+When pjb reconnected after the run, two dialogs were waiting on the desktop:
 
-- locked (Win-L, console session still Active): everything works, COM
-  included (job 16984618487);
-- disconnected (switch user; detached RDP is the same WTS state): AutoCAD
-  COM -- automation and epure -- never starts; BricsCAD's GUI launch
-  (batch /b, epure) never starts; only headless paths work: clautolisp and
-  AutoCAD --mode batch (accoreconsole).
+- Bricsys license manager: "La licence n'est plus valide. L'application va
+  maintenant s'arreter." (the license is no longer valid; the application
+  will now stop);
+- FlexNet License Finder: "Your application was not able to obtain a license
+  because the FlexNet license server manager could not determine where to
+  find the licensing data it needs" (specify the license server / file).
 
-Operational rule for the CAD runner: lock the screen, never switch user or
-leave an RDP client detached while CAD jobs may run; unattended CAD
-verification that must survive a disconnected session uses AutoCAD
---mode batch. Each Windows CAD job's log carries the SESSION-STATE line, so a
-CAD job that dies with READY-TIMEOUT "BOOTING" under connect=Disconnected is
-this, not a code defect.
+On PF5S26B the license servers (the FlexNet one EPURE uses, on the
+enterprise LAN) are reached through a VPN, and the VPN dropped when the
+session was disconnected (it tried to reconnect as the new user). So during
+job 16990501680 the CADs had NO LICENSE SERVER as well as no desktop, and the
+run cannot tell the two apart:
 
-The 2026-09-28 benchmark:autocad:windows death is NOT explained by this: it
-ran --mode batch (accoreconsole), which survives a disconnected session.
+- the BricsCAD batch / epure timeouts coincide with BricsCAD's own "license no
+  longer valid" dialog -- a modal dialog on a desktop nobody sees is exactly a
+  launch stuck at BOOTING;
+- the epure FlexNet license was certainly unavailable;
+- AutoCAD --mode automation / --epure: not attributable either; that
+  AutoCAD --mode batch (accoreconsole) still ran shows only that ITS license
+  path worked.
 
-Remaining for acceptance: the rdp-tcp transport report under RDP (criterion
-3) has not been seen on the machine.
+What the two runs DO establish:
 
+- locked console session (Win-L, VPN up): everything works, COM included
+  (job 16984618487) -- the lock screen is not a problem;
+- headless paths (clautolisp, AutoCAD accoreconsole) survive a disconnected
+  session even without the VPN.
+
+What is NOT established: whether a disconnected session, with its license
+servers still reachable, breaks COM / GUI CAD launches.
+
+* Next: redo on the Windows Server runner (no VPN)
+
+Replay probe:cad-session-state:windows in a disconnected session on the
+Windows Server machine, whose license servers are reachable without a VPN,
+so that the desktop is the only variable. Before trusting a row, check on
+reconnection that no license dialog is waiting (and that the session-state
+line says connect=Disconnected). Until then, the operational rule is only
+"locking is safe"; keep the runner's session connected (no switch user, no
+detached RDP), if only because on PF5S26B that also drops the VPN.
+
+Remaining for acceptance, as before: the rdp-tcp transport report under RDP.
