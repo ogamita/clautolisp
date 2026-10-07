@@ -118,14 +118,14 @@ bare -E/--encoding that sets them all.")
      ("file"     "default+ccs"     "Windows cp1252, macOS UTF-8; -Efile-write UTF-8/UTF-16LE -> OPEN ,ccs= on Windows (BOM); read never decodes; else warned")
      ("console"  "product-fixed"   "GUI device: macOS full-Unicode, Windows cp1252; -Econsole[-out] = drain codec, -Econsole-in warned and ignored")
      ("cadstdio" "auto / -Ecadstdio" "drain auto-detects; -Ecadstdio overrides")
-     ("log"      "product-fixed"   "LOGFILEMODE; accented prompts read back whole: windows-1252 or UTF-8+BOM (unsettled)")
+     ("log"      "product-fixed"   "LOGFILEMODE: windows-1252 or UTF-8+BOM (unsettled); --cad-log decodes a BOM, else windows-1252 on Windows; -Elog overrides")
      ("terminal" "settable"        "-Eterminal — alfe's own stream"))
     (:autocad
      ("source"   "LISPSYS"         "LISPSYS 0=cp1252, 1/2=UTF-8 (restart); -Esource forwarded at 1/2")
-     ("file"     "LISPSYS / MBCS"  "writes cp1252 at every LISPSYS; reads cp1252 at 0, UTF-8 else cp1252 at 1/2; OPEN takes no encoding at 0; -Efile[-read|-write] warned, not forwarded")
+     ("file"     "LISPSYS / MBCS"  "writes cp1252 at every LISPSYS; reads cp1252 at 0, UTF-8 else cp1252 at 1/2; OPEN takes no encoding at 0; -Efile-write UTF-8 -> OPEN \"utf8\" at LISPSYS 1/2 (warned at 0, and for \"a\"); -Efile-read warned, not forwarded")
      ("console"  "product-fixed"   "accoreconsole UTF-16LE; -Econsole warned and ignored")
      ("cadstdio" "-Ecadstdio"      "drain: the CAD's file bytes (cp1252, E3), auto-detected; -Ecadstdio forces")
-     ("log"      "product-fixed"   "LOGFILEMODE: windows-1252 (measured, AutoCAD 2022)")
+     ("log"      "product-fixed"   "LOGFILEMODE: windows-1252 (measured, AutoCAD 2022); --cad-log decodes it so; -Elog overrides")
      ("terminal" "settable"        "-Eterminal — alfe's own stream")))
   "Per-backend encoding-situation provenance for --list-situations, distilled
 from the measured (os × tool × version) findings. Approximate at the CLI

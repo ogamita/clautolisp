@@ -41,6 +41,7 @@
            #:request-control
            #:shutdown
            #:cleanup-workdir
+           #:collect-engine-log
            ;; session struct + accessors
            #:session
            #:make-session
@@ -229,6 +230,21 @@ handle for the CLI's exit-trace renderer."))
 Default method delegates to ALFE.WORKDIR:REMOVE-WORKDIR — backends
 override only when they have extra cleanup (e.g. a lock-file the
 CAD process might still hold)."))
+
+(defgeneric collect-engine-log (backend workdir &key cli-options)
+  (:documentation
+   "The engine's own command-history log (LOGFILEMODE) of the run that used
+WORKDIR, read after the engine has shut down and before the workdir is removed
+(alfe --cad-log; the `log' encoding situation). Returns (values ENTRIES
+STATUS): ENTRIES a list of (NAME . TEXT), one per log file in the order the
+engine wrote them, TEXT decoded per -Elog (else the backend's measured
+default) with LF line ends; STATUS :COLLECTED, :NONE (the engine wrote no
+log) or :UNSUPPORTED (the backend has no CAD log for alfe to collect -- the
+default)."))
+
+(defmethod collect-engine-log ((backend backend) workdir &key cli-options)
+  (declare (ignore workdir cli-options))
+  (values '() :unsupported))
 
 (defmethod backend-display-name :around ((backend backend))
   (or (call-next-method) (backend-name backend)))

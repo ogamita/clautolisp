@@ -711,3 +711,92 @@ settled. clautolisp now writes per-drawing logs (cador command-log.lisp) and
 -Elog reaches them (*AUTOLISP-LOG-ENCODING*): default windows-1252 under the
 AutoCAD dialects, UTF-8 otherwise. Still open here: console -in, the CAD-side
 file default, one keyword per situation on start-engine.
+
+* The remainder (2026-10-07, clautolisp 2.2.231 / alfe 2.2.231)
+
+The two items the 2026-10-06 sections left open, and what became of them.
+
+** AutoCAD's "utf8" third argument at LISPSYS 1 / 2 -- MEASURED, then forwarded
+
+It was measured meanwhile (E1, job 16980926802, MR !438; recorded in
+autocad-open-encoding-lispsys-divergence): at LISPSYS 1 / 2 (open f "w" "utf8")
+writes UTF-8 without a BOM, "utf8-bom" with one, and a plain "w" still writes
+cp1252; a plain "r" decodes UTF-8 (BOM skipped) and falls back to cp1252, while
+"r" "utf8" returns the BOM as 65279 and stops at a byte that is not UTF-8. At 0
+any third argument is an error. clautolisp's OWN OPEN under the AutoCAD dialects
+follows that in 2.2.222 (MR !450, autocad-open-encoding-lispsys-divergence) --
+not touched here. Done here, on the alfe side:
+
+- -Efile-write UTF-8 under --autocad is forwarded: CAD-FILE-ENCODING-PLAN
+  returns the third argument "utf8" (a third value), emitted as
+  *ALFE-OPEN-WRITE-ARG*; the bootstrap's alfe-open* passes it to a plain
+  (open f "w") in alfe-loaded code when the CAD's LISPSYS is 1 or 2
+  (alfe-lispsys-unicode-p, read in the CAD at the call: LISPSYS is fixed when
+  AutoCAD starts and alfe cannot know it beforehand). At LISPSYS 0 it warns
+  once on alfe's error channel and opens the plain mode. Other write encodings
+  on AutoCAD are still warned about and not forwarded.
+- NOT forwarded: an (open f "a") -- what AutoCAD does with "a" "utf8" /
+  "utf8-bom" (a second BOM in the middle?) is unmeasured; warned once.
+- Reads: the -Efile-read warning now states the measured read defaults (it is
+  still not forwarded: the default read is the best there is at every level).
+- G3, the deported loader (autolisp-source-open-encoded-try): on AutoCAD it
+  passed "r" "utf8" for an explicit -Esource UTF-8. By the measurement above
+  that is never better than a plain "r" (an error, so the fallback, at 0) and
+  worse at 1 / 2 (a BOM read as a character, a truncated read on a cp1252
+  byte), so AutoCAD now always gets the plain "r". Test
+  protocol-autocad-source-open-takes-no-third-argument.
+
+** The `log' situation -- alfe now reads the CAD's log: --cad-log FILE
+
+The bootstrap already pointed LOGFILEPATH at the workdir's logs/ and set
+LOGFILEMODE 1 (log / full phases); nothing read the file, and -Elog was
+accepted and silently unused on the CAD backends. Now:
+
+- --cad-log FILE (alfe option; cli-options slot cad-log in the shared struct):
+  after the engine is down and before the workdir goes,
+  ALFE.BACKEND:COLLECT-ENGINE-LOG (new generic; CAD backends ->
+  CAD-COMMON:COLLECT-CAD-LOG) reads every file of logs/ except alfe's
+  debug.log, oldest first, decodes it, normalises CR LF to LF, and alfe writes
+  it to FILE in UTF-8 (one "==> NAME <==" line per file when there are several).
+- Decoding: the explicit -Elog (the bare -E does not reach it -- the CAD does
+  not change its log's encoding for alfe); else a BOM's encoding; else
+  windows-1252 on MS-Windows -- measured for AutoCAD 2022, and right under BOTH
+  open BricsCAD V25 hypotheses (windows-1252, or UTF-8 with a BOM) -- and the
+  auto-detect cascade elsewhere (macOS: no log in batch, nothing measured).
+- No log: a warning, no file. --clautolisp: a warning, no file (clautolisp
+  writes its own log where LOGFILEPATH points; -Elog sets its encoding there).
+
+** Probes written, results to read (nothing guessed)
+
+1. BricsCAD V25 Windows log encoding (windows-1252, or UTF-8 with a BOM?):
+   - probes/sources/probe-logfile.lsp gained the line "the log's (size chars
+     lines high-chars first-high-codes)": the file's byte size against what
+     (open "r") reads back. Single-octet file: size = chars + line ends; UTF-8:
+     each accented character one byte more, plus 3 for a BOM. Runs in
+     vendor:probes:* (family suite).
+   - scripts/run-encoding-experiment.{ps1,sh} gained a LOG step: a native PRINC
+     of e-acute + euro and a LINE command, run with --cad-log --keep-workdir,
+     reports what --cad-log decoded (code points) AND the raw log bytes (size,
+     first 16 bytes, the bytes around the first one above 7F). Runs in
+     encoding:experiment:{bricscad:windows,autocad:windows,bricscad:macos}.
+   TO MEASURE: whether the raw BricsCAD log starts with EF BB BF and how its
+   first accented prompt character is encoded. If UTF-8 without a BOM (neither
+   hypothesis), the default decode rule must change.
+2. APPEND with an encoding (alfe already appends ,ccs= to "a" on BricsCAD
+   Windows, unmeasured):
+   - probe-open-encoding.lsp: "w,ccs=UTF-8" then "a,ccs=UTF-8", the same in
+     UTF-16LE, "w,ccs=UTF-8" then a plain "a", and "w" "utf8" then "a" "utf8"
+     -- sizes after the write and after the append (UTF-8+BOM 7 -> 9 = no
+     second BOM, 12 = a second one; UTF-16LE 8 -> 10 / 12).
+   - lispsys-bom-probe.lsp: "w"/"a" with "utf8" and "utf8-bom" at each LISPSYS
+     level ("open-a-..." lines; 4 -> 6, 7 -> 9 or 12).
+   TO MEASURE: if no second BOM, alfe-open* may forward "a" on AutoCAD too; if
+   BricsCAD writes a second BOM on "a,ccs=", alfe must stop forwarding "a".
+3. End-to-end confirmation of the AutoCAD forwarding:
+   lispsys-forward-probe.lsp, run by run-lispsys-bom-probe.ps1 at each level
+   with -Efile-write utf-8 ("ENC E1F" lines + WARN lines).
+   TO MEASURE: LISPSYS 0 -> "w SIZE 3" + the LISPSYS warning; 1 / 2 ->
+   "w SIZE 4"; every level "a SIZE 1" + the append warning.
+
+Still open here: the three measurements above. Everything else in sections
+4 to 6 is implemented.

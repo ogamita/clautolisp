@@ -1545,8 +1545,14 @@ picks the drain codec."
 
 (defun %open-plan (backend platform write read)
   "(list CCS WARNINGS) of CAD-FILE-ENCODING-PLAN."
-  (multiple-value-list
-   (alfe.backend.cad-common:cad-file-encoding-plan backend platform write read)))
+  (subseq (multiple-value-list
+           (alfe.backend.cad-common:cad-file-encoding-plan backend platform write read))
+          0 2))
+
+(defun %open-plan-arg (backend platform write read)
+  "The third value of CAD-FILE-ENCODING-PLAN: OPEN's third argument."
+  (nth-value 2 (alfe.backend.cad-common:cad-file-encoding-plan
+                backend platform write read)))
 
 (test cad-file-encoding-plan-bricscad-windows-write
   "BricsCAD on Windows: UTF-8 and UTF-16LE (any spelling) become the ,ccs=
@@ -1568,16 +1574,29 @@ forwarded and is warned about."
     (is (search "measured, V25" (first warnings))))
   (is (equal '(nil nil) (%open-plan :bricscad :windows nil nil))))
 
-(test cad-file-encoding-plan-other-cads-warn
-  "AutoCAD (any platform) and BricsCAD on macOS honour no write encoding:
-NIL, with the measured reason -- except a request for what they do anyway."
-  (destructuring-bind (ccs warnings) (%open-plan :autocad :windows "UTF-8" nil)
+(test cad-file-encoding-plan-autocad-utf8-is-the-third-argument
+  "AutoCAD: a UTF-8 write (any spelling) becomes OPEN's third argument \"utf8\"
+(measured at LISPSYS 1/2: UTF-8 without a BOM; the CAD side applies it only
+there), silently on alfe's side and with no ,ccs=; cp1252 is the default and
+needs nothing; any other encoding is warned about, not forwarded."
+  (dolist (name '("UTF-8" "utf-8" "utf8"))
+    (is (equal '(nil nil) (%open-plan :autocad :windows name nil)) "~S" name)
+    (is (equal "utf8" (%open-plan-arg :autocad :windows name nil)) "~S" name))
+  (is (equal '(nil nil) (%open-plan :autocad :windows "cp1252" nil)))
+  (is (null (%open-plan-arg :autocad :windows "cp1252" nil)))
+  (destructuring-bind (ccs warnings) (%open-plan :autocad :windows "UTF-16LE" nil)
     (is (null ccs))
     (is (= 1 (length warnings)))
-    (is (search "backend AUTOCAD: -Efile-write UTF-8 is not forwarded" (first warnings)))
-    (is (search "OPEN takes no encoding at LISPSYS 0 (measured, AutoCAD 2022)" (first warnings)))
-    (is (search "LISPSYS 1/2 is unmeasured" (first warnings))))
-  (is (equal '(nil nil) (%open-plan :autocad :windows "cp1252" nil)))
+    (is (search "backend AUTOCAD: -Efile-write UTF-16LE is not forwarded" (first warnings)))
+    (is (search "none at 0, measured, AutoCAD 2022" (first warnings))))
+  (is (null (%open-plan-arg :autocad :windows "UTF-16LE" nil)))
+  ;; BricsCAD never gets a third argument
+  (is (null (%open-plan-arg :bricscad :windows "UTF-8" nil)))
+  (is (null (%open-plan-arg :bricscad :macos "UTF-8" nil))))
+
+(test cad-file-encoding-plan-other-cads-warn
+  "BricsCAD on macOS honours no write encoding: NIL, with the measured reason
+-- except a request for what it does anyway."
   (destructuring-bind (ccs warnings) (%open-plan :bricscad :macos "UTF-16LE" nil)
     (is (null ccs))
     (is (= 1 (length warnings)))
@@ -1592,9 +1611,10 @@ Warned on every CAD, except cp1252 on AutoCAD, which is what it reads."
     (destructuring-bind (ccs warnings) (%open-plan (first case) (second case) nil "UTF-8")
       (is (null ccs))
       (is (= 1 (length warnings)) "~S: one warning" case)
-      (is (search "-Efile-read UTF-8 is not forwarded: the CAD's OPEN never decodes on read"
+      (is (search "-Efile-read UTF-8 is not forwarded: the CAD's OPEN reads in its own default"
                   (first warnings)))
-      (is (search "AutoCAD 2022 reads cp1252, BricsCAD returns octets" (first warnings)))))
+      (is (search "UTF-8 falling back to cp1252 at LISPSYS 1/2; BricsCAD returns octets"
+                  (first warnings)))))
   (is (equal '(nil nil) (%open-plan :autocad :windows nil "cp1252")))
   ;; both directions: the write is still forwarded, the read still warned
   (destructuring-bind (ccs warnings) (%open-plan :bricscad :windows "UTF-8" "UTF-8")
@@ -1613,13 +1633,21 @@ parsed options and logs each warning once per run."
     (is (null (alfe.backend.cad-common:cad-open-write-ccs
                :bricscad (parse-arguments '("--bricscad")) :platform :windows)))
     (is (null (alfe.backend.cad-common:cad-open-write-ccs :bricscad nil :platform :windows)))
+    ;; AutoCAD: no ccs, the third argument "utf8", and no warning
+    (multiple-value-bind (ccs arg)
+        (alfe.backend.cad-common:cad-open-write-ccs
+         :autocad (parse-arguments '("--autocad" "-Efile-write" "UTF-8"))
+         :platform :windows)
+      (is (null ccs))
+      (is (equal "utf8" arg)))
+    (is (= 0 (length alfe.backend.cad-common::*cad-file-encoding-warnings-given*)))
     (is (null (alfe.backend.cad-common:cad-open-write-ccs
-               :autocad (parse-arguments '("--autocad" "-Efile-write" "UTF-8"))
+               :autocad (parse-arguments '("--autocad" "-Efile-write" "UTF-16LE"))
                :platform :windows)))
     (is (= 1 (length alfe.backend.cad-common::*cad-file-encoding-warnings-given*)))
     ;; the same warning again is not logged twice
     (alfe.backend.cad-common:cad-open-write-ccs
-     :autocad (parse-arguments '("--autocad" "-Efile-write" "UTF-8")) :platform :windows)
+     :autocad (parse-arguments '("--autocad" "-Efile-write" "UTF-16LE")) :platform :windows)
     (is (= 1 (length alfe.backend.cad-common::*cad-file-encoding-warnings-given*)))
     ;; -Efile (both directions) on BricsCAD Windows: write forwarded, read warned
     (is (equal "UTF-8"
@@ -3662,4 +3690,113 @@ on invalid UTF-8) -- and becomes UTF-8 + BOM for the other CADs."
            (is (equal '(#xEF #xBB #xBF 34 65 #xC3 #xA9 90 34)
                       (bytes (alfe.backend.cad-common::stage-source-as-utf8-bom
                               protocol (namestring source) "cp1252" :bricscad)))))
+      (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))
+
+;;; --- --cad-log: the CAD's own command-history log ------------------
+;;;
+;;; encoding-situations-cli-options, the `log' situation. The CAD writes its
+;;; LOGFILEMODE log into the workdir's logs/ (the bootstrap's
+;;; autolisp-log-setup); alfe reads it after the run. Measured: AutoCAD 2022
+;;; writes windows-1252; BricsCAD V25 windows-1252 or UTF-8 with a BOM (not
+;;; settled) -- so a BOM decides, else windows-1252 on Windows.
+
+(defun %octets (&rest items)
+  "An octet vector from ITEMS: integers are octets, strings their ASCII codes."
+  (coerce (loop for item in items
+                append (if (stringp item) (map 'list #'char-code item) (list item)))
+          '(vector (unsigned-byte 8))))
+
+(test cad-log-decode-encoding-measured-defaults
+  "Without -Elog: a UTF-8 or UTF-16LE BOM names the encoding; otherwise
+windows-1252 on MS-Windows and the auto-detect cascade elsewhere. An explicit
+-Elog wins, its line-ending suffix ignored; one the log decoder does not have
+falls back to :AUTO with a warning."
+  (let ((plain (%octets "caf" #xE9)))
+    (is (eq :cp1252 (alfe.backend.cad-common:cad-log-decode-encoding plain :platform :windows)))
+    (is (eq :auto (alfe.backend.cad-common:cad-log-decode-encoding plain :platform :macos)))
+    (is (eq :utf-8 (alfe.backend.cad-common:cad-log-decode-encoding
+                    (%octets #xEF #xBB #xBF "caf" #xC3 #xA9) :platform :windows)))
+    (is (eq :utf-16le (alfe.backend.cad-common:cad-log-decode-encoding
+                       (%octets #xFF #xFE "A" 0) :platform :windows)))
+    (is (eq :utf-8 (alfe.backend.cad-common:cad-log-decode-encoding
+                    plain :explicit "UTF-8" :platform :windows)))
+    (is (eq :iso-8859-1 (alfe.backend.cad-common:cad-log-decode-encoding
+                         plain :explicit "ISO-8859-1-DOS" :platform :windows)))
+    (multiple-value-bind (kw warning)
+        (alfe.backend.cad-common:cad-log-decode-encoding
+         plain :explicit "MAC-ROMAN" :platform :windows)
+      (is (eq :auto kw))
+      (is (search "-Elog MAC-ROMAN: the CAD log is decoded only as" warning)))))
+
+(test cad-log-decoded-text
+  "The decoded log: windows-1252's 0x80 is the euro, a BOM is not part of the
+text, and CR LF become LF."
+  (is (string= (format nil "caf~Cx~C~%B~%" (code-char 233) (code-char #x20AC))
+               (alfe.backend.cad-common:decode-cad-log-octets
+                (%octets "caf" #xE9 "x" #x80 13 10 "B" 13 10) :platform :windows)))
+  (is (string= (format nil "caf~C~%" (code-char 233))
+               (alfe.backend.cad-common:decode-cad-log-octets
+                (%octets #xEF #xBB #xBF "caf" #xC3 #xA9 10) :platform :windows))))
+
+(defun %write-octets (path octets)
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output :element-type '(unsigned-byte 8)
+                            :if-exists :supersede :if-does-not-exist :create)
+    (write-sequence octets out))
+  path)
+
+(defun %read-utf-8 (path)
+  (with-open-file (in path :external-format :utf-8)
+    (let* ((s (make-string (file-length in)))
+           (n (read-sequence s in)))
+      (subseq s 0 n))))
+
+(test cad-log-collected-into-the-cad-log-file
+  "COLLECT-ENGINE-LOG on a CAD backend reads the workdir's logs/ (not alfe's
+debug.log); WRITE-CAD-LOG-IF-ASKED writes it to the --cad-log FILE in UTF-8, one
+`==> NAME <==' header per file when there are several. No log: :NONE, no file.
+The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
+  (let* ((workdir (merge-pathnames
+                   (format nil "alfe-cad-log-~D/" (random 1000000 *cad-test-random*))
+                   (uiop:temporary-directory)))
+         (logs (merge-pathnames "logs/" workdir))
+         (out (merge-pathnames "collected.txt" workdir))
+         (autocad (alfe.backend:find-backend :autocad))
+         (*error-output* (make-string-output-stream)))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist logs)
+           ;; no log yet
+           (multiple-value-bind (entries status)
+               (alfe.backend:collect-engine-log autocad workdir :cli-options nil)
+             (is (null entries))
+             (is (eq :none status)))
+           (%write-octets (merge-pathnames "debug.log" logs) (%octets "alfe debug" 10))
+           (%write-octets (merge-pathnames "empty_1_1_0001.log" logs)
+                          (%octets "PRB caf" #xE9 13 10))
+           (let ((opts (parse-arguments
+                        (list "--autocad" "--cad-log" (namestring out)))))
+             (is (equal (namestring out)
+                        (clautolisp.autolisp-cli:cli-options-cad-log opts)))
+             (let ((alfe.backend.cad-common:*host-os-override* :windows))
+               (is (equal (pathname (namestring out))
+                          (alfe.cli::write-cad-log-if-asked opts autocad workdir))))
+             (is (string= (format nil "PRB caf~C~%" (code-char 233)) (%read-utf-8 out)))
+             ;; a second log file: both, each under its header
+             (%write-octets (merge-pathnames "empty_1_1_0002.log" logs)
+                            (%octets "second" 13 10))
+             (let ((alfe.backend.cad-common:*host-os-override* :windows))
+               (alfe.cli::write-cad-log-if-asked opts autocad workdir))
+             (let ((text (%read-utf-8 out)))
+               (is (search "==> empty_1_1_0001.log <==" text))
+               (is (search "==> empty_1_1_0002.log <==" text))
+               (is (search "second" text))
+               (is (not (search "alfe debug" text))
+                   "alfe's own debug.log is not the CAD's log")))
+           ;; the clautolisp backend: nothing collected, no file
+           (let ((other (merge-pathnames "other.txt" workdir)))
+             (is (null (alfe.cli::write-cad-log-if-asked
+                        (parse-arguments (list "--clautolisp" "--cad-log" (namestring other)))
+                        (alfe.backend:find-backend :clautolisp) workdir)))
+             (is (null (probe-file other)))))
       (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))

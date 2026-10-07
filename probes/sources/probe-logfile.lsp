@@ -15,6 +15,11 @@
 ;;;;     read back (first 60), with the char codes of the marker line;
 ;;;;   - LOGFILEMODE 1 again: same name or new, appended or rewritten;
 ;;;;   - (setvar "LOGFILENAME" ...) -- read-only, the message.
+;;;;   - the log's encoding (BricsCAD's was not settled: windows-1252 or UTF-8
+;;;;     with a BOM): its SIZE in bytes against what (open "r") reads back --
+;;;;     characters, lines, characters above 127 -- so the runner can tell a
+;;;;     single-octet file (size = chars + line ends) from a UTF-8 one (each
+;;;;     accented character one byte more, plus 3 for a BOM).
 ;;;; Every step under VL-CATCH-ALL-APPLY; COMMAND only from a lambda.
 
 (defun cad-probe--log-show (cad-probe--log-thunk / r)
@@ -52,6 +57,25 @@
           (setq found (vl-string->list line))))
       (close f)
       found)
+    :NO-FILE))
+
+(defun cad-probe--log-measure (path / f line chars lines nhigh first c)
+  ;; (SIZE CHARS LINES HIGH-CHARS FIRST-HIGH-CODES): the file's byte size and,
+  ;; read back with (open "r"), its character count (line ends excluded), its
+  ;; line count, how many characters are above 127, and the first ten such
+  ;; codes. Or :NO-FILE.
+  (if (and path (/= path "") (findfile path))
+    (progn
+      (setq f (open path "r") chars 0 lines 0 nhigh 0 first '())
+      (while (setq line (read-line f))
+        (setq lines (1+ lines) chars (+ chars (strlen line)))
+        (foreach c (vl-string->list line)
+          (if (> c 127)
+            (progn
+              (setq nhigh (1+ nhigh))
+              (if (< (length first) 10) (setq first (cons c first)))))))
+      (close f)
+      (list (vl-file-size path) chars lines nhigh (reverse first)))
     :NO-FILE))
 
 (defun cad-probe-run-logfile-probes ( / cad-probe--log-dir cad-probe--log-name
@@ -95,6 +119,8 @@
     (function (lambda () (cad-probe--log-lines cad-probe--log-name 60))))
   (cad-probe--log "the marker line's char codes"
     (function (lambda () (cad-probe--log-marker-codes cad-probe--log-name))))
+  (cad-probe--log "the log's (size chars lines high-chars first-high-codes)"
+    (function (lambda () (cad-probe--log-measure cad-probe--log-name))))
   ;; --- reopened -------------------------------------------------------------
   (cad-probe--log "LOGFILEMODE 1 again: state"
     (function (lambda () (setvar "LOGFILEMODE" 1) (cad-probe--log-state))))

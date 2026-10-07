@@ -59,6 +59,7 @@
    #:cli-options-no-color-p      ; AC
    #:cli-options-keep-workdir-p  ; A
    #:cli-options-write-workdir-path ; A — --write-workdir-path FILE
+   #:cli-options-cad-log         ; A — --cad-log FILE
    #:cli-options-main            ; A — symbol name (string)
    #:cli-options-mock-input      ; C — clautolisp cador prompt-stream
    #:cli-options-gui             ; C — clautolisp DCL subprocess renderer

@@ -534,8 +534,14 @@
 ;; The front-end publishes the EXPLICITLY-requested source encoding as
 ;; *AUTOLISP-CAD-LOAD-ENCODING* (empty when the user did not pass -Esource).
 ;; When set, open the source file the way THIS backend understands
-;; (*AUTOLISP-BACKEND*): BricsCAD "r,ccs=ENC", AutoCAD the 3rd-arg literal,
-;; clautolisp reads *AUTOLISP-FILE-ENCODING* itself so a bare open suffices.
+;; (*AUTOLISP-BACKEND*): BricsCAD "r,ccs=ENC"; clautolisp reads
+;; *AUTOLISP-FILE-ENCODING* itself so a bare open suffices; and AutoCAD a
+;; bare open too. AutoCAD 2022's OPEN, measured (E1, job 16980926802): at
+;; LISPSYS 0 any third argument is an error; at LISPSYS 1 / 2 a plain "r"
+;; decodes UTF-8 -- BOM skipped -- and falls back to cp1252 on a byte that is
+;; not UTF-8, while "r" "utf8" returns the BOM as a character (65279) and
+;; stops reading at the first such byte. So the third argument is never
+;; better than the plain read, and is worse at LISPSYS 1 / 2.
 ;; ANY failure -- an unsupported 3rd arg at AutoCAD LISPSYS 0, an unknown ccs
 ;; -- falls back to the bare "r" open, so a load can NEVER break because of
 ;; this. Empty encoding => bare open => the pre-G3 behaviour, unchanged.
@@ -563,8 +569,7 @@
            ((= u "UTF16LE") (open path "r,ccs=UTF-16LE"))
            (T               (open path "r"))))    ; ANSI default handles latin-1
     ((= backend "AUTOCAD")
-     (cond ((= u "UTF8")    (open path "r" "utf8"))
-           (T               (open path "r"))))    ; MBCS default
+     (open path "r"))                              ; LISPSYS decides (see above)
     (T                      (open path "r"))))     ; clautolisp reads the var itself
 
 (defun autolisp-source-open-encoded (path / enc backend f)
@@ -864,34 +869,90 @@
     (alfe-load (car alfe--args))))
 
 ;; -Efile-write forwarded to the CAD's OPEN (encoding-situations-cli-options
-;; section 6 point 5). alfe sets *ALFE-OPEN-WRITE-CCS* in run-common.lsp ONLY
-;; where the CAD honours it -- measured: BricsCAD on Windows, "w,ccs=UTF-8"
-;; (UTF-8 with a BOM) and "w,ccs=UTF-16LE" (with a BOM); AutoCAD 2022 at
-;; LISPSYS 0 and BricsCAD on macOS ignore any encoding. Unset, OPEN calls are
-;; never rewritten (see alfe-form-needs-rewrite-p).
+;; section 6 point 5). alfe sets, in run-common.lsp, ONLY where the CAD
+;; honours it (measured):
+;;   *ALFE-OPEN-WRITE-CCS* -- BricsCAD on Windows: "w,ccs=UTF-8" (UTF-8 with a
+;;     BOM) and "w,ccs=UTF-16LE" (with a BOM);
+;;   *ALFE-OPEN-WRITE-ARG* -- AutoCAD: (open f "w" "utf8") writes UTF-8 without
+;;     a BOM at LISPSYS 1 / 2; at LISPSYS 0 any third argument is an error.
+;; AutoCAD 2022 at LISPSYS 0 and BricsCAD on macOS ignore any encoding. With
+;; neither set, OPEN calls are never rewritten (see alfe-form-needs-rewrite-p).
 (defun alfe-open-ccs-active-p ()
   (and (boundp '*ALFE-OPEN-WRITE-CCS*)
        (= (type *ALFE-OPEN-WRITE-CCS*) 'STR)
        (> (strlen *ALFE-OPEN-WRITE-CCS*) 0)))
 
+(defun alfe-open-arg-active-p ()
+  (and (boundp '*ALFE-OPEN-WRITE-ARG*)
+       (= (type *ALFE-OPEN-WRITE-ARG*) 'STR)
+       (> (strlen *ALFE-OPEN-WRITE-ARG*) 0)))
+
+(defun alfe-open-rewrite-p ()
+  (or (alfe-open-ccs-active-p) (alfe-open-arg-active-p)))
+
+;; T when AutoLISP is Unicode (LISPSYS 1 or 2), where AutoCAD's OPEN takes
+;; its third argument. LISPSYS is read when AutoCAD starts; a CAD without it
+;; (before 2021) is the ANSI case.
+(defun alfe-lispsys-unicode-p ( / alfe--v)
+  (setq alfe--v (vl-catch-all-apply 'getvar (list "LISPSYS")))
+  (and (not (vl-catch-all-error-p alfe--v))
+       (member alfe--v '(1 2))))
+
+;; One warning per distinct text and run, on alfe's error channel.
+(setq *alfe-open-warned* nil)
+(defun alfe-open-warn (alfe--text)
+  (if (not (member alfe--text *alfe-open-warned*))
+    (progn
+      (setq *alfe-open-warned* (cons alfe--text *alfe-open-warned*))
+      (autolisp-log-err (strcat "WARN " alfe--text))))
+  nil)
+
+;; T iff ARGS is (path mode) with a plain "w" or "a" mode.
+(defun alfe-open-plain-write-p (alfe--args)
+  (and (= (length alfe--args) 2)
+       (= (type (cadr alfe--args)) 'STR)
+       (member (strcase (cadr alfe--args)) '("W" "A"))))
+
 ;; (open path mode [enc]) with its arguments as ONE list. A plain "w" / "a"
 ;; mode (no ",ccs=" of its own, no third argument) gets ",ccs=<ccs>"
-;; appended; if the CAD refuses that, the plain mode is used. Every other
-;; call is passed to OPEN unchanged.
-(defun alfe-open* (args / f)
-  (if (and (alfe-open-ccs-active-p)
-           (= (length args) 2)
-           (= (type (cadr args)) 'STR)
-           (member (strcase (cadr args)) '("W" "A")))
-    (progn
-      (setq f (vl-catch-all-apply
-                'open
-                (list (car args)
-                      (strcat (cadr args) ",ccs=" *ALFE-OPEN-WRITE-CCS*))))
-      (if (or (null f) (vl-catch-all-error-p f))
-        (open (car args) (cadr args))
-        f))
-    (apply 'open args)))
+;; appended; a plain "w" gets the third argument <arg> when LISPSYS is 1 or
+;; 2. If the CAD refuses either, the plain mode is used. Every other call is
+;; passed to OPEN unchanged.
+(defun alfe-open* (alfe--args / alfe--f)
+  (cond
+    ((and (alfe-open-ccs-active-p) (alfe-open-plain-write-p alfe--args))
+     (setq alfe--f (vl-catch-all-apply
+                     'open
+                     (list (car alfe--args)
+                           (strcat (cadr alfe--args) ",ccs=" *ALFE-OPEN-WRITE-CCS*))))
+     (if (or (null alfe--f) (vl-catch-all-error-p alfe--f))
+       (open (car alfe--args) (cadr alfe--args))
+       alfe--f))
+    ((and (alfe-open-arg-active-p) (alfe-open-plain-write-p alfe--args))
+     (cond
+       ((/= (strcase (cadr alfe--args)) "W")
+        (alfe-open-warn
+          (strcat "-Efile-write: (open f \"a\") is not given \""
+                  *ALFE-OPEN-WRITE-ARG*
+                  "\": AutoCAD's encoding argument on append is unmeasured;"
+                  " the file is appended to in its default encoding."))
+        (open (car alfe--args) (cadr alfe--args)))
+       ((not (alfe-lispsys-unicode-p))
+        (alfe-open-warn
+          (strcat "-Efile-write: not forwarded, LISPSYS is "
+                  (vl-prin1-to-string (getvar "LISPSYS"))
+                  ": AutoCAD's OPEN takes an encoding only at LISPSYS 1 or 2"
+                  " (measured, AutoCAD 2022); files are written in cp1252."))
+        (open (car alfe--args) (cadr alfe--args)))
+       (T
+        (setq alfe--f (vl-catch-all-apply
+                        'open
+                        (list (car alfe--args) (cadr alfe--args)
+                              *ALFE-OPEN-WRITE-ARG*)))
+        (if (or (null alfe--f) (vl-catch-all-error-p alfe--f))
+          (open (car alfe--args) (cadr alfe--args))
+          alfe--f))))
+    (T (apply 'open alfe--args))))
 
 ;; T iff FORM contains a native princ/print/prin1/load CALL that needs
 ;; rewriting. Walks without consing; stops at QUOTE / FUNCTION so quoted
@@ -902,8 +963,9 @@
 ;; lacks, and AutoCAD then fails eval'ing it (observed as "division par
 ;; zero" on accoreconsole for EVERY alfe-load, ASCII or not). The princ
 ;; normalizer (autolisp-normalize-princ-call) is written the same way for
-;; the same reason. OPEN counts only while *ALFE-OPEN-WRITE-CCS* is set
-;; (alfe-open-ccs-active-p), so without -Efile-write nothing more is rebuilt.
+;; the same reason. OPEN counts only while *ALFE-OPEN-WRITE-CCS* or
+;; *ALFE-OPEN-WRITE-ARG* is set (alfe-open-rewrite-p), so without a forwarded
+;; -Efile-write nothing more is rebuilt.
 (defun alfe-form-needs-rewrite-p (form / head s)
   (cond
     ((atom form) nil)
@@ -918,7 +980,7 @@
         nil)
        ((and (= (type head) 'SYM)
              (or (= s "PRINC") (= s "PRINT") (= s "PRIN1") (= s "LOAD")
-                 (and (= s "OPEN") (alfe-open-ccs-active-p))))
+                 (and (= s "OPEN") (alfe-open-rewrite-p))))
         T)
        (T
         (cond
@@ -950,7 +1012,7 @@
         (list 'alfe-prin1* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
        ((and (= (type head) 'SYM) (= s "LOAD"))
         (list 'alfe-load* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
-       ((and (= (type head) 'SYM) (= s "OPEN") (alfe-open-ccs-active-p))
+       ((and (= (type head) 'SYM) (= s "OPEN") (alfe-open-rewrite-p))
         (list 'alfe-open* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
        (T
         (mapcar 'alfe-rewrite-form form))))))

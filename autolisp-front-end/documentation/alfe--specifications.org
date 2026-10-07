@@ -1689,6 +1689,19 @@ e.g. -Eterminal-in / -Eterminal-out), and a bare -E ENC /
 directions, and resolution order live in the =clautolisp= CLI spec
 (=*encoding-situations*=).
 
+On the CAD backends two of them reach the CAD only where it was measured to
+honour them. =file=: a write encoding becomes, in code loaded with
+=alfe-load=, a ~,ccs=~ suffix on a plain ="w"= / ="a"= on BricsCAD/Windows
+(=*ALFE-OPEN-WRITE-CCS*=), and on AutoCAD the third argument ="utf8"= of a
+plain ="w"= (=*ALFE-OPEN-WRITE-ARG*=), passed by the CAD-side =alfe-open*=
+only when =LISPSYS= is 1 or 2 and warned about otherwise. =log=: the CAD
+writes its =LOGFILEMODE= log into the workdir's =logs/= in its own encoding;
+=--cad-log FILE= has alfe read it after the run
+(=ALFE.BACKEND:COLLECT-ENGINE-LOG=) and copy it to FILE in UTF-8, decoding
+it per the explicit =-Elog= (the bare =-E= does not reach it), else a BOM's
+encoding, else =windows-1252= on MS-Windows and the auto-detect cascade
+elsewhere.
+
 *** Default source-file encoding — precedence
 
 When the caller does not pass =-Esource ENC=, =alfe= (and the

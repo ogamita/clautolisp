@@ -1169,6 +1169,7 @@ single place that knows the product behind a name (`autocad',
                                  (backend-name "CLAUTOLISP")
                                  (variant nil)
                                  (open-write-ccs nil)
+                                 (open-write-arg nil)
                                  (assume-no-rest-p
                                   (autocad-target-p backend-name cli-options)))
   "Write the run-common.lsp init script the CAD-side runtime sources
@@ -1202,6 +1203,11 @@ ALFE.BACKEND.CAD-COMMON:CAD-OPEN-WRITE-CCS), emits
 user's OPEN calls into alfe-open*, which appends \",ccs=...\" to a plain
 \"w\"/\"a\" mode (-Efile-write forwarded to the CAD's OPEN). NIL (the
 default) emits nothing, so OPEN calls are never rewritten.
+
+OPEN-WRITE-ARG, when a non-empty string (\"utf8\", AutoCAD only), emits
+`(setq *ALFE-OPEN-WRITE-ARG* \"...\")': alfe-open* then passes it as the
+third argument of a plain \"w\" OPEN when the CAD's LISPSYS is 1 or 2, and
+warns once (on the error channel) when it is 0 or the mode is \"a\".
 
 When CLI-OPTIONS is non-NIL, the CLI-derived *AUTOLISP-…* globals
 from transmit-options.issue are emitted at the *top* of the file
@@ -1251,6 +1257,8 @@ Returns the path of the emitted file."
               ;; the bootstrap never rewrites OPEN.
               (when (and (stringp open-write-ccs) (plusp (length open-write-ccs)))
                 (format out "(setq *ALFE-OPEN-WRITE-CCS* ~S)~%" open-write-ccs))
+              (when (and (stringp open-write-arg) (plusp (length open-write-arg)))
+                (format out "(setq *ALFE-OPEN-WRITE-ARG* ~S)~%" open-write-arg))
               (flet ((emit-path (hyphen underscore path)
                        (emit-var hyphen underscore
                                  (format nil "~S" (stringify-path path)))))

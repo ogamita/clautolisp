@@ -12,6 +12,10 @@
 
     scripts/run-lispsys-bom-probe.ps1
 
+  At each level it also runs lispsys-forward-probe.lsp under
+  -Efile-write utf-8: alfe's forwarding of that request as OPEN's third
+  argument "utf8" (LISPSYS 1/2 only), checked end to end.
+
   Output: dist/encoding/lispsys-bom-autocad-Windows.txt, every probe line
   prefixed with its LISPSYS level.
 #>
@@ -32,6 +36,10 @@ if ($alfe -like '*.exe') {
 }
 
 $probe = Join-Path $root "autolisp-front-end/tests/scenarios/entities/lispsys-bom-probe.lsp"
+# alfe's -Efile-write UTF-8 forwarded as OPEN's third argument "utf8", run at
+# each level too (encoding-situations-cli-options): 4-byte "w" at LISPSYS 1/2,
+# 3 bytes and a WARN at 0, and a WARN for "a" (unmeasured, not forwarded).
+$forward = Join-Path $root "autolisp-front-end/tests/scenarios/entities/lispsys-forward-probe.lsp"
 if (-not $env:ALFE_RUNTIME_LSP)   { $env:ALFE_RUNTIME_LSP   = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-remote-io.lsp") -replace '\\','/' }
 if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-bootstrap.lsp") -replace '\\','/' }
 
@@ -112,6 +120,12 @@ try {
         ForEach-Object { "[LISPSYS $level] $_" } |
         Tee-Object -FilePath $report -Append
     } catch { "[LISPSYS $level] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+    try {
+      (& $alfe --no-init --autocad --mode batch -Efile-write utf-8 -l $forward 2>&1) |
+        Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|WARN|BOOTSTRAP-FAILED|FAILED' } |
+        ForEach-Object { "[LISPSYS $level forward] $_" } |
+        Tee-Object -FilePath $report -Append
+    } catch { "[LISPSYS $level forward] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
   }
 } finally {
   foreach ($k in $keys) {

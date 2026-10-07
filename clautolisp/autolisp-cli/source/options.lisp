@@ -72,6 +72,9 @@
                                       ;     workdir is prepared, write its
                                       ;     absolute path to FILE (for CI to
                                       ;     locate a --keep-workdir workdir).
+  (cad-log          nil)              ; A   --cad-log FILE: after the run, the CAD's
+                                      ;     own command-history log (LOGFILEMODE),
+                                      ;     decoded per -Elog, copied to FILE.
   ;; Clautolisp-only
   (mock-input       nil)              ; C   --mock-input PATH (string)
   (gui              nil)              ; C   --gui CMD          (string)
