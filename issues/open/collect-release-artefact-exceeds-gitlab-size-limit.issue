@@ -1,0 +1,55 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: collect-release-artefact-exceeds-gitlab-size-limit -- collect:release cannot upload a ~1.07 GB set (413)
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: ci-infra
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-07
+
+* Symptom
+
+The release-2.3.0 tag pipeline (2922308871): collect:release (job 17000128365)
+assembled the whole release set -- 15 assets, every platform including the
+GitHub-built Windows zips, manifest-release-assets.txt written -- and then
+failed at the artefact upload:
+
+#+begin_example
+dist/combined/: found 17 matching artifact files and directories
+ERROR: Uploading artifacts as "archive" to coordinator... 413 Payload Too Large
+FATAL: too large
+#+end_example
+
+The set is ~1.07 GB: the two all-platform unions alone are 600 MB
+(=clautolisp-2.3.0-all.tar.bz2= 283 MB, =clautolisp-2.3.0-all.zip= 320 MB),
+duplicating every per-platform archive beside them. release-2.2.1 was under the
+limit; the set grew with the macOS and arm64 binaries and the compiler.
+
+Both publishing scripts read that artefact, so the release could not be
+published by the documented procedure.
+
+* Workaround (used for release-2.3.0, now scripted)
+
+Collect locally on poseidon and publish from the local set:
+=deploy-release-to-poseidon.sh --from DIR= and =make-gitlab-release.py
+--manifest FILE --links poseidon= (AGENTS.md, release runbook). The published
+links are poseidon's, so nothing depends on the GitLab artefact.
+
+* Fix options (to decide)
+
+1. Do not upload the =all.*= unions as the artefact: upload the per-platform
+   archives + the manifest (~470 MB), and build the unions where they are
+   mirrored (deploy-release-to-poseidon.sh runs =make collect-artefacts=, or a
+   union step, on poseidon).
+2. Drop one of the two unions (=all.zip= exists only "for Windows" and repeats
+   =all.tar.bz2=), halving them.
+3. Have the pipeline mirror to poseidon itself (a poseidon-tagged job with the
+   web-tree access), so the combined set never has to be a GitLab artefact.
+
+=check-release-lane-integrity= / =check-release-artefact-set= must keep
+holding whichever is chosen.
+
+* Acceptance
+
+- A release tag pipeline's collect:release succeeds for a set of the 2.3.0
+  size, and the documented procedure (deploy, then publish) works unchanged.

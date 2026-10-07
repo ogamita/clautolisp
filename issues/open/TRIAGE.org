@@ -786,6 +786,7 @@ opendcl-conformance. All =TODO=.
 | Issue | Status | Notes |
 |-------+--------+-------|
 | alfe-windows-test-portability-remainder | TODO | P3: native shell fixture and AutoCAD workdir pathname comparison remain; conformance missing-file path fixed in 2.2.227. |
+| collect-release-artefact-exceeds-gitlab-size-limit | TODO | NOUVEAU 2026-10-07 (P2) : collect:release de release-2.3.0 a assemble les 15 assets puis echoue a l upload (413 Payload Too Large, ~1.07 GB dont 600 MB d unions all.*). Contourne : collecte locale sur poseidon + deploy-release-to-poseidon.sh --from + make-gitlab-release.py --manifest (release publiee). Correctif a decider (ne pas televerser les unions / une seule union / miroir depuis le pipeline). |
 
 * Companion non-issue files (keep, do not process as issues)
 =alfe.plan=, =opendcl.plan=, =missing-functions-plan.md=,

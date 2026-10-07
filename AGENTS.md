@@ -587,6 +587,20 @@ the whole thing; the traps below are what cost time the first time.
   `stuck_pending_no_matching_runners` — so a red per-platform lane is NOT proof
   the platform is missing. Wait for `collect:release=success` (poll its terminal
   state) before mirroring/publishing.
+- *collect:release ran but could not store its artefact (GitLab `413 Payload
+  Too Large`).* release-2.3.0's set was ~1.07 GB, above gitlab.com's artefact
+  limit: the job ASSEMBLED all 15 assets (its log lists them), then failed at
+  upload, so neither script could fetch it. Reproduce the collect on poseidon
+  and publish from the local set: extract the tag (`git archive release-M.m.d`),
+  download each `release:*` job's artefacts and the GitHub Windows run
+  (`gh run download <id> -R ogamita/clautolisp -p 'clautolisp-*-windows-*'`),
+  copy the Windows zips into `dist/`, run `make collect-artefacts COLLECT_IN=dist
+  COLLECT_OUT=dist/combined`, then
+  `bash scripts/deploy-release-to-poseidon.sh release-M.m.d --from dist/combined`
+  and `python3 scripts/make-gitlab-release.py release-M.m.d --links poseidon
+  --manifest dist/combined/manifest-release-assets.txt` (dry run first). The
+  links are poseidon's, so nothing depends on the missing GitLab artefact
+  (collect-release-artefact-exceeds-gitlab-size-limit.issue).
 
 **Mirroring to poseidon (step 6).** Release archives are hosted on a
 **durable poseidon web area**, not on GitLab job artefacts. The `ogamita`
