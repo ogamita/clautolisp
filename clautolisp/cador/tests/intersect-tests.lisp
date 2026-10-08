@@ -6,8 +6,9 @@
 ;;;; The host BELOW the builtins layer: the result is the plain flat list of
 ;;;; doubles X1 Y1 Z1 X2 ... (NIL when the objects do not meet); the VARIANT
 ;;;; wrapping is tested end-to-end in the builtins suite. Point ORDER is
-;;;; cador's documented choice (along the base object) -- TO MEASURE with
-;;;; intersectwith-probe.lsp.
+;;;; the vendors' MEASURED order (intersectwith-probe.lsp, 2026-10-08):
+;;;; AutoCAD's by default (the bare host has no dialect), BricsCAD's with
+;;;; :vendor :bricscad (intersectwith-bricscad-order).
 
 (defun %iw-obj (mock dxf)
   (let ((view (host-entmake mock dxf)))
@@ -62,6 +63,12 @@
 
 (defparameter *iw-sqrt5* (sqrt 5d0))
 
+(defun %iw-reverse-points (flat)
+  "FLAT (X1 Y1 Z1 X2 ...) with its points in the reverse order."
+  (loop for p in (reverse (loop for (x y z) on flat by #'cdddr
+                                collect (list x y z)))
+        append p))
+
 (test intersectwith-line-line
   (clautolisp.autolisp-runtime:without-builtin-layer-hooks
     (let* ((mock (make-cador))
@@ -103,25 +110,28 @@
            (ym3 (%iw-line mock '(-10d0 -3d0 0d0) '(10d0 -3d0 0d0)))
            (two '(-5d0 0d0 0d0 5d0 0d0 0d0))
            (owt '(5d0 0d0 0d0 -5d0 0d0 0d0)))
-      ;; along the base: the line's direction ...
-      (%iw-check mock lx c5 two two two two)
-      (%iw-check mock lxr c5 owt owt owt owt)
-      ;; ... a circle's counter-clockwise from angle 0
+      ;; line x CIRCLE: the point farther from the line's start first,
+      ;; whichever is the base
+      (%iw-check mock lx c5 owt owt owt owt)
+      (%iw-check mock lxr c5 two two two two)
       (%iw-check mock c5 lx owt owt owt owt)
       (%iw-check mock c5 lv '(0d0 5d0 0d0 0d0 -5d0 0d0) '(0d0 5d0 0d0 0d0 -5d0 0d0)
                  '(0d0 5d0 0d0 0d0 -5d0 0d0) '(0d0 5d0 0d0 0d0 -5d0 0d0))
       ;; tangency is ONE point
       (%iw-check mock tan c5 '(0d0 5d0 0d0) '(0d0 5d0 0d0) '(0d0 5d0 0d0) '(0d0 5d0 0d0))
       (%iw-check mock out c5 nil nil nil nil)
-      (%iw-check mock in c5 nil two nil two)
+      (%iw-check mock in c5 nil owt nil owt)
       (let ((pts '(-4d0 3d0 0d0 4d0 3d0 0d0))
             (low '(-4d0 -3d0 0d0 4d0 -3d0 0d0)))
+        ;; line x ARC: descending offset from the arc's start -- (-4,3) at
+        ;; 143 degrees before (4,3) at 37
         (%iw-check mock y3 up pts pts pts pts)
-        ;; below the upper half arc: only on its full circle
-        (%iw-check mock ym3 up nil nil low low)
-        (%iw-check mock up ym3 nil low nil low)
-        ;; the arc's end points are on it
-        (%iw-check mock lx up two two two two)))))
+        ;; below the upper half arc: only on its full circle; (4,-3) at 323
+        ;; before (-4,-3) at 217
+        (%iw-check mock ym3 up nil nil (%iw-reverse-points low) (%iw-reverse-points low))
+        (%iw-check mock up ym3 nil (%iw-reverse-points low) nil (%iw-reverse-points low))
+        ;; the arc's end points are on it; its start counts as a whole turn
+        (%iw-check mock lx up owt owt owt owt)))))
 
 (test intersectwith-circle-circle-and-arc-arc
   (clautolisp.autolisp-runtime:without-builtin-layer-hooks
@@ -138,13 +148,15 @@
            (both '(3d0 4d0 0d0 3d0 -4d0 0d0))
            (top '(3d0 4d0 0d0))
            (bottom '(3d0 -4d0 0d0)))
-      (%iw-check mock c5 r6 both both both both)
-      (%iw-check mock r6 c5 both both both both)
+      ;; mid + h perp first (perp: left of base centre -> other centre); AutoCAD
+      ;; computes options 2 / 3 as the OTHER object's IntersectWith
+      (%iw-check mock c5 r6 both both (%iw-reverse-points both) (%iw-reverse-points both))
+      (%iw-check mock r6 c5 (%iw-reverse-points both) (%iw-reverse-points both) both both)
       (%iw-check mock c5 ctan '(5d0 0d0 0d0) '(5d0 0d0 0d0) '(5d0 0d0 0d0) '(5d0 0d0 0d0))
       (%iw-check mock c5 far nil nil nil nil)
       (%iw-check mock c5 cin nil nil nil nil)
       ;; (3,4) is on both arcs, (3,-4) only on LEFT
-      (%iw-check mock up left top both top both)
+      (%iw-check mock up left top both top (%iw-reverse-points both))
       (%iw-check mock left up top top both both)
       ;; (3,-4) is on LOW only, (3,4) on neither
       (%iw-check mock low right nil nil bottom (list 3d0 -4d0 0d0 3d0 4d0 0d0)))))
@@ -227,8 +239,8 @@
                  '(8d0 0d0 0d0 -8d0 0d0 0d0) '(8d0 0d0 0d0 -8d0 0d0 0d0))
       ;; the upper half ellipse meets y = -2 only when extended
       (let* ((x (* 8 (sqrt 0.75d0)))
-             ;; the full ellipse from parameter 0: lower left, then right
-             (pts (list (- x) -2d0 0d0 x -2d0 0d0)))
+             ;; line x ellipse: the point farther from the line's start first
+             (pts (list x -2d0 0d0 (- x) -2d0 0d0)))
         (%iw-check mock half ym2 nil pts nil pts))
       ;; ellipse x circle is found numerically: x^2 = 12, y^2 = 13
       (let* ((x (sqrt 12d0)) (y (sqrt 13d0))
@@ -253,3 +265,59 @@
                                   mock lx "IntersectWith" (list lx 0 0))))))
         (is (host-vlax-method-applicable-p mock lx "IntersectWith"))
         (is (host-vlax-method-applicable-p mock lx "intersectwith"))))))
+
+;;; BricsCAD's order (intersectwith-probe.lsp on BricsCAD V26 macOS, job
+;;; 17029587293, and V25 Windows, 17029587294): no role swap for options
+;;; 2 / 3, a bulge span taken in its travel direction (and as the FIRST of
+;;; a span x circle pair), ellipse x circle by ascending X then descending Y.
+
+(defun %iw-entity (mock dxf)
+  (let ((view (host-entmake mock dxf)))
+    (clautolisp.cador::cador-find-entity-by-handle
+     mock (autolisp-ename-value (cdr (first view))))))
+
+(test intersectwith-bricscad-order
+  (clautolisp.autolisp-runtime:without-builtin-layer-hooks
+    (let* ((mock (make-cador))
+           (c5 (%iw-entity mock (list (cons 0 "CIRCLE") (list 10 0d0 0d0 0d0) (cons 40 5d0))))
+           (r6 (%iw-entity mock (list (cons 0 "CIRCLE") (list 10 6d0 0d0 0d0) (cons 40 5d0))))
+           (y5 (%iw-entity mock (list (cons 0 "LINE") (list 10 -10d0 5d0 0d0)
+                                      (list 11 10d0 5d0 0d0))))
+           (pl (%iw-entity mock (list (cons 0 "LWPOLYLINE") (cons 100 "AcDbEntity")
+                                      (cons 100 "AcDbPolyline") (cons 90 4) (cons 70 0)
+                                      (list 10 -3d0 -3d0) (cons 42 0d0)
+                                      (list 10 -3d0 3d0) (cons 42 -1d0)
+                                      (list 10 3d0 3d0) (cons 42 0d0)
+                                      (list 10 3d0 -3d0) (cons 42 0d0))))
+           (el (%iw-entity mock (list (cons 0 "ELLIPSE") (cons 100 "AcDbEntity")
+                                      (cons 100 "AcDbEllipse") (list 10 0d0 0d0 0d0)
+                                      (list 11 8d0 0d0 0d0) (cons 40 0.5d0)
+                                      (cons 41 0d0) (cons 42 (* 2 pi)))))
+           (s5 *iw-sqrt5*)
+           (x (sqrt 12d0)) (y (sqrt 13d0))
+           (cy (/ 25d0 6)) (cx (sqrt (- 25d0 (* cy cy)))))
+      (flet ((both (base other option)
+               (values (clautolisp.cador::entity-intersect-with mock base other option
+                                                                :vendor :autocad)
+                       (clautolisp.cador::entity-intersect-with mock base other option
+                                                                :vendor :bricscad))))
+        ;; circle x circle, option 2: AutoCAD follows the argument, BricsCAD not
+        (multiple-value-bind (a b) (both c5 r6 2)
+          (is (%iw-near-p '(3d0 -4d0 0d0 3d0 4d0 0d0) a))
+          (is (%iw-near-p '(3d0 4d0 0d0 3d0 -4d0 0d0) b)))
+        ;; the bulge span against a line
+        (multiple-value-bind (a b) (both pl y5 0)
+          (is (%iw-near-p (list (- s5) 5d0 0d0 s5 5d0 0d0) a))
+          (is (%iw-near-p (list s5 5d0 0d0 (- s5) 5d0 0d0) b)))
+        ;; ... and against a circle, the first span extended
+        (multiple-value-bind (a b) (both pl c5 1)
+          (is (%iw-near-p (list -3d0 -4d0 0d0 (- cx) cy 0d0 cx cy 0d0 3d0 -4d0 0d0) a))
+          (is (%iw-near-p (list -3d0 -4d0 0d0 cx cy 0d0 (- cx) cy 0d0 3d0 -4d0 0d0) b)))
+        ;; ellipse x circle
+        (multiple-value-bind (a b) (both el c5 0)
+          (is (%iw-near-p (list x y 0d0 (- x) y 0d0 (- x) (- y) 0d0 x (- y) 0d0) a 1d-7))
+          (is (%iw-near-p (list (- x) y 0d0 (- x) (- y) 0d0 x y 0d0 x (- y) 0d0) b 1d-7)))
+        ;; the point SETS agree: an empty result is empty for both
+        (multiple-value-bind (a b) (both c5 y5 0)
+          (is (%iw-near-p '(0d0 5d0 0d0) a))
+          (is (%iw-near-p '(0d0 5d0 0d0) b)))))))

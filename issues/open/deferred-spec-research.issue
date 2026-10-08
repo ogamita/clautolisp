@@ -170,18 +170,19 @@ mechanism. The question is the vendor NAME.
 == IntersectWith (ActiveX entity method, clautolisp 2.3.10) ==
 
   Source: clautolisp/cador/source/intersect.lisp (SPEC-UNCERTAIN in its
-  header). Probe: autolisp-front-end/tests/scenarios/entities/
-  intersectwith-probe.lsp, jobs intersectwith:probe:*. Full list in
-  issues/open/cador-intersectwith-missing.issue (TO MEASURE):
+  header). Measured 2026-10-08 (intersectwith-probe.lsp, jobs 17029587293
+  / 294 / 295; issues/closed/cador-intersectwith-missing.issue): point
+  sets, tangency, overlaps, vertex crossings, Z, polyline extension, the
+  empty result and each vendor's point ORDER for the probed pairs. Still
+  extrapolated, to add to the probe:
 
-  * the ORDER of the returned points (cador: along the base object);
-  * how far an open polyline extends (cador: first span backwards, last
-    span forwards; a closed one not at all), and a RAY under
-    acExtendThisEntity;
-  * tangency (one point), overlapping lines / coincident circles (no
-    point), a crossing at a polyline vertex (once), plan crossings at
-    different Z (no point);
-  * vlax-safearray->list of the EMPTY result (cador: nil).
+  * a RAY under acExtendThisEntity (cador: the infinite line);
+  * line x circle when the line starts beyond the centre (cador: the
+    farther point first);
+  * clockwise ARC entities (extrusion -Z), 3D polylines, rays / xlines in
+    the order rules;
+  * ellipse x circle / ellipse beyond the one measured pair (BricsCAD:
+    ascending X then descending Y).
 
 == Future entries ==
 

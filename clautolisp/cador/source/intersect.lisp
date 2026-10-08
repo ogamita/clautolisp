@@ -33,13 +33,37 @@
 ;;;; is exact in 3D -- two segments that cross in plan but not in Z do not
 ;;;; meet.
 ;;;;
-;;;; POINT ORDER: SPEC-UNCERTAIN -- the reference says nothing. cador sorts
-;;;; the points by their parameter along the BASE object (start to end; a
-;;;; full circle from angle 0 counter-clockwise; a polyline span by span),
-;;;; and drops a point repeated within tolerance (a crossing exactly at a
-;;;; polyline vertex is reported once). Tangency gives ONE point; collinear
-;;;; overlapping lines and coincident circles give NONE. All TO MEASURE:
-;;;; autolisp-front-end/tests/scenarios/entities/intersectwith-probe.lsp.
+;;;; MEASURED (intersectwith-probe.lsp, 2026-10-08: AutoCAD 2022 job
+;;;; 17029587295, BricsCAD V26 macOS 17029587293, BricsCAD V25 Windows
+;;;; 17029587294; cador-intersectwith-missing.issue). Both vendors find the
+;;;; same POINT SETS for every probed pair and option: tangency is ONE point,
+;;;; collinear overlapping lines and concentric circles give NONE, a crossing
+;;;; at a polyline vertex is reported ONCE, segments crossing in plan at
+;;;; different Z do not meet, an open polyline extends only its first span
+;;;; backwards and its last forwards, a closed one not at all. They differ
+;;;; only in the ORDER, which is not a sort along the base object but the
+;;;; order each pair's solver yields -- reproduced here per vendor:
+;;;;
+;;;;   - the base's curves in order (span by span), for each the other's
+;;;;     curves in order, the points of each pair in the pair's own order;
+;;;;   - line x CIRCLE entity, line x ellipse: the point FARTHER from the
+;;;;     line's start first (the numerically stable quadratic root);
+;;;;   - line x ARC (an ARC entity, extended or not, or a bulge span):
+;;;;     DESCENDING offset along the arc from its start, the start itself
+;;;;     counting as a whole turn. AutoCAD takes a bulge span as the
+;;;;     counter-clockwise arc it is stored as, BricsCAD in its travel
+;;;;     direction;
+;;;;   - circle/arc x circle/arc: mid + h perp first, perp the left normal
+;;;;     of the first centre -> second centre. The FIRST curve is the base's,
+;;;;     except that AutoCAD takes a polyline span as the second;
+;;;;   - AutoCAD computes acExtendOtherEntity / acExtendBoth as the OTHER
+;;;;     object's IntersectWith (its order follows the argument);
+;;;;   - ellipse x circle/ellipse: AutoCAD along the ellipse's parameter;
+;;;;     BricsCAD by ascending X, then descending Y (one measured pair).
+;;;;
+;;;; SPEC-UNCERTAIN: cases the probe did not exercise (a line starting beyond
+;;;; the circle's centre, clockwise ARC entities with extrusion -Z, rays /
+;;;; xlines, 3D polylines) follow the same rules by extension.
 
 (defparameter *intersect-tolerance* 1d-9
   "Distance (drawing units) under which two points, or a point and a curve,
@@ -78,7 +102,9 @@ are taken to coincide in IntersectWith.")
                  ; >= 2pi is the whole curve
   extend-start   ; an arc extended backwards from its start
   extend-end     ; an arc extended forwards from its end
-  (rank 0))      ; the span's index along its object (point order)
+  (rank 0)       ; the span's index along its object
+  circle-entity  ; a CIRCLE entity (not an arc): its own line ordering rule
+  span-p)        ; a polyline span
 
 (defun %iw-full-p (curve)
   (or (>= (abs (iw-curve-sweep curve)) (- +iw-2pi+ 1d-12))
@@ -137,7 +163,9 @@ WCS sense), or NIL for a zero-length span."
   (cond
     ((< (%iw-dist p q) *intersect-tolerance*) nil)
     ((< (abs bulge) 1d-12)
-     (%iw-line-curve p q (if extend-start nil 0d0) (if extend-end nil 1d0) rank))
+     (let ((c (%iw-line-curve p q (if extend-start nil 0d0) (if extend-end nil 1d0) rank)))
+       (setf (iw-curve-span-p c) t)
+       c))
     (t
      (let* ((sweep (* 4 (atan bulge)))
             (chord (%iw-len2 (%iw- q p)))
@@ -148,7 +176,9 @@ WCS sense), or NIL for a zero-length span."
             (radius (/ chord (* 2 (abs (sin (/ sweep 2))))))
             (start (atan (- (second p) (second center)) (- (first p) (first center)))))
        (setf (third center) (third p))
-       (%iw-arc-curve center radius start sweep extend-start extend-end rank)))))
+       (let ((c (%iw-arc-curve center radius start sweep extend-start extend-end rank)))
+         (setf (iw-curve-span-p c) t)
+         c)))))
 
 (defun %iw-polyline-curves (vertices closed extend)
   "VERTICES: ((WCS-POINT . BULGE) ...). The spans' curves, the first one
@@ -245,7 +275,9 @@ extended backwards and the last forwards when EXTEND and the polyline is open."
          (list (%iw-line-curve o (%iw+ o (%iw-point (g 11))) nil nil))))
       (:circle
        (let ((sign (%iw-normal-sign entity)))
-         (list (%iw-ocs-arc sign (g 10) (%num (g 40)) 0d0 +iw-2pi+ nil))))
+         (let ((c (%iw-ocs-arc sign (g 10) (%num (g 40)) 0d0 +iw-2pi+ nil)))
+           (setf (iw-curve-circle-entity c) t)
+           (list c))))
       (:arc
        (let ((sign (%iw-normal-sign entity)))
          (list (%iw-ocs-arc sign (g 10) (%num (g 40))
@@ -464,37 +496,95 @@ by bisection, each near-zero local minimum (a tangency) by golden section."
                      (push m thetas)))))))))
       (mapcar (lambda (theta) (%iw-ellipse-point ellipse theta)) (nreverse thetas)))))
 
-(defun %iw-shape-intersections (a b)
-  "The points where the UNDERLYING shapes of curves A and B meet."
-  (let ((sa (iw-curve-shape a)) (sb (iw-curve-shape b)))
-    (cond
-      ((and (eq sa :line) (eq sb :line)) (%iw-line-line a b))
-      ((and (eq sa :line) (eq sb :circle)) (%iw-line-circle a b))
-      ((and (eq sa :circle) (eq sb :line)) (%iw-line-circle b a))
-      ((and (eq sa :circle) (eq sb :circle)) (%iw-circle-circle a b))
-      ((and (eq sa :line) (eq sb :ellipse)) (%iw-line-ellipse a b))
-      ((and (eq sa :ellipse) (eq sb :line)) (%iw-line-ellipse b a))
-      ((eq sa :ellipse) (%iw-ellipse-conic a b))
-      (t (%iw-ellipse-conic b a)))))
+;;; --- the vendors' point order (measured) ------------------------------
 
-(defun entity-intersect-with (host base other option)
+(defun %iw-farther-first (line points)
+  "POINTS on LINE, the one farther from the line's start first (the order of
+the numerically stable quadratic root)."
+  (let ((o (iw-curve-origin line)))
+    (stable-sort (copy-list points) #'> :key (lambda (p) (%iw-dist o p)))))
+
+(defun %iw-arc-offset (curve p)
+  "P's offset along the arc CURVE from its start, in (0, 2pi]: the start
+itself counts as a whole turn."
+  (let* ((c (iw-curve-center curve))
+         (angle (atan (- (second p) (second c)) (- (first p) (first c))))
+         (offset (mod (* (signum (iw-curve-sweep curve))
+                         (- angle (iw-curve-start curve)))
+                      +iw-2pi+)))
+    (if (or (< offset 1d-9) (> offset (- +iw-2pi+ 1d-9))) +iw-2pi+ offset)))
+
+(defun %iw-line-conic-order (line conic points)
+  (if (and (eq (iw-curve-shape conic) :circle)
+           (not (iw-curve-circle-entity conic)))
+      (stable-sort (copy-list points) #'> :key (lambda (p) (%iw-arc-offset conic p)))
+      (%iw-farther-first line points)))
+
+(defun %iw-x-then-y-down (points)
+  (stable-sort (copy-list points)
+               (lambda (p q)
+                 (if (> (abs (- (first p) (first q))) 1d-7)
+                     (< (first p) (first q))
+                     (> (second p) (second q))))))
+
+(defun %iw-pair-points (first second vendor)
+  "The points where the underlying shapes of FIRST and SECOND meet, in the
+order VENDOR's solver yields them."
+  (let ((sa (iw-curve-shape first)) (sb (iw-curve-shape second)))
+    (cond
+      ((and (eq sa :line) (eq sb :line)) (%iw-line-line first second))
+      ((and (eq sa :line) (eq sb :circle))
+       (%iw-line-conic-order first second (%iw-line-circle first second)))
+      ((and (eq sa :circle) (eq sb :line))
+       (%iw-line-conic-order second first (%iw-line-circle second first)))
+      ((and (eq sa :circle) (eq sb :circle)) (%iw-circle-circle first second))
+      ((and (eq sa :line) (eq sb :ellipse))
+       (%iw-farther-first first (%iw-line-ellipse first second)))
+      ((and (eq sa :ellipse) (eq sb :line))
+       (%iw-farther-first second (%iw-line-ellipse second first)))
+      (t
+       (let ((points (if (eq sa :ellipse)
+                         (%iw-ellipse-conic first second)
+                         (%iw-ellipse-conic second first))))
+         (if (eq vendor :bricscad) (%iw-x-then-y-down points) points))))))
+
+(defun %iw-ccw-span (curve)
+  "AutoCAD's view of a clockwise bulge span: the counter-clockwise arc it is
+stored as (same points, start at the other end)."
+  (when (and (iw-curve-span-p curve) (eq (iw-curve-shape curve) :circle)
+             (minusp (iw-curve-sweep curve)))
+    (setf (iw-curve-start curve) (+ (iw-curve-start curve) (iw-curve-sweep curve))
+          (iw-curve-sweep curve) (- (iw-curve-sweep curve)))
+    (rotatef (iw-curve-extend-start curve) (iw-curve-extend-end curve)))
+  curve)
+
+(defun entity-intersect-with (host base other option &key (vendor :autocad))
   "IntersectWith(OTHER, OPTION) on BASE (entity handles): the points where
-they meet, as a flat list of doubles X1 Y1 Z1 X2 ..., sorted along BASE;
-NIL when they do not meet."
+they meet, as a flat list of doubles X1 Y1 Z1 X2 ..., in the order VENDOR
+\(:AUTOCAD or :BRICSCAD) returns them; NIL when they do not meet."
+  (when (and (eq vendor :autocad) (member option '(2 3)))
+    ;; AutoCAD answers acExtendOtherEntity / acExtendBoth as the other
+    ;; object's IntersectWith (measured: the order follows the argument).
+    (rotatef base other)
+    (setf option (if (= option 2) 1 3)))
   (let* ((extend-base (member option '(1 3)))
          (extend-other (member option '(2 3)))
          (curves-a (entity-intersection-curves host base extend-base))
          (curves-b (entity-intersection-curves host other extend-other))
-         (hits '()))
+         (points '()))
+    (when (eq vendor :autocad)
+      (mapc #'%iw-ccw-span curves-a)
+      (mapc #'%iw-ccw-span curves-b))
     (dolist (a curves-a)
       (dolist (b curves-b)
-        (dolist (p (%iw-shape-intersections a b))
-          (let ((ka (%iw-key a p)))
-            (when (and ka (%iw-key b p))
-              (push (cons ka p) hits))))))
-    (let ((points '()))
-      (dolist (hit (stable-sort (nreverse hits) #'< :key #'car))
-        (unless (find-if (lambda (q) (< (%iw-dist q (cdr hit)) (* 10 *intersect-tolerance*)))
-                         points)
-          (push (cdr hit) points)))
-      (loop for p in (nreverse points) append p))))
+        (multiple-value-bind (first second)
+            (if (and (eq vendor :autocad) (iw-curve-span-p a))
+                (values b a)
+                (values a b))
+          (dolist (p (%iw-pair-points first second vendor))
+            (when (and (%iw-key a p) (%iw-key b p)
+                       (not (find-if (lambda (q)
+                                       (< (%iw-dist q p) (* 10 *intersect-tolerance*)))
+                                     points)))
+              (push p points))))))
+    (loop for p in (nreverse points) append p)))

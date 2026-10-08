@@ -1,0 +1,227 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-intersectwith-missing — the ActiveX entity method IntersectWith did not exist on cador
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+BRANCH: fix-cador-intersectwith
+#+DATE: 2026-10-08
+
+* Symptom
+
+Downstream SCHMS CI, under clautolisp's cador host:
+
+: VLA-Object AutoCAD.Entity has no method named INTERSECTWITH
+
+Both call forms failed:
+
+: (vla-IntersectWith obj1 obj2 acExtendNone)
+: (vlax-invoke obj1 'IntersectWith obj2 acExtendNone)
+
+=vla-intersectwith= is in the SCHMS call inventory
+(=issues/open/schms-call-inventory.md=, 2 calls).
+
+* Cause
+
+cador's entity-backed COM objects carry no method table: their methods are
+answered by =%entity-fallback-method= (=clautolisp/cador/source/vlax-api.lisp=),
+which knew only Delete / Erase / Update / Move / Rotate / Copy /
+GetBoundingBox (and GetAttributes on an INSERT). Anything else fell through to
+=:unknown-com-method=. The =acExtend*= constants were already bound (the
+measured ActiveX enumeration table, 0..3).
+
+* Vendor contract (Autodesk ActiveX reference, IntersectWith method)
+
+: RetVal = object.IntersectWith(IntersectObject, ExtendOption)
+
+- IntersectObject: the entity to intersect with.
+- ExtendOption (AcExtendOption): =acExtendNone= 0 (neither extended),
+  =acExtendThisEntity= 1 (the base), =acExtendOtherEntity= 2 (the argument),
+  =acExtendBoth= 3.
+- RetVal: VARIANT (array of doubles), the points flattened X1 Y1 Z1 X2 Y2 Z2
+  ...; EMPTY when there is no intersection.
+
+* Resolution (clautolisp 2.3.10 / alfe 2.3.10, branch fix-cador-intersectwith)
+
+- =clautolisp/cador/source/intersect.lisp= (new): each entity is decomposed
+  into curves on an underlying LINE / CIRCLE / ELLIPSE with a parameter range;
+  the underlying shapes are intersected (line-line, line-circle,
+  circle-circle, line-ellipse exactly; ellipse against circle / ellipse
+  numerically: 2048 samples, bisection on sign changes, golden section on
+  near-zero minima for tangencies), and each point is kept when it lies in
+  both ranges.
+  Supported: LINE, RAY, XLINE, CIRCLE, ARC, ELLIPSE (full or partial),
+  LWPOLYLINE and 2D POLYLINE (bulged spans as true arcs, the OCS for
+  extrusion +Z / -Z), 3D POLYLINE (3D segments). SPLINE, meshes, polyface
+  meshes, text, inserts, points etc. and any entity whose extrusion is not
+  +Z / -Z signal =:unsupported-com-geometry= ("IntersectWith: AcDbSpline is
+  not a curve IntersectWith handles; clautolisp does not support it.").
+- =%entity-fallback-method= answers "IntersectWith" (and
+  =vlax-method-applicable-p= says so); the result goes through the
+  =*com-point-wrap-hook*=, i.e. the same VARIANT(SAFEARRAY of doubles) as a
+  point property; an empty intersection is an EMPTY safearray (bounds 0 .. -1),
+  not nil, and =vlax-invoke= converts it to the flat list or nil.
+- Option validation: an ExtendOption other than 0..3, a non-entity argument,
+  or a third argument signal =:invalid-com-argument=.
+- Tests: =clautolisp/cador/tests/intersect-tests.lisp= (6 tests, 200 checks:
+  every pair under the 4 options),
+  =clautolisp/autolisp-builtins-core/tests/intersectwith-tests.lisp=
+  (7 tests, 20 checks: both call forms, VARIANT / SAFEARRAY shape, empty
+  result, constants, applicability, catchable unsupported error).
+- Docs: user manual, the ActiveX section (IntersectWith bullet);
+  RELEASE_NOTES.org. The spec has no page for ActiveX methods, so no
+  =*** clautolisp= section.
+- Probe: =autolisp-front-end/tests/scenarios/entities/intersectwith-probe.lsp=,
+  driven by =scripts/run-intersectwith-probe.{sh,ps1}=; CI jobs (family
+  =intersectwith= in =scripts/ci-detect-probe-changes.py=):
+  =intersectwith:probe:bricscad:macos=, =intersectwith:probe:bricscad:windows=,
+  =intersectwith:probe:autocad:windows= (GUI, COM automation),
+  =intersectwith:probe:accoreconsole:windows= (in =.gitlab/native.yml=) and
+  =intersectwith:probe:clautolisp:linux= (parent, manual). Output lines
+  =IWPROBE <pair>.<option>.<field>=<value>=, artefact =dist/intersectwith/=.
+
+* TO MEASURE (as filed; answered below, 2026-10-08)
+
+All in the source as SPEC-UNCERTAIN (intersect.lisp header).
+
+1. *Point order.* cador sorts along the BASE object: a line from its start,
+   a circle counter-clockwise from angle 0, an arc from its start angle, an
+   ellipse from parameter 41, a polyline span by span (a point on the
+   backward extension of its first span sorts first). Probe pairs
+   LINE-CIRCLE-TWO vs LINE-CIRCLE-TWO-REVERSED vs CIRCLE-LINE-TWO,
+   CIRCLE-LINE-VERTICAL, CIRCLE-CIRCLE-TWO(-SWAPPED), PLINE-CIRCLE.
+2. *Polyline extension rule.* An open polyline extends only its first span
+   backwards and its last span forwards (an arc span to its full circle); a
+   closed one does not extend. PLINE-LINE-EXTENDED, LINE-PLINE-EXTENDED,
+   PLINECLOSED-LINE-EXTENDED, POLYLINE2D-LINE-EXTENDED.
+3. *Ray extension.* acExtendThisEntity on a RAY makes it the infinite line
+   (not in the probe yet: the RAY / XLINE cases are unit tests only).
+4. *Tangency* = one point (LINE-CIRCLE-TANGENT, CIRCLE-CIRCLE-TANGENT).
+5. *Overlaps* = no point: collinear overlapping lines (LINE-LINE-COLLINEAR),
+   concentric / coincident circles (CIRCLE-CIRCLE-CONCENTRIC). The vendor
+   may return the overlap's end points.
+6. *Duplicates*: a crossing at a polyline vertex is reported once
+   (PLINE-LINE-VERTICES).
+7. *Z*: two segments crossing in plan at different heights do not meet
+   (LINE-LINE-SKEWZ); the vendor may project.
+8. *Empty result*: =vlax-safearray->list= of the empty array returns nil in
+   clautolisp; the vendor may signal (the TOLIST field is written for every
+   call, empty or not). The bounds (0 .. -1) are also to confirm.
+9. *vlax-variant-type* of the result: the vendor returns 8197 (8192 + 5,
+   array of doubles); clautolisp returns the symbol ARRAY -- a separate,
+   pre-existing defect, =vlax-variant-type-returns-a-symbol.issue=.
+10. Whether AcCoreConsole answers IntersectWith at all (it has no application
+    object): =intersectwith:probe:accoreconsole:windows=.
+
+When the results are in: replace the SPEC-UNCERTAIN marker with Vendor:
+citations, adjust the order / extension / overlap choices to the measured
+behaviour (with dialect-divergence classification if AutoCAD and BricsCAD
+differ), and close.
+
+* Measurements (2026-10-08, MR !462, branch head e22c528e)
+
+intersectwith-probe.lsp on four targets (artefacts dist/intersectwith/):
+
+| job         | target                                   | IWPROBE lines |
+|-------------+------------------------------------------+---------------|
+| 17029587295 | intersectwith:probe:autocad:windows (AutoCAD 2022, 24.1s, GUI via COM) | 1159 + DONE |
+| 17029587293 | intersectwith:probe:bricscad:macos (BricsCAD V26)    | 1158 + DONE |
+| 17029587294 | intersectwith:probe:bricscad:windows (BricsCAD V25)  | 1159 + DONE |
+| 17029587296 | intersectwith:probe:accoreconsole:windows (AutoCAD 2022 AcCoreConsole) | 206 + DONE |
+
+Coordinates: the probe builds its geometry from short literals (and pi
+computed on the CAD side), so alfe's real rounding
+(alfe-cad-transport-rounds-reals) does not reach them; all values are
+compared to 1e-3 and agree. The two BricsCAD builds agree on every line.
+The Windows reports end with a false "IWPROBE-INCOMPLETE": the .ps1
+re-read its own mixed UTF-8 / UTF-16 report (fixed for this probe;
+probe-ps1-done-check-misreads-utf16-report.issue for the siblings).
+
+Clautolisp's column: the same probe on the built clautolisp-sbcl --host
+mock, under --dialect autocad and --dialect bricscad.
+
+1. *Point order* -- DIVERGENT, and not a sort along the base object on
+   either vendor (what 2f546bf1 did). The point SETS agree everywhere; the order is each pair's solver order:
+   - line x CIRCLE: the point farther from the line's start first, on both,
+     whichever is the base: LINE-CIRCLE-TWO.0.INVOKE=(5 0 0 -5 0 0),
+     LINE-CIRCLE-TWO-REVERSED.0.INVOKE=(-5 0 0 5 0 0),
+     CIRCLE-LINE-TWO = (5 0 0 -5 0 0), CIRCLE-LINE-VERTICAL = (0 5 0 0 -5 0);
+   - line x ARC: descending offset from the arc's start (the start counting
+     as a whole turn), on both: LINE-ARC-TWO.0.INVOKE=(-4 3 0 4 3 0),
+     LINE-ARC-EXTARC.2.INVOKE=(4 -3 0 -4 -3 0), LINE-ARC-ENDS = (5 0 0 -5 0 0);
+   - circle/arc x circle/arc: mid + h perp first (perp: left of base centre
+     -> other centre) on both; but AutoCAD answers options 2 and 3 as the
+     ARGUMENT's IntersectWith: CIRCLE-CIRCLE-TWO.2.INVOKE AutoCAD
+     (3 -4 0 3 4 0), BricsCAD (3 4 0 3 -4 0); ARC-ARC-ONE.3 likewise;
+   - polylines span by span; a bulge span: AutoCAD takes it as the
+     counter-clockwise arc it is stored as (and as the SECOND of a span x
+     circle pair), BricsCAD in its travel direction (as the first):
+     PLINE-LINE-ARCSPAN.0.INVOKE AutoCAD (-2.236068 5 0 2.236068 5 0),
+     BricsCAD (2.236068 5 0 -2.236068 5 0); PLINE-CIRCLE.1.INVOKE AutoCAD
+     (-3 -4 0 -2.763854 4.166667 0 2.763854 4.166667 0 3 -4 0), BricsCAD
+     (-3 -4 0 2.763854 4.166667 0 -2.763854 4.166667 0 3 -4 0);
+   - ellipse x circle: AutoCAD along the ellipse's parameter
+     (3.464102 3.605551 0 -3.464102 3.605551 0 ...), BricsCAD by ascending X
+     then descending Y (-3.464102 3.605551 0 -3.464102 -3.605551 0
+     3.464102 3.605551 0 3.464102 -3.605551 0); line x ellipse: farther first
+     on both (ELLIPSE-LINE = (8 0 0 -8 0 0)).
+2. *Polyline extension* -- as implemented, on both: first span backwards,
+   last forwards (PLINE-LINE-EXTENDED.1.INVOKE=(-3 -5 0 3 -5 0), and .2 nil);
+   a closed polyline does not extend (PLINECLOSED-LINE-EXTENDED.* nil);
+   POLYLINE2D-LINE-EXTENDED identical.
+3. *Ray extension* -- not in the probe; unchanged (SPEC-UNCERTAIN,
+   deferred-spec-research.issue).
+4. *Tangency* -- one point on both (LINE-CIRCLE-TANGENT = (0 5 0),
+   CIRCLE-CIRCLE-TANGENT = (5 0 0)).
+5. *Overlaps* -- no point on both (LINE-LINE-COLLINEAR.*, CIRCLE-CIRCLE-
+   CONCENTRIC.* nil).
+6. *Vertex crossing* -- once on both (PLINE-LINE-VERTICES = (-3 3 0 3 3 0)).
+7. *Z* -- crossing in plan at different Z: no point on both
+   (LINE-LINE-SKEWZ.* nil).
+8. *Empty result* -- bounds 0 .. -1 on both (LINE-LINE-PARALLEL.0.UBOUND=-1);
+   vlax-safearray->list of it is an ERROR on both: AutoCAD "Le serveur
+   ActiveX a renvoye une erreur: Index non valide" (ActiveX Server returned
+   an error: Invalid index), BricsCAD "bad argument type <#<safearray...>> ;
+   expected SAFEARRAY at [vlax-safearray->list]". vlax-invoke gives nil.
+9. *vlax-variant-type* -- 8197 for a non-empty result on both; for the EMPTY
+   one AutoCAD 8197, BricsCAD 8204 (an array of VARIANTs).
+10. *AcCoreConsole* -- has no COM entity objects at all:
+    (vlax-ename->vla-object e) fails with "type d'argument incorrect:
+    VLA-OBJECT nil" for every entity, so IntersectWith cannot be called
+    (every pair NO-BASE-OBJECT). Nothing to reproduce: clautolisp has no
+    AcCoreConsole dialect.
+
+Also observed: AutoCAD prints (type v) of a VARIANT / SAFEARRAY as
+"variant" / "safearray" through vl-princ-to-string (BricsCAD "VARIANT");
+type-symbols-print-lowercase-on-autocad.issue.
+
+* Resolution of the measurements (clautolisp 2.3.10 / alfe 2.3.10, same branch)
+
+- intersect.lisp reproduces each vendor's order (rules above), chosen by
+  the dialect's PRODUCT: BricsCAD under a BricsCAD dialect, AutoCAD
+  otherwise (strict, autocad, clautolisp, lax). The order is an
+  UNRESOLVED divergence (the reference says nothing): every dialect but lax
+  prints [intersectwith-order] when the two vendors' orders differ for the
+  call.
+- The empty result: an empty array of doubles (8197, AutoCAD, as the
+  reference says) -- of VARIANTs (8204) under a BricsCAD dialect, which
+  warns [intersectwith-empty], as strict does (resolved divergence,
+  AutoCAD normative; %resolved-divergence-policy).
+- vlax-safearray->list of an array with no element signals, with the
+  product's message.
+- vlax-variant-type returns the vlax-vb* code (8197 for the result), and
+  vlax-safearray-type too; vlax-make-variant / vlax-variant-change-type /
+  vlax-make-safearray accept integer type codes
+  (vlax-variant-type-returns-a-symbol, closed with this).
+- With the change, the probe's clautolisp column equals AutoCAD's under
+  --dialect autocad and BricsCAD's (both builds) under --dialect bricscad
+  on all 1157 lines, apart from the error messages' language and the
+  lowercase type names above.
+- Tests: cador intersect-tests 7 tests / 210 checks (AutoCAD order, and
+  intersectwith-bricscad-order); builtins intersectwith-tests 9 tests / 50 checks with the variant / safearray tests
+  (dialect order, empty shape per product, variant type codes).
+
+Remaining, deferred (deferred-spec-research.issue, IntersectWith): orders in
+cases the probe did not exercise -- a line starting beyond a circle's
+centre, clockwise (-Z) ARC entities, rays / xlines, 3D polylines, ellipse
+pairs beyond the one measured -- follow the same rules by extension.

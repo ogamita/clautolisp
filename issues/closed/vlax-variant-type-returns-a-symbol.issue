@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: vlax-variant-type-returns-a-symbol — vlax-variant-type answers ARRAY / REAL / ... instead of the integer VARIANT type code
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: -
@@ -44,3 +44,20 @@ result (field VARIANT-TYPE).
   =(vlax-variant-type (vlax-make-variant 1.0))= = 5; strings 8; integers per
   the vendor default (to confirm).
 - Builtins tests for each type.
+
+* Resolved (2026-10-08, clautolisp 2.3.10, branch fix-cador-intersectwith)
+
+- vlax-variant-type returns the vlax-vb* code: 0 empty, 2 short, 3 for an
+  AutoLISP integer (vlax-vbLong, the reference's default), 5 real, 8
+  string, 9 object, 11 boolean, 12 variant, and 8192 + the element code for
+  an array -- 8197 for a point or an IntersectWith result, as AutoCAD 2022
+  and BricsCAD V25 / V26 return (intersectwith-probe, jobs 17029587293 /
+  294 / 295); 8204 for BricsCAD's empty IntersectWith result.
+- vlax-safearray-type returns the element code likewise.
+- vlax-make-variant, vlax-variant-change-type and vlax-make-safearray accept
+  an integer type code (they used to turn it into VARIANT).
+- Tests: builtin-tests (variant / safearray type tests updated from the
+  symbols to the codes), intersectwith-tests
+  vlax-variant-type-returns-the-vb-type-code.
+- Still missing: the vlax-vb* constant NAMES are unbound --
+  vlax-vb-constants-unbound.issue.

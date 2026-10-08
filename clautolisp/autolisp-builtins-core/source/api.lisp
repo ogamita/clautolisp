@@ -8038,7 +8038,10 @@ host does the case-insensitive match."
          (size (reduce #'* (bounds-shape parsed) :initial-value 1))
          (storage (make-array size :initial-element nil)))
     (make-autolisp-safearray
-     :value (make-safearray-data :type-tag (if (keywordp tag) tag :variant)
+     :value (make-safearray-data :type-tag (cond ((keywordp tag) tag)
+                                                 ((and (integerp tag) (< tag 8192))
+                                                  (%variant-type-tag tag))
+                                                 (t :variant))
                                   :bounds parsed
                                   :storage storage))))
 
@@ -8075,13 +8078,31 @@ host does the case-insensitive match."
     (aref (safearray-data-storage data) flat)))
 
 (defun builtin-vlax-safearray->list (safe)
+  "The elements of SAFE as a list. An array with NO element (upper bound
+below the lower one -- IntersectWith's result when nothing meets) is an
+error on both vendors (measured, intersectwith-probe 2026-10-08): AutoCAD
+\"ActiveX Server returned an error: Invalid index\", BricsCAD \"bad argument
+type ... expected SAFEARRAY\"."
   (let* ((data (safearray-of safe "VLAX-SAFEARRAY->LIST"))
          (storage (safearray-data-storage data)))
+    (when (zerop (length storage))
+      (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+             (product (and dialect
+                           (ignore-errors
+                            (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+        (if (eq product :bricscad)
+            (signal-builtin-argument-error
+             :empty-safearray "VLAX-SAFEARRAY->LIST"
+             "bad argument type <#<safearray...>> ; expected SAFEARRAY at [vlax-safearray->list]")
+            (signal-builtin-argument-error
+             :empty-safearray "VLAX-SAFEARRAY->LIST"
+             "ActiveX Server returned an error: Invalid index"))))
     (coerce storage 'list)))
 
 (defun builtin-vlax-safearray-type (safe)
+  "The element type of SAFE as its vlax-vb* code (spec: Integer type code)."
   (let ((data (safearray-of safe "VLAX-SAFEARRAY-TYPE")))
-    (intern-autolisp-symbol (symbol-name (safearray-data-type-tag data)))))
+    (%variant-type-code (safearray-data-type-tag data))))
 
 (defun builtin-vlax-safearray-get-l-bound (safe dim)
   (let* ((data (safearray-of safe "VLAX-SAFEARRAY-GET-L-BOUND"))
@@ -8144,13 +8165,40 @@ host does the case-insensitive match."
                 ((typep type 'autolisp-symbol)
                  (intern (autolisp-symbol-name type) "KEYWORD"))
                 ((keywordp type) type)
-                ((integerp type) type)
+                ((integerp type) (%variant-type-tag type))
                 (t :variant))))
     (make-autolisp-variant :value (cons (if (keywordp tag) tag :variant) value))))
 
+(defparameter *variant-type-codes*
+  '((:empty . 0) (:null . 1) (:short . 2) (:integer . 3) (:long . 3)
+    (:single . 4) (:real . 5) (:double . 5) (:currency . 6) (:date . 7)
+    (:string . 8) (:object . 9) (:vla-object . 9) (:error . 10)
+    (:boolean . 11) (:variant . 12) (:byte . 17))
+  "Internal VARIANT / SAFEARRAY type tag -> the vlax-vb* type code. An
+AutoLISP integer is a vlax-vbLong (3), as the reference documents for
+vlax-make-variant's default.")
+
+(defun %variant-type-code (tag)
+  (if (integerp tag) tag (or (cdr (assoc tag *variant-type-codes*)) 12)))
+
+(defun %variant-type-tag (code)
+  "A vlax-vb* integer CODE as the internal tag (an array code as :ARRAY)."
+  (cond ((>= code 8192) :array)
+        (t (or (car (find code *variant-type-codes* :key #'cdr)) :variant))))
+
 (defun builtin-vlax-variant-type (variant)
-  (let ((tag (car (variant-pair variant "VLAX-VARIANT-TYPE"))))
-    (intern-autolisp-symbol (symbol-name tag))))
+  "The variant's vlax-vb* type code (spec: Integer type code): 8192 + the
+element type for an array -- 8197 for the array of doubles a point or
+IntersectWith returns (measured on AutoCAD and BricsCAD, 2026-10-08)."
+  (let* ((pair (variant-pair variant "VLAX-VARIANT-TYPE"))
+         (tag (car pair)))
+    (if (eq tag :array)
+        (+ 8192 (let ((inner (cdr pair)))
+                  (if (typep inner 'autolisp-safearray)
+                      (%variant-type-code
+                       (safearray-data-type-tag (safearray-of inner "VLAX-VARIANT-TYPE")))
+                      12)))
+        (%variant-type-code tag))))
 
 (defun builtin-vlax-variant-value (variant)
   (cdr (variant-pair variant "VLAX-VARIANT-VALUE")))
@@ -8161,6 +8209,7 @@ host does the case-insensitive match."
                    ((typep new-type 'autolisp-symbol)
                     (intern (autolisp-symbol-name new-type) "KEYWORD"))
                    ((keywordp new-type) new-type)
+                   ((integerp new-type) (%variant-type-tag new-type))
                    (t :variant))))
     (make-autolisp-variant :value (cons target (cdr pair)))))
 
@@ -12098,8 +12147,11 @@ variable convention below."
   ;; representation) wraps it as the VARIANT(SAFEARRAY of doubles) the
   ;; vendor surface returns — and unwraps one for the write direction.
   (setf clautolisp.autolisp-runtime:*com-point-wrap-hook*
-        (lambda (doubles)
-          (%safearray-variant (%doubles->safearray doubles))))
+        (lambda (doubles &optional (element-type :double))
+          (let ((array (%doubles->safearray doubles)))
+            (setf (safearray-data-type-tag (safearray-of array "COM-POINT"))
+                  element-type)
+            (%safearray-variant array))))
   (setf clautolisp.autolisp-runtime:*com-point-unwrap-hook*
         (lambda (value)
           (and (or (typep value 'autolisp-safearray)
