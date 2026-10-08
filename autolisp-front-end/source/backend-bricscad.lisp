@@ -99,7 +99,9 @@
                 #:launcher-state-description
                 #:kill-engine-process
                 #:cad-argument-path
-                #:launcher-exit-code)
+                #:launcher-exit-code
+                #:make-console-capture
+                #:console-capture-launch-keys)
   (:import-from #:alfe.logging
                 #:log-debug
                 #:log-verbose
@@ -1515,7 +1517,10 @@ file-protocol session plus the launched engine's PROCESS-INFO so
 SHUTDOWN can terminate it."
   (protocol-session nil)
   (process-info     nil)
-  (variant          nil))
+  (variant          nil)
+  ;; The files the launched process's console is redirected into
+  ;; (MAKE-CONSOLE-CAPTURE; alfe-accoreconsole-console-pipe-not-drained).
+  (console-capture  nil))
 
 (defmethod prepare-workdir ((backend bricscad-backend) workdir-root &key)
   (let ((workdir (if workdir-root
@@ -1830,9 +1835,16 @@ own."
                                   :launch-options
                                   (list :directory nil :environment nil)
                                   :variant variant :argv argv :workdir workdir))
+                 ;; The launched process's console goes to FILES in the
+                 ;; workdir, never to a pipe nobody reads while it runs: a
+                 ;; full pipe blocks the writer for ever
+                 ;; (alfe-accoreconsole-console-pipe-not-drained). Read back
+                 ;; as UTF-8, falling back to ISO-8859-1.
+                 (capture (make-console-capture workdir :external-format :utf-8))
                  (session (%make-bricscad-session
                           :backend backend
                           :workdir workdir
+                          :console-capture capture
                           :request-timeout (and cli-options
                                                 (alfe.cli:cli-options-timeout
                                                  cli-options))
@@ -1841,10 +1853,9 @@ own."
             (log-verbose "backend BRICSCAD: launching: ~{~A~^ ~}" argv)
             (let ((process-info
                     (when launcher
-                      (call-launcher launcher argv launch-options
-                                     :input :stream
-                                     :output :stream
-                                     :error-output :stream))))
+                      (apply #'call-launcher launcher argv launch-options
+                             :input :stream
+                             (console-capture-launch-keys capture)))))
               (when process-info
                 (log-debug "backend BRICSCAD: spawned, process-info-pid = ~A"
                            (ignore-errors (uiop:process-info-pid process-info))))
@@ -1884,7 +1895,9 @@ own."
                                         elapsed last))
                           (t
                            (let ((failure (launcher-failure-details
-                                           (bricscad-session-process-info session))))
+                                           (bricscad-session-process-info session)
+                                           :capture (bricscad-session-console-capture
+                                                     session))))
                              (log-warn "backend BRICSCAD: READY ~:[timeout~;abort~] after ~,2F s; last status = ~S~@[ (~A)~]"
                                        failure elapsed last failure)
                              (error 'backend-bootstrap-error

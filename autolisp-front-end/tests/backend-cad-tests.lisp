@@ -1354,14 +1354,15 @@ READY timeout."
             (let ((backend (alfe.backend.autocad:make-autocad-backend
                             :accoreconsole-path "C:/dummy/accoreconsole.exe"))
                   (launcher
-                    (lambda (argv &rest keys &key input output error-output &allow-other-keys)
-                      (declare (ignore argv input output error-output keys))
-                      (uiop:launch-program
-                       '("powershell.exe" "-NoProfile" "-Command"
-                         "[Console]::Error.WriteLine('fatal cfg lock'); exit 7")
-                       :input :stream
-                       :output :stream
-                       :error-output :stream))))
+                    ;; START-ENGINE's own launch keywords: the console goes
+                    ;; where alfe sends it (files in the workdir since
+                    ;; alfe-accoreconsole-console-pipe-not-drained).
+                    (lambda (argv &rest keys)
+                      (declare (ignore argv))
+                      (apply #'uiop:launch-program
+                             '("powershell.exe" "-NoProfile" "-Command"
+                               "[Console]::Error.WriteLine('fatal cfg lock'); exit 7")
+                             keys))))
               (handler-case
                   (progn
                     (alfe.backend:start-engine

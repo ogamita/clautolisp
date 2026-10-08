@@ -212,6 +212,7 @@
    (:file "tests/dribble-tests")
    (:file "tests/file-protocol-tests")
    (:file "tests/backend-cad-tests")
+   (:file "tests/console-flood-tests")
    (:file "tests/trustedpaths-tests")
    (:file "tests/empty-drawing-tests")
    (:file "tests/conformance-tests")

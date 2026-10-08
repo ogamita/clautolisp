@@ -2543,6 +2543,19 @@ wait into a hard cap of =N= seconds that restricts as well as extends, so
 =alfe --timeout 1= aborts a long eval and =alfe --timeout 600= grants it ten
 minutes.
 
+*The engine's console.* A CAD backend launches its process (=accoreconsole=,
+=bricscad=, or the =cscript= / =osascript= launcher) with standard output and
+standard error redirected to =WORKDIR/engine-console-stdout.txt= and
+=WORKDIR/engine-console-stderr.txt=, never to pipes: nothing reads the console
+while the engine runs (the payload travels through the protocol files), and a
+pipe nobody drains blocks its writer once the operating system's buffer is
+full. alfe reads the files after the process has exited, for the
+exited-before-READY and launcher-failure diagnostics (AutoCAD's console is
+decoded with the console codec the user asked for, as its pipe was, else ISO-8859-1 with
+UTF-16LE's NULs dropped; BricsCAD's as UTF-8, falling back to ISO-8859-1).
+Standard input stays a pipe. The =cscript= that quits an AutoCAD this run
+created discards its output.
+
 ** Backend and engine selection
 
 | Variable                  | Values                                          | CLI                          | Effect                                                            |

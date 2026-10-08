@@ -90,6 +90,8 @@ FAMILIES = {
                        "scripts/run-curve-geometry-probe.*"],
     "intersectwith": [f"{ENTITIES}/intersectwith-probe.lsp",
                       "scripts/run-intersectwith-probe.*"],
+    "console-flood": [f"{ENTITIES}/console-flood-probe.lsp",
+                      "scripts/run-console-flood-probe.*"],
     "sysvars": ["autolisp-spec/autolisp/dump-sysvars.lsp"],
     "entget-pointers": ["probes/sources/probe-entget-pointers.lsp"],
 }

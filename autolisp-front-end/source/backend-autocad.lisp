@@ -67,7 +67,10 @@
                 #:require-runtime-assets
                 #:drive-protocol-actions
                 #:launcher-state-description
-                #:kill-engine-process)
+                #:kill-engine-process
+                #:make-console-capture
+                #:console-capture-launch-keys
+                #:process-console-text)
   (:import-from #:alfe.logging
                 #:log-debug
                 #:log-verbose
@@ -1125,24 +1128,15 @@ pipe read, so the default stays the robust total decoder (G2)."
       ((and env (plusp (length env))) (intern (string-upcase env) :keyword))
       (t :iso-8859-1))))
 
-(defun slurp-process-stream (stream)
-  (if (null stream)
-      ""
-      (with-output-to-string (out)
-        (loop for ch = (read-char stream nil nil)
-              while ch
-              unless (char= ch #\Null)
-                do (write-char ch out)))))
-
-(defun process-exit-details (process-info)
-  (let ((exit-code (ignore-errors (uiop:wait-process process-info)))
-        (stdout (slurp-process-stream
-                 (ignore-errors (uiop:process-info-output process-info))))
-        (stderr (slurp-process-stream
-                 (ignore-errors (uiop:process-info-error-output process-info)))))
+(defun process-exit-details (process-info &optional capture)
+  "Exit code and console text of the dead engine PROCESS-INFO. The console is
+read from CAPTURE, the files START-ENGINE redirected it into (never a pipe
+left undrained while the engine ran -- alfe-accoreconsole-console-pipe-not-
+drained), plus any pipe a test launcher returned; UTF-16LE's NULs stripped."
+  (let ((exit-code (ignore-errors (uiop:wait-process process-info))))
     (list :exit-code exit-code
-          :stdout stdout
-          :stderr stderr)))
+          :stdout (process-console-text process-info :stdout :capture capture)
+          :stderr (process-console-text process-info :stderr :capture capture))))
 
 (defun %com-field (text name)
   "The value of a NAME=… line in TEXT (the bridge's error file), or NIL."
@@ -1227,7 +1221,8 @@ started is what ATTACHED/CREATED say.")
           (format out "~%  Server asked for: ~A (override with $AUTOCAD_PROGID)."
                   progid))))))
 
-(defun wait-for-ready-or-process-exit (protocol process-info timeout)
+(defun wait-for-ready-or-process-exit (protocol process-info timeout
+                                       &optional capture)
   (let ((start (get-internal-real-time))
         (interval-ms 50)
         (last-seen nil)
@@ -1249,7 +1244,7 @@ started is what ATTACHED/CREATED say.")
           (return (values :ready (elapsed) last-seen nil)))
         (when (and process-info
                    (not (uiop:process-alive-p process-info)))
-          (let ((details (process-exit-details process-info)))
+          (let ((details (process-exit-details process-info capture)))
             (alfe.protocol.file:stream-debug-log-to-logger protocol)
             (return (values :exited (elapsed) last-seen details))))
         (when (>= (elapsed) timeout)
@@ -1274,7 +1269,9 @@ started is what ATTACHED/CREATED say.")
   (progid           nil)
   ;; What TRUST-WORKDIR-FOR-RUN added to TRUSTEDPATHS, for UNTRUST-WORKDIR
   ;; (alfe-cad-workdir-not-in-trustedpaths). NIL when nothing was added.
-  (trusted          nil))
+  (trusted          nil)
+  ;; The files the engine's console is redirected into (MAKE-CONSOLE-CAPTURE).
+  (console-capture  nil))
 
 (defmethod prepare-workdir ((backend autocad-backend) workdir-root &key)
   (let ((workdir (if workdir-root
@@ -1423,9 +1420,25 @@ started is what ATTACHED/CREATED say.")
                                 :launch-options
                                 (list :directory nil :environment nil)
                                 :variant variant :argv argv :workdir workdir))
+               ;; The console goes to FILES in the workdir, not to pipes:
+               ;; nothing reads a pipe while the engine runs, and accoreconsole
+               ;; echoes its whole command line there (UTF-16LE), so a long
+               ;; chatty run filled the pipe and blocked on its next write
+               ;; until --timeout (alfe-accoreconsole-console-pipe-not-drained).
+               (capture (make-console-capture
+                         workdir
+                         ;; accoreconsole's console is not UTF-8 on a
+                         ;; non-UTF-8 Windows; a robust external-format keeps
+                         ;; reading it from crashing bootstrap
+                         ;; (alfe-accoreconsole-encoding.issue). -Econsole /
+                         ;; -Ecadstdio (or $ALFE_AUTOCAD_CONSOLE_ENCODING)
+                         ;; override it (G2 send half).
+                         :external-format (autocad-console-external-format
+                                           cli-options)))
                (session (%make-autocad-session
                          :backend backend
                          :workdir workdir
+                         :console-capture capture
                          :request-timeout (and cli-options
                                                (alfe.cli:cli-options-timeout
                                                 cli-options))
@@ -1443,18 +1456,11 @@ started is what ATTACHED/CREATED say.")
                (_ (log-verbose "backend AUTOCAD: launching: ~{~A~^ ~}" argv))
                (process-info
                  (when launcher
-                   (call-launcher launcher argv launch-options
-                            :input :stream
-                            :output :stream
-                            :error-output :stream
-                            ;; accoreconsole's console is not UTF-8 on a
-                            ;; non-UTF-8 Windows; a robust external-format
-                            ;; keeps reading its pipe from crashing bootstrap
-                            ;; (alfe-accoreconsole-encoding.issue). -Econsole /
-                            ;; -Ecadstdio (or $ALFE_AUTOCAD_CONSOLE_ENCODING)
-                            ;; override it (G2 send half).
-                            :external-format (autocad-console-external-format
-                                              cli-options)))))
+                   (apply #'call-launcher launcher argv launch-options
+                          :input :stream
+                          :external-format (autocad-console-external-format
+                                            cli-options)
+                          (console-capture-launch-keys capture)))))
           (declare (ignore _))
           (when process-info
             (log-debug "backend AUTOCAD: spawned, process-info-pid = ~A"
@@ -1506,7 +1512,8 @@ unwind-protect that reaps the engine when it does not get there."
                          ready-timeout)
             (multiple-value-bind (state elapsed last details)
                 (wait-for-ready-or-process-exit
-                 protocol process-info ready-timeout)
+                 protocol process-info ready-timeout
+                 (and session (autocad-session-console-capture session)))
               (cond
                 ((eq state :ready)
                  (log-verbose "backend AUTOCAD: READY after ~,2F s (status ~S)"
@@ -1637,7 +1644,9 @@ not create it)")
                                        :progid (autocad-session-progid session)))
                    (info (funcall launcher
                                   (list "cscript" "//nologo" (namestring vbs))
-                                  :output :stream :error-output :stream))
+                                  ;; Nothing reads its output: discard it
+                                  ;; rather than leave a pipe nobody drains.
+                                  :output nil :error-output nil))
                    (start (get-internal-real-time)))
               (loop while (and (uiop:process-alive-p info)
                                (< (/ (float (- (get-internal-real-time) start))

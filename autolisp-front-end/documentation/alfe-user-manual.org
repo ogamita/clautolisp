@@ -595,6 +595,18 @@ with =--keep-workdir= (or =$AUTOLISP_KEEP_WORKDIR=), which stops alfe
 deleting the directory at the end of the run, since by default there is
 nothing left to look at.
 
+The process alfe launches for a CAD backend (=accoreconsole=, =bricscad=,
+or the =cscript= / =osascript= launcher) writes its own console — the
+command echoes, prompts and messages the CAD prints, not your program's
+output, which comes back through the protocol — to two files in that
+directory, =engine-console-stdout.txt= and =engine-console-stderr.txt=.
+alfe reads them only when the launch fails, to quote them in its
+message; with =--keep-workdir= they stay for inspection. They used to be
+pipes that nothing read while the CAD ran, so a long, chatty
+=--autocad --mode batch= run (=accoreconsole= echoes its whole command line,
+two bytes a character) filled the pipe and hung until =--timeout=. A file
+never fills, however long the run.
+
 =--bootstrap-phase= truncates the engine-side bootstrap, which is how
 you diagnose a CAD that never reaches =READY= — work *up* from =marker=
 and the phase that stops working is the one at fault:
