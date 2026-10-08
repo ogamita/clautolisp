@@ -1,0 +1,39 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: native-pipeline-yaml-not-linted -- an invalid rule in .gitlab/native.yml passes every repo check and silently kills the child pipeline
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: ci-infra
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-08
+
+* Symptom
+
+MR !462 (IntersectWith) added four probe jobs to =.gitlab/native.yml= with
+=if: '$$MACOS_RUNNER == "online" && ...'= (a doubled =$=). GitLab rejects that
+expression ("rule if invalid expression syntax"), so the parent's
+=native:pipeline= bridge failed with =downstream_pipeline_creation_failed=
+twice (pipelines 2925982648, 2926066881) and NO macOS / Windows job of that MR
+ran -- not only the new probes, every native lane. The bridge's failure
+reason says nothing about the YAML; the cause was only found by posting the
+file to the project's CI lint API (=ci/lint= with the file as =content=):
+
+#+begin_example
+valid: False
+ERROR jobs:intersectwith:probe:bricscad:macos:rules:rule if invalid expression syntax
+...
+#+end_example
+
+=check-native-pipeline-changes=, =check-probe-families=,
+=check-cad-sweep-gating= and =glab ci lint= (which lints =.gitlab-ci.yml=,
+not the included child file) all passed.
+
+* Fix
+
+Lint =.gitlab/native.yml= itself in the repo checks: a script posting it to
+the CI lint endpoint (needs a token -- fine in CI, optional locally), or an
+offline check for the shapes GitLab rejects (a =$$NAME= in a =rules: if=,
+unbalanced quotes / regex slashes). Run it in =check-native-pipeline-changes=
+or as its own make target in the lint lane.
+
+Fixed by hand in MR !462 (commit 89a9921e).
