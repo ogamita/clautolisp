@@ -30,6 +30,7 @@ probe-foreach-scope.lsp       cad-probe-run-foreach-scope-probes
 probe-vlax-for-scope.lsp      cad-probe-run-vlax-for-scope-probes
 probe-block-walk.lsp          cad-probe-run-block-walk-probes
 probe-xdata.lsp               cad-probe-run-xdata-probes
+probe-entget-pointers.lsp     cad-probe-run-entget-pointer-probes
 probe-commands.lsp            cad-probe-run-command-probes
 probe-printer.lsp             cad-probe-run-printer-probes
 probe-cond.lsp                cad-probe-run-cond-probes

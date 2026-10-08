@@ -84,7 +84,12 @@ class Check(unittest.TestCase):
             f"{E}/getcname-probe.lsp", f"{E}/pgp-probe.lsp",
             f"{E}/optkw-probe.lsp", f"{E}/pathname-probe.lsp",
             f"{E}/lispsys-bom-probe.lsp",
-            "autolisp-spec/autolisp/dump-sysvars.lsp", *pc.UNCLAIMED}
+            "autolisp-spec/autolisp/dump-sysvars.lsp", *pc.UNCLAIMED,
+            # Every literal (glob-free) path a family names is a real probe
+            # file, so the clean tree includes them: a new family no longer
+            # needs a hand-added fixture here (MR !460 failed on exactly that).
+            *(p for pats in pc.FAMILIES.values() for p in pats
+              if not any(ch in p for ch in "*?["))}
 
     def yml(self):
         return "\n".join(f"$PROBES_CHANGED =~ /,{f},/" for f in pc.FAMILIES)

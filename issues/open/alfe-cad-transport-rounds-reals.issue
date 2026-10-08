@@ -1,0 +1,86 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-cad-transport-rounds-reals — alfe re-prints every loaded form for AutoCAD/BricsCAD, so real literals arrive rounded (6 significant digits on AutoCAD)
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-alfe-cad-transport-rounds-reals
+#+DATE: 2026-10-08
+
+* Symptom
+
+The curve-geometry probe (=autolisp-front-end/tests/scenarios/entities/
+curve-geometry-probe.lsp=, run by =alfe --autocad -l= / =alfe --bricscad -l=)
+sets, at top level,
+
+#+begin_src lisp
+(setq cg-pi/2 1.5707963267948966
+      cg-pi/4 0.7853981633974483
+      cg-7pi/4 5.497787143782138)
+#+end_src
+
+and entmakes an ARC with =(cons 51 cg-pi/2)=. The CAD stored:
+
+- AutoCAD 2022 (job 17026948757, =curve-geometry:probe:autocad:windows=;
+  identical on AcCoreConsole, job 17026948758):
+  =CURVE arc-0-90 (entget e) ... (50 . 0) (51 . 1.5708)=, and
+  =arc-315-45 (entget e) ... (50 . 5.497790000000001) (51 . 0.785398)=.
+  The end point of the "quarter" arc is (-0.0000367 9.99999999993 0), its
+  length 15.708: every ARC answer of that run is the answer for the
+  ROUNDED angles.
+- BricsCAD V25 / V26 (jobs 17026948756 / 17026948755): =(51 . 1.5707963267949)=,
+  end point x = -3.5e-14 (= 10 cos 1.5707963267949) instead of 6e-16: the
+  same loss, at 14 significant digits.
+
+Values the CAD COMPUTES are not affected (the ARC built by =(command "_.ARC"
+"_C" ...)= has =(51 . 1.570796326794897)= on both), nor numbers held inside a
+STRING the probe reads at run time. Only literals in the loaded file's own
+top-level forms are rounded.
+
+* Cause
+
+alfe does not load the =-l= file with the CAD's own LOAD. The runtime's
+source loader (=autolisp-source-load-run-body-impl= in
+=source/runtime/autolisp-bootstrap.lsp=) reads each top-level form and hands
+it to =autolisp-eval-request-form=. The CAD-side definition of that function
+emitted by =source/file-protocol.lisp= (the BricsCAD V26 mapcar/lambda
+workaround, issues/closed/bricscad-rest-mapcar-lambda-bug.issue) does NOT
+eval the form: it RE-PRINTS it with =autolisp-readable-text=, writes the text
+to =alfe-eval.lsp= and native-loads that file. =autolisp-readable-text=
+renders every non-string atom with =vl-princ-to-string= (=autolisp-render=),
+and PRINC of a REAL is 6 significant digits on AutoCAD (1.5708) and 14 on
+BricsCAD (1.5707963267949). The digits are lost on the CAD side, in alfe's
+runtime, before the CAD's reader sees the text again.
+
+The same path serves =-x= forms (=autolisp-run-eval-file= reads the
+expression and calls =autolisp-eval-request-form=) and the REPL, so a real
+typed or passed with =-x= is rounded too.
+
+Not affected: =--clautolisp= (direct and subprocess) -- no re-print.
+
+* Evidence still to collect
+
+The second round of the same probe (branch fix-cador-arc-curve-geometry,
+=reader= cases) settles it per CAD: =(setq cg-x 1.2345678901234)= at top
+level vs =(eval (read "(setq cg-y 1.2345678901234)"))= vs
+=(rtos 1.2345678901234 2 16)= inside a string. If this ticket's cause is
+right, the first prints 1.23457 on AutoCAD and the other two
+1.2345678901234000.
+
+* Proposal
+
+Never re-print source. The loader already holds each form's TEXT
+(=alfe--piece= in the read loop; the =-x= file text): write that text to
+=alfe-eval.lsp= instead of =(autolisp-readable-text form)=, keeping the
+=(setq *AUTOLISP-EVAL-RESULT* ...)= wrapper and the princ normaliser
+(apply the normaliser only when the form contains an empty =(princ)= and
+fall back to re-printing then -- or make the normaliser textual). Where a
+form must be printed (a form built in memory), print reals with full
+precision: =(rtos x 1 16)= is reader-valid on both CADs regardless of
+DIMZIN / LUPREC, or =vl-prin1-to-string= after setting nothing (measure:
+its REAL precision is the question). Test: an alfe scenario that loads a
+file with =(setq x 1.2345678901234)= and prints =(rtos x 2 16)=, required
+equal to 1.2345678901234000 on every backend; the vendor lanes run it.
+
+Found while measuring cador-curve-length-and-sampling (its 2026-10-08
+section notes how the AutoCAD column was compared despite the rounding).

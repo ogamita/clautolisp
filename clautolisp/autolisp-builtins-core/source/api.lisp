@@ -7765,35 +7765,17 @@ BricsCAD); always returns nil."
 ;;; --- Curve geometry (Group E: vlax-curve-*) ----------------------
 ;;;
 ;;; A vlax-curve-* argument is an entity ENAME or a VLA-object; we
-;;; resolve it to the entity's DXF (host-entget) and compute the
-;;; requested quantity analytically. Parameter conventions (spec 70877
-;;; ff.): `param' is the curve's NATIVE parameter (arc-length for a
-;;; LINE; the angle in radians for CIRCLE/ARC; vertex-index.fraction for
-;;; a polyline), `dist' is arc-length from the start; all points/vectors
-;;; are WCS 3D lists; every operation returns nil on failure / an
-;;; out-of-range argument. Analytic support: LINE, RAY, XLINE, CIRCLE,
-;;; ARC, and straight-segment LWPOLYLINE / POLYLINE. ELLIPSE and SPLINE,
-;;; and the arc segments of a bulged polyline, are SPEC-UNCERTAIN (NURBS
-;;; / elliptic-integral territory) and return nil rather than wrong math
-;;; — see issues/open/vla-accessor-family.issue.
-
-(defun %v (p) "Coerce a DXF/AutoLISP point list to (x y z) doubles."
-  (flet ((d (x) (coerce (if (numberp x) x 0) 'double-float)))
-    (list (d (nth 0 p)) (d (nth 1 p)) (d (nth 2 p)))))
-(defun %v+ (a b) (mapcar #'+ a b))
-(defun %v- (a b) (mapcar #'- a b))
-(defun %v* (a s) (mapcar (lambda (x) (* x s)) a))
-(defun %vdot (a b) (reduce #'+ (mapcar #'* a b)))
-(defun %vlen (a) (sqrt (%vdot a a)))
-(defun %vunit (a) (let ((l (%vlen a))) (if (zerop l) a (%v* a (/ 1.0d0 l)))))
-(defun %pt->list (p) (mapcar (lambda (x) (coerce x 'double-float)) p))
-
-(defun %dxf-ref (dxf code)
-  (cdr (assoc code dxf :test (lambda (c e) (and (numberp e) (= c e))))))
-(defun %dxf-all (dxf code)
-  (loop for pair in dxf
-        when (and (consp pair) (numberp (car pair)) (= (car pair) code))
-          collect (cdr pair)))
+;;; resolve it to the entity (host-entget, plus the VERTEX entities of a
+;;; heavy POLYLINE) and compute the requested quantity analytically with
+;;; the host layer's curve model (autolisp-host/source/curve-geometry.lisp,
+;;; shared with the cador ActiveX properties ArcLength / Length / Area ...).
+;;; Parameter conventions are the vendor ones: the distance for a LINE,
+;;; the ANGLE in radians for CIRCLE/ARC (an ARC runs from its start angle to
+;;; its end angle, raised by 2pi when not above it), vertex-index.fraction
+;;; for a polyline (bulge segments are true arcs). `dist' is arc length from
+;;; the start; points and vectors are WCS 3D lists; an argument outside the
+;;; curve, or an unsupported entity (ELLIPSE, SPLINE: SPEC-UNCERTAIN), yields
+;;; nil. cador-curve-length-and-sampling.issue.
 
 (defun %curve-ename (curve operator-name)
   (cond
@@ -7805,228 +7787,20 @@ BricsCAD); always returns nil."
         "~A expects a curve ENAME or VLA-object, got ~S." operator-name curve))))
 
 (defun %curve (curve operator-name)
-  "Parse the entity behind CURVE into a descriptor plist, or NIL if the
-entity is absent or not an analytically-supported curve type."
-  (let* ((ename (%curve-ename curve operator-name))
-         (dxf (host-entget (current-evaluation-host) ename nil)))
-    (and dxf (%parse-curve dxf))))
+  "The curve descriptor of the entity behind CURVE, or NIL if the entity is
+absent or not an analytically-supported curve type."
+  (let ((ename (%curve-ename curve operator-name)))
+    (and ename
+         (clautolisp.autolisp-host:host-curve-descriptor
+          (current-evaluation-host) ename))))
 
-(defun %parse-curve (dxf)
-  (let ((type (%dxf-ref dxf 0)))
-    (setf type (if (typep type 'autolisp-string) (autolisp-string-value type) type))
-    (cond
-      ((equal type "LINE")
-       (let* ((a (%v (%dxf-ref dxf 10))) (b (%v (%dxf-ref dxf 11))))
-         (list :type :line :start a :end b :length (%vlen (%v- b a)))))
-      ((member type '("RAY" "XLINE") :test #'equal)
-       (list :type (if (equal type "RAY") :ray :xline)
-             :base (%v (%dxf-ref dxf 10)) :dir (%vunit (%v (%dxf-ref dxf 11)))))
-      ((equal type "CIRCLE")
-       (list :type :circle :center (%v (%dxf-ref dxf 10))
-             :radius (coerce (%dxf-ref dxf 40) 'double-float)))
-      ((equal type "ARC")
-       (let* ((c (%v (%dxf-ref dxf 10)))
-              (r (coerce (%dxf-ref dxf 40) 'double-float))
-              (s (* (/ pi 180d0) (coerce (%dxf-ref dxf 50) 'double-float)))
-              (e (* (/ pi 180d0) (coerce (%dxf-ref dxf 51) 'double-float))))
-         (when (<= e s) (incf e (* 2 pi)))    ; normalise CCW sweep
-         (list :type :arc :center c :radius r :start-angle s :end-angle e)))
-      ((member type '("LWPOLYLINE" "POLYLINE") :test #'equal)
-       (let* ((verts (mapcar #'%v (%dxf-all dxf 10)))
-              (flags (or (%dxf-ref dxf 70) 0))
-              (closed (logbitp 0 (if (numberp flags) (truncate flags) 0)))
-              (bulges (%dxf-all dxf 42)))
-         (when (>= (length verts) 2)
-           (list :type :polyline :verts verts :closed closed
-                 :bulged (some (lambda (b) (and (numberp b) (not (zerop b)))) bulges)))))
-      (t nil))))                             ; ELLIPSE / SPLINE / other -> nil
-
-;;; Per-descriptor geometry. Each returns nil when undefined.
-
-(defun %poly-segpoints (curve)
-  (let ((v (getf curve :verts)))
-    (if (getf curve :closed) (append v (list (first v))) v)))
-
-(defun %poly-seglens (curve)
-  (let ((pts (%poly-segpoints curve)))
-    (loop for (a b) on pts while b collect (%vlen (%v- b a)))))
-
-(defun %curve-length (curve)
-  (case (getf curve :type)
-    (:line (getf curve :length))
-    (:circle (* 2 pi (getf curve :radius)))
-    (:arc (* (getf curve :radius)
-             (- (getf curve :end-angle) (getf curve :start-angle))))
-    (:polyline (reduce #'+ (%poly-seglens curve) :initial-value 0.0d0))
-    (t nil)))
-
-(defun %curve-start-param (curve)
-  (case (getf curve :type)
-    ((:line :circle :polyline) 0.0d0)
-    (:ray 0.0d0)
-    (:xline nil)                            ; unbounded below
-    (:arc (getf curve :start-angle))
-    (t nil)))
-
-(defun %curve-end-param (curve)
-  (case (getf curve :type)
-    (:line (getf curve :length))
-    (:circle (* 2 pi (getf curve :radius)))  ; circle native param == arc length
-    (:arc (getf curve :end-angle))
-    (:polyline (coerce (1- (length (%poly-segpoints curve))) 'double-float))
-    ((:ray :xline) nil)
-    (t nil)))
-
-(defun %point-at-param (curve p)
-  (case (getf curve :type)
-    (:line (%v+ (getf curve :start)
-                (%v* (%vunit (%v- (getf curve :end) (getf curve :start))) p)))
-    ((:ray :xline) (%v+ (getf curve :base) (%v* (getf curve :dir) p)))
-    (:circle (let ((c (getf curve :center)) (r (getf curve :radius)) (th (/ p (getf curve :radius))))
-               (%v+ c (list (* r (cos th)) (* r (sin th)) 0.0d0))))
-    (:arc (let ((c (getf curve :center)) (r (getf curve :radius)))
-            (%v+ c (list (* r (cos p)) (* r (sin p)) 0.0d0))))
-    (:polyline
-     (let* ((pts (%poly-segpoints curve))
-            (n (1- (length pts))))
-       (when (and (>= p 0) (<= p n))
-         (multiple-value-bind (i f) (floor p)
-           (when (= i n) (setf i (1- n) f 1.0d0))
-           (%v+ (nth i pts) (%v* (%v- (nth (1+ i) pts) (nth i pts)) f))))))
-    (t nil)))
-
-(defun %dist-at-param (curve p)
-  (case (getf curve :type)
-    ((:line :ray :xline :circle) p)          ; native param == arc length
-    (:arc (* (getf curve :radius) (- p (getf curve :start-angle))))
-    (:polyline
-     (let ((lens (%poly-seglens curve)))
-       (multiple-value-bind (i f) (floor p)
-         (+ (reduce #'+ (subseq lens 0 (min i (length lens))) :initial-value 0.0d0)
-            (if (< i (length lens)) (* f (nth i lens)) 0.0d0)))))
-    (t nil)))
-
-(defun %param-at-dist (curve d)
-  (case (getf curve :type)
-    ((:line :ray :xline :circle) d)
-    (:arc (+ (getf curve :start-angle) (/ d (getf curve :radius))))
-    (:polyline
-     (let ((lens (%poly-seglens curve)) (acc 0.0d0) (i 0))
-       (dolist (l lens (coerce (length lens) 'double-float))
-         (when (<= d (+ acc l)) (return (+ i (if (zerop l) 0 (/ (- d acc) l)))))
-         (incf acc l) (incf i))))
-    (t nil)))
-
-(defun %point-at-dist (curve d)
-  (let ((p (%param-at-dist curve d))) (and p (%point-at-param curve p))))
-
-(defun %first-deriv (curve p)
-  (case (getf curve :type)
-    (:line (%vunit (%v- (getf curve :end) (getf curve :start))))
-    ((:ray :xline) (getf curve :dir))
-    (:circle (let ((r (getf curve :radius)) (th (/ p (getf curve :radius))))
-               (list (* (- r) (sin th)) (* r (cos th)) 0.0d0)))
-    (:arc (let ((r (getf curve :radius)))
-            (list (* (- r) (sin p)) (* r (cos p)) 0.0d0)))
-    (:polyline (let* ((pts (%poly-segpoints curve)) (n (1- (length pts)))
-                      (i (min (floor p) (1- n))))
-                 (%vunit (%v- (nth (1+ i) pts) (nth i pts)))))
-    (t nil)))
-
-(defun %second-deriv (curve p)
-  (case (getf curve :type)
-    ((:line :ray :xline :polyline) (list 0.0d0 0.0d0 0.0d0))
-    (:circle (let ((r (getf curve :radius)) (th (/ p (getf curve :radius))))
-               (list (* (- r) (cos th)) (* (- r) (sin th)) 0.0d0)))
-    (:arc (let ((r (getf curve :radius)))
-            (list (* (- r) (cos p)) (* (- r) (sin p)) 0.0d0)))
-    (t nil)))
-
-(defun %closest-on-segment (a b pt extend)
-  "Nearest point on segment A-B (or its infinite line when EXTEND) to PT."
-  (let* ((ab (%v- b a)) (len2 (%vdot ab ab)))
-    (if (zerop len2) a
-        (let ((tt (/ (%vdot (%v- pt a) ab) len2)))
-          (unless extend (setf tt (max 0.0d0 (min 1.0d0 tt))))
-          (%v+ a (%v* ab tt))))))
-
-(defun %closest-point-to (curve pt extend)
-  (case (getf curve :type)
-    ((:line) (%closest-on-segment (getf curve :start) (getf curve :end) pt extend))
-    ((:ray) (let ((c (%closest-on-segment (getf curve :base)
-                                          (%v+ (getf curve :base) (getf curve :dir)) pt t)))
-              ;; clamp to p>=0 unless extend
-              (if (or extend (>= (%vdot (%v- c (getf curve :base)) (getf curve :dir)) 0)) c
-                  (getf curve :base))))
-    ((:xline) (%closest-on-segment (getf curve :base)
-                                   (%v+ (getf curve :base) (getf curve :dir)) pt t))
-    ((:circle :arc)
-     (let* ((c (getf curve :center)) (r (getf curve :radius))
-            (d (%v- (list (nth 0 pt) (nth 1 pt) (nth 2 c)) c))
-            (th (atan (nth 1 d) (nth 0 d))))
-       (when (eq (getf curve :type) :arc)
-         (unless extend
-           (let ((s (getf curve :start-angle)) (e (getf curve :end-angle)))
-             (let ((tn (+ th (if (< th s) (* 2 pi) 0))))
-               (unless (<= s tn e)
-                 (return-from %closest-point-to
-                   (let ((ps (%point-at-param curve s)) (pe (%point-at-param curve e)))
-                     (if (< (%vlen (%v- pt ps)) (%vlen (%v- pt pe))) ps pe))))))))
-       (%v+ c (list (* r (cos th)) (* r (sin th)) 0.0d0))))
-    (:polyline
-     (let ((best nil) (bestd nil))
-       (loop for (a b) on (%poly-segpoints curve) while b
-             for cp = (%closest-on-segment a b pt extend)
-             for dd = (%vlen (%v- pt cp))
-             when (or (null bestd) (< dd bestd)) do (setf best cp bestd dd))
-       best))
-    (t nil)))
-
-(defun %param-at-point (curve pt)
-  "Native parameter of PT if it lies on the curve (within tolerance)."
-  (let ((cp (%closest-point-to curve pt nil)))
-    (when (and cp (< (%vlen (%v- pt cp)) 1.0d-6))
-      (case (getf curve :type)
-        (:line (%vlen (%v- cp (getf curve :start))))
-        ((:ray :xline) (%vdot (%v- cp (getf curve :base)) (getf curve :dir)))
-        ((:circle :arc)
-         (let* ((c (getf curve :center))
-                (d (%v- cp c)) (th (atan (nth 1 d) (nth 0 d))))
-           (if (eq (getf curve :type) :circle)
-               (* (getf curve :radius) (mod th (* 2 pi)))
-               (let ((s (getf curve :start-angle)))
-                 (if (< th s) (+ th (* 2 pi)) th)))))
-        (:polyline
-         (let ((pts (%poly-segpoints curve)) (acc 0))
-           (loop for (a b) on pts while b for i from 0
-                 for seg = (%closest-on-segment a b pt nil)
-                 when (< (%vlen (%v- pt seg)) 1.0d-6)
-                   do (return (+ i (let ((l (%vlen (%v- b a))))
-                                     (if (zerop l) 0 (/ (%vlen (%v- seg a)) l))))))))
-        (t nil)))))
-
-(defun %curve-area (curve)
-  (case (getf curve :type)
-    (:circle (* pi (getf curve :radius) (getf curve :radius)))
-    (:arc (let ((r (getf curve :radius))
-                (dt (- (getf curve :end-angle) (getf curve :start-angle))))
-            (* 0.5d0 r r (- dt (sin dt)))))    ; circular-segment area
-    (:polyline
-     (when (getf curve :closed)
-       (let ((v (getf curve :verts)) (a 0.0d0))
-         (loop for (p q) on (append v (list (first v))) while q
-               do (incf a (- (* (nth 0 p) (nth 1 q)) (* (nth 0 q) (nth 1 p)))))
-         (abs (* 0.5d0 a)))))                  ; shoelace
-    (t nil)))                                  ; open curves: nil
-
-(defun %is-closed (curve)
-  (case (getf curve :type)
-    (:circle t)
-    (:polyline (getf curve :closed))
-    (:arc (>= (- (getf curve :end-angle) (getf curve :start-angle)) (* 2 pi)))
-    (t nil)))
-
-;;; The AutoLISP-visible builtins.
+(defun %curve-point-arg (pt operator-name)
+  (require-proper-list pt operator-name)
+  (unless (and (<= 2 (length pt) 3) (every #'realp pt))
+    (signal-builtin-argument-error
+     :invalid-point operator-name
+     "~A expects a 2D or 3D point, got ~S." operator-name pt))
+  pt)
 
 (defmacro %def-curve-op (name (curve-var &rest extra) &body body)
   "Define a vlax-curve-* builtin whose BODY computes a value from the
@@ -8038,51 +7812,68 @@ not an analytically-supported curve."
          (if (null ,c) nil
              (let ((,curve-var ,c)) ,@body))))))
 
-(defun %list->al-point (p) (and p (%pt->list p)))
+(defun %list->al-point (p) (and p (mapcar (lambda (x) (coerce x 'double-float)) p)))
+(defun %curve-real (x name) (coerce (require-number x name) 'double-float))
 
 (%def-curve-op builtin-vlax-curve-getstartpoint (curve)
-  (%list->al-point (%point-at-param curve (%curve-start-param curve))))
+  (%list->al-point (clautolisp.autolisp-host:curve-start-point curve)))
 (%def-curve-op builtin-vlax-curve-getendpoint (curve)
-  (%list->al-point (%point-at-param curve (%curve-end-param curve))))
-(%def-curve-op builtin-vlax-curve-getstartparam (curve) (%curve-start-param curve))
-(%def-curve-op builtin-vlax-curve-getendparam (curve) (%curve-end-param curve))
+  (%list->al-point (clautolisp.autolisp-host:curve-end-point curve)))
+(%def-curve-op builtin-vlax-curve-getstartparam (curve)
+  (clautolisp.autolisp-host:curve-start-param curve))
+(%def-curve-op builtin-vlax-curve-getendparam (curve)
+  (clautolisp.autolisp-host:curve-end-param curve))
 (%def-curve-op builtin-vlax-curve-getpointatparam (curve p)
-  (%list->al-point (%point-at-param curve (coerce (require-number p 'vlax-curve-getpointatparam) 'double-float))))
+  (%list->al-point (clautolisp.autolisp-host:curve-point-at-param
+                    curve (%curve-real p 'vlax-curve-getpointatparam))))
 (%def-curve-op builtin-vlax-curve-getpointatdist (curve d)
-  (%list->al-point (%point-at-dist curve (coerce (require-number d 'vlax-curve-getpointatdist) 'double-float))))
+  (%list->al-point (clautolisp.autolisp-host:curve-point-at-dist
+                    curve (%curve-real d 'vlax-curve-getpointatdist))))
 (%def-curve-op builtin-vlax-curve-getparamatpoint (curve pt)
-  (require-proper-list pt 'vlax-curve-getparamatpoint)
-  (%param-at-point curve (%v pt)))
+  (clautolisp.autolisp-host:curve-param-at-point
+   curve (%curve-point-arg pt 'vlax-curve-getparamatpoint)))
 (%def-curve-op builtin-vlax-curve-getdistatparam (curve p)
-  (%dist-at-param curve (coerce (require-number p 'vlax-curve-getdistatparam) 'double-float)))
+  (clautolisp.autolisp-host:curve-dist-at-param
+   curve (%curve-real p 'vlax-curve-getdistatparam)))
 (%def-curve-op builtin-vlax-curve-getdistatpoint (curve pt)
-  (require-proper-list pt 'vlax-curve-getdistatpoint)
-  (let ((prm (%param-at-point curve (%v pt)))) (and prm (%dist-at-param curve prm))))
+  (clautolisp.autolisp-host:curve-dist-at-point
+   curve (%curve-point-arg pt 'vlax-curve-getdistatpoint)))
 (%def-curve-op builtin-vlax-curve-getparamatdist (curve d)
-  (%param-at-dist curve (coerce (require-number d 'vlax-curve-getparamatdist) 'double-float)))
+  (clautolisp.autolisp-host:curve-param-at-dist
+   curve (%curve-real d 'vlax-curve-getparamatdist)))
 (%def-curve-op builtin-vlax-curve-getfirstderiv (curve p)
-  (%list->al-point (%first-deriv curve (coerce (require-number p 'vlax-curve-getfirstderiv) 'double-float))))
+  (%list->al-point (clautolisp.autolisp-host:curve-first-deriv
+                    curve (%curve-real p 'vlax-curve-getfirstderiv))))
 (%def-curve-op builtin-vlax-curve-getsecondderiv (curve p)
-  (%list->al-point (%second-deriv curve (coerce (require-number p 'vlax-curve-getsecondderiv) 'double-float))))
+  (%list->al-point (clautolisp.autolisp-host:curve-second-deriv
+                    curve (%curve-real p 'vlax-curve-getsecondderiv))))
 (%def-curve-op builtin-vlax-curve-getclosestpointto (curve pt &optional extend)
-  (require-proper-list pt 'vlax-curve-getclosestpointto)
-  (%list->al-point (%closest-point-to curve (%v pt) (and extend t))))
+  (%list->al-point (clautolisp.autolisp-host:curve-closest-point
+                    curve (%curve-point-arg pt 'vlax-curve-getclosestpointto)
+                    (and extend t))))
 (%def-curve-op builtin-vlax-curve-getclosestpointtoprojection (curve pt normal &optional extend)
   ;; SPEC-UNCERTAIN: only the planar (normal ~ Z) case is supported, where
   ;; projection is the identity and this reduces to getclosestpointto;
   ;; a general oblique projection returns nil rather than wrong geometry.
-  (require-proper-list pt 'vlax-curve-getclosestpointtoprojection)
-  (require-proper-list normal 'vlax-curve-getclosestpointtoprojection)
-  (let ((n (%vunit (%v normal))))
-    (if (> (abs (%vdot n '(0.0d0 0.0d0 1.0d0))) 0.999d0)
-        (%list->al-point (%closest-point-to curve (%v pt) (and extend t)))
+  (%curve-point-arg pt 'vlax-curve-getclosestpointtoprojection)
+  (%curve-point-arg normal 'vlax-curve-getclosestpointtoprojection)
+  (let* ((n (mapcar (lambda (x) (coerce x 'double-float)) normal))
+         (len (sqrt (reduce #'+ (mapcar #'* n n)))))
+    (if (and (plusp len) (> (abs (/ (or (third n) 0.0d0) len)) 0.999d0))
+        (%list->al-point (clautolisp.autolisp-host:curve-closest-point
+                          curve pt (and extend t)))
         nil)))
-(%def-curve-op builtin-vlax-curve-getarea (curve) (%curve-area curve))
-(%def-curve-op builtin-vlax-curve-getperimeter (curve) (%curve-length curve))
-(%def-curve-op builtin-vlax-curve-isclosed (curve) (if (%is-closed curve) (autolisp-true) nil))
+(%def-curve-op builtin-vlax-curve-getarea (curve)
+  (clautolisp.autolisp-host:curve-area curve))
+(%def-curve-op builtin-vlax-curve-getperimeter (curve)
+  (clautolisp.autolisp-host:curve-length curve))
+(%def-curve-op builtin-vlax-curve-isclosed (curve)
+  (if (clautolisp.autolisp-host:curve-closed-p curve) (autolisp-true) nil))
 (%def-curve-op builtin-vlax-curve-isperiodic (curve)
-  (if (member (getf curve :type) '(:circle)) (autolisp-true) nil))
-(%def-curve-op builtin-vlax-curve-isplanar (curve) (autolisp-true))
+  (if (clautolisp.autolisp-host:curve-periodic-p curve) (autolisp-true) nil))
+(%def-curve-op builtin-vlax-curve-isplanar (curve)
+  (declare (ignore curve))
+  (autolisp-true))
 
 ;;; --- Dynamic vla-* accessor façade -------------------------------
 ;;

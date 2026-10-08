@@ -63,12 +63,11 @@ result is EQ to any other ename for the same record. (ename-eq-identity)"
 ;;; can (strcat), (=) and (type) the values a tblsearch / tblnext record
 ;;; yields. Without this wrap the raw CL strings would reject those
 ;;; operators. Table records carry no (-1 . ename) head (tblobjname is
-;;; the way to an ename), so we wrap the data list as-is.
-
-(defun table-record->al-view (record)
-  "The AutoLISP tblsearch / tblnext view of a table RECORD: its
-group-code list with every string value wrapped as an autolisp-string."
-  (pure->al-value (symbol-table-record-data record)))
+;;; the way to an ename), so we wrap the data list as-is -- except the
+;;; DXF pointer group codes (330-369, 390-399, 480-481), which come back
+;;; as ENAMES like ENTGET's, not as handle strings. The view is built by
+;;; TABLE-RECORD-AL-VIEW+EXTRAS (entity-api.lisp), which also adds a BLOCK
+;;; record's (-2 . first-entity) group.
 
 (defmethod host-tblsearch ((host cador) kind name)
   (let ((record (cador-find-table-record host

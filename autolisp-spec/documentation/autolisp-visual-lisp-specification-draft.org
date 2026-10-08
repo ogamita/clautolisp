@@ -7644,6 +7644,21 @@ e-acute "B":
 | ~(open f "w,ccs=UTF-8")~  | accepted, ignored        | accepted, ignored                | honoured (BOM)          |
 | ~(open f "w,ccs=UTF-16LE")~ | accepted, ignored      | accepted, ignored                | honoured (BOM)          |
 
+Appending on BricsCAD V25 Windows (probe-open-encoding, 2026-10-08, job
+17027935338, ACADVER "25.0 BricsCAD"): "A" e-acute "B" written with the
+first mode, one e-acute appended with the second, file sizes after each and
+what a plain ~(open f "r")~ reads back:
+
+| write, then append                       | sizes  | read back                  |
+|------------------------------------------+--------+----------------------------|
+| ~"w,ccs=UTF-8"~, then ~"a,ccs=UTF-8"~       | 7, 9   | (65 195 169 66 195 169)    |
+| ~"w,ccs=UTF-16LE"~, then ~"a,ccs=UTF-16LE"~ | 8, 10  | (65 233 0 66 0 233 0)      |
+| ~"w,ccs=UTF-8"~, then a plain ~"a"~         | 7, 8   | (65 195 169 66 233)        |
+| ~"w" "utf8"~, then ~"a" "utf8"~             | 3, 4   | (65 233 66 233)            |
+
+So an append with ~,ccs=~ writes no second byte-order mark; a plain ~"a"~
+appends cp1252 to the UTF-8 file.
+
 The documented ~"utf8"~ / ~"utf8-bom"~ at AutoCAD LISPSYS 1 / 2 were
 measured by encoding experiment E1, 2026-10-06 (AutoCAD 2022 accoreconsole,
 LISPSYS set in every profile and the engine restarted per level, job
@@ -7667,6 +7682,17 @@ writing "A" e-acute "B" with ~write-char~ and reading it back with
 So LISPSYS changes the default READ (and LOAD), not the default WRITE: with
 no encoding argument AutoCAD 2022 writes cp1252 at every level, as
 Autodesk's page says ("the file is assumed to contain ... (MBCS)").
+
+Appending with the encoding argument (E1 again, 2026-10-08, job
+16998925786): "A" e-acute "B" written with ~(open f "w" ENC)~, then one
+e-acute appended with ~(open f "a" ENC)~, file sizes after each:
+
+| LISPSYS | ~"utf8"~                  | ~"utf8-bom"~                              |
+|---------+---------------------------+-------------------------------------------|
+| 0       | error: too many arguments | error: too many arguments                 |
+| 1, 2    | 4 then 6 (UTF-8 appended) | 7 then 9 (UTF-8 appended, no second BOM)  |
+
+An append to a file that does not exist yet was not measured.
 
 *** clautolisp
 Non-normative (pjb, 2026-10-06: "open third argument: lenient, but dialect
@@ -7713,7 +7739,9 @@ measurement above:
   ~*AUTOLISP-FILE-WRITE-ENCODING*~ for that.
 - ~(open f "w" "utf8-bom")~ writes the BOM (EF BB BF) before the UTF-8
   text; ~"utf8"~ writes UTF-8 without one. Only mode ~"w"~ writes the BOM:
-  ~"a"~ was not measured and appends no BOM.
+  ~"a"~ appends none, which matches AutoCAD on a file that already exists
+  (measured above: no second BOM); ~"a"~ creating a new file was not
+  measured.
 - ~(open f "r")~ with no encoding argument, when the default read encoding
   is UTF-8 (LISPSYS 1 / 2): a UTF-8 BOM is skipped, a well-formed UTF-8
   file is decoded as UTF-8, any other file as windows-1252 -- the rule
@@ -38733,6 +38761,13 @@ setting it to 1 opens the current drawing's log (AutoCAD and BricsCAD/Windows
 create the file at once; BricsCAD/macOS in batch mode writes none); 0 closes
 it; turning it on again appends to the same file under a new header.
 
+The log's encoding: windows-1252 on AutoCAD 2022 (probe-logfile, MR !428:
+a PRINCed e-acute reads back as 233) and on BricsCAD V25 Windows, without a
+byte-order mark (encoding experiment, 2026-10-08, job 16998925784: the raw
+log begins =0D 0A 2D=, and the French prompt "Depart" with e-acute is the
+bytes =44 E9 70 61 72 74=). BricsCAD V25 logs only its command channel
+(prompts and answers), not a PRINC.
+
 *** clautolisp
 One log per drawing; a registry preference, per product, read at launch.
 See the clautolisp user manual, "The command-history log file".
@@ -65659,6 +65694,25 @@ application preserved* (the host never normalizes xdata). ~entmod~ edits
 xdata per application: an application present in the supplied ~(-3 …)~
 cell replaces that application's group; an application with an empty
 group is removed; applications absent from the cell are left untouched.
+
+clautolisp implementation deviation — not part of the normative
+specification above. Under the cador host (since clautolisp 2.3.7) the
+DXF pointer group codes 330-369, 390-399 and 480-481 are returned as
+entity names, as the vendors do (measured 2026-10-08 on AutoCAD 2022
+and BricsCAD V25 / V26); 5, 105 and the xdata 1005 stay handle
+strings; 320-329 and the null owner of the named-object dictionary
+follow the dialect's product (AutoCAD: strings, ~<Entity name: 0>~;
+BricsCAD: entity names, pair omitted); a pointer to an erased object is
+still the same entity name, whose ~entget~ is ~nil~. A handle string in
+a pointer code is an error under the vendor dialects, as on both
+vendors; under ~--dialect clautolisp~ and ~strict~ it is stored with an
+~[entmake-pointer-value]~ warning, under ~lax~ silently -- that
+acceptance is the deviation. Where cador also deviates: an entity it
+created in model or paper space
+carries no ~(330 . <block record>)~ owner, and the header groups come
+in the order ~-1 5 0~ rather than the vendors' ~-1 0 5 … 330 100~
+(issues/open/cador-entget-owner-and-header-layout.issue). The corner
+cases are measured by ~probes/sources/probe-entget-pointers.lsp~.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).

@@ -2,6 +2,7 @@
 #+TITLE: Character-encoding consolidation (alfe + clautolisp): the umbrella — program of work, code map, and the no-regression invariant
 #+AUTHOR: Pascal J. Bourguignon
 #+DATE: 2026-07-28
+#+STATUS: DONE (2026-10-08, clautolisp 2.3.9 / alfe 2.3.9 -- see Resolution at the end)
 
 * What this is (and what it defers)
 
@@ -276,3 +277,39 @@ report): the BricsCAD V25 log encoding; OPEN in append mode with an encoding
 (BricsCAD ",ccs=", AutoCAD "utf8"/"utf8-bom"); the end-to-end check of the
 AutoCAD "utf8" forwarding (lispsys-forward-probe). This umbrella closes with
 encoding-situations-cli-options once those are read and acted on.
+
+* Progress 2026-10-08 (measurements read; clautolisp 2.3.9 / alfe 2.3.9)
+
+The three remaining measurements ran on 2026-10-08 (pipeline 2922145991, jobs
+16998925783 / -784 / -785 / -786); details and evidence in
+encoding-situations-cli-options, section "Measured 2026-10-08":
+
+- E2, BricsCAD V25 log: SETTLED -- windows-1252 without a BOM (job
+  16998925784: raw log starts 0D 0A 2D, e-acute is E9 in 44 E9 70 61 72 74).
+  alfe's --cad-log default was already right; unchanged. clautolisp's own
+  BricsCAD-dialect log is UTF-8: new ticket cador-bricscad-windows-log-encoding.
+- OPEN append with an encoding: AutoCAD SETTLED (job 16998925786: "a" "utf8"
+  4 -> 6, "a" "utf8-bom" 7 -> 9 = no second BOM, at LISPSYS 1 / 2; an error at
+  0) -- alfe 2.3.9 now forwards -Efile-write UTF-8 to "a" too. BricsCAD's
+  ",ccs=" append NOT measured (probe-open-encoding runs in vendor:probes:*,
+  not among these jobs); the forwarding stays as it is.
+- End-to-end AutoCAD forwarding: NOT measured -- the probe was loaded with -l,
+  which alfe never rewrites (w SIZE 3 / a SIZE 1 at every level, no WARN). The
+  probe is now alfe-loaded from an entry file; the gap itself is
+  alfe-efile-write-not-applied-to-l-file.
+
+Still open, so this umbrella stays open with encoding-situations-cli-options:
+the BricsCAD ",ccs=" append measurement and the re-run of the end-to-end check.
+
+* Resolution (2026-10-08, clautolisp 2.3.9 / alfe 2.3.9) -- DONE
+
+The last measurements are in (encoding-situations-cli-options, sections
+"Verified 2026-10-08" and "Measured 2026-10-08 -- the BricsCAD ,ccs= append"):
+the AutoCAD -Efile-write forwarding is verified in the CAD (job 17027024820:
+LISPSYS 0 w 3 / a 1 + one WARN, LISPSYS 1/2 w 4 / a 2); BricsCAD V25 writes no
+second BOM on an append with ",ccs=" (job 17027935338: UTF-8 7 -> 9, UTF-16LE
+8 -> 10), so its forwarding on "a" stays; the BricsCAD V25 log is windows-1252
+without a BOM. All gaps G1-G6 and phases 0-4 of this umbrella are landed and
+confirmed on the runners. Closed together with encoding-situations-cli-options.
+Follow-ups: alfe-efile-write-not-applied-to-l-file,
+cador-bricscad-windows-log-encoding, open-ccs-bom-bricscad-windows-divergence.

@@ -85,11 +85,169 @@ string; conses recurse; everything else passes through."
 (defun pure->al-value (value)
   "Convert a stored pure CL value to its AutoLISP view: CL string ->
 autolisp-string; conses recurse; everything else passes through.
-(Enames are reconstructed only for the -1 head, by ENTITY->AL-VIEW.)"
+(Enames are reconstructed where the group code is known: the -1 head by
+ENTITY->AL-VIEW, the DXF pointer codes by PURE-PAIR->AL-PAIR.)"
   (typecase value
     (string (clautolisp.autolisp-runtime:make-autolisp-string value))
     (cons (cons (pure->al-value (car value)) (pure->al-value (cdr value))))
     (t value)))
+
+;;; --- DXF pointer group codes ------------------------------------
+;;;
+;;; The drawing stores every object reference as the hex handle STRING
+;;; it names (that is what DXF writes and what clautolisp.drawing keys
+;;; its tables on). AutoLISP does not see those strings: ENTGET (and so
+;;; DICTSEARCH / DICTNEXT / TBLSEARCH / TBLNEXT, which return the same
+;;; view) translates the POINTER group codes into ENTITY NAMES, per the
+;;; DXF reference's group-code value types:
+;;;   330-339 soft-pointer ID      340-349 hard-pointer ID
+;;;   350-359 soft-owner ID        360-369 hard-owner ID
+;;;   390-399 handle of the plot-style-name object (hard pointer)
+;;;   480-481 hard-pointer handle
+;;; 5 / 105 (the object's own handle) and the xdata 1005 stay strings.
+;;;
+;;; MEASURED 2026-10-08 (probes/sources/probe-entget-pointers.lsp; jobs
+;;; 17026569911 AutoCAD 2022, 17026569912 BricsCAD V25 Windows,
+;;; 17026569913 BricsCAD V26 macOS) -- the vendors agree on:
+;;;   - every pointer code above reads back as an ENAME;
+;;;   - a pointer to an ERASED object stays the same (EQ) ename, whose
+;;;     entget is nil;
+;;;   - a handle STRING in a pointer code is REFUSED by entmakex and
+;;;     entmod with an error (AutoCAD "bad DXF group: (340 . "2A2")",
+;;;     BricsCAD "bad argument type <(340 . "95")> ; expected ENTITYNAME
+;;;     at [invalid DXF/XED data]");
+;;; and differ on:
+;;;   - 320-329: AutoCAD keeps them handle STRINGS (and refuses an ename
+;;;     there: "bad DXF group"); BricsCAD treats them as pointers (ENAME
+;;;     on read, a string refused);
+;;;   - the null pointer: AutoCAD lists the named-object dictionary's
+;;;     owner as (330 . <Entity name: 0>); BricsCAD omits the pair.
+;;; Per product: BricsCAD dialects follow BricsCAD; every other dialect
+;;; (autocad, clautolisp, strict, lax) follows AutoCAD, the normative
+;;; reference. A string where an ename is required (or the reverse) is
+;;; refused under the vendor dialects, as there; clautolisp and strict
+;;; accept it (the pre-2.3.7 contract) with an [entmake-pointer-value]
+;;; warning, lax accepts it silently -- the policy of %INVALID-INSERT-POLICY.
+;;; (issues/closed/cador-entget-pointer-codes-are-handle-strings.issue)
+
+(defun %group-code-integer (code)
+  (and (realp code) (= code (round code)) (round code)))
+
+(defun dxf-pointer-group-code-p (code)
+  "True iff the DXF group CODE carries an object POINTER on every vendor
+(an ID that ENTGET returns as an ENAME): 330-369, 390-399, 480-481."
+  (let ((c (%group-code-integer code)))
+    (and c (or (<= 330 c 369) (<= 390 c 399) (<= 480 c 481)))))
+
+(defun dxf-arbitrary-handle-group-code-p (code)
+  "True iff CODE is one of the 320-329 \"arbitrary object handle\" codes:
+strings on AutoCAD, enames on BricsCAD (measured 2026-10-08)."
+  (let ((c (%group-code-integer code)))
+    (and c (<= 320 c 329))))
+
+(defun %current-product ()
+  "The vendor product of the active dialect (:autocad / :bricscad), or NIL
+for clautolisp / strict / lax."
+  (let ((dialect (ignore-errors
+                  (clautolisp.autolisp-runtime:current-evaluation-dialect))))
+    (and dialect (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+
+(defun %ename-group-code-p (code product)
+  "True iff PRODUCT's ENTGET shows group CODE as an ENAME."
+  (or (dxf-pointer-group-code-p code)
+      (and (eq product :bricscad) (dxf-arbitrary-handle-group-code-p code))))
+
+(defun %null-handle-p (value)
+  (and (stringp value) (string= value "0")))
+
+(defun pure-pair->al-pair (host pair &optional (product (%current-product)))
+  "The AutoLISP view of one stored group-code PAIR, or :OMIT. An ename
+code's handle string becomes the ENAME HANDLE->ENAME interns for it --
+also for a handle naming no live object (an erased target: ENTGET of it
+is nil, as on both vendors). The null handle \"0\" is (330 . <Entity
+name: 0>) on AutoCAD and omitted on BricsCAD. Every other value goes
+through PURE->AL-VALUE."
+  (cond
+    ((not (consp pair)) pair)
+    ((and (%ename-group-code-p (car pair) product)
+          (stringp (cdr pair))
+          (plusp (length (cdr pair))))
+     (if (and (eq product :bricscad) (%null-handle-p (cdr pair)))
+         :omit
+         (cons (car pair) (handle->ename host (cdr pair)))))
+    (t (cons (car pair) (pure->al-value (cdr pair))))))
+
+(defun pure-data->al-view (host data)
+  "The AutoLISP view of the stored group-code list DATA: PURE-PAIR->AL-PAIR
+on each top-level pair (an xdata (-3 ...) cell is not a pointer code, so
+its 1005 handles stay strings)."
+  (let ((product (%current-product)))
+    (loop for pair in data
+          for view = (pure-pair->al-pair host pair product)
+          unless (eq view :omit) collect view)))
+
+;;; The write side: ENTMAKE / ENTMAKEX / ENTMOD data.
+
+(defun %al-pair-text (code value)
+  "CODE . VALUE printed the way the vendors' error messages show it."
+  (format nil "(~A . ~A)" code
+          (typecase value
+            (clautolisp.autolisp-runtime:autolisp-string
+             (format nil "~S" (clautolisp.autolisp-runtime:autolisp-string-value value)))
+            (string (format nil "~S" value))
+            (clautolisp.autolisp-runtime:autolisp-ename
+             (format nil "<Entity name: ~A>"
+                     (clautolisp.autolisp-runtime:autolisp-ename-value value)))
+            (t (princ-to-string value)))))
+
+(defun %bad-pointer-pair (pair product)
+  "PAIR (an AutoLISP group-code pair) if its value has the wrong kind for
+PRODUCT's group-code typing -- a string where an ENAME is required, or an
+ename in a 320-329 string code (AutoCAD) -- else NIL."
+  (and (consp pair)
+       (let ((code (car pair)) (value (cdr pair)))
+         (cond
+           ((%ename-group-code-p code product)
+            (and (or (typep value 'clautolisp.autolisp-runtime:autolisp-string)
+                     (stringp value))
+                 pair))
+           ((dxf-arbitrary-handle-group-code-p code)
+            (and (typep value 'clautolisp.autolisp-runtime:autolisp-ename) pair))
+           (t nil)))))
+
+(defun emit-entmake-pointer-value-warning (operator-name pair)
+  (format *error-output*
+          "~&[entmake-pointer-value] ~A: ~A -- AutoCAD and BricsCAD refuse ~
+this group (a pointer code takes an ENAME, AutoCAD's 320-329 a handle ~
+string); clautolisp stores it as given, which is not portable.~%"
+          operator-name (%al-pair-text (car pair) (cdr pair))))
+
+(defun %vet-pointer-groups (data operator-name)
+  "Apply the vendors' group-code typing to the AutoLISP DATA of an
+ENTMAKE / ENTMAKEX / ENTMOD (top-level pairs; xdata is not concerned).
+Under an AutoCAD or BricsCAD dialect a mistyped pair is an error, worded
+as that vendor words it; clautolisp and strict warn and proceed; lax
+proceeds silently."
+  (when (listp data)
+    (let* ((product (%current-product))
+           (bad (loop for pair in data
+                      thereis (%bad-pointer-pair pair product))))
+      (when bad
+        (multiple-value-bind (action warn-p)
+            (%invalid-insert-policy
+             (clautolisp.autolisp-runtime:current-evaluation-dialect-name))
+          (when warn-p
+            (emit-entmake-pointer-value-warning operator-name bad))
+          (when (eq action :reject)
+            (if (eq product :bricscad)
+                (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                 :invalid-entity-data
+                 "bad argument type <~A> ; expected ENTITYNAME at [invalid DXF/XED data]"
+                 (%al-pair-text (car bad) (cdr bad)))
+                (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                 :invalid-entity-data
+                 "bad DXF group: ~A"
+                 (%al-pair-text (car bad) (cdr bad))))))))))
 
 (defun al-data->pure (data operator-name)
   "Convert an AutoLISP DXF group-code list to a pure-CL list. The
@@ -157,11 +315,7 @@ supplies the ename intern cache for the (-1 . ename) head."
                     (%filter-xdata-groups (cdr xdata-cell) names))))
     (append
      (list (cons -1 (handle->ename host (entity-handle-id entity))))
-     (mapcar (lambda (pair)
-               (if (consp pair)
-                   (cons (car pair) (pure->al-value (cdr pair)))
-                   pair))
-             ordinary)
+     (pure-data->al-view host ordinary)
      (when kept
        (list (cons -3 (pure->al-value kept)))))))
 
@@ -225,6 +379,26 @@ such entity exists or it has been deleted."
          (and record
               (cons (cons -1 ename)
                     (table-record-al-view+extras host record))))))))
+
+(defun %normalise-entmade-arc-angles (pure operator-name)
+  "AutoCAD stores an entmade ARC's 50/51 normalised into [0, 2pi) (measured
+by curve-geometry:probe:autocad:windows, 2026-10-08: (50 . -pi/4)
+(51 . 7.0) read back as 5.497787 / 0.716815); BricsCAD keeps them as given.
+So under every dialect but the BricsCAD ones ENTMAKE / ENTMAKEX normalise."
+  (if (and (member operator-name '(entmake entmakex))
+           (equal (%data-type-string pure) "ARC")
+           (not (%bricscad-dialect-for-entmakex-p)))
+      (mapcar (lambda (pair)
+                (if (and (consp pair)
+                         (or (group-code-equal-p (car pair) 50)
+                             (group-code-equal-p (car pair) 51))
+                         (realp (cdr pair)))
+                    (cons (car pair)
+                          (let ((m (mod (coerce (cdr pair) 'double-float) (* 2 pi))))
+                            (if (>= m (* 2 pi)) 0.0d0 m)))
+                    pair))
+              pure)
+      pure))
 
 (defun %data-type-string (data)
   "The (0 . TYPE) string of the pure group-code list DATA, or NIL."
@@ -369,7 +543,7 @@ block-contents walk ((entnext (cdr (assoc -2 (tblsearch \"BLOCK\" n)))).
 SPEC-UNCERTAIN: on the vendors an *empty* block's -2 names its ENDBLK
 entity; the host stores no ENDBLK and omits the group
 (deferred-spec-research.issue)."
-  (let ((view (pure->al-value (symbol-table-record-data record))))
+  (let ((view (pure-data->al-view host (symbol-table-record-data record))))
     (if (eq (symbol-table-record-kind record) :block-record)
         (let ((first-handle
                 (first (%block-entity-handles
@@ -491,7 +665,10 @@ subclass markers is REJECTED (nil) under the normative dialects (autocad,
 clautolisp, strict) per the autolisp-spec, and ACCEPTED (markers
 synthesised) under the deviant/lenient dialects (bricscad, lax). strict
 and bricscad additionally warn."
-  (let* ((pure (al-data->pure data operator-name))
+  (when (member operator-name '(entmake entmakex))
+    (%vet-pointer-groups data operator-name))
+  (let* ((pure (%normalise-entmade-arc-angles
+                (al-data->pure data operator-name) operator-name))
          (drawing (cador-active-drawing host))
          (missing-markers (clautolisp.drawing:entity-dxf-missing-markers pure)))
     ;; An INSERT referencing an undefined block is rejected by both vendors
@@ -518,6 +695,8 @@ and bricscad additionally warn."
     (multiple-value-bind (normalised reason)
         (clautolisp.drawing:validate-entity-dxf pure)
       (declare (ignore reason))
+      (when (and normalised (eq (%current-product) :bricscad))
+        (setf normalised (%bricscad-xrecord-drop-explicit-280 pure normalised)))
       (if (null normalised)
           (values nil nil)
           (let* ((owned (%link-subentity-owner host normalised))
@@ -640,7 +819,7 @@ probed (deferred-spec-research.issue)."
        (setf (cador-open-block-definition host)
              (list name pure (make-symbol-table-record :kind :block-record
                                                        :name name :data pure)))
-       (pure->al-value pure)))))
+       (pure-data->al-view host pure)))))
 
 (defun %open-block-ename (host)
   "The ename of the block definition being built, or NIL."
@@ -797,7 +976,34 @@ application's xdata. Returns PURE (possibly with groups dropped), or
                     (t (push group kept)))))
           (substitute (cons (car cell) (nreverse kept)) cell pure)))))
 
+(defun %xrecord-marker-position (data)
+  (position-if (lambda (pair)
+                 (and (consp pair) (group-code-equal-p (car pair) 100)
+                      (stringp (cdr pair))
+                      (string-equal (cdr pair) "AcDbXrecord")))
+               data))
+
+(defun %bricscad-xrecord-drop-explicit-280 (supplied normalised)
+  "BricsCAD V25 / V26 (MEASURED 2026-10-08, probe-entget-pointers.lsp, jobs
+17026569912 / 17026569913): an XRECORD entmade with an explicit 280 right
+after (100 . \"AcDbXrecord\") reads back with NO 280 at all -- the pair
+is consumed as the cloning flag and not listed -- while one entmade without
+it reads back with (280 . 1). AutoCAD lists the supplied value. Returns
+NORMALISED without that 280 when SUPPLIED (the pure create data) had one."
+  (let ((type (%data-type-string supplied))
+        (marker (%xrecord-marker-position supplied)))
+    (if (and type (string-equal type "XRECORD") marker
+             (let ((next (nth (1+ marker) supplied)))
+               (and (consp next) (group-code-equal-p (car next) 280))))
+        (let ((at (%xrecord-marker-position normalised)))
+          (if at
+              (append (subseq normalised 0 (1+ at))
+                      (nthcdr (+ 2 at) normalised))
+              normalised))
+        normalised)))
+
 (defmethod host-entmod ((host cador) data)
+  (%vet-pointer-groups data 'entmod)
   (let* ((handle (extract-modified-handle data 'entmod host))
          (pure (%vet-entmod-xdata host (al-data->pure data 'entmod)))
          (drawing (cador-active-drawing host)))

@@ -1,6 +1,7 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: clautolisp/alfe: named encoding "situations", per-situation CLI options, and line-termination
 #+DATE: 2026-07-27
+#+STATUS: DONE (2026-10-08, clautolisp 2.3.9 / alfe 2.3.9 -- see Resolution at the end)
 
 * Status
 
@@ -800,3 +801,205 @@ accepted and silently unused on the CAD backends. Now:
 
 Still open here: the three measurements above. Everything else in sections
 4 to 6 is implemented.
+
+* Measured 2026-10-08 (pipeline 2922145991, master ac83486f = clautolisp/alfe 2.3.1) -- acted on in clautolisp 2.3.9 / alfe 2.3.9
+
+The three measurements of the 2026-10-07 section were run: jobs 16998925783
+(encoding:experiment:bricscad:macos, BricsCAD V26), 16998925784
+(encoding:experiment:bricscad:windows, BricsCAD V25 (x64) fr), 16998925785
+(encoding:experiment:autocad:windows, AutoCAD 2022) and 16998925786
+(encoding:experiment:lispsys-bom:autocad:windows). Read from the job traces
+and artefacts, on bytes. (The Windows runner keeps dist/encoding/ between
+jobs, so each Windows job's artefact also carries the other jobs' reports;
+each answer below comes from the job that wrote it, checked against its own
+trace.)
+
+** 1. BricsCAD V25 log encoding -- SETTLED: windows-1252, no BOM
+
+Job 16998925784, LOG step (run-encoding-experiment.ps1 -Backend bricscad):
+#+begin_example
+[LOG] decoded: 11 lines
+[LOG] decoded line: D?part de la ligne : 0,0 | high code points: 233
+[LOG] decoded line: D?finissez l'extr?mit? ou [Angle/Longueur/annUler] : 1,1 | high code points: 233 233 233
+[LOG] raw Dessin1_2026-10-08_11-54-58.log: 475 bytes; first 16: 0D 0A 2D 2D 2D 2D 2D 2D 2D 2D 2D 2D 20 5B 20 42; first byte above 7F at offset 143: 0D 0A 44 E9 70 61 72 74
+#+end_example
+No EF BB BF at the start; e-acute is the single byte E9 ("\r\nDepart"). Neither
+of the two open hypotheses was "UTF-8 without a BOM", so alfe's --cad-log
+default (a BOM's encoding, else windows-1252 on MS-Windows) was already right
+and is unchanged (comments, manuals and a regression test on these bytes,
+cad-log-decodes-the-measured-bricscad-v25-log, updated in 2.3.9); the
+--cad-log copy (cad-log-bricscad.txt, UTF-8) reads "Départ de la ligne",
+"Définissez l'extrémité". As known, BricsCAD logs only the command channel: the
+PRINC marker is absent. The probe-logfile size line (vendor:probes:*) was not
+part of these jobs; the raw bytes above settle the question anyway.
+- BricsCAD V26 macOS (job 16998925783): "the CAD wrote no log ... BricsCAD on
+  macOS writes none in batch mode" -- confirmed again, nothing to decode.
+- AutoCAD 2022 (job 16998925785): the LOG step gave NO evidence. The raw log
+  =empty_129366860.log= is 210 bytes, all below 80 ("first byte above 7F at
+  offset 210: none"); it holds the header, "nil", ._QSAVE and ._QUIT -- no
+  LOG-MARKER, no LINE prompts -- and the trace has no "LOG WRITTEN" line, so
+  the probe form failed in the CAD before its PRINC (the report's filter
+  dropped the ERROR line; it keeps ERROR lines from 2.3.9 on). AutoCAD's log
+  encoding stays as measured by probe-logfile (MR !428): windows-1252.
+Consequence outside alfe: clautolisp writes its own log in UTF-8 under the
+BricsCAD dialects -- filed as cador-bricscad-windows-log-encoding (the cador
+sources are not touched here).
+
+** 2. OPEN in APPEND mode with an encoding -- AutoCAD SETTLED, BricsCAD NOT MEASURED
+
+AutoCAD 2022, job 16998925786 (lispsys-bom-probe.lsp: "A" e-acute "B" written
+with (open f "w" ENC), one e-acute appended with (open f "a" ENC), sizes):
+#+begin_example
+[LISPSYS 0] ENC E1 open-a-utf8 ERR nombre d'arguments trop important
+[LISPSYS 0] ENC E1 open-a-utf8-bom ERR nombre d'arguments trop important
+[LISPSYS 1] ENC E1 open-a-utf8 SIZES (4 6)
+[LISPSYS 1] ENC E1 open-a-utf8-bom SIZES (7 9)
+[LISPSYS 2] ENC E1 open-a-utf8 SIZES (4 6)
+[LISPSYS 2] ENC E1 open-a-utf8-bom SIZES (7 9)
+#+end_example
+So at LISPSYS 1 / 2 "a" "utf8" appends UTF-8 (2 bytes for e-acute) and
+"a" "utf8-bom" adds NO second BOM (7 -> 9, not 12); at 0 the third argument is
+an error, as on "w". Acted on (alfe 2.3.9): alfe-open* now passes
+*ALFE-OPEN-WRITE-ARG* to a plain "a" as well as to "w" at LISPSYS 1 / 2 (at 0:
+not forwarded, one warning per run for both); the "a ... is not given"
+warning is gone. Test protocol-alfe-load-forwards-open-write-arg.
+
+BricsCAD: probe-open-encoding.lsp (the "w,ccs=UTF-8" -> "a,ccs=UTF-8",
+UTF-16LE, plain "a", "w" "utf8" -> "a" "utf8" cases) runs in the
+vendor:probes:* jobs, and none of those was among the runs read here. The
+BricsCAD ",ccs=" append is therefore STILL UNMEASURED, and alfe's forwarding
+of ,ccs= on "a" for BricsCAD/Windows is KEPT unchanged until it is (if
+BricsCAD writes a second BOM there, that forwarding must stop).
+
+** 3. End-to-end AutoCAD -Efile-write forwarding -- NOT MEASURED (the probe's premise was wrong)
+
+Job 16998925786, lispsys-forward-probe.lsp under -Efile-write utf-8:
+#+begin_example
+[LISPSYS 0 forward] ENC E1F LISPSYS 0 FORWARDED-ARG "utf8"
+[LISPSYS 0 forward] ENC E1F w SIZE 3
+[LISPSYS 0 forward] ENC E1F a SIZE 1
+[LISPSYS 1 forward] ENC E1F LISPSYS 1 FORWARDED-ARG "utf8"
+[LISPSYS 1 forward] ENC E1F w SIZE 3
+[LISPSYS 1 forward] ENC E1F a SIZE 1
+[LISPSYS 2 forward] ENC E1F LISPSYS 2 FORWARDED-ARG "utf8"
+[LISPSYS 2 forward] ENC E1F w SIZE 3
+[LISPSYS 2 forward] ENC E1F a SIZE 1
+#+end_example
+and no WARN line at any level (the report filter keeps lines matching WARN,
+case-insensitively). Expected was "w SIZE 4" at LISPSYS 1 / 2 and a WARN at
+every level. *ALFE-OPEN-WRITE-ARG* was set in the CAD, but alfe-open* was
+never called: alfe sends the -l file as a (load ...) request, which the
+bootstrap evaluates through autolisp-eval-request-form, and only alfe-load
+rewrites OPEN. So the run measured the UNFORWARDED OPEN, not the forwarding;
+the probe was wrong, and a real gap surfaced: -Efile-write never reaches the
+-l file's own OPEN calls, silently -- filed as
+alfe-efile-write-not-applied-to-l-file (pjb-decision: rewrite OPEN in the
+request path, or warn). Done here: the manuals now say so;
+run-lispsys-bom-probe.ps1 writes a one-line entry file
+(alfe-load "<lispsys-forward-probe.lsp>") and gives THAT to -l, so the next run
+measures the forwarding itself. New expectations (with "a" now forwarded):
+LISPSYS 0 -> w 3, a 1, one WARN naming LISPSYS; LISPSYS 1 / 2 -> w 4, a 2, no
+WARN.
+
+** Still open here
+
+- The BricsCAD/Windows append with ",ccs=" (probe-open-encoding, in a
+  vendor:probes:bricscad:windows run): keep or stop the ,ccs= forwarding on
+  "a".
+- The end-to-end AutoCAD check, re-run with the corrected probe
+  (encoding:experiment:lispsys-bom:autocad:windows).
+Everything else of sections 4 to 6, and the `log' situation, is done.
+
+* Verified 2026-10-08 (MR !464, branch encoding-measured-2026-10-08 at 395f09a8 = clautolisp/alfe 2.3.9)
+
+** 3. End-to-end AutoCAD -Efile-write forwarding -- SETTLED
+
+Job 17027024820 (encoding:experiment:lispsys-bom:autocad:windows, AutoCAD
+2022), the corrected probe (lispsys-forward-probe.lsp alfe-loaded from the
+one-line entry file run-lispsys-bom-probe.ps1 writes), -Efile-write utf-8:
+#+begin_example
+[LISPSYS 0 forward] ENC E1F LISPSYS 0 FORWARDED-ARG "utf8"
+[LISPSYS 0 forward] ENC E1F w SIZE 3
+[LISPSYS 0 forward] ENC E1F a SIZE 1
+[LISPSYS 0 forward] WARN -Efile-write: not forwarded, LISPSYS is 0: AutoCAD's OPEN takes an encoding only at LISPSYS 1 or 2 (measured, AutoCAD 2022); files are written in cp1252.
+[LISPSYS 1 forward] ENC E1F LISPSYS 1 FORWARDED-ARG "utf8"
+[LISPSYS 1 forward] ENC E1F w SIZE 4
+[LISPSYS 1 forward] ENC E1F a SIZE 2
+[LISPSYS 2 forward] ENC E1F LISPSYS 2 FORWARDED-ARG "utf8"
+[LISPSYS 2 forward] ENC E1F w SIZE 4
+[LISPSYS 2 forward] ENC E1F a SIZE 2
+#+end_example
+Exactly the expectation: at LISPSYS 0 nothing is forwarded and ONE warning is
+given (for both the "w" and the "a"); at LISPSYS 1 / 2 "w" writes UTF-8 (4
+bytes for "A" e-acute "B") and "a" appends UTF-8 (2 bytes for e-acute), with
+no warning. The AutoCAD forwarding of -Efile-write UTF-8, "w" and "a"
+(alfe 2.3.9), is confirmed in the CAD. The same job repeats the append
+measurement: open-a-utf8 SIZES (4 6) and open-a-utf8-bom SIZES (7 9) at
+LISPSYS 1 / 2, "nombre d'arguments trop important" at 0. (Code loaded by the
+-l file itself is still not rewritten: alfe-efile-write-not-applied-to-l-file.)
+
+** The LOG step, re-run (jobs 17027024819 AutoCAD, 17027024818 BricsCAD V25)
+
+- AutoCAD 2022 (job 17027024819): with ERROR lines now kept, the step says why
+  it left no evidence:
+  #+begin_example
+  [LOG] ERROR protocol request 1: while loading ...\dist\encoding\log-probe.lsp (form starting at line 1) at line 1, column 1: nombre d'arguments insuffisants
+  [LOG] raw empty_129c0a04d.log: 210 bytes; first 16: 5B 20 41 75 74 6F 43 41 44 20 2D 20 54 68 75 20; first byte above 7F at offset 210: none
+  #+end_example
+  The probe form's (apply (quote princ) (list X)) calls the bootstrap's
+  fixed-arity (obj file) princ shadow on AutoCAD with one argument; APPLY
+  hides the call from the princ normalizer that pads (princ X), so the form
+  fails before the LINE command. A probe-authoring bug, not a log finding;
+  AutoCAD's log encoding stays as measured by probe-logfile (windows-1252, MR
+  !428). To make this step informative on AutoCAD the marker must not go
+  through APPLY (left as is: nothing depends on it).
+- BricsCAD V25 (job 17027024818) repeats the 2026-10-08 result byte for byte:
+  raw log 475 bytes, first 16 bytes 0D 0A 2D ..., first byte above 7F at
+  offset 143 in 0D 0A 44 E9 70 61 72 74 -- windows-1252, no BOM.
+
+** Still open here
+
+Only the BricsCAD/Windows ",ccs=" append (probe-open-encoding in
+vendor:probes:bricscad, job 17027024838, running): keep or stop alfe's ,ccs=
+forwarding on "a".
+
+* Measured 2026-10-08 -- the BricsCAD ",ccs=" append (probe:suite:bricscad:windows)
+
+Job 17027935338 (probe:suite:bricscad:windows, MR !464 pipeline 2926085769,
+branch at ff85b2f0; ACADVER "25.0 BricsCAD", LISPSYS 0), results
+probe-results/bricscad/ms-windows/20261008T112520Z/results.sexp, suite
+open-encoding ("A" e-acute "B" written with the first mode, one e-acute
+appended with the second; (size-after-write size-after-append), then a plain
+(open f "r") read-back):
+#+begin_example
+"w,ccs=UTF-8" then "a,ccs=UTF-8"       (7 9)   read (65 195 169 66 195 169)
+"w,ccs=UTF-16LE" then "a,ccs=UTF-16LE" (8 10)  read (65 233 0 66 0 233 0)
+"w,ccs=UTF-8" then a plain "a"         (7 8)   read (65 195 169 66 233)
+"w" "utf8" then "a" "utf8"             (3 4)   read (65 233 66 233)
+#+end_example
+So BricsCAD V25 on Windows writes NO second BOM on an append with ",ccs="
+(UTF-8 +2 bytes, UTF-16LE +2 bytes for one e-acute; the read-back has no
+EF BB BF / FF FE in the middle), while a plain "a" on the same UTF-8 file
+appends the cp1252 byte E9 -- a mixed file. The ",ccs=" forwarding on "a" is
+therefore right and is KEPT (alfe unchanged; backend-cad-common.lisp comment,
+alfe user manual and the spec's OPEN "Measured" subsection record it). "utf8"
+on "w"/"a" stays without effect on BricsCAD (cp1252), as measured before.
+
+Found on the way: clautolisp under bricscad-v25 writes NO BOM for
+"w,ccs=UTF-8" / "w,ccs=UTF-16LE" (BricsCAD writes one) --
+open-ccs-bom-bricscad-windows-divergence.
+
+* Resolution (2026-10-08, clautolisp 2.3.9 / alfe 2.3.9) -- DONE
+
+Every measurement this ticket waited for is in, and acted on:
+- source, file, console, cadstdio, log, terminal: situations, CLI (section 4),
+  plumbing (section 6) and the measured defaults (section 7, E1-E5) done in
+  the earlier sections;
+- log: BricsCAD V25 Windows windows-1252 without a BOM (jobs 16998925784,
+  17027024818), AutoCAD 2022 windows-1252 (MR !428), BricsCAD V26 macOS none
+  in batch; alfe --cad-log's default matches;
+- file write forwarding: AutoCAD "utf8" on "w" and "a" at LISPSYS 1/2,
+  verified end to end (job 17027024820); BricsCAD/Windows ",ccs=" on "w" and
+  "a", the append measured above.
+Follow-ups filed as their own tickets: alfe-efile-write-not-applied-to-l-file,
+cador-bricscad-windows-log-encoding, open-ccs-bom-bricscad-windows-divergence.

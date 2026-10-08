@@ -1,0 +1,285 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-curve-length-and-sampling — ARC length 0.274 and NIL sampling: vlax-curve-* read ARC angles as degrees and measured bulges along their chords
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: curve-geometry:probe:* second round (thresholds; the first round ran 2026-10-08)
+#+BRANCH: fix-cador-arc-curve-geometry
+#+DATE: 2026-10-08
+
+* Observed
+
+Downstream SCHMS CI job 529315 (clautolisp / alfe 2.3.1, cador host through
+=alfe --clautolisp=), suite =[geometrie-cad]=:
+
+#+begin_example
+FAIL [geometrie-cad] arc-et-polyligne-a-bulge-exposent-leur-geometrie -- longueur ARC obtenue: 0.27415567780803773
+FAIL [geometrie-cad] echantillonnage-traverse-plusieurs-maillons -- MAX expects a number, got NIL.
+#+end_example
+
+("ARC and bulge polyline expose their geometry -- ARC length obtained: 0.274";
+"sampling traverses several links".) The same suite's line chaining,
+degree-3 junction and closed-loop tests pass: they only use LINEs.
+
+* Reproduction (before the fix)
+
+#+begin_src lisp
+(setq e (entmakex '((0 . "ARC") (10 0.0 0.0 0.0) (40 . 10.0)
+                    (50 . 0.0) (51 . 1.5707963267948966))))
+(vlax-curve-getEndParam e)                                  ; 0.027415567780803774
+(vlax-curve-getDistAtParam e (vlax-curve-getEndParam e))    ; 0.27415567780803773  <- the report
+(vlax-curve-getEndPoint e)                                  ; (9.996 0.274 0.0)
+(vlax-curve-getDistAtPoint e '(0.0 10.0 0.0))               ; nil                  <- MAX got NIL
+(vla-get-ArcLength (vlax-ename->vla-object e))              ; error: no property named ARCLENGTH
+#+end_example
+
+The reported value is exact: 10 * (pi/2) * (pi/180) = 0.27415567780803773,
+an R 10 quarter ARC whose length was read through
+=vlax-curve-getDistAtParam= at =vlax-curve-getEndParam= (=getPerimeter= gave
+the same number). The sampling test walks a chain of links and measures the
+position of each link end with =vlax-curve-getDistAtPoint= (or
+=getParamAtPoint=): the true end point of the arc was not on the mis-scaled
+arc, so the call answered =nil= and the following =max= failed.
+
+* Cause
+
+=%parse-curve= (=autolisp-builtins-core/source/api.lisp=, the vlax-curve-*
+model) multiplied the ARC's 50/51 groups by pi/180, as if they were DXF-FILE
+degrees. entget / entmake / the ARC command / ActiveX all carry RADIANS, so
+every ARC was 180/pi times too short in sweep: wrong params, lengths, end
+point, and "not on the curve" for its real points. The unit test that should
+have caught it built its fixture with =(51 . 90.0)=, i.e. it encoded the same
+misconception.
+
+Further defects of the same model, found while auditing every way AutoLISP
+reads curve geometry on cador:
+
+- a CIRCLE's parameter was its arc length (end param 2piR), not its angle
+  (end param 2pi);
+- bulge segments of LWPOLYLINE / POLYLINE were measured along their chords
+  (length, params, points, area, first derivative);
+- the 42 groups were collected without regard to which vertex they follow;
+- a 2D (heavy) POLYLINE had no vertices (entget of the header carries none),
+  so every vlax-curve-* answered nil;
+- parameters / distances outside the curve were not refused (a polyline
+  getParamAtDist past the end returned the end param), and a param or dist
+  exactly at the end could miss through rounding;
+- the open-polyline area was nil (the vendors close it with the chord);
+- the polyline first derivative was a unit vector, not d point / d param;
+- the ActiveX surface lacked ArcLength, TotalAngle, Center, Radius,
+  StartAngle, EndAngle, StartPoint/EndPoint, Length, Area, Circumference,
+  Diameter, Angle, Delta, Closed, AddArc, AddCircle, AddLightWeightPolyline,
+  GetBulge/SetBulge;
+- the ARC command stored atan's negative angles (entget reports [0, 2pi)) and
+  had no Center form.
+
+* Fix (clautolisp 2.3.8 / alfe 2.3.8)
+
+- New =autolisp-host/source/curve-geometry.lisp=: ONE analytic curve model
+  (LINE, RAY, XLINE, CIRCLE, ARC, LWPOLYLINE, 2D/3D POLYLINE with true bulge
+  arcs) with the AcDbCurve parameter conventions -- LINE param = distance;
+  CIRCLE / ARC param = angle in radians, ARC end raised by 2pi when not above
+  the start; polyline param = vertex index + fraction (proportional to the
+  swept angle on a bulge). Out-of-curve arguments answer nil; values within a
+  relative 1e-9 of an end are clamped onto it; points within 1e-6 are on the
+  curve; a 2D query point is taken in the curve's plane. =host-curve-descriptor=
+  walks a heavy POLYLINE's VERTEX entities.
+- =vlax-curve-*= (builtins-core) and the cador ActiveX properties both read
+  it, so the two surfaces cannot disagree.
+- cador: computed properties ArcLength, TotalAngle, Length, Area,
+  Circumference, Diameter, (ARC) StartPoint/EndPoint, (LINE) Angle/Delta,
+  Closed; group-backed Center, Radius, StartAngle, EndAngle, (LINE)
+  StartPoint/EndPoint; methods AddArc (angles normalised into [0, 2pi)),
+  AddCircle, AddLightWeightPolyline, GetBulge, SetBulge; ARC command
+  normalises its angles and takes "C center start end|A deg" and
+  "start C center end|A deg".
+- Tests: autolisp-host curve-geometry-tests (7 tests), builtins-core
+  vlax-curve-* tests for ARC (0-90, 315-45), CIRCLE, LINE, bulge / closed /
+  heavy polylines with boundary params, dists and vertex points, the ActiveX
+  properties and AddArc / command ARC / AddLightWeightPolyline; cador command
+  tests for the ARC normalisation and Center forms.
+
+* Probe (vendor measurement -- NOT yet run)
+
+=autolisp-front-end/tests/scenarios/entities/curve-geometry-probe.lsp=, run by
+=scripts/run-curve-geometry-probe.{sh,ps1}=, family =curve-geometry= in
+=scripts/ci-detect-probe-changes.py=, jobs in =.gitlab/native.yml=:
+
+- =curve-geometry:probe:bricscad:macos=
+- =curve-geometry:probe:bricscad:windows=
+- =curve-geometry:probe:autocad:windows=
+- =curve-geometry:probe:accoreconsole:windows=
+
+(automatic on a merge request that changes the probe, else manual; soft).
+Output: =dist/curve-geometry/<backend>-<os>.txt=, one =CURVE= line per case.
+
+* TO MEASURE (the fix follows the documentation; these points are not yet
+  confirmed on a vendor)
+
+1. ARC params = angles, end param raised by 2pi for 315-45 (doc: yes).
+2. Out-of-range param / dist: nil (as clautolisp) or an error, or
+   extrapolation? (=getPointAtParam= past the end, =getDistAtParam= below the
+   start, =getParamAtDist= past the length, and =getPointAtParam= of an ARC
+   315-45 at 0.1 -- an angle on the arc but below the start param.)
+3. Tolerance at the ends: =getParamAtDist= at length + 1e-9; =getParamAtPoint=
+   with a 1e-7 and a 1e-4 offset (clautolisp: on the curve within 1e-6).
+4. Bulge segment parameterisation: is the fraction proportional to the swept
+   angle (=getPointAtParam 0.5= = arc midpoint, =getPointAtParam 0.25=)?
+5. Polyline first / second derivatives: d point / d param (clautolisp:
+   chord vector on a line segment, R*theta*tangent on an arc) or unit?
+6. Open polyline / ARC =getArea= (clautolisp: closed by the chord; ARC =
+   circular segment).
+7. A 2D query point on an elevated LWPOLYLINE (clautolisp: taken in the
+   plane), and a 3D point off the plane.
+8. entmake of an ARC with angles outside [0, 2pi): normalised by entget?
+   (clautolisp stores them as given and normalises only in the curve model.)
+9. vla-AddArc with a negative start angle: stored normalised?
+10. The ARC command's Center forms (C center start end, C ... A 90).
+11. Which ActiveX properties exist on which kind (ARC has no Length, LINE
+    no Area -- clautolisp errors there), and whether AcCoreConsole reaches
+    vlax-curve-* at all without COM.
+12. =vlax-curve-getPerimeter= -- does either vendor define it?
+13. =Coordinates= (not modelled by cador yet).
+14. CIRCLE =getParamAtPoint= just below angle 0 (clautolisp: 0, not 2pi).
+
+When the jobs have run: compare each CURVE line with the clautolisp column,
+fix the divergences (version-gated if AutoCAD and BricsCAD differ), and close.
+
+* Related, filed separately
+
+- =dxf-file-angle-units.issue=: a DXF FILE stores ARC/TEXT/INSERT angles in
+  degrees, and clautolisp's DXF codec copies them verbatim into entget (no
+  degrees <-> radians conversion on read or write).
+
+* Measured 2026-10-08 (first probe round, MR !463 pipeline, SHA 8a0a5876)
+
+Jobs: =curve-geometry:probe:autocad:windows= 17026948757 (AutoCAD 2022 GUI),
+=curve-geometry:probe:accoreconsole:windows= 17026948758 (AcCoreConsole 2022),
+=curve-geometry:probe:bricscad:windows= 17026948756 (BricsCAD V25),
+=curve-geometry:probe:bricscad:macos= 17026948755 (BricsCAD V26). Each wrote
+=dist/curve-geometry/<backend>-<os>.txt= (764 CURVE lines; AcCoreConsole 718:
+=vla-AddArc= has no COM there). The two BricsCAD versions answered
+identically everywhere; AutoCAD GUI and AcCoreConsole identically wherever
+COM is not involved.
+
+Two artefacts of the run, not of the curve model:
+- On AutoCAD the probe's 16/17-significant-digit literals (1.5707963267948966,
+  0.7853981633974483, 5.497787143782138) arrived as 1.5708 / 0.785398 /
+  5.49779 (entget of the entmade ARC: =(51 . 1.5708)=), so every AutoCAD ARC
+  value is that of the rounded angles. The clautolisp column was compared with
+  a copy of the probe carrying the same rounded constants. Measured in the
+  second round (=reader= cases); cause found in alfe, see
+  alfe-cad-transport-rounds-reals.
+- The Windows reports are a UTF-8 BOM followed by a UTF-16LE body
+  (=Tee-Object -Append= under PowerShell 5), so their =CURVE-DONE= line was
+  not seen and a spurious =CURVE-INCOMPLETE= was appended. Fixed in
+  =run-curve-geometry-probe.ps1= (=Add-Content -Encoding utf8=).
+
+Answers to the 14 TO MEASURE points (A = AutoCAD GUI + AcCoreConsole, B =
+BricsCAD V25 + V26; a CURVE line is cited as =<entity> <expression>=):
+
+1. ARC params are angles: A and B. =arc-315-45 (vlax-curve-getStartParam e)= =
+   5.4978, =getEndParam= = 7.0686 (45 deg + 2pi). Same as clautolisp.
+2. Out of range -- per entity and product:
+   - LINE: dist <-> param extrapolate on A and B (=line-10 getDistAtParam e
+     (- start 0.1)= -0.1, =(+ end 0.1)= 10.1, =getParamAtDist e -1.0= -1);
+     =getPointAtParam= outside: nil on both.
+   - CIRCLE: =getDistAtParam= extrapolates (R p) on both; =getPointAtParam=
+     any angle; =getParamAtDist= past 2piR: A wraps (len + 1 -> 0.2, -1 ->
+     2pi - 0.2; exactly 2piR stays 2pi), B extrapolates (6.4832, -0.2).
+   - ARC: =getDistAtParam= A extrapolates R (p - start) (=arc-0-90 ... (-
+     start 0.1)= -1; =arc-315-45 getDistAtParam e 0.1= -53.98, no wrap), B
+     nil; =getParamAtDist= past the ends A extrapolates (1.6708), B answers
+     the ARC LENGTH (15.70796 for len + 1 and for -1); =getPointAtParam= on
+     both: any angle on the arc modulo 2pi (=arc-315-45 getPointAtParam e 0.1=
+     -> (9.95 0.998 0)), nil off the arc (=arc-0-90 ... (+ end 0.5)=).
+   - LWPOLYLINE: nil outside on both, except B =getParamAtDist= far past an
+     end -> the LENGTH (25.70796).
+   - 2D POLYLINE: A extrapolates BELOW the start along the first segment
+     (=poly2d-bulge getDistAtParam e -0.1= -1.5708, =getPointAtParam e -0.5=
+     (5 5 0)), nil above the end; B nil on both sides.
+3. End tolerance: dist + 1e-9 -> ARC start + d/R (extrapolated, A and B), LINE
+   10.000000001, CIRCLE A 2e-10 (wrapped) / B 2pi + 2e-10, LWPOLYLINE the end
+   param (A and B), 2D POLYLINE A nil -- even at EXACTLY the length
+   (=getParamAtDist= and =getPointAtDist= nil) -- B the end param. Points:
+   1e-7 above the end is OFF an ARC / LINE / CIRCLE / 2D POLYLINE on A (nil);
+   A's LWPOLYLINE ignores Z altogether (1e-4 above -> the end param); B
+   accepts 1e-7 above an LWPOLYLINE, not 1e-4.
+4. Bulge parameter proportional to the swept angle: A and B
+   (=lwpoly-bulge getPointAtParam e 0.5= (5 -5 0), =0.25= (1.4645 -3.5355 0)).
+5. Derivatives: LINE first derivative END - START (10 0 0), not the unit
+   vector (A and B); straight polyline segment: the chord vector; bulge
+   segment: tangent of length R (d/d angle), oriented by the travel ((0 -5 0)
+   at the start of bulge 1, (0 5 0) of bulge -1). Second derivative on a
+   bulge: B -R (cos, sin); A the same times the sign of the bulge (bulge -1:
+   A (-5 0 0), B (5 0 0)). A's LWPOLYLINE second derivative carries the
+   ELEVATION as Z (=lwpoly-elevation-5 getSecondDeriv= (0 0 5); B (0 0 0)).
+6. =getArea=: open polyline closed by the chord (89.27 on both), ARC the
+   circular segment (28.54), LINE 0 (not nil); B answers 0 for an ARC whose
+   stored angles are outside [0, 2pi).
+7. 2D / off-plane points on the LWPOLYLINE at elevation 5: A =(4 0)= -> 0.4 and
+   =(4 0 0)= -> 0.4 (Z ignored); B nil for both (a 2D point is at Z 0).
+8. entmake of an ARC with (50 . -pi/4) (51 . 7.0): A stores 5.4978 / 0.7168
+   (normalised); B keeps -0.785398 / 7 and measures from it (start param
+   -0.785398, end param 0.716815, area 0).
+9. vla-AddArc with start -pi/4: both store 5.497787 (normalised).
+   AcCoreConsole cannot run it (no COM).
+10. ARC command Center forms (=_C center start end=, =_C center start _A 90=)
+    and the 3-point form with negative atan angles: the same entget on all
+    four.
+11. ActiveX properties: ARC has ArcLength, TotalAngle, StartAngle, EndAngle,
+    StartPoint, EndPoint, Center, Radius, Area and NO Length; LINE has Length,
+    Angle, Delta and NO Area; CIRCLE has Area, Circumference, Diameter and NO
+    Length; LWPOLYLINE Length, Area, Closed, Coordinates, GetBulge; 2D
+    POLYLINE Length, Area. AcCoreConsole: =vlax-ename->vla-object= fails, so
+    every vla-* / vlax-get errors there, while =vlax-curve-*= on an ENAME
+    works.
+12. =vlax-curve-getPerimeter=: B defines it; A "no function definition". The
+    spec already lists it BricsCAD-only, so clautolisp warns
+    =[vendor-operator]= under the AutoCAD / strict dialects and proceeds (the
+    project's vendor-only-operator convention) -- unchanged.
+13. =Coordinates= of the LWPOLYLINE: =(0 0 10 0 10 10)= on A and B.
+14. CIRCLE =getParamAtPoint '(5 -1e-12 0)=: A 6.283185307179387 (no snap), B 0.
+
+Also measured: =vlax-curve-isPeriodic= is T for a CLOSED polyline (A and B);
+=getClosestPointTo= with extend is NOT extended on an LWPOLYLINE but IS on
+the straight end segment of a 2D POLYLINE (=(1000 1000 0) T= -> (10 1000 0));
+B answers 0 (not nil) for a point off a LINE or a polyline lying in Z = 0
+(=line-10 getParamAtPoint e '(1000 1000 0)= -> 0), nil when elevated.
+
+** What changed (clautolisp 2.3.8, second commit)
+
+- =curve-geometry.lisp= implements every rule above, selected by
+  =current-curve-product= (:bricscad under a BricsCAD dialect, :autocad --
+  AutoCAD being the behavioural template -- under strict / autocad /
+  clautolisp / lax). Point tolerance 1e-10 (widened by 1e-14 x the
+  coordinates' magnitude); BricsCAD LWPOLYLINE 1e-6; BricsCAD getParamAtDist
+  "far past" threshold 1e-6 -- the last two bracketed, not measured.
+- cador: ENTMAKE / ENTMAKEX normalise an ARC's 50/51 under every dialect but
+  the BricsCAD ones; the LWPOLYLINE =Coordinates= property (read and write).
+- Checked by running the same probe on the built clautolisp-sbcl:
+  =--dialect bricscad= against both BricsCAD reports: 0 differences;
+  =--dialect autocad= (and the default strict) with the AutoCAD-rounded
+  constants against the AutoCAD report: 0 differences but the 15
+  =getPerimeter= lines (item 12); against AcCoreConsole, in addition only the
+  COM lines (clautolisp has COM).
+
+** Remaining -- the second probe round (added to the same probe; NEXT until run)
+
+1. =reader= cases: the rounded literals are alfe's, not AutoCAD's reader:
+   alfe's CAD-side =autolisp-eval-request-form= re-prints every loaded
+   top-level form with =vl-princ-to-string= (6 significant digits on AutoCAD,
+   14 on BricsCAD) -- ticketed as alfe-cad-transport-rounds-reals (P1). The
+   =reader= cases (=cg-x= at top level vs the same literal read from a string)
+   confirm it per CAD.
+2. =tol-*= cases: the point tolerance (Z and in-plane offsets 1e-11 .. 1e-5)
+   on ARC, LINE (Z 0 and Z 5), LWPOLYLINE (elevation 0 and 5) -- replaces the
+   1e-10 / 1e-6 assumptions, and settles whether B's "0 when off" holds for a
+   LINE at Z 5.
+3. =over-*= cases: B's getParamAtDist threshold between "like at the end" and
+   "the length" (1e-8 .. 1e-2), A's LWPOLYLINE clamp tolerance, A's 2D
+   POLYLINE strictness just below the length.
+4. =lwpoly-bulge-elevation-5=: does A's elevation-as-Z second derivative hold
+   on a bulge segment?
+5. =poly2d-coordinates=: the 2D POLYLINE =Coordinates= (not modelled; cador
+   errors today).

@@ -137,8 +137,10 @@ if ($Backend -ne "clautolisp") {
 # install). Reported: what --cad-log decoded (the code points of every line
 # holding a character above 127) and the RAW bytes of the log file alfe read
 # -- its size, its first 16 bytes (a BOM?), and 8 bytes around its first byte
-# above 127 -- which settles BricsCAD's log encoding (windows-1252 or UTF-8
-# with a BOM, left open by probe-logfile).
+# above 127. MEASURED 2026-10-08 (job 16998925784): BricsCAD V25 writes
+# windows-1252 without a BOM. The AutoCAD run of that day logged neither the
+# marker nor the LINE (no "LOG WRITTEN" either): the form failed in the CAD,
+# and ERROR lines are now kept in the report so the next run says why.
 if ($Backend -ne "clautolisp") {
   $logLsp = Join-Path $outDir "log-probe.lsp"
   $logForm = '(progn (apply (quote princ) (list (strcat "\nLOG-MARKER caf" (chr 233) " eur" (chr 8364) "\n"))) ' +
@@ -155,7 +157,7 @@ if ($Backend -ne "clautolisp") {
   "########## LOG: --cad-log ##########" | Tee-Object -FilePath $report -Append
   try {
     (& $alfe @logArgs 2>&1) |
-      Where-Object { "$_" -match 'LOG |cad-log|BOOTSTRAP-FAILED|FAILED' } |
+      Where-Object { "$_" -match 'LOG |cad-log|ERROR|BOOTSTRAP-FAILED|FAILED' } |
       ForEach-Object { "[LOG] $_" } |
       Tee-Object -FilePath $report -Append
   } catch { "[LOG] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }

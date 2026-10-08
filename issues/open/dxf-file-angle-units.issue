@@ -1,0 +1,55 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: dxf-file-angle-units — the DXF codec copies file angles (degrees) into entget data (radians) unconverted
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-dxf-file-angle-units
+#+DATE: 2026-10-08
+
+* Symptom
+
+A DXF file stores most entity angles in DEGREES (ARC 50/51, TEXT / MTEXT /
+ATTRIB / ATTDEF / INSERT / SHAPE 50, DIMENSION 53, ...); AutoLISP's entget
+reports them in RADIANS. clautolisp's DXF codec
+(=clautolisp/drawing/source/dxf.lisp=) has no degrees <-> radians conversion
+at all, on read or on write, so:
+
+- a drawing written by AutoCAD / BricsCAD and opened in clautolisp shows an
+  ARC of 0..90 degrees as =(50 . 0.0) (51 . 90.0)= in entget -- 90 RADIANS;
+  every vlax-curve-* and ActiveX value derived from it is wrong;
+- a drawing clautolisp writes stores radians where a vendor reads degrees
+  (an ARC of 0..pi/2 opens in AutoCAD as 0..1.57 degrees).
+
+Round trips clautolisp -> clautolisp are consistent, which is why no test
+saw it.
+
+* Reproduction
+
+#+begin_src lisp
+(with-input-from-string
+    (s (format nil "0~%SECTION~%2~%ENTITIES~%0~%ARC~%5~%2A~%8~%0~%10~%0.0~%20~%0.0~%30~%0.0~%40~%10.0~%50~%0.0~%51~%90.0~%0~%ENDSEC~%0~%EOF~%"))
+  (clautolisp.drawing:dxf-read-drawing-from-stream s))
+;; entity data: ((5 . "2A") (0 . "ARC") (8 . "0") (10 0.0 0.0 0.0) (40 . 10.0)
+;;               (50 . 0.0) (51 . 90.0))          <- entget would say 1.5708
+#+end_src
+
+* Cause
+
+=dxf-parse-value= / =dxf-write-data-pair= treat every real group the same.
+The degree-valued groups depend on the entity type (ELLIPSE 41/42 are
+radians -- parameters, not angles; LWPOLYLINE 42 is a bulge), so the
+conversion needs a per-type table.
+
+* Proposal
+
+A per-entity-type table of degree groups (from the DXF reference), applied
+in =dxf-load-entities= / =dxf-load-blocks= (degrees -> radians) and in the
+entity writer (radians -> degrees). Check the DWG codec (LibreDWG reports
+radians) stays untouched. Tests: read a vendor-written DXF with an ARC, a
+rotated TEXT and an INSERT; write and re-read; compare with a probe-captured
+entget.
+
+Found while fixing cador-curve-length-and-sampling (the vlax-curve-* model
+used to convert ARC angles from degrees, which happened to match a
+DXF-loaded drawing but not entmake / command / ActiveX).

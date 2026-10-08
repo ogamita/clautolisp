@@ -1,0 +1,9 @@
+{
+  "product": "autocad",
+  "platform": "ms-windows",
+  "timestamp_utc": "20261008T102105Z",
+  "status": "completed",
+  "exit_code": 0,
+  "runner_template": "\"C:/Program Files/Autodesk/AutoCAD 2022/accoreconsole.exe\" /s __SCRIPT_FILE__",
+  "result_file": "probe-results/autocad/ms-windows/20261008T102105Z/results.sexp"
+}

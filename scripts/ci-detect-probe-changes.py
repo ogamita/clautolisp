@@ -86,7 +86,10 @@ FAMILIES = {
     "optkw": [f"{ENTITIES}/optkw-probe.lsp", "scripts/run-optkw-probe.*"],
     "pathname": [f"{ENTITIES}/pathname-probe.lsp",
                  "scripts/run-pathname-probe.*"],
+    "curve-geometry": [f"{ENTITIES}/curve-geometry-probe.lsp",
+                       "scripts/run-curve-geometry-probe.*"],
     "sysvars": ["autolisp-spec/autolisp/dump-sysvars.lsp"],
+    "entget-pointers": ["probes/sources/probe-entget-pointers.lsp"],
 }
 
 # What a probe file looks like; every tracked match must be in a family or

@@ -49,6 +49,44 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *Curve geometry follows the vendor conventions* (2.3.8): an ARC's
+  ~vlax-curve-*~ parameters are its angles in radians and its lengths are
+  R * sweep (an ARC of R 10 over 90 degrees used to measure 0.274, its
+  angles being read as degrees, and its true end point was "not on the
+  curve"); a CIRCLE's parameter is its angle; bulge segments of LWPOLYLINE
+  and 2D POLYLINE are true arcs (they were measured along their chords);
+  a parameter, distance or point exactly at a vertex or at the end of the
+  curve answers a number. New ActiveX surface on the mock host:
+  ~ArcLength~, ~TotalAngle~, ~Center~, ~Radius~, ~StartAngle~, ~EndAngle~,
+  ~StartPoint~, ~EndPoint~, ~Length~, ~Area~, ~Circumference~, ~Diameter~,
+  ~Angle~, ~Delta~, ~Closed~, ~AddArc~, ~AddCircle~,
+  ~AddLightWeightPolyline~, ~GetBulge~ / ~SetBulge~; the ~ARC~ command
+  takes the Center forms. See the user manual's ActiveX section.
+  The edge cases follow what AutoCAD 2022 and BricsCAD V25/V26 were MEASURED
+  to answer, per product dialect: out-of-range params and distances (LINE /
+  CIRCLE / AutoCAD ARC extrapolate, polylines answer nil, BricsCAD answers the
+  length far past an end), the point tolerance, derivatives (a LINE's is END -
+  START, a bulge's has length R), the area of a LINE (0), closed polylines
+  being periodic, and ENTMAKE normalising an ARC's angles except under a
+  BricsCAD dialect; LWPOLYLINE ~Coordinates~ is new.
+
+- *cador: DXF pointer group codes come back as entity names* (2.3.7):
+  ~entget~, ~dictsearch~, ~dictnext~, ~tblsearch~, ~tblnext~ and the
+  entmake/entmod echo return the codes 330-369, 390-399 and 480-481 (owner,
+  soft/hard pointer, dictionary entries, plot style) as ENAMEs, so
+  ~(entget (cdr (assoc 330 data)))~ works -- they were handle strings
+  (=ENTGET expects an ENAME, got "41"=). 5, 105 and the xdata 1005 stay
+  strings; 320-329 are strings as on AutoCAD, enames under the BricsCAD
+  dialects as on BricsCAD; the null owner of the named-object dictionary
+  is =<Entity name: 0>= (AutoCAD) or absent (BricsCAD dialects). A handle
+  string in a pointer code is now an error in entmake/entmakex/entmod
+  under the AutoCAD and BricsCAD dialects, as on both vendors (clautolisp
+  and strict warn and store it). An XRECORD reads back with ~(280 . 1)~
+  after its ~(100 . "AcDbXrecord")~ marker, as on both vendors; without
+  the marker it is refused except under BricsCAD / lax; objects no longer
+  carry a trailing ~(100 . "AcDbObject")~. All measured on AutoCAD 2022
+  and BricsCAD V25 / V26. user-manual § /DXF pointer group codes under
+  cador/.
 - *The shipped LibreDWG reports its own version* (2.2.230): =LibreDWG
   0.14= (its =PACKAGE_VERSION=, =dwg_api_version_string()=, and the
   =999= comment of the DXF it writes), where it used to report
@@ -1936,13 +1974,18 @@ file or COM), and forwards the workload.
 - ~--cad-log FILE~ (alfe 2.2.231): after an =--autocad= / =--bricscad= run,
   alfe copies the CAD's own command-history log (=LOGFILEMODE=, which it
   directs into its workdir) to FILE in UTF-8, decoded per ~-Elog~, else as
-  measured (a BOM's encoding; windows-1252 on MS-Windows). No log, or
-  =--clautolisp=: a warning and no file. § /The CAD's log: --cad-log/.
-- ~-Efile-write UTF-8~ now reaches AutoCAD (alfe 2.2.231): in code loaded
-  with =alfe-load=, a plain ~(open f "w")~ becomes ~(open f "w" "utf8")~
-  when the running AutoCAD's =LISPSYS= is 1 or 2 (measured: UTF-8 without a
-  BOM); at =LISPSYS= 0, and for ~"a"~ (unmeasured), it is warned about once
-  and the plain mode is used.
+  measured (a BOM's encoding; windows-1252 on MS-Windows, which both
+  Windows CADs write: AutoCAD 2022, and BricsCAD V25 -- measured with alfe
+  2.3.9 to write windows-1252 without a BOM). No log, or =--clautolisp=: a
+  warning and no file. § /The CAD's log: --cad-log/.
+- ~-Efile-write UTF-8~ now reaches AutoCAD (alfe 2.2.231; ~"a"~ since
+  2.3.9): in code loaded with =alfe-load=, a plain ~(open f "w")~ /
+  ~(open f "a")~ becomes ~(open f "w" "utf8")~ / ~(open f "a" "utf8")~ when
+  the running AutoCAD's =LISPSYS= is 1 or 2 (measured: UTF-8 without a BOM,
+  and an append never adds a second BOM); at =LISPSYS= 0 it is warned about
+  once and the plain mode is used. The file given to =-l= is itself not
+  rewritten, so its own ~open~ calls are not forwarded: have it
+  =alfe-load= the code that writes.
 - Per-*situation* encoding CLI: ~-E<situation>[-<dir>] ENC~ /
   ~--<situation>-encoding ENC~ for ~source~ / ~file~ / ~console~ /
   ~cadstdio~ / ~log~ / ~terminal~, plus a bare ~-E ENC~ that sets them

@@ -71,6 +71,24 @@
     (is (= 1 (count "AcDbEntity" data :key #'cdr :test #'equal)))
     (is (= 1 (count "AcDbLine" data :key #'cdr :test #'equal)))))
 
+(test validate-xrecord-puts-marker-and-280-before-the-data
+  ;; ENTGET of an XRECORD reads (100 . "AcDbXrecord") (280 . 1) <data>:
+  ;; the 280 cloning flag is supplied when absent, the marker precedes
+  ;; the data, and no AcDbObject marker is added (measured 2026-10-08, see
+  ;; cador-entget-pointer-codes-are-handle-strings.issue).
+  (let ((data (validate-entity-dxf '((0 . "XRECORD") (100 . "AcDbXrecord")
+                                     (1 . "Classe") (70 . 1)))))
+    (is (equal '((0 . "XRECORD") (100 . "AcDbXrecord") (280 . 1)
+                 (1 . "Classe") (70 . 1))
+               data)))
+  ;; An explicit 280 right after the marker is kept as the flag.
+  (is (equal '((0 . "XRECORD") (100 . "AcDbXrecord") (280 . 0) (1 . "x"))
+             (validate-entity-dxf '((0 . "XRECORD") (100 . "AcDbXrecord")
+                                    (280 . 0) (1 . "x")))))
+  ;; A marker-less create (lenient dialects) gets marker + flag up front.
+  (is (equal '((0 . "XRECORD") (100 . "AcDbXrecord") (280 . 1) (1 . "x"))
+             (validate-entity-dxf '((0 . "XRECORD") (1 . "x"))))))
+
 (test validate-keeps-explicit-layer
   (multiple-value-bind (data reason)
       (validate-entity-dxf '((0 . "POINT") (8 . "MyLayer") (10 0.0d0 0.0d0 0.0d0)))
@@ -102,8 +120,8 @@
 (test entity-family-expected-markers-lists-base-plus-subclasses
   (is (equal '("AcDbEntity" "AcDbEllipse")
              (entity-family-expected-markers (find-entity-family "ELLIPSE"))))
-  ;; A non-graphical object gets the AcDbObject base marker.
-  (is (equal '("AcDbObject" "AcDbXrecord")
+  ;; A non-graphical object has no base marker (no AcDbObject in DXF).
+  (is (equal '("AcDbXrecord")
              (entity-family-expected-markers (find-entity-family "XRECORD")))))
 
 (test entity-dxf-missing-markers-reports-absent-r13-markers

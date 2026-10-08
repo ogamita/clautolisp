@@ -577,6 +577,38 @@ completes is the related, deferred check."
    ("clautolisp: normative rules" . "autolisp-spec chapter 25, \"Normative Rules: Dialect Portability Warnings\"")))
 
 (register-dialect-warning
+ :tag "entmake-pointer-value"
+ :title "ENTMAKE / ENTMAKEX / ENTMOD with a handle string in a pointer group code"
+ :kind :portability
+ :message "~A: ~A -- AutoCAD and BricsCAD refuse this group (a pointer code takes an ENAME, AutoCAD's 320-329 a handle string); clautolisp stores it as given, which is not portable."
+ :arguments "the operator (ENTMAKE / ENTMAKEX / ENTMOD) and the offending pair"
+ :example ": [entmake-pointer-value] ENTMAKEX: (340 . \"2A\") -- AutoCAD and BricsCAD refuse this group (a pointer code takes an ENAME, AutoCAD's 320-329 a handle string); clautolisp stores it as given, which is not portable."
+ :dialects
+ "MEASURED 2026-10-08 (probes/sources/probe-entget-pointers.lsp; AutoCAD
+2022 job 17026569911, BricsCAD V25 job 17026569912, BricsCAD V26 job
+17026569913): both vendors SIGNAL AN ERROR when ENTMAKEX or ENTMOD receives
+a handle string in a pointer group code (330-369, 390-399, 480-481) --
+AutoCAD \"bad DXF group: (340 . \\\"2A2\\\")\", BricsCAD \"bad argument
+type <(340 . \\\"95\\\")> ; expected ENTITYNAME at [invalid DXF/XED
+data]\". 320-329 differ: AutoCAD wants a string there and refuses an ename;
+BricsCAD wants an ename and refuses a string. clautolisp before 2.3.7 stored
+the handle string, and entget returned it as a string.
+
+- --dialect autocad-* / bricscad-* -- the vendor's error, worded as the
+  vendor words it; silent otherwise.
+- --dialect clautolisp -- store the value as given, and WARN.
+- --strict -- store it, and WARN.
+- --lax -- store it, silent."
+ :rationale
+ "A program that builds a pointer from (cdr (assoc 5 ...)) instead of the
+ename works on cador and fails on both CADs; the warning names the pair before
+a real CAD job does."
+ :references
+ '(("clautolisp: emitted by" . "clautolisp/cador/source/entity-api.lisp, EMIT-ENTMAKE-POINTER-VALUE-WARNING")
+   ("clautolisp: the probe that measured both engines" . "probes/sources/probe-entget-pointers.lsp")
+   ("clautolisp: issue" . "issues/closed/cador-entget-pointer-codes-are-handle-strings.issue")))
+
+(register-dialect-warning
  :tag "entmod-nongraphical"
  :title "ENTMOD on a non-graphical object"
  :kind :vendor-divergence

@@ -1,0 +1,59 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-efile-write-not-applied-to-l-file — -Efile-write never reaches the OPEN calls of the -l file (or -x forms) on the CAD backends, silently
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: pjb-decision (rewrite the -l file, or document it as is)
+#+BRANCH: fix-alfe-efile-write-not-applied-to-l-file
+#+DATE: 2026-10-08
+
+* Context
+
+Found 2026-10-08 reading the end-to-end check of the AutoCAD -Efile-write
+forwarding (=encoding-situations-cli-options=, measurement 3). alfe forwards
+-Efile-write to the CAD's own OPEN by rewriting OPEN calls into the bootstrap's
+=alfe-open*= (",ccs=" on BricsCAD/Windows, the third argument "utf8" on
+AutoCAD at LISPSYS 1/2). The rewrite is done by =alfe-load= only
+(=*alfe-load-rewrite*= set, =alfe-eval-rewritten-form=).
+
+* Problem
+
+=alfe --autocad -Efile-write utf-8 -l prog.lsp= does not forward anything to
+the OPEN calls in =prog.lsp=, and says nothing. The =-l= action is sent as a
+=(load "<staged path>")= request (=backend-cad-common.lisp=, the =:load=
+branch); the CAD side evaluates it through =autolisp-eval-request-form= ->
+=autolisp-eval-load-form= -> =autolisp-source-load=, with
+=*alfe-load-rewrite*= NIL, so each form goes through
+=autolisp-eval-request-form=, which never rewrites OPEN. The same holds for
+=-x= forms and for a nested native =(load ...)= in such a file.
+
+Evidence: job 16998925786 (encoding:experiment:lispsys-bom:autocad:windows,
+pipeline 2922145991, AutoCAD 2022): =lispsys-forward-probe.lsp=, loaded with
+=-l= under =-Efile-write utf-8=, printed =FORWARDED-ARG "utf8"= (the variable
+was set) but =w SIZE 3= and =a SIZE 1= at LISPSYS 0, 1 and 2, and no WARN line
+at any level -- =alfe-open*= was never called (it warns unconditionally at
+LISPSYS 0).
+
+The user manual says the forwarding applies "in code loaded with =alfe-load="
+and that the native =load= and =-x= forms are left alone, but it never said
+the =-l= file itself is not loaded with =alfe-load= (2026-10-08: now it does,
+with the workaround: give =-l= a file that =alfe-load=-s the program).
+
+* Proposal
+
+Either (pjb):
+1. rewrite OPEN (only OPEN, only while =alfe-open-rewrite-p=) in the request
+   path too, so the =-l= file and =-x= forms are covered; the cons-identity
+   guard (=alfe-form-needs-rewrite-p=) already limits rebuilding to forms that
+   contain an OPEN call when forwarding is active. Needs a CAD run (AutoCAD and
+   BricsCAD/Windows) before it ships, since the request path's eval was the
+   one that broke on rebuilt conses ("division par zero") before the guard; or
+2. keep it as is (documented now) and warn once when -Efile-write is
+   forwarded but the run's =-l= file contains a literal OPEN call.
+
+* Acceptance criteria
+
+- =alfe --autocad -Efile-write utf-8 -l f.lsp= with =(open p "w")= in =f.lsp=
+  writes UTF-8 at LISPSYS 1/2 (option 1), or warns (option 2);
+- a unit test with the hosted clautolisp engine (as
+  =protocol-alfe-load-forwards-open-write-arg=) through the =:load= action.

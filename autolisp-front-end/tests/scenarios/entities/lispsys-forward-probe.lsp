@@ -3,15 +3,19 @@
 ;;;; "utf8" (alfe-open* in the bootstrap), checked end to end.
 ;;;;
 ;;;; scripts/run-lispsys-bom-probe.ps1 runs this once per LISPSYS level, with
-;;;; `alfe --autocad -Efile-write utf-8 -l lispsys-forward-probe.lsp'. alfe
-;;;; rewrites the literal OPEN calls below into alfe-open*, which passes "utf8"
-;;;; to a plain "w" at LISPSYS 1 / 2 and warns (WARN line on alfe's stderr)
-;;;; at LISPSYS 0 and for an "a".
+;;;; `alfe --autocad -Efile-write utf-8 -l ENTRY', where ENTRY is a one-line
+;;;; file (alfe-load "<this file>"). This file MUST be loaded with alfe-load:
+;;;; only alfe-load rewrites the literal OPEN calls below into alfe-open*. The
+;;;; -l file itself goes through the plain request path, which rewrites
+;;;; nothing -- the first run (2026-10-08, job 16998925786) loaded this file
+;;;; with -l directly and so measured the unforwarded OPEN: "w SIZE 3" and
+;;;; "a SIZE 1" at every level, no WARN (alfe-efile-write-not-applied-to-l-file).
 ;;;;
 ;;;; Prints one "ENC E1F ..." line per case with the file size:
 ;;;;   w: "A" e-acute "B" -- 3 = cp1252 (not forwarded), 4 = UTF-8 (forwarded);
 ;;;;   a: one e-acute appended to a fresh file -- 1 = cp1252, 2 = UTF-8.
-;;;; Expected: LISPSYS 0 -> w 3 + a WARN; LISPSYS 1 / 2 -> w 4; a 1 + a WARN.
+;;;; Expected: LISPSYS 0 -> w 3, a 1, one WARN naming LISPSYS (alfe's error
+;;;; channel); LISPSYS 1 / 2 -> w 4, a 2, no WARN.
 
 (defun e1f--line (text)
   (princ (strcat "\nENC E1F " text "\n")))

@@ -934,6 +934,91 @@ getcname:probe:accoreconsole:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-getcname-probe.ps1 -Backend accoreconsole
 
+# --- curve geometry: vlax-curve-* / ArcLength / bulges, measured -------------
+#
+# cador-curve-length-and-sampling.issue. SCHMS read an ARC's length as 0.274
+# (R 10, 90 degrees) and got NIL sampling a chain of curves on the cador host;
+# the fix follows the documented AcDbCurve conventions (ARC params = angles,
+# bulge segments = arcs), and these jobs MEASURE them on the vendors: every
+# vlax-curve-* on ARC (0-90, 315-45), CIRCLE, LINE, LWPOLYLINE (bulge, closed,
+# elevation) and 2D POLYLINE, at boundary params / dists and vertices, plus the
+# ArcLength / TotalAngle / Length / Area properties and how entmake / command
+# ARC / vla-AddArc store the angles. Soft: a probe measures, never gates.
+.curve-geometry-artifacts:
+  artifacts:
+    name: "curve-geometry-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/curve-geometry/]
+    expire_in: 30 days
+
+curve-geometry:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-curve-geometry-probe.sh --backend bricscad
+
+curve-geometry:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-curve-geometry-probe.ps1 -Backend bricscad
+
+curve-geometry:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-curve-geometry-probe.ps1 -Backend autocad
+
+curve-geometry:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-curve-geometry-probe.ps1 -Backend accoreconsole
+
 # --- keyboard command aliases: the .pgp harvest for cadtui -------------------
 #
 # cadtui-locale-probe-pgp-aliases.issue. The third, distinct CAD locale
@@ -1363,6 +1448,94 @@ probe:suite:bricscad:windows:
   artifacts:
     when: always
     name: "probe-suite-bricscad-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+# WHAT TYPE DOES ENTGET GIVE THE DXF POINTER GROUP CODES?
+#
+# probes/sources/probe-entget-pointers.lsp alone (PROBE_SUITES), on the three
+# CAD engines: 330/340/350/360/390/480 as ENAME or handle string, the null
+# pointer of the named-object dictionary, a pointer to an erased object,
+# 320-329, handle strings written through entmakex / entmod, and the XRECORD
+# read-back layout ((280 . 1) after the AcDbXrecord marker). The answer
+# settles the TO MEASURE points of
+# issues/closed/cador-entget-pointer-codes-are-handle-strings.issue. The same
+# suite also runs inside the full probe:suite:* jobs; these narrow jobs give
+# the answer without the rest of the suite's queue time. SOFT, like every
+# probe: it measures, it gates nothing.
+probe:entget-pointers:autocad:windows:
+  extends: .gate-windows-cad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-autocad
+  artifacts:
+    when: always
+    name: "probe-entget-pointers-autocad-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:entget-pointers:bricscad:windows:
+  extends: .gate-windows-bricscad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-entget-pointers-bricscad-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:entget-pointers:bricscad:macos:
+  extends: .gate-macos-cad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+  script:
+    # BricsCAD probes are DRIVEN BY ALFE (detect-cad.sh), as in
+    # probe:suite:bricscad:macos.
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-entget-pointers-bricscad-macos-$CI_COMMIT_SHORT_SHA"
     paths: [probe-results/]
     expire_in: 90 days
 

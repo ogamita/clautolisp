@@ -138,3 +138,62 @@
     (host-dictadd m1 (host-namedobjdict m1) (mk-str "K") (make-xrecord-ename m1))
     ;; m2's fresh root dictionary has no such entry
     (is (null (host-dictsearch m2 (host-namedobjdict m2) (mk-str "K"))))))
+
+;;; --- Pointer group codes are ENAMES (cador-entget-pointer-codes-are-handle-strings)
+
+(test dictionary-entry-pointers-are-entgetable-enames
+  (let ((mock (make-cador)))
+    (let ((nod (host-namedobjdict mock))
+          (x   (make-xrecord-ename mock "pointed")))
+      (host-dictadd mock nod (mk-str "PTR") x)
+      ;; (entget (namedobjdict)): every 350/360 entry is an ENAME that
+      ;; entget accepts; the one we added is EQ to the xrecord's ename.
+      (let* ((view (host-entget mock nod))
+             (entries (remove-if-not (lambda (p) (and (consp p) (member (car p) '(350 360))))
+                                     view)))
+        (is (plusp (length entries)))
+        (dolist (p entries)
+          (is (typep (cdr p) 'autolisp-ename))
+          (is (consp (host-entget mock (cdr p)))))
+        (is (member x (mapcar #'cdr entries) :test #'eq))
+        ;; The root dictionary's owner is the null handle: an ename (not
+        ;; a string), whose entget is NIL -- no error. Measured on AutoCAD 2022
+        ;; (2026-10-08); BricsCAD omits the pair (pointer-dialect-tests).
+        (let ((owner (cdr (assoc 330 view))))
+          (is (typep owner 'autolisp-ename))
+          (is (null (host-entget mock owner)))))
+      ;; dictsearch / dictnext member views: the owner 330 is the
+      ;; dictionary's ename, EQ to (namedobjdict).
+      (let ((found (host-dictsearch mock nod (mk-str "PTR"))))
+        (is (eq nod (cdr (assoc 330 found))))
+        (is (typep (cdr (assoc 5 found)) 'autolisp-string)))
+      (let ((walked nil))
+        (loop for v = (host-dictnext mock nod :rewind (null walked))
+              while v
+              do (setf walked t)
+                 (when (eq x (cdr (assoc -1 v)))
+                   (is (eq nod (cdr (assoc 330 v))))))
+        (is (eq t walked))))))
+
+(test xrecord-read-back-has-the-280-flag-before-its-data
+  ;; SCHMS reads an xrecord back with (cddr (member '(100 . "AcDbXrecord")
+  ;; data)), skipping the marker AND the (280 . 1) AutoCAD inserts; without
+  ;; that 280 the first data group was eaten ("Nom de classe attendu").
+  (let* ((mock (make-cador))
+         (nod (host-namedobjdict mock))
+         (x (host-entmakex mock (list (cons 0 "XRECORD")
+                                      (cons 100 "AcDbXrecord")
+                                      (cons 1 "Classe")
+                                      (cons 70 1)))))
+    (host-dictadd mock nod (mk-str "SCHMS") x)
+    (dolist (view (list (host-entget mock x)
+                        (host-dictsearch mock nod (mk-str "SCHMS"))))
+      (let ((payload (member 100 view :key #'car)))
+        (is (string= "AcDbXrecord" (autolisp-string-value (cdr (first payload)))))
+        (is (equal '(280 . 1) (second payload)))
+        (is (eql 1 (car (third payload))))
+        (is (string= "Classe" (autolisp-string-value (cdr (third payload)))))
+        (is (equal '(70 . 1) (fourth payload)))
+        (is (null (nthcdr 4 payload)))
+        ;; no AcDbObject marker anywhere
+        (is (= 1 (count 100 view :key (lambda (p) (and (consp p) (car p))))))))))
