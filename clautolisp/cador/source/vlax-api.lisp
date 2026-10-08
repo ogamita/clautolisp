@@ -694,6 +694,8 @@ handled, (values NIL NIL) otherwise."
           ((and (string-equal name "SetBulge")
                 (eq (entity-handle-kind entity) :lwpolyline))
            (values (%lwpolyline-set-bulge entity (first args) (second args)) t))
+          ((string-equal name "IntersectWith")
+           (values (%entity-intersect-with host entity args) t))
           (t (values nil nil))))))
 
 (defun %lwpolyline-vertex-tail (entity index operator-name)
@@ -732,6 +734,69 @@ handled, (values NIL NIL) otherwise."
         (setf (cdr tail) (cons (cons 42 (coerce bulge 'double-float)) (cdr tail))))
     nil))
 
+(defun %entity-intersect-with (host entity args)
+  "IntersectWith(IntersectObject, ExtendOption): the points where ENTITY
+meets the other entity, as the VARIANT-wrapped double SAFEARRAY the vendor
+returns (X1 Y1 Z1 X2 ...) -- an EMPTY one when they do not meet
+(intersect.lisp; cador-intersectwith-missing)."
+  (destructuring-bind (&optional other-vla (option 0) &rest more) args
+    (when more
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+       :invalid-com-argument
+       "IntersectWith expects (IntersectObject ExtendOption), got ~D arguments."
+       (length args)))
+    (let* ((object (resolve-vla-object host other-vla "IntersectWith"))
+           (other (or (%resolve-backing-entity host object)
+                      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                       :invalid-com-argument
+                       "IntersectWith expects an entity, got ~A."
+                       (cador-com-object-progid object))))
+           (option (cond ((null option) 0)
+                         ((and (integerp option) (<= 0 option 3)) option)
+                         (t (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                             :invalid-com-argument
+                             "IntersectWith expects an acExtendOption 0-3, got ~S."
+                             option)))))
+      (let* ((dialect (%current-dialect-name))
+             (template (and dialect
+                            (clautolisp.autolisp-reader:autolisp-dialect-template-name
+                             dialect)))
+             (bricscad (member template '(:bricscad-v26 :bricscad)))
+             (points (entity-intersect-with host entity other option
+                                            :vendor (if bricscad :bricscad :autocad))))
+        ;; The vendors find the same points but return them in different
+        ;; orders (measured; the reference says nothing): an UNRESOLVED
+        ;; divergence, so every dialect but lax says so when it shows.
+        (unless (eq template :lax)
+          (let ((theirs (entity-intersect-with host entity other option
+                                               :vendor (if bricscad :autocad :bricscad))))
+            (unless (equal points theirs)
+              (emit-intersectwith-order-divergence-warning
+               (length points) (if bricscad "BricsCAD" "AutoCAD")))))
+        (if (null points)
+            ;; The empty result: AutoCAD returns an empty array of doubles
+            ;; (8197), as the reference says; BricsCAD an empty array of
+            ;; VARIANTs (8204) -- a divergence resolved for AutoCAD.
+            (multiple-value-bind (action warn-p) (%resolved-divergence-policy dialect)
+              (when warn-p
+                (emit-intersectwith-empty-divergence-warning))
+              (%wrap-com-point '() (if (and bricscad (eq action :deviant)) :variant :double)))
+            (%wrap-com-point points))))))
+
+(defun emit-intersectwith-order-divergence-warning (count vendor)
+  (format *error-output*
+          "~&[intersectwith-order] IntersectWith: AutoCAD and BricsCAD return ~
+these ~D points in different orders (measured; the reference does not say) -- ~
+this run follows ~A. Do not rely on the order of the points.~%"
+          (floor count 3) vendor))
+
+(defun emit-intersectwith-empty-divergence-warning ()
+  (format *error-output*
+          "~&[intersectwith-empty] IntersectWith found no point: AutoCAD returns ~
+an empty array of doubles (vlax-variant-type 8197), as the reference says; ~
+BricsCAD an empty array of VARIANTs (8204). Test the upper bound, not the ~
+type.~%"))
+
 (defun %entity-fallback-method-p (host object name)
   (let ((entity (%resolve-backing-entity host object)))
     (and entity
@@ -740,7 +805,7 @@ handled, (values NIL NIL) otherwise."
              (and (member name '("GetBulge" "SetBulge") :test #'string-equal)
                   (eq (entity-handle-kind entity) :lwpolyline))
              (member name '("Delete" "Erase" "Update" "Move" "Rotate"
-                            "Copy" "GetBoundingBox")
+                            "Copy" "GetBoundingBox" "IntersectWith")
                      :test #'string-equal))
          t)))
 
@@ -905,9 +970,14 @@ NAME, or NIL."
          (cdr entry))))
 
 
-(defun %wrap-com-point (doubles)
+(defun %wrap-com-point (doubles &optional (element-type :double))
+  "DOUBLES as the VARIANT(SAFEARRAY) the vendor surface returns, through the
+builtins' wrap hook (plain list without it). ELEMENT-TYPE is the array's
+element type -- :double, or :variant for BricsCAD's empty IntersectWith."
   (let ((wrap clautolisp.autolisp-runtime:*com-point-wrap-hook*))
-    (if wrap (funcall wrap doubles) doubles)))
+    (cond ((null wrap) doubles)
+          ((eq element-type :double) (funcall wrap doubles))
+          (t (funcall wrap doubles element-type)))))
 
 (defun %maybe-com-point (value)
   "The list of CL doubles inside VALUE — a VARIANT / SAFEARRAY (via the

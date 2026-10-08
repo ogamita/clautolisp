@@ -1,0 +1,45 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vlax-vb-constants-unbound — vlax-vbInteger, vlax-vbDouble ... are nil after (vl-load-com)
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-vlax-vb-constants-unbound
+#+DATE: 2026-10-08
+
+* Symptom
+
+Found while fixing vlax-variant-type (cador-intersectwith-missing):
+
+: (vl-load-com)
+: (list vlax-vbInteger vlax-vbDouble vlax-vbString)   ; clautolisp => (nil nil nil)
+
+The specification names them as the type arguments of vlax-make-safearray,
+vlax-make-variant and vlax-variant-change-type (Function Entry:
+VLAX-MAKE-SAFEARRAY: vlax-vbInteger, vlax-vbLong, vlax-vbSingle,
+vlax-vbDouble, vlax-vbString, vlax-vbObject, vlax-vbBoolean, vlax-vbVariant;
+VLAX-MAKE-VARIANT: "an integer defaults to vlax-vbLong"), so the canonical
+=(vlax-make-safearray vlax-vbDouble '(0 . 2))= passes nil as the type.
+
+* Cause
+
+The ActiveX constants installed by (vl-load-com) are the GENERATED table of
+probe-activex-constants.lsp (activex-constants-table.lisp), whose name list
+has no vlax-vb* entry; nothing else binds them.
+
+* Proposal
+
+Add the vlax-vb* names (vlax-vbEmpty 0, vlax-vbNull 1, vlax-vbInteger 2,
+vlax-vbLong 3, vlax-vbSingle 4, vlax-vbDouble 5, vlax-vbCurrency 6,
+vlax-vbDate 7, vlax-vbString 8, vlax-vbObject 9, vlax-vbError 10,
+vlax-vbBoolean 11, vlax-vbVariant 12, vlax-vbDataObject 13,
+vlax-vbDecimal 14, vlax-vbByte 17, vlax-vbArray 8192 -- the VB VarType
+values) to probe-activex-constants.lsp, run it on AutoCAD and BricsCAD,
+regenerate the table. Since 2.3.10 vlax-make-variant /
+vlax-variant-change-type / vlax-make-safearray accept the integer codes, so
+binding the names is all that is missing.
+
+* Acceptance criteria
+
+- The measured values bound after (vl-load-com), per product.
+- =(vlax-variant-type (vlax-make-variant 1 vlax-vbInteger))= = 2.

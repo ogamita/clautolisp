@@ -1,0 +1,29 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: type-symbols-print-lowercase-on-autocad — AutoCAD prints (type v) of a VARIANT / SAFEARRAY in lower case
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: fix-type-symbols-print-lowercase-on-autocad
+#+DATE: 2026-10-08
+
+* Observation
+
+intersectwith-probe.lsp prints =(vl-princ-to-string (type v))=:
+
+| target                         | variant   | its safearray |
+|--------------------------------+-----------+---------------|
+| AutoCAD 2022 (job 17029587295) | variant   | safearray     |
+| BricsCAD V25 / V26             | VARIANT   | SAFEARRAY     |
+| clautolisp (any dialect)       | VARIANT   | SAFEARRAY     |
+
+=(eq (type v) 'VARIANT)= is true on AutoCAD all the same (the probe takes
+that branch), so the symbol is the same and only its printed name differs.
+VLA-OBJECT prints in upper case on AutoCAD too.
+
+* Proposal
+
+Measure which TYPE results AutoCAD prints in lower case (variant,
+safearray, maybe others) with vl-princ-to-string, prin1, princ and
+vl-symbol-name; if confirmed, print them that way under the AutoCAD
+dialects (a divergence to classify per AGENTS.md).

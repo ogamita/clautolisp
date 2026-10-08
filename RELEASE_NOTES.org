@@ -49,6 +49,26 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *ActiveX ~IntersectWith~ on the mock / cador host* (2.3.10): ~(vla-IntersectWith
+  a b acExtendNone)~ returns a VARIANT holding a SAFEARRAY of doubles
+  (X1 Y1 Z1 X2 ...), an *empty* one (upper bound -1) when the objects do
+  not meet, and ~(vlax-invoke a 'IntersectWith b n)~ the flat list or nil,
+  for LINE, RAY, XLINE, CIRCLE, ARC, ELLIPSE, LWPOLYLINE and 2D / 3D
+  POLYLINE, under the four ~acExtend*~ options, with the points and their
+  order measured on AutoCAD 2022 and BricsCAD V25 / V26 (the order follows
+  the dialect's product; ~[intersectwith-order]~ when they differ). It used
+  to fail with "has no method named INTERSECTWITH". SPLINE and other kinds
+  signal an error. ~vlax-safearray->list~ of an empty array is now an
+  error, as on both vendors. user-manual § /The ActiveX / COM object
+  model/ (IntersectWith).
+- ~vlax-variant-type~ and ~vlax-safearray-type~ return the integer
+  ~vlax-vb*~ type code (8197 for an array of doubles) instead of a symbol;
+  ~vlax-make-variant~, ~vlax-variant-change-type~ and ~vlax-make-safearray~
+  accept integer type codes (2.3.10).
+  POLYLINE, under the four ~acExtend*~ options. It used to fail with "has
+  no method named INTERSECTWITH". SPLINE and other kinds signal an error.
+  The point order is clautolisp's choice until measured. user-manual §
+  /The mock host/ (IntersectWith).
 - *Curve geometry follows the vendor conventions* (2.3.8): an ARC's
   ~vlax-curve-*~ parameters are its angles in radians and its lengths are
   R * sweep (an ARC of R 10 over 90 degrees used to measure 0.274, its

@@ -1,0 +1,38 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: probe-ps1-done-check-misreads-utf16-report — Windows probe scripts flag complete runs INCOMPLETE
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-probe-ps1-done-check
+#+DATE: 2026-10-08
+
+* Symptom
+
+Every Windows run of intersectwith-probe (jobs 17029587294, 17029587295,
+17029587296, 2026-10-08) ended its report with
+
+: IWPROBE-INCOMPLETE  the probe did not reach its end
+
+right after the =IWPROBE-DONE= line it claims is missing.
+
+* Cause
+
+The scripts write the report header with =Set-Content -Encoding utf8=
+(UTF-8 BOM), then append with =Tee-Object -FilePath -Append=, which in
+Windows PowerShell 5 writes UTF-16LE. The file is mixed (UTF-8 BOM + CRLF,
+then UTF-16LE without BOM), and =Select-String -Path $report -Pattern
+'^...-DONE'= reads it as UTF-8 and never matches.
+
+* Resolution so far
+
+run-intersectwith-probe.ps1 (clautolisp 2.3.10) decides on the captured
+lines instead of re-reading the file. The same check is still in
+run-getcname-probe.ps1, run-optkw-probe.ps1, run-path-sysvars-probe.ps1 and
+run-pgp-probe.ps1 (=grep -l "Select-String -Path" scripts/*.ps1=).
+
+* Proposal
+
+Apply the same change to those four; better, write the report in ONE
+encoding (=Out-File -Encoding utf8 -Append=, or collect and Set-Content
+once), so the artefacts no longer need byte-level decoding.

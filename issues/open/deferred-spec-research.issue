@@ -167,6 +167,23 @@ mechanism. The question is the vendor NAME.
     document-version bump — pjb's call, since it changes the normative
     spec.
 
+== IntersectWith (ActiveX entity method, clautolisp 2.3.10) ==
+
+  Source: clautolisp/cador/source/intersect.lisp (SPEC-UNCERTAIN in its
+  header). Measured 2026-10-08 (intersectwith-probe.lsp, jobs 17029587293
+  / 294 / 295; issues/closed/cador-intersectwith-missing.issue): point
+  sets, tangency, overlaps, vertex crossings, Z, polyline extension, the
+  empty result and each vendor's point ORDER for the probed pairs. Still
+  extrapolated, to add to the probe:
+
+  * a RAY under acExtendThisEntity (cador: the infinite line);
+  * line x circle when the line starts beyond the centre (cador: the
+    farther point first);
+  * clockwise ARC entities (extrusion -Z), 3D polylines, rays / xlines in
+    the order rules;
+  * ellipse x circle / ellipse beyond the one measured pair (BricsCAD:
+    ascending X then descending Y).
+
 == Future entries ==
 
 When opening a new SPEC-UNCERTAIN marker, add an `== NAME (Mn) ==`

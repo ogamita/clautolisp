@@ -1457,6 +1457,29 @@ pathname:probe:clautolisp:linux:
     - make -C autolisp-front-end build-alfe-sbcl
     - bash scripts/run-pathname-probe.sh --backend clautolisp
 
+intersectwith:probe:clautolisp:linux:
+  # MANUAL: the clautolisp column of the IntersectWith probe (the CAD columns
+  # are the intersectwith:probe:* jobs of the native child), to diff against
+  # them -- cador-intersectwith-missing.issue.
+  stage: test
+  interruptible: true
+  rules:
+    - *not-on-schedule
+    - when: manual
+      allow_failure: true
+  tags: [linux, amd64, docker]
+  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-intersectwith-probe.sh --backend clautolisp
+  artifacts:
+    name: "intersectwith-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/intersectwith/]
+    expire_in: 30 days
+
 .benchmark:
   stage: benchmark
   # A benchmark may not hold a runner for the project default (120 min).

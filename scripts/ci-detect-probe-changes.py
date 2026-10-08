@@ -88,6 +88,8 @@ FAMILIES = {
                  "scripts/run-pathname-probe.*"],
     "curve-geometry": [f"{ENTITIES}/curve-geometry-probe.lsp",
                        "scripts/run-curve-geometry-probe.*"],
+    "intersectwith": [f"{ENTITIES}/intersectwith-probe.lsp",
+                      "scripts/run-intersectwith-probe.*"],
     "sysvars": ["autolisp-spec/autolisp/dump-sysvars.lsp"],
     "entget-pointers": ["probes/sources/probe-entget-pointers.lsp"],
 }

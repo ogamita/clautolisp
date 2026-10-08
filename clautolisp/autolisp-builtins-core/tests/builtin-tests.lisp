@@ -3089,9 +3089,8 @@ the host's prompt-output / command log after the run."
         (val-fn  (autolisp-symbol-function (find-autolisp-symbol "VLAX-VARIANT-VALUE"))))
     (let ((v (call-autolisp-function make-fn 42)))
       (is (eql 42 (call-autolisp-function val-fn v)))
-      (is (string= "INTEGER"
-                   (autolisp-symbol-name
-                    (call-autolisp-function type-fn v)))))))
+      ;; vlax-vbLong: an AutoLISP integer's default variant type
+      (is (eql 3 (call-autolisp-function type-fn v))))))
 
 ;;; --- Dynamic vla-* accessor façade (vla-accessor-family.issue) ---
 ;;;
@@ -5862,11 +5861,14 @@ HKCU registry-path strings (complete-unit-tests.issue)."
   "The untested safearray introspection/mutation ops, on a real 1-D safearray
 built headlessly via vlax-make-safearray (complete-unit-tests.issue)."
   (reset-autolisp-symbol-table)
-  (is (string= "INTEGER"
-               (autolisp-symbol-name
-                (run-autolisp-string
-                 "(vlax-safearray-type (vlax-make-safearray 'integer '(0 . 2)))"
-                 :setup-fn #'install-core-into))))
+  ;; the vlax-vb* code (spec: Integer type code); an AutoLISP integer is a
+  ;; vlax-vbLong (3)
+  (is (eql 3 (run-autolisp-string
+              "(vlax-safearray-type (vlax-make-safearray 'integer '(0 . 2)))"
+              :setup-fn #'install-core-into)))
+  (is (eql 5 (run-autolisp-string
+              "(vlax-safearray-type (vlax-make-safearray 5 '(0 . 2)))"
+              :setup-fn #'install-core-into)))
   (is (eql 0 (run-autolisp-string
               "(vlax-safearray-get-l-bound (vlax-make-safearray 'integer '(0 . 2)) 1)"
               :setup-fn #'install-core-into)))
@@ -5885,11 +5887,13 @@ built headlessly via vlax-make-safearray (complete-unit-tests.issue)."
   (is (eql 42 (run-autolisp-string
                "(vlax-variant-value (vlax-variant-change-type (vlax-make-variant 42) 'real))"
                :setup-fn #'install-core-into)))
-  (is (string= "REAL"
-               (autolisp-symbol-name
-                (run-autolisp-string
-                 "(vlax-variant-type (vlax-variant-change-type (vlax-make-variant 42) 'real))"
-                 :setup-fn #'install-core-into)))))
+  (is (eql 5 (run-autolisp-string
+              "(vlax-variant-type (vlax-variant-change-type (vlax-make-variant 42) 'real))"
+              :setup-fn #'install-core-into)))
+  ;; an integer type code (vlax-vbDouble) re-tags too
+  (is (eql 5 (run-autolisp-string
+              "(vlax-variant-type (vlax-variant-change-type (vlax-make-variant 42) 5))"
+              :setup-fn #'install-core-into))))
 
 (test vlax-safearray-mode-is-a-nil-stub
   "_vlax-safearray-mode is an internal policy-flag no-op stub returning nil

@@ -1598,6 +1598,59 @@ provides that surface through the host backend:
   reported touching it (AutoCAD); under a BricsCAD dialect the true
   ink is reported and spaces count to their advance. Characters
   outside ASCII are measured as =n=.
+- *IntersectWith* (2.3.10): ~(vla-IntersectWith a b option)~ returns the
+  points where entity ~a~ meets entity ~b~ as a VARIANT holding a
+  SAFEARRAY of doubles, flattened ~X1 Y1 Z1 X2 Y2 Z2 ...~ -- read it with
+  ~(vlax-safearray->list (vlax-variant-value r))~. When the objects do not
+  meet the array is *empty* (lower bound 0, upper bound -1), not ~nil~;
+  ~(vlax-invoke a 'IntersectWith b option)~ gives the same points as a
+  plain flat list, or ~nil~. ~option~ is an ~acExtend*~ constant:
+  ~acExtendNone~ (0), ~acExtendThisEntity~ (1, extend ~a~),
+  ~acExtendOtherEntity~ (2, extend ~b~), ~acExtendBoth~ (3).
+  - Supported: LINE, RAY, XLINE, CIRCLE, ARC, ELLIPSE (full or partial),
+    LWPOLYLINE and 2D POLYLINE (each span, a bulged span as its true arc)
+    and 3D POLYLINE, lying in planes parallel to XY (extrusion +Z or -Z).
+    The geometry is exact (an ellipse against a circle or another ellipse
+    to about 1e-9); a 3D line is exact in 3D, so two segments that cross in
+    plan at different heights do not meet (as on both vendors).
+  - Extending: a line becomes the infinite line, a ray the infinite line,
+    an arc its full circle, an elliptical arc its full ellipse. An *open*
+    polyline extends only its first span backwards and its last span
+    forwards (an arc span to its full circle); a closed one does not
+    extend (measured on both vendors).
+  - The points are those AutoCAD 2022 and BricsCAD V25 / V26 return
+    (measured): a tangency is one point, a point reached twice (a crossing
+    exactly at a polyline vertex) is reported once, collinear overlapping
+    lines and concentric circles give no point.
+  - Their *order* is the vendor's, which the reference does not specify
+    and AutoCAD and BricsCAD do not share; clautolisp follows BricsCAD
+    under a BricsCAD dialect and AutoCAD otherwise. On both, a line
+    against a circle gives the point farther from the line's start first;
+    a line against an arc, the points by decreasing offset from the arc's
+    start; two circles or arcs, the point left of the line joining the
+    centres first. AutoCAD computes ~acExtendOtherEntity~ /
+    ~acExtendBoth~ as the argument's ~IntersectWith~ and takes a bulged
+    polyline span as a counter-clockwise arc; BricsCAD takes the span in
+    its direction of travel, and sorts an ellipse's crossings with a
+    circle by X. When the two vendors' orders differ for a call, every
+    dialect but ~--lax~ prints an ~[intersectwith-order]~ warning: do not
+    rely on the order.
+  - With no intersection, the array is empty (bounds 0 and -1);
+    ~vlax-safearray->list~ of it is an *error* on both vendors (and in
+    clautolisp), so test ~(vlax-safearray-get-u-bound arr 1)~ first, or use
+    ~vlax-invoke~, which returns ~nil~. ~vlax-variant-type~ of the result
+    is 8197 (an array of doubles) -- except an empty result under a
+    BricsCAD dialect, 8204 (an array of variants), as BricsCAD returns it;
+    BricsCAD dialects and ~--dialect strict~ print an
+    ~[intersectwith-empty]~ warning then.
+  - AutoCAD's AcCoreConsole has no COM entity objects at all
+    (~vlax-ename->vla-object~ fails there), so ~IntersectWith~ is only
+    available in the GUI product.
+  - SPLINE, meshes, polyface meshes, text, block references, points and
+    every other kind, and entities in a plane not parallel to XY, signal
+    an error ("IntersectWith: AcDbSpline is not a curve IntersectWith
+    handles; clautolisp does not support it."), catchable with
+    ~vl-catch-all-apply~.
 
 Example (headless, against the mock host):
 
