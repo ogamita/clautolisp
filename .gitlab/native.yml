@@ -934,6 +934,91 @@ getcname:probe:accoreconsole:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-getcname-probe.ps1 -Backend accoreconsole
 
+# --- curve geometry: vlax-curve-* / ArcLength / bulges, measured -------------
+#
+# cador-curve-length-and-sampling.issue. SCHMS read an ARC's length as 0.274
+# (R 10, 90 degrees) and got NIL sampling a chain of curves on the cador host;
+# the fix follows the documented AcDbCurve conventions (ARC params = angles,
+# bulge segments = arcs), and these jobs MEASURE them on the vendors: every
+# vlax-curve-* on ARC (0-90, 315-45), CIRCLE, LINE, LWPOLYLINE (bulge, closed,
+# elevation) and 2D POLYLINE, at boundary params / dists and vertices, plus the
+# ArcLength / TotalAngle / Length / Area properties and how entmake / command
+# ARC / vla-AddArc store the angles. Soft: a probe measures, never gates.
+.curve-geometry-artifacts:
+  artifacts:
+    name: "curve-geometry-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/curve-geometry/]
+    expire_in: 30 days
+
+curve-geometry:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-curve-geometry-probe.sh --backend bricscad
+
+curve-geometry:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-curve-geometry-probe.ps1 -Backend bricscad
+
+curve-geometry:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-curve-geometry-probe.ps1 -Backend autocad
+
+curve-geometry:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-curve-geometry-probe.ps1 -Backend accoreconsole
+
 # --- keyboard command aliases: the .pgp harvest for cadtui -------------------
 #
 # cadtui-locale-probe-pgp-aliases.issue. The third, distinct CAD locale

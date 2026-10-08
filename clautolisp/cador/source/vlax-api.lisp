@@ -688,13 +688,57 @@ handled, (values NIL NIL) otherwise."
            ;; assigns the caller's two output symbols (the vendor
            ;; by-reference contract) and wraps the points.
            (values (%entity-bounding-box host entity) t))
+          ((and (string-equal name "GetBulge")
+                (eq (entity-handle-kind entity) :lwpolyline))
+           (values (%lwpolyline-bulge entity (first args)) t))
+          ((and (string-equal name "SetBulge")
+                (eq (entity-handle-kind entity) :lwpolyline))
+           (values (%lwpolyline-set-bulge entity (first args) (second args)) t))
           (t (values nil nil))))))
+
+(defun %lwpolyline-vertex-tail (entity index operator-name)
+  "The data tail starting at the INDEX-th 10 group of an LWPOLYLINE."
+  (let ((tail (and (integerp index) (>= index 0)
+                   (let ((i -1))
+                     (loop for tail on (entity-handle-data entity)
+                           when (and (consp (car tail)) (eql (caar tail) 10))
+                             do (incf i)
+                                (when (= i index) (return tail)))))))
+    (or tail
+        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+         :invalid-com-argument
+         "~A: no vertex ~S on this polyline." operator-name index))))
+
+(defun %lwpolyline-bulge (entity index)
+  "Polyline.GetBulge(Index): the 42 group following vertex INDEX, 0.0 when absent."
+  (let ((tail (%lwpolyline-vertex-tail entity index "GetBulge")))
+    (loop for pair in (rest tail)
+          until (and (consp pair) (eql (car pair) 10))
+          when (and (consp pair) (eql (car pair) 42))
+            do (return (coerce (cdr pair) 'double-float))
+          finally (return 0.0d0))))
+
+(defun %lwpolyline-set-bulge (entity index bulge)
+  "Polyline.SetBulge(Index, Bulge): set (or insert) the 42 group of vertex INDEX."
+  (unless (realp bulge)
+    (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+     :invalid-com-argument "SetBulge expects a number, got ~S." bulge))
+  (let* ((tail (%lwpolyline-vertex-tail entity index "SetBulge"))
+         (cell (loop for pair in (rest tail)
+                     until (and (consp pair) (eql (car pair) 10))
+                     when (and (consp pair) (eql (car pair) 42)) do (return pair))))
+    (if cell
+        (setf (cdr cell) (coerce bulge 'double-float))
+        (setf (cdr tail) (cons (cons 42 (coerce bulge 'double-float)) (cdr tail))))
+    nil))
 
 (defun %entity-fallback-method-p (host object name)
   (let ((entity (%resolve-backing-entity host object)))
     (and entity
          (or (and (string-equal name "GetAttributes")
                   (eq (entity-handle-kind entity) :insert))
+             (and (member name '("GetBulge" "SetBulge") :test #'string-equal)
+                  (eq (entity-handle-kind entity) :lwpolyline))
              (member name '("Delete" "Erase" "Update" "Move" "Rotate"
                             "Copy" "GetBoundingBox")
                      :test #'string-equal))
@@ -724,6 +768,15 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
       ((and (consp kind) (eq (car kind) :block-entities)
             (string-equal name "AddAttribute"))
        (values (%block-add-attribute host kind args) t))
+      ((and (consp kind) (eq (car kind) :block-entities)
+            (string-equal name "AddArc"))
+       (values (%model-add-arc host kind args) t))
+      ((and (consp kind) (eq (car kind) :block-entities)
+            (string-equal name "AddCircle"))
+       (values (%model-add-circle host kind args) t))
+      ((and (consp kind) (eq (car kind) :block-entities)
+            (string-equal name "AddLightWeightPolyline"))
+       (values (%model-add-lwpolyline host kind args) t))
       ((and (eq kind :documents) (string-equal name "Add"))
        (values (%documents-add host) t))
       ((and (eq kind :documents) (string-equal name "Open"))
@@ -748,7 +801,8 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
              (member name '("Add" "Open" "Close") :test #'string-equal) t)
         (and (eq kind :linetypes) (string-equal name "Load") t)
         (and (consp kind) (eq (car kind) :block-entities)
-             (member name '("Delete" "InsertBlock" "AddLine" "AddAttribute")
+             (member name '("Delete" "InsertBlock" "AddLine" "AddAttribute"
+                            "AddArc" "AddCircle" "AddLightWeightPolyline")
                      :test #'string-equal)
              t)
         (and (%layer-object-p object) (string-equal name "Delete") t)
@@ -821,7 +875,15 @@ RESULT T) when NAME was handled, (values NIL NIL) otherwise."
     ("InsertionPoint"     :group 10  :type :point
                           :kinds (:text :mtext :attrib :attdef :insert :point))
     ("TextAlignmentPoint" :group 11  :type :point
-                          :kinds (:text :attrib :attdef)))
+                          :kinds (:text :attrib :attdef))
+    ;; curve geometry stored in groups (cador-curve-length-and-sampling);
+    ;; angles are radians, as in entget and ActiveX.
+    ("Center"             :group 10  :type :point   :kinds (:circle :arc))
+    ("Radius"             :group 40  :type :real    :kinds (:circle :arc))
+    ("StartAngle"         :group 50  :type :real    :kinds (:arc))
+    ("EndAngle"           :group 51  :type :real    :kinds (:arc))
+    ("StartPoint"         :group 10  :type :point   :kinds (:line))
+    ("EndPoint"           :group 11  :type :point   :kinds (:line)))
   "Scalar / point entity COM properties bridged onto DXF groups.
 EffectiveName = Name headless — the host has no dynamic blocks
 (SPEC-UNCERTAIN; vla-entity-property-bridge.issue). ObjectName and
@@ -924,6 +986,8 @@ bridged, (values NIL NIL) otherwise."
        (values (%entity-alignment entity) t))
       ((%hasattributes-property-p entity name)
        (values (eql 1 (%entity-group-value entity 66)) t))
+      ((%curve-com-property-p entity name)
+       (values (%curve-com-property-get host object entity name) t))
       ;; Visible: group 60, 0 (or absent) visible, 1 invisible.
       ((string-equal name "Visible")
        (values (not (eql 1 (%entity-group-value entity 60))) t))
@@ -961,6 +1025,8 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
         "VLA-OBJECT property ~A is read-only." name))
       ((%alignment-property-p entity name)
        (values (setf (%entity-alignment entity) value) t))
+      ((%curve-com-property-p entity name)
+       (values (%curve-com-property-put entity name value) t))
       ((string-equal name "Visible")
        (%entity-set-group entity 60 (if value 0 1))
        (values value t))
@@ -1001,8 +1067,94 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
              (string-equal name "Visible")
              (%alignment-property-p entity name)
              (%hasattributes-property-p entity name)
+             (%curve-com-property-p entity name)
              (%entity-property-descriptor entity name))
          t)))
+
+;;; --- Computed curve properties ------------------------------------------
+;;;
+;;; ArcLength, TotalAngle, Length, Area, Circumference, Diameter, the ARC's
+;;; StartPoint / EndPoint, the LINE's Angle / Delta and the polylines'
+;;; Closed are derived from the entity's geometry with the same analytic
+;;; curve model as vlax-curve-* (autolisp-host curve-geometry), so the two
+;;; surfaces cannot disagree (cador-curve-length-and-sampling.issue: before
+;;; 2.3.8 none of them existed and vla-get-ArcLength signalled "no property
+;;; named ARCLENGTH").
+
+(defparameter *curve-com-properties*
+  ;; (NAME KINDS WRITABLE-P)
+  '(("ArcLength"     (:arc)                           nil)
+    ("TotalAngle"    (:arc)                           nil)
+    ("Length"        (:line :lwpolyline :polyline)    nil)
+    ("Area"          (:circle :arc :lwpolyline :polyline) nil)
+    ("Circumference" (:circle)                        t)
+    ("Diameter"      (:circle)                        t)
+    ("StartPoint"    (:arc)                           nil)
+    ("EndPoint"      (:arc)                           nil)
+    ("Angle"         (:line)                          nil)
+    ("Delta"         (:line)                          nil)
+    ("Closed"        (:lwpolyline :polyline)          t))
+  "Computed (geometry-derived) entity COM properties.")
+
+(defun %curve-com-property-entry (entity name)
+  (let ((entry (assoc name *curve-com-properties* :test #'string-equal)))
+    (and entry (member (entity-handle-kind entity) (second entry)) entry)))
+
+(defun %curve-com-property-p (entity name)
+  (and (%curve-com-property-entry entity name) t))
+
+(defun %entity-curve (host object)
+  (clautolisp.autolisp-host:host-curve-descriptor
+   host (handle->ename host (cador-com-object-backing-ename object))))
+
+(defun %curve-com-property-get (host object entity name)
+  (let ((curve (%entity-curve host object)))
+    (flet ((is (n) (string-equal name n))
+           (pt (p) (and p (%wrap-com-point
+                           (mapcar (lambda (x) (coerce x 'double-float)) p)))))
+      (cond
+        ((or (is "ArcLength") (is "Length") (is "Circumference"))
+         (and curve (clautolisp.autolisp-host:curve-length curve)))
+        ((is "TotalAngle") (and curve (clautolisp.autolisp-host:curve-total-angle curve)))
+        ((is "Area") (and curve (clautolisp.autolisp-host:curve-area curve)))
+        ((is "Diameter") (* 2.0d0 (coerce (or (%entity-group-value entity 40) 0) 'double-float)))
+        ((is "StartPoint") (pt (and curve (clautolisp.autolisp-host:curve-start-point curve))))
+        ((is "EndPoint") (pt (and curve (clautolisp.autolisp-host:curve-end-point curve))))
+        ((or (is "Angle") (is "Delta"))
+         (let* ((a (%entity-group-value entity 10)) (b (%entity-group-value entity 11))
+                (d (mapcar (lambda (u v) (coerce (- v u) 'double-float))
+                           (subseq (append a (list 0 0 0)) 0 3)
+                           (subseq (append b (list 0 0 0)) 0 3))))
+           (if (is "Delta")
+               (pt d)
+               (let ((ang (atan (second d) (first d))))
+                 (if (minusp ang) (+ ang (* 2 pi)) ang)))))
+        ((is "Closed")
+         (logbitp 0 (let ((f (%entity-group-value entity 70))) (if (integerp f) f 0))))))))
+
+(defun %curve-com-property-put (entity name value)
+  (let ((entry (%curve-com-property-entry entity name)))
+    (unless (third entry)
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+       :com-read-only-property
+       "VLA-OBJECT property ~A is read-only." name))
+    (flet ((real-value ()
+             (unless (realp value)
+               (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                :invalid-com-property-value
+                "Property ~A expects a number, got ~S." name value))
+             (coerce value 'double-float)))
+      (cond
+        ((string-equal name "Diameter") (%entity-set-group entity 40 (/ (real-value) 2)))
+        ((string-equal name "Circumference")
+         (%entity-set-group entity 40 (/ (real-value) (* 2 pi))))
+        ((string-equal name "Closed")
+         (let ((f (%entity-group-value entity 70)))
+           (%entity-set-group entity 70
+                              (if value
+                                  (logior (if (integerp f) f 0) 1)
+                                  (logandc2 (if (integerp f) f 0) 1))))))
+      value)))
 
 ;;; --- Layer / Linetype / Document object surface ------------------
 ;;; (cador-schme-a1-activex-coverage.issue). The AutoCAD.Layer and
@@ -1058,7 +1210,7 @@ tblsearch \"LAYER\" and ActiveX read back the same value."
 (defparameter *com-boolean-properties*
   '("Visible" "Saved" "ReadOnly" "IsLayout" "IsXRef" "IsDynamicBlock"
     "Explodable" "HasAttributes" "LayerOn" "Freeze" "Lock" "Plottable"
-    "Active" "ModelType")
+    "Active" "ModelType" "Closed")
   "ActiveX properties of type Boolean (VARIANT_BOOL): read as :VLAX-TRUE /
 :VLAX-FALSE, written as those, T / nil, or -1 / 0 (probe-triage3, BricsCAD
 V26 macOS job 16931597044 and V25 Windows job 16931597047).")
@@ -1395,6 +1547,58 @@ in the collection's space; return its VLA-object."
                           'add-line owner)
       (declare (ignore entity))
       (host-vlax-ename->vla-object host ename))))
+
+(defun %model-add-curve (host collection-kind data operator)
+  (multiple-value-bind (entity ename)
+      (%host-add-entity host data operator (%space-owner-name collection-kind))
+    (declare (ignore entity))
+    (and ename (host-vlax-ename->vla-object host ename))))
+
+(defun %com-real-argument (value operator-name)
+  (unless (realp value)
+    (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+     :invalid-com-argument "~A expects a number, got ~S." operator-name value))
+  (coerce value 'double-float))
+
+(defun %model-add-arc (host collection-kind args)
+  "ModelSpace.AddArc(Center, Radius, StartAngle, EndAngle): angles in
+radians, stored normalised into [0, 2pi) as entget reports them."
+  (destructuring-bind (&optional center radius start end &rest ignore) args
+    (declare (ignore ignore))
+    (flet ((norm (a) (let ((m (mod a (* 2.0d0 pi)))) (if (>= m (* 2.0d0 pi)) 0.0d0 m))))
+      (%model-add-curve
+       host collection-kind
+       (list (cons 0 "ARC") (cons 8 (%current-layer-name host))
+             (cons 10 (copy-list (%unwrap-com-point center "AddArc")))
+             (cons 40 (%com-real-argument radius "AddArc"))
+             (cons 50 (norm (%com-real-argument start "AddArc")))
+             (cons 51 (norm (%com-real-argument end "AddArc"))))
+       'add-arc))))
+
+(defun %model-add-circle (host collection-kind args)
+  "ModelSpace.AddCircle(Center, Radius)."
+  (%model-add-curve
+   host collection-kind
+   (list (cons 0 "CIRCLE") (cons 8 (%current-layer-name host))
+         (cons 10 (copy-list (%unwrap-com-point (first args) "AddCircle")))
+         (cons 40 (%com-real-argument (second args) "AddCircle")))
+   'add-circle))
+
+(defun %model-add-lwpolyline (host collection-kind args)
+  "ModelSpace.AddLightWeightPolyline(Vertices): a flat array of doubles
+x1 y1 x2 y2 ...; bulges are set afterwards with SetBulge."
+  (let ((xs (%unwrap-com-point (first args) "AddLightWeightPolyline")))
+    (when (or (oddp (length xs)) (< (length xs) 4))
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+       :invalid-com-argument
+       "AddLightWeightPolyline expects an even number (>= 4) of coordinates, got ~S." xs))
+    (%model-add-curve
+     host collection-kind
+     (append (list (cons 0 "LWPOLYLINE") (cons 100 "AcDbEntity")
+                   (cons 100 "AcDbPolyline") (cons 8 (%current-layer-name host))
+                   (cons 90 (/ (length xs) 2)) (cons 70 0))
+             (loop for (x y) on xs by #'cddr collect (list 10 x y)))
+     'add-lwpolyline)))
 
 (defun %block-add-attribute (host collection-kind args)
   "Block.AddAttribute(Height, Mode, Prompt, InsertionPoint, Tag, Value): add an

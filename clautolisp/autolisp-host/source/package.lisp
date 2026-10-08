@@ -120,4 +120,29 @@
    #:host-vlax-add-cmd
    #:host-vlax-remove-cmd
    #:host-vlax-queueexpr
-   #:host-vlax-collection-items))
+   #:host-vlax-collection-items
+   ;; --- Curve geometry (curve-geometry.lisp) -----------------------
+   #:*curve-point-tolerance*
+   #:*curve-param-tolerance*
+   #:parse-curve-dxf
+   #:host-curve-descriptor
+   #:make-curve-segment
+   #:curve-type
+   #:curve-length
+   #:curve-total-angle
+   #:curve-start-param
+   #:curve-end-param
+   #:curve-start-point
+   #:curve-end-point
+   #:curve-point-at-param
+   #:curve-dist-at-param
+   #:curve-param-at-dist
+   #:curve-point-at-dist
+   #:curve-param-at-point
+   #:curve-dist-at-point
+   #:curve-closest-point
+   #:curve-first-deriv
+   #:curve-second-deriv
+   #:curve-closed-p
+   #:curve-periodic-p
+   #:curve-area))

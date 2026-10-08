@@ -3429,7 +3429,9 @@ Value as its TextString; both are read through the façade as well."
 (defparameter +curve-circle+
   "(vl-load-com)(setq e (entmakex '((0 . \"CIRCLE\")(10 0.0 0.0 0.0)(40 . 5.0))))")
 (defparameter +curve-arc+
-  "(vl-load-com)(setq e (entmakex '((0 . \"ARC\")(10 0.0 0.0 0.0)(40 . 2.0)(50 . 0.0)(51 . 90.0))))")
+  ;; entget / entmake angles are RADIANS (cador-curve-length-and-sampling:
+  ;; this fixture said 90.0 while the model converted from degrees).
+  "(vl-load-com)(setq e (entmakex '((0 . \"ARC\")(10 0.0 0.0 0.0)(40 . 2.0)(50 . 0.0)(51 . 1.5707963267948966))))")
 (defparameter +curve-pline+
   (concatenate 'string
    "(vl-load-com)(setq e (entmakex '((0 . \"LWPOLYLINE\")"
@@ -3453,8 +3455,8 @@ Value as its TextString; both are read through the façade as well."
   (is (< (abs (- (* 2 pi 5) (%curve +curve-circle+ "(vlax-curve-getperimeter e)"))) 1d-6))
   (is (%curve +curve-circle+ "(vlax-curve-isclosed e)"))
   (is (%curve +curve-circle+ "(vlax-curve-isperiodic e)"))
-  ;; arc-length param r*pi/2 -> quarter turn -> (0 5 0)
-  (is (%pt~ (%curve +curve-circle+ "(vlax-curve-getpointatparam e 7.8539816339744831)")
+  ;; a CIRCLE's param is the ANGLE: pi/2 -> quarter turn -> (0 5 0)
+  (is (%pt~ (%curve +curve-circle+ "(vlax-curve-getpointatparam e (/ pi 2))")
             '(0 5 0) 1d-6)))
 
 (test vlax-curve-arc-geometry
@@ -3479,6 +3481,202 @@ Value as its TextString; both are read through the façade as well."
   (is (null (%vla (concatenate 'string
                    "(vl-load-com)(setq tp (entmakex '((0 . \"POINT\")(10 1.0 2.0 0.0))))"
                    "(vlax-curve-getstartpoint tp)")))))
+
+;;; --- curve geometry: arcs, bulges, boundaries ----------------------
+;;; cador-curve-length-and-sampling.issue: SCHMS read an ARC's length as
+;;; 0.27415567780803773 (R 10, 0..pi/2: the model converted the RADIAN
+;;; entget angles from degrees) and its sampling got NIL from
+;;; vlax-curve-getDistAtPoint at the real arc end point.
+
+(defun %~ (got expected &optional (eps 1d-9))
+  (and (numberp got) (< (abs (- got expected)) eps)))
+
+(defparameter +curve-arc90+
+  "(vl-load-com)(setq e (entmakex '((0 . \"ARC\")(10 0.0 0.0 0.0)(40 . 10.0)(50 . 0.0)(51 . 1.5707963267948966))))")
+(defparameter +curve-arc-across-zero+   ; 315 deg -> 45 deg
+  "(vl-load-com)(setq e (entmakex '((0 . \"ARC\")(10 0.0 0.0 0.0)(40 . 10.0)(50 . 5.497787143782138)(51 . 0.7853981633974483))))")
+(defparameter +curve-bulge-pline+       ; (0,0) bulge 1 (10,0) then (10,10)
+  (concatenate 'string
+   "(vl-load-com)(setq e (entmakex '((0 . \"LWPOLYLINE\")"
+   "(100 . \"AcDbEntity\")(100 . \"AcDbPolyline\")"
+   "(90 . 3)(70 . 0)(10 0.0 0.0)(42 . 1.0)(10 10.0 0.0)(10 10.0 10.0))))"))
+(defparameter +curve-closed-pline+      ; 10x10 square, closed
+  (concatenate 'string
+   "(vl-load-com)(setq e (entmakex '((0 . \"LWPOLYLINE\")"
+   "(100 . \"AcDbEntity\")(100 . \"AcDbPolyline\")"
+   "(90 . 4)(70 . 1)(10 0.0 0.0)(10 10.0 0.0)(10 10.0 10.0)(10 0.0 10.0))))"))
+(defparameter +curve-heavy-pline+       ; the bulge polyline as a 2D POLYLINE
+  (concatenate 'string
+   "(vl-load-com)(entmake '((0 . \"POLYLINE\")(66 . 1)(70 . 0)(10 0.0 0.0 0.0)))"
+   "(entmake '((0 . \"VERTEX\")(10 0.0 0.0 0.0)(42 . 1.0)))"
+   "(entmake '((0 . \"VERTEX\")(10 10.0 0.0 0.0)))"
+   "(entmake '((0 . \"VERTEX\")(10 10.0 10.0 0.0)))"
+   "(entmake '((0 . \"SEQEND\")))(setq e (entlast))"))
+
+(test vlax-curve-arc-params-are-angles-and-dists-are-arc-lengths
+  ;; R 10, 0..90 deg: params are the angles, the length is R * sweep = 5pi.
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getstartparam e)") 0.0d0))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getendparam e)") (/ pi 2)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatparam e (vlax-curve-getendparam e))")
+          (* 5 pi)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatparam e (/ pi 4))") (* 2.5 pi)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getperimeter e)") (* 5 pi)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getstartpoint e)") '(10 0 0)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getendpoint e)") '(0 10 0)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getpointatparam e (/ pi 4))")
+            (list (* 10 (cos (/ pi 4))) (* 10 (sin (/ pi 4))) 0)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getparamatdist e (* 2.5 pi))") (/ pi 4)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getpointatdist e (* 5 pi))") '(0 10 0)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getfirstderiv e 0.0)") '(0 10 0)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getsecondderiv e 0.0)") '(-10 0 0)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getarea e)") (* 50 (- (/ pi 2) 1))))
+  (is (null (%curve +curve-arc90+ "(vlax-curve-isclosed e)"))))
+
+(test vlax-curve-arc-boundaries-and-points-on-the-arc
+  ;; the end points are on the curve: the sampling NIL of the report
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatpoint e '(0.0 10.0 0.0))") (* 5 pi)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatpoint e '(10.0 0.0 0.0))") 0.0d0))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getparamatpoint e '(0.0 10.0 0.0))") (/ pi 2)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getparamatpoint e (vlax-curve-getendpoint e))")
+          (/ pi 2)))
+  ;; a 2D point is accepted (taken in the arc's plane)
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatpoint e '(0.0 10.0))") (* 5 pi)))
+  ;; param / dist exactly at the end, and just outside
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getparamatdist e (vlax-curve-getdistatparam e (vlax-curve-getendparam e)))")
+          (/ pi 2)))
+  (is (null (%curve +curve-arc90+ "(vlax-curve-getparamatdist e 16.0)")))
+  (is (null (%curve +curve-arc90+ "(vlax-curve-getpointatparam e 2.0)")))
+  (is (null (%curve +curve-arc90+ "(vlax-curve-getdistatparam e -0.1)")))
+  ;; a point off the arc has no param; its closest point is the near end
+  (is (null (%curve +curve-arc90+ "(vlax-curve-getparamatpoint e '(-10.0 0.0 0.0))")))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getclosestpointto e '(0.0 20.0 0.0))") '(0 10 0)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getclosestpointto e '(5.0 -20.0 0.0))") '(10 0 0))))
+
+(test vlax-curve-arc-crossing-zero-degrees
+  ;; 315 -> 45 deg: start param 7pi/4, end param raised by 2pi to 9pi/4
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getstartparam e)") (* 7/4 pi)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getendparam e)") (* 9/4 pi)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getdistatparam e (vlax-curve-getendparam e))")
+          (* 5 pi)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getparamatpoint e '(10.0 0.0 0.0))") (* 2 pi)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getdistatpoint e '(10.0 0.0 0.0))") (* 2.5 pi)))
+  (is (%pt~ (%curve +curve-arc-across-zero+ "(vlax-curve-getpointatdist e (* 2.5 pi))") '(10 0 0)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getparamatpoint e (vlax-curve-getstartpoint e))")
+          (* 7/4 pi)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getparamatpoint e (vlax-curve-getendpoint e))")
+          (* 9/4 pi))))
+
+(test vlax-curve-circle-params-are-angles
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getstartparam e)") 0.0d0))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getendparam e)") (* 2 pi)))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getdistatparam e pi)") (* 5 pi)))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getparamatdist e (* 5 pi))") pi))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getparamatpoint e '(0.0 5.0 0.0))") (/ pi 2)))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getparamatpoint e '(5.0 0.0 0.0))") 0.0d0))
+  (is (%pt~ (%curve +curve-circle+ "(vlax-curve-getendpoint e)") '(5 0 0) 1d-9)))
+
+(test vlax-curve-bulge-polyline-follows-the-arc
+  ;; segment 0 is a half circle of R 5 (length 5pi), segment 1 a 10 line
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getendparam e)") 2.0d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getdistatparam e 1.0)") (* 5 pi)))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getdistatparam e 2.0)") (+ 10 (* 5 pi))))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getperimeter e)") (+ 10 (* 5 pi))))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getpointatparam e 0.5)") '(5 -5 0)))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getpointatdist e (* 2.5 pi))") '(5 -5 0)))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(5.0 -5.0 0.0))") 0.5d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getdistatpoint e '(5.0 -5.0 0.0))") (* 2.5 pi)))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getclosestpointto e '(5.0 -9.0 0.0))") '(5 -5 0)))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getfirstderiv e 0.5)") (list (* 5 pi) 0 0)))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getfirstderiv e 1.5)") '(0 10 0)))
+  ;; open: area closed by the chord = half disc + triangle
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getarea e)") (+ 50 (* 12.5 pi)))))
+
+(test vlax-curve-polyline-vertex-and-end-boundaries
+  ;; vertices are params 0, 1, 2; the end vertex and end dist are numbers
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(0.0 0.0 0.0))") 0.0d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(10.0 0.0 0.0))") 1.0d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(10.0 10.0 0.0))") 2.0d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(10.0 10.0))") 2.0d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getdistatpoint e '(10.0 10.0 0.0))") (+ 10 (* 5 pi))))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatdist e (vlax-curve-getdistatparam e 2.0))") 2.0d0))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getpointatdist e (vlax-curve-getdistatparam e 2.0))") '(10 10 0)))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getpointatparam e 1.0)") '(10 0 0)))
+  (is (null (%curve +curve-bulge-pline+ "(vlax-curve-getpointatparam e 2.5)")))
+  (is (null (%curve +curve-bulge-pline+ "(vlax-curve-getparamatdist e 100.0)")))
+  (is (null (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(20.0 20.0 0.0))"))))
+
+(test vlax-curve-closed-polyline
+  (is (%curve +curve-closed-pline+ "(vlax-curve-isclosed e)"))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getendparam e)") 4.0d0))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getperimeter e)") 40.0d0))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getarea e)") 100.0d0))
+  (is (%pt~ (%curve +curve-closed-pline+ "(vlax-curve-getendpoint e)") '(0 0 0)))
+  (is (%pt~ (%curve +curve-closed-pline+ "(vlax-curve-getpointatparam e 3.5)") '(0 5 0)))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getdistatpoint e '(0.0 5.0 0.0))") 35.0d0))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getparamatpoint e '(0.0 10.0 0.0))") 3.0d0))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getparamatpoint e '(0.0 0.0 0.0))") 0.0d0)))
+
+(test vlax-curve-heavy-2d-polyline-reads-its-vertices
+  (is (%~ (%curve +curve-heavy-pline+ "(vlax-curve-getendparam e)") 2.0d0))
+  (is (%~ (%curve +curve-heavy-pline+ "(vlax-curve-getdistatparam e 2.0)") (+ 10 (* 5 pi))))
+  (is (%pt~ (%curve +curve-heavy-pline+ "(vlax-curve-getpointatparam e 0.5)") '(5 -5 0)))
+  (is (%pt~ (%curve +curve-heavy-pline+ "(vlax-curve-getendpoint e)") '(10 10 0))))
+
+(test vlax-curve-line-boundaries
+  (is (%~ (%curve +curve-line+ "(vlax-curve-getendparam e)") 10.0d0))
+  (is (%~ (%curve +curve-line+ "(vlax-curve-getdistatpoint e '(10.0 0.0 0.0))") 10.0d0))
+  (is (%~ (%curve +curve-line+ "(vlax-curve-getparamatdist e 10.0)") 10.0d0))
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getpointatdist e 10.0)") '(10 0 0)))
+  (is (null (%curve +curve-line+ "(vlax-curve-getpointatdist e 10.5)")))
+  (is (%~ (%curve +curve-line+ "(vlax-curve-getparamatpoint e '(4.0 0.0))") 4.0d0)))
+
+(test vla-curve-properties-agree-with-vlax-curve
+  (is (%~ (%curve +curve-arc90+ "(vla-get-arclength (vlax-ename->vla-object e))") (* 5 pi)))
+  (is (%~ (%curve +curve-arc90+ "(vla-get-totalangle (vlax-ename->vla-object e))") (/ pi 2)))
+  (is (%~ (%curve +curve-arc90+ "(vla-get-radius (vlax-ename->vla-object e))") 10.0d0))
+  (is (%~ (%curve +curve-arc90+ "(vla-get-endangle (vlax-ename->vla-object e))") (/ pi 2)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-safearray->list (vlax-variant-value (vla-get-endpoint (vlax-ename->vla-object e))))")
+            '(0 10 0)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vla-get-arclength (vlax-ename->vla-object e))") (* 5 pi)))
+  (is (%~ (%curve +curve-bulge-pline+ "(vla-get-length (vlax-ename->vla-object e))") (+ 10 (* 5 pi))))
+  (is (%~ (%curve +curve-heavy-pline+ "(vla-get-length (vlax-ename->vla-object e))") (+ 10 (* 5 pi))))
+  (is (%~ (%curve +curve-closed-pline+ "(vla-get-area (vlax-ename->vla-object e))") 100.0d0))
+  (is (%curve +curve-closed-pline+ "(eq :vlax-true (vla-get-closed (vlax-ename->vla-object e)))"))
+  (is (%curve +curve-bulge-pline+ "(eq :vlax-false (vla-get-closed (vlax-ename->vla-object e)))"))
+  (is (%~ (%curve +curve-line+ "(vla-get-length (vlax-ename->vla-object e))") 10.0d0))
+  (is (%~ (%curve +curve-circle+ "(vla-get-circumference (vlax-ename->vla-object e))") (* 10 pi)))
+  (is (%~ (%curve +curve-circle+ "(vla-get-diameter (vlax-ename->vla-object e))") 10.0d0)))
+
+(test vla-addarc-and-command-arc-build-radian-arcs
+  ;; vla-AddArc normalises the angles into [0, 2pi) like entget
+  (is (%~ (%vla (concatenate 'string
+                 "(vl-load-com)(setq ms (vla-get-modelspace (vla-get-activedocument (vlax-get-acad-object))))"
+                 "(setq a (vla-addarc ms (vlax-3d-point '(0 0 0)) 10.0 (* 1.75 pi) (* 0.25 pi)))"
+                 "(vlax-curve-getdistatparam a (vlax-curve-getendparam a))"))
+          (* 5 pi)))
+  (is (%~ (%vla (concatenate 'string
+                 "(vl-load-com)(setq ms (vla-get-modelspace (vla-get-activedocument (vlax-get-acad-object))))"
+                 "(setq a (vla-addarc ms (vlax-3d-point '(0 0 0)) 10.0 (* -0.25 pi) (* 0.25 pi)))"
+                 "(cdr (assoc 50 (entget (vlax-vla-object->ename a))))"))
+          (* 1.75 pi)))
+  ;; ARC Center start end, and Center start Angle
+  (is (%~ (%vla "(vl-load-com)(command \"_ARC\" \"_C\" '(0 0) '(10 0) '(0 10))(vlax-curve-getdistatparam (entlast) (vlax-curve-getendparam (entlast)))")
+          (* 5 pi)))
+  (is (%~ (%vla "(vl-load-com)(command \"_ARC\" \"_C\" '(0 0) '(7.0710678118654755 -7.0710678118654755) \"_A\" 90)(cdr (assoc 50 (entget (entlast))))")
+          (* 1.75 pi)))
+  (is (%~ (%vla "(vl-load-com)(command \"_ARC\" '(10 0) \"_C\" '(0 0) '(0 10))(vla-get-arclength (vlax-ename->vla-object (entlast)))")
+          (* 5 pi))))
+
+(test vla-addlightweightpolyline-and-bulges
+  (let ((r (%vla (concatenate 'string
+                  "(vl-load-com)(setq ms (vla-get-modelspace (vla-get-activedocument (vlax-get-acad-object))))"
+                  "(setq p (vla-addlightweightpolyline ms (vlax-make-variant (vlax-safearray-fill (vlax-make-safearray vlax-vbdouble '(0 . 5)) '(0 0 10 0 10 10)))))"
+                  "(vla-setbulge p 0 1.0)"
+                  "(list (vla-getbulge p 0) (vla-getbulge p 1) (vla-get-length p) (vlax-curve-getdistatparam p 1.0))"))))
+    (is (%~ (first r) 1.0d0))
+    (is (%~ (second r) 0.0d0))
+    (is (%~ (third r) (+ 10 (* 5 pi))))
+    (is (%~ (fourth r) (* 5 pi)))))
 
 ;;; --- vlax-for (special form) + vlax-map-collection ---------------
 

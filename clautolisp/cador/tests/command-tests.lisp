@@ -319,6 +319,34 @@
       (is (< (abs (- 0.0d0 (%ct-group data 50))) 1d-6))        ; start angle
       (is (< (abs (- pi (%ct-group data 51))) 1d-6)))))        ; end angle
 
+(test command-arc-angles-are-radians-in-0-2pi
+  ;; cador-curve-length-and-sampling: entget reports an ARC's 50/51 in
+  ;; [0, 2pi); the 3-point form used to store atan's negative angles.
+  (let ((mock (make-cador)))
+    ;; (0,-1) (1,0) (0,1): the right half circle, 270 -> 90 degrees.
+    (clautolisp.autolisp-host:host-command
+     mock '("._arc" "0,-1" "1,0" "0,1" ""))
+    (let ((data (%ct-last-data mock)))
+      (is (< (abs (- (* 1.5d0 pi) (%ct-group data 50))) 1d-6))
+      (is (< (abs (- (* 0.5d0 pi) (%ct-group data 51))) 1d-6)))))
+
+(test command-arc-center-forms
+  (let ((mock (make-cador)))
+    ;; C center start end: the end point fixes the end angle only
+    (clautolisp.autolisp-host:host-command
+     mock '("._arc" "_c" "0,0" "10,0" "0,20"))
+    (let ((data (%ct-last-data mock)))
+      (is (string= "ARC" (autolisp-string-value (%ct-group data 0))))
+      (is (< (abs (- 10.0d0 (%ct-group data 40))) 1d-9))
+      (is (< (abs (%ct-group data 50)) 1d-9))
+      (is (< (abs (- (* 0.5d0 pi) (%ct-group data 51))) 1d-9)))
+    ;; start C center Angle -90: clockwise, i.e. CCW from 270 to 0 degrees
+    (clautolisp.autolisp-host:host-command
+     mock '("._arc" "10,0" "_c" "0,0" "_a" "-90"))
+    (let ((data (%ct-last-data mock)))
+      (is (< (abs (- (* 1.5d0 pi) (%ct-group data 50))) 1d-9))
+      (is (< (abs (%ct-group data 51)) 1d-9)))))
+
 (test command-pline-draws-a-closed-lwpolyline
   (let ((mock (make-cador)))
     (clautolisp.autolisp-host:host-command

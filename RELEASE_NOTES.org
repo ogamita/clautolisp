@@ -49,6 +49,20 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *Curve geometry follows the vendor conventions* (2.3.8): an ARC's
+  ~vlax-curve-*~ parameters are its angles in radians and its lengths are
+  R * sweep (an ARC of R 10 over 90 degrees used to measure 0.274, its
+  angles being read as degrees, and its true end point was "not on the
+  curve"); a CIRCLE's parameter is its angle; bulge segments of LWPOLYLINE
+  and 2D POLYLINE are true arcs (they were measured along their chords);
+  a parameter, distance or point exactly at a vertex or at the end of the
+  curve answers a number. New ActiveX surface on the mock host:
+  ~ArcLength~, ~TotalAngle~, ~Center~, ~Radius~, ~StartAngle~, ~EndAngle~,
+  ~StartPoint~, ~EndPoint~, ~Length~, ~Area~, ~Circumference~, ~Diameter~,
+  ~Angle~, ~Delta~, ~Closed~, ~AddArc~, ~AddCircle~,
+  ~AddLightWeightPolyline~, ~GetBulge~ / ~SetBulge~; the ~ARC~ command
+  takes the Center forms. See the user manual's ActiveX section.
+
 - *cador: DXF pointer group codes come back as entity names* (2.3.7):
   ~entget~, ~dictsearch~, ~dictnext~, ~tblsearch~, ~tblnext~ and the
   entmake/entmod echo return the codes 330-369, 390-399 and 480-481 (owner,

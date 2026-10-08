@@ -603,27 +603,77 @@ they are collinear."
   (flet ((norm (v) (mod v (* 2.0d0 pi))))
     (<= (norm (- x a)) (norm (- b a)))))
 
+(defun %norm-angle (a)
+  "Angle A (radians) normalised into [0, 2pi), as entget reports an ARC's
+50/51 groups."
+  (let ((m (mod a (* 2.0d0 pi)))) (if (>= m (* 2.0d0 pi)) 0.0d0 m)))
+
+(defun %arc-entity (host center radius start end)
+  (%command-entity
+   host
+   (list (cons 0 "ARC") (cons 8 (%current-layer-name host))
+         (cons 10 (list (first center) (second center) (or (third center) 0.0d0)))
+         (cons 40 radius)
+         (cons 50 (%norm-angle start)) (cons 51 (%norm-angle end)))))
+
+(defun %point-angle (center p)
+  (atan (- (second p) (second center)) (- (first p) (first center))))
+
+(defun %arc-from-center (host center start-point tokens)
+  "The Center forms after CENTER and START-POINT: an end point (it only
+fixes the end angle; the arc runs CCW), or Angle DEGREES (included angle,
+negative = clockwise). Returns the remaining tokens."
+  (let ((radius (sqrt (+ (expt (- (first start-point) (first center)) 2)
+                         (expt (- (second start-point) (second center)) 2))))
+        (a1 (%point-angle center start-point))
+        (token (first tokens)))
+    (cond
+      ((%command-token-point token)
+       (pop tokens)
+       (%arc-entity host center radius a1 (%point-angle center (%command-token-point token))))
+      ((and (%command-option-p token "a" "angle")
+            (%command-token-number (second tokens)))
+       (let ((included (* (/ pi 180d0) (%command-token-number (second tokens)))))
+         (setf tokens (cddr tokens))
+         (if (minusp included)
+             (%arc-entity host center radius (+ a1 included) a1)
+             (%arc-entity host center radius a1 (+ a1 included))))))
+    tokens))
+
 (defun %cmd-arc (host tokens)
   "ARC: three points (start, a point on the arc, end) -> an ARC entity with
-CCW start/end angles (group 50/51) oriented so the middle point lies on it.
-The Center/Angle keyword forms degrade to record-only."
-  (multiple-value-bind (points tokens) (%collect-points tokens)
-    (when (= (length points) 3)
-      (destructuring-bind (p1 p2 p3) points
-        (multiple-value-bind (center radius) (%circumscribe p1 p2 p3)
-          (when center
-            (let* ((cx (first center)) (cy (second center))
-                   (a1 (atan (- (second p1) cy) (- (first p1) cx)))
-                   (a2 (atan (- (second p2) cy) (- (first p2) cx)))
-                   (a3 (atan (- (second p3) cy) (- (first p3) cx))))
-              (multiple-value-bind (start end)
-                  (if (%ccw-between-p a1 a3 a2) (values a1 a3) (values a3 a1))
-                (%command-entity
-                 host
-                 (list (cons 0 "ARC") (cons 8 (%current-layer-name host))
-                       (cons 10 (list cx cy 0.0d0)) (cons 40 radius)
-                       (cons 50 start) (cons 51 end)))))))))
-    tokens))
+CCW start/end angles (group 50/51, radians in [0, 2pi)) oriented so the
+middle point lies on it. The Center forms -- C center start end|Angle deg,
+and start C center end|Angle deg -- are supported too; the other keyword
+forms (End, chord Length, Direction, Radius) degrade to record-only."
+  (cond
+    ((%command-option-p (first tokens) "c" "center" "centre")
+     (let ((center (%command-token-point (second tokens)))
+           (start (%command-token-point (third tokens))))
+       (if (and center start)
+           (%arc-from-center host center start (cdddr tokens))
+           (rest tokens))))
+    ((and (%command-token-point (first tokens))
+          (%command-option-p (second tokens) "c" "center" "centre"))
+     (let ((start (%command-token-point (first tokens)))
+           (center (%command-token-point (third tokens))))
+       (if center
+           (%arc-from-center host center start (cdddr tokens))
+           (cddr tokens))))
+    (t
+     (multiple-value-bind (points tokens) (%collect-points tokens)
+       (when (= (length points) 3)
+         (destructuring-bind (p1 p2 p3) points
+           (multiple-value-bind (center radius) (%circumscribe p1 p2 p3)
+             (when center
+               (let* ((cx (first center)) (cy (second center))
+                      (a1 (atan (- (second p1) cy) (- (first p1) cx)))
+                      (a2 (atan (- (second p2) cy) (- (first p2) cx)))
+                      (a3 (atan (- (second p3) cy) (- (first p3) cx))))
+                 (multiple-value-bind (start end)
+                     (if (%ccw-between-p a1 a3 a2) (values a1 a3) (values a3 a1))
+                   (%arc-entity host (list cx cy 0.0d0) radius start end)))))))
+       tokens))))
 
 (defun %cmd-pline (host tokens)
   "PLINE: vertex points until Close/RETURN -> one LWPOLYLINE. The Arc/Width/

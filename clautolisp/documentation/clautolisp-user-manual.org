@@ -1535,6 +1535,29 @@ provides that surface through the host backend:
   VARIANT-wrapped double SAFEARRAYs —
   ~(vlax-safearray->list (vlax-variant-value …))~ — and accept
   ~vlax-3d-point~ results (or plain lists) on writes.
+- *Curve geometry* (since 2.3.8): ~vlax-curve-*~ and the geometric
+  ActiveX properties share one analytic model of LINE, RAY, XLINE,
+  CIRCLE, ARC, LWPOLYLINE and 2D/3D POLYLINE, with the vendor parameter
+  conventions: a LINE's parameter is the distance, a CIRCLE's or an
+  ARC's is the *angle in radians* (an ARC runs from its start angle to
+  its end angle, the latter raised by 2pi when it is not above the
+  former), a polyline's is the vertex index plus the fraction of the
+  segment. Bulge segments are true arcs: their length is R * |theta|
+  with theta = 4 atan(bulge), so ~vlax-curve-getDistAtParam~ /
+  ~getParamAtDist~ / ~getPointAtDist~ / ~getDistAtPoint~ /
+  ~getParamAtPoint~ follow the arc, and a vertex or the exact end of the
+  curve is a valid argument. A parameter, distance or point off the
+  curve answers ~nil~. ~ArcLength~, ~TotalAngle~, ~Center~, ~Radius~,
+  ~StartAngle~ / ~EndAngle~ (radians), ~StartPoint~ / ~EndPoint~,
+  ~Length~, ~Area~, ~Circumference~, ~Diameter~, ~Angle~, ~Delta~ and
+  ~Closed~ read the same model, and ~ModelSpace.AddArc~ / ~AddCircle~ /
+  ~AddLightWeightPolyline~ with ~GetBulge~ / ~SetBulge~ build curves
+  through the object model; the ~ARC~ command also takes the Center
+  forms (~"_C" center start end~ / ~"_A" degrees~). Up to 2.3.7 an
+  ARC's angles were read as degrees, so its length came out pi/180 too
+  small (R 10, 90 degrees: 0.274 instead of 15.708), the true end point
+  was "not on the curve" (~nil~), and bulges were measured along their
+  chords. A query point given in 2D is taken in the curve's plane.
 - Block references work end-to-end: ~(vla-insertblock space pt name
   xs ys zs rot)~ creates the INSERT with an ATTRIB per non-constant
   ATTDEF of the definition (transformed to the placement);

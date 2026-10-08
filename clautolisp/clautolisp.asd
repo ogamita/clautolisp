@@ -143,7 +143,10 @@
   :components
   ((:file "autolisp-host/source/package")
    (:file "autolisp-host/source/protocol")
-   (:file "autolisp-host/source/nihil"))
+   (:file "autolisp-host/source/nihil")
+   ;; analytic curve model shared by vlax-curve-* and the cador ActiveX
+   ;; geometric properties (cador-curve-length-and-sampling.issue)
+   (:file "autolisp-host/source/curve-geometry"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-host/tests")))
   :perform (asdf:test-op (op system)
@@ -562,6 +565,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-host/tests/test-harness")
    (:file "autolisp-host/tests/nihil-tests")
    (:file "autolisp-host/tests/host-error-tests")
+   (:file "autolisp-host/tests/curve-geometry-tests")
    (:file "autolisp-host/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
