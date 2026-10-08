@@ -908,3 +908,56 @@ WARN.
 - The end-to-end AutoCAD check, re-run with the corrected probe
   (encoding:experiment:lispsys-bom:autocad:windows).
 Everything else of sections 4 to 6, and the `log' situation, is done.
+
+* Verified 2026-10-08 (MR !464, branch encoding-measured-2026-10-08 at 395f09a8 = clautolisp/alfe 2.3.9)
+
+** 3. End-to-end AutoCAD -Efile-write forwarding -- SETTLED
+
+Job 17027024820 (encoding:experiment:lispsys-bom:autocad:windows, AutoCAD
+2022), the corrected probe (lispsys-forward-probe.lsp alfe-loaded from the
+one-line entry file run-lispsys-bom-probe.ps1 writes), -Efile-write utf-8:
+#+begin_example
+[LISPSYS 0 forward] ENC E1F LISPSYS 0 FORWARDED-ARG "utf8"
+[LISPSYS 0 forward] ENC E1F w SIZE 3
+[LISPSYS 0 forward] ENC E1F a SIZE 1
+[LISPSYS 0 forward] WARN -Efile-write: not forwarded, LISPSYS is 0: AutoCAD's OPEN takes an encoding only at LISPSYS 1 or 2 (measured, AutoCAD 2022); files are written in cp1252.
+[LISPSYS 1 forward] ENC E1F LISPSYS 1 FORWARDED-ARG "utf8"
+[LISPSYS 1 forward] ENC E1F w SIZE 4
+[LISPSYS 1 forward] ENC E1F a SIZE 2
+[LISPSYS 2 forward] ENC E1F LISPSYS 2 FORWARDED-ARG "utf8"
+[LISPSYS 2 forward] ENC E1F w SIZE 4
+[LISPSYS 2 forward] ENC E1F a SIZE 2
+#+end_example
+Exactly the expectation: at LISPSYS 0 nothing is forwarded and ONE warning is
+given (for both the "w" and the "a"); at LISPSYS 1 / 2 "w" writes UTF-8 (4
+bytes for "A" e-acute "B") and "a" appends UTF-8 (2 bytes for e-acute), with
+no warning. The AutoCAD forwarding of -Efile-write UTF-8, "w" and "a"
+(alfe 2.3.9), is confirmed in the CAD. The same job repeats the append
+measurement: open-a-utf8 SIZES (4 6) and open-a-utf8-bom SIZES (7 9) at
+LISPSYS 1 / 2, "nombre d'arguments trop important" at 0. (Code loaded by the
+-l file itself is still not rewritten: alfe-efile-write-not-applied-to-l-file.)
+
+** The LOG step, re-run (jobs 17027024819 AutoCAD, 17027024818 BricsCAD V25)
+
+- AutoCAD 2022 (job 17027024819): with ERROR lines now kept, the step says why
+  it left no evidence:
+  #+begin_example
+  [LOG] ERROR protocol request 1: while loading ...\dist\encoding\log-probe.lsp (form starting at line 1) at line 1, column 1: nombre d'arguments insuffisants
+  [LOG] raw empty_129c0a04d.log: 210 bytes; first 16: 5B 20 41 75 74 6F 43 41 44 20 2D 20 54 68 75 20; first byte above 7F at offset 210: none
+  #+end_example
+  The probe form's (apply (quote princ) (list X)) calls the bootstrap's
+  fixed-arity (obj file) princ shadow on AutoCAD with one argument; APPLY
+  hides the call from the princ normalizer that pads (princ X), so the form
+  fails before the LINE command. A probe-authoring bug, not a log finding;
+  AutoCAD's log encoding stays as measured by probe-logfile (windows-1252, MR
+  !428). To make this step informative on AutoCAD the marker must not go
+  through APPLY (left as is: nothing depends on it).
+- BricsCAD V25 (job 17027024818) repeats the 2026-10-08 result byte for byte:
+  raw log 475 bytes, first 16 bytes 0D 0A 2D ..., first byte above 7F at
+  offset 143 in 0D 0A 44 E9 70 61 72 74 -- windows-1252, no BOM.
+
+** Still open here
+
+Only the BricsCAD/Windows ",ccs=" append (probe-open-encoding in
+vendor:probes:bricscad, job 17027024838, running): keep or stop alfe's ,ccs=
+forwarding on "a".
