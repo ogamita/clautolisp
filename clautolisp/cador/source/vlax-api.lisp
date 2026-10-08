@@ -694,6 +694,8 @@ handled, (values NIL NIL) otherwise."
           ((and (string-equal name "SetBulge")
                 (eq (entity-handle-kind entity) :lwpolyline))
            (values (%lwpolyline-set-bulge entity (first args) (second args)) t))
+          ((string-equal name "IntersectWith")
+           (values (%entity-intersect-with host entity args) t))
           (t (values nil nil))))))
 
 (defun %lwpolyline-vertex-tail (entity index operator-name)
@@ -732,6 +734,31 @@ handled, (values NIL NIL) otherwise."
         (setf (cdr tail) (cons (cons 42 (coerce bulge 'double-float)) (cdr tail))))
     nil))
 
+(defun %entity-intersect-with (host entity args)
+  "IntersectWith(IntersectObject, ExtendOption): the points where ENTITY
+meets the other entity, as the VARIANT-wrapped double SAFEARRAY the vendor
+returns (X1 Y1 Z1 X2 ...) -- an EMPTY one when they do not meet
+(intersect.lisp; cador-intersectwith-missing)."
+  (destructuring-bind (&optional other-vla (option 0) &rest more) args
+    (when more
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+       :invalid-com-argument
+       "IntersectWith expects (IntersectObject ExtendOption), got ~D arguments."
+       (length args)))
+    (let* ((object (resolve-vla-object host other-vla "IntersectWith"))
+           (other (or (%resolve-backing-entity host object)
+                      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                       :invalid-com-argument
+                       "IntersectWith expects an entity, got ~A."
+                       (cador-com-object-progid object))))
+           (option (cond ((null option) 0)
+                         ((and (integerp option) (<= 0 option 3)) option)
+                         (t (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                             :invalid-com-argument
+                             "IntersectWith expects an acExtendOption 0-3, got ~S."
+                             option)))))
+      (%wrap-com-point (entity-intersect-with host entity other option)))))
+
 (defun %entity-fallback-method-p (host object name)
   (let ((entity (%resolve-backing-entity host object)))
     (and entity
@@ -740,7 +767,7 @@ handled, (values NIL NIL) otherwise."
              (and (member name '("GetBulge" "SetBulge") :test #'string-equal)
                   (eq (entity-handle-kind entity) :lwpolyline))
              (member name '("Delete" "Erase" "Update" "Move" "Rotate"
-                            "Copy" "GetBoundingBox")
+                            "Copy" "GetBoundingBox" "IntersectWith")
                      :test #'string-equal))
          t)))
 

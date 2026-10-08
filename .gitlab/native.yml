@@ -1209,6 +1209,92 @@ pathname:probe:autocad:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend autocad
 
+# --- ActiveX IntersectWith: what the vendors return --------------------------
+#
+# cador-intersectwith-missing.issue. clautolisp implements IntersectWith from
+# the reference, which says nothing about the ORDER of the points, tangency,
+# overlapping curves, a crossing at a polyline vertex, how far a polyline
+# extends, or vlax-safearray->list on the EMPTY result. This probe measures
+# them (both call forms, the four acExtend options). `autocad' is the GUI
+# engine through COM automation; `accoreconsole' the headless console, which
+# has no application object -- whether its vla- surface answers is itself
+# measured. Soft: a probe measures, never gates.
+.intersectwith-artifacts:
+  interruptible: true
+  artifacts:
+    name: "intersectwith-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/intersectwith/]
+    expire_in: 30 days
+
+intersectwith:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .intersectwith-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-intersectwith-probe.sh --backend bricscad
+
+intersectwith:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .intersectwith-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend bricscad
+
+intersectwith:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .intersectwith-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend autocad
+
+intersectwith:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .intersectwith-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend accoreconsole
+
 # --- vendor probes on real BricsCAD / AutoCAD ------------------------------
 # Self-building (make build-alfe-sbcl in-script), like the encoding/pathname
 # probes, so they no longer `needs:` build:alfe:* (which stays in the parent

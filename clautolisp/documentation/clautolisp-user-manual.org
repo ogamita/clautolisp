@@ -1598,6 +1598,40 @@ provides that surface through the host backend:
   reported touching it (AutoCAD); under a BricsCAD dialect the true
   ink is reported and spaces count to their advance. Characters
   outside ASCII are measured as =n=.
+- *IntersectWith* (2.3.10): ~(vla-IntersectWith a b option)~ returns the
+  points where entity ~a~ meets entity ~b~ as a VARIANT holding a
+  SAFEARRAY of doubles, flattened ~X1 Y1 Z1 X2 Y2 Z2 ...~ -- read it with
+  ~(vlax-safearray->list (vlax-variant-value r))~. When the objects do not
+  meet the array is *empty* (lower bound 0, upper bound -1), not ~nil~;
+  ~(vlax-invoke a 'IntersectWith b option)~ gives the same points as a
+  plain flat list, or ~nil~. ~option~ is an ~acExtend*~ constant:
+  ~acExtendNone~ (0), ~acExtendThisEntity~ (1, extend ~a~),
+  ~acExtendOtherEntity~ (2, extend ~b~), ~acExtendBoth~ (3).
+  - Supported: LINE, RAY, XLINE, CIRCLE, ARC, ELLIPSE (full or partial),
+    LWPOLYLINE and 2D POLYLINE (each span, a bulged span as its true arc)
+    and 3D POLYLINE, lying in planes parallel to XY (extrusion +Z or -Z).
+    The geometry is exact (an ellipse against a circle or another ellipse
+    to about 1e-9); a 3D line is exact in 3D, so two segments that cross in
+    plan at different heights do not meet.
+  - Extending: a line becomes the infinite line, a ray the infinite line,
+    an arc its full circle, an elliptical arc its full ellipse. An *open*
+    polyline extends only its first span backwards and its last span
+    forwards (an arc span to its full circle); a closed one does not
+    extend.
+  - Points come *in order along ~a~*: a line from its start, a circle
+    counter-clockwise from angle 0, an arc from its start angle, a
+    polyline span by span (a point on the backward extension of its first
+    span first). A tangency is one point; a point reached twice (a
+    crossing exactly at a polyline vertex) is reported once; collinear
+    overlapping lines and coincident circles give no point. The vendor
+    reference says nothing about these, so they are clautolisp's choices
+    until measured (the =intersectwith:probe:*= CI jobs,
+    ~autolisp-front-end/tests/scenarios/entities/intersectwith-probe.lsp~).
+  - SPLINE, meshes, polyface meshes, text, block references, points and
+    every other kind, and entities in a plane not parallel to XY, signal
+    an error ("IntersectWith: AcDbSpline is not a curve IntersectWith
+    handles; clautolisp does not support it."), catchable with
+    ~vl-catch-all-apply~.
 
 Example (headless, against the mock host):
 
