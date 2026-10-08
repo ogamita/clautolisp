@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-eval-request-locals-capture-user-setq -- a request's (setq f ...) / (setq text ...) / (setq form ...) on a CAD backend sets the request evaluator's LOCAL, and the value is gone
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS:
@@ -131,3 +131,26 @@ request-locals:probe:bricscad:macos, request-locals:probe:bricscad:windows,
 request-locals:probe:autocad:windows (GUI),
 request-locals:probe:accoreconsole:windows.
 Baseline --clautolisp: all kept (72 observations).
+
+* Verified on the runners (2026-10-08, MR !468 pipeline 2927377490) -- DONE
+
+request-locals probe, alfe 2.3.15: a user (setq NAME v) for each of the 23
+names the request path used to bind (F TEXT R PATH FORM SOURCE ERR
+NORMALIZED RESULT KEEP REQ-ID RC LINE OBJ MSG ARGS NAME VALUE X S IDX BACK
+ON), in each of the 3 request kinds, keeps its value afterwards:
+
+| job         | target                     | kept      | summary              |
+|-------------+----------------------------+-----------+----------------------|
+| 17037517171 | BricsCAD V25 Windows       | 69 / 69   | lost 0 in 1, 2, 3    |
+| 17037517170 | BricsCAD V26 macOS         | 69 / 69   | lost 0 in 1, 2, 3    |
+| 17037517172 | AutoCAD 2022 GUI           | 69 / 69   | lost 0 in 1, 2, 3    |
+| 17037517173 | AutoCAD 2022 accoreconsole | 69 / 69   | lost 0 in 1, 2, 3    |
+
+#+begin_example
+RLOCALS-INFO ALFE 2.3.15
+RLOCALS 1 F kept 1
+RLOCALS 2 TEXT kept 112
+RLOCALS 3 ON kept 233
+RLOCALS-SUMMARY 3 kept 0
+RLOCALS-DONE
+#+end_example
