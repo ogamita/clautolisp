@@ -1093,7 +1093,10 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
     ("EndPoint"      (:arc)                           nil)
     ("Angle"         (:line)                          nil)
     ("Delta"         (:line)                          nil)
-    ("Closed"        (:lwpolyline :polyline)          t))
+    ("Closed"        (:lwpolyline :polyline)          t)
+    ;; measured on AutoCAD and BricsCAD: (vlax-get pl 'Coordinates) of the
+    ;; LWPOLYLINE (0,0) (10,0) (10,10) => (0 0 10 0 10 10)
+    ("Coordinates"   (:lwpolyline)                    t))
   "Computed (geometry-derived) entity COM properties.")
 
 (defun %curve-com-property-entry (entity name)
@@ -1130,7 +1133,13 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
                (let ((ang (atan (second d) (first d))))
                  (if (minusp ang) (+ ang (* 2 pi)) ang)))))
         ((is "Closed")
-         (logbitp 0 (let ((f (%entity-group-value entity 70))) (if (integerp f) f 0))))))))
+         (logbitp 0 (let ((f (%entity-group-value entity 70))) (if (integerp f) f 0))))
+        ((is "Coordinates")
+         (%wrap-com-point
+          (loop for pair in (entity-handle-data entity)
+                when (and (consp pair) (eql (car pair) 10))
+                  append (list (coerce (first (cdr pair)) 'double-float)
+                               (coerce (second (cdr pair)) 'double-float)))))))))
 
 (defun %curve-com-property-put (entity name value)
   (let ((entry (%curve-com-property-entry entity name)))
@@ -1148,6 +1157,17 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
         ((string-equal name "Diameter") (%entity-set-group entity 40 (/ (real-value) 2)))
         ((string-equal name "Circumference")
          (%entity-set-group entity 40 (/ (real-value) (* 2 pi))))
+        ((string-equal name "Coordinates")
+         (let* ((xs (%unwrap-com-point value name))
+                (cells (remove-if-not (lambda (pair) (and (consp pair) (eql (car pair) 10)))
+                                      (entity-handle-data entity))))
+           (unless (= (length xs) (* 2 (length cells)))
+             (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+              :invalid-com-property-value
+              "Coordinates expects ~D numbers (x y per vertex), got ~D."
+              (* 2 (length cells)) (length xs)))
+           (loop for cell in cells for (x y) on xs by #'cddr
+                 do (setf (cdr cell) (list x y)))))
         ((string-equal name "Closed")
          (let ((f (%entity-group-value entity 70)))
            (%entity-set-group entity 70

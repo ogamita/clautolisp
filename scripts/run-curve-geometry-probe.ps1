@@ -59,19 +59,22 @@ $bargs += @("-l", $probe)
 $outDir = Join-Path $root "dist/curve-geometry"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $report = Join-Path $outDir "$Backend-Windows.txt"
+# Every write is Add-Content -Encoding utf8: Tee-Object -Append writes UTF-16
+# under Windows PowerShell 5, which left the 2026-10-08 reports mixed
+# (UTF-8 BOM + UTF-16LE body) and hid the DONE line from Select-String.
 Set-Content -Encoding utf8 $report ""
 
-"########## BACKEND: $Backend on Windows ##########" | Tee-Object -FilePath $report -Append
+"########## BACKEND: $Backend on Windows ##########" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 & $alfe $bargs 2>&1 |
   Select-String -Pattern '^CURVE|BOOTSTRAP-FAILED|FAILED' |
   ForEach-Object { $_.Line } |
-  Tee-Object -FilePath $report -Append
+  ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 
 # A report with no DONE line is a run that died mid-way; say so in the file, so
 # a truncated run is never read as a complete one.
 if (-not (Select-String -Path $report -Pattern '^CURVE-DONE' -Quiet)) {
   "CURVE-INCOMPLETE  the probe did not reach its end" |
-    Tee-Object -FilePath $report -Append
+    ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 }
 
 Write-Host "curve-geometry probe ($Backend) -> $report"

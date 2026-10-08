@@ -62,6 +62,13 @@ separate binary for tool integrators.
   ~Angle~, ~Delta~, ~Closed~, ~AddArc~, ~AddCircle~,
   ~AddLightWeightPolyline~, ~GetBulge~ / ~SetBulge~; the ~ARC~ command
   takes the Center forms. See the user manual's ActiveX section.
+  The edge cases follow what AutoCAD 2022 and BricsCAD V25/V26 were MEASURED
+  to answer, per product dialect: out-of-range params and distances (LINE /
+  CIRCLE / AutoCAD ARC extrapolate, polylines answer nil, BricsCAD answers the
+  length far past an end), the point tolerance, derivatives (a LINE's is END -
+  START, a bulge's has length R), the area of a LINE (0), closed polylines
+  being periodic, and ENTMAKE normalising an ARC's angles except under a
+  BricsCAD dialect; LWPOLYLINE ~Coordinates~ is new.
 
 - *cador: DXF pointer group codes come back as entity names* (2.3.7):
   ~entget~, ~dictsearch~, ~dictnext~, ~tblsearch~, ~tblnext~ and the

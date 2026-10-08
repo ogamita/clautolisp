@@ -380,6 +380,26 @@ such entity exists or it has been deleted."
               (cons (cons -1 ename)
                     (table-record-al-view+extras host record))))))))
 
+(defun %normalise-entmade-arc-angles (pure operator-name)
+  "AutoCAD stores an entmade ARC's 50/51 normalised into [0, 2pi) (measured
+by curve-geometry:probe:autocad:windows, 2026-10-08: (50 . -pi/4)
+(51 . 7.0) read back as 5.497787 / 0.716815); BricsCAD keeps them as given.
+So under every dialect but the BricsCAD ones ENTMAKE / ENTMAKEX normalise."
+  (if (and (member operator-name '(entmake entmakex))
+           (equal (%data-type-string pure) "ARC")
+           (not (%bricscad-dialect-for-entmakex-p)))
+      (mapcar (lambda (pair)
+                (if (and (consp pair)
+                         (or (group-code-equal-p (car pair) 50)
+                             (group-code-equal-p (car pair) 51))
+                         (realp (cdr pair)))
+                    (cons (car pair)
+                          (let ((m (mod (coerce (cdr pair) 'double-float) (* 2 pi))))
+                            (if (>= m (* 2 pi)) 0.0d0 m)))
+                    pair))
+              pure)
+      pure))
+
 (defun %data-type-string (data)
   "The (0 . TYPE) string of the pure group-code list DATA, or NIL."
   (dolist (pair data nil)
@@ -647,7 +667,8 @@ synthesised) under the deviant/lenient dialects (bricscad, lax). strict
 and bricscad additionally warn."
   (when (member operator-name '(entmake entmakex))
     (%vet-pointer-groups data operator-name))
-  (let* ((pure (al-data->pure data operator-name))
+  (let* ((pure (%normalise-entmade-arc-angles
+                (al-data->pure data operator-name) operator-name))
          (drawing (cador-active-drawing host))
          (missing-markers (clautolisp.drawing:entity-dxf-missing-markers pure)))
     ;; An INSERT referencing an undefined block is rejected by both vendors

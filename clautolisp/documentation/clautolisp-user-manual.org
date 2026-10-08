@@ -1546,8 +1546,7 @@ provides that surface through the host backend:
   with theta = 4 atan(bulge), so ~vlax-curve-getDistAtParam~ /
   ~getParamAtDist~ / ~getPointAtDist~ / ~getDistAtPoint~ /
   ~getParamAtPoint~ follow the arc, and a vertex or the exact end of the
-  curve is a valid argument. A parameter, distance or point off the
-  curve answers ~nil~. ~ArcLength~, ~TotalAngle~, ~Center~, ~Radius~,
+  curve is a valid argument (beyond the ends: see below). ~ArcLength~, ~TotalAngle~, ~Center~, ~Radius~,
   ~StartAngle~ / ~EndAngle~ (radians), ~StartPoint~ / ~EndPoint~,
   ~Length~, ~Area~, ~Circumference~, ~Diameter~, ~Angle~, ~Delta~ and
   ~Closed~ read the same model, and ~ModelSpace.AddArc~ / ~AddCircle~ /
@@ -1557,7 +1556,25 @@ provides that surface through the host backend:
   ARC's angles were read as degrees, so its length came out pi/180 too
   small (R 10, 90 degrees: 0.274 instead of 15.708), the true end point
   was "not on the curve" (~nil~), and bulges were measured along their
-  chords. A query point given in 2D is taken in the curve's plane.
+  chords.
+
+  What happens at and beyond the ends, and off the curve, was measured on
+  AutoCAD 2022 and BricsCAD V25/V26 and follows the PRODUCT of the
+  dialect (AutoCAD's under strict, autocad, clautolisp and lax): a LINE
+  or CIRCLE extrapolates distances and parameters past its ends (AutoCAD
+  wraps a CIRCLE's ~getParamAtDist~ into [0, 2pi)), an ARC does on
+  AutoCAD and answers ~nil~ on BricsCAD, an LWPOLYLINE answers ~nil~
+  (BricsCAD's ~getParamAtDist~ far past an end answers the curve's
+  length), and AutoCAD's 2D POLYLINE refuses a distance at its length. A
+  point counts as on the curve within 1e-10 (AutoCAD's LWPOLYLINE ignores
+  the point's Z; a 2D point is in the curve's plane on AutoCAD, at Z 0 on
+  BricsCAD), and BricsCAD answers 0 rather than ~nil~ for a point off a
+  LINE or a polyline lying at Z 0. A LINE's first derivative is END -
+  START; on a bulge segment the derivative has length R. ~getArea~ of a
+  LINE is 0, and a closed polyline is periodic. ~entmake~ normalises an
+  ARC's angles into [0, 2pi) except under a BricsCAD dialect, which keeps
+  them and measures from the stored start angle. LWPOLYLINE
+  ~Coordinates~ reads and writes the flat x y list.
 - Block references work end-to-end: ~(vla-insertblock space pt name
   xs ys zs rot)~ creates the INSERT with an ATTRIB per non-constant
   ATTDEF of the definition (transformed to the placement);

@@ -124,6 +124,7 @@
    ;; --- Curve geometry (curve-geometry.lisp) -----------------------
    #:*curve-point-tolerance*
    #:*curve-param-tolerance*
+   #:current-curve-product
    #:parse-curve-dxf
    #:host-curve-descriptor
    #:make-curve-segment
