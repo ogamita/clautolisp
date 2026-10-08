@@ -653,7 +653,12 @@ RUN_FILE_COMPAT_BIN   := $(RUN_FILE_COMPAT)
 
 INSTALL_BINARIES_sbcl := $(CLAUTOLISP_SBCL) $(READ_AUTOLISP_SBCL)
 INSTALL_BINARIES_ccl  := $(CLAUTOLISP_CCL)  $(READ_AUTOLISP_CCL)
-INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARIES_$(impl)))
+# INSTALL_LISPS narrows that to the Lisps actually BUILT: the root
+# stage-programs builds only $(RELEASE_LISPS) and passes it here, so a
+# stale image of a Lisp it did not build (an old *-ccl left in bin/) is
+# not shipped -- nor used to compile the plug-ins against current source.
+INSTALL_LISPS ?= $(AVAILABLE_IMPLEMENTATIONS)
+INSTALL_BINARIES := $(foreach impl,$(INSTALL_LISPS),$(INSTALL_BINARIES_$(impl)))
 
 .PHONY: install install-programs install-documentation install-libraries \
         install-lisp-systems install-emacs uninstall

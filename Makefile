@@ -884,11 +884,11 @@ stage: stage-programs stage-libraries stage-documentation  ## Build + stage ever
 stage-programs: build-programs  ## Build the programs and stage them (bin/, libexec/, the harnesses, the alref libs and alfe's plug-ins) under $(STAGE)/programs.
 	rm -rf "$(STAGE_PROGRAMS)"
 	install -d "$(STAGE_PROGRAMS)"
-	"$(MAKE)" -C autolisp-spec      install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
-	"$(MAKE)" -C clautolisp         install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
-	"$(MAKE)" -C autolisp-test      install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
-	"$(MAKE)" -C autolisp-front-end install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
-	"$(MAKE)" -C autolisp-benchmark install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" $(LISP_VARS)
+	"$(MAKE)" -C autolisp-spec      install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" INSTALL_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
+	"$(MAKE)" -C clautolisp         install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" INSTALL_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
+	"$(MAKE)" -C autolisp-test      install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" INSTALL_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
+	"$(MAKE)" -C autolisp-front-end install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" INSTALL_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
+	"$(MAKE)" -C autolisp-benchmark install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" INSTALL_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
 	@$(call dispatch-layout,$(STAGE_PROGRAMS))
 	@$(call stage-manifest,$(STAGE_PROGRAMS),programs)
 	@echo "staged: $(STAGE_PROGRAMS)"
