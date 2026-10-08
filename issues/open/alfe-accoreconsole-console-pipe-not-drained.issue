@@ -171,6 +171,17 @@ FLOOD-DONE (Select-String over a report mixing a UTF-8 header with Tee-Object's
 UTF-16LE lines) and went red. Both fixed: the probe measures and switches
 driver, the verdict is computed from the captured lines.
 
+Second run, job 17030198222 (c5997f0f): the prompt driver added 0 bytes
+(dead), then the run DIED in the princ driver -- errors.txt: "nombre
+d'arguments insuffisants" at the driver loop. On AutoCAD alfe's princ takes
+(OBJ FILE); its load rewriter pads direct calls, but a 1-argument princ
+reached through APPLY is not rewritten. Fixed: the driver passes the stream
+(apply 'princ (list LINE nil)); prompt and princ are now small (64 KB) and
+GUARDED by vl-catch-all-apply, so an error ends that driver (FLOOD-DRIVER ...
+error MSG), not the run; the command-echo SETVAR driver (CMDECHO 1) is the
+primary flood with the whole 1 MB target, then REGEN if still short -- both
+unguarded (vl-catch-all-apply around COMMAND aborts AutoCAD runs), hence last.
+
 Close this ticket when that job has reported FLOOD-VERDICT with this fix; then the optkw probe can go back to one
 session (and benchmark:autocad:windows, which also runs --mode batch and died
 mid-suite on 2026-09-28, can be re-run against it --

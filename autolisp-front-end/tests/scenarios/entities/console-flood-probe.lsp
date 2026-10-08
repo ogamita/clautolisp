@@ -17,27 +17,35 @@
 ;;;; after every chunk, tries several drivers, keeps the ones that make it
 ;;;; grow, and stops when the console has received *flood-target* bytes.
 ;;;;
-;;;; Drivers, in order (each until it added its share, was found dead, or
-;;;; spent 60 s):
-;;;;   prompt   (prompt LINE)                -- measured; known not to reach it
-;;;;   princ    native PRINC, called through APPLY so alfe's load rewriter
-;;;;            (which turns princ into its protocol capture) leaves it alone
+;;;; Drivers, in order (each until it added its share, was found dead, failed,
+;;;; or spent 60 s):
+;;;;   prompt   (prompt LINE) -- measured; reached nothing in job 17030198222
+;;;;   princ    (apply 'princ (list LINE nil)) -- out of reach of alfe's load
+;;;;            rewriter; the explicit NIL stream is required, because on
+;;;;            AutoCAD alfe's princ takes (OBJ FILE) and a 1-argument call
+;;;;            through APPLY failed "nombre d'arguments insuffisants" and
+;;;;            ended the whole run (job 17030198222)
 ;;;;   setvar   (command "_.SETVAR" "USERI1" n) with CMDECHO 1: the command
 ;;;;            line echo of a command, which is what filled the console in
-;;;;            the option-keyword runs that hung
-;;;;   regen    (command "_.REGEN"): echoes its "Regenerating model." line
+;;;;            the option-keyword runs that hung. THE PRIMARY FLOOD: its
+;;;;            share is the whole target
+;;;;   regen    (command "_.REGEN"), only if the console is still short
+;;;; The first two are small (64 KB shares) and GUARDED: an error ends that
+;;;; driver (FLOOD-DRIVER ... error), not the run. The command drivers are not
+;;;; guarded -- (vl-catch-all-apply around COMMAND aborts an AutoCAD run) --
+;;;; so they come last.
 ;;;;
 ;;;; Output (alfe's stdout):
 ;;;;   FLOOD-ENGINE  <PROGRAM> <ACADVER>
 ;;;;   FLOOD-FILE    <path> <bytes at start>        (or "unknown")
 ;;;;   FLOOD-STEP    <driver> <iterations so far> <console bytes>
 ;;;;   FLOOD-DRIVER  <driver> <iterations> added <bytes> <live|dead|unmeasured>
+;;;;                 [error <message>]
 ;;;;   FLOOD-DONE    <console bytes> (<added> added)
 ;;;; A report without FLOOD-DONE is a session that did not complete; the last
 ;;;; FLOOD-STEP says how far the console had got.
 
 (setq *flood-target* (* 1024 1024))   ; bytes the console must receive in all
-(setq *flood-share* (* 384 1024))     ; bytes one driver is asked to add
 (setq *flood-chunk* 200)              ; iterations between two measurements
 (setq *flood-max-iterations* 40000)   ; per driver, whatever happens
 (setq *flood-max-ms* 60000)           ; per driver: alfe's --timeout is 300 s
@@ -70,7 +78,7 @@
 
 ;; One iteration of each driver.
 (defun flood--prompt (i) (prompt (strcat *flood-line* "\n")))
-(defun flood--princ (i) (apply 'princ (list (strcat *flood-line* "\n"))))
+(defun flood--princ (i) (apply 'princ (list (strcat *flood-line* "\n") nil)))
 ;; COMMAND is called directly, never as (vl-catch-all-apply 'command ...):
 ;; AutoCAD aborts the whole run on that form.
 (defun flood--setvar (i) (command "_.SETVAR" "USERI1" (rem i 30000)))
@@ -84,15 +92,24 @@
   (setq v (flood--getvar "MILLISECS"))
   (if (numberp v) v 0))
 
-(defun flood--run (name driver share / start size i stop added t0)
+(defun flood--run (name driver share guarded / start size i stop added t0 r
+                                                 failure)
   (setq start (flood--size)
         i 0
         stop nil
+        failure nil
         t0 (flood--ms))
   (while (not stop)
     (repeat *flood-chunk*
-      (driver i)
+      (if (not failure)
+        (if guarded
+          (progn
+            (setq r (vl-catch-all-apply driver (list i)))
+            (if (vl-catch-all-error-p r)
+              (setq failure (vl-catch-all-error-message r))))
+          (apply driver (list i))))
       (setq i (1+ i)))
+    (if failure (setq stop T))
     (setq size (flood--size))
     (flood--say (strcat "FLOOD-STEP    " name " " (itoa i) " "
                         (if size (itoa size) "?")))
@@ -109,7 +126,8 @@
                       (if added (itoa added) "?") " "
                       (cond ((null added) "unmeasured")
                             ((< added 64) "dead")
-                            (T "live"))))
+                            (T "live"))
+                      (if failure (strcat " error " failure) "")))
   added)
 
 (flood--say (strcat "FLOOD-ENGINE  " (vl-princ-to-string (flood--getvar "PROGRAM"))
@@ -123,14 +141,19 @@
 (vl-catch-all-apply 'setvar (list "CMDECHO" 1))
 (setq *flood-old-useri1* (flood--getvar "USERI1"))
 
-(flood--run "prompt" flood--prompt (* 64 1024))
-(foreach entry (list (list "princ" flood--princ)
-                     (list "setvar" flood--setvar)
-                     (list "regen" flood--regen))
-  (if (or (null *flood-base*)
-          (null (flood--size))
-          (< (- (flood--size) *flood-base*) *flood-target*))
-    (flood--run (car entry) (cadr entry) *flood-share*)))
+(defun flood--short-p ( / size)
+  (setq size (flood--size))
+  (or (null *flood-base*)
+      (null size)
+      (< (- size *flood-base*) *flood-target*)))
+
+;; (NAME DRIVER-SYMBOL SHARE GUARDED)
+(foreach entry (list (list "prompt" 'flood--prompt (* 64 1024) T)
+                     (list "princ"  'flood--princ  (* 64 1024) T)
+                     (list "setvar" 'flood--setvar *flood-target* nil)
+                     (list "regen"  'flood--regen  *flood-target* nil))
+  (if (flood--short-p)
+    (flood--run (nth 0 entry) (nth 1 entry) (nth 2 entry) (nth 3 entry))))
 
 (if *flood-old-useri1*
   (vl-catch-all-apply 'setvar (list "USERI1" *flood-old-useri1*)))
