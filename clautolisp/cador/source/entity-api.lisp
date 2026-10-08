@@ -85,11 +85,63 @@ string; conses recurse; everything else passes through."
 (defun pure->al-value (value)
   "Convert a stored pure CL value to its AutoLISP view: CL string ->
 autolisp-string; conses recurse; everything else passes through.
-(Enames are reconstructed only for the -1 head, by ENTITY->AL-VIEW.)"
+(Enames are reconstructed where the group code is known: the -1 head by
+ENTITY->AL-VIEW, the DXF pointer codes by PURE-PAIR->AL-PAIR.)"
   (typecase value
     (string (clautolisp.autolisp-runtime:make-autolisp-string value))
     (cons (cons (pure->al-value (car value)) (pure->al-value (cdr value))))
     (t value)))
+
+;;; --- DXF pointer group codes ------------------------------------
+;;;
+;;; The drawing stores every object reference as the hex handle STRING
+;;; it names (that is what DXF writes and what clautolisp.drawing keys
+;;; its tables on). AutoLISP does not see those strings: ENTGET (and so
+;;; DICTSEARCH / DICTNEXT / TBLSEARCH / TBLNEXT, which return the same
+;;; view) translates the POINTER group codes into ENTITY NAMES, per the
+;;; DXF reference's group-code value types:
+;;;   330-339 soft-pointer ID      340-349 hard-pointer ID
+;;;   350-359 soft-owner ID        360-369 hard-owner ID
+;;;   390-399 handle of the plot-style-name object (hard pointer)
+;;;   480-481 hard-pointer handle
+;;; NOT translated, they stay handle strings: 5 / 105 (the object's own
+;;; handle), 320-329 ("arbitrary object handles": handle VALUES the
+;;; database does not translate -- TO MEASURE,
+;;; probes/sources/probe-entget-pointers.lsp) and the xdata 1005 handle.
+;;; The inverse direction needs nothing new: AL->PURE-VALUE already turns
+;;; an ENAME back into its handle string, and a handle STRING supplied to
+;;; ENTMAKE / ENTMOD in those codes is stored as given (the pre-2.3.7
+;;; contract, kept for compatibility).
+;;; (issues/open/cador-entget-pointer-codes-are-handle-strings.issue)
+
+(defun dxf-pointer-group-code-p (code)
+  "True iff the DXF group CODE carries an object POINTER (an ID that
+ENTGET returns as an ENAME): 330-369, 390-399, 480-481."
+  (and (realp code)
+       (= code (round code))
+       (let ((c (round code)))
+         (or (<= 330 c 369) (<= 390 c 399) (<= 480 c 481)))))
+
+(defun pure-pair->al-pair (host pair)
+  "The AutoLISP view of one stored group-code PAIR: a pointer code's
+handle string becomes the ENAME HANDLE->ENAME interns for it (also for a
+handle naming no live object -- an erased or dangling target -- and for
+the null handle \"0\": both give an ename whose ENTGET is NIL, which is
+what AutoCAD does for a pointer to an erased object; the null pointer is
+TO MEASURE); every other value goes through PURE->AL-VALUE."
+  (cond
+    ((not (consp pair)) pair)
+    ((and (dxf-pointer-group-code-p (car pair))
+          (stringp (cdr pair))
+          (plusp (length (cdr pair))))
+     (cons (car pair) (handle->ename host (cdr pair))))
+    (t (cons (car pair) (pure->al-value (cdr pair))))))
+
+(defun pure-data->al-view (host data)
+  "The AutoLISP view of the stored group-code list DATA: PURE-PAIR->AL-PAIR
+on each top-level pair (an xdata (-3 ...) cell is not a pointer code, so
+its 1005 handles stay strings)."
+  (mapcar (lambda (pair) (pure-pair->al-pair host pair)) data))
 
 (defun al-data->pure (data operator-name)
   "Convert an AutoLISP DXF group-code list to a pure-CL list. The
@@ -157,11 +209,7 @@ supplies the ename intern cache for the (-1 . ename) head."
                     (%filter-xdata-groups (cdr xdata-cell) names))))
     (append
      (list (cons -1 (handle->ename host (entity-handle-id entity))))
-     (mapcar (lambda (pair)
-               (if (consp pair)
-                   (cons (car pair) (pure->al-value (cdr pair)))
-                   pair))
-             ordinary)
+     (pure-data->al-view host ordinary)
      (when kept
        (list (cons -3 (pure->al-value kept)))))))
 
@@ -369,7 +417,7 @@ block-contents walk ((entnext (cdr (assoc -2 (tblsearch \"BLOCK\" n)))).
 SPEC-UNCERTAIN: on the vendors an *empty* block's -2 names its ENDBLK
 entity; the host stores no ENDBLK and omits the group
 (deferred-spec-research.issue)."
-  (let ((view (pure->al-value (symbol-table-record-data record))))
+  (let ((view (pure-data->al-view host (symbol-table-record-data record))))
     (if (eq (symbol-table-record-kind record) :block-record)
         (let ((first-handle
                 (first (%block-entity-handles
@@ -640,7 +688,7 @@ probed (deferred-spec-research.issue)."
        (setf (cador-open-block-definition host)
              (list name pure (make-symbol-table-record :kind :block-record
                                                        :name name :data pure)))
-       (pure->al-value pure)))))
+       (pure-data->al-view host pure)))))
 
 (defun %open-block-ename (host)
   "The ename of the block definition being built, or NIL."

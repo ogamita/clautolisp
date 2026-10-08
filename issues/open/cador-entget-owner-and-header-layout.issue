@@ -1,0 +1,41 @@
+#+TITLE: cador: entget of a main-space entity has no 330 owner; header group order differs from AutoCAD
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: cador-entget-pointer-codes-are-handle-strings
+#+BRANCH:
+
+* Symptom
+
+Found while fixing =cador-entget-pointer-codes-are-handle-strings=
+(clautolisp 2.3.7), on the clautolisp baseline run of
+=probes/sources/probe-entget-pointers.lsp=:
+
+#+begin_src lisp
+(setq l (entmakex '((0 . "LINE") (8 . "0") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0))))
+(assoc 330 (entget l))   ; nil on cador; AutoCAD: (330 . <*Model_Space record>)
+#+end_src
+
+and the header order of entget differs:
+
+- cador LINE: =-1 5 0 ...= (handle before type)
+- cador XRECORD after dictadd: =-1 5 330 0 100 280 ...= (the owner is
+  inserted after the FIRST stored group, which is the 5)
+- AutoCAD (documented examples): =-1 0 5 [102 {ACAD_REACTORS 330 102 }] 330 100 ...=
+
+* Cause
+
+=clautolisp.drawing:add-entity= stores =(5 . handle)= at the head of the
+data; the owner of a main-space entity is implicit (=entity-handle-block=
+NIL) and only written as a 330 by the DXF writer (=dxf.lisp=, the
+=*Model_Space= record handle); =set-entity-owner= (dictionary.lisp) puts
+the 330 after the first group.
+
+* Fix sketch
+
+Synthesize the 330 owner in the AutoLISP view (the block record's id as an
+ENAME -- table record ids are gensyms in a fresh cador document, so they
+need a real handle first), and order the view's header groups
+=-1 0 5 [102...] 330 100= like the vendors. TO MEASURE against the
+=entget-pointers= probe results (LINE in model space, XRECORD codes)
+before relying on the exact order.

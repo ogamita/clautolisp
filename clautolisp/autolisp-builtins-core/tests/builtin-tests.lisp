@@ -8238,3 +8238,36 @@ OPEN-ARGUMENTS...) under DIALECT after PRELUDE, as a printed list."
     (is (= 1 (len 65 #xE2 #x82)))               ; cut short
     (is (= 5 (len 65 #xF0 #x9F #x98 #x80)))
     (is (= 4 (len #xEF #xBB #xBF 65)))))
+
+;;; --- DXF pointer codes through the AutoLISP builtins ---------------
+;;; Regression for the SCHMS report under the cador host:
+;;;   ENTGET expects an ENAME, got "41"
+;;; (cador-entget-pointer-codes-are-handle-strings.issue). AutoLISP code
+;;; follows a pointer with (entget (cdr (assoc 330 ...))); the owner,
+;;; dictionary-entry and table-record pointers must be ENAMES.
+
+(test entget-follows-pointer-group-codes-under-cador
+  ;; Owner 330 of a VERTEX -> its POLYLINE.
+  (let ((r (%al "(progn
+                   (setq p (entmakex '((0 . \"POLYLINE\") (70 . 1))))
+                   (setq v (entmakex '((0 . \"VERTEX\") (10 0.0 0.0 0.0))))
+                   (entmakex '((0 . \"SEQEND\")))
+                   (list (type (cdr (assoc 330 (entget v))))
+                         (eq p (cdr (assoc 330 (entget v))))
+                         (cdr (assoc 0 (entget (cdr (assoc 330 (entget v))))))))")))
+    (is (string= "ENAME" (autolisp-symbol-name (first r))))
+    (is (not (null (second r))))
+    (is (string= "POLYLINE" (autolisp-string-value (third r)))))
+  ;; (entget (namedobjdict)) 350 entries and a dictsearch member's 330.
+  (let ((r (%al "(progn
+                   (setq x (entmakex '((0 . \"XRECORD\") (100 . \"AcDbXrecord\") (1 . \"v\"))))
+                   (dictadd (namedobjdict) \"PTRTEST\" x)
+                   (list (type (cdr (assoc 350 (entget (namedobjdict)))))
+                         (cdr (assoc 0 (entget (cdr (assoc 350 (entget (namedobjdict)))))))
+                         (eq (namedobjdict)
+                             (cdr (assoc 330 (dictsearch (namedobjdict) \"PTRTEST\"))))
+                         (type (cdr (assoc 5 (entget x))))))")))
+    (is (string= "ENAME" (autolisp-symbol-name (first r))))
+    (is (typep (second r) 'autolisp-string))
+    (is (not (null (third r))))
+    (is (string= "STR" (autolisp-symbol-name (fourth r))))))

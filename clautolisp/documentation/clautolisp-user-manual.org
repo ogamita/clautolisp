@@ -1191,6 +1191,36 @@ a per-session log; ~command~ returns ~nil~. Read the log back with
 signals ~:host-not-supported~ (~vl-cmdf~ instead returns ~nil~, per
 its T / nil success contract).
 
+*** DXF pointer group codes under cador
+
+cador stores the drawing's object references as handles, but -- like
+AutoCAD -- ~entget~ returns the DXF *pointer* group codes as entity
+names: 330-339 (soft pointer, e.g. the owner), 340-349 (hard pointer),
+350-359 (soft owner, e.g. a dictionary's entries), 360-369 (hard owner,
+e.g. an extension dictionary), 390-399 (plot style) and 480-481. So does
+every function returning the same view: ~dictsearch~, ~dictnext~,
+~tblsearch~, ~tblnext~ and the lists ~entmake~ / ~entmod~ return. Such an
+ename is ~eq~ to every other ename of the same object, so
+~(entget (cdr (assoc 330 data)))~ follows the owner. Since 2.3.7; before,
+they were handle strings and that ~entget~ failed with ~ENTGET expects an
+ENAME~.
+
+- Still strings: 5 and 105 (the object's own handle), 320-329 (arbitrary
+  handle values, which the database does not translate) and the xdata
+  1005 handle.
+- A pointer to an object that no longer exists (erased, or the null
+  handle ~0~ that owns the named-object dictionary) is still an ename;
+  ~entget~ of it returns ~nil~.
+- ~entmake~ / ~entmod~ accept an ename or a handle string in those codes.
+- An XRECORD reads back with ~(280 . 1)~ (the duplicate-record cloning
+  flag) right after its ~(100 . "AcDbXrecord")~ marker, as on AutoCAD,
+  unless the data supplied a 280 there; code that skips the pair after
+  the marker therefore finds the first data group.
+
+The exact vendor behaviour of the corner cases (the null pointer, the
+string accepted by entmake, the XRECORD flag on BricsCAD) is being
+measured by ~probes/sources/probe-entget-pointers.lsp~.
+
 *** cadtui localisation dictionaries
 
 Under ~--host cadtui~ the interaction language and the CAD vocabulary are

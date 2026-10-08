@@ -49,6 +49,17 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *cador: DXF pointer group codes come back as entity names* (2.3.7):
+  ~entget~, ~dictsearch~, ~dictnext~, ~tblsearch~, ~tblnext~ and the
+  entmake/entmod echo return the codes 330-369, 390-399 and 480-481 (owner,
+  soft/hard pointer, dictionary entries, plot style) as ENAMEs, so
+  ~(entget (cdr (assoc 330 data)))~ works -- they were handle strings
+  (=ENTGET expects an ENAME, got "41"=). 5, 105, 320-329 and the xdata
+  1005 stay strings; a handle string is still accepted by entmake/entmod.
+  An XRECORD now reads back with ~(280 . 1)~ after its
+  ~(100 . "AcDbXrecord")~ marker, as AutoCAD does, and objects no longer
+  carry a trailing ~(100 . "AcDbObject")~. user-manual § /DXF pointer
+  group codes under cador/.
 - *The shipped LibreDWG reports its own version* (2.2.230): =LibreDWG
   0.14= (its =PACKAGE_VERSION=, =dwg_api_version_string()=, and the
   =999= comment of the DXF it writes), where it used to report

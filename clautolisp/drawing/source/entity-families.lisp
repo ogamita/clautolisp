@@ -346,19 +346,73 @@ note on ENTMAKE in the spec."
                ;; its per-class markers. Only the ABSENT ones are added: data
                ;; that already has them (every command-made LWPOLYLINE) got
                ;; them twice (entmake-duplicates-subclass-markers).
-               (base-marker
-                 (if (entity-family-graphical-p family) "AcDbEntity" "AcDbObject"))
+               ;;
+               ;; A non-graphical OBJECT (XRECORD, DICTIONARY) shows no
+               ;; AcDbObject marker in ENTGET -- the DXF reference lists
+               ;; only its own subclass marker -- and an XRECORD's marker
+               ;; must PRECEDE its data groups, not trail them; that case
+               ;; is %COMPLETE-XRECORD-HEADER's.
+               (graphical (entity-family-graphical-p family))
                (present (loop for pair in with-defaults
                               when (and (consp pair) (eql (car pair) 100)
                                         (stringp (cdr pair)))
                                 collect (cdr pair)))
                (with-subclasses
-                 (append with-defaults
-                         (loop for m in (cons base-marker
-                                              (entity-family-subclasses family))
-                               unless (member m present :test #'string=)
-                                 collect (cons 100 m)))))
+                 (cond
+                   ((string-equal type "XRECORD")
+                    (%complete-xrecord-header with-defaults))
+                   (t
+                    (append with-defaults
+                            (loop for m in (if graphical
+                                               (cons "AcDbEntity"
+                                                     (entity-family-subclasses family))
+                                               (entity-family-subclasses family))
+                                  unless (member m present :test #'string=)
+                                    collect (cons 100 m)))))))
           (values with-subclasses nil))))))
+
+;;; --- XRECORD header ------------------------------------------------
+;;;
+;;; ENTGET of an XRECORD on AutoCAD reads
+;;;   (-1 . e) (0 . "XRECORD") (5 . h) [(102 . "{ACAD_REACTORS") ... (102 . "}")]
+;;;   (330 . owner) (100 . "AcDbXrecord") (280 . 1) <the data groups ...>
+;;; The (280 . 1) -- the DXF "duplicate record cloning flag", 1 = keep
+;;; existing -- is supplied by the database when the ENTMAKE data omits it,
+;;; and code that reads an xrecord back skips it positionally: SCHMS's
+;;; xrecord decoder takes (cddr (member '(100 . "AcDbXrecord") data)), so
+;;; without it the first data group was eaten ("Nom de classe attendu",
+;;; issues/open/cador-entget-pointer-codes-are-handle-strings.issue).
+;;; TO MEASURE (probes/sources/probe-entget-pointers.lsp): the 280 default
+;;; and position on AutoCAD and BricsCAD, and whether a 280 the caller puts
+;;; right after the marker is taken as the flag (assumed: yes, per DXF).
+
+(defun %complete-xrecord-header (data)
+  "DATA (an XRECORD create list) with (100 . \"AcDbXrecord\") (280 . 1)
+ahead of the data groups: the 280 is inserted right after an existing
+marker unless a 280 already follows it; a missing marker (lenient
+dialects only -- the strict ones reject it upstream) is inserted with the
+280 after the leading header groups (0 5 102 330 360)."
+  (let ((marker (position-if (lambda (pair)
+                               (and (consp pair) (%group-code= (car pair) 100)
+                                    (stringp (cdr pair))
+                                    (string-equal (cdr pair) "AcDbXrecord")))
+                             data)))
+    (if marker
+        (let ((next (nth (1+ marker) data)))
+          (if (and (consp next) (%group-code= (car next) 280))
+              data
+              (append (subseq data 0 (1+ marker))
+                      (list (cons 280 1))
+                      (nthcdr (1+ marker) data))))
+        (let ((pos (or (position-if-not
+                        (lambda (pair)
+                          (and (consp pair) (realp (car pair))
+                               (member (round (car pair)) '(-1 0 5 102 330 360))))
+                        data)
+                       (length data))))
+          (append (subseq data 0 pos)
+                  (list (cons 100 "AcDbXrecord") (cons 280 1))
+                  (nthcdr pos data))))))
 
 ;;; --- Divergence D1: R13+ subclass-marker contract ---------------
 ;;;

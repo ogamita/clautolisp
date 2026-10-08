@@ -87,6 +87,7 @@ FAMILIES = {
     "pathname": [f"{ENTITIES}/pathname-probe.lsp",
                  "scripts/run-pathname-probe.*"],
     "sysvars": ["autolisp-spec/autolisp/dump-sysvars.lsp"],
+    "entget-pointers": ["probes/sources/probe-entget-pointers.lsp"],
 }
 
 # What a probe file looks like; every tracked match must be in a family or

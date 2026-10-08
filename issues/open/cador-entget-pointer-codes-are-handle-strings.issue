@@ -1,0 +1,133 @@
+#+TITLE: cador: ENTGET returns DXF pointer group codes as handle strings, and XRECORDs lack (280 . 1)
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS:
+#+BRANCH: fix-cador-entget-pointer-enames
+
+* Symptom (downstream, SCHMS CI under the clautolisp cador host)
+
+SCHMS job 529315 (clautolisp / alfe 2.3.1, cador host, suites run by
+SCHMS tests/test-cad.lsp):
+
+- [tables-cad] lignes-conservent-ordre-valeurs-et-reference --
+  =ENTGET expects an ENAME, got "27".= (also ="2A"=, ="2D"=, ="33"= in the
+  voies / postes / remplacement tests)
+- [dictionnaires-cad] enumeration-restitue-chaque-cle-et-sa-valeur --
+  =ENTGET expects an ENAME, got "3B".=
+- [dictionnaires-cad] remplacement-retire-les-anciennes-cles --
+  =ENTGET expects an ENAME, got "41".=
+- [dictionnaires-cad] ecriture-et-acces-direct-utilisent-de-vrais-xrecords --
+  =CAR expects a list, got "Nom de classe attendu".=
+
+Repro (2.3.1):
+
+#+begin_src lisp
+(setq p (entmakex '((0 . "POLYLINE") (70 . 1))))
+(setq v (entmakex '((0 . "VERTEX") (10 0.0 0.0 0.0))))
+(entmakex '((0 . "SEQEND")))
+(type (cdr (assoc 330 (entget v))))          ; STR   (AutoCAD: ENAME)
+(entget (cdr (assoc 330 (entget v))))        ; error: ENTGET expects an ENAME
+(setq x (entmakex '((0 . "XRECORD") (100 . "AcDbXrecord") (1 . "C") (70 . 1))))
+(dictadd (namedobjdict) "K" x)
+(type (cdr (assoc 350 (entget (namedobjdict)))))   ; STR
+(cadr (member '(100 . "AcDbXrecord") (entget x)))  ; (1 . "C")  (AutoCAD: (280 . 1))
+#+end_src
+
+* Cause
+
+1. The drawing stores every object reference as the hex handle STRING
+   (DXF's representation). The AutoLISP view built at the cador boundary
+   (=entity->al-view= in =clautolisp/cador/source/entity-api.lisp=, used
+   by entget / entmake / entmod / dictsearch / dictnext; and
+   =table-record-al-view+extras=, used by tblsearch / tblnext / entget of
+   a tblobjname) passed every value through =pure->al-value=, which wraps
+   any CL string as an AutoLISP string. Only the =(-1 . ename)= head and a
+   BLOCK record's =-2= were made enames. The reverse direction was already
+   right (=al->pure-value= turns an ENAME into its handle), so entmake /
+   entmod round-tripped and the bug only showed on reading.
+   =cador/tests/entity-api-tests.lisp= asserted the 330 owner IS a string,
+   which locked the bug in.
+
+2. "Nom de classe attendu" is NOT a clautolisp message: it is SCHMS's own
+   xrecord decoder (=src-vlx/xdata_codec.lsp=, =parse_instances=), which
+   reads an xrecord back with =(cddr (member '(100 . "AcDbXrecord") data))=
+   -- skipping the marker AND the =(280 . 1)= duplicate-record-cloning
+   flag that AutoCAD's database inserts after the marker. cador stored the
+   entmakex data as given, so the =cddr= ate the first data group (the
+   class name), and the decoder returned its error string, which the test
+   then CAR-ed. clautolisp's fault: cador did not synthesise the 280. It
+   also appended an =(100 . "AcDbObject")= marker AFTER the data groups of
+   every non-graphical object -- which would have broken the same decoder
+   at the end of the payload, and is not what ENTGET shows (DXF lists no
+   AcDbObject marker on objects).
+
+* Fix (clautolisp 2.3.7)
+
+- =dxf-pointer-group-code-p= / =pure-pair->al-pair= / =pure-data->al-view=
+  (entity-api.lisp): a string value under group codes *330-369, 390-399,
+  480-481* (DXF soft/hard pointer, soft/hard owner, plot-style hard
+  pointer, hard-pointer handle) is returned as the ENAME =handle->ename=
+  interns for it, so it is EQ to every other ename of that object. Used by
+  =entity->al-view= (entget, entmake's echo, entmod's result, dictsearch,
+  dictnext), =table-record-al-view+extras= (tblsearch, tblnext, entget of a
+  table record) and the BLOCK header echo of entmake.
+- NOT converted, they stay strings: 5 / 105 (the object's own handle),
+  320-329 ("arbitrary object handles", handle values the database does
+  not translate), the xdata 1005 handle (inside the -3 cell).
+- Null / dangling: a handle naming no live object -- an erased target, a
+  fabricated handle, the null handle "0" (the root dictionary's owner) --
+  still comes back as an ENAME; =(entget it)= is NIL, never an error.
+  AutoCAD keeps an ename for a pointer to an erased object, and prints the
+  NOD owner as =<Entity name: 0>= as far as is known.
+- entmake / entmod: unchanged and accept both forms in the pointer codes --
+  an ENAME is stored as its handle, a handle STRING as given (pre-2.3.7
+  behaviour, kept for compatibility; no warning, the vendors' acceptance
+  of a string there is a TO MEASURE point).
+- XRECORD (=validate-entity-dxf=, drawing/entity-families.lisp,
+  =%complete-xrecord-header=): =(280 . 1)= is inserted right after the
+  =(100 . "AcDbXrecord")= marker unless a 280 already follows it; a
+  marker-less create (lenient dialects) gets marker + flag before the data
+  groups. Non-graphical objects no longer get a trailing
+  =(100 . "AcDbObject")=.
+
+Tests: cador entity-api-tests (owner 330 is an entget-able ename; every
+pointer range converted; 5/105/320/1005 stay strings; entmake/entmod with
+ename and with string pointers; pointer to an erased object), cador
+dictionary-api-tests (NOD 350/360 entries entget-able, NOD 330 null
+pointer, dictsearch/dictnext member 330 EQ the dictionary; xrecord
+read-back layout), drawing entity-families-tests (xrecord header),
+builtins-core (the SCHMS repro through the AutoLISP builtins).
+
+* TO MEASURE (probe written, not yet run)
+
+Probe: =probes/sources/probe-entget-pointers.lsp= (suite
+=entget-pointers=, in =probes/sources/manifest.txt=, so the full
+=probe:suite:*= jobs run it too). Narrow manual jobs (.gitlab/native.yml,
+family =entget-pointers= in scripts/ci-detect-probe-changes.py):
+=probe:entget-pointers:autocad:windows=,
+=probe:entget-pointers:bricscad:windows=,
+=probe:entget-pointers:bricscad:macos=.
+
+1. TYPE of 330 (LINE in model space, ATTRIB, XRECORD in the NOD, layer
+   record), 350/360 (NOD), 360 (extension dictionary, ActiveX only),
+   390/347/348 (layer "0"), and whether =(entget <it>)= works.
+2. The NOD's 330: =<Entity name: 0>=, nil, or absent?
+3. A pointer to an erased object: still an ename, EQ to the old one,
+   entget NIL?
+4. 320-329 written as an ename / string: read back as a string?
+5. A handle STRING written to 340 by entmakex / entmod: accepted?
+   Converted to an ename on read-back?
+6. XRECORD layout: =(280 . 1)= after the marker, on both vendors; with an
+   explicit =(280 . 0)=; without the 100 marker (AutoCAD rejects? BricsCAD
+   synthesises where?).
+
+Status stays NEXT until the probe has run and its answers are folded in.
+
+* Not fixed here (separate ticket)
+
+=cador-entget-owner-and-header-layout.issue=: a cador-created main-space
+entity carries no 330 owner at all (AutoCAD: the *Model_Space block
+record), and the header group order differs (cador: -1 5 330 0 ...;
+AutoCAD: -1 0 5 [102 ...] 330 100 ...). Code that reads positionally can
+still trip on those.
