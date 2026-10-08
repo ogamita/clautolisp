@@ -7668,6 +7668,17 @@ So LISPSYS changes the default READ (and LOAD), not the default WRITE: with
 no encoding argument AutoCAD 2022 writes cp1252 at every level, as
 Autodesk's page says ("the file is assumed to contain ... (MBCS)").
 
+Appending with the encoding argument (E1 again, 2026-10-08, job
+16998925786): "A" e-acute "B" written with ~(open f "w" ENC)~, then one
+e-acute appended with ~(open f "a" ENC)~, file sizes after each:
+
+| LISPSYS | ~"utf8"~                  | ~"utf8-bom"~                              |
+|---------+---------------------------+-------------------------------------------|
+| 0       | error: too many arguments | error: too many arguments                 |
+| 1, 2    | 4 then 6 (UTF-8 appended) | 7 then 9 (UTF-8 appended, no second BOM)  |
+
+An append to a file that does not exist yet was not measured.
+
 *** clautolisp
 Non-normative (pjb, 2026-10-06: "open third argument: lenient, but dialect
 warn when it's used in other dialects or strict"). clautolisp's ~open~
@@ -7713,7 +7724,9 @@ measurement above:
   ~*AUTOLISP-FILE-WRITE-ENCODING*~ for that.
 - ~(open f "w" "utf8-bom")~ writes the BOM (EF BB BF) before the UTF-8
   text; ~"utf8"~ writes UTF-8 without one. Only mode ~"w"~ writes the BOM:
-  ~"a"~ was not measured and appends no BOM.
+  ~"a"~ appends none, which matches AutoCAD on a file that already exists
+  (measured above: no second BOM); ~"a"~ creating a new file was not
+  measured.
 - ~(open f "r")~ with no encoding argument, when the default read encoding
   is UTF-8 (LISPSYS 1 / 2): a UTF-8 BOM is skipped, a well-formed UTF-8
   file is decoded as UTF-8, any other file as windows-1252 -- the rule
@@ -38732,6 +38745,13 @@ AutoCAD 2022, BricsCAD V25 (Windows) and V26 (macOS), probe-logfile (MR !428):
 setting it to 1 opens the current drawing's log (AutoCAD and BricsCAD/Windows
 create the file at once; BricsCAD/macOS in batch mode writes none); 0 closes
 it; turning it on again appends to the same file under a new header.
+
+The log's encoding: windows-1252 on AutoCAD 2022 (probe-logfile, MR !428:
+a PRINCed e-acute reads back as 233) and on BricsCAD V25 Windows, without a
+byte-order mark (encoding experiment, 2026-10-08, job 16998925784: the raw
+log begins =0D 0A 2D=, and the French prompt "Depart" with e-acute is the
+bytes =44 E9 70 61 72 74=). BricsCAD V25 logs only its command channel
+(prompts and answers), not a PRINC.
 
 *** clautolisp
 One log per drawing; a registry preference, per product, read at launch.

@@ -874,7 +874,9 @@
 ;;   *ALFE-OPEN-WRITE-CCS* -- BricsCAD on Windows: "w,ccs=UTF-8" (UTF-8 with a
 ;;     BOM) and "w,ccs=UTF-16LE" (with a BOM);
 ;;   *ALFE-OPEN-WRITE-ARG* -- AutoCAD: (open f "w" "utf8") writes UTF-8 without
-;;     a BOM at LISPSYS 1 / 2; at LISPSYS 0 any third argument is an error.
+;;     a BOM at LISPSYS 1 / 2, and (open f "a" "utf8") appends UTF-8 (measured
+;;     2026-10-08: no BOM, and "utf8-bom" on an append adds no second one);
+;;     at LISPSYS 0 any third argument is an error.
 ;; AutoCAD 2022 at LISPSYS 0 and BricsCAD on macOS ignore any encoding. With
 ;; neither set, OPEN calls are never rewritten (see alfe-form-needs-rewrite-p).
 (defun alfe-open-ccs-active-p ()
@@ -915,9 +917,9 @@
 
 ;; (open path mode [enc]) with its arguments as ONE list. A plain "w" / "a"
 ;; mode (no ",ccs=" of its own, no third argument) gets ",ccs=<ccs>"
-;; appended; a plain "w" gets the third argument <arg> when LISPSYS is 1 or
-;; 2. If the CAD refuses either, the plain mode is used. Every other call is
-;; passed to OPEN unchanged.
+;; appended, or the third argument <arg> when LISPSYS is 1 or 2. If the CAD
+;; refuses either, the plain mode is used. Every other call is passed to OPEN
+;; unchanged.
 (defun alfe-open* (alfe--args / alfe--f)
   (cond
     ((and (alfe-open-ccs-active-p) (alfe-open-plain-write-p alfe--args))
@@ -930,13 +932,6 @@
        alfe--f))
     ((and (alfe-open-arg-active-p) (alfe-open-plain-write-p alfe--args))
      (cond
-       ((/= (strcase (cadr alfe--args)) "W")
-        (alfe-open-warn
-          (strcat "-Efile-write: (open f \"a\") is not given \""
-                  *ALFE-OPEN-WRITE-ARG*
-                  "\": AutoCAD's encoding argument on append is unmeasured;"
-                  " the file is appended to in its default encoding."))
-        (open (car alfe--args) (cadr alfe--args)))
        ((not (alfe-lispsys-unicode-p))
         (alfe-open-warn
           (strcat "-Efile-write: not forwarded, LISPSYS is "

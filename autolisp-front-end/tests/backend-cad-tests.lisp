@@ -3697,8 +3697,8 @@ on invalid UTF-8) -- and becomes UTF-8 + BOM for the other CADs."
 ;;; encoding-situations-cli-options, the `log' situation. The CAD writes its
 ;;; LOGFILEMODE log into the workdir's logs/ (the bootstrap's
 ;;; autolisp-log-setup); alfe reads it after the run. Measured: AutoCAD 2022
-;;; writes windows-1252; BricsCAD V25 windows-1252 or UTF-8 with a BOM (not
-;;; settled) -- so a BOM decides, else windows-1252 on Windows.
+;;; writes windows-1252; BricsCAD V25 windows-1252 without a BOM (2026-10-08,
+;;; job 16998925784) -- so a BOM decides, else windows-1252 on Windows.
 
 (defun %octets (&rest items)
   "An octet vector from ITEMS: integers are octets, strings their ASCII codes."
@@ -3737,6 +3737,18 @@ text, and CR LF become LF."
   (is (string= (format nil "caf~C~%" (code-char 233))
                (alfe.backend.cad-common:decode-cad-log-octets
                 (%octets #xEF #xBB #xBF "caf" #xC3 #xA9 10) :platform :windows))))
+
+(test cad-log-decodes-the-measured-bricscad-v25-log
+  "The opening bytes of the log BricsCAD V25 on Windows wrote on 2026-10-08
+(job 16998925784: no BOM, CR LF, e-acute as the single octet E9) decode, with
+no -Elog, to the French prompt the CAD printed."
+  (let ((bytes (%octets 13 10 "---------- [ BricsCAD - Thu Oct  8 11:54:58 2026] ----------"
+                        13 10 ": _.LINE" 13 10 "D" #xE9 "part de la ligne : 0,0" 13 10)))
+    (is (eq :cp1252 (alfe.backend.cad-common:cad-log-decode-encoding
+                     bytes :platform :windows)))
+    (is (search (format nil "~%D~Cpart de la ligne : 0,0~%" (code-char 233))
+                (alfe.backend.cad-common:decode-cad-log-octets
+                 bytes :platform :windows)))))
 
 (defun %write-octets (path octets)
   (ensure-directories-exist path)

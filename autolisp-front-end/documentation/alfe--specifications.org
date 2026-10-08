@@ -1725,14 +1725,18 @@ On the CAD backends two of them reach the CAD only where it was measured to
 honour them. =file=: a write encoding becomes, in code loaded with
 =alfe-load=, a ~,ccs=~ suffix on a plain ="w"= / ="a"= on BricsCAD/Windows
 (=*ALFE-OPEN-WRITE-CCS*=), and on AutoCAD the third argument ="utf8"= of a
-plain ="w"= (=*ALFE-OPEN-WRITE-ARG*=), passed by the CAD-side =alfe-open*=
-only when =LISPSYS= is 1 or 2 and warned about otherwise. =log=: the CAD
+plain ="w"= or ="a"= (=*ALFE-OPEN-WRITE-ARG*=), passed by the CAD-side
+=alfe-open*= only when =LISPSYS= is 1 or 2 and warned about otherwise (an
+append with ="utf8"= / ="utf8-bom"= was measured to add no second BOM). The
+=-l= file itself is evaluated through the request path, which does not
+rewrite =open=; only code it (or =-x=) loads with =alfe-load= is
+forwarded. =log=: the CAD
 writes its =LOGFILEMODE= log into the workdir's =logs/= in its own encoding;
 =--cad-log FILE= has alfe read it after the run
 (=ALFE.BACKEND:COLLECT-ENGINE-LOG=) and copy it to FILE in UTF-8, decoding
 it per the explicit =-Elog= (the bare =-E= does not reach it), else a BOM's
-encoding, else =windows-1252= on MS-Windows and the auto-detect cascade
-elsewhere.
+encoding, else =windows-1252= on MS-Windows (measured on AutoCAD 2022 and
+BricsCAD V25, neither with a BOM) and the auto-detect cascade elsewhere.
 
 *** Default source-file encoding — precedence
 

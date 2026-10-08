@@ -1974,13 +1974,18 @@ file or COM), and forwards the workload.
 - ~--cad-log FILE~ (alfe 2.2.231): after an =--autocad= / =--bricscad= run,
   alfe copies the CAD's own command-history log (=LOGFILEMODE=, which it
   directs into its workdir) to FILE in UTF-8, decoded per ~-Elog~, else as
-  measured (a BOM's encoding; windows-1252 on MS-Windows). No log, or
-  =--clautolisp=: a warning and no file. § /The CAD's log: --cad-log/.
-- ~-Efile-write UTF-8~ now reaches AutoCAD (alfe 2.2.231): in code loaded
-  with =alfe-load=, a plain ~(open f "w")~ becomes ~(open f "w" "utf8")~
-  when the running AutoCAD's =LISPSYS= is 1 or 2 (measured: UTF-8 without a
-  BOM); at =LISPSYS= 0, and for ~"a"~ (unmeasured), it is warned about once
-  and the plain mode is used.
+  measured (a BOM's encoding; windows-1252 on MS-Windows, which both
+  Windows CADs write: AutoCAD 2022, and BricsCAD V25 -- measured with alfe
+  2.3.9 to write windows-1252 without a BOM). No log, or =--clautolisp=: a
+  warning and no file. § /The CAD's log: --cad-log/.
+- ~-Efile-write UTF-8~ now reaches AutoCAD (alfe 2.2.231; ~"a"~ since
+  2.3.9): in code loaded with =alfe-load=, a plain ~(open f "w")~ /
+  ~(open f "a")~ becomes ~(open f "w" "utf8")~ / ~(open f "a" "utf8")~ when
+  the running AutoCAD's =LISPSYS= is 1 or 2 (measured: UTF-8 without a BOM,
+  and an append never adds a second BOM); at =LISPSYS= 0 it is warned about
+  once and the plain mode is used. The file given to =-l= is itself not
+  rewritten, so its own ~open~ calls are not forwarded: have it
+  =alfe-load= the code that writes.
 - Per-*situation* encoding CLI: ~-E<situation>[-<dir>] ENC~ /
   ~--<situation>-encoding ENC~ for ~source~ / ~file~ / ~console~ /
   ~cadstdio~ / ~log~ / ~terminal~, plus a bare ~-E ENC~ that sets them

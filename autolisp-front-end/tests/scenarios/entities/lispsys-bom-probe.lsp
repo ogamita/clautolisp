@@ -65,10 +65,12 @@
                         (if (vl-catch-all-error-p r)
                           (strcat "ERR " (vl-catch-all-error-message r))
                           (vl-prin1-to-string r))))))
-  ;; APPEND with the third argument (unmeasured; alfe does not forward
-  ;; -Efile-write to an "a" until it is): write "A" e-acute "B" with
+  ;; APPEND with the third argument: write "A" e-acute "B" with
   ;; (open f "w" ENC), append one e-acute with (open f "a" ENC), report both
   ;; sizes -- "utf8": 4 then 6; "utf8-bom": 7 then 9 (no second BOM) or 12.
+  ;; Measured 2026-10-08 (AutoCAD 2022, job 16998925786): LISPSYS 1 / 2 give
+  ;; (4 6) and (7 9) -- no second BOM -- and LISPSYS 0 "too many arguments";
+  ;; so alfe forwards -Efile-write UTF-8 to an "a" as well.
   (foreach e1--enc '("utf8" "utf8-bom")
     (setq e1--path (strcat dir "/e1-append-" e1--enc ".txt"))
     (setq r (vl-catch-all-apply

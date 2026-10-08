@@ -1377,7 +1377,10 @@ version pick the right one. The virtual =autocad[-VER]= maps to =acad= or
 ;;;   AutoCAD 2022 (LISPSYS 1/2) write cp1252 by default; (open f "w" "utf8")
 ;;;                             writes UTF-8 without a BOM, "utf8-bom" with
 ;;;                             one. Read decodes UTF-8, falling back to
-;;;                             cp1252 (E1, job 16980926802).
+;;;                             cp1252 (E1, job 16980926802). An append
+;;;                             (open f "a" "utf8") adds UTF-8, and "utf8-bom"
+;;;                             on a file that has its BOM adds no second one
+;;;                             (sizes 4 -> 6 and 7 -> 9, job 16998925786).
 ;;;   BricsCAD V25 Windows      write cp1252; third argument accepted, no
 ;;;                             effect; "w,ccs=UTF-8" writes UTF-8 WITH a BOM,
 ;;;                             "w,ccs=UTF-16LE" UTF-16LE with a BOM. Read
@@ -1388,9 +1391,10 @@ version pick the right one. The virtual =autocad[-VER]= maps to =acad= or
 ;;; So alfe can honour the WRITE direction in two cases: BricsCAD on Windows,
 ;;; UTF-8 or UTF-16LE, by appending ",ccs=" to the user's "w"/"a" mode; and
 ;;; AutoCAD, UTF-8, by passing "utf8" as OPEN's third argument to a plain "w"
-;;; -- in the CAD, only when LISPSYS is 1 or 2 (it is read at start-up, alfe
-;;; cannot know it beforehand), and not on "a", whose behaviour with an
-;;; encoding is unmeasured. Both are done by alfe-open* in the bootstrap.
+;;; or "a" -- in the CAD, only when LISPSYS is 1 or 2 (it is read at start-up,
+;;; alfe cannot know it beforehand). Both are done by alfe-open* in the
+;;; bootstrap, in code loaded with alfe-load (the -l file itself is not
+;;; rewritten: alfe-efile-write-not-applied-to-l-file).
 ;;; Everything else is warned about, never silently dropped -- except a
 ;;; request for what the CAD does anyway.
 
@@ -1422,8 +1426,8 @@ on alfe's host), WRITE-ENCODING / READ-ENCODING the resolved situation values
 Returns (values CCS WARNINGS ARG). CCS is the string alfe-open* appends as
 \",ccs=CCS\" to a plain \"w\"/\"a\" OPEN mode -- \"UTF-8\" or \"UTF-16LE\",
 only for BricsCAD on Windows -- or NIL. ARG is the third argument alfe-open*
-passes to a plain \"w\" OPEN -- \"utf8\", only for AutoCAD, and applied in the
-CAD only at LISPSYS 1 / 2 -- or NIL. WARNINGS is the list of texts to log: one
+passes to a plain \"w\" / \"a\" OPEN -- \"utf8\", only for AutoCAD, and applied
+in the CAD only at LISPSYS 1 / 2 -- or NIL. WARNINGS is the list of texts to log: one
 per request the CAD cannot honour, with the measured reason. A request for
 what the CAD does anyway (cp1252 on Windows, UTF-8 on BricsCAD macOS, a cp1252
 read on AutoCAD) is no warning."
@@ -1493,7 +1497,7 @@ or NIL)."
         (when ccs
           (log-debug "backend ~A: OPEN \"w\"/\"a\" get ,ccs=~A" backend-name ccs))
         (when arg
-          (log-debug "backend ~A: OPEN \"w\" gets the third argument ~S at LISPSYS 1/2"
+          (log-debug "backend ~A: OPEN \"w\"/\"a\" get the third argument ~S at LISPSYS 1/2"
                      backend-name arg))
         (values ccs arg))))
 
@@ -1506,14 +1510,16 @@ or NIL)."
 ;;; closed when the engine quits. --cad-log FILE has alfe read it once the
 ;;; engine is down and copy it, decoded, to FILE.
 ;;;
-;;; How it is decoded, MEASURED (probe-logfile, MR !428):
-;;;   AutoCAD 2022              windows-1252 (a PRINCed e-acute reads back 233);
-;;;   BricsCAD V25 Windows      its accented prompts read back whole: windows-1252
-;;;                             or UTF-8 WITH a BOM, not yet settled;
-;;;   BricsCAD V26 macOS        writes no log in batch mode.
+;;; How it is decoded, MEASURED:
+;;;   AutoCAD 2022              windows-1252 (probe-logfile, MR !428: a PRINCed
+;;;                             e-acute reads back 233);
+;;;   BricsCAD V25 Windows      windows-1252, no BOM (2026-10-08, job
+;;;                             16998925784: the raw log starts 0D 0A 2D, and
+;;;                             "Depart" with e-acute is 44 E9 70 61 72 74);
+;;;   BricsCAD V26 macOS        writes no log in batch mode (job 16998925783).
 ;;; So the default is: a BOM names the encoding (UTF-8, UTF-16LE); without one,
-;;; windows-1252 on Windows -- right under both BricsCAD hypotheses -- and the
-;;; auto-detect cascade elsewhere (nothing measured there). An explicit -Elog
+;;; windows-1252 on Windows -- both Windows CADs -- and the auto-detect cascade
+;;; elsewhere (nothing measured there). An explicit -Elog
 ;;; overrides it; the bare -E does not reach the log, which the CAD writes in
 ;;; its own encoding whatever alfe is told.
 

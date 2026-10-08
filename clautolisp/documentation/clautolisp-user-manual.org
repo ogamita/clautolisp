@@ -210,6 +210,12 @@ line" adds the REPL's own output (~princ~ ...) and the lines typed at it.
 BricsCAD adds a trailing separator to ~LOGFILEPATH~; AutoCAD keeps it as
 given. ~-Elog ENC~ (~--log-encoding~) chooses the encoding.
 
+Known gap: BricsCAD V25 on Windows was since measured (2026-10-08) to write
+its log in windows-1252 without a byte-order mark, while clautolisp writes
+UTF-8 under every BricsCAD dialect; until that is aligned
+(=issues/open/cador-bricscad-windows-log-encoding.issue=), pass
+~-Elog windows-1252~ to get the bytes BricsCAD writes on Windows.
+
 *** Recording the session: the dribble
 
 The REPL can record its interactions — input lines, standard output,

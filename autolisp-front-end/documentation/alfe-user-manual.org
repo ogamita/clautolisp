@@ -635,9 +635,9 @@ alfe decodes as follows:
   warned about and the log is auto-detected. A bare =-E= does *not* reach
   the log: the CAD does not change its encoding for it;
 - otherwise, as measured: a byte-order mark names the encoding (UTF-8,
-  UTF-16LE); without one, =windows-1252= on MS-Windows (measured on AutoCAD
-  2022; BricsCAD V25 writes either =windows-1252= or UTF-8 with a BOM, and
-  this rule reads both right) and auto-detection elsewhere.
+  UTF-16LE); without one, =windows-1252= on MS-Windows, which is what both
+  Windows CADs write (measured: AutoCAD 2022, and BricsCAD V25 — no BOM,
+  an e-acute is the single byte =E9=) and auto-detection elsewhere.
 
 No log, no file: alfe warns instead — BricsCAD on macOS writes none in
 batch mode (measured), and =--bootstrap-phase marker= / =core= do not turn
@@ -907,7 +907,9 @@ still an error, but a fixed boundary is never silently wrong).
   At =LISPSYS= 1 or 2, AutoCAD 2022's =open= does take a third argument
   (measured, the =LISPSYS= probe): =(open f "w" "utf8")= writes UTF-8
   without a BOM, ="utf8-bom"= with one, and a plain ="w"= still writes
-  cp1252; a plain read decodes UTF-8, falling back to cp1252.
+  cp1252; a plain read decodes UTF-8, falling back to cp1252. An append
+  =(open f "a" "utf8")= adds UTF-8, and ="utf8-bom"= on a file that already
+  has its BOM adds no second one.
 
   So alfe forwards the WRITE direction in two cases, in code loaded with
   =alfe-load=, when =-Efile-write= (or =-Efile=, or the bare =-E=) asks for:
@@ -915,15 +917,17 @@ still an error, but a fixed boundary is never silently wrong).
     =(open f "a")= becomes ~(open f "w,ccs=UTF-8")~ (or =UTF-16LE=), so the
     file is written in that encoding *with a byte-order mark*; if BricsCAD
     refuses the mode, the plain one is used;
-  - AutoCAD, =UTF-8=: a plain =(open f "w")= becomes =(open f "w" "utf8")=
-    (UTF-8, no BOM) — but only when the running AutoCAD's =LISPSYS= is 1 or
-    2, which alfe checks in the CAD at the call, since =LISPSYS= is set when
-    AutoCAD starts. At =LISPSYS= 0 the plain mode is used and a warning
-    says why, once per run; so is an =(open f "a")=, whose behaviour with
-    an encoding argument is not yet measured.
+  - AutoCAD, =UTF-8=: a plain =(open f "w")= / =(open f "a")= becomes
+    =(open f "w" "utf8")= / =(open f "a" "utf8")= (UTF-8, no BOM) — but
+    only when the running AutoCAD's =LISPSYS= is 1 or 2, which alfe checks
+    in the CAD at the call, since =LISPSYS= is set when AutoCAD starts. At
+    =LISPSYS= 0 the plain mode is used and a warning says why, once per run.
   A call that already names an encoding (a ~,ccs=~ of its own, a third
   argument) or a read mode is left alone, and so is code that is not loaded
-  with =alfe-load= (the native =load=, =-x= forms). =cp1252= /
+  with =alfe-load= (the native =load=, =-x= forms) — including the file
+  given to =-l= itself: alfe hands it to the CAD as a =load= request, which
+  does not rewrite =open=. To have =-Efile-write= reach a program's =open=
+  calls, give =-l= a file that =alfe-load=-s the program. =cp1252= /
   =windows-1252= is both Windows CADs' default and needs nothing. Every
   other request is warned about, once per run, with the measured reason,
   and not forwarded: any other write encoding on BricsCAD/Windows or on

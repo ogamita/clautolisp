@@ -1933,8 +1933,9 @@ clautolisp-sbcl is not on disk."
 ;;; AutoCAD's half of -Efile-write: OPEN's third argument "utf8" (measured,
 ;;; AutoCAD 2022 at LISPSYS 1/2: UTF-8 without a BOM; at LISPSYS 0 any third
 ;;; argument is an error). alfe emits *ALFE-OPEN-WRITE-ARG*; alfe-open* passes
-;;; it to a plain "w" only when alfe-lispsys-unicode-p, and warns once on the
-;;; error channel otherwise -- and on "a", which is unmeasured.
+;;; it to a plain "w" or "a" only when alfe-lispsys-unicode-p, and warns once
+;;; on the error channel otherwise. "a" "utf8" was measured 2026-10-08 (job
+;;; 16998925786): it appends UTF-8, and no second BOM is ever written.
 
 (test protocol-emit-run-common-lsp-open-write-arg
   "run-common.lsp carries (setq *ALFE-OPEN-WRITE-ARG* \"utf8\") when an arg is
@@ -1984,9 +1985,10 @@ an unrewritten (apply 'open ...) into OUTDIR/ref.txt, and an e-acute with
 (test protocol-alfe-load-forwards-open-write-arg
   "Acceptance with the real bootstrap under a hosted clautolisp (which honours
 OPEN's third argument): at LISPSYS 1/2 a loaded (open P \"w\") becomes
-(open P \"w\" \"utf8\") and writes A e-acute as 41 C3 A9; an (open P \"a\") is
-left in the default encoding with a warning. At LISPSYS 0 nothing is forwarded
-and the warning names LISPSYS. Skipped when clautolisp-sbcl is not on disk."
+(open P \"w\" \"utf8\") and writes A e-acute as 41 C3 A9, and an (open P \"a\")
+becomes (open P \"a\" \"utf8\") and appends e-acute as C3 A9, with no warning.
+At LISPSYS 0 nothing is forwarded and one warning names LISPSYS. Skipped when
+clautolisp-sbcl is not on disk."
   (let ((binary (clautolisp-engine-binary)))
     (if (not binary)
         (is (null (clautolisp-engine-binary))
@@ -1994,21 +1996,19 @@ and the warning names LISPSYS. Skipped when clautolisp-sbcl is not on disk."
         (let ((outdir (make-test-workdir "open-arg-out")))
           (unwind-protect
                (progn
-                 ;; 1. LISPSYS 1/2: forwarded on "w", warned on "a"
+                 ;; 1. LISPSYS 1/2: forwarded on "w" and on "a"
                  (multiple-value-bind (statuses stdout stderr)
                      (%drive-open-arg binary t outdir)
                    (declare (ignore stdout))
                    (is (every (lambda (s) (search " OK" s)) statuses)
                        "every request must succeed: ~S~%~A" statuses stderr)
                    (let ((plain (%file-octets (merge-pathnames "plain.txt" outdir)))
-                         (ref (%file-octets (merge-pathnames "ref.txt" outdir)))
                          (app (%file-octets (merge-pathnames "app.txt" outdir))))
                      (is (equal '(65 195 169) plain)
                          "(open P \"w\") must write UTF-8 through \"utf8\": ~S" plain)
-                     (is (equal (rest ref) app)
-                         "(open P \"a\") must keep the default encoding: ~S vs ~S" app ref))
-                   (is (search "is not given \"utf8\"" stderr) "stderr ~S" stderr)
-                   (is (not (search "LISPSYS is" stderr)) "stderr ~S" stderr))
+                     (is (equal '(195 169) app)
+                         "(open P \"a\") must append UTF-8 through \"utf8\": ~S" app))
+                   (is (not (search "-Efile-write" stderr)) "no warning: ~S" stderr))
                  ;; 2. LISPSYS 0: nothing forwarded, warned once
                  (delete-file (merge-pathnames "app.txt" outdir))
                  (multiple-value-bind (statuses stdout stderr)
@@ -2019,6 +2019,9 @@ and the warning names LISPSYS. Skipped when clautolisp-sbcl is not on disk."
                    (is (equal (%file-octets (merge-pathnames "ref.txt" outdir))
                               (%file-octets (merge-pathnames "plain.txt" outdir)))
                        "at LISPSYS 0 (open P \"w\") must write the default")
+                   (is (equal (rest (%file-octets (merge-pathnames "ref.txt" outdir)))
+                              (%file-octets (merge-pathnames "app.txt" outdir)))
+                       "at LISPSYS 0 (open P \"a\") must append in the default")
                    (is (search "-Efile-write: not forwarded, LISPSYS is" stderr)
                        "stderr ~S" stderr)
                    (is (= 1 (loop with start = 0

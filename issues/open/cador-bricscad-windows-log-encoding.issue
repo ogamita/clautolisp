@@ -1,0 +1,56 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-bricscad-windows-log-encoding — clautolisp's LOGFILEMODE log is UTF-8 under the BricsCAD dialects; BricsCAD V25 on Windows writes windows-1252
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: fix-cador-bricscad-windows-log-encoding
+#+DATE: 2026-10-08
+
+* Context
+
+Filed 2026-10-08 from the encoding measurements recorded in
+=encoding-situations-cli-options= (section "Measured 2026-10-08"). clautolisp
+writes per-drawing command-history logs (clautolisp 2.2.209,
+=clautolisp/cador/source/command-log.lisp=), and =%command-log-encoding=
+picks the encoding: =-Elog= when given, else windows-1252 for the AutoCAD
+product and UTF-8 otherwise -- so UTF-8 under every BricsCAD dialect. At the
+time BricsCAD V25's log encoding was not settled (windows-1252 or UTF-8 with a
+BOM).
+
+* Problem
+
+Measured now (job 16998925784, encoding:experiment:bricscad:windows, pipeline
+2922145991, BricsCAD V25 (x64) fr, Windows): the raw log
+=Dessin1_2026-10-08_11-54-58.log= is 475 bytes; its first 16 bytes are
+=0D 0A 2D 2D 2D 2D 2D 2D 2D 2D 2D 2D 20 5B 20 42= (no BOM), and its first byte
+above 7F, at offset 143, sits in =0D 0A 44 E9 70 61 72 74= ("Depart" with
+e-acute as the single byte E9). BricsCAD V25 on Windows therefore writes
+windows-1252 without a BOM. clautolisp under a BricsCAD dialect writes UTF-8,
+so a program comparing logs, or a tool reading clautolisp's log the way it
+reads BricsCAD's, sees different bytes on Windows.
+
+BricsCAD V26 on macOS writes no log in batch mode (job 16998925783), so the
+macOS BricsCAD dialects have no measured encoding (UTF-8 is the platform's
+natural choice and stays).
+
+Repro: =clautolisp-sbcl --dialect bricscad-v25= on Windows, =(setvar
+"LOGFILEMODE" 1)=, run a command whose prompt carries a non-ASCII character,
+look at the bytes of =(getvar "LOGFILENAME")=.
+
+* Proposal
+
+In =%command-log-encoding=: windows-1252 for the BricsCAD product when the
+dialect's platform is Windows (dispatch on the product and platform, never on
+a dialect keyword -- AGENTS.md, "Dialect versions and products"); UTF-8 for
+the macOS / Linux BricsCAD dialects. Update the clautolisp user manual's log
+table (the "Known gap" note added 2026-10-08) and the LOGFILEMODE
+=*** clautolisp= note. Not done on the measuring branch because the cador
+sources were being edited on parallel branches.
+
+* Acceptance criteria
+
+- under a Windows BricsCAD dialect, with no -Elog, an e-acute in the log is
+  the byte E9, and no BOM is written;
+- the macOS BricsCAD and the other dialects are unchanged;
+- unit test in the cador suite; manual note removed.
