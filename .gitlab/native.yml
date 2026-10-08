@@ -1232,7 +1232,7 @@ intersectwith:probe:bricscad:macos:
   # a PROBE: automatic only when its family changed (and the runner is
   # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
   rules:
-    - if: '$$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
       when: on_success
       allow_failure: true
     - when: manual
@@ -1249,7 +1249,7 @@ intersectwith:probe:bricscad:windows:
   # a PROBE: automatic only when its family changed (and the runner is
   # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
   rules:
-    - if: '$$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
       when: on_success
       allow_failure: true
     - when: manual
@@ -1266,7 +1266,7 @@ intersectwith:probe:autocad:windows:
   # a PROBE: automatic only when its family changed (and the runner is
   # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
   rules:
-    - if: '$$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
       when: on_success
       allow_failure: true
     - when: manual
@@ -1283,7 +1283,7 @@ intersectwith:probe:accoreconsole:windows:
   # a PROBE: automatic only when its family changed (and the runner is
   # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
   rules:
-    - if: '$$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
       when: on_success
       allow_failure: true
     - when: manual
