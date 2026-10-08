@@ -1381,7 +1381,7 @@ recognises a quit."
             (is (not (search "(error err)" content)))
             ;; ERR must be a local of the override, not a global left
             ;; behind in the CAD's symbol table.
-            (is (search "(defun autolisp-eval-request-form (form / r err"
+            (is (search "(defun autolisp-eval-request-source (form source / r err"
                         content))
             ;; The discarding shape must not come back: the ONLY
             ;; occurrence of the load call is the one bound to ERR.
@@ -1825,6 +1825,197 @@ clautolisp-sbcl is not on disk."
           (is (search "ENCSRC-OK" (without-returns stdout))
               "alfe-load must set ENCSRC from the loaded file: ~S" stdout)
           (is (string= "" stderr))))))
+
+;;; --- real literals reach the CAD with every digit --------------------
+;;;
+;;; alfe-cad-transport-rounds-reals. The emitted AUTOLISP-EVAL-REQUEST-FORM
+;;; hands each form to the CAD's native LOAD through alfe-eval.lsp. It
+;;; used to PRINT the form back (autolisp-readable-text, vl-princ-to-string
+;;; per atom), and PRINC of a real keeps 6 significant digits on AutoCAD
+;;; and 14 on BricsCAD: (setq a 1.5707963267948966) was evaluated as
+;;; (setq a 1.5708). Now the source TEXT is written whenever the caller has
+;;; it and no normaliser rewrote the form, and a form that must be printed
+;;; goes through autolisp-form-source-text, which prints reals losslessly.
+;;;
+;;; clautolisp's own princ is lossless, so these tests make the hosted
+;;; engine behave like AutoCAD: AUTOLISP-RENDER (the bootstrap's princ
+;;; renderer) is redefined to keep 6 significant digits. With that stub the
+;;; old code rounds every literal, and only the fix keeps them.
+
+(defparameter +lossy-render-form+
+  (concatenate 'string
+               "(defun autolisp-render (obj / r)"
+               " (if (= (type obj) 'REAL)"
+               " (rtos obj 1 5)"
+               " (progn (setq r (vl-catch-all-apply 'vl-princ-to-string (list obj)))"
+               " (if (vl-catch-all-error-p r) \"<unprintable>\" r))))")
+  "AutoLISP that makes the hosted clautolisp print a REAL the way
+AutoCAD's PRINC does: 6 significant digits.")
+
+(defun %autolisp-read-one (text)
+  "The first object the clautolisp reader reads from TEXT; a real as
+its double-float value."
+  (let ((object (first (clautolisp.autolisp-reader:read-result-objects
+                        (clautolisp.autolisp-reader:read-forms-from-string
+                         text)))))
+    (handler-case (clautolisp.autolisp-reader:real-object-value object)
+      (error () object))))
+
+(defun %prefixed-lines (prefix text)
+  "The rest of every line of TEXT that starts with PREFIX, in order."
+  (loop for line in (uiop:split-string (without-returns text)
+                                       :separator (string #\Newline))
+        when (and (>= (length line) (length prefix))
+                  (string= prefix line :end2 (length prefix)))
+          collect (subseq line (length prefix))))
+
+(test protocol-form-source-text-prints-reals-losslessly
+  "autolisp-form-source-text (the CAD-side printer for a form that has to
+be written back as source) prints each real so that it reads back to the
+SAME double -- 1.2345678901234, 1.5707963267948966, 1.0e-300, 1.0e300,
+-0.0 (sign kept) and 3.0 (still a real) -- on an engine whose PRINC keeps
+only 6 digits, as AutoCAD's does. The text is read back here with the
+clautolisp reader and compared with EQL, which tells -0.0 from 0.0.
+Strings, symbols, quotes and dotted pairs print as before. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary))
+        (literals '("1.2345678901234" "1.5707963267948966" "1.0e-300"
+                    "1.0e300" "-0.0" "3.0" "0.1" "-2.5e-7")))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; source printer test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary
+             (append
+              (list +lossy-render-form+
+                    ;; The stub is in force: PRINC-style rendering rounds.
+                    "(princ (strcat \"PLAIN \" (autolisp-render (read \"1.5707963267948966\")) \"\\n\") nil)")
+              (mapcar (lambda (literal)
+                        (format nil "(princ (strcat \"SRC \" (autolisp-form-source-text (read ~S)) \"\\n\") nil)"
+                                literal))
+                      literals)
+              (list
+               "(princ (strcat \"FORM \" (autolisp-form-source-text (read \"(setq a 1.5707963267948966 s \\\"q\\\\\\\"x\\\" c (quote (k . 2.5)))\")) \"\\n\") nil)"
+               "(princ (strcat \"NORM \" (autolisp-real-text-normalize \".5\") \" \" (autolisp-real-text-normalize \"-.5\") \" \" (autolisp-real-text-normalize \"3\") \" \" (autolisp-real-text-normalize \"3.\") \" \" (autolisp-real-text-normalize \"1E+00\") \" \" (autolisp-real-text-normalize \"2.5E-07\") \"\\n\") nil)"))
+             :assume-no-rest-p nil)
+          (let ((plain (%prefixed-lines "PLAIN " stdout))
+                (printed (%prefixed-lines "SRC " stdout)))
+            (is (every (lambda (s) (search " OK" s)) statuses)
+                "every request must succeed: ~S ~S" statuses stderr)
+            ;; The stub really rounds (otherwise this test proves nothing).
+            (is (equal '("1.57080E+00") plain) "stub: ~S" plain)
+            (is (= (length literals) (length printed))
+                "one SRC line per literal: ~S" stdout)
+            (loop for literal in literals
+                  for text in printed
+                  do (let ((expected (%autolisp-read-one literal))
+                           (got (%autolisp-read-one text)))
+                       (is (typep got 'double-float)
+                           "~A printed as ~S, which reads as ~S"
+                           literal text got)
+                       (is (eql expected got)
+                           "~A printed as ~S reads back as ~S"
+                           literal text got)))
+            ;; The sign of a zero is kept in the spelling.
+            (is (member "-0.0" printed :test #'string=) "-0.0: ~S" printed)
+            ;; Everything else prints as before; 2.5 keeps the (stub's)
+            ;; plain spelling because that one reads back exactly.
+            (is (equal (list "(SETQ A 1.5707963267948966E+00 S \"q\\\"x\" C (QUOTE (K . 2.50000E+00)))")
+                       (%prefixed-lines "FORM " stdout))
+                "form: ~S" stdout)
+            (is (equal '("0.5 -0.5 3.0 3.0 1.0E+00 2.5E-07")
+                       (%prefixed-lines "NORM " stdout))
+                "normalize: ~S" stdout))))))
+
+(defun %real-transport-run (binary assume-no-rest-p)
+  "Host the emitted run-common.lsp with the 6-digit stub, count every
+call of autolisp-form-source-text (the re-printer), load a file of real
+literals, send real literals as protocol requests, and return
+(values statuses stdout stderr)."
+  (drive-hosted-engine
+   binary nil
+   :assume-no-rest-p assume-no-rest-p
+   :forms-fn
+   (lambda (workdir)
+     (let ((f (merge-pathnames "rtx-literals.lsp" workdir)))
+       (with-open-file (out f :direction :output :if-exists :supersede
+                              :if-does-not-exist :create)
+         (format out ";; real literals, read by the CAD-side loader~%~
+(setq rtx-a 1.5707963267948966)~%~
+(setq rtx-b 0.7853981633974483~%      rtx-n -0.0) (setq rtx-e 1.2345678901234)~%"))
+       (list
+        +lossy-render-form+
+        ;; Count the re-prints: wrap the printer.
+        (concatenate 'string
+                     "(progn (setq *rtx-printed* 0)"
+                     " (setq rtx-orig-fst autolisp-form-source-text)"
+                     " (defun autolisp-form-source-text (obj)"
+                     " (setq *rtx-printed* (1+ *rtx-printed*))"
+                     " (rtx-orig-fst obj)))")
+        (format nil "(load ~S)" (namestring f))
+        ;; A protocol request (an -x form) with a literal of its own.
+        "(setq rtx-d 1.5707963267948966)"
+        ;; No re-print so far: every form above travelled as its text.
+        "(princ (strcat \"PRINTED \" (itoa *rtx-printed*) \"\\n\") nil)"
+        ;; A form with a 1-arg princ: the AutoCAD normaliser rewrites it, so
+        ;; there it MUST be re-printed -- losslessly.
+        "(progn (setq rtx-c 5.497787143782138 rtx-m -0.0) (princ \"\"))"
+        "(princ (strcat \"REPRINTED \" (if (> *rtx-printed* 0) \"yes\" \"no\") \"\\n\") nil)"
+        (concatenate
+         'string
+         "(princ (strcat"
+         " \"RTX A \" (if (= rtx-a (read \"1.5707963267948966\")) \"EXACT\" \"ROUNDED\")"
+         " \" B \" (if (= rtx-b (read \"0.7853981633974483\")) \"EXACT\" \"ROUNDED\")"
+         " \" D \" (if (= rtx-d (read \"1.5707963267948966\")) \"EXACT\" \"ROUNDED\")"
+         " \" C \" (if (= rtx-c (read \"5.497787143782138\")) \"EXACT\" \"ROUNDED\")"
+         " \" N \" (if (minusp (atan rtx-n -1.0)) \"NEG\" \"POS\")"
+         " \" M \" (if (minusp (atan rtx-m -1.0)) \"NEG\" \"POS\")"
+         " \"\\n\") nil)")
+        ;; (rtos x 2 16) of the loaded 1.2345678901234: all its digits.
+        ;; Trailing zeros depend on DIMZIN, so they are not compared.
+        "(princ (strcat \"RTOS-E \" (rtos rtx-e 2 16) \"\\n\") nil)")))))
+
+(test protocol-real-literals-reach-the-engine-exactly
+  "Acceptance with a real AutoLISP engine whose PRINC keeps 6 digits
+(AutoCAD's): real literals of a loaded file and of a protocol request
+arrive exactly, on the variadic (BricsCAD) path AND the fixed-arity
+(AutoCAD) path. No form is re-printed while its text is at hand -- the
+re-printer is called zero times for the loaded file and the request --
+and the form the AutoCAD normaliser rewrites is re-printed losslessly
+(its literals, -0.0 included, still exact). (rtos x 2 16) of the loaded
+1.2345678901234 gives back all its digits. Skipped when clautolisp-sbcl
+is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; real transport test skipped.")
+        (dolist (no-rest '(nil t))
+          (multiple-value-bind (statuses stdout stderr)
+              (%real-transport-run binary no-rest)
+            (is (= 9 (length statuses)) "~:[variadic~;fixed-arity~]: ~S"
+                no-rest statuses)
+            (is (every (lambda (s) (search " OK" s)) statuses)
+                "~:[variadic~;fixed-arity~]: every request must succeed: ~S ~S"
+                no-rest statuses stderr)
+            (is (equal '("0") (%prefixed-lines "PRINTED " stdout))
+                "~:[variadic~;fixed-arity~]: the loaded file and the request must travel as text: ~S"
+                no-rest stdout)
+            ;; Only the AutoCAD path rewrites (princ ""), so only there is
+            ;; a form printed back -- and its literals still arrive exact.
+            (is (equal (list (if no-rest "yes" "no"))
+                       (%prefixed-lines "REPRINTED " stdout))
+                "~:[variadic~;fixed-arity~]: ~S" no-rest stdout)
+            (is (equal '("A EXACT B EXACT D EXACT C EXACT N NEG M NEG")
+                       (%prefixed-lines "RTX " stdout))
+                "~:[variadic~;fixed-arity~]: ~S" no-rest stdout)
+            (let ((rtos (first (%prefixed-lines "RTOS-E " stdout))))
+              (is (and rtos
+                       (>= (length rtos) 15)
+                       (string= "1.2345678901234" rtos :end2 15)
+                       (every (lambda (ch) (char= ch #\0)) (subseq rtos 15)))
+                  "~:[variadic~;fixed-arity~]: (rtos x 2 16) = ~S"
+                  no-rest rtos)))))))
 
 ;;; --- -Efile-write forwarded to the CAD's OPEN ------------------------
 ;;;

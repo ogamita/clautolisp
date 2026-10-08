@@ -1822,6 +1822,13 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- *Real literals reach AutoCAD and BricsCAD with every digit* (2.3.12). alfe
+  handed each form of an =-l= file (and each =-x= / REPL form) to the CAD
+  PRINTED BACK with =princ=, which keeps 6 significant digits of a real on
+  AutoCAD and 14 on BricsCAD: =(setq a 1.5707963267948966)= ran as
+  =(setq a 1.5708)=. The CAD now reads the form's own text; a form alfe
+  must rewrite is printed with every real at full precision. See the
+  manual's /How a form reaches a CAD/.
 - *=alfe --list-hosts= answers.* It prints cador, cadtui and nihil with a
   one-line summary each and exits, like =--list-dialects=. The option was
   accepted and ignored before, so with no other action alfe opened its

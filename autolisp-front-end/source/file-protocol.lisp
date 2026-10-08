@@ -1444,6 +1444,19 @@ Returns the path of the emitted file."
       (write-line (strcat \"DEBUG=\" (if *AUTOLISP-DEBUG* \"1\" \"0\")) f)~%~
       (write-line (strcat \"VERBOSE=\" (if *AUTOLISP-VERBOSE* \"1\" \"0\")) f)~%~
       (close f))))~%~
+;; The text alfe-eval.lsp gets for FORM. SOURCE, the text FORM was read~%~
+;; from, is used only when normalize returned FORM itself (EQ: nothing~%~
+;; was rewritten) and SOURCE reads back EQUAL to FORM -- so the CAD never~%~
+;; evaluates anything but what was read. Otherwise the (normalised) form~%~
+;; is printed with autolisp-form-source-text, reals at full precision.~%~
+(defun alfe-request-source-text (form normalized source / back)~%~
+  (if (and source (eq normalized form))~%~
+    (progn~%~
+      (setq back (vl-catch-all-apply 'read (list source)))~%~
+      (if (and (not (vl-catch-all-error-p back)) (equal back form))~%~
+        source~%~
+        (autolisp-form-source-text normalized)))~%~
+    (autolisp-form-source-text normalized)))~%~
 ;; Wrap autolisp-eval-request-form so the publish fires after every~%~
 ;; protocol-driven evaluation. For non-LOAD forms, we no longer call~%~
 ;; `(eval form)' inline — BricsCAD V26 mis-dispatches embedded~%~
@@ -1460,14 +1473,26 @@ Returns the path of the emitted file."
 ;; full diagnosis. Performance: per-request file write + load adds~%~
 ;; a few ms on SSDs, well below the human perception threshold for~%~
 ;; a typed-form REPL turn.~%~
-(defun autolisp-eval-request-form (form / r err path text f)~%~
-  (setq form (autolisp-normalize-princ-call form))~%~
+;;~%~
+;; WHAT is written to alfe-eval.lsp: the form's own SOURCE TEXT whenever~%~
+;; the caller has it (the -l read loop, the protocol request, -x) and no~%~
+;; normaliser rewrote the form -- the CAD then reads exactly what the~%~
+;; user wrote. Printing the form back instead rendered every real with~%~
+;; PRINC, which keeps 6 significant digits on AutoCAD and 14 on BricsCAD:~%~
+;; (setq a 1.5707963267948966) reached AutoCAD as (setq a 1.5708). When~%~
+;; the form must be printed (no text, or normalize rebuilt it) it goes~%~
+;; through autolisp-form-source-text, which prints reals losslessly. See~%~
+;; alfe-cad-transport-rounds-reals.~%~
+(defun autolisp-eval-request-form (form)~%~
+  (autolisp-eval-request-source form nil))~%~
+(defun autolisp-eval-request-source (form source / r err path text f normalized)~%~
+  (setq normalized (autolisp-normalize-princ-call form))~%~
   (cond~%~
-    ((autolisp-load-form-p form)~%~
-      (setq r (autolisp-eval-load-form form)))~%~
+    ((autolisp-load-form-p normalized)~%~
+      (setq r (autolisp-eval-load-form normalized)))~%~
     (T~%~
       (setq path (strcat *AUTOLISP_PROTOCOL_DIR* \"alfe-eval.lsp\"))~%~
-      (setq text (autolisp-readable-text form))~%~
+      (setq text (alfe-request-source-text form normalized source))~%~
       (setq f (open path \"w\"))~%~
       (if f~%~
         (progn~%~

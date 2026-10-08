@@ -92,6 +92,8 @@ FAMILIES = {
                       "scripts/run-intersectwith-probe.*"],
     "console-flood": [f"{ENTITIES}/console-flood-probe.lsp",
                       "scripts/run-console-flood-probe.*"],
+    "real-transport": [f"{ENTITIES}/real-transport-probe.lsp",
+                       "scripts/run-real-transport-probe.*"],
     "sysvars": ["autolisp-spec/autolisp/dump-sysvars.lsp"],
     "entget-pointers": ["probes/sources/probe-entget-pointers.lsp"],
 }

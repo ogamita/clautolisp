@@ -175,6 +175,127 @@
 (defun autolisp-stdout-text (obj)
   (autolisp-readable-text obj))
 
+;; --- Printing a form back as SOURCE, losslessly ---------------------------
+;;
+;; alfe-cad-transport-rounds-reals: autolisp-readable-text renders an atom
+;; with vl-princ-to-string, which is right for what a program PRINTS (the
+;; user sees the digits the CAD's own princ would show) and wrong for SOURCE
+;; that the CAD will read again: PRINC of a REAL keeps 6 significant digits on
+;; AutoCAD (1.5707963267948966 -> 1.5708) and 14 on BricsCAD. A form that has
+;; to be written back as text (alfe-eval.lsp, when a normaliser rewrote it)
+;; goes through autolisp-form-source-text instead, which prints every REAL
+;; with as many digits as it takes to read back to the SAME double.
+;;
+;; The candidates are tried shortest first, and each is CHECKED in the CAD
+;; itself by reading it back -- the CAD's reader is the one that will read the
+;; file, so its verdict is the one that counts:
+;;   1. the plain princ text (3.0, 0.5: kept as the user would write them);
+;;   2. (rtos x 1 16): scientific, 17 significant digits -- enough for any
+;;      double -- and any magnitude (1.0e-300, 1.0e300);
+;;   3. (rtos x 2 16): decimal, for a CAD whose reader would not take 2.
+;; RTOS output depends on DIMZIN (its zero-suppression bits can drop the
+;; leading zero, ".5", or the trailing ones, "3" for 3.0), so it is normalised
+;; to always carry a digit before and after the point; a REAL stays a REAL.
+;; When no candidate reads back exactly, the readable one with the most
+;; digits is used, and failing that the plain text: never worse than before.
+
+;; The REAL that TEXT reads as, or NIL when it reads as anything else or
+;; does not read at all.
+(defun autolisp-real-text-value (text / r)
+  (setq r (vl-catch-all-apply 'read (list text)))
+  (if (and (not (vl-catch-all-error-p r)) (= (type r) 'REAL))
+    r
+    nil))
+
+(defun autolisp-real-text-reads-back-p (text x / r)
+  (setq r (autolisp-real-text-value text))
+  (and r (= r x)))
+
+;; Undo what DIMZIN's zero suppression does to RTOS output: ".5" -> "0.5",
+;; "-.5" -> "-0.5", "3" -> "3.0", "3." -> "3.0", "1E+00" -> "1.0E+00".
+(defun autolisp-real-text-normalize (text / epos mant expo)
+  (cond
+    ((= (substr text 1 1) ".") (setq text (strcat "0" text)))
+    ((= (substr text 1 2) "-.") (setq text (strcat "-0" (substr text 2)))))
+  (setq epos (vl-string-search "E" (strcase text)))
+  (if epos
+    (progn
+      (setq mant (substr text 1 epos))
+      (setq expo (substr text (+ epos 1))))
+    (progn
+      (setq mant text)
+      (setq expo "")))
+  (cond
+    ((not (vl-string-search "." mant)) (setq mant (strcat mant ".0")))
+    ((= (substr mant (strlen mant)) ".") (setq mant (strcat mant "0"))))
+  (strcat mant expo))
+
+;; (rtos X MODE 16), normalised, or NIL when RTOS refuses.
+(defun autolisp-real-rtos-text (x mode / s)
+  (setq s (vl-catch-all-apply 'rtos (list x mode 16)))
+  (if (or (vl-catch-all-error-p s) (/= (type s) 'STR) (= s ""))
+    nil
+    (autolisp-real-text-normalize s)))
+
+;; T when the REAL X is a negative zero. = cannot tell -0.0 from 0.0, but
+;; ATAN (atan2) can: (atan -0.0 -1.0) is -pi, (atan 0.0 -1.0) is +pi.
+(defun autolisp-real-negative-zero-p (x / r)
+  (and (= x 0.0)
+       (progn
+         (setq r (vl-catch-all-apply 'atan (list x -1.0)))
+         (and (not (vl-catch-all-error-p r)) (minusp r)))))
+
+;; Source text for the REAL X that reads back to X itself.
+(defun autolisp-real-source-text (x / plain sci dec)
+  (setq plain (autolisp-render x))
+  (cond
+    ;; Zero: every candidate reads back = to it whatever its sign, so the
+    ;; sign is decided here (RTOS drops it on some hosts).
+    ((= x 0.0) (if (autolisp-real-negative-zero-p x) "-0.0" "0.0"))
+    ((autolisp-real-text-reads-back-p plain x) plain)
+    ((and (setq sci (autolisp-real-rtos-text x 1))
+          (autolisp-real-text-reads-back-p sci x))
+     sci)
+    ((and (setq dec (autolisp-real-rtos-text x 2))
+          (autolisp-real-text-reads-back-p dec x))
+     dec)
+    ((and sci (autolisp-real-text-value sci)) sci)
+    ((and dec (autolisp-real-text-value dec)) dec)
+    (T plain)))
+
+;; autolisp-readable-text for SOURCE: the same rendering (strings quoted and
+;; escaped, dotted tails kept, symbols and integers as princ shows them)
+;; except that a REAL keeps all its digits.
+(defun autolisp-form-source-text (obj / acc first tail rest)
+  (cond
+    ((null obj)
+     "nil")
+    ((= (type obj) 'STR)
+     (strcat "\"" (autolisp-escape-string obj) "\""))
+    ((= (type obj) 'REAL)
+     (autolisp-real-source-text obj))
+    ((listp obj)
+     (setq acc "(")
+     (setq first T)
+     (setq tail obj)
+     (while tail
+       (if first
+         (setq first nil)
+         (setq acc (strcat acc " ")))
+       (setq acc (strcat acc (autolisp-form-source-text (car tail))))
+       (setq rest (cdr tail))
+       (cond
+         ((null rest)
+           (setq tail nil))
+         ((listp rest)
+           (setq tail rest))
+         (T
+           (setq acc (strcat acc " . " (autolisp-form-source-text rest)))
+           (setq tail nil))))
+     (strcat acc ")"))
+    (T
+     (autolisp-render obj))))
+
 (defun autolisp-emit-user-out (obj)
   (if *AUTOLISP_CAPTURE_STDOUT*
     (autolisp-write-line *AUTOLISP_OUTFILE*
@@ -704,13 +825,17 @@
                ;; rewrites native ops to alfe-* and evaluates DIRECTLY, so the
                ;; form is never re-serialised to alfe-eval.lsp and native-loaded
                ;; (which re-introduces a high byte that chokes AutoCAD). The
-               ;; default protocol path keeps going through eval-request-form.
+               ;; default protocol path keeps going through eval-request-form,
+               ;; WITH the form's own text: on a CAD that text is what reaches
+               ;; the native LOAD, so a real literal keeps every digit the
+               ;; file gave it (alfe-cad-transport-rounds-reals).
                (setq alfe--eval-result
-                 (vl-catch-all-apply
-                   (if (and (boundp '*alfe-load-rewrite*) *alfe-load-rewrite*)
-                     'alfe-eval-rewritten-form
-                     'autolisp-eval-request-form)
-                   (list alfe--form-read)))
+                 (if (and (boundp '*alfe-load-rewrite*) *alfe-load-rewrite*)
+                   (vl-catch-all-apply 'alfe-eval-rewritten-form
+                                       (list alfe--form-read))
+                   (vl-catch-all-apply 'autolisp-eval-request-source
+                                       (list alfe--form-read
+                                             (autolisp-first-form-text alfe--piece)))))
                (setq *AUTOLISP_CAPTURE_STDOUT* alfe--capture-old)
                (if (vl-catch-all-error-p alfe--eval-result)
                  (if (or *AUTOLISP_QUIT_REQUESTED*
@@ -1169,6 +1294,29 @@
     (autolisp-eval-load-form alfe--form)
     (eval alfe--form)))
 
+;; The same request, with the SOURCE TEXT the form was read from (or NIL
+;; when there is none). Every caller that read the form from text passes
+;; that text along: alfe's run-common.lsp redefines this function to hand
+;; the TEXT itself to the CAD's native LOAD instead of printing the form
+;; back, which lost the digits of every real literal
+;; (alfe-cad-transport-rounds-reals). Here, with no such override, the
+;; text is not needed and the form is evaluated as before.
+(defun autolisp-eval-request-source (alfe--form alfe--text)
+  (autolisp-eval-request-form alfe--form))
+
+;; The text of the FIRST form in TEXT -- leading blanks and comments
+;; dropped, nothing after the form kept -- i.e. exactly what READ consumed
+;; from it. NIL when TEXT is not a string or holds no complete form.
+(defun autolisp-first-form-text (alfe--text / alfe--trimmed alfe--end)
+  (if (= (type alfe--text) 'STR)
+    (progn
+      (setq alfe--trimmed (autolisp-source-trim-leading-junk alfe--text))
+      (setq alfe--end (autolisp-source-first-form-end alfe--trimmed))
+      (if alfe--end
+        (substr alfe--trimmed 1 alfe--end)
+        nil))
+    nil))
+
 (defun autolisp-run-load (alfe--idx alfe--path / alfe--r alfe--olderr)
   (autolisp-mark-begin "LOAD" alfe--idx)
   (autolisp-log-out (strcat "LOAD " alfe--path))
@@ -1230,7 +1378,9 @@
             (setq *AUTOLISP_ERROR_MSG* nil)
             (setq alfe--olderr *error*)
             (setq *error* autolisp-trap-error)
-            (setq alfe--r (autolisp-eval-request-form alfe--form-read))
+            (setq alfe--r (autolisp-eval-request-source
+                            alfe--form-read
+                            (autolisp-first-form-text alfe--form-text)))
             (setq *error* alfe--olderr)
             (setq *AUTOLISP_CAPTURE_STDOUT* nil)
             (if *AUTOLISP_QUIT_REQUESTED*
@@ -1560,7 +1710,9 @@
               (progn
                 (autolisp-log-out (strcat "EVAL " alfe--form-text))
                 (setq *AUTOLISP_CAPTURE_STDOUT* T)
-                (setq alfe--r (vl-catch-all-apply 'autolisp-eval-request-form (list alfe--form-read)))
+                (setq alfe--r (vl-catch-all-apply 'autolisp-eval-request-source
+                                                  (list alfe--form-read
+                                                        (autolisp-first-form-text alfe--form-text))))
                 (setq *AUTOLISP_CAPTURE_STDOUT* nil)
                 (if (vl-catch-all-error-p alfe--r)
                   (progn

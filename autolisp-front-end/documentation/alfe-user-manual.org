@@ -807,6 +807,33 @@ helper in your init file:
 alfe -l ~/.autolisp -x "(ep (quote (list 1 2 3)))"
 #+end_src
 
+** How a form reaches a CAD
+
+On the =--bricscad= and =--autocad= backends alfe does not hand an =-l=
+file to the CAD's own =LOAD=: its CAD-side loader reads the file one
+top-level form at a time, so that errors are reported with their file,
+line and enclosing =defun=, and passes each form to the CAD's native
+=LOAD= through a temporary file (=protocol/alfe-eval.lsp= in the
+workdir). =-x= expressions and the forms typed at the REPL take the same
+route.
+
+What that file holds is the form's own *text*, exactly as it was written:
+the CAD reads =(setq a 1.5707963267948966)= with its own reader, and
+=a= gets every digit. Only a form alfe has to rewrite is printed back from
+its value -- on AutoCAD, whose =defun= has no =&rest=, a call such as
+=(princ x)= is padded to =(princ x nil)= -- and then every real is printed
+with as many digits as it takes to read back to the same number
+(=1.5707963267948966E+00=), checked by the CAD's own reader.
+
+/Changed in alfe 2.3.12./ Every form used to be printed back with =princ=,
+which keeps 6 significant digits of a real on AutoCAD (=1.5708=) and 14 on
+BricsCAD (=1.5707963267949=), so real literals of a loaded file, of =-x=
+and of the REPL arrived rounded. Values the CAD computes, and digits held
+in a string, were never affected. =--clautolisp= was never affected.
+
+What a program *prints* is unchanged: =(print 1.5707963267948966)= on
+AutoCAD still shows =1.5708=, as AutoCAD's own =print= does.
+
 ** Interactive REPL on CAD backends
 
 =alfe --interactive --bricscad= (and =--autocad=) drops into a live

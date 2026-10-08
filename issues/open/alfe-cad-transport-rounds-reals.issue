@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-transport-rounds-reals — alfe re-prints every loaded form for AutoCAD/BricsCAD, so real literals arrive rounded (6 significant digits on AutoCAD)
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -84,3 +84,96 @@ equal to 1.2345678901234000 on every backend; the vendor lanes run it.
 
 Found while measuring cador-curve-length-and-sampling (its 2026-10-08
 section notes how the AutoCAD column was compared despite the rounding).
+
+* Resolution (2026-10-08, clautolisp 2.3.12 / alfe 2.3.12)
+
+Implemented on branch fix-alfe-cad-transport-rounds-reals. Stays NEXT until
+the vendor probe jobs below have MEASURED it on the runners.
+
+** Every place a form was printed back for the CAD
+
+- =source/file-protocol.lisp=, the emitted run-common.lsp override (the one
+  that writes =alfe-eval.lsp=): now =autolisp-eval-request-source (form
+  source)=; =autolisp-eval-request-form (form)= calls it with NIL.
+  =alfe-request-source-text= writes SOURCE when normalize returned FORM
+  itself (EQ: nothing rewritten) AND =(read source)= is EQUAL to FORM (so
+  the CAD never evaluates anything but what was read); otherwise it prints
+  the (normalised) form with =autolisp-form-source-text= (lossless reals).
+- =autolisp-bootstrap.lsp=, the -l read loop
+  (=autolisp-source-load-run-body-impl=): passes =(autolisp-first-form-text
+  alfe--piece)= -- the form's own text, leading comments dropped. The
+  =alfe-load= rewrite path is unchanged (it evals directly and never
+  printed anything).
+- =autolisp-remote-io.lsp=, the protocol server loop (every -x / --main /
+  REPL / (load ...) request alfe sends): =autolisp-protocol-remote-read=
+  keeps the request text in =*AUTOLISP_PROTOCOL_REQUEST_TEXT*= and the loop
+  calls =autolisp-eval-request-source= with its first form.
+- =autolisp-bootstrap.lsp=, the historical batch paths
+  =autolisp-run-eval-file= (-x) and =autolisp-run-repl-request= (REPL):
+  pass their text too. Without alfe's override the bootstrap's own
+  =autolisp-eval-request-source= ignores the text and evals as before.
+- The normalisers: =autolisp-normalize-princ-call= (AutoCAD only; the
+  identity on &rest hosts) rewrites a 1-arg princ/print/prin1/load, so such
+  a form IS printed back -- now losslessly. =alfe-rewrite-form= (alfe-load)
+  evaluates its result directly, no printing.
+- Left as they are, on purpose: =autolisp-readable-text= /
+  =autolisp-stdout-text= (what print/prin1 SHOW, which must match the CAD's
+  own print: =(print pi)= is 3.14159 on AutoCAD), the failure report's
+  =[form: ...]= and the selftest loop's =FORM= line (diagnostics, not
+  source). On the alfe side, =(load ~S)= / =(NAME)= / =(print TEXT)= are
+  built from strings, and =%render-autolisp-literal= (the CLI bindings in
+  run-common.lsp) never sees a real (a float would print with CL's ~S, e.g.
+  1.5d0 -- noted here; no binding carries one).
+
+** Lossless real printing (=autolisp-real-source-text=)
+
+Candidates, shortest first, each CHECKED by reading it back with the CAD's
+own reader (a REAL, and = to the value): the plain princ text (keeps 3.0 or
+0.5 as written); =(rtos x 1 16)= (17 significant digits, any magnitude);
+=(rtos x 2 16)=. RTOS output is normalised against DIMZIN's zero
+suppression (".5" -> "0.5", "3" -> "3.0", "1E+00" -> "1.0E+00"), so a real
+stays a real. Zero is decided apart: "-0.0" when =(atan x -1.0)= is
+negative (= cannot tell the signs apart), else "0.0". When nothing reads
+back exactly, the readable candidate with the most digits wins, else the
+plain text -- never worse than before. No sysvar is changed.
+
+** The other direction
+
+alfe never parses a real the CAD printed: values come back only as printed
+OUTPUT (=print= etc., deliberately with the CAD's own digits) and as status
+lines. Nothing to ticket.
+
+** Tests
+
+- =protocol-form-source-text-prints-reals-losslessly= (hosted
+  clautolisp-sbcl with =autolisp-render= stubbed to 6 significant digits,
+  like AutoCAD's princ): 1.2345678901234, 1.5707963267948966, 1.0e-300,
+  1.0e300, -0.0, 3.0, 0.1, -2.5e-7 read back EQL through the clautolisp
+  reader; strings / symbols / quote / dotted pairs print as before; the
+  DIMZIN normaliser.
+- =protocol-real-literals-reach-the-engine-exactly=, on the variadic AND
+  the fixed-arity (AutoCAD) shadow paths: a loaded file's literals and an
+  -x request's literal arrive exact; the re-printer is called ZERO times
+  for them; the form the AutoCAD normaliser rewrites is re-printed and
+  still exact (-0.0 keeps its sign); (rtos x 2 16) of the loaded
+  1.2345678901234 is 1.2345678901234000. Seen RED against the old printer
+  ("A ROUNDED ... E 1.2345700000000000").
+- Conformance scenarios
+  =tests/scenarios/language/real-literal-precision{,-bricscad,-autocad}.sexp=
+  (clautolisp-only / bricscad-only / autocad-only, one fixture).
+
+** Probe (to be played on the runners)
+
+=autolisp-front-end/tests/scenarios/entities/real-transport-probe.lsp=, run
+by =scripts/run-real-transport-probe.{sh,ps1}= (family =real-transport= in
+=scripts/ci-detect-probe-changes.py=), jobs in =.gitlab/native.yml=:
+=real-transport:probe:bricscad:macos=, =real-transport:probe:bricscad:windows=,
+=real-transport:probe:autocad:windows=,
+=real-transport:probe:accoreconsole:windows=. Per literal (11 cases) and
+path (literal / normalised / read / x-request) it prints whether the value
+equals the CAD's own =(read "<digits>")=, its type, =(rtos x 2 16)= and
+=(rtos x 1 16)=; plus the CAD's princ digits (=REALTX-PRINC=) and what
+alfe's printer chose and whether it read back (=REALTX-PRINTER=). Expected
+after the fix: every =literal=, =normalised= and =x-request= line =exact=
+on all four. The second round of curve-geometry-probe (=reader= cases, MR
+!463) answers the same question for =cg-x=.
