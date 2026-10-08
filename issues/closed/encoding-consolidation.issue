@@ -2,6 +2,7 @@
 #+TITLE: Character-encoding consolidation (alfe + clautolisp): the umbrella — program of work, code map, and the no-regression invariant
 #+AUTHOR: Pascal J. Bourguignon
 #+DATE: 2026-07-28
+#+STATUS: DONE (2026-10-08, clautolisp 2.3.9 / alfe 2.3.9 -- see Resolution at the end)
 
 * What this is (and what it defers)
 
@@ -299,3 +300,16 @@ encoding-situations-cli-options, section "Measured 2026-10-08":
 
 Still open, so this umbrella stays open with encoding-situations-cli-options:
 the BricsCAD ",ccs=" append measurement and the re-run of the end-to-end check.
+
+* Resolution (2026-10-08, clautolisp 2.3.9 / alfe 2.3.9) -- DONE
+
+The last measurements are in (encoding-situations-cli-options, sections
+"Verified 2026-10-08" and "Measured 2026-10-08 -- the BricsCAD ,ccs= append"):
+the AutoCAD -Efile-write forwarding is verified in the CAD (job 17027024820:
+LISPSYS 0 w 3 / a 1 + one WARN, LISPSYS 1/2 w 4 / a 2); BricsCAD V25 writes no
+second BOM on an append with ",ccs=" (job 17027935338: UTF-8 7 -> 9, UTF-16LE
+8 -> 10), so its forwarding on "a" stays; the BricsCAD V25 log is windows-1252
+without a BOM. All gaps G1-G6 and phases 0-4 of this umbrella are landed and
+confirmed on the runners. Closed together with encoding-situations-cli-options.
+Follow-ups: alfe-efile-write-not-applied-to-l-file,
+cador-bricscad-windows-log-encoding, open-ccs-bom-bricscad-windows-divergence.

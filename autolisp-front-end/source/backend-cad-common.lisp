@@ -1384,7 +1384,12 @@ version pick the right one. The virtual =autocad[-VER]= maps to =acad= or
 ;;;   BricsCAD V25 Windows      write cp1252; third argument accepted, no
 ;;;                             effect; "w,ccs=UTF-8" writes UTF-8 WITH a BOM,
 ;;;                             "w,ccs=UTF-16LE" UTF-16LE with a BOM. Read
-;;;                             never decodes (raw octets, BOM skipped).
+;;;                             never decodes (raw octets, BOM skipped). An
+;;;                             append "a,ccs=" adds no second BOM (UTF-8
+;;;                             7 -> 9, UTF-16LE 8 -> 10), while a plain "a"
+;;;                             on such a file appends cp1252 (7 -> 8): so
+;;;                             ",ccs=" is forwarded on "a" too (job
+;;;                             17027935338).
 ;;;   BricsCAD V26 macOS        writes UTF-8 without a BOM whatever the mode;
 ;;;                             read returns raw octets.
 ;;;

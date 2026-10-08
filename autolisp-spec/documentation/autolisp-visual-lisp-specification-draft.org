@@ -7644,6 +7644,21 @@ e-acute "B":
 | ~(open f "w,ccs=UTF-8")~  | accepted, ignored        | accepted, ignored                | honoured (BOM)          |
 | ~(open f "w,ccs=UTF-16LE")~ | accepted, ignored      | accepted, ignored                | honoured (BOM)          |
 
+Appending on BricsCAD V25 Windows (probe-open-encoding, 2026-10-08, job
+17027935338, ACADVER "25.0 BricsCAD"): "A" e-acute "B" written with the
+first mode, one e-acute appended with the second, file sizes after each and
+what a plain ~(open f "r")~ reads back:
+
+| write, then append                       | sizes  | read back                  |
+|------------------------------------------+--------+----------------------------|
+| ~"w,ccs=UTF-8"~, then ~"a,ccs=UTF-8"~       | 7, 9   | (65 195 169 66 195 169)    |
+| ~"w,ccs=UTF-16LE"~, then ~"a,ccs=UTF-16LE"~ | 8, 10  | (65 233 0 66 0 233 0)      |
+| ~"w,ccs=UTF-8"~, then a plain ~"a"~         | 7, 8   | (65 195 169 66 233)        |
+| ~"w" "utf8"~, then ~"a" "utf8"~             | 3, 4   | (65 233 66 233)            |
+
+So an append with ~,ccs=~ writes no second byte-order mark; a plain ~"a"~
+appends cp1252 to the UTF-8 file.
+
 The documented ~"utf8"~ / ~"utf8-bom"~ at AutoCAD LISPSYS 1 / 2 were
 measured by encoding experiment E1, 2026-10-06 (AutoCAD 2022 accoreconsole,
 LISPSYS set in every profile and the engine restarted per level, job

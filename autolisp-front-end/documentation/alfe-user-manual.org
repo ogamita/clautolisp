@@ -915,8 +915,10 @@ still an error, but a fixed boundary is never silently wrong).
   =alfe-load=, when =-Efile-write= (or =-Efile=, or the bare =-E=) asks for:
   - BricsCAD/Windows, =UTF-8= or =UTF-16LE=: a plain =(open f "w")= /
     =(open f "a")= becomes ~(open f "w,ccs=UTF-8")~ (or =UTF-16LE=), so the
-    file is written in that encoding *with a byte-order mark*; if BricsCAD
-    refuses the mode, the plain one is used;
+    file is written in that encoding *with a byte-order mark*; an append
+    adds no second one (measured, BricsCAD V25), whereas a plain ="a"=
+    would append cp1252 bytes to the UTF-8 file; if BricsCAD refuses the
+    mode, the plain one is used;
   - AutoCAD, =UTF-8=: a plain =(open f "w")= / =(open f "a")= becomes
     =(open f "w" "utf8")= / =(open f "a" "utf8")= (UTF-8, no BOM) — but
     only when the running AutoCAD's =LISPSYS= is 1 or 2, which alfe checks

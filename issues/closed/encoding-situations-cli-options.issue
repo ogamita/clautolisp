@@ -1,6 +1,7 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: clautolisp/alfe: named encoding "situations", per-situation CLI options, and line-termination
 #+DATE: 2026-07-27
+#+STATUS: DONE (2026-10-08, clautolisp 2.3.9 / alfe 2.3.9 -- see Resolution at the end)
 
 * Status
 
@@ -961,3 +962,44 @@ LISPSYS 1 / 2, "nombre d'arguments trop important" at 0. (Code loaded by the
 Only the BricsCAD/Windows ",ccs=" append (probe-open-encoding in
 vendor:probes:bricscad, job 17027024838, running): keep or stop alfe's ,ccs=
 forwarding on "a".
+
+* Measured 2026-10-08 -- the BricsCAD ",ccs=" append (probe:suite:bricscad:windows)
+
+Job 17027935338 (probe:suite:bricscad:windows, MR !464 pipeline 2926085769,
+branch at ff85b2f0; ACADVER "25.0 BricsCAD", LISPSYS 0), results
+probe-results/bricscad/ms-windows/20261008T112520Z/results.sexp, suite
+open-encoding ("A" e-acute "B" written with the first mode, one e-acute
+appended with the second; (size-after-write size-after-append), then a plain
+(open f "r") read-back):
+#+begin_example
+"w,ccs=UTF-8" then "a,ccs=UTF-8"       (7 9)   read (65 195 169 66 195 169)
+"w,ccs=UTF-16LE" then "a,ccs=UTF-16LE" (8 10)  read (65 233 0 66 0 233 0)
+"w,ccs=UTF-8" then a plain "a"         (7 8)   read (65 195 169 66 233)
+"w" "utf8" then "a" "utf8"             (3 4)   read (65 233 66 233)
+#+end_example
+So BricsCAD V25 on Windows writes NO second BOM on an append with ",ccs="
+(UTF-8 +2 bytes, UTF-16LE +2 bytes for one e-acute; the read-back has no
+EF BB BF / FF FE in the middle), while a plain "a" on the same UTF-8 file
+appends the cp1252 byte E9 -- a mixed file. The ",ccs=" forwarding on "a" is
+therefore right and is KEPT (alfe unchanged; backend-cad-common.lisp comment,
+alfe user manual and the spec's OPEN "Measured" subsection record it). "utf8"
+on "w"/"a" stays without effect on BricsCAD (cp1252), as measured before.
+
+Found on the way: clautolisp under bricscad-v25 writes NO BOM for
+"w,ccs=UTF-8" / "w,ccs=UTF-16LE" (BricsCAD writes one) --
+open-ccs-bom-bricscad-windows-divergence.
+
+* Resolution (2026-10-08, clautolisp 2.3.9 / alfe 2.3.9) -- DONE
+
+Every measurement this ticket waited for is in, and acted on:
+- source, file, console, cadstdio, log, terminal: situations, CLI (section 4),
+  plumbing (section 6) and the measured defaults (section 7, E1-E5) done in
+  the earlier sections;
+- log: BricsCAD V25 Windows windows-1252 without a BOM (jobs 16998925784,
+  17027024818), AutoCAD 2022 windows-1252 (MR !428), BricsCAD V26 macOS none
+  in batch; alfe --cad-log's default matches;
+- file write forwarding: AutoCAD "utf8" on "w" and "a" at LISPSYS 1/2,
+  verified end to end (job 17027024820); BricsCAD/Windows ",ccs=" on "w" and
+  "a", the append measured above.
+Follow-ups filed as their own tickets: alfe-efile-write-not-applied-to-l-file,
+cador-bricscad-windows-log-encoding, open-ccs-bom-bricscad-windows-divergence.

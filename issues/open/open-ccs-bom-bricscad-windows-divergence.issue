@@ -1,0 +1,51 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: open-ccs-bom-bricscad-windows-divergence — clautolisp's (open f "w,ccs=UTF-8") writes no BOM under the BricsCAD Windows dialect; BricsCAD V25 writes one
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: fix-open-ccs-bom-bricscad-windows-divergence
+#+DATE: 2026-10-08
+
+* Context
+
+Found 2026-10-08 while closing encoding-situations-cli-options (the BricsCAD
+",ccs=" append measurement, job 17027935338). BricsCAD V25 on Windows writes
+a byte-order mark for ",ccs=UTF-8" and ",ccs=UTF-16LE" (probe-open-encoding:
+"A" e-acute "B" is 7 bytes with "w,ccs=UTF-8", 8 with "w,ccs=UTF-16LE" --
+jobs 16968316289 and 17027935338), and an append with the same ",ccs=" adds
+no second one (7 -> 9, 8 -> 10).
+
+* Problem
+
+clautolisp (2.3.9, =clautolisp-sbcl --dialect bricscad-v25=) writes no BOM:
+
+#+begin_example
+(setq f (open "ap.txt" "w,ccs=UTF-8")) (write-char 65 f) (write-char 233 f) (close f)
+(setq f (open "ap.txt" "a,ccs=UTF-8")) (write-char 233 f) (close f)
+  -> ap.txt = 41 C3 A9 C3 A9            (BricsCAD: EF BB BF 41 C3 A9 ... C3 A9)
+(setq f (open "ap16.txt" "w,ccs=UTF-16LE")) (write-char 65 f) (close f)
+(setq f (open "ap16.txt" "a,ccs=UTF-16LE")) (write-char 66 f) (close f)
+  -> ap16.txt = 41 00 42 00             (BricsCAD: FF FE 41 00 42 00)
+#+end_example
+
+The append half already matches (no second BOM); the write half does not.
+The spec's =*** clautolisp= note under ~open~ says the ",ccs=" suffix is
+honoured silently under the Windows BricsCAD dialects for UTF-8 / UTF-16LE
+("honoured, measured"), which suggests the same bytes.
+
+* Proposal
+
+Under the Windows BricsCAD dialects (product BricsCAD, platform Windows --
+dispatch on product/platform, never on a dialect keyword), ",ccs=UTF-8" and
+",ccs=UTF-16LE" on mode "w" (and on "a" creating a new, empty file -- not
+measured; decide) write the BOM first; "a" on an existing file writes none.
+Other dialects unchanged. Document it in the =*** clautolisp= section of
+~open~ and the clautolisp user manual. (Not done on the measuring branch: no
+clautolisp source changes were allowed there.)
+
+* Acceptance criteria
+
+- under bricscad-v25 (Windows), "w,ccs=UTF-8" of "A" e-acute -> EF BB BF 41 C3 A9;
+  "w,ccs=UTF-16LE" of "A" -> FF FE 41 00; the appends add no BOM;
+- other dialects byte-for-byte unchanged; builtin unit tests.
