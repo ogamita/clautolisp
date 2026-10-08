@@ -5,15 +5,17 @@
     scripts/run-console-flood-probe.ps1 [-Backend {accoreconsole|bricscad}]
 
   Runs autolisp-front-end/tests/scenarios/entities/console-flood-probe.lsp in
-  ONE CAD session: it PROMPTs 2, 4, 8, 16, 64 and 256 KB to the CAD's own
-  command line (accoreconsole's console, UTF-16LE). Before alfe 2.3.11 nothing
-  read that console until the engine exited, so the session hung at the block
-  that filled the pipe, until --timeout. With the fix every block completes.
+  ONE CAD session: it drives about 1 MB into accoreconsole's own console
+  (UTF-16LE) -- PROMPT, native PRINC, echoed SETVAR and REGEN commands --
+  measuring engine-console-stdout.txt after every chunk (FLOOD-STEP lines).
+  Before alfe 2.3.11 nothing read that console until the engine exited, so the
+  session hung once the pipe was full, until --timeout.
 
   Output: dist/console-flood/<backend>-Windows.txt -- the FLOOD lines, the
   elapsed time and alfe's exit code; dist/console-flood/workdir-<backend>/ --
   the kept workdir, whose engine-console-stdout.txt holds the console text.
-  Exits 1 when the session did not reach FLOOD-DONE.
+  Exits 1 when the session did not reach FLOOD-DONE (FLOOD-INCOMPLETE), or when
+  the console received under 256 KB (FLOOD-WEAK: the run proves nothing).
 #>
 param(
   [ValidateSet("accoreconsole","bricscad")]
@@ -62,31 +64,46 @@ switch ($Backend) {
 }
 $bargs += @("-l", $probe)
 
-"########## BACKEND: $Backend on Windows ##########" | Tee-Object -FilePath $report -Append
+# Every report line goes through Add-Content -Encoding utf8: Tee-Object writes
+# UTF-16LE on Windows PowerShell 5, and mixed with the UTF-8 header it made the
+# file unreadable to Select-String, which then missed FLOOD-DONE in a run that
+# had printed it (job 17028620750). The verdict below is computed from the
+# CAPTURED lines, never by re-reading the file.
+function Report([string]$line) {
+  Write-Host $line
+  Add-Content -Encoding utf8 -Path $report -Value $line
+}
+
+Report "########## BACKEND: $Backend on Windows ##########"
 $start = Get-Date
-& $alfe $bargs 2>&1 |
-  Select-String -Pattern '^FLOOD|BOOTSTRAP-FAILED|FAILED|TIMEOUT|did not reach' |
-  ForEach-Object { $_.Line } |
-  Tee-Object -FilePath $report -Append
+$lines = @(& $alfe $bargs 2>&1 |
+  ForEach-Object { "$_" } |
+  Where-Object { $_ -match '^FLOOD|BOOTSTRAP-FAILED|FAILED|TIMEOUT|did not reach' })
 $code = $LASTEXITCODE
 $elapsed = [int]((Get-Date) - $start).TotalSeconds
-"FLOOD-RUN     alfe exit $code after $elapsed s" | Tee-Object -FilePath $report -Append
+foreach ($l in $lines) { Report $l }
+Report "FLOOD-RUN     alfe exit $code after $elapsed s"
 
 $console = Join-Path $workdir "engine-console-stdout.txt"
+$bytes = 0
 if (Test-Path $console) {
-  "FLOOD-CONSOLE engine-console-stdout.txt = $((Get-Item $console).Length) bytes" |
-    Tee-Object -FilePath $report -Append
+  $bytes = (Get-Item $console).Length
+  Report "FLOOD-CONSOLE engine-console-stdout.txt = $bytes bytes"
 } else {
-  "FLOOD-CONSOLE no engine-console-stdout.txt in the workdir (an alfe before 2.3.11?)" |
-    Tee-Object -FilePath $report -Append
+  Report "FLOOD-CONSOLE no engine-console-stdout.txt in the workdir (an alfe before 2.3.11?)"
 }
 
-# No DONE line: the session did not complete -- say so in the file, so a
-# truncated run is never read as a pass.
-if (-not (Select-String -Path $report -Pattern '^FLOOD-DONE' -Quiet)) {
-  "FLOOD-INCOMPLETE  the session did not reach its end" |
-    Tee-Object -FilePath $report -Append
-  Write-Host "console-flood probe ($Backend) -> $report : INCOMPLETE"
+# No DONE line: the session did not complete. A run that completed but whose
+# console never received far more than a pipe buffer proves nothing about the
+# deadlock: say so and fail, rather than read it as a pass.
+$done = @($lines | Where-Object { $_ -match '^FLOOD-DONE' })
+if ($done.Count -eq 0) {
+  Report "FLOOD-INCOMPLETE  the session did not reach its end"
   exit 1
 }
-Write-Host "console-flood probe ($Backend) -> $report : complete"
+$minimum = 256 * 1024
+if ($bytes -lt $minimum) {
+  Report "FLOOD-WEAK    the console received $bytes bytes, under $minimum -- the run proves nothing about a full pipe"
+  exit 1
+}
+Report "FLOOD-VERDICT complete, $bytes console bytes in one session"

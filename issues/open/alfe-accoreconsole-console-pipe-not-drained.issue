@@ -151,13 +151,27 @@ keywords through instead of forcing :stream pipes.
 =console-flood:probe:accoreconsole:windows= (.gitlab/native.yml, probe family
 =console-flood=; automatic on a merge-request pipeline that changes the probe,
 manual otherwise) runs scripts/run-console-flood-probe.ps1:
-console-flood-probe.lsp PROMPTs 2, 4, 8, 16, 64 and 256 KB to accoreconsole's
-command line in ONE session (--autocad --mode batch --timeout 300,
---keep-workdir). Report dist/console-flood/accoreconsole-Windows.txt: FLOOD-DONE
-= complete; FLOOD-INCOMPLETE (the job goes red) = the session stopped, at the
-last FLOOD-BEGIN. The kept workdir's engine-console-stdout.txt size shows how
-much console text accoreconsole produced. Close this ticket when that job has
-reported FLOOD-DONE with this fix; then the optkw probe can go back to one
+console-flood-probe.lsp drives about 1 MB into accoreconsole's own console in
+ONE session (--autocad --mode batch --timeout 300, --keep-workdir), measuring
+the size of engine-console-stdout.txt after every chunk (FLOOD-STEP lines) and
+per driver (FLOOD-DRIVER ... live|dead): PROMPT, native PRINC (through APPLY,
+so alfe's load rewriter leaves it alone), (command "_.SETVAR" "USERI1" n) with
+CMDECHO 1 -- the echoed command line that filled the console in the optkw
+runs -- and (command "_.REGEN"), until 1 MB reached the console. Report
+dist/console-flood/accoreconsole-Windows.txt: FLOOD-VERDICT = complete with
+that many console bytes; FLOOD-INCOMPLETE (red) = the session stopped, at the
+last FLOOD-STEP; FLOOD-WEAK (red) = completed but the console received under
+256 KB, which proves nothing about a full pipe.
+
+First run, job 17028620750 (MR !465, b2c56dfe): the first version PROMPTed
+350 KB and completed in 15 s, but engine-console-stdout.txt held only 2290
+bytes -- a (prompt) evaluated inside alfe's protocol does not reach
+accoreconsole's stdout -- so it proved nothing; and the wrapper missed its own
+FLOOD-DONE (Select-String over a report mixing a UTF-8 header with Tee-Object's
+UTF-16LE lines) and went red. Both fixed: the probe measures and switches
+driver, the verdict is computed from the captured lines.
+
+Close this ticket when that job has reported FLOOD-VERDICT with this fix; then the optkw probe can go back to one
 session (and benchmark:autocad:windows, which also runs --mode batch and died
 mid-suite on 2026-09-28, can be re-run against it --
 autocad-com-fails-in-disconnected-windows-session.issue).
