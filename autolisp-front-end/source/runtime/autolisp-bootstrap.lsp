@@ -1,145 +1,145 @@
-(defun autolisp-bootstrap-append-line (path text / f)
-  (if (and (= (type path) 'STR)
-           (/= path ""))
+(defun autolisp-bootstrap-append-line (alfe--path alfe--text / alfe--f)
+  (if (and (= (type alfe--path) 'STR)
+           (/= alfe--path ""))
     (progn
-      (setq f (open path "a"))
-      (if f
+      (setq alfe--f (open alfe--path "a"))
+      (if alfe--f
         (progn
-          (write-line text f)
-          (close f))))))
+          (write-line alfe--text alfe--f)
+          (close alfe--f))))))
 
-(defun autolisp-bootstrap-write-line (path text / f)
-  (if (and (= (type path) 'STR)
-           (/= path ""))
+(defun autolisp-bootstrap-write-line (alfe--path alfe--text / alfe--f)
+  (if (and (= (type alfe--path) 'STR)
+           (/= alfe--path ""))
     (progn
-      (setq f (open path "w"))
-      (if f
+      (setq alfe--f (open alfe--path "w"))
+      (if alfe--f
         (progn
-          (write-line text f)
-          (close f))))))
+          (write-line alfe--text alfe--f)
+          (close alfe--f))))))
 
-(defun autolisp-bootstrap-render-error (err / msg)
+(defun autolisp-bootstrap-render-error (alfe--err / alfe--msg)
   (cond
-    ((and (= (type err) 'STR)
-          (/= err ""))
-     err)
+    ((and (= (type alfe--err) 'STR)
+          (/= alfe--err ""))
+     alfe--err)
     ((and (fboundp 'vl-catch-all-error-message)
           (not (vl-catch-all-error-p
-                 (setq msg (vl-catch-all-apply 'vl-catch-all-error-message
-                                               (list err))))))
-     msg)
+                 (setq alfe--msg (vl-catch-all-apply 'vl-catch-all-error-message
+                                               (list alfe--err))))))
+     alfe--msg)
     (T
      "<bootstrap failure>")))
 
-(defun autolisp-bootstrap-mark-fatal (phase err / msg)
-  (setq msg (autolisp-bootstrap-render-error err))
+(defun autolisp-bootstrap-mark-fatal (alfe--phase alfe--err / alfe--msg)
+  (setq alfe--msg (autolisp-bootstrap-render-error alfe--err))
   (autolisp-bootstrap-append-line *AUTOLISP_ERRFILE*
-                                  (strcat "ERROR " phase ": " msg))
+                                  (strcat "ERROR " alfe--phase ": " alfe--msg))
   (autolisp-bootstrap-write-line *AUTOLISP_STATUSFILE* "1")
   (autolisp-bootstrap-write-line *AUTOLISP_PROTOCOL_STATUSFILE*
-                                 (strcat "FAILED " phase))
+                                 (strcat "FAILED " alfe--phase))
   (if *AUTOLISP_QUIT_ON_FINISH*
     (vl-catch-all-apply 'command (list "_QUIT" "_Y")))
   1)
 
-(defun autolisp-write-line (path text / f)
-  (setq f (open path "a"))
-  (if f
+(defun autolisp-write-line (alfe--path alfe--text / alfe--f)
+  (setq alfe--f (open alfe--path "a"))
+  (if alfe--f
     (progn
-      (write-line text f)
-      (close f))))
+      (write-line alfe--text alfe--f)
+      (close alfe--f))))
 
-(defun autolisp-reset-file (path / f)
-  (setq f (open path "w"))
-  (if f (close f)))
+(defun autolisp-reset-file (alfe--path / alfe--f)
+  (setq alfe--f (open alfe--path "w"))
+  (if alfe--f (close alfe--f)))
 
-(defun autolisp-slurp-file (path / f line acc)
-  (setq f (open path "r"))
-  (if (not f)
+(defun autolisp-slurp-file (alfe--path / alfe--f alfe--line alfe--acc)
+  (setq alfe--f (open alfe--path "r"))
+  (if (not alfe--f)
     ""
     (progn
-      (setq acc "")
-      (while (setq line (read-line f))
-        (setq line (vl-string-translate "\r" "" line))
-        (if (= acc "")
-          (setq acc line)
-          (setq acc (strcat acc "\n" line))))
-      (close f)
-      acc)))
+      (setq alfe--acc "")
+      (while (setq alfe--line (read-line alfe--f))
+        (setq alfe--line (vl-string-translate "\r" "" alfe--line))
+        (if (= alfe--acc "")
+          (setq alfe--acc alfe--line)
+          (setq alfe--acc (strcat alfe--acc "\n" alfe--line))))
+      (close alfe--f)
+      alfe--acc)))
 
-(defun autolisp-str (obj)
-  (if (= (type obj) 'STR)
-    obj
-    (autolisp-render obj)))
+(defun autolisp-str (alfe--obj)
+  (if (= (type alfe--obj) 'STR)
+    alfe--obj
+    (autolisp-render alfe--obj)))
 
-(defun autolisp-render (obj / rendered)
-  (setq rendered (vl-catch-all-apply 'vl-princ-to-string (list obj)))
-  (if (vl-catch-all-error-p rendered)
+(defun autolisp-render (alfe--obj / alfe--rendered)
+  (setq alfe--rendered (vl-catch-all-apply 'vl-princ-to-string (list alfe--obj)))
+  (if (vl-catch-all-error-p alfe--rendered)
     "<unprintable>"
-    rendered))
+    alfe--rendered))
 
-(defun autolisp-set-status (code / f)
-  (setq f (open *AUTOLISP_STATUSFILE* "w"))
-  (if f
+(defun autolisp-set-status (alfe--code / alfe--f)
+  (setq alfe--f (open *AUTOLISP_STATUSFILE* "w"))
+  (if alfe--f
     (progn
-      (write-line (itoa code) f)
-      (close f)))
-  code)
+      (write-line (itoa alfe--code) alfe--f)
+      (close alfe--f)))
+  alfe--code)
 
-(defun autolisp-set-status-text (text / f)
-  (setq f (open *AUTOLISP_STATUSFILE* "w"))
-  (if f
+(defun autolisp-set-status-text (alfe--text / alfe--f)
+  (setq alfe--f (open *AUTOLISP_STATUSFILE* "w"))
+  (if alfe--f
     (progn
-      (write-line text f)
-      (close f)))
-  text)
+      (write-line alfe--text alfe--f)
+      (close alfe--f)))
+  alfe--text)
 
-(defun autolisp-log-out (text)
-  (autolisp-write-line *AUTOLISP_OUTFILE* text))
+(defun autolisp-log-out (alfe--text)
+  (autolisp-write-line *AUTOLISP_OUTFILE* alfe--text))
 
-(defun autolisp-log-err (text)
-  (autolisp-write-line *AUTOLISP_ERRFILE* text))
+(defun autolisp-log-err (alfe--text)
+  (autolisp-write-line *AUTOLISP_ERRFILE* alfe--text))
 
-(defun autolisp-safe-getvar (name / value)
-  (setq value (vl-catch-all-apply 'getvar (list name)))
-  (if (vl-catch-all-error-p value)
+(defun autolisp-safe-getvar (alfe--name / alfe--value)
+  (setq alfe--value (vl-catch-all-apply 'getvar (list alfe--name)))
+  (if (vl-catch-all-error-p alfe--value)
     ""
-    (autolisp-str value)))
+    (autolisp-str alfe--value)))
 
-(defun autolisp-write-runtime-info (/ f)
-  (setq f (open *AUTOLISP_PROTOCOL_INFOFILE* "w"))
-  (if f
+(defun autolisp-write-runtime-info (/ alfe--f)
+  (setq alfe--f (open *AUTOLISP_PROTOCOL_INFOFILE* "w"))
+  (if alfe--f
     (progn
-      (write-line (autolisp-safe-getvar "PRODUCT") f)
-      (write-line (autolisp-safe-getvar "ACADVER") f)
-      (write-line (autolisp-safe-getvar "PROGRAM") f)
-      (close f)))
+      (write-line (autolisp-safe-getvar "PRODUCT") alfe--f)
+      (write-line (autolisp-safe-getvar "ACADVER") alfe--f)
+      (write-line (autolisp-safe-getvar "PROGRAM") alfe--f)
+      (close alfe--f)))
   nil)
 
 (defun autolisp-stdout-prefix ()
   "<<<AUTOLISP-STDOUT>>>")
 
-(defun autolisp-escape-string (text / idx len ch acc)
-  (setq idx 1)
-  (setq len (strlen text))
-  (setq acc "")
-  (while (<= idx len)
-    (setq ch (substr text idx 1))
-    (if (= ch "\\")
-      (setq acc (strcat acc "\\\\"))
-      (if (= ch "\"")
-        (setq acc (strcat acc "\\\""))
-        (setq acc (strcat acc ch))))
-    (setq idx (+ idx 1)))
-  acc)
+(defun autolisp-escape-string (alfe--text / alfe--idx alfe--len alfe--ch alfe--acc)
+  (setq alfe--idx 1)
+  (setq alfe--len (strlen alfe--text))
+  (setq alfe--acc "")
+  (while (<= alfe--idx alfe--len)
+    (setq alfe--ch (substr alfe--text alfe--idx 1))
+    (if (= alfe--ch "\\")
+      (setq alfe--acc (strcat alfe--acc "\\\\"))
+      (if (= alfe--ch "\"")
+        (setq alfe--acc (strcat alfe--acc "\\\""))
+        (setq alfe--acc (strcat alfe--acc alfe--ch))))
+    (setq alfe--idx (+ alfe--idx 1)))
+  alfe--acc)
 
-(defun autolisp-readable-text (obj / acc first tail rest)
+(defun autolisp-readable-text (alfe--obj / alfe--acc alfe--first alfe--tail alfe--rest)
   (cond
-    ((null obj)
+    ((null alfe--obj)
      "nil")
-    ((= (type obj) 'STR)
-     (strcat "\"" (autolisp-escape-string obj) "\""))
-    ((listp obj)
+    ((= (type alfe--obj) 'STR)
+     (strcat "\"" (autolisp-escape-string alfe--obj) "\""))
+    ((listp alfe--obj)
      ;; Walk the list with an improper-tail guard. A proper list
      ;; ends with NIL, terminator stays a plain closing paren; a
      ;; dotted pair like `[1 . 2]' or improper tail like
@@ -151,29 +151,29 @@
      ;; eval through the file-load path -- mapcar+lambda bodies
      ;; returning cons cells via cons of two atoms produce dotted
      ;; pairs that the printer crashed on.
-     (setq acc "(")
-     (setq first T)
-     (setq tail obj)
-     (while tail
-       (if first
-         (setq first nil)
-         (setq acc (strcat acc " ")))
-       (setq acc (strcat acc (autolisp-readable-text (car tail))))
-       (setq rest (cdr tail))
+     (setq alfe--acc "(")
+     (setq alfe--first T)
+     (setq alfe--tail alfe--obj)
+     (while alfe--tail
+       (if alfe--first
+         (setq alfe--first nil)
+         (setq alfe--acc (strcat alfe--acc " ")))
+       (setq alfe--acc (strcat alfe--acc (autolisp-readable-text (car alfe--tail))))
+       (setq alfe--rest (cdr alfe--tail))
        (cond
-         ((null rest)
-           (setq tail nil))
-         ((listp rest)
-           (setq tail rest))
+         ((null alfe--rest)
+           (setq alfe--tail nil))
+         ((listp alfe--rest)
+           (setq alfe--tail alfe--rest))
          (T
-           (setq acc (strcat acc " . " (autolisp-readable-text rest)))
-           (setq tail nil))))
-     (strcat acc ")"))
+           (setq alfe--acc (strcat alfe--acc " . " (autolisp-readable-text alfe--rest)))
+           (setq alfe--tail nil))))
+     (strcat alfe--acc ")"))
     (T
-     (autolisp-render obj))))
+     (autolisp-render alfe--obj))))
 
-(defun autolisp-stdout-text (obj)
-  (autolisp-readable-text obj))
+(defun autolisp-stdout-text (alfe--obj)
+  (autolisp-readable-text alfe--obj))
 
 ;; --- Printing a form back as SOURCE, losslessly ---------------------------
 ;;
@@ -201,139 +201,139 @@
 
 ;; The REAL that TEXT reads as, or NIL when it reads as anything else or
 ;; does not read at all.
-(defun autolisp-real-text-value (text / r)
-  (setq r (vl-catch-all-apply 'read (list text)))
-  (if (and (not (vl-catch-all-error-p r)) (= (type r) 'REAL))
-    r
+(defun autolisp-real-text-value (alfe--text / alfe--r)
+  (setq alfe--r (vl-catch-all-apply 'read (list alfe--text)))
+  (if (and (not (vl-catch-all-error-p alfe--r)) (= (type alfe--r) 'REAL))
+    alfe--r
     nil))
 
-(defun autolisp-real-text-reads-back-p (text x / r)
-  (setq r (autolisp-real-text-value text))
-  (and r (= r x)))
+(defun autolisp-real-text-reads-back-p (alfe--text alfe--x / alfe--r)
+  (setq alfe--r (autolisp-real-text-value alfe--text))
+  (and alfe--r (= alfe--r alfe--x)))
 
 ;; Undo what DIMZIN's zero suppression does to RTOS output: ".5" -> "0.5",
 ;; "-.5" -> "-0.5", "3" -> "3.0", "3." -> "3.0", "1E+00" -> "1.0E+00".
-(defun autolisp-real-text-normalize (text / epos mant expo)
+(defun autolisp-real-text-normalize (alfe--text / alfe--epos alfe--mant alfe--expo)
   (cond
-    ((= (substr text 1 1) ".") (setq text (strcat "0" text)))
-    ((= (substr text 1 2) "-.") (setq text (strcat "-0" (substr text 2)))))
-  (setq epos (vl-string-search "E" (strcase text)))
-  (if epos
+    ((= (substr alfe--text 1 1) ".") (setq alfe--text (strcat "0" alfe--text)))
+    ((= (substr alfe--text 1 2) "-.") (setq alfe--text (strcat "-0" (substr alfe--text 2)))))
+  (setq alfe--epos (vl-string-search "E" (strcase alfe--text)))
+  (if alfe--epos
     (progn
-      (setq mant (substr text 1 epos))
-      (setq expo (substr text (+ epos 1))))
+      (setq alfe--mant (substr alfe--text 1 alfe--epos))
+      (setq alfe--expo (substr alfe--text (+ alfe--epos 1))))
     (progn
-      (setq mant text)
-      (setq expo "")))
+      (setq alfe--mant alfe--text)
+      (setq alfe--expo "")))
   (cond
-    ((not (vl-string-search "." mant)) (setq mant (strcat mant ".0")))
-    ((= (substr mant (strlen mant)) ".") (setq mant (strcat mant "0"))))
-  (strcat mant expo))
+    ((not (vl-string-search "." alfe--mant)) (setq alfe--mant (strcat alfe--mant ".0")))
+    ((= (substr alfe--mant (strlen alfe--mant)) ".") (setq alfe--mant (strcat alfe--mant "0"))))
+  (strcat alfe--mant alfe--expo))
 
 ;; (rtos X MODE 16), normalised, or NIL when RTOS refuses.
-(defun autolisp-real-rtos-text (x mode / s)
-  (setq s (vl-catch-all-apply 'rtos (list x mode 16)))
-  (if (or (vl-catch-all-error-p s) (/= (type s) 'STR) (= s ""))
+(defun autolisp-real-rtos-text (alfe--x alfe--mode / alfe--s)
+  (setq alfe--s (vl-catch-all-apply 'rtos (list alfe--x alfe--mode 16)))
+  (if (or (vl-catch-all-error-p alfe--s) (/= (type alfe--s) 'STR) (= alfe--s ""))
     nil
-    (autolisp-real-text-normalize s)))
+    (autolisp-real-text-normalize alfe--s)))
 
 ;; T when the REAL X is a negative zero. = cannot tell -0.0 from 0.0, but
 ;; ATAN (atan2) can: (atan -0.0 -1.0) is -pi, (atan 0.0 -1.0) is +pi.
-(defun autolisp-real-negative-zero-p (x / r)
-  (and (= x 0.0)
+(defun autolisp-real-negative-zero-p (alfe--x / alfe--r)
+  (and (= alfe--x 0.0)
        (progn
-         (setq r (vl-catch-all-apply 'atan (list x -1.0)))
-         (and (not (vl-catch-all-error-p r)) (minusp r)))))
+         (setq alfe--r (vl-catch-all-apply 'atan (list alfe--x -1.0)))
+         (and (not (vl-catch-all-error-p alfe--r)) (minusp alfe--r)))))
 
 ;; Source text for the REAL X that reads back to X itself.
-(defun autolisp-real-source-text (x / plain sci dec)
-  (setq plain (autolisp-render x))
+(defun autolisp-real-source-text (alfe--x / alfe--plain alfe--sci alfe--dec)
+  (setq alfe--plain (autolisp-render alfe--x))
   (cond
     ;; Zero: every candidate reads back = to it whatever its sign, so the
     ;; sign is decided here (RTOS drops it on some hosts).
-    ((= x 0.0) (if (autolisp-real-negative-zero-p x) "-0.0" "0.0"))
-    ((autolisp-real-text-reads-back-p plain x) plain)
-    ((and (setq sci (autolisp-real-rtos-text x 1))
-          (autolisp-real-text-reads-back-p sci x))
-     sci)
-    ((and (setq dec (autolisp-real-rtos-text x 2))
-          (autolisp-real-text-reads-back-p dec x))
-     dec)
-    ((and sci (autolisp-real-text-value sci)) sci)
-    ((and dec (autolisp-real-text-value dec)) dec)
-    (T plain)))
+    ((= alfe--x 0.0) (if (autolisp-real-negative-zero-p alfe--x) "-0.0" "0.0"))
+    ((autolisp-real-text-reads-back-p alfe--plain alfe--x) alfe--plain)
+    ((and (setq alfe--sci (autolisp-real-rtos-text alfe--x 1))
+          (autolisp-real-text-reads-back-p alfe--sci alfe--x))
+     alfe--sci)
+    ((and (setq alfe--dec (autolisp-real-rtos-text alfe--x 2))
+          (autolisp-real-text-reads-back-p alfe--dec alfe--x))
+     alfe--dec)
+    ((and alfe--sci (autolisp-real-text-value alfe--sci)) alfe--sci)
+    ((and alfe--dec (autolisp-real-text-value alfe--dec)) alfe--dec)
+    (T alfe--plain)))
 
 ;; autolisp-readable-text for SOURCE: the same rendering (strings quoted and
 ;; escaped, dotted tails kept, symbols and integers as princ shows them)
 ;; except that a REAL keeps all its digits.
-(defun autolisp-form-source-text (obj / acc first tail rest)
+(defun autolisp-form-source-text (alfe--obj / alfe--acc alfe--first alfe--tail alfe--rest)
   (cond
-    ((null obj)
+    ((null alfe--obj)
      "nil")
-    ((= (type obj) 'STR)
-     (strcat "\"" (autolisp-escape-string obj) "\""))
-    ((= (type obj) 'REAL)
-     (autolisp-real-source-text obj))
-    ((listp obj)
-     (setq acc "(")
-     (setq first T)
-     (setq tail obj)
-     (while tail
-       (if first
-         (setq first nil)
-         (setq acc (strcat acc " ")))
-       (setq acc (strcat acc (autolisp-form-source-text (car tail))))
-       (setq rest (cdr tail))
+    ((= (type alfe--obj) 'STR)
+     (strcat "\"" (autolisp-escape-string alfe--obj) "\""))
+    ((= (type alfe--obj) 'REAL)
+     (autolisp-real-source-text alfe--obj))
+    ((listp alfe--obj)
+     (setq alfe--acc "(")
+     (setq alfe--first T)
+     (setq alfe--tail alfe--obj)
+     (while alfe--tail
+       (if alfe--first
+         (setq alfe--first nil)
+         (setq alfe--acc (strcat alfe--acc " ")))
+       (setq alfe--acc (strcat alfe--acc (autolisp-form-source-text (car alfe--tail))))
+       (setq alfe--rest (cdr alfe--tail))
        (cond
-         ((null rest)
-           (setq tail nil))
-         ((listp rest)
-           (setq tail rest))
+         ((null alfe--rest)
+           (setq alfe--tail nil))
+         ((listp alfe--rest)
+           (setq alfe--tail alfe--rest))
          (T
-           (setq acc (strcat acc " . " (autolisp-form-source-text rest)))
-           (setq tail nil))))
-     (strcat acc ")"))
+           (setq alfe--acc (strcat alfe--acc " . " (autolisp-form-source-text alfe--rest)))
+           (setq alfe--tail nil))))
+     (strcat alfe--acc ")"))
     (T
-     (autolisp-render obj))))
+     (autolisp-render alfe--obj))))
 
-(defun autolisp-emit-user-out (obj)
+(defun autolisp-emit-user-out (alfe--obj)
   (if *AUTOLISP_CAPTURE_STDOUT*
     (autolisp-write-line *AUTOLISP_OUTFILE*
                          (strcat (autolisp-stdout-prefix)
-                                 (autolisp-stdout-text obj))))
-  obj)
+                                 (autolisp-stdout-text alfe--obj))))
+  alfe--obj)
 
-(defun autolisp-emit-user-line (text)
+(defun autolisp-emit-user-line (alfe--text)
   (if *AUTOLISP_CAPTURE_STDOUT*
     (autolisp-write-line *AUTOLISP_OUTFILE*
-                         (strcat (autolisp-stdout-prefix) text))
-    text)
-  text)
+                         (strcat (autolisp-stdout-prefix) alfe--text))
+    alfe--text)
+  alfe--text)
 
 ;; Fallback for BricsCAD builds where the project-specific LispFunction is not
 ;; loaded yet. The real EPURELIB.dll definition can still replace this later.
-(defun get_new_guid (/ stamp)
+(defun get_new_guid (/ alfe--stamp)
   (if (not (boundp '*AUTOLISP_GUID_SEQ*))
     (setq *AUTOLISP_GUID_SEQ* 0))
   (setq *AUTOLISP_GUID_SEQ* (+ *AUTOLISP_GUID_SEQ* 1))
-  (setq stamp (rtos (getvar "DATE") 2 8))
-  (strcat "AUTO-" stamp "-" (itoa *AUTOLISP_GUID_SEQ*)))
+  (setq alfe--stamp (rtos (getvar "DATE") 2 8))
+  (strcat "AUTO-" alfe--stamp "-" (itoa *AUTOLISP_GUID_SEQ*)))
 
-(defun autolisp-mark-begin (kind idx)
+(defun autolisp-mark-begin (alfe--kind alfe--idx)
   nil)
 
-(defun autolisp-mark-end (kind idx rc)
+(defun autolisp-mark-end (alfe--kind alfe--idx alfe--rc)
   nil)
 
-(defun autolisp-finish (code)
+(defun autolisp-finish (alfe--code)
   (if *AUTOLISP_LOG_STATE*
     (autolisp-log-restore *AUTOLISP_LOG_STATE*))
   (if _autolisp_old_srchpath
     (setvar "SRCHPATH" _autolisp_old_srchpath))
-  (autolisp-set-status code)
+  (autolisp-set-status alfe--code)
   (if *AUTOLISP_QUIT_ON_FINISH*
     (autolisp-host-quit))
-  code)
+  alfe--code)
 
 ;; AutoLISP has two comment forms: a semicolon comments out the rest of
 ;; its line, and ;| opens a BLOCK comment that runs, across lines, to the
@@ -343,256 +343,256 @@
 ;; is never taken for code (alfe-cad-source-loader-evaluates-block-
 ;; comments: `no function definition: SYMBOLE' was the word after a
 ;; parenthesis in such a block). Delimiters inside a string are text.
-(defun autolisp-source-block-open-p (text idx)
-  (and (= (substr text idx 1) ";")
-       (= (substr text (+ idx 1) 1) "|")))
+(defun autolisp-source-block-open-p (alfe--text alfe--idx)
+  (and (= (substr alfe--text alfe--idx 1) ";")
+       (= (substr alfe--text (+ alfe--idx 1) 1) "|")))
 
-(defun autolisp-source-block-close-p (text idx)
-  (and (= (substr text idx 1) "|")
-       (= (substr text (+ idx 1) 1) ";")))
+(defun autolisp-source-block-close-p (alfe--text alfe--idx)
+  (and (= (substr alfe--text alfe--idx 1) "|")
+       (= (substr alfe--text (+ alfe--idx 1) 1) ";")))
 
 ;; TEXT without its block comments, each replaced by one space, for the
 ;; loader's own READ: what the CAD's READ makes of a block comment inside
 ;; a form is not something the loader needs to depend on. TEXT is
 ;; returned as is when it holds no ;| at all.
-(defun autolisp-source-strip-block-comments (text / idx len ch in-string escape in-line acc seg)
-  (if (not (vl-string-search ";|" text))
-    text
+(defun autolisp-source-strip-block-comments (alfe--text / alfe--idx alfe--len alfe--ch alfe--in-string alfe--escape alfe--in-line alfe--acc alfe--seg)
+  (if (not (vl-string-search ";|" alfe--text))
+    alfe--text
     (progn
-      (setq idx 1)
-      (setq len (strlen text))
-      (setq in-string nil)
-      (setq escape nil)
-      (setq in-line nil)
-      (setq acc '())
-      (setq seg 1)
-      (while (<= idx len)
-        (setq ch (substr text idx 1))
+      (setq alfe--idx 1)
+      (setq alfe--len (strlen alfe--text))
+      (setq alfe--in-string nil)
+      (setq alfe--escape nil)
+      (setq alfe--in-line nil)
+      (setq alfe--acc '())
+      (setq alfe--seg 1)
+      (while (<= alfe--idx alfe--len)
+        (setq alfe--ch (substr alfe--text alfe--idx 1))
         (cond
-          (in-line
-           (if (= ch "\n") (setq in-line nil)))
-          (in-string
+          (alfe--in-line
+           (if (= alfe--ch "\n") (setq alfe--in-line nil)))
+          (alfe--in-string
            (cond
-             (escape (setq escape nil))
-             ((= ch "\\") (setq escape T))
-             ((= ch "\"") (setq in-string nil))))
-          ((= ch "\"") (setq in-string T))
-          ((autolisp-source-block-open-p text idx)
-           (setq acc (cons " " (cons (substr text seg (- idx seg)) acc)))
-           (setq idx (+ idx 2))
-           (while (and (<= idx len)
-                       (not (autolisp-source-block-close-p text idx)))
-             (setq idx (+ idx 1)))
+             (alfe--escape (setq alfe--escape nil))
+             ((= alfe--ch "\\") (setq alfe--escape T))
+             ((= alfe--ch "\"") (setq alfe--in-string nil))))
+          ((= alfe--ch "\"") (setq alfe--in-string T))
+          ((autolisp-source-block-open-p alfe--text alfe--idx)
+           (setq alfe--acc (cons " " (cons (substr alfe--text alfe--seg (- alfe--idx alfe--seg)) alfe--acc)))
+           (setq alfe--idx (+ alfe--idx 2))
+           (while (and (<= alfe--idx alfe--len)
+                       (not (autolisp-source-block-close-p alfe--text alfe--idx)))
+             (setq alfe--idx (+ alfe--idx 1)))
            ;; idx is on the | of |; (or past the end): skip that |, the
            ;; loop step skips the ;.
-           (setq seg (+ idx 2)))
-          ((= ch ";") (setq in-line T)))
-        (setq idx (+ idx 1)))
-      (if (<= seg len)
-        (setq acc (cons (substr text seg) acc)))
-      (apply 'strcat (reverse acc)))))
+           (setq alfe--seg (+ alfe--idx 2)))
+          ((= alfe--ch ";") (setq alfe--in-line T)))
+        (setq alfe--idx (+ alfe--idx 1)))
+      (if (<= alfe--seg alfe--len)
+        (setq alfe--acc (cons (substr alfe--text alfe--seg) alfe--acc)))
+      (apply 'strcat (reverse alfe--acc)))))
 
-(defun autolisp-source-scan-text (text / idx len depth in-string escape in-comment ch line col open-stack started top block-line block-col)
+(defun autolisp-source-scan-text (alfe--text / alfe--idx alfe--len alfe--depth alfe--in-string alfe--escape alfe--in-comment alfe--ch alfe--line alfe--col alfe--open-stack alfe--started alfe--top alfe--block-line alfe--block-col)
   (setq *AUTOLISP_SOURCE_SCAN_STATE* 'empty)
   (setq *AUTOLISP_SOURCE_SCAN_LINE* 1)
   (setq *AUTOLISP_SOURCE_SCAN_COL* 1)
-  (setq idx 1)
-  (setq len (strlen text))
-  (setq depth 0)
-  (setq in-string nil)
-  (setq escape nil)
-  (setq in-comment nil)
-  (setq line 1)
-  (setq col 0)
-  (setq open-stack nil)
-  (setq started nil)
-  (while (and (<= idx len)
+  (setq alfe--idx 1)
+  (setq alfe--len (strlen alfe--text))
+  (setq alfe--depth 0)
+  (setq alfe--in-string nil)
+  (setq alfe--escape nil)
+  (setq alfe--in-comment nil)
+  (setq alfe--line 1)
+  (setq alfe--col 0)
+  (setq alfe--open-stack nil)
+  (setq alfe--started nil)
+  (while (and (<= alfe--idx alfe--len)
               (/= *AUTOLISP_SOURCE_SCAN_STATE* 'extra))
-    (setq ch (substr text idx 1))
+    (setq alfe--ch (substr alfe--text alfe--idx 1))
     (cond
-      ((= ch "\n")
-       (setq line (+ line 1))
-       (setq col 0)
-       (if (eq in-comment 'line)
-         (setq in-comment nil)))
+      ((= alfe--ch "\n")
+       (setq alfe--line (+ alfe--line 1))
+       (setq alfe--col 0)
+       (if (eq alfe--in-comment 'line)
+         (setq alfe--in-comment nil)))
       (T
-       (setq col (+ col 1))
+       (setq alfe--col (+ alfe--col 1))
        (cond
-         ((eq in-comment 'block)
-          (if (autolisp-source-block-close-p text idx)
+         ((eq alfe--in-comment 'block)
+          (if (autolisp-source-block-close-p alfe--text alfe--idx)
             (progn
-              (setq in-comment nil)
-              (setq idx (+ idx 1))
-              (setq col (+ col 1)))))
-         (in-comment
+              (setq alfe--in-comment nil)
+              (setq alfe--idx (+ alfe--idx 1))
+              (setq alfe--col (+ alfe--col 1)))))
+         (alfe--in-comment
           nil)
-         (in-string
+         (alfe--in-string
           (cond
-            (escape
-             (setq escape nil))
-            ((= ch "\\")
-             (setq escape T))
-            ((= ch "\"")
-             (setq in-string nil))))
-         ((autolisp-source-block-open-p text idx)
-          (setq in-comment 'block)
-          (setq block-line line)
-          (setq block-col col)
-          (setq idx (+ idx 1))
-          (setq col (+ col 1)))
-         ((= ch ";")
-          (setq in-comment 'line))
-         ((member ch '(" " "\t" "\r"))
+            (alfe--escape
+             (setq alfe--escape nil))
+            ((= alfe--ch "\\")
+             (setq alfe--escape T))
+            ((= alfe--ch "\"")
+             (setq alfe--in-string nil))))
+         ((autolisp-source-block-open-p alfe--text alfe--idx)
+          (setq alfe--in-comment 'block)
+          (setq alfe--block-line alfe--line)
+          (setq alfe--block-col alfe--col)
+          (setq alfe--idx (+ alfe--idx 1))
+          (setq alfe--col (+ alfe--col 1)))
+         ((= alfe--ch ";")
+          (setq alfe--in-comment 'line))
+         ((member alfe--ch '(" " "\t" "\r"))
           nil)
          (T
-          (setq started T)
+          (setq alfe--started T)
           (cond
-            ((= ch "\"")
-             (setq in-string T))
-            ((= ch "(")
-             (setq depth (+ depth 1))
-             (setq open-stack (cons (list line col) open-stack)))
-            ((= ch ")")
-             (if (> depth 0)
+            ((= alfe--ch "\"")
+             (setq alfe--in-string T))
+            ((= alfe--ch "(")
+             (setq alfe--depth (+ alfe--depth 1))
+             (setq alfe--open-stack (cons (list alfe--line alfe--col) alfe--open-stack)))
+            ((= alfe--ch ")")
+             (if (> alfe--depth 0)
                (progn
-                 (setq depth (- depth 1))
-                 (setq open-stack (cdr open-stack)))
+                 (setq alfe--depth (- alfe--depth 1))
+                 (setq alfe--open-stack (cdr alfe--open-stack)))
                (progn
                  (setq *AUTOLISP_SOURCE_SCAN_STATE* 'extra)
-                 (setq *AUTOLISP_SOURCE_SCAN_LINE* line)
-                 (setq *AUTOLISP_SOURCE_SCAN_COL* col)))))))))
-    (setq idx (+ idx 1)))
+                 (setq *AUTOLISP_SOURCE_SCAN_LINE* alfe--line)
+                 (setq *AUTOLISP_SOURCE_SCAN_COL* alfe--col)))))))))
+    (setq alfe--idx (+ alfe--idx 1)))
   (if (/= *AUTOLISP_SOURCE_SCAN_STATE* 'extra)
     ;; in-string and open-stack imply started. A block comment still
     ;; open at the end needs more lines even when no form has begun --
     ;; 'empty would let the loader drop the text, and the comment's next
     ;; line would then be read as code.
     (cond
-      (in-string
+      (alfe--in-string
        (setq *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)
-       (setq *AUTOLISP_SOURCE_SCAN_LINE* line)
-       (setq *AUTOLISP_SOURCE_SCAN_COL* (max 1 col)))
-      (open-stack
-       (setq top (car open-stack))
+       (setq *AUTOLISP_SOURCE_SCAN_LINE* alfe--line)
+       (setq *AUTOLISP_SOURCE_SCAN_COL* (max 1 alfe--col)))
+      (alfe--open-stack
+       (setq alfe--top (car alfe--open-stack))
        (setq *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete)
-       (setq *AUTOLISP_SOURCE_SCAN_LINE* (car top))
-       (setq *AUTOLISP_SOURCE_SCAN_COL* (cadr top)))
-      ((eq in-comment 'block)
+       (setq *AUTOLISP_SOURCE_SCAN_LINE* (car alfe--top))
+       (setq *AUTOLISP_SOURCE_SCAN_COL* (cadr alfe--top)))
+      ((eq alfe--in-comment 'block)
        (setq *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-comment)
-       (setq *AUTOLISP_SOURCE_SCAN_LINE* block-line)
-       (setq *AUTOLISP_SOURCE_SCAN_COL* block-col))
-      ((not started)
+       (setq *AUTOLISP_SOURCE_SCAN_LINE* alfe--block-line)
+       (setq *AUTOLISP_SOURCE_SCAN_COL* alfe--block-col))
+      ((not alfe--started)
        (setq *AUTOLISP_SOURCE_SCAN_STATE* 'empty))
       (T
        (setq *AUTOLISP_SOURCE_SCAN_STATE* 'complete)
-       (setq *AUTOLISP_SOURCE_SCAN_LINE* line)
-       (setq *AUTOLISP_SOURCE_SCAN_COL* (max 1 col)))))
+       (setq *AUTOLISP_SOURCE_SCAN_LINE* alfe--line)
+       (setq *AUTOLISP_SOURCE_SCAN_COL* (max 1 alfe--col)))))
   *AUTOLISP_SOURCE_SCAN_STATE*)
 
-(defun autolisp-source-leading-symbols (text count / idx len ch in-comment token start tokens)
-  (setq idx 1)
-  (setq len (strlen text))
-  (setq in-comment nil)
-  (setq tokens '())
-  (while (and (<= idx len)
-              (< (length tokens) count))
-    (setq ch (substr text idx 1))
+(defun autolisp-source-leading-symbols (alfe--text alfe--count / alfe--idx alfe--len alfe--ch alfe--in-comment alfe--token alfe--start alfe--tokens)
+  (setq alfe--idx 1)
+  (setq alfe--len (strlen alfe--text))
+  (setq alfe--in-comment nil)
+  (setq alfe--tokens '())
+  (while (and (<= alfe--idx alfe--len)
+              (< (length alfe--tokens) alfe--count))
+    (setq alfe--ch (substr alfe--text alfe--idx 1))
     (cond
-      ((eq in-comment 'block)
-       (if (autolisp-source-block-close-p text idx)
+      ((eq alfe--in-comment 'block)
+       (if (autolisp-source-block-close-p alfe--text alfe--idx)
          (progn
-           (setq in-comment nil)
-           (setq idx (+ idx 2)))
-         (setq idx (+ idx 1))))
-      (in-comment
-       (if (= ch "\n")
-         (setq in-comment nil))
-       (setq idx (+ idx 1)))
-      ((autolisp-source-block-open-p text idx)
-       (setq in-comment 'block)
-       (setq idx (+ idx 2)))
-      ((= ch ";")
-       (setq in-comment 'line)
-       (setq idx (+ idx 1)))
-      ((member ch '(" " "\t" "\r" "\n" "(" ")"))
-       (setq idx (+ idx 1)))
+           (setq alfe--in-comment nil)
+           (setq alfe--idx (+ alfe--idx 2)))
+         (setq alfe--idx (+ alfe--idx 1))))
+      (alfe--in-comment
+       (if (= alfe--ch "\n")
+         (setq alfe--in-comment nil))
+       (setq alfe--idx (+ alfe--idx 1)))
+      ((autolisp-source-block-open-p alfe--text alfe--idx)
+       (setq alfe--in-comment 'block)
+       (setq alfe--idx (+ alfe--idx 2)))
+      ((= alfe--ch ";")
+       (setq alfe--in-comment 'line)
+       (setq alfe--idx (+ alfe--idx 1)))
+      ((member alfe--ch '(" " "\t" "\r" "\n" "(" ")"))
+       (setq alfe--idx (+ alfe--idx 1)))
       (T
-       (setq start idx)
-       (while (and (<= idx len)
-                   (not (member (substr text idx 1)
+       (setq alfe--start alfe--idx)
+       (while (and (<= alfe--idx alfe--len)
+                   (not (member (substr alfe--text alfe--idx 1)
                                 '(" " "\t" "\r" "\n" "(" ")" "\"" ";"))))
-         (setq idx (+ idx 1)))
-       (setq token (substr text start (- idx start)))
-       (setq tokens (append tokens (list token))))))
-  tokens)
+         (setq alfe--idx (+ alfe--idx 1)))
+       (setq alfe--token (substr alfe--text alfe--start (- alfe--idx alfe--start)))
+       (setq alfe--tokens (append alfe--tokens (list alfe--token))))))
+  alfe--tokens)
 
-(defun autolisp-source-leading-defun-name (text / tokens)
-  (setq tokens (autolisp-source-leading-symbols text 2))
-  (if (and (= (length tokens) 2)
-           (= (strcase (car tokens)) "DEFUN"))
-    (cadr tokens)
+(defun autolisp-source-leading-defun-name (alfe--text / alfe--tokens)
+  (setq alfe--tokens (autolisp-source-leading-symbols alfe--text 2))
+  (if (and (= (length alfe--tokens) 2)
+           (= (strcase (car alfe--tokens)) "DEFUN"))
+    (cadr alfe--tokens)
     nil))
 
-(defun autolisp-source-trim-leading-junk (text / idx len ch in-comment done)
+(defun autolisp-source-trim-leading-junk (alfe--text / alfe--idx alfe--len alfe--ch alfe--in-comment alfe--done)
   ;; READ on BricsCAD can return NIL when the input string starts with
   ;; comment-only lines. Strip leading spaces/comments before READ so the
   ;; first real top-level form is what gets parsed.
-  (setq idx 1)
-  (setq len (strlen text))
-  (setq in-comment nil)
-  (setq done nil)
-  (while (and (<= idx len) (not done))
-    (setq ch (substr text idx 1))
+  (setq alfe--idx 1)
+  (setq alfe--len (strlen alfe--text))
+  (setq alfe--in-comment nil)
+  (setq alfe--done nil)
+  (while (and (<= alfe--idx alfe--len) (not alfe--done))
+    (setq alfe--ch (substr alfe--text alfe--idx 1))
     (cond
-      ((eq in-comment 'block)
-       (if (autolisp-source-block-close-p text idx)
+      ((eq alfe--in-comment 'block)
+       (if (autolisp-source-block-close-p alfe--text alfe--idx)
          (progn
-           (setq in-comment nil)
-           (setq idx (+ idx 2)))
-         (setq idx (+ idx 1))))
-      (in-comment
-       (if (= ch "\n")
-         (setq in-comment nil))
-       (setq idx (+ idx 1)))
-      ((autolisp-source-block-open-p text idx)
-       (setq in-comment 'block)
-       (setq idx (+ idx 2)))
-      ((= ch ";")
-       (setq in-comment 'line)
-       (setq idx (+ idx 1)))
-      ((member ch '(" " "\t" "\r" "\n"))
-       (setq idx (+ idx 1)))
+           (setq alfe--in-comment nil)
+           (setq alfe--idx (+ alfe--idx 2)))
+         (setq alfe--idx (+ alfe--idx 1))))
+      (alfe--in-comment
+       (if (= alfe--ch "\n")
+         (setq alfe--in-comment nil))
+       (setq alfe--idx (+ alfe--idx 1)))
+      ((autolisp-source-block-open-p alfe--text alfe--idx)
+       (setq alfe--in-comment 'block)
+       (setq alfe--idx (+ alfe--idx 2)))
+      ((= alfe--ch ";")
+       (setq alfe--in-comment 'line)
+       (setq alfe--idx (+ alfe--idx 1)))
+      ((member alfe--ch '(" " "\t" "\r" "\n"))
+       (setq alfe--idx (+ alfe--idx 1)))
       (T
-       (setq done T))))
-  (if (> idx len)
+       (setq alfe--done T))))
+  (if (> alfe--idx alfe--len)
     ""
-    (substr text idx)))
+    (substr alfe--text alfe--idx)))
 
-(defun autolisp-source-stack-text (/ paths acc)
-  (setq paths (reverse *AUTOLISP_LOAD_STACK*))
-  (setq acc "")
-  (while paths
-    (if (= acc "")
-      (setq acc (car paths))
-      (setq acc (strcat acc " -> " (car paths))))
-    (setq paths (cdr paths)))
-  acc)
+(defun autolisp-source-stack-text (/ alfe--paths alfe--acc)
+  (setq alfe--paths (reverse *AUTOLISP_LOAD_STACK*))
+  (setq alfe--acc "")
+  (while alfe--paths
+    (if (= alfe--acc "")
+      (setq alfe--acc (car alfe--paths))
+      (setq alfe--acc (strcat alfe--acc " -> " (car alfe--paths))))
+    (setq alfe--paths (cdr alfe--paths)))
+  alfe--acc)
 
-(defun autolisp-source-format-error (path detail line col form-start defun-name / msg stack)
-  (setq msg (strcat "while loading " path))
-  (if form-start
-    (setq msg (strcat msg " (form starting at line " (itoa form-start) ")")))
-  (if line
-    (setq msg (strcat msg " at line " (itoa line))))
-  (if col
-    (setq msg (strcat msg ", column " (itoa col))))
-  (if (and defun-name (/= defun-name ""))
-    (setq msg (strcat msg " in defun " defun-name)))
-  (setq msg (strcat msg ": " detail))
-  (setq stack (autolisp-source-stack-text))
-  (if (and stack (/= stack "") (> (length *AUTOLISP_LOAD_STACK*) 1))
-    (setq msg (strcat msg " [load stack: " stack "]")))
-  msg)
+(defun autolisp-source-format-error (alfe--path alfe--detail alfe--line alfe--col alfe--form-start alfe--defun-name / alfe--msg alfe--stack)
+  (setq alfe--msg (strcat "while loading " alfe--path))
+  (if alfe--form-start
+    (setq alfe--msg (strcat alfe--msg " (form starting at line " (itoa alfe--form-start) ")")))
+  (if alfe--line
+    (setq alfe--msg (strcat alfe--msg " at line " (itoa alfe--line))))
+  (if alfe--col
+    (setq alfe--msg (strcat alfe--msg ", column " (itoa alfe--col))))
+  (if (and alfe--defun-name (/= alfe--defun-name ""))
+    (setq alfe--msg (strcat alfe--msg " in defun " alfe--defun-name)))
+  (setq alfe--msg (strcat alfe--msg ": " alfe--detail))
+  (setq alfe--stack (autolisp-source-stack-text))
+  (if (and alfe--stack (/= alfe--stack "") (> (length *AUTOLISP_LOAD_STACK*) 1))
+    (setq alfe--msg (strcat alfe--msg " [load stack: " alfe--stack "]")))
+  alfe--msg)
 
 ;;; Raising an error WITHOUT the `error' function.
 ;;;
@@ -622,8 +622,8 @@
   (car 0)
   (__autolisp-force-error-no-such-function))
 
-(defun autolisp-raise (msg)
-  (if (autolisp-quit-signal-p msg)
+(defun autolisp-raise (alfe--msg)
+  (if (autolisp-quit-signal-p alfe--msg)
     ;; A quit is a control signal, not a diagnostic: do not put it in
     ;; the error context (it would be reported as an error message).
     ;; The protocol loop and the batch paths recognise a quit by
@@ -640,17 +640,17 @@
       ;; happened. Say plainly that there was no message; the loop then
       ;; adds the form (alfe-cad-load-error-message-says-only-error).
       (setq *AUTOLISP_LAST_ERROR_CONTEXT*
-            (if (or (null msg) (/= (type msg) 'STR) (= (autolisp-str msg) ""))
+            (if (or (null alfe--msg) (/= (type alfe--msg) 'STR) (= (autolisp-str alfe--msg) ""))
                 "the engine supplied no message"
-                (autolisp-str msg)))))
+                (autolisp-str alfe--msg)))))
   (autolisp-force-error))
 
-(defun autolisp-effective-error-message (fallback)
+(defun autolisp-effective-error-message (alfe--fallback)
   (if (and (boundp '*AUTOLISP_LAST_ERROR_CONTEXT*)
            *AUTOLISP_LAST_ERROR_CONTEXT*
            (/= *AUTOLISP_LAST_ERROR_CONTEXT* ""))
     *AUTOLISP_LAST_ERROR_CONTEXT*
-    fallback))
+    alfe--fallback))
 
 (defun autolisp-clear-last-error-context ()
   (setq *AUTOLISP_LAST_ERROR_CONTEXT* nil))
@@ -660,11 +660,11 @@
     (setq *AUTOLISP_LOAD_STACK* (cdr *AUTOLISP_LOAD_STACK*)))
   nil)
 
-(defun autolisp-source-raise (path detail line col form-start defun-name / msg)
-  (setq msg (autolisp-source-format-error path detail line col form-start defun-name))
-  (setq *AUTOLISP_LAST_ERROR_CONTEXT* msg)
+(defun autolisp-source-raise (alfe--path alfe--detail alfe--line alfe--col alfe--form-start alfe--defun-name / alfe--msg)
+  (setq alfe--msg (autolisp-source-format-error alfe--path alfe--detail alfe--line alfe--col alfe--form-start alfe--defun-name))
+  (setq *AUTOLISP_LAST_ERROR_CONTEXT* alfe--msg)
   (autolisp-source-pop-stack)
-  (autolisp-raise msg))
+  (autolisp-raise alfe--msg))
 
 (defun autolisp-source-load-failure (alfe--onfailure)
   (if (= (type alfe--onfailure) 'SYM)
@@ -677,35 +677,35 @@
 ;; findfile, though native (open)/(load) resolve it (and BricsCAD's findfile
 ;; does search the cwd). So the resolver below falls back to a direct open
 ;; test. accoreconsole-deported-load-highbyte.
-(defun autolisp-source-file-openable-p (path / f)
-  (setq f (open path "r"))
-  (if f
-    (progn (close f) T)
+(defun autolisp-source-file-openable-p (alfe--path / alfe--f)
+  (setq alfe--f (open alfe--path "r"))
+  (if alfe--f
+    (progn (close alfe--f) T)
     nil))
 
-(defun autolisp-source-resolve-load-path (path / found home)
-  (setq found (findfile path))
-  (if (not found)
-    (setq found (findfile (strcat path ".lsp"))))
+(defun autolisp-source-resolve-load-path (alfe--path / alfe--found alfe--home)
+  (setq alfe--found (findfile alfe--path))
+  (if (not alfe--found)
+    (setq alfe--found (findfile (strcat alfe--path ".lsp"))))
   ;; cwd-relative / absolute paths findfile's support-path search misses:
   ;; accept the path as given (then +".lsp") when it actually opens.
-  (if (not found)
-    (if (autolisp-source-file-openable-p path)
-      (setq found path)))
-  (if (not found)
-    (if (autolisp-source-file-openable-p (strcat path ".lsp"))
-      (setq found (strcat path ".lsp"))))
-  (if (not found)
-    (if (and (> (strlen path) 1)
-             (= (substr path 1 2) "~/"))
+  (if (not alfe--found)
+    (if (autolisp-source-file-openable-p alfe--path)
+      (setq alfe--found alfe--path)))
+  (if (not alfe--found)
+    (if (autolisp-source-file-openable-p (strcat alfe--path ".lsp"))
+      (setq alfe--found (strcat alfe--path ".lsp"))))
+  (if (not alfe--found)
+    (if (and (> (strlen alfe--path) 1)
+             (= (substr alfe--path 1 2) "~/"))
       (progn
-        (setq home (getenv "HOME"))
-        (if home
+        (setq alfe--home (getenv "HOME"))
+        (if alfe--home
           (progn
-            (setq found (findfile (strcat home (substr path 2))))
-            (if (not found)
-              (setq found (findfile (strcat home (substr path 2) ".lsp")))))))))
-  found)
+            (setq alfe--found (findfile (strcat alfe--home (substr alfe--path 2))))
+            (if (not alfe--found)
+              (setq alfe--found (findfile (strcat alfe--home (substr alfe--path 2) ".lsp")))))))))
+  alfe--found)
 
 ;; Run the loaded-file's read+eval loop. Extracted from
 ;; `autolisp-source-load-core-impl' so the outer function can wrap
@@ -768,38 +768,38 @@
 ;; before *AUTOLISP-CAD-LOAD-ENCODING* exists. G3 governs the USER files the
 ;; shim loads, not the runtime itself, so the ASCII-only rule below stands.
 
-(defun autolisp-source-enc-canon (s / out i c)
+(defun autolisp-source-enc-canon (alfe--s / alfe--out alfe--i alfe--c)
   ;; upcase and drop "-"/"_" so "utf-8" "UTF8" "utf_8" all fold to "UTF8".
-  (setq out "" i 1)
-  (while (<= i (strlen s))
-    (setq c (substr s i 1))
-    (if (and (/= c "-") (/= c "_"))
-      (setq out (strcat out (strcase c))))
-    (setq i (1+ i)))
-  out)
+  (setq alfe--out "" alfe--i 1)
+  (while (<= alfe--i (strlen alfe--s))
+    (setq alfe--c (substr alfe--s alfe--i 1))
+    (if (and (/= alfe--c "-") (/= alfe--c "_"))
+      (setq alfe--out (strcat alfe--out (strcase alfe--c))))
+    (setq alfe--i (1+ alfe--i)))
+  alfe--out)
 
-(defun autolisp-source-open-encoded-try (path enc backend / u)
-  (setq u (autolisp-source-enc-canon enc))
+(defun autolisp-source-open-encoded-try (alfe--path alfe--enc alfe--backend / alfe--u)
+  (setq alfe--u (autolisp-source-enc-canon alfe--enc))
   (cond
-    ((= backend "BRICSCAD")
-     (cond ((= u "UTF8")    (open path "r,ccs=UTF-8"))
-           ((= u "UTF16LE") (open path "r,ccs=UTF-16LE"))
-           (T               (open path "r"))))    ; ANSI default handles latin-1
-    ((= backend "AUTOCAD")
-     (open path "r"))                              ; LISPSYS decides (see above)
-    (T                      (open path "r"))))     ; clautolisp reads the var itself
+    ((= alfe--backend "BRICSCAD")
+     (cond ((= alfe--u "UTF8")    (open alfe--path "r,ccs=UTF-8"))
+           ((= alfe--u "UTF16LE") (open alfe--path "r,ccs=UTF-16LE"))
+           (T               (open alfe--path "r"))))    ; ANSI default handles latin-1
+    ((= alfe--backend "AUTOCAD")
+     (open alfe--path "r"))                              ; LISPSYS decides (see above)
+    (T                      (open alfe--path "r"))))     ; clautolisp reads the var itself
 
-(defun autolisp-source-open-encoded (path / enc backend f)
-  (setq enc (if (boundp '*AUTOLISP-CAD-LOAD-ENCODING*) *AUTOLISP-CAD-LOAD-ENCODING* nil))
-  (setq backend (if (boundp '*AUTOLISP-BACKEND*) *AUTOLISP-BACKEND* nil))
-  (if (or (null enc) (= enc "") (null backend))
-    (open path "r")                                ; behaviour-preserving default
+(defun autolisp-source-open-encoded (alfe--path / alfe--enc alfe--backend alfe--f)
+  (setq alfe--enc (if (boundp '*AUTOLISP-CAD-LOAD-ENCODING*) *AUTOLISP-CAD-LOAD-ENCODING* nil))
+  (setq alfe--backend (if (boundp '*AUTOLISP-BACKEND*) *AUTOLISP-BACKEND* nil))
+  (if (or (null alfe--enc) (= alfe--enc "") (null alfe--backend))
+    (open alfe--path "r")                                ; behaviour-preserving default
     (progn
-      (setq f (vl-catch-all-apply 'autolisp-source-open-encoded-try
-                                  (list path enc backend)))
-      (if (or (vl-catch-all-error-p f) (null f))
-        (open path "r")                            ; robust fallback on any failure
-        f))))
+      (setq alfe--f (vl-catch-all-apply 'autolisp-source-open-encoded-try
+                                  (list alfe--path alfe--enc alfe--backend)))
+      (if (or (vl-catch-all-error-p alfe--f) (null alfe--f))
+        (open alfe--path "r")                            ; robust fallback on any failure
+        alfe--f))))
 
 ;; Where the FIRST top-level form in TEXT ends, as a 1-based index, or
 ;; NIL when TEXT holds no complete form.
@@ -820,57 +820,57 @@
 ;; at the paren that brings the depth back to zero -- or a bare atom,
 ;; which ends before the first whitespace after it, or at end of text.
 (defun autolisp-source-first-form-end
-       (text / idx len ch depth in-string escape in-comment started found)
-  (setq idx 1)
-  (setq len (strlen text))
-  (setq depth 0)
-  (setq in-string nil)
-  (setq escape nil)
-  (setq in-comment nil)
-  (setq started nil)
-  (setq found nil)
-  (while (and (<= idx len) (not found))
-    (setq ch (substr text idx 1))
+       (alfe--text / alfe--idx alfe--len alfe--ch alfe--depth alfe--in-string alfe--escape alfe--in-comment alfe--started alfe--found)
+  (setq alfe--idx 1)
+  (setq alfe--len (strlen alfe--text))
+  (setq alfe--depth 0)
+  (setq alfe--in-string nil)
+  (setq alfe--escape nil)
+  (setq alfe--in-comment nil)
+  (setq alfe--started nil)
+  (setq alfe--found nil)
+  (while (and (<= alfe--idx alfe--len) (not alfe--found))
+    (setq alfe--ch (substr alfe--text alfe--idx 1))
     (cond
-      ((eq in-comment 'block)
-       (if (autolisp-source-block-close-p text idx)
+      ((eq alfe--in-comment 'block)
+       (if (autolisp-source-block-close-p alfe--text alfe--idx)
          (progn
-           (setq in-comment nil)
-           (setq idx (+ idx 1)))))
-      (in-comment
-       (if (= ch "\n") (setq in-comment nil)))
-      (in-string
+           (setq alfe--in-comment nil)
+           (setq alfe--idx (+ alfe--idx 1)))))
+      (alfe--in-comment
+       (if (= alfe--ch "\n") (setq alfe--in-comment nil)))
+      (alfe--in-string
        (cond
-         (escape (setq escape nil))
-         ((= ch "\\") (setq escape T))
-         ((= ch "\"")
-          (setq in-string nil)
+         (alfe--escape (setq alfe--escape nil))
+         ((= alfe--ch "\\") (setq alfe--escape T))
+         ((= alfe--ch "\"")
+          (setq alfe--in-string nil)
           ;; A string at top level is a complete form by itself.
-          (if (= depth 0) (setq found idx)))))
-      ((and started (= depth 0) (= ch ";"))
+          (if (= alfe--depth 0) (setq alfe--found alfe--idx)))))
+      ((and alfe--started (= alfe--depth 0) (= alfe--ch ";"))
        ;; A comment ends a bare atom begun at top level.
-       (setq found (- idx 1)))
-      ((autolisp-source-block-open-p text idx)
-       (setq in-comment 'block)
-       (setq idx (+ idx 1)))
-      ((= ch ";") (setq in-comment 'line))
-      ((= ch "\"")
-       (setq in-string T)
-       (setq started T))
-      ((= ch "(")
-       (setq depth (+ depth 1))
-       (setq started T))
-      ((= ch ")")
-       (setq depth (- depth 1))
-       (if (<= depth 0) (setq found idx)))
-      ((member ch (list " " "\t" "\r" "\n"))
+       (setq alfe--found (- alfe--idx 1)))
+      ((autolisp-source-block-open-p alfe--text alfe--idx)
+       (setq alfe--in-comment 'block)
+       (setq alfe--idx (+ alfe--idx 1)))
+      ((= alfe--ch ";") (setq alfe--in-comment 'line))
+      ((= alfe--ch "\"")
+       (setq alfe--in-string T)
+       (setq alfe--started T))
+      ((= alfe--ch "(")
+       (setq alfe--depth (+ alfe--depth 1))
+       (setq alfe--started T))
+      ((= alfe--ch ")")
+       (setq alfe--depth (- alfe--depth 1))
+       (if (<= alfe--depth 0) (setq alfe--found alfe--idx)))
+      ((member alfe--ch (list " " "\t" "\r" "\n"))
        ;; Whitespace ends a bare atom begun at top level.
-       (if (and started (= depth 0)) (setq found (- idx 1))))
-      (T (setq started T)))
-    (if (not found) (setq idx (+ idx 1))))
+       (if (and alfe--started (= alfe--depth 0)) (setq alfe--found (- alfe--idx 1))))
+      (T (setq alfe--started T)))
+    (if (not alfe--found) (setq alfe--idx (+ alfe--idx 1))))
   ;; A bare atom that runs to the end of TEXT ends there.
-  (if (and (not found) started (= depth 0)) (setq found len))
-  found)
+  (if (and (not alfe--found) alfe--started (= alfe--depth 0)) (setq alfe--found alfe--len))
+  alfe--found)
 
 (defun autolisp-source-load-run-body-impl (alfe--resolved / alfe--f alfe--line alfe--line-no alfe--form-text alfe--form-start-line alfe--result alfe--form-read alfe--defun-name alfe--eval-result alfe--capture-old alfe--piece alfe--piece-end)
   (progn
@@ -1047,35 +1047,35 @@
 ;; Output operators: one argument, the arg list, mirroring the runtime's
 ;; princ/print/prin1 framing. A file descriptor in the second slot writes
 ;; there; otherwise output goes to the captured user stream.
-(defun alfe-princ* (args)
+(defun alfe-princ* (alfe--args)
   (cond
-    ((null args) (autolisp-princ-newline))
-    ((cadr args)
-     (autolisp-write-string-to-file (autolisp-str (car args)) (cadr args))
-     (car args))
-    (T (autolisp-emit-user-line (autolisp-str (car args))) (car args))))
+    ((null alfe--args) (autolisp-princ-newline))
+    ((cadr alfe--args)
+     (autolisp-write-string-to-file (autolisp-str (car alfe--args)) (cadr alfe--args))
+     (car alfe--args))
+    (T (autolisp-emit-user-line (autolisp-str (car alfe--args))) (car alfe--args))))
 
-(defun alfe-print* (args)
+(defun alfe-print* (alfe--args)
   (cond
-    ((null args) (autolisp-princ-newline))
-    ((cadr args)
+    ((null alfe--args) (autolisp-princ-newline))
+    ((cadr alfe--args)
      (autolisp-write-string-to-file
-       (strcat "\n" (autolisp-stdout-text (car args)) " ") (cadr args))
-     (car args))
-    (T (autolisp-princ-newline) (autolisp-emit-user-out (car args)))))
+       (strcat "\n" (autolisp-stdout-text (car alfe--args)) " ") (cadr alfe--args))
+     (car alfe--args))
+    (T (autolisp-princ-newline) (autolisp-emit-user-out (car alfe--args)))))
 
-(defun alfe-prin1* (args)
+(defun alfe-prin1* (alfe--args)
   (cond
-    ((null args) (autolisp-emit-user-out nil))
-    ((cadr args)
-     (autolisp-write-string-to-file (autolisp-stdout-text (car args)) (cadr args))
-     (car args))
-    (T (autolisp-emit-user-out (car args)))))
+    ((null alfe--args) (autolisp-emit-user-out nil))
+    ((cadr alfe--args)
+     (autolisp-write-string-to-file (autolisp-stdout-text (car alfe--args)) (cadr alfe--args))
+     (car alfe--args))
+    (T (autolisp-emit-user-out (car alfe--args)))))
 
 ;; One-argument conveniences for hand-written alfe-owned code.
-(defun alfe-princ (obj) (alfe-princ* (list obj)))
-(defun alfe-print (obj) (alfe-print* (list obj)))
-(defun alfe-prin1 (obj) (alfe-prin1* (list obj)))
+(defun alfe-princ (alfe--obj) (alfe-princ* (list alfe--obj)))
+(defun alfe-print (alfe--obj) (alfe-print* (list alfe--obj)))
+(defun alfe-prin1 (alfe--obj) (alfe-prin1* (list alfe--obj)))
 
 ;; Deporting byte-safe loader. alfe-load / alfe-load-onfailure are the
 ;; fixed-arity entry points; alfe-load* takes the arg list (what the rewriter
@@ -1200,64 +1200,64 @@
 ;; the same reason. OPEN counts only while *ALFE-OPEN-WRITE-CCS* or
 ;; *ALFE-OPEN-WRITE-ARG* is set (alfe-open-rewrite-p), so without a forwarded
 ;; -Efile-write nothing more is rebuilt.
-(defun alfe-form-needs-rewrite-p (form / head s)
+(defun alfe-form-needs-rewrite-p (alfe--form / alfe--head alfe--s)
   (cond
-    ((atom form) nil)
-    ((not (listp form)) nil)
-    ((null form) nil)
+    ((atom alfe--form) nil)
+    ((not (listp alfe--form)) nil)
+    ((null alfe--form) nil)
     (T
-     (setq head (car form))
+     (setq alfe--head (car alfe--form))
      (cond
-       ((and (= (type head) 'SYM)
-             (progn (setq s (strcase (vl-symbol-name head)))
-                    (or (= s "QUOTE") (= s "FUNCTION"))))
+       ((and (= (type alfe--head) 'SYM)
+             (progn (setq alfe--s (strcase (vl-symbol-name alfe--head)))
+                    (or (= alfe--s "QUOTE") (= alfe--s "FUNCTION"))))
         nil)
-       ((and (= (type head) 'SYM)
-             (or (= s "PRINC") (= s "PRINT") (= s "PRIN1") (= s "LOAD")
-                 (and (= s "OPEN") (alfe-open-rewrite-p))))
+       ((and (= (type alfe--head) 'SYM)
+             (or (= alfe--s "PRINC") (= alfe--s "PRINT") (= alfe--s "PRIN1") (= alfe--s "LOAD")
+                 (and (= alfe--s "OPEN") (alfe-open-rewrite-p))))
         T)
        (T
         (cond
-          ((alfe-form-needs-rewrite-p (car form)) T)
-          ((alfe-form-needs-rewrite-p (cdr form)) T)
+          ((alfe-form-needs-rewrite-p (car alfe--form)) T)
+          ((alfe-form-needs-rewrite-p (cdr alfe--form)) T)
           (T nil)))))))
 
 ;; Rewrite a form's native operator calls into alfe-* calls. The star forms
 ;; take the arg list, so a variadic call maps to a fixed-arity one. Only
 ;; called (via alfe-rewrite-form) when the pre-check found a call to rewrite,
 ;; so a form with none keeps its reader-built cons cells intact.
-(defun alfe-rewrite-form-impl (form / head s)
+(defun alfe-rewrite-form-impl (alfe--form / alfe--head alfe--s)
   (cond
-    ((atom form) form)
-    ((not (listp form)) form)
-    ((null form) form)
+    ((atom alfe--form) alfe--form)
+    ((not (listp alfe--form)) alfe--form)
+    ((null alfe--form) alfe--form)
     (T
-     (setq head (car form))
+     (setq alfe--head (car alfe--form))
      (cond
-       ((and (= (type head) 'SYM)
-             (progn (setq s (strcase (vl-symbol-name head)))
-                    (or (= s "QUOTE") (= s "FUNCTION"))))
-        form)
-       ((and (= (type head) 'SYM) (= s "PRINC"))
-        (list 'alfe-princ* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
-       ((and (= (type head) 'SYM) (= s "PRINT"))
-        (list 'alfe-print* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
-       ((and (= (type head) 'SYM) (= s "PRIN1"))
-        (list 'alfe-prin1* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
-       ((and (= (type head) 'SYM) (= s "LOAD"))
-        (list 'alfe-load* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
-       ((and (= (type head) 'SYM) (= s "OPEN") (alfe-open-rewrite-p))
-        (list 'alfe-open* (cons 'list (mapcar 'alfe-rewrite-form (cdr form)))))
+       ((and (= (type alfe--head) 'SYM)
+             (progn (setq alfe--s (strcase (vl-symbol-name alfe--head)))
+                    (or (= alfe--s "QUOTE") (= alfe--s "FUNCTION"))))
+        alfe--form)
+       ((and (= (type alfe--head) 'SYM) (= alfe--s "PRINC"))
+        (list 'alfe-princ* (cons 'list (mapcar 'alfe-rewrite-form (cdr alfe--form)))))
+       ((and (= (type alfe--head) 'SYM) (= alfe--s "PRINT"))
+        (list 'alfe-print* (cons 'list (mapcar 'alfe-rewrite-form (cdr alfe--form)))))
+       ((and (= (type alfe--head) 'SYM) (= alfe--s "PRIN1"))
+        (list 'alfe-prin1* (cons 'list (mapcar 'alfe-rewrite-form (cdr alfe--form)))))
+       ((and (= (type alfe--head) 'SYM) (= alfe--s "LOAD"))
+        (list 'alfe-load* (cons 'list (mapcar 'alfe-rewrite-form (cdr alfe--form)))))
+       ((and (= (type alfe--head) 'SYM) (= alfe--s "OPEN") (alfe-open-rewrite-p))
+        (list 'alfe-open* (cons 'list (mapcar 'alfe-rewrite-form (cdr alfe--form)))))
        (T
-        (mapcar 'alfe-rewrite-form form))))))
+        (mapcar 'alfe-rewrite-form alfe--form))))))
 
 ;; Cons-identity-preserving entry point: an untouched form is returned as-is
 ;; (same cons cells), so only forms that really carry a native operator call
 ;; are rebuilt. See alfe-form-needs-rewrite-p.
-(defun alfe-rewrite-form (form)
-  (if (alfe-form-needs-rewrite-p form)
-    (alfe-rewrite-form-impl form)
-    form))
+(defun alfe-rewrite-form (alfe--form)
+  (if (alfe-form-needs-rewrite-p alfe--form)
+    (alfe-rewrite-form-impl alfe--form)
+    alfe--form))
 
 (defun alfe-eval-rewritten-form (alfe--form)
   (eval (alfe-rewrite-form alfe--form)))
@@ -1281,144 +1281,144 @@
 
 ;; T iff FORM contains an OPEN call, outside QUOTE / FUNCTION. Walks without
 ;; consing, like alfe-form-needs-rewrite-p, but for OPEN alone.
-(defun alfe-form-has-open-call-p (form / head s)
+(defun alfe-form-has-open-call-p (alfe--form / alfe--head alfe--s)
   (cond
-    ((atom form) nil)
-    ((not (listp form)) nil)
-    ((null form) nil)
+    ((atom alfe--form) nil)
+    ((not (listp alfe--form)) nil)
+    ((null alfe--form) nil)
     (T
-     (setq head (car form))
+     (setq alfe--head (car alfe--form))
      (cond
-       ((and (= (type head) 'SYM)
-             (progn (setq s (strcase (vl-symbol-name head)))
-                    (or (= s "QUOTE") (= s "FUNCTION"))))
+       ((and (= (type alfe--head) 'SYM)
+             (progn (setq alfe--s (strcase (vl-symbol-name alfe--head)))
+                    (or (= alfe--s "QUOTE") (= alfe--s "FUNCTION"))))
         nil)
-       ((and (= (type head) 'SYM) (= s "OPEN")) T)
-       ((alfe-form-has-open-call-p (car form)) T)
-       ((alfe-form-has-open-call-p (cdr form)) T)
+       ((and (= (type alfe--head) 'SYM) (= alfe--s "OPEN")) T)
+       ((alfe-form-has-open-call-p (car alfe--form)) T)
+       ((alfe-form-has-open-call-p (cdr alfe--form)) T)
        (T nil)))))
 
-(defun alfe-rewrite-open-calls-impl (form / head s)
+(defun alfe-rewrite-open-calls-impl (alfe--form / alfe--head alfe--s)
   (cond
-    ((atom form) form)
-    ((not (listp form)) form)
-    ((null form) form)
+    ((atom alfe--form) alfe--form)
+    ((not (listp alfe--form)) alfe--form)
+    ((null alfe--form) alfe--form)
     (T
-     (setq head (car form))
+     (setq alfe--head (car alfe--form))
      (cond
-       ((and (= (type head) 'SYM)
-             (progn (setq s (strcase (vl-symbol-name head)))
-                    (or (= s "QUOTE") (= s "FUNCTION"))))
-        form)
-       ((and (= (type head) 'SYM) (= s "OPEN"))
-        (list 'alfe-open* (cons 'list (mapcar 'alfe-rewrite-open-calls (cdr form)))))
+       ((and (= (type alfe--head) 'SYM)
+             (progn (setq alfe--s (strcase (vl-symbol-name alfe--head)))
+                    (or (= alfe--s "QUOTE") (= alfe--s "FUNCTION"))))
+        alfe--form)
+       ((and (= (type alfe--head) 'SYM) (= alfe--s "OPEN"))
+        (list 'alfe-open* (cons 'list (mapcar 'alfe-rewrite-open-calls (cdr alfe--form)))))
        (T
-        (mapcar 'alfe-rewrite-open-calls form))))))
+        (mapcar 'alfe-rewrite-open-calls alfe--form))))))
 
 ;; FORM with its OPEN calls turned into alfe-open* calls -- the SAME conses
 ;; when it has none (the cons-identity guard of alfe-rewrite-form).
-(defun alfe-rewrite-open-calls (form)
-  (if (alfe-form-has-open-call-p form)
-    (alfe-rewrite-open-calls-impl form)
-    form))
+(defun alfe-rewrite-open-calls (alfe--form)
+  (if (alfe-form-has-open-call-p alfe--form)
+    (alfe-rewrite-open-calls-impl alfe--form)
+    alfe--form))
 
 ;; T iff a request FORM must have its OPEN calls rewritten: -Efile-write is
 ;; forwarded AND the form calls OPEN.
-(defun alfe-open-request-p (form)
-  (and (alfe-open-rewrite-p) (alfe-form-has-open-call-p form)))
+(defun alfe-open-request-p (alfe--form)
+  (and (alfe-open-rewrite-p) (alfe-form-has-open-call-p alfe--form)))
 
-(defun alfe-open-text-delimiter-p (ch)
-  (member ch '(" " "\t" "\r" "\n" "(" ")" "'" "\"" ";")))
+(defun alfe-open-text-delimiter-p (alfe--ch)
+  (member alfe--ch '(" " "\t" "\r" "\n" "(" ")" "'" "\"" ";")))
 
 ;; The token heading the list whose open paren is at IDX of TEXT, as
 ;; (START . TOKEN), or NIL when the list starts with no token.
-(defun alfe-open-text-head (text idx len / j start)
-  (setq j (+ idx 1))
-  (while (and (<= j len) (member (substr text j 1) '(" " "\t" "\r" "\n")))
-    (setq j (+ j 1)))
-  (setq start j)
-  (while (and (<= j len) (not (alfe-open-text-delimiter-p (substr text j 1))))
-    (setq j (+ j 1)))
-  (if (> j start) (cons start (substr text start (- j start))) nil))
+(defun alfe-open-text-head (alfe--text alfe--idx alfe--len / alfe--j alfe--start)
+  (setq alfe--j (+ alfe--idx 1))
+  (while (and (<= alfe--j alfe--len) (member (substr alfe--text alfe--j 1) '(" " "\t" "\r" "\n")))
+    (setq alfe--j (+ alfe--j 1)))
+  (setq alfe--start alfe--j)
+  (while (and (<= alfe--j alfe--len) (not (alfe-open-text-delimiter-p (substr alfe--text alfe--j 1))))
+    (setq alfe--j (+ alfe--j 1)))
+  (if (> alfe--j alfe--start) (cons alfe--start (substr alfe--text alfe--start (- alfe--j alfe--start))) nil))
 
 ;; TEXT, the source of one form, with every OPEN call "(open ARGS)" written
 ;; "(alfe-open* (list ARGS))" -- the textual twin of alfe-rewrite-open-calls:
 ;; a list quoted by ' or headed by QUOTE / FUNCTION is left alone, strings and
 ;; comments (; and ;| |;) are skipped. Nothing else of TEXT changes, so a real
 ;; literal keeps every digit it was written with.
-(defun alfe-open-rewrite-text (text / idx len ch nx stack quoted pending in-string escape in-comment in-block head s child-quoted open-p edits out pos e)
-  (setq idx 1)
-  (setq len (strlen text))
-  (setq stack nil)
-  (setq pending nil)
-  (setq in-string nil)
-  (setq escape nil)
-  (setq in-comment nil)
-  (setq in-block nil)
-  (setq edits nil)
-  (while (<= idx len)
-    (setq ch (substr text idx 1))
-    (setq nx (if (< idx len) (substr text (+ idx 1) 1) ""))
+(defun alfe-open-rewrite-text (alfe--text / alfe--idx alfe--len alfe--ch alfe--nx alfe--stack alfe--quoted alfe--pending alfe--in-string alfe--escape alfe--in-comment alfe--in-block alfe--head alfe--s alfe--child-quoted alfe--open-p alfe--edits alfe--out alfe--pos alfe--e)
+  (setq alfe--idx 1)
+  (setq alfe--len (strlen alfe--text))
+  (setq alfe--stack nil)
+  (setq alfe--pending nil)
+  (setq alfe--in-string nil)
+  (setq alfe--escape nil)
+  (setq alfe--in-comment nil)
+  (setq alfe--in-block nil)
+  (setq alfe--edits nil)
+  (while (<= alfe--idx alfe--len)
+    (setq alfe--ch (substr alfe--text alfe--idx 1))
+    (setq alfe--nx (if (< alfe--idx alfe--len) (substr alfe--text (+ alfe--idx 1) 1) ""))
     (cond
-      (in-block
-       (if (and (= ch "|") (= nx ";"))
-         (progn (setq in-block nil) (setq idx (+ idx 1)))))
-      (in-comment
-       (if (= ch "\n") (setq in-comment nil)))
-      (in-string
+      (alfe--in-block
+       (if (and (= alfe--ch "|") (= alfe--nx ";"))
+         (progn (setq alfe--in-block nil) (setq alfe--idx (+ alfe--idx 1)))))
+      (alfe--in-comment
+       (if (= alfe--ch "\n") (setq alfe--in-comment nil)))
+      (alfe--in-string
        (cond
-         (escape (setq escape nil))
-         ((= ch "\\") (setq escape T))
-         ((= ch "\"") (setq in-string nil))))
-      ((= ch ";")
-       (if (= nx "|")
-         (progn (setq in-block T) (setq idx (+ idx 1)))
-         (setq in-comment T)))
-      ((= ch "\"")
-       (setq in-string T)
-       (setq pending nil))
-      ((= ch "'")
-       (setq pending T))
-      ((= ch "(")
-       (setq quoted (or pending (and stack (car (car stack)))))
-       (setq pending nil)
-       (setq child-quoted quoted)
-       (setq open-p nil)
-       (if (not quoted)
+         (alfe--escape (setq alfe--escape nil))
+         ((= alfe--ch "\\") (setq alfe--escape T))
+         ((= alfe--ch "\"") (setq alfe--in-string nil))))
+      ((= alfe--ch ";")
+       (if (= alfe--nx "|")
+         (progn (setq alfe--in-block T) (setq alfe--idx (+ alfe--idx 1)))
+         (setq alfe--in-comment T)))
+      ((= alfe--ch "\"")
+       (setq alfe--in-string T)
+       (setq alfe--pending nil))
+      ((= alfe--ch "'")
+       (setq alfe--pending T))
+      ((= alfe--ch "(")
+       (setq alfe--quoted (or alfe--pending (and alfe--stack (car (car alfe--stack)))))
+       (setq alfe--pending nil)
+       (setq alfe--child-quoted alfe--quoted)
+       (setq alfe--open-p nil)
+       (if (not alfe--quoted)
          (progn
-           (setq head (alfe-open-text-head text idx len))
-           (if head
+           (setq alfe--head (alfe-open-text-head alfe--text alfe--idx alfe--len))
+           (if alfe--head
              (progn
-               (setq s (strcase (cdr head)))
+               (setq alfe--s (strcase (cdr alfe--head)))
                (cond
-                 ((= s "OPEN")
-                  (setq open-p T)
-                  (setq edits (cons (list (car head) (strlen (cdr head))
+                 ((= alfe--s "OPEN")
+                  (setq alfe--open-p T)
+                  (setq alfe--edits (cons (list (car alfe--head) (strlen (cdr alfe--head))
                                           "alfe-open* (list")
-                                    edits)))
-                 ((or (= s "QUOTE") (= s "FUNCTION"))
-                  (setq child-quoted T)))))))
-       (setq stack (cons (list child-quoted open-p) stack)))
-      ((= ch ")")
-       (if stack
+                                    alfe--edits)))
+                 ((or (= alfe--s "QUOTE") (= alfe--s "FUNCTION"))
+                  (setq alfe--child-quoted T)))))))
+       (setq alfe--stack (cons (list alfe--child-quoted alfe--open-p) alfe--stack)))
+      ((= alfe--ch ")")
+       (if alfe--stack
          (progn
-           (if (cadr (car stack))
-             (setq edits (cons (list idx 0 ")") edits)))
-           (setq stack (cdr stack)))))
-      ((member ch '(" " "\t" "\r" "\n")) nil)
-      (T (setq pending nil)))
-    (setq idx (+ idx 1)))
+           (if (cadr (car alfe--stack))
+             (setq alfe--edits (cons (list alfe--idx 0 ")") alfe--edits)))
+           (setq alfe--stack (cdr alfe--stack)))))
+      ((member alfe--ch '(" " "\t" "\r" "\n")) nil)
+      (T (setq alfe--pending nil)))
+    (setq alfe--idx (+ alfe--idx 1)))
   ;; The edits were collected left to right; splice them in.
-  (setq out "")
-  (setq pos 1)
-  (foreach e (reverse edits)
-    (if (> (car e) pos)
-      (setq out (strcat out (substr text pos (- (car e) pos)))))
-    (setq out (strcat out (caddr e)))
-    (setq pos (+ (car e) (cadr e))))
-  (if (<= pos len)
-    (strcat out (substr text pos))
-    out))
+  (setq alfe--out "")
+  (setq alfe--pos 1)
+  (foreach alfe--e (reverse alfe--edits)
+    (if (> (car alfe--e) alfe--pos)
+      (setq alfe--out (strcat alfe--out (substr alfe--text alfe--pos (- (car alfe--e) alfe--pos)))))
+    (setq alfe--out (strcat alfe--out (caddr alfe--e)))
+    (setq alfe--pos (+ (car alfe--e) (cadr alfe--e))))
+  (if (<= alfe--pos alfe--len)
+    (strcat alfe--out (substr alfe--text alfe--pos))
+    alfe--out))
 
 ;; The text the CAD is given for a request FORM that calls OPEN while
 ;; -Efile-write is forwarded. NORMALIZED is FORM after the princ normaliser,
@@ -1428,29 +1428,29 @@
 ;; exactly what alfe-load would have. Otherwise (no text, or the normaliser
 ;; rebuilt the form, which is then printed anyway) the rewritten form is
 ;; printed with autolisp-form-source-text, reals at full precision.
-(defun alfe-open-request-text (form normalized source / rewritten text back)
-  (setq rewritten (alfe-rewrite-open-calls normalized))
-  (if (and source (eq normalized form))
+(defun alfe-open-request-text (alfe--form alfe--normalized alfe--source / alfe--rewritten alfe--text alfe--back)
+  (setq alfe--rewritten (alfe-rewrite-open-calls alfe--normalized))
+  (if (and alfe--source (eq alfe--normalized alfe--form))
     (progn
-      (setq text (vl-catch-all-apply 'alfe-open-rewrite-text (list source)))
-      (if (vl-catch-all-error-p text)
-        (setq text nil))
-      (if text
-        (setq back (vl-catch-all-apply 'read (list text))))
-      (if (and text (not (vl-catch-all-error-p back)) (equal back rewritten))
-        text
-        (autolisp-form-source-text rewritten)))
-    (autolisp-form-source-text rewritten)))
+      (setq alfe--text (vl-catch-all-apply 'alfe-open-rewrite-text (list alfe--source)))
+      (if (vl-catch-all-error-p alfe--text)
+        (setq alfe--text nil))
+      (if alfe--text
+        (setq alfe--back (vl-catch-all-apply 'read (list alfe--text))))
+      (if (and alfe--text (not (vl-catch-all-error-p alfe--back)) (equal alfe--back alfe--rewritten))
+        alfe--text
+        (autolisp-form-source-text alfe--rewritten)))
+    (autolisp-form-source-text alfe--rewritten)))
 
-(defun autolisp-internal-protocol-load-p (path)
-  (and (= (type path) 'STR)
-       (wcmatch path "*protocol-request-*.lsp")))
+(defun autolisp-internal-protocol-load-p (alfe--path)
+  (and (= (type alfe--path) 'STR)
+       (wcmatch alfe--path "*protocol-request-*.lsp")))
 
-(defun autolisp-load-form-p (form)
-  (and (listp form)
-       form
-       (= (type (car form)) 'SYM)
-       (= (strcase (vl-symbol-name (car form))) "LOAD")))
+(defun autolisp-load-form-p (alfe--form)
+  (and (listp alfe--form)
+       alfe--form
+       (= (type (car alfe--form)) 'SYM)
+       (= (strcase (vl-symbol-name (car alfe--form))) "LOAD")))
 
 ;; Cheap-walk pre-check: T iff FORM contains a princ/print/prin1 call that the
 ;; fixed-arity no-&rest shadows can't take as written -- i.e. UNDER-arity: an
@@ -1462,30 +1462,30 @@
 ;; FUNCTION exactly like the rewriter, so quoted data doesn't false-positive.
 ;; (On &rest hosts autolisp-normalize-princ-call is the identity, so none of
 ;; this runs -- BricsCAD is unaffected.)
-(defun autolisp-form-contains-empty-princ-p (form / head s)
+(defun autolisp-form-contains-empty-princ-p (alfe--form / alfe--head alfe--s)
   (cond
-    ((atom form) nil)
-    ((not (listp form)) nil)
-    ((null form) nil)
+    ((atom alfe--form) nil)
+    ((not (listp alfe--form)) nil)
+    ((null alfe--form) nil)
     (T
-      (setq head (car form))
+      (setq alfe--head (car alfe--form))
       (cond
-        ((and (= (type head) 'SYM)
-              (progn (setq s (strcase (vl-symbol-name head)))
-                     (or (= s "QUOTE") (= s "FUNCTION"))))
+        ((and (= (type alfe--head) 'SYM)
+              (progn (setq alfe--s (strcase (vl-symbol-name alfe--head)))
+                     (or (= alfe--s "QUOTE") (= alfe--s "FUNCTION"))))
           nil)
-        ((and (= (type head) 'SYM)
-              (or (= s "PRINC") (= s "PRINT") (= s "PRIN1"))
-              (< (length form) 3))          ; 0 or 1 args on a 2-arg shadow
+        ((and (= (type alfe--head) 'SYM)
+              (or (= alfe--s "PRINC") (= alfe--s "PRINT") (= alfe--s "PRIN1"))
+              (< (length alfe--form) 3))          ; 0 or 1 args on a 2-arg shadow
           T)
-        ((and (= (type head) 'SYM)
-              (= s "LOAD")
-              (= (length form) 2))          ; 1-arg (load X) on a 2-arg shadow
+        ((and (= (type alfe--head) 'SYM)
+              (= alfe--s "LOAD")
+              (= (length alfe--form) 2))          ; 1-arg (load X) on a 2-arg shadow
           T)
         (T
           (cond
-            ((autolisp-form-contains-empty-princ-p (car form)) T)
-            ((autolisp-form-contains-empty-princ-p (cdr form)) T)
+            ((autolisp-form-contains-empty-princ-p (car alfe--form)) T)
+            ((autolisp-form-contains-empty-princ-p (cdr alfe--form)) T)
             (T nil)))))))
 
 ;; The actual rewriter — only called from `autolisp-normalize-princ-call'
@@ -1493,49 +1493,49 @@
 ;; replace. Rebuilds cons cells (necessary to inject the rewrite); see
 ;; the comment on autolisp-normalize-princ-call about why we don't want
 ;; this to run otherwise.
-(defun autolisp-normalize-princ-call-impl (form / head s)
+(defun autolisp-normalize-princ-call-impl (alfe--form / alfe--head alfe--s)
   (cond
-    ((atom form)
-     form)
-    ((and (listp form) form)
-     (setq head (car form))
+    ((atom alfe--form)
+     alfe--form)
+    ((and (listp alfe--form) alfe--form)
+     (setq alfe--head (car alfe--form))
      (cond
-       ((and (= (type head) 'SYM)
-             (progn (setq s (strcase (vl-symbol-name head)))
-                    (or (= s "QUOTE") (= s "FUNCTION"))))
-        form)
+       ((and (= (type alfe--head) 'SYM)
+             (progn (setq alfe--s (strcase (vl-symbol-name alfe--head)))
+                    (or (= alfe--s "QUOTE") (= alfe--s "FUNCTION"))))
+        alfe--form)
        ;; princ/print/prin1: the no-&rest shadows require (obj file), so pad
        ;; under-arity calls. Empty (princ) keeps its newline alias; a 1-arg
        ;; call gets the missing FILE = nil (the arg itself is walked too);
        ;; 2-arg (and odd larger) calls just recurse into their args. This
        ;; preserves the value contract -- princ returns its first arg.
-       ((and (= (type head) 'SYM)
-             (or (= s "PRINC") (= s "PRINT") (= s "PRIN1")))
+       ((and (= (type alfe--head) 'SYM)
+             (or (= alfe--s "PRINC") (= alfe--s "PRINT") (= alfe--s "PRIN1")))
         (cond
-          ((= (length form) 1)
-           (if (= s "PRINC")
+          ((= (length alfe--form) 1)
+           (if (= alfe--s "PRINC")
              (list 'autolisp-princ-newline)
-             (list head "" nil)))
-          ((= (length form) 2)
-           (list head
-                 (autolisp-normalize-princ-call-impl (cadr form))
+             (list alfe--head "" nil)))
+          ((= (length alfe--form) 2)
+           (list alfe--head
+                 (autolisp-normalize-princ-call-impl (cadr alfe--form))
                  nil))
           (T
-           (cons head (mapcar 'autolisp-normalize-princ-call-impl (cdr form))))))
+           (cons alfe--head (mapcar 'autolisp-normalize-princ-call-impl (cdr alfe--form))))))
        ;; `load' is likewise shadowed with a fixed (file onfailure) arity on the
        ;; no-&rest host (e.g. a vertical app's own load wrapper), so a 1-arg
        ;; (load X) trips the same too-few-args trap. Pad the missing ONFAILURE
        ;; with nil; 2-arg (load X F) passes through.
-       ((and (= (type head) 'SYM)
-             (= s "LOAD")
-             (= (length form) 2))
-        (list head
-              (autolisp-normalize-princ-call-impl (cadr form))
+       ((and (= (type alfe--head) 'SYM)
+             (= alfe--s "LOAD")
+             (= (length alfe--form) 2))
+        (list alfe--head
+              (autolisp-normalize-princ-call-impl (cadr alfe--form))
               nil))
        (T
-        (cons head (mapcar 'autolisp-normalize-princ-call-impl (cdr form))))))
+        (cons alfe--head (mapcar 'autolisp-normalize-princ-call-impl (cdr alfe--form))))))
     (T
-     form)))
+     alfe--form)))
 
 ;; Rewrite bare `(princ)' calls (with no arguments) into
 ;; `(autolisp-princ-newline)' so the bootstrap-shadowed 1-arg `princ'
@@ -1556,10 +1556,10 @@
 ;; — any user form that doesn't literally contain `(princ)' passes
 ;; through with the reader's cons-cell identity intact, and BricsCAD's
 ;; mapcar happily walks the lambda.
-(defun autolisp-normalize-princ-call (form)
-  (if (autolisp-form-contains-empty-princ-p form)
-    (autolisp-normalize-princ-call-impl form)
-    form))
+(defun autolisp-normalize-princ-call (alfe--form)
+  (if (autolisp-form-contains-empty-princ-p alfe--form)
+    (autolisp-normalize-princ-call-impl alfe--form)
+    alfe--form))
 
 (defun autolisp-eval-load-form (alfe--form)
   ;; The LOAD argument must be EVALUATED before it reaches the source loader:
@@ -1643,9 +1643,9 @@
         (autolisp-mark-end "LOAD" alfe--idx 0)
         T)))))
 
-(defun autolisp-trap-error (msg)
-  (setq *AUTOLISP_ERROR_MSG* (autolisp-effective-error-message msg))
-  (if (autolisp-quit-signal-p msg)
+(defun autolisp-trap-error (alfe--msg)
+  (setq *AUTOLISP_ERROR_MSG* (autolisp-effective-error-message alfe--msg))
+  (if (autolisp-quit-signal-p alfe--msg)
     (setq *AUTOLISP_QUIT_REQUESTED* T))
   nil)
 
@@ -1744,9 +1744,9 @@
 (setq *AUTOLISP_LAST_ERROR_CONTEXT* nil)
 (setq *CLLOAD_DEFAULT_LOADER* 'autolisp-source-load)
 
-(defun autolisp-quit-signal-p (msg)
-  (and (= (type msg) 'STR)
-       (= msg *AUTOLISP_QUIT_SIGNAL*)))
+(defun autolisp-quit-signal-p (alfe--msg)
+  (and (= (type alfe--msg) 'STR)
+       (= alfe--msg *AUTOLISP_QUIT_SIGNAL*)))
 
 (defun quit ()
   (setq *AUTOLISP_QUIT_REQUESTED* T)
@@ -1781,39 +1781,39 @@
 (autolisp-reset-file *AUTOLISP_ERRFILE*)
 (autolisp-set-status 99)
 (setq *AUTOLISP_LOG_STATE* nil)
-(defun autolisp-safe-getvar (name / r)
-  (setq r (vl-catch-all-apply 'getvar (list name)))
-  (if (vl-catch-all-error-p r) nil r))
+(defun autolisp-safe-getvar (alfe--name / alfe--r)
+  (setq alfe--r (vl-catch-all-apply 'getvar (list alfe--name)))
+  (if (vl-catch-all-error-p alfe--r) nil alfe--r))
 
 ;; Actually safe: some sysvars are read-only on some hosts (LOGFILENAME is
 ;; read-only on both AutoCAD and BricsCAD -- only LOGFILEPATH is settable),
 ;; and a bare (setvar) on such a var SIGNALS, which previously aborted the
 ;; whole log-setup mid-way and surfaced as an error. Swallow the rejection
 ;; and return T only when the set took.
-(defun autolisp-safe-setvar (name value / r)
-  (setq r (vl-catch-all-apply 'setvar (list name value)))
-  (not (vl-catch-all-error-p r)))
+(defun autolisp-safe-setvar (alfe--name alfe--value / alfe--r)
+  (setq alfe--r (vl-catch-all-apply 'setvar (list alfe--name alfe--value)))
+  (not (vl-catch-all-error-p alfe--r)))
 
-(defun autolisp-log-setup (/ old-mode old-path)
+(defun autolisp-log-setup (/ alfe--old-mode alfe--old-path)
   ;; Direct the session log into our workdir via LOGFILEPATH -- the one
   ;; log sysvar that is writable on the real CAD hosts. LOGFILENAME is
   ;; read-only there, so we do NOT try to set it (the host keeps its
   ;; default log name in our directory, which is all we need). Every set
   ;; goes through autolisp-safe-setvar, so a host that also locks
   ;; LOGFILEPATH/LOGFILEMODE degrades quietly instead of erroring.
-  (setq old-mode (autolisp-safe-getvar "LOGFILEMODE"))
-  (setq old-path (autolisp-safe-getvar "LOGFILEPATH"))
+  (setq alfe--old-mode (autolisp-safe-getvar "LOGFILEMODE"))
+  (setq alfe--old-path (autolisp-safe-getvar "LOGFILEPATH"))
   (autolisp-safe-setvar "LOGFILEPATH" *AUTOLISP_LOGDIR*)
   (autolisp-safe-setvar "LOGFILEMODE" 1)
-  (list old-mode old-path))
+  (list alfe--old-mode alfe--old-path))
 
-(defun autolisp-log-restore (state / old-mode old-path)
-  (if state
+(defun autolisp-log-restore (alfe--state / alfe--old-mode alfe--old-path)
+  (if alfe--state
     (progn
-      (setq old-mode (nth 0 state))
-      (setq old-path (nth 1 state))
-      (if old-path (autolisp-safe-setvar "LOGFILEPATH" old-path))
-      (if old-mode (autolisp-safe-setvar "LOGFILEMODE" old-mode)))))
+      (setq alfe--old-mode (nth 0 alfe--state))
+      (setq alfe--old-path (nth 1 alfe--state))
+      (if alfe--old-path (autolisp-safe-setvar "LOGFILEPATH" alfe--old-path))
+      (if alfe--old-mode (autolisp-safe-setvar "LOGFILEMODE" alfe--old-mode)))))
 
 (setq _autolisp_log_setup_result (vl-catch-all-apply 'autolisp-log-setup nil))
 (if (vl-catch-all-error-p _autolisp_log_setup_result)
@@ -1833,12 +1833,12 @@
 ;; printer to reach the file. Keep ASCII-only (see the note in
 ;; autolisp-source-load-run-body-impl): every byte > 127 has tripped a
 ;; BricsCAD / clautolisp LOAD failure.
-(defun autolisp-write-string-to-file (text file / idx len)
-  (setq idx 1)
-  (setq len (strlen text))
-  (while (<= idx len)
-    (write-char (ascii (substr text idx 1)) file)
-    (setq idx (+ idx 1)))
+(defun autolisp-write-string-to-file (alfe--text alfe--file / alfe--idx alfe--len)
+  (setq alfe--idx 1)
+  (setq alfe--len (strlen alfe--text))
+  (while (<= alfe--idx alfe--len)
+    (write-char (ascii (substr alfe--text alfe--idx 1)) alfe--file)
+    (setq alfe--idx (+ alfe--idx 1)))
   nil)
 
 ;; Mirror interactive output to OUTFILE so results do not depend on CAD
@@ -1848,31 +1848,31 @@
 ;; destined for a user-opened file leaks onto stdout. See
 ;; issues/closed/alfe-bricscad-open.issue. FILE is nil for the common
 ;; no-descriptor call, which keeps the previous protocol behaviour.
-(defun print (obj file)
-  (if file
+(defun print (alfe--obj alfe--file)
+  (if alfe--file
     (progn
       (autolisp-write-string-to-file
-        (strcat "\n" (autolisp-stdout-text obj) " ") file)
-      obj)
+        (strcat "\n" (autolisp-stdout-text alfe--obj) " ") alfe--file)
+      alfe--obj)
     (progn
       (autolisp-princ-newline)
-      (autolisp-emit-user-out obj))))
+      (autolisp-emit-user-out alfe--obj))))
 
-(defun princ (obj file)
-  (if file
+(defun princ (alfe--obj alfe--file)
+  (if alfe--file
     (progn
-      (autolisp-write-string-to-file (autolisp-str obj) file)
-      obj)
+      (autolisp-write-string-to-file (autolisp-str alfe--obj) alfe--file)
+      alfe--obj)
     (progn
-      (autolisp-emit-user-line (autolisp-str obj))
-      obj)))
+      (autolisp-emit-user-line (autolisp-str alfe--obj))
+      alfe--obj)))
 
-(defun prin1 (obj file)
-  (if file
+(defun prin1 (alfe--obj alfe--file)
+  (if alfe--file
     (progn
-      (autolisp-write-string-to-file (autolisp-stdout-text obj) file)
-      obj)
-    (autolisp-emit-user-out obj)))
+      (autolisp-write-string-to-file (autolisp-stdout-text alfe--obj) alfe--file)
+      alfe--obj)
+    (autolisp-emit-user-out alfe--obj)))
 
 (defun autolisp-princ-newline ()
   (if *AUTOLISP_CAPTURE_STDOUT*
@@ -1880,33 +1880,33 @@
     (terpri))
   nil)
 
-(defun prompt (msg)
-  (if msg
+(defun prompt (alfe--msg)
+  (if alfe--msg
     (progn
-      (autolisp-emit-user-line (autolisp-str msg))
-      msg)
-    msg))
+      (autolisp-emit-user-line (autolisp-str alfe--msg))
+      alfe--msg)
+    alfe--msg))
 
-(defun autolisp-slurp-lines (path / f line acc)
-  (setq f (open path "r"))
-  (if (not f)
+(defun autolisp-slurp-lines (alfe--path / alfe--f alfe--line alfe--acc)
+  (setq alfe--f (open alfe--path "r"))
+  (if (not alfe--f)
     nil
     (progn
-      (setq acc '())
-      (while (setq line (read-line f))
-        (setq line (vl-string-translate "\r" "" line))
-        (setq acc (cons line acc)))
-      (close f)
-      (reverse acc))))
+      (setq alfe--acc '())
+      (while (setq alfe--line (read-line alfe--f))
+        (setq alfe--line (vl-string-translate "\r" "" alfe--line))
+        (setq alfe--acc (cons alfe--line alfe--acc)))
+      (close alfe--f)
+      (reverse alfe--acc))))
 
-(defun autolisp-lines->text (lines / acc)
-  (setq acc "")
-  (while lines
-    (if (= acc "")
-      (setq acc (car lines))
-      (setq acc (strcat acc "\n" (car lines))))
-    (setq lines (cdr lines)))
-  acc)
+(defun autolisp-lines->text (alfe--lines / alfe--acc)
+  (setq alfe--acc "")
+  (while alfe--lines
+    (if (= alfe--acc "")
+      (setq alfe--acc (car alfe--lines))
+      (setq alfe--acc (strcat alfe--acc "\n" (car alfe--lines))))
+    (setq alfe--lines (cdr alfe--lines)))
+  alfe--acc)
 
 ;; Probe whether a function NAME (a string) is actually bound on this host.
 ;; vl-catch-all-apply CANNOT trap the error raised when a symbol has no
@@ -1917,9 +1917,9 @@
 ;; AutoCAD's accoreconsole). atoms-family probes the symbol table directly:
 ;; given a symlist it returns the supplied names that exist, nil in the slot
 ;; for those that do not.
-(defun autolisp-host-has-fn (name / hit)
-  (setq hit (atoms-family 1 (list (strcase name))))
-  (if (and hit (car hit)) T nil))
+(defun autolisp-host-has-fn (alfe--name / alfe--hit)
+  (setq alfe--hit (atoms-family 1 (list (strcase alfe--name))))
+  (if (and alfe--hit (car alfe--hit)) T nil))
 
 ;; Real-time yield of about MS milliseconds using ONLY (getvar "DATE") -- a
 ;; monotonic-enough wall clock every AutoCAD/BricsCAD provides, read without
@@ -1933,22 +1933,22 @@
 ;; established, so it escapes the guard and aborts the protocol read loop.
 ;; A clock spin costs CPU but is correct and portable; hosts with a real
 ;; sleep (vlax-sleep on BricsCAD) never reach this helper.
-(defun autolisp-busy-wait-ms (ms / target)
-  (setq target (+ (getvar "DATE") (/ (float ms) 86400000.0)))
-  (while (< (getvar "DATE") target)
-    (setq target target)))
+(defun autolisp-busy-wait-ms (alfe--ms / alfe--target)
+  (setq alfe--target (+ (getvar "DATE") (/ (float alfe--ms) 86400000.0)))
+  (while (< (getvar "DATE") alfe--target)
+    (setq alfe--target alfe--target)))
 
-(defun autolisp-delay-ms (ms)
-  (autolisp-busy-wait-ms ms)
+(defun autolisp-delay-ms (alfe--ms)
+  (autolisp-busy-wait-ms alfe--ms)
   nil)
 
-(defun autolisp-sleep-ms (ms / r)
+(defun autolisp-sleep-ms (alfe--ms / alfe--r)
   (if (autolisp-host-has-fn "VLAX-SLEEP")
     (progn
-      (setq r (vl-catch-all-apply 'vlax-sleep (list ms)))
-      (if (vl-catch-all-error-p r)
-        (autolisp-delay-ms ms)))
-    (autolisp-delay-ms ms))
+      (setq alfe--r (vl-catch-all-apply 'vlax-sleep (list alfe--ms)))
+      (if (vl-catch-all-error-p alfe--r)
+        (autolisp-delay-ms alfe--ms)))
+    (autolisp-delay-ms alfe--ms))
   nil)
 
 (defun autolisp-repl-reset-counters ()

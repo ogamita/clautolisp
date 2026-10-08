@@ -1415,6 +1415,91 @@ real-transport:probe:accoreconsole:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-real-transport-probe.ps1 -Backend accoreconsole
 
+# --- user globals through alfe: a (setq f ...) must reach the global ------
+#
+# alfe-eval-request-locals-capture-user-setq.issue. AutoLISP binds a DEFUN's
+# parameters and locals dynamically, and alfe evaluates every user form inside
+# its own CAD-side functions; up to alfe 2.3.14 those bound F, TEXT, R, PATH,
+# FORM ..., so a user (setq f 1) set alfe's local and was lost. Since 2.3.15
+# they are all named alfe--NAME. These jobs MEASURE it: the -l file, an -x
+# setq and a function each set 23 such names, and a LATER request reads the
+# globals back (RLOCALS ... kept|lost). Soft: a probe measures, never gates.
+.request-locals-artifacts:
+  interruptible: true
+  artifacts:
+    name: "request-locals-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/request-locals/]
+    expire_in: 30 days
+
+request-locals:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .request-locals-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,request-locals,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-request-locals-probe.sh --backend bricscad
+
+request-locals:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .request-locals-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,request-locals,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-request-locals-probe.ps1 -Backend bricscad
+
+request-locals:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .request-locals-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,request-locals,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-request-locals-probe.ps1 -Backend autocad
+
+request-locals:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .request-locals-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,request-locals,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-request-locals-probe.ps1 -Backend accoreconsole
+
 # --- vendor probes on real BricsCAD / AutoCAD ------------------------------
 # Self-building (make build-alfe-sbcl in-script), like the encoding/pathname
 # probes, so they no longer `needs:` build:alfe:* (which stays in the parent

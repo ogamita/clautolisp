@@ -232,6 +232,31 @@ eventually catch a bare =(setq *AUTOLISP-DEBUG* nil)= on the next
 round-trip, but the explicit setter is race-free and is the
 documented entry point.
 
+** Reserved binding names (=alfe--=)
+
+AutoLISP binds a =defun='s parameters and =/=-locals, a =lambda='s
+parameters and a =foreach= variable *dynamically*, and every user form a
+CAD backend evaluates (the =-l= file, =-x=, =--main=, REPL input, a file
+loaded with =alfe-load=) runs while runtime functions are on the stack
+(=autolisp-protocol-server-loop=, =autolisp-eval-request-source=, the
+deported loader, the printers ...). So:
+
+- every name the CAD-side runtime binds -- =autolisp-bootstrap.lsp=,
+  =autolisp-remote-io.lsp= and the emitted =run-common.lsp= -- starts with
+  =alfe--=; names with that prefix are reserved to alfe, and every other
+  name a user program =setq='s is its global, as in the CAD itself;
+- a runtime function =setq='s only its own bindings or a starred global
+  (=*AUTOLISP…*=, =*ALFE…*=), never an unstarred global a user may own.
+
+Both are enforced statically by the alfe suite
+(=runtime-binds-only-alfe-prefixed-names=,
+=runtime-defuns-setq-no-unprefixed-global=) and by a hosted test that sets
+every such name through each action
+(=protocol-user-setq-of-every-runtime-name-reaches-the-global=);
+=alfe-eval-request-locals-capture-user-setq=. The historical template
+under /Emitted =run-common.lsp= template/ predates the rule and still shows
+the old names.
+
 ** Minimal example
 
 #+begin_src lisp

@@ -98,6 +98,8 @@ FAMILIES = {
                        "scripts/run-real-transport-probe.*"],
     "block-comment": [f"{ENTITIES}/block-comment-probe.lsp",
                       "scripts/run-block-comment-probe.*"],
+    "request-locals": [f"{ENTITIES}/request-locals-probe.lsp",
+                       "scripts/run-request-locals-probe.*"],
     "sysvars": ["autolisp-spec/autolisp/dump-sysvars.lsp"],
     "entget-pointers": ["probes/sources/probe-entget-pointers.lsp"],
 }
