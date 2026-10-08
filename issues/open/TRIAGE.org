@@ -824,3 +824,9 @@ opendcl-conformance. All =TODO=.
 =alfe.plan=, =opendcl.plan=, =missing-functions-plan.md=,
 =note-secureload.txt=, =schms-call-inventory.md=,
 =test-1252.lsp=, =compiler-transpile-probe.lisp=.
+
+* P3 Windows hosted protocol cleanup
+
+| Issue | Type | Status | Notes |
+|-------+------+--------+-------|
+| alfe-windows-hosted-log-cleanup | bug | TODO | Intermittent locked Drawing1 log during protocol-real-literals cleanup; next Windows SBCL run passes, lock owner unverified. |

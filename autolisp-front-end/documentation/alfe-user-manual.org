@@ -176,7 +176,8 @@ boundary until alfe has called the hooks (alfe starts it with
 through which the two wait for each other; see /Plug-ins/), so a variable
 set by one =-x= is there for the next, as in-process. =--quit= ends the
 plan: =alfe -x A --quit -x B= never runs =B=, and =alfe --quit= runs
-nothing (it does not start the child's REPL). =(clal-dribble FILE)= called
+nothing and exits successfully on every platform, including Windows
+(it does not start the child's REPL). =(clal-dribble FILE)= called
 from a =-l= / =-x= action records the run into FILE in both, the last,
 unterminated line included.
 

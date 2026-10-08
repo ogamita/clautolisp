@@ -832,13 +832,13 @@ name it."
                   :backend backend :dialect nil :dcl :auto)
                  nil)))
       (is (equal '("/x/clautolisp-sbcl" "--quiet" "--no-init"
-                   "--dialect" "strict" "--host" "cador" "-x" "")
+                   "--dialect" "strict" "--host" "cador" "-x" " ")
                  argv)
           "~S" argv))))
 
 (test clautolisp-subprocess-argv-stops-at-quit-and-forwards-the-boundaries
   "The child is handed the actions before the plan's first :QUIT only (the
-in-process engine stops there; clautolisp has no --quit), the no-op -x \"\"
+in-process engine stops there; clautolisp has no --quit), the no-op -x \" \"
 when that leaves none, and --front-end-action-boundaries DIR, before the
 actions, when alfe calls per-action hooks."
   (let* ((backend (alfe.backend.clautolisp:make-clautolisp-backend
@@ -854,7 +854,7 @@ actions, when alfe calls per-action hooks."
                  (argv (list (alfe.backend:action-eval "(a)")
                              (alfe.backend:action-quit)
                              (alfe.backend:action-eval "(b)")))))
-      (is (equal (append prefix '("-x" ""))
+      (is (equal (append prefix '("-x" " "))
                  (argv (list (alfe.backend:action-quit)))))
       (is (equal (append prefix '("-i"))
                  (argv (list (alfe.backend:action-interactive)))))

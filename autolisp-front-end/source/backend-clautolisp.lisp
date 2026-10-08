@@ -1295,8 +1295,9 @@ exactly when the contract says so (alfe-clautolisp-backend-semantic-parity.issue
 Then the front-end bindings and the boundaries, then one flag pair per action
 of the plan up to its first :QUIT (%CHILD-PLAN), last, so every option is in
 effect from the first -l / -x. A plan with no action for the child (alfe
---quit) is the no-op -x \"\": the clautolisp program would take an empty
-command line for a REPL, which the in-process engine never starts."
+--quit) is the no-op -x \" \": the clautolisp program would take an empty
+command line for a REPL, which the in-process engine never starts. A space
+keeps the no-op argument nonempty across native Windows process launching."
   (let ((binary (clautolisp-backend-executable-path (session-backend session)))
         (action-flags (loop for action in (%child-plan plan)
                             for flags = (action-to-cli-flags action)
@@ -1315,7 +1316,7 @@ command line for a REPL, which the in-process engine never starts."
             (when action-boundaries
               (list "--front-end-action-boundaries"
                     (namestring action-boundaries)))
-            (or action-flags (list "-x" "")))))
+            (or action-flags (list "-x" " ")))))
 
 (defun %front-end-bindings-pathname (session)
   "Where EVAL-PLAN writes SESSION's front-end bindings for the child: in the
@@ -1559,7 +1560,7 @@ whole plan, so the run is the one EVAL-PLAN makes without them.
 
 The child's boundaries are its own actions, in the order it runs them: the
 -l / -x of %CHILD-PLAN, then its REPL. They are mapped back onto the plan's
-actions (a -l / -x / --main in plan order, the :INTERACTIVE), the no-op -x \"\"
+actions (a -l / -x / --main in plan order, the :INTERACTIVE), the no-op -x \" \"
 of an action-less plan onto none. A :QUIT has no counterpart in the child: its
 hooks are called when the child has run every action it was given, as the
 in-process engine reaches the :QUIT after the last one."

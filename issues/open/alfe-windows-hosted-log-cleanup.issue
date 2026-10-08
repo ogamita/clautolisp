@@ -1,0 +1,22 @@
+#+TITLE: Intermittent Windows hosted protocol log cleanup failure
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: reproducible-lock-owner
+#+BRANCH: master
+
+* Symptom and reproduction
+On 2026-10-08, make test failed in
+PROTOCOL-REAL-LITERALS-REACH-THE-ENGINE-EXACTLY while deleting
+logs/Drawing1_2026-10-08_20-40-06.log in the hosted-rest workdir.
+Windows reported that another process was using the file.
+Run make -C autolisp-front-end test-sbcl with clautolisp-sbcl built.
+
+* Investigation
+The same test passed (12 checks) on the next local Windows SBCL run.
+DRIVE-HOSTED-ENGINE waits for the child, then terminates/waits again in
+its unwind cleanup before deleting the workdir. The lock owner and
+cause remain unknown; a process or external scanner may hold the file.
+Capture the locking process and child exit state when this recurs before
+choosing a lifecycle fix or a bounded cleanup retry. Do not suppress
+cleanup errors or assume this is fixed by the quit-only argv correction.

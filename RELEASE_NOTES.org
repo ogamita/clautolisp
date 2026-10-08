@@ -1801,6 +1801,10 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
+- A quit-only subprocess plan exits successfully on Windows; its no-op
+  expression survives native argument passing. See the user manual's
+  discussion of subprocess plans and =--quit=.
+
 - *Long AutoCAD batch runs no longer hang* (alfe 2.3.11): the CAD's own
   console (=accoreconsole=, =bricscad=, the =cscript= / =osascript=
   launchers) now goes to =engine-console-stdout.txt= /
