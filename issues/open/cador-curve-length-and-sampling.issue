@@ -168,7 +168,8 @@ Two artefacts of the run, not of the curve model:
   5.49779 (entget of the entmade ARC: =(51 . 1.5708)=), so every AutoCAD ARC
   value is that of the rounded angles. The clautolisp column was compared with
   a copy of the probe carrying the same rounded constants. Measured in the
-  second round (=reader= cases).
+  second round (=reader= cases); cause found in alfe, see
+  alfe-cad-transport-rounds-reals.
 - The Windows reports are a UTF-8 BOM followed by a UTF-16LE body
   (=Tee-Object -Append= under PowerShell 5), so their =CURVE-DONE= line was
   not seen and a spurious =CURVE-INCOMPLETE= was appended. Fixed in
@@ -265,8 +266,12 @@ B answers 0 (not nil) for a point off a LINE or a polyline lying in Z = 0
 
 ** Remaining -- the second probe round (added to the same probe; NEXT until run)
 
-1. =reader= cases: does AutoCAD READ =1.5707963267948966= as 1.5708 (=rtos 2
-   16=, =atof=, =read=)? If so it is a reader divergence of its own (ticket it).
+1. =reader= cases: the rounded literals are alfe's, not AutoCAD's reader:
+   alfe's CAD-side =autolisp-eval-request-form= re-prints every loaded
+   top-level form with =vl-princ-to-string= (6 significant digits on AutoCAD,
+   14 on BricsCAD) -- ticketed as alfe-cad-transport-rounds-reals (P1). The
+   =reader= cases (=cg-x= at top level vs the same literal read from a string)
+   confirm it per CAD.
 2. =tol-*= cases: the point tolerance (Z and in-plane offsets 1e-11 .. 1e-5)
    on ARC, LINE (Z 0 and Z 5), LWPOLYLINE (elevation 0 and 5) -- replaces the
    1e-10 / 1e-6 assumptions, and settles whether B's "0 when off" holds for a

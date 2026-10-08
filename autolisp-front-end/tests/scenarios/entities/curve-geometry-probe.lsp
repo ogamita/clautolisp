@@ -277,6 +277,14 @@
 (cg-case "reader" "(rtos (atof \"1.5707963267948966\") 2 16)")
 (cg-case "reader" "(rtos (read \"1.5707963267948966\") 2 16)")
 (cg-case "reader" "(rtos (/ pi 2) 2 16)")
+;; Decisive between the CAD's reader and alfe's transport
+;; (alfe-cad-transport-rounds-reals): a TOP-LEVEL form travels through alfe's
+;; autolisp-eval-request-form, which re-prints it; the text inside a string
+;; is only READ on the CAD. Same literal, both ways.
+(setq cg-x 1.2345678901234)
+(cg-case "reader" "(rtos cg-x 2 16)")
+(cg-case "reader" "(rtos (eval (read \"(setq cg-y 1.2345678901234)\")) 2 16)")
+(cg-case "reader" "(rtos 1.2345678901234 2 16)")
 
 ;; Point tolerance: offsets off the end of an ARC, a LINE, LWPOLYLINEs at
 ;; elevation 0 and 5 and a 2D POLYLINE, along Z and in the plane.
