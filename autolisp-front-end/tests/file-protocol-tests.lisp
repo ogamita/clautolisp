@@ -955,15 +955,15 @@ the cador used by the test suite."
               (is (search "(defun alfe-host-supports-rest-p" content))
               (is (search "__alfe-amp-rest-probe" content))
               ;; The variadic shadows installed under the YES branch.
-              (is (search "(defun princ (&rest args)" content))
-              (is (search "(defun print (&rest args)" content))
-              (is (search "(defun prin1 (&rest args)" content))
-              (is (search "(defun prompt (&rest args)" content))
+              (is (search "(defun princ (&rest alfe--args)" content))
+              (is (search "(defun print (&rest alfe--args)" content))
+              (is (search "(defun prin1 (&rest alfe--args)" content))
+              (is (search "(defun prompt (&rest alfe--args)" content))
               ;; The no-op normalize override that's the whole
               ;; point — with variadic shadows in place, walking
               ;; the form is unnecessary. Identity-fn preserves
               ;; cons-cell identity.
-              (is (search "(defun autolisp-normalize-princ-call (form) form)"
+              (is (search "(defun autolisp-normalize-princ-call (alfe--form) alfe--form)"
                           content))
               ;; The fallback debug log for hosts that lack &rest.
               (is (search "host lacks &rest" content))
@@ -972,7 +972,7 @@ the cador used by the test suite."
               ;; to the open file descriptor, NOT leak onto
               ;; protocol/stdout.txt. The variadic shadows test (cadr
               ;; args) and write through autolisp-write-string-to-file.
-              (is (search "((cadr args)" content))
+              (is (search "((cadr alfe--args)" content))
               (is (search "autolisp-write-string-to-file" content))
               ;; The old comment that documented the drop as intended
               ;; must be gone, so a future reader can't reinstate it.
@@ -1371,26 +1371,26 @@ recognises a quit."
           (declare (ignore session))
           (let ((content (alfe.protocol.file:read-file-as-string path)))
             ;; The outcome is bound, tested, and re-signalled.
-            (is (search "(setq err (vl-catch-all-apply 'load (list path)))"
+            (is (search "(setq alfe--err (vl-catch-all-apply 'load (list alfe--path)))"
                         content))
-            (is (search "(vl-catch-all-error-p err)" content))
+            (is (search "(vl-catch-all-error-p alfe--err)" content))
             ;; Re-signalled through autolisp-raise, never `error': that
             ;; function does not exist on AutoCAD
             ;; (alfe-autocad-error-primitive-masks-load-failure).
-            (is (search "(if err (autolisp-raise err) r)" content))
-            (is (not (search "(error err)" content)))
+            (is (search "(if alfe--err (autolisp-raise alfe--err) alfe--r)" content))
+            (is (not (search "(error alfe--err)" content)))
             ;; ERR must be a local of the override, not a global left
             ;; behind in the CAD's symbol table.
-            (is (search "(defun autolisp-eval-request-source (form source / r err"
+            (is (search "(defun autolisp-eval-request-source (alfe--form alfe--source / alfe--r alfe--err"
                         content))
             ;; The discarding shape must not come back: the ONLY
             ;; occurrence of the load call is the one bound to ERR.
-            (let ((pos (search "(vl-catch-all-apply 'load (list path))"
+            (let ((pos (search "(vl-catch-all-apply 'load (list alfe--path))"
                                content)))
               (is (not (null pos)))
               (when pos
-                (is (string= "(setq err "
-                             (subseq content (- pos 10) pos))
+                (is (string= "(setq alfe--err "
+                             (subseq content (- pos 16) pos))
                     "the load call's value is dropped again")))))
       (delete-workdir workdir))))
 
@@ -1712,7 +1712,7 @@ a diagnostic."
           (let ((boot (alfe.protocol.file:read-file-as-string
                        (alfe.protocol.file:protocol-session-bootstrap-lsp-staged
                         session))))
-            (is (search "(defun autolisp-raise (msg)" boot))
+            (is (search "(defun autolisp-raise (alfe--msg)" boot))
             (is (search "(defun autolisp-force-error ()" boot))))
       (delete-workdir workdir))))
 
@@ -2653,6 +2653,314 @@ is not on disk."
                  (is (search "END-REACHED" (without-returns stdout)) "stdout ~S" stdout)
                  (is (equal '(65) (%file-octets (merge-pathnames "out.txt" outdir)))))
             (delete-workdir outdir))))))
+
+;;; --- the alfe-- reserved prefix ---------------------------------------
+;;;
+;;; alfe-eval-request-locals-capture-user-setq. AutoLISP binds a DEFUN's
+;;; parameters and /-locals DYNAMICALLY, and on a CAD backend every user
+;;; form -- the -l file, -x, --main, REPL input, alfe-load -- is evaluated
+;;; while alfe's own CAD-side functions are on the stack (the server loop,
+;;; autolisp-eval-request-source, the deported loader, the printers ...). A
+;;; user (setq f ...) used to assign the request evaluator's LOCAL F, and
+;;; the value was gone when the request returned. Every variable such a
+;;; function binds now carries the reserved prefix alfe--; the static check
+;;; below keeps it so, and the hosted test proves the user's globals survive.
+
+(defparameter *alfe-runtime-binding-prefix* "alfe--"
+  "The prefix every parameter, /-local, LAMBDA parameter and FOREACH
+variable of alfe's CAD-side runtime must carry.")
+
+(defparameter *alfe-runtime-binding-allow-list* '()
+  "Names alfe's CAD-side runtime may bind WITHOUT the alfe-- prefix, as
+case-insensitive strings. Empty on purpose: a name belongs here only with
+a comment saying why no user code can ever run while it is bound.")
+
+(defun %lsp-tokens (text)
+  "AutoLISP TEXT as a list of tokens: :OPEN, :CLOSE, :QUOTE, (:STRING s)
+or an atom's text. Comments (; and ;| |;) are dropped."
+  (let ((tokens '()) (i 0) (n (length text)))
+    (flet ((delimiterp (c)
+             (member c '(#\( #\) #\' #\" #\; #\Space #\Tab #\Return #\Newline
+                         #\Page))))
+      (loop while (< i n)
+            do (let ((c (char text i)))
+                 (cond
+                   ((member c '(#\Space #\Tab #\Return #\Newline #\Page))
+                    (incf i))
+                   ((and (char= c #\;) (< (1+ i) n) (char= (char text (1+ i)) #\|))
+                    (let ((end (search "|;" text :start2 (+ i 2))))
+                      (setf i (if end (+ end 2) n))))
+                   ((char= c #\;)
+                    (let ((end (position #\Newline text :start i)))
+                      (setf i (or end n))))
+                   ((char= c #\")
+                    (let ((j (1+ i)))
+                      (loop while (and (< j n) (char/= (char text j) #\"))
+                            do (when (char= (char text j) #\\) (incf j))
+                               (incf j))
+                      (push (list :string (subseq text (1+ i) (min j n))) tokens)
+                      (setf i (1+ j))))
+                   ((char= c #\() (push :open tokens) (incf i))
+                   ((char= c #\)) (push :close tokens) (incf i))
+                   ((char= c #\') (push :quote tokens) (incf i))
+                   (t
+                    (let ((j i))
+                      (loop while (and (< j n) (not (delimiterp (char text j))))
+                            do (incf j))
+                      (push (subseq text i j) tokens)
+                      (setf i j)))))))
+    (nreverse tokens)))
+
+(defun %lsp-forms (text)
+  "The forms of AutoLISP TEXT: a symbol or number is its text (a CL
+string), a string literal (:STRING s), 'X is (:QUOTE X), a list a list."
+  (let ((tokens (%lsp-tokens text)))
+    (labels ((read-one ()
+               (let ((token (pop tokens)))
+                 (cond
+                   ((eq token :open)
+                    (loop until (or (null tokens) (eq (first tokens) :close))
+                          collect (read-one)
+                          finally (pop tokens)))
+                   ((eq token :quote) (list :quote (read-one)))
+                   (t token)))))
+      (loop while tokens
+            if (eq (first tokens) :close) do (pop tokens)
+            else collect (read-one)))))
+
+(defun %lsp-symbol-p (form)
+  (stringp form))
+
+(defun %lsp-head-p (form name)
+  (and (consp form) (%lsp-symbol-p (first form)) (string-equal (first form) name)))
+
+(defun %lsp-binding-sites (forms)
+  "Every binding site in FORMS, as (DESCRIPTION NAMES SETQ-TARGETS): one
+per DEFUN (its name, its parameters and /-locals), LAMBDA and FOREACH.
+SETQ-TARGETS, for a DEFUN, are the names its body SETQs that no site of
+that DEFUN binds -- globals. Quoted data is not code, except a quoted
+DEFUN or LAMBDA list, which is code that is EVALed."
+  (let ((sites '()))
+    (labels ((lambda-list-names (list)
+               (when (listp list)
+                 (remove-if (lambda (s)
+                              (or (not (%lsp-symbol-p s))
+                                  (member s '("/" "&rest" "&optional")
+                                          :test #'string-equal)))
+                            list)))
+             (setq-targets (form)
+               ;; SETQ targets anywhere in FORM, skipping quoted data.
+               (cond
+                 ((not (consp form)) '())
+                 ((member (first form) '(:quote :string)) '())
+                 ((%lsp-head-p form "setq")
+                  (loop for (target value) on (rest form) by #'cddr
+                        when (%lsp-symbol-p target) collect target
+                        append (setq-targets value)))
+                 (t (loop for sub in form append (setq-targets sub)))))
+             (bound-names (form)
+               ;; Every name bound by a site inside FORM, itself included.
+               (cond
+                 ((not (consp form)) '())
+                 ((%lsp-head-p form "defun")
+                  (append (lambda-list-names (third form))
+                          (loop for sub in (cdddr form) append (bound-names sub))))
+                 ((%lsp-head-p form "lambda")
+                  (append (lambda-list-names (second form))
+                          (loop for sub in (cddr form) append (bound-names sub))))
+                 ((%lsp-head-p form "foreach")
+                  (append (when (%lsp-symbol-p (second form))
+                            (list (second form)))
+                          (loop for sub in (cddr form) append (bound-names sub))))
+                 ((eq (first form) :string) '())
+                 ((eq (first form) :quote) (bound-names (second form)))
+                 (t (loop for sub in form append (bound-names sub)))))
+             (walk (form)
+               (when (and (consp form) (not (eq (first form) :string)))
+                 (cond
+                   ((%lsp-head-p form "defun")
+                    (let ((bound (bound-names form)))
+                      (push (list (format nil "defun ~A" (second form))
+                                  (lambda-list-names (third form))
+                                  (remove-if
+                                   (lambda (target)
+                                     (member target bound :test #'string-equal))
+                                   (setq-targets (cdddr form))))
+                            sites)))
+                   ((%lsp-head-p form "lambda")
+                    (push (list "lambda" (lambda-list-names (second form)) '())
+                          sites))
+                   ((%lsp-head-p form "foreach")
+                    (push (list "foreach"
+                                (when (%lsp-symbol-p (second form))
+                                  (list (second form)))
+                                '())
+                          sites)))
+                 (mapc #'walk form))))
+      (mapc #'walk forms))
+    (nreverse sites)))
+
+(defun %alfe-runtime-texts ()
+  "(NAME . TEXT) of every AutoLISP text alfe runs on a CAD: the two
+vendored runtime files, and the run-common.lsp the file-protocol emitter
+writes (both of its shadow branches are in that one text)."
+  (let ((workdir (make-test-workdir "runtime-texts")))
+    (unwind-protect
+         (append
+          (mapcar (lambda (basename)
+                    (cons basename
+                          (alfe.protocol.file:read-file-as-string
+                           (%vendored-runtime-source basename))))
+                  '("autolisp-bootstrap.lsp" "autolisp-remote-io.lsp"))
+          (multiple-value-bind (session path)
+              (emit-run-common-with-real-runtime workdir)
+            (declare (ignore session))
+            (list (cons "run-common.lsp"
+                        (alfe.protocol.file:read-file-as-string path)))))
+      (delete-workdir workdir))))
+
+(defun %alfe-prefixed-p (name)
+  (let ((prefix *alfe-runtime-binding-prefix*))
+    (and (> (length name) (length prefix))
+         (string-equal prefix name :end2 (length prefix)))))
+
+(defun %alfe-runtime-user-visible-names ()
+  "The names alfe's CAD-side runtime binds, WITHOUT the alfe-- prefix:
+the names a user program would have lost before the prefix, as
+lowercase strings, sorted and unique."
+  (let ((names '()))
+    (dolist (entry (%alfe-runtime-texts))
+      (dolist (site (%lsp-binding-sites (%lsp-forms (cdr entry))))
+        (dolist (name (second site))
+          (pushnew (string-downcase
+                    (if (%alfe-prefixed-p name)
+                        (subseq name (length *alfe-runtime-binding-prefix*))
+                        name))
+                   names :test #'string=))))
+    (sort names #'string<)))
+
+(test runtime-binds-only-alfe-prefixed-names
+  "Static guard for alfe-eval-request-locals-capture-user-setq: every
+parameter, /-local, LAMBDA parameter and FOREACH variable in alfe's
+CAD-side runtime -- autolisp-bootstrap.lsp, autolisp-remote-io.lsp and the
+run-common.lsp file-protocol.lisp emits -- starts with alfe--, so no user
+SETQ can land in a binding of alfe's while its functions are on the
+dynamic stack. Names in *ALFE-RUNTIME-BINDING-ALLOW-LIST* are exempt."
+  (let ((offenders '()) (sites 0))
+    (dolist (entry (%alfe-runtime-texts))
+      (dolist (site (%lsp-binding-sites (%lsp-forms (cdr entry))))
+        (incf sites)
+        (dolist (name (second site))
+          (unless (or (%alfe-prefixed-p name)
+                      (member name *alfe-runtime-binding-allow-list*
+                              :test #'string-equal))
+            (push (format nil "~A: ~A binds ~A" (car entry) (first site) name)
+                  offenders)))))
+    ;; The scanner must actually see the runtime (a broken reader would
+    ;; find no site and pass vacuously).
+    (is (> sites 150) "only ~D binding sites found" sites)
+    (is (null offenders)
+        "unprefixed bindings in alfe's CAD runtime:~%~{  ~A~%~}"
+        (reverse offenders))))
+
+(test runtime-defuns-setq-no-unprefixed-global
+  "Static guard, the other direction: a function of alfe's CAD-side
+runtime may SETQ only its own bindings or a *STARRED* global. An
+undeclared (setq f ...) in autolisp-protocol-pulse-heartbeat assigned the
+USER's global F (or a caller's local F) on every heartbeat, i.e. between
+any two requests."
+  (let ((offenders '()))
+    (dolist (entry (%alfe-runtime-texts))
+      (dolist (site (%lsp-binding-sites (%lsp-forms (cdr entry))))
+        (dolist (target (third site))
+          (unless (and (plusp (length target)) (char= (char target 0) #\*))
+            (push (format nil "~A: ~A sets ~A" (car entry) (first site) target)
+                  offenders)))))
+    (is (null offenders)
+        "alfe's CAD runtime SETQs unstarred globals:~%~{  ~A~%~}"
+        (reverse offenders))))
+
+(defun %setq-every-name-form (names value)
+  (format nil "(setq ~{~A ~D~^ ~})"
+          (loop for name in names append (list name value))))
+
+(defun %drive-user-setq-of-runtime-names (binary names &key assume-no-rest-p dialect)
+  "Host the real runtime and, for every action a CAD backend evaluates
+user code through, SETQ every one of NAMES, then check in a LATER request
+that the GLOBAL holds the value: -l (a (load P) request read by the
+deported loader) 42, -x 43, REPL input (wrapped in print, as the REPL
+does) 44, --main (a function the -l file defines) 45, alfe-load 46. The -l
+file also writes through F before setting it. Returns (values statuses
+stdout stderr)."
+  (drive-hosted-engine
+   binary nil
+   :assume-no-rest-p assume-no-rest-p
+   :dialect dialect
+   :forms-fn
+   (lambda (workdir)
+     (let ((lfile (merge-pathnames "user-names-l.lsp" workdir))
+           (afile (merge-pathnames "user-names-a.lsp" workdir))
+           (ofile (merge-pathnames "user-names-out.txt" workdir)))
+       (with-open-file (out lfile :direction :output :if-exists :supersede
+                                  :if-does-not-exist :create :external-format :utf-8)
+         (format out "(setq f (open ~S \"w\"))~%(write-char 65 f)~%(close f)~%"
+                 (namestring ofile))
+         (format out "~A~%" (%setq-every-name-form names 42))
+         (format out "(defun zz--main () ~A)~%" (%setq-every-name-form names 45))
+         (format out "(setq zz--l-end T)~%"))
+       (with-open-file (out afile :direction :output :if-exists :supersede
+                                  :if-does-not-exist :create :external-format :utf-8)
+         (format out "~A~%" (%setq-every-name-form names 46)))
+       (list
+        ;; The checker: the names whose GLOBAL value is not V.
+        (format nil "(defun zz--check (zz--v zz--tag / zz--s zz--bad) ~
+(foreach zz--s '(~{~A~^ ~}) ~
+(if (not (equal (eval zz--s) zz--v)) (setq zz--bad (cons zz--s zz--bad)))) ~
+(princ (strcat zz--tag \"=\" (if zz--bad (vl-prin1-to-string (reverse zz--bad)) \"ALL\") \"\\n\") nil))"
+                names)
+        (format nil "(load ~S)" (namestring lfile))
+        "(zz--check 42 \"L\")"
+        (%setq-every-name-form names 43)
+        "(zz--check 43 \"X\")"
+        (format nil "(print ~A)" (%setq-every-name-form names 44))
+        "(zz--check 44 \"REPL\")"
+        "(zz--main)"
+        "(zz--check 45 \"MAIN\")"
+        (format nil "(alfe-load ~S)" (namestring afile))
+        "(zz--check 46 \"ALFE-LOAD\")"
+        (format nil "(princ (if zz--l-end \"L-END\" \"L-STOPPED\") nil)"))))))
+
+(test protocol-user-setq-of-every-runtime-name-reaches-the-global
+  "alfe-eval-request-locals-capture-user-setq, hosted, on the AutoCAD path
+(fixed-arity shadows, --dialect autocad) and the BricsCAD path (variadic
+shadows, --dialect bricscad): a user SETQ of ANY name alfe's CAD-side
+runtime binds -- F, TEXT, R, PATH, FORM, SOURCE, RESULT, ... -- through
+-l, -x, REPL input, --main or alfe-load sets the user's GLOBAL, which a
+later request reads back. It used to set a local of the request evaluator
+and vanish. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary))
+        (names (%alfe-runtime-user-visible-names)))
+    ;; The name list is the runtime's own: it must include the names the
+    ;; ticket saw captured.
+    (dolist (name '("f" "text" "r" "path" "form" "source" "err" "normalized"
+                    "result" "keep" "req-id" "rc"))
+      (is (member name names :test #'string=) "~A not among ~S" name names))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; user-setq test skipped.")
+        (loop for (no-rest dialect) in '((t "autocad") (nil "bricscad"))
+              do (multiple-value-bind (statuses stdout stderr)
+                     (%drive-user-setq-of-runtime-names
+                      binary names :assume-no-rest-p no-rest :dialect dialect)
+                   (let ((out (without-returns stdout)))
+                     (is (every (lambda (s) (search " OK" s)) statuses)
+                         "~A: every request must succeed: ~S~%~A"
+                         dialect statuses stderr)
+                     (dolist (tag '("L" "X" "REPL" "MAIN" "ALFE-LOAD"))
+                       (is (search (format nil "~A=ALL" tag) out)
+                           "~A, ~A: user globals lost -- stdout ~S"
+                           dialect tag out))
+                     (is (search "L-END" out) "~A: stdout ~S" dialect out)))))))
 
 (test protocol-failure-inside-a-loaded-file-fails-that-request
   "Acceptance: a form that fails inside a loaded file makes THAT request

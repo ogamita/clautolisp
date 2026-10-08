@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-eval-request-locals-capture-user-setq -- a request's (setq f ...) / (setq text ...) / (setq form ...) on a CAD backend sets the request evaluator's LOCAL, and the value is gone
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS:
-#+BRANCH: fix-alfe-eval-request-locals-capture-user-setq
+#+BRANCH: fix-alfe-request-locals-capture
 #+DATE: 2026-10-08
 
 * Context
@@ -48,3 +48,86 @@ runs while user code is evaluated to an =alfe--= prefixed name
 =autolisp-protocol-server-loop=, =autolisp-run-eval-file=,
 =autolisp-run-main=, the REPL file loop), and add the repro above as a test
 over every such name.
+
+* Resolution (alfe 2.3.15, 2026-10-08) -- NEXT until the CAD probe verifies
+
+** Audit
+
+Every binding site of alfe's CAD-side runtime was renamed, not only the
+request path: whether a function is on the stack while user code runs
+depends on callbacks (*error*, the princ/print shadows, alfe-load's
+rewrites) that are easy to miss, and one uniform rule is checkable.
+
+- autolisp-bootstrap.lsp: 108 defuns. 17 already carried alfe-- (the
+  earlier loader fix, alfe 2.2.155); the parameters and /-locals of the
+  other 91 are now alfe--NAME (autolisp-*-line/-file/-status helpers, the
+  printers autolisp-str / -render / -readable-text / -stdout-text /
+  -form-source-text / -real-*, the source scanners
+  autolisp-source-scan-text / -leading-symbols / -trim-leading-junk /
+  -first-form-end / -format-error / -raise / -resolve-load-path /
+  -open-encoded*, the rewriters alfe-form-needs-rewrite-p /
+  alfe-rewrite-form* / alfe-rewrite-open-calls* / alfe-open-rewrite-text /
+  alfe-open-request-text / autolisp-normalize-princ-call*, the fixed-arity
+  princ / print / prin1 / prompt shadows, alfe-princ* / -print* / -prin1*,
+  autolisp-safe-getvar / -setvar, autolisp-log-setup / -restore,
+  autolisp-slurp-lines, autolisp-sleep-ms, get_new_guid ...) and the
+  foreach variable of alfe-open-rewrite-text.
+- autolisp-remote-io.lsp: every defun, among them
+  autolisp-protocol-server-loop (keep form req-id result rc),
+  autolisp-protocol-remote-read (acc line), -remote-read-line (lines line),
+  -read-from-text (text f value), autolisp-read-line (old-flag line),
+  autolisp-request-failure-text (req-id msg form text shown), the
+  slurp/write/status helpers, -form-complete-p, -yield (mode ms r),
+  -sleep-ms (ms r), the selftest loop.
+- run-common.lsp, as file-protocol.lisp emits it: alfe-debug-log
+  (msg f path), autolisp-emit-user-line / -out / -str, autolisp-log-err,
+  alfe-publish-runtime-flags (f), alfe-request-source-text (form normalized
+  source back), autolisp-eval-request-form (form),
+  autolisp-eval-request-source (form source r err path text f normalized),
+  alfe-set-debugging / alfe-set-verbose (on), alfe-host-supports-rest-p
+  (probe call-result) and its quoted probe (&rest x), the variadic princ /
+  print / prin1 / prompt (&rest args), the identity
+  autolisp-normalize-princ-call (form) and the fixed-arity princ / print /
+  prin1 (obj file).
+- A second defect of the same class: autolisp-protocol-pulse-heartbeat
+  SETQ'd an undeclared F, i.e. the user's GLOBAL f, on every heartbeat --
+  between any two requests. It is now a local (alfe--f).
+- Function names: alfe defines alfe-*, autolisp-*, the princ / print /
+  prin1 / prompt / terpri shadows, quit, exit, clear-input, clear-output,
+  get_new_guid and C:AUTOLISP-PROTOCOL-SELFTEST; globals are *AUTOLISP...*
+  / *ALFE...* (plus the never-set legacy _autolisp_old_srchpath and
+  run.scr's alfe-scr-mark). Renaming them would break the public
+  interface; the alfe user manual now says they are alfe's (section "Names
+  reserved to alfe on a CAD"), with the alfe-- prefix.
+
+** Guards (alfe tests, FiveAM)
+
+- runtime-binds-only-alfe-prefixed-names: reads autolisp-bootstrap.lsp,
+  autolisp-remote-io.lsp and an emitted run-common.lsp with a small
+  AutoLISP reader and fails on any defun parameter / local, lambda
+  parameter or foreach variable without the alfe-- prefix
+  (*alfe-runtime-binding-allow-list*, empty, documents exceptions).
+- runtime-defuns-setq-no-unprefixed-global: a runtime defun may SETQ only
+  its own bindings or a *starred* global (catches the heartbeat F).
+- protocol-user-setq-of-every-runtime-name-reaches-the-global: hosted
+  clautolisp, AutoCAD path (fixed-arity shadows, --dialect autocad) and
+  BricsCAD path (variadic, --dialect bricscad): every bare name the runtime
+  binds (over 110, derived from the sources by the same reader) is SETQ'd through
+  -l (a (load P) request), -x, REPL input (print-wrapped), a --main style
+  function and alfe-load, and a LATER request checks every global.
+All three were run against the unfixed sources: they FAIL (on the hosted
+engine X/REPL lost exactly ERR F FORM NORMALIZED PATH R REQ-ID SOURCE
+TEXT, the -l and --main paths lost every name), and pass with the fix.
+
+** CAD probe (to run -- the ticket stays NEXT until it says kept)
+
+Family request-locals: autolisp-front-end/tests/scenarios/entities/
+request-locals-probe.lsp + scripts/run-request-locals-probe.{sh,ps1}. The
+-l file does (setq f 1 text "t" r 2 path "p" form 3 ...) over 23 names, an
+-x setq and a function set them again, and a LATER -x reads them back:
+RLOCALS <step> <name> kept|lost, RLOCALS-SUMMARY <step>. Jobs (manual
+unless the family changed, soft):
+request-locals:probe:bricscad:macos, request-locals:probe:bricscad:windows,
+request-locals:probe:autocad:windows (GUI),
+request-locals:probe:accoreconsole:windows.
+Baseline --clautolisp: all kept (72 observations).

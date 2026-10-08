@@ -251,6 +251,15 @@ separate binary for tool integrators.
   overwrite the loader's own variable -- AutoLISP scope is dynamic -- and the
   rest of the file was never read; the loader's variables now carry a
   private ~alfe--~ prefix.
+- alfe 2.3.15: under ~--autocad~ / ~--bricscad~ a user variable named like one
+  of alfe's internals is no longer lost. A ~(setq f 1)~, ~text~, ~r~, ~path~,
+  ~form~, ~source~, ~result~ ... made by an =-l= file, an =-x= form,
+  =--main=, the REPL or ~alfe-load~ used to set a LOCAL of alfe's request
+  evaluator (AutoLISP scope is dynamic) and vanished when the request
+  returned. Every variable alfe's CAD-side runtime binds is now named
+  ~alfe--NAME~; names starting with ~alfe--~ are reserved to alfe (see the
+  alfe user manual, /Names reserved to alfe on a CAD/). The runtime's
+  heartbeat no longer overwrites a user's global ~f~ between requests.
 - ~-Efile-write UTF-8~ / ~UTF-16LE~ reaches BricsCAD on Windows: a plain
   ~(open f "w")~ / ~"a"~ in code alfe loads is opened with ~,ccs=~ (the file
   gets a BOM, as BricsCAD writes it). Everywhere else -- AutoCAD (no encoding

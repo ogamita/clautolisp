@@ -1095,6 +1095,29 @@ encoding probe reads =(setq ENCSRC "A<e-acute>Z")= back as code points
 =65 233 90= on all three). Native =(load)= of a high byte still FAILS on
 accoreconsole, which is why alfe-owned code must call =alfe-load=.
 
+** Names reserved to alfe on a CAD
+
+On =--autocad= and =--bricscad=, alfe evaluates every form you give it —
+the =-l= file, each =-x=, =--main=, REPL input, a file loaded with
+=alfe-load= — *inside* alfe's own AutoLISP functions running in the CAD.
+AutoLISP binds a function's parameters and locals dynamically, so a name
+those functions bound would capture your =setq=: before alfe 2.3.15 a
+=(setq f 1)= (or =text=, =r=, =path=, =form=, =source=, =result=, ...) set
+alfe's local and was gone when the request returned.
+
+Every variable alfe's CAD-side runtime binds is now named =alfe--NAME=, so
+any other name is yours, globally, exactly as in the CAD itself. In return:
+
+- names starting with =alfe--= are *reserved* to alfe — do not =setq= or
+  bind them;
+- the functions alfe defines in the CAD (=alfe-*=, =autolisp-*=, the
+  =princ= / =print= / =prin1= / =prompt= / =terpri= shadows, =quit=, =exit=,
+  =clear-input=, =clear-output=, =get_new_guid=) and its globals
+  (=*AUTOLISP…*=, =*ALFE…*=) must not be redefined or assigned.
+
+The =clautolisp= backend evaluates your code in-process and has no such
+functions on the stack, so this concerns the CAD backends only.
+
 * Init files
 
 On startup (unless =--no-init= / =-norc= is given), alfe loads

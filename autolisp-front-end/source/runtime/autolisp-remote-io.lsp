@@ -4,51 +4,51 @@
 (if (not (boundp '*autolisp-protocol-yield-ms*))
   (setq *autolisp-protocol-yield-ms* 100))
 
-(defun autolisp-protocol-write-line (path text / f)
-  (setq f (open path "a"))
-  (if f
+(defun autolisp-protocol-write-line (alfe--path alfe--text / alfe--f)
+  (setq alfe--f (open alfe--path "a"))
+  (if alfe--f
     (progn
-      (write-line text f)
-      (close f))))
+      (write-line alfe--text alfe--f)
+      (close alfe--f))))
 
-(defun autolisp-protocol-reset-file (path / f)
-  (setq f (open path "w"))
-  (if f
-    (close f)))
+(defun autolisp-protocol-reset-file (alfe--path / alfe--f)
+  (setq alfe--f (open alfe--path "w"))
+  (if alfe--f
+    (close alfe--f)))
 
-(defun autolisp-protocol-slurp-lines (path / f line acc)
-  (setq f (open path "r"))
-  (if (not f)
+(defun autolisp-protocol-slurp-lines (alfe--path / alfe--f alfe--line alfe--acc)
+  (setq alfe--f (open alfe--path "r"))
+  (if (not alfe--f)
     nil
     (progn
-      (setq acc '())
-      (while (setq line (read-line f))
-        (setq acc (cons line acc)))
-      (close f)
-      (reverse acc))))
+      (setq alfe--acc '())
+      (while (setq alfe--line (read-line alfe--f))
+        (setq alfe--acc (cons alfe--line alfe--acc)))
+      (close alfe--f)
+      (reverse alfe--acc))))
 
-(defun autolisp-protocol-lines->text (lines / acc)
-  (setq acc "")
-  (while lines
-    (if (= acc "")
-      (setq acc (car lines))
-      (setq acc (strcat acc "\n" (car lines))))
-    (setq lines (cdr lines)))
-  acc)
+(defun autolisp-protocol-lines->text (alfe--lines / alfe--acc)
+  (setq alfe--acc "")
+  (while alfe--lines
+    (if (= alfe--acc "")
+      (setq alfe--acc (car alfe--lines))
+      (setq alfe--acc (strcat alfe--acc "\n" (car alfe--lines))))
+    (setq alfe--lines (cdr alfe--lines)))
+  alfe--acc)
 
-(defun autolisp-protocol-set-status (text / f)
-  (setq f (open *AUTOLISP_PROTOCOL_STATUSFILE* "w"))
-  (if f
+(defun autolisp-protocol-set-status (alfe--text / alfe--f)
+  (setq alfe--f (open *AUTOLISP_PROTOCOL_STATUSFILE* "w"))
+  (if alfe--f
     (progn
-      (write-line text f)
-      (close f)))
-  text)
+      (write-line alfe--text alfe--f)
+      (close alfe--f)))
+  alfe--text)
 
-(defun autolisp-protocol-write-stdout (text)
-  (autolisp-protocol-write-line *AUTOLISP_PROTOCOL_STDOUTFILE* text))
+(defun autolisp-protocol-write-stdout (alfe--text)
+  (autolisp-protocol-write-line *AUTOLISP_PROTOCOL_STDOUTFILE* alfe--text))
 
-(defun autolisp-protocol-write-stderr (text)
-  (autolisp-protocol-write-line *AUTOLISP_PROTOCOL_STDERRFILE* text))
+(defun autolisp-protocol-write-stderr (alfe--text)
+  (autolisp-protocol-write-line *AUTOLISP_PROTOCOL_STDERRFILE* alfe--text))
 
 (defun autolisp-protocol-clear-stdout ()
   (autolisp-protocol-reset-file *AUTOLISP_PROTOCOL_STDOUTFILE*))
@@ -70,134 +70,134 @@
   (autolisp-protocol-clear-stderr)
   nil)
 
-(defun autolisp-protocol-pulse-heartbeat (/ stamp)
-  (setq stamp (rtos (getvar "DATE") 2 8))
-  (setq f (open *AUTOLISP_PROTOCOL_HEARTBEATFILE* "w"))
-  (if f
+(defun autolisp-protocol-pulse-heartbeat (/ alfe--stamp alfe--f)
+  (setq alfe--stamp (rtos (getvar "DATE") 2 8))
+  (setq alfe--f (open *AUTOLISP_PROTOCOL_HEARTBEATFILE* "w"))
+  (if alfe--f
     (progn
-      (write-line stamp f)
-      (close f))))
+      (write-line alfe--stamp alfe--f)
+      (close alfe--f))))
 
-(defun autolisp-protocol-form-complete-p (text / idx len depth in-string escape in-comment started ch)
-  (setq idx 1)
-  (setq len (strlen text))
-  (setq depth 0)
-  (setq in-string nil)
-  (setq escape nil)
-  (setq in-comment nil)
-  (setq started nil)
-  (while (<= idx len)
-    (setq ch (substr text idx 1))
+(defun autolisp-protocol-form-complete-p (alfe--text / alfe--idx alfe--len alfe--depth alfe--in-string alfe--escape alfe--in-comment alfe--started alfe--ch)
+  (setq alfe--idx 1)
+  (setq alfe--len (strlen alfe--text))
+  (setq alfe--depth 0)
+  (setq alfe--in-string nil)
+  (setq alfe--escape nil)
+  (setq alfe--in-comment nil)
+  (setq alfe--started nil)
+  (while (<= alfe--idx alfe--len)
+    (setq alfe--ch (substr alfe--text alfe--idx 1))
     (cond
-      (in-comment
-        (if (= ch "\n")
-          (setq in-comment nil)))
-      (in-string
-        (setq started T)
+      (alfe--in-comment
+        (if (= alfe--ch "\n")
+          (setq alfe--in-comment nil)))
+      (alfe--in-string
+        (setq alfe--started T)
         (cond
-          (escape
-            (setq escape nil))
-          ((= ch "\\")
-            (setq escape T))
-          ((= ch "\"")
-            (setq in-string nil))))
-      ((= ch ";")
-        (setq in-comment T))
-      ((member ch '(" " "\t" "\r" "\n")))
+          (alfe--escape
+            (setq alfe--escape nil))
+          ((= alfe--ch "\\")
+            (setq alfe--escape T))
+          ((= alfe--ch "\"")
+            (setq alfe--in-string nil))))
+      ((= alfe--ch ";")
+        (setq alfe--in-comment T))
+      ((member alfe--ch '(" " "\t" "\r" "\n")))
       (T
-        (setq started T)
+        (setq alfe--started T)
         (cond
-          ((= ch "\"")
-            (setq in-string T))
-          ((= ch "(")
-            (setq depth (+ depth 1)))
-          ((= ch ")")
-            (if (> depth 0)
-              (setq depth (- depth 1)))))))
-    (setq idx (+ idx 1)))
-  (and started (not in-string) (not in-comment) (= depth 0)))
+          ((= alfe--ch "\"")
+            (setq alfe--in-string T))
+          ((= alfe--ch "(")
+            (setq alfe--depth (+ alfe--depth 1)))
+          ((= alfe--ch ")")
+            (if (> alfe--depth 0)
+              (setq alfe--depth (- alfe--depth 1)))))))
+    (setq alfe--idx (+ alfe--idx 1)))
+  (and alfe--started (not alfe--in-string) (not alfe--in-comment) (= alfe--depth 0)))
 
-(defun autolisp-protocol-pop-file-lines (path / lines)
-  (setq lines (autolisp-protocol-slurp-lines path))
-  (if lines
-    (vl-file-delete path))
-  lines)
+(defun autolisp-protocol-pop-file-lines (alfe--path / alfe--lines)
+  (setq alfe--lines (autolisp-protocol-slurp-lines alfe--path))
+  (if alfe--lines
+    (vl-file-delete alfe--path))
+  alfe--lines)
 
 (defun autolisp-protocol-pop-control ()
   (autolisp-protocol-lines->text
     (autolisp-protocol-pop-file-lines *AUTOLISP_PROTOCOL_CONTROLFILE*)))
 
-(defun autolisp-protocol-handle-control (/ control)
-  (setq control (autolisp-protocol-pop-control))
+(defun autolisp-protocol-handle-control (/ alfe--control)
+  (setq alfe--control (autolisp-protocol-pop-control))
   (cond
-    ((= control "PING")
+    ((= alfe--control "PING")
       (autolisp-protocol-pulse-heartbeat)
       nil)
-    ((= control "SHUTDOWN")
+    ((= alfe--control "SHUTDOWN")
       (autolisp-protocol-set-status "STOPPING")
       (setq *AUTOLISP_PROTOCOL_STOP* T)
       T)
     (T nil)))
 
-(defun autolisp-protocol-queue-input-lines (lines)
-  (while lines
+(defun autolisp-protocol-queue-input-lines (alfe--lines)
+  (while alfe--lines
     (setq *AUTOLISP_PROTOCOL_INPUT_QUEUE*
-          (append *AUTOLISP_PROTOCOL_INPUT_QUEUE* (list (car lines))))
-    (setq lines (cdr lines))))
+          (append *AUTOLISP_PROTOCOL_INPUT_QUEUE* (list (car alfe--lines))))
+    (setq alfe--lines (cdr alfe--lines))))
 
-(defun autolisp-protocol-remote-read-line (/ lines line)
+(defun autolisp-protocol-remote-read-line (/ alfe--lines alfe--line)
   (while (null *AUTOLISP_PROTOCOL_INPUT_QUEUE*)
     (autolisp-protocol-handle-control)
     (if *AUTOLISP_PROTOCOL_STOP*
       (setq *AUTOLISP_PROTOCOL_INPUT_QUEUE* '("__AUTOLISP_PROTOCOL_STOP__")))
     (autolisp-protocol-pulse-heartbeat)
-    (setq lines (autolisp-protocol-pop-file-lines *AUTOLISP_PROTOCOL_STDINFILE*))
-    (if lines
-      (autolisp-protocol-queue-input-lines lines)
+    (setq alfe--lines (autolisp-protocol-pop-file-lines *AUTOLISP_PROTOCOL_STDINFILE*))
+    (if alfe--lines
+      (autolisp-protocol-queue-input-lines alfe--lines)
       (progn
         (if *AUTOLISP_PROTOCOL_EMIT_WAITING_INPUT*
           (autolisp-protocol-set-status "WAITING-INPUT"))
         (autolisp-protocol-yield))))
-  (setq line (car *AUTOLISP_PROTOCOL_INPUT_QUEUE*))
+  (setq alfe--line (car *AUTOLISP_PROTOCOL_INPUT_QUEUE*))
   (setq *AUTOLISP_PROTOCOL_INPUT_QUEUE* (cdr *AUTOLISP_PROTOCOL_INPUT_QUEUE*))
-  line)
+  alfe--line)
 
-(defun autolisp-read-line (/ old-flag line)
-  (setq old-flag *AUTOLISP_PROTOCOL_EMIT_WAITING_INPUT*)
+(defun autolisp-read-line (/ alfe--old-flag alfe--line)
+  (setq alfe--old-flag *AUTOLISP_PROTOCOL_EMIT_WAITING_INPUT*)
   (setq *AUTOLISP_PROTOCOL_EMIT_WAITING_INPUT* T)
-  (setq line (autolisp-protocol-remote-read-line))
-  (setq *AUTOLISP_PROTOCOL_EMIT_WAITING_INPUT* old-flag)
-  line)
+  (setq alfe--line (autolisp-protocol-remote-read-line))
+  (setq *AUTOLISP_PROTOCOL_EMIT_WAITING_INPUT* alfe--old-flag)
+  alfe--line)
 
-(defun autolisp-protocol-read-from-text (text / f value)
-  (read text))
+(defun autolisp-protocol-read-from-text (alfe--text / alfe--f alfe--value)
+  (read alfe--text))
 
-(defun autolisp-protocol-remote-read (/ acc line)
-  (setq acc "")
-  (while (not (autolisp-protocol-form-complete-p acc))
-    (setq line (autolisp-protocol-remote-read-line))
-    (if (= acc "")
-      (setq acc line)
-      (setq acc (strcat acc "\n" line))))
+(defun autolisp-protocol-remote-read (/ alfe--acc alfe--line)
+  (setq alfe--acc "")
+  (while (not (autolisp-protocol-form-complete-p alfe--acc))
+    (setq alfe--line (autolisp-protocol-remote-read-line))
+    (if (= alfe--acc "")
+      (setq alfe--acc alfe--line)
+      (setq alfe--acc (strcat alfe--acc "\n" alfe--line))))
   ;; Keep the request's TEXT: the server loop hands it to
   ;; autolisp-eval-request-source with the form, so the CAD reads the
   ;; request as it was written instead of a re-print of it, which kept
   ;; only 6 (AutoCAD) or 14 (BricsCAD) digits of a real literal
   ;; (alfe-cad-transport-rounds-reals).
-  (setq *AUTOLISP_PROTOCOL_REQUEST_TEXT* acc)
-  (autolisp-protocol-read-from-text acc))
+  (setq *AUTOLISP_PROTOCOL_REQUEST_TEXT* alfe--acc)
+  (autolisp-protocol-read-from-text alfe--acc))
 
 ;; See autolisp-host-has-fn / autolisp-delay-ms in the bootstrap (loaded
 ;; first): probe vlax-sleep's existence rather than trusting
 ;; vl-catch-all-apply to trap an undefined-symbol error, which it cannot.
 ;; On AutoCAD (no vlax-sleep) this degrades to the DELAY command.
-(defun autolisp-protocol-sleep-ms (ms / r)
+(defun autolisp-protocol-sleep-ms (alfe--ms / alfe--r)
   (if (autolisp-host-has-fn "VLAX-SLEEP")
     (progn
-      (setq r (vl-catch-all-apply 'vlax-sleep (list ms)))
-      (if (vl-catch-all-error-p r)
-        (autolisp-delay-ms ms)))
-    (autolisp-delay-ms ms))
+      (setq alfe--r (vl-catch-all-apply 'vlax-sleep (list alfe--ms)))
+      (if (vl-catch-all-error-p alfe--r)
+        (autolisp-delay-ms alfe--ms)))
+    (autolisp-delay-ms alfe--ms))
   nil)
 
 (defun autolisp-protocol-yield-ms ()
@@ -212,85 +212,85 @@
     (strcase *autolisp-protocol-yield-mode*)
     "VLAX-SLEEP"))
 
-(defun autolisp-protocol-yield (/ mode ms r)
-  (setq mode (autolisp-protocol-yield-mode))
-  (setq ms (autolisp-protocol-yield-ms))
+(defun autolisp-protocol-yield (/ alfe--mode alfe--ms alfe--r)
+  (setq alfe--mode (autolisp-protocol-yield-mode))
+  (setq alfe--ms (autolisp-protocol-yield-ms))
   (cond
-    ((= mode "SLEEP")
-      (setq r (vl-catch-all-apply 'sleep (list ms)))
-      (if (vl-catch-all-error-p r)
-        (autolisp-protocol-sleep-ms ms)))
-    ((= mode "GRREAD")
+    ((= alfe--mode "SLEEP")
+      (setq alfe--r (vl-catch-all-apply 'sleep (list alfe--ms)))
+      (if (vl-catch-all-error-p alfe--r)
+        (autolisp-protocol-sleep-ms alfe--ms)))
+    ((= alfe--mode "GRREAD")
       ;; Experimental: grread may let BricsCAD process UI messages,
       ;; but host behavior can differ and it may still block.
-      (setq r (vl-catch-all-apply 'grread (list nil 8 0)))
-      (if (vl-catch-all-error-p r)
-        (autolisp-protocol-sleep-ms ms)))
-    ((= mode "DELAY")
-      (setq r (vl-catch-all-apply 'command (list "_DELAY" ms)))
-      (if (vl-catch-all-error-p r)
-        (autolisp-protocol-sleep-ms ms)))
+      (setq alfe--r (vl-catch-all-apply 'grread (list nil 8 0)))
+      (if (vl-catch-all-error-p alfe--r)
+        (autolisp-protocol-sleep-ms alfe--ms)))
+    ((= alfe--mode "DELAY")
+      (setq alfe--r (vl-catch-all-apply 'command (list "_DELAY" alfe--ms)))
+      (if (vl-catch-all-error-p alfe--r)
+        (autolisp-protocol-sleep-ms alfe--ms)))
     (T
-      (autolisp-protocol-sleep-ms ms)))
+      (autolisp-protocol-sleep-ms alfe--ms)))
   nil)
 
-(defun autolisp-protocol-result-code (result)
+(defun autolisp-protocol-result-code (alfe--result)
   (cond
-    ((= (type result) 'INT)
-      result)
-    ((= (type result) 'REAL)
-      (fix result))
+    ((= (type alfe--result) 'INT)
+      alfe--result)
+    ((= (type alfe--result) 'REAL)
+      (fix alfe--result))
     (T 0)))
 
-(defun autolisp-vague-error-message-p (msg)
+(defun autolisp-vague-error-message-p (alfe--msg)
   "True when MSG tells the user nothing: absent, empty, or one of the
 bare words a host offers when it has no text of its own. BricsCAD
 answers exactly \"error\" for some conditions, which is what
 alfe-cad-load-error-message-says-only-error was about -- the report was
 correct and useless."
-  (or (null msg)
-      (/= (type msg) 'STR)
-      (= msg "")
-      (member (strcase msg)
+  (or (null alfe--msg)
+      (/= (type alfe--msg) 'STR)
+      (= alfe--msg "")
+      (member (strcase alfe--msg)
               (list "ERROR" "ERREUR" "FUNCTION CANCELLED"
                     ;; What autolisp-raise puts in the context when the
                     ;; host gave nothing: still vague, so the form is
                     ;; still worth adding.
                     (strcase "the engine supplied no message")))))
 
-(defun autolisp-request-failure-text (req-id msg form / text shown)
+(defun autolisp-request-failure-text (alfe--req-id alfe--msg alfe--form / alfe--text alfe--shown)
   "The stderr line for a failed request: the engine's message, plus the
 FORM when that message says nothing. A host that supplies no text leaves
 the user with a position and no cause, and the form is the one piece of
 context this side always has."
-  (setq text (strcat "ERROR protocol request " (itoa req-id) ": "
-                     (if (autolisp-vague-error-message-p msg)
-                         (if (or (null msg) (/= (type msg) 'STR) (= msg "")
-                                 (= (strcase msg)
+  (setq alfe--text (strcat "ERROR protocol request " (itoa alfe--req-id) ": "
+                     (if (autolisp-vague-error-message-p alfe--msg)
+                         (if (or (null alfe--msg) (/= (type alfe--msg) 'STR) (= alfe--msg "")
+                                 (= (strcase alfe--msg)
                                     (strcase "the engine supplied no message")))
                              "the engine supplied no message"
-                             (strcat msg " -- the engine said no more"))
-                         msg)))
-  (if (autolisp-vague-error-message-p msg)
+                             (strcat alfe--msg " -- the engine said no more"))
+                         alfe--msg)))
+  (if (autolisp-vague-error-message-p alfe--msg)
     (progn
-      (setq shown (autolisp-readable-text form))
-      (if (> (strlen shown) 200)
-        (setq shown (strcat (substr shown 1 200) "...")))
-      (setq text (strcat text " [form: " shown "]"))))
-  text)
+      (setq alfe--shown (autolisp-readable-text alfe--form))
+      (if (> (strlen alfe--shown) 200)
+        (setq alfe--shown (strcat (substr alfe--shown 1 200) "...")))
+      (setq alfe--text (strcat alfe--text " [form: " alfe--shown "]"))))
+  alfe--text)
 
-(defun autolisp-protocol-server-loop (/ keep form req-id result rc)
+(defun autolisp-protocol-server-loop (/ alfe--keep alfe--form alfe--req-id alfe--result alfe--rc)
   (setq *AUTOLISP_PROTOCOL_INPUT_QUEUE* nil)
   (setq *AUTOLISP_PROTOCOL_STOP* nil)
   (setq *AUTOLISP_PROTOCOL_EMIT_WAITING_INPUT* nil)
   (autolisp-protocol-clear-stdout)
   (autolisp-protocol-clear-stderr)
-  (setq req-id 0)
+  (setq alfe--req-id 0)
   (autolisp-protocol-set-status "READY 0")
   (while (not *AUTOLISP_PROTOCOL_STOP*)
     (setq *AUTOLISP_PROTOCOL_REQUEST_TEXT* nil)
-    (setq form (vl-catch-all-apply 'autolisp-protocol-remote-read nil))
-    (if (vl-catch-all-error-p form)
+    (setq alfe--form (vl-catch-all-apply 'autolisp-protocol-remote-read nil))
+    (if (vl-catch-all-error-p alfe--form)
       (progn
         ;; ONE report, not two. This loop used to write the message to the
         ;; session log (autolisp-log-err) AND to the wire
@@ -303,31 +303,31 @@ context this side always has."
         ;; for. See alfe-cad-error-reported-twice-on-stderr.
         (autolisp-protocol-write-stderr
           (strcat "ERROR protocol read: "
-                  (vl-catch-all-error-message form)))
+                  (vl-catch-all-error-message alfe--form)))
         (autolisp-protocol-set-status "FAILED READ")
         (setq *AUTOLISP_PROTOCOL_STOP* T))
       (if (or *AUTOLISP_PROTOCOL_STOP*
-              (eq form '__AUTOLISP_PROTOCOL_STOP__))
+              (eq alfe--form '__AUTOLISP_PROTOCOL_STOP__))
         nil
         (progn
-          (setq req-id (+ req-id 1))
-          (autolisp-protocol-set-status (strcat "RUNNING " (itoa req-id)))
-          (setq result (vl-catch-all-apply
+          (setq alfe--req-id (+ alfe--req-id 1))
+          (autolisp-protocol-set-status (strcat "RUNNING " (itoa alfe--req-id)))
+          (setq alfe--result (vl-catch-all-apply
                          'autolisp-eval-request-source
-                         (list form
+                         (list alfe--form
                                (autolisp-first-form-text
                                  *AUTOLISP_PROTOCOL_REQUEST_TEXT*))))
-          (if (vl-catch-all-error-p result)
+          (if (vl-catch-all-error-p alfe--result)
             (if (or (and (boundp '*AUTOLISP_QUIT_REQUESTED*)
                          *AUTOLISP_QUIT_REQUESTED*)
                     (and (boundp '*AUTOLISP_QUIT_SIGNAL*)
                      (autolisp-quit-signal-p
-                       (vl-catch-all-error-message result))))
+                       (vl-catch-all-error-message alfe--result))))
               (progn
-                (setq rc 0)
-                (autolisp-set-status rc)
+                (setq alfe--rc 0)
+                (autolisp-set-status alfe--rc)
                 (autolisp-protocol-set-status
-                  (strcat "DONE " (itoa req-id) " QUIT"))
+                  (strcat "DONE " (itoa alfe--req-id) " QUIT"))
                 (setq *AUTOLISP_PROTOCOL_STOP* T))
               (progn
                 ;; One report, as above, and it names a cause: when the
@@ -335,15 +335,15 @@ context this side always has."
                 ;; (alfe-cad-load-error-message-says-only-error).
                 (autolisp-protocol-write-stderr
                   (autolisp-request-failure-text
-                    req-id
+                    alfe--req-id
                     (autolisp-effective-error-message
-                      (vl-catch-all-error-message result))
-                    form))
+                      (vl-catch-all-error-message alfe--result))
+                    alfe--form))
                 (autolisp-clear-last-error-context)
-                (setq rc 1)
-                (autolisp-set-status rc)
+                (setq alfe--rc 1)
+                (autolisp-set-status alfe--rc)
                 (autolisp-protocol-set-status
-                  (strcat "DONE " (itoa req-id) " FAIL"))))
+                  (strcat "DONE " (itoa alfe--req-id) " FAIL"))))
             (progn
               ;; *AUTOLISP_STATUSFILE* still records the form value as
               ;; the legacy numeric exit code (batch scripts on the
@@ -353,10 +353,10 @@ context this side always has."
               ;; evaluation -- including (+ 1 2) returning 3 -- must
               ;; land on `DONE N OK', otherwise the alfe-side REPL
               ;; sees every scalar value as a failure.
-              (setq rc (autolisp-protocol-result-code result))
-              (autolisp-set-status rc)
+              (setq alfe--rc (autolisp-protocol-result-code alfe--result))
+              (autolisp-set-status alfe--rc)
               (autolisp-protocol-set-status
-                (strcat "DONE " (itoa req-id) " OK"))))))))
+                (strcat "DONE " (itoa alfe--req-id) " OK"))))))))
   (autolisp-protocol-set-status "STOPPED")
   ;; Return nil, NOT (princ "") -- under AutoCAD the host lacks &rest so the
   ;; bootstrap keeps the fixed 2-arg `princ' shadow (obj file); a 1-arg
@@ -365,31 +365,31 @@ context this side always has."
   ;; The loop's return value is discarded by the run-common outer catch.
   nil)
 
-(defun autolisp-protocol-selftest-loop (/ keep control line form)
+(defun autolisp-protocol-selftest-loop (/ alfe--keep alfe--control alfe--line alfe--form)
   (setq *AUTOLISP_PROTOCOL_INPUT_QUEUE* nil)
   (setq *AUTOLISP_PROTOCOL_STOP* nil)
   (setq *AUTOLISP_PROTOCOL_EMIT_WAITING_INPUT* T)
   (autolisp-protocol-clear-stdout)
   (autolisp-protocol-clear-stderr)
   (autolisp-protocol-set-status "READY")
-  (setq keep T)
-  (while keep
+  (setq alfe--keep T)
+  (while alfe--keep
     (autolisp-protocol-handle-control)
     (if *AUTOLISP_PROTOCOL_STOP*
-      (setq keep nil))
-    (if keep
+      (setq alfe--keep nil))
+    (if alfe--keep
       (progn
-        (setq line (autolisp-protocol-remote-read-line))
-        (if (and line (/= line "__AUTOLISP_PROTOCOL_STOP__"))
+        (setq alfe--line (autolisp-protocol-remote-read-line))
+        (if (and alfe--line (/= alfe--line "__AUTOLISP_PROTOCOL_STOP__"))
           (progn
             (autolisp-protocol-set-status "RUNNING")
-            (autolisp-protocol-write-stdout (strcat "LINE " line))
-            (setq form (autolisp-protocol-remote-read))
+            (autolisp-protocol-write-stdout (strcat "LINE " alfe--line))
+            (setq alfe--form (autolisp-protocol-remote-read))
             (autolisp-protocol-write-stdout
-              (strcat "FORM " (vl-princ-to-string form)))
+              (strcat "FORM " (vl-princ-to-string alfe--form)))
             (autolisp-protocol-write-stderr "STDERR done")
             (autolisp-protocol-set-status "READY"))
-          (setq keep nil)))))
+          (setq alfe--keep nil)))))
   (autolisp-protocol-set-status "STOPPED")
   ;; Return nil, NOT (princ "") -- under AutoCAD the host lacks &rest so the
   ;; bootstrap keeps the fixed 2-arg `princ' shadow (obj file); a 1-arg
