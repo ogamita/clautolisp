@@ -67,6 +67,17 @@ user scripts run through alfe --mode batch) is exposed.
 
 * Resolution (clautolisp 2.3.11 / alfe 2.3.11, 2026-10-08, branch fix-alfe-drain-engine-pipes) -- fixed, awaiting the runner probe
 
+** Evidence from the runner: one session per command completes
+
+With the optkw probe changed to run ONE accoreconsole session per command
+(MR !461, job 17027498898, optkw:probe:accoreconsole:windows) all 13
+commands complete -- PLINE BREAK LENGTHEN OFFSET TRIM EXTEND FILLET CHAMFER
+MIRROR ROTATE SCALE RECTANG ZOOM -- including ROTATE, RECTANG and ZOOM, which
+hung in the single-session runs 16981155886, 16998925798 and 17026576122
+(each after 8-9 commands, ~3.6-4k characters of console output). No command
+hangs by itself; the cumulative console output of one session does --
+consistent with an undrained pipe.
+
 ** The mechanism, demonstrated off the runner
 
 A regression test runs a REAL child process (the host Lisp) through
