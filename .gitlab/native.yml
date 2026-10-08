@@ -1150,6 +1150,38 @@ optkw:probe:bricscad:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-optkw-probe.ps1 -Backend bricscad
 
+# --- a long, chatty accoreconsole session must complete ----------------------
+#
+# alfe-accoreconsole-console-pipe-not-drained.issue. alfe used to leave
+# accoreconsole's console on pipes nobody read until it exited; once the pipe
+# was full the engine blocked and the run hung until --timeout. The probe
+# PROMPTs 2..256 KB to the command line in ONE session and reports how far it
+# got (FLOOD-DONE = complete). Soft: a probe measures. The kept workdir holds
+# the console text alfe now captures to engine-console-stdout.txt.
+.console-flood-artifacts:
+  artifacts:
+    name: "console-flood-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/console-flood/]
+    expire_in: 30 days
+
+console-flood:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .console-flood-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,console-flood,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-console-flood-probe.ps1 -Backend accoreconsole
+
 .pathname-artifacts:
   interruptible: true
   artifacts:

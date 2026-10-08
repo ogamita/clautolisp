@@ -1792,6 +1792,13 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
+- *Long AutoCAD batch runs no longer hang* (alfe 2.3.11): the CAD's own
+  console (=accoreconsole=, =bricscad=, the =cscript= / =osascript=
+  launchers) now goes to =engine-console-stdout.txt= /
+  =engine-console-stderr.txt= in the workdir instead of pipes nobody read
+  while it ran, so a chatty =--autocad --mode batch= session no longer blocks
+  once the pipe is full and sits until =--timeout=. See the user manual's
+  /CAD engine control/.
 - Windows checkout discovery now finds =clautolisp-sbcl.exe= before falling
   back to PATH. See the user manual's engine discovery search order.
 

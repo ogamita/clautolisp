@@ -54,6 +54,15 @@
            #:launcher-failure-details
            #:kill-engine-process
            #:cad-argument-path
+           ;; the engine's console, captured to files (never an undrained pipe)
+           #:console-capture
+           #:console-capture-p
+           #:make-console-capture
+           #:console-capture-stdout-path
+           #:console-capture-stderr-path
+           #:console-capture-launch-keys
+           #:console-capture-text
+           #:process-console-text
            ;; plug-in support: launcher script slots, launch options
            #:expand-plugin-slots
            #:launcher-lines
@@ -609,26 +618,30 @@ LAST-STATUS, when given, sharpens it further — see READY-TIMEOUT-DIAGNOSIS."
   (when process-info
     (ready-timeout-diagnosis (launcher-exit-code process-info) last-status)))
 
-(defun launcher-failure-details (process-info &key (limit 4000))
+(defun launcher-failure-details (process-info &key (limit 4000) capture)
   "When PROCESS-INFO exited non-zero, return a string with its exit code
 and whatever it wrote to stderr/stdout (truncated to LIMIT characters);
-NIL while it is alive or when it exited 0. Only ever reads the streams of
-a process already known to be dead, so it cannot block on a live pipe."
+NIL while it is alive or when it exited 0.
+
+The text comes from CAPTURE, the CONSOLE-CAPTURE the launch redirected the
+process's output into (see MAKE-CONSOLE-CAPTURE), and from the process's own
+pipes only when a launcher returned some anyway (PROCESS-CONSOLE-TEXT). It is
+read only once the process is known to be dead."
   (let ((code (launcher-exit-code process-info)))
     (when (and code (not (eql code 0)))
-      (flet ((tail (stream)
-               (or (ignore-errors
-                    (when (and stream (open-stream-p stream))
-                      (let ((text (with-output-to-string (out)
-                                    (loop for line = (read-line stream nil nil)
-                                          while line do (write-line line out)))))
-                        (when (plusp (length text))
-                          (if (> (length text) limit)
-                              (subseq text (- (length text) limit))
-                              text)))))
-                   "")))
-        (let ((err (tail (ignore-errors (uiop:process-info-error-output process-info))))
-              (out (tail (ignore-errors (uiop:process-info-output process-info)))))
+      (flet ((tail (which)
+               (let ((text (string-right-trim
+                            '(#\Newline #\Return)
+                            (or (ignore-errors
+                                 (process-console-text process-info which
+                                                       :capture capture
+                                                       :strip-nul nil))
+                                ""))))
+                 (if (> (length text) limit)
+                     (subseq text (- (length text) limit))
+                     text))))
+        (let ((err (tail :stderr))
+              (out (tail :stdout)))
           (format nil "launcher exited with code ~A~@[; stderr: ~A~]~@[; stdout: ~A~]"
                   code
                   (when (plusp (length err)) (string-trim '(#\Newline #\Space) err))
@@ -701,6 +714,97 @@ warns about. Shared here so both use it."
                              2))
                do (sleep 0.02))))))
   nil)
+
+;;; --- the engine's console: captured to files, never an undrained pipe ---
+;;;
+;;; alfe used to start the CAD (accoreconsole, bricscad, and the cscript /
+;;; osascript launchers) with :OUTPUT :STREAM :ERROR-OUTPUT :STREAM and read
+;;; those pipes only once the process had EXITED, for the diagnostics. Nothing
+;;; read them while it ran -- the payload travels through the file protocol --
+;;; so once the operating system's pipe buffer was full (a few KB to 64 KB)
+;;; the engine's next console write blocked for ever. accoreconsole echoes its
+;;; whole command line to that console, in UTF-16LE, so a long chatty --mode
+;;; batch run hung part-way, at no particular command, until --timeout
+;;; (alfe-accoreconsole-console-pipe-not-drained.issue).
+;;;
+;;; The console now goes to two files in the run's workdir. A file never fills,
+;;; so the engine can never block on it; reading it cannot block either, even
+;;; when a grandchild (the bricscad.exe a launcher started) still holds the
+;;; handle, which reading a pipe to its end-of-file would; it needs no thread,
+;;; so it is the same on SBCL and CCL, Windows and POSIX; and --keep leaves the
+;;; console in the workdir for a post-mortem. It is the shape the clautolisp
+;;; child already had (%RUN-ENGINE-CHILD in backend-clautolisp.lisp).
+
+(defstruct (console-capture (:constructor %make-console-capture))
+  "Where a launched engine's standard output and error output go, and the
+external format to read them back with."
+  (stdout-path nil)
+  (stderr-path nil)
+  (external-format :iso-8859-1))
+
+(defun make-console-capture (workdir &key (name "engine-console")
+                                          (external-format :iso-8859-1))
+  "A CONSOLE-CAPTURE into WORKDIR/NAME-stdout.txt and WORKDIR/NAME-stderr.txt.
+EXTERNAL-FORMAT is how CONSOLE-CAPTURE-TEXT decodes them (the default is a
+total decoder that never signals)."
+  (let ((dir (uiop:ensure-directory-pathname workdir)))
+    (%make-console-capture
+     :stdout-path (merge-pathnames (format nil "~A-stdout.txt" name) dir)
+     :stderr-path (merge-pathnames (format nil "~A-stderr.txt" name) dir)
+     :external-format (or external-format :iso-8859-1))))
+
+(defun console-capture-launch-keys (capture)
+  "The UIOP:LAUNCH-PROGRAM keywords that send the process's standard output
+and error output to CAPTURE's files (each truncated first)."
+  (list :output (console-capture-stdout-path capture)
+        :if-output-exists :supersede
+        :error-output (console-capture-stderr-path capture)
+        :if-error-output-exists :supersede))
+
+(defun %read-stream-text (stream strip-nul)
+  (with-output-to-string (out)
+    (loop for ch = (read-char stream nil nil)
+          while ch
+          unless (and strip-nul (char= ch (code-char 0)))
+            do (write-char ch out))))
+
+(defun console-capture-text (capture which &key (strip-nul t))
+  "What the engine wrote to WHICH (:STDOUT or :STDERR) of CAPTURE, as a string;
+\"\" when there is nothing. Decoded with CAPTURE's external format, falling
+back to ISO-8859-1 (which never signals) when that fails. STRIP-NUL removes
+the NULs of a UTF-16LE console read byte-wise (accoreconsole). Never blocks:
+it reads a file, never a pipe."
+  (let ((path (and capture
+                   (ecase which
+                     (:stdout (console-capture-stdout-path capture))
+                     (:stderr (console-capture-stderr-path capture))))))
+    (flet ((read-as (format)
+             (with-open-file (in path :direction :input
+                                      :if-does-not-exist nil
+                                      :external-format format)
+               (if in (%read-stream-text in strip-nul) ""))))
+      (or (and path
+               (or (ignore-errors (read-as (console-capture-external-format capture)))
+                   (ignore-errors (read-as :iso-8859-1))))
+          ""))))
+
+(defun process-console-text (process-info which &key capture (strip-nul t))
+  "Everything PROCESS-INFO wrote to WHICH (:STDOUT or :STDERR): the text of
+CAPTURE's file, then whatever its pipe still holds when the launcher returned
+one (a test launcher may). Call it only once the process is dead -- reading a
+live pipe to its end would wait for the process."
+  (let ((stream (and process-info
+                     (ignore-errors
+                      (ecase which
+                        (:stdout (uiop:process-info-output process-info))
+                        (:stderr (uiop:process-info-error-output process-info)))))))
+    (concatenate 'string
+                 (console-capture-text capture which :strip-nul strip-nul)
+                 (or (and (streamp stream)
+                          (open-stream-p stream)
+                          (input-stream-p stream)
+                          (ignore-errors (%read-stream-text stream strip-nul)))
+                     ""))))
 
 ;;; --- plug-in support ---------------------------------------------------
 ;;;
