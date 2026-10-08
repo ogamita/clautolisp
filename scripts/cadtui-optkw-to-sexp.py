@@ -16,6 +16,13 @@ on "/", yielding the LOCAL option keywords. Output (per-command, first cut):
      ("_TRIM"   ("couPer" "Ligne" ...))
      ...)
 
+Several transcripts may be given (the runs of one product): their harvests are
+MERGED -- a command takes the keywords of the first run that offered any, and
+a later run that offers a DIFFERENT list for it is reported (stderr and a
+header comment), never silently preferred. Needed because one run seldom
+covers every command: AutoCAD's accoreconsole hangs part-way (2026-10-08), and
+BricsCAD's lazily written log loses the LAST command's prompt.
+
 That first cut holds the LOCAL keywords only. The SECOND mode pairs them with
 their international keywords, per product, into the shipped dictionary:
 
@@ -152,15 +159,45 @@ def lisp_escape(s):
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def emit(engine, commands, source):
+def source_label(path):
+    """'job N dist/optkw/FILE' for a downloaded job artifact (.../a-N/dist/...),
+    else the path as given."""
+    m = re.search(r"a-(\d+)/(dist/.*)$", path.replace(os.sep, "/"))
+    return "job %s %s" % m.groups() if m else path
+
+
+def merge(runs):
+    """RUNS = [(path, engine, commands)...] -> (engines, commands, conflicts).
+    First run with keywords for a command wins; a differing later list is a
+    conflict (command, kept-path, kept, other-path, other)."""
+    engines, merged, owner, conflicts = [], {}, {}, []
+    for path, engine, commands in runs:
+        if engine and engine not in engines:
+            engines.append(engine)
+        for name, kws in commands.items():
+            merged.setdefault(name, [])
+            if not kws:
+                continue
+            if not merged[name]:
+                merged[name], owner[name] = kws, path
+            elif merged[name] != kws:
+                conflicts.append((name, owner[name], merged[name], path, kws))
+    return engines, merged, conflicts
+
+
+def emit(engine, commands, source, conflicts=()):
     out = [";;;; cadtui — CAD command option-keyword dictionary (:option-keyword).",
            ";;;; GENERATED from an optkw probe transcript by",
            ";;;; scripts/cadtui-optkw-to-sexp.py — do not hand-edit. FIRST CUT:",
            ";;;; command -> the LOCAL option keywords read from its prompt. The",
            ";;;; international pairing + abbreviation letters are a later refinement."]
-    if engine:
-        out.append(";;;; source engine: %s" % "  ".join(engine))
-    out.append(";;;; source artifact: %s" % source)
+    for e in engine or []:
+        out.append(";;;; source engine: %s" % "  ".join(e))
+    for src in source:
+        out.append(";;;; source artifact: %s" % src)
+    for name, p1, k1, p2, k2 in conflicts:
+        out.append(";;;; CONFLICT %s: kept %s from %s; %s offered %s"
+                   % (name, k1, source_label(p1), source_label(p2), k2))
     kept = {c: k for c, k in commands.items() if k}
     out.append(";;;; %d command(s) with options; %d probed."
                % (len(kept), len(commands)))
@@ -254,7 +291,8 @@ def emit_pairs(pairs, unpaired, table_path):
 
 def main(argv):
     ap = argparse.ArgumentParser(description="optkw transcript -> option-keyword.sexp")
-    ap.add_argument("artifact", nargs="?", help="dist/optkw/<backend>-<os>.txt")
+    ap.add_argument("artifact", nargs="*",
+                    help="dist/optkw/<backend>-<os>.txt (several: merged, first wins)")
     ap.add_argument("--pair", metavar="TABLE.json",
                     help="pair the first-cut harvests named in TABLE.json with their"
                          " international keywords (the shipped option-keyword.sexp)")
@@ -273,8 +311,13 @@ def main(argv):
     else:
         if not args.artifact:
             ap.error("an artifact (or --pair TABLE.json) is required")
-        engine, commands = parse(args.artifact)
-        text = emit(engine, commands, args.artifact)
+        runs = [(a,) + parse(a) for a in args.artifact]
+        engines, commands, conflicts = merge(runs)
+        for name, p1, k1, p2, k2 in conflicts:
+            sys.stderr.write("cadtui-optkw-to-sexp: CONFLICT %s: kept %r (%s), %s offered %r\n"
+                             % (name, k1, source_label(p1), source_label(p2), k2))
+        text = emit(engines, commands, [source_label(a) for a in args.artifact],
+                    conflicts)
         summary = "wrote %d command(s) with options" % sum(1 for k in commands.values() if k)
     if args.output:
         with open(args.output, "w", encoding="utf-8") as fh:

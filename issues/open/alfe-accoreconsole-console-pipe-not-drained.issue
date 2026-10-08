@@ -1,0 +1,66 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-accoreconsole-console-pipe-not-drained — a long accoreconsole run may block on its own console pipe (suspected)
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: windows-access (a run on the AutoCAD runner to confirm)
+#+BRANCH: fix-alfe-accoreconsole-console-pipe-not-drained
+
+* Context
+
+Found while harvesting option keywords (cadtui-locale-option-keywords.issue,
+2026-10-08). The optkw probe enters 13 commands in ONE accoreconsole session
+(alfe --autocad --mode batch). Three runs hung part-way, each after a
+DIFFERENT command:
+
+| job         | order                                   | completed                    | hung at |
+|-------------+-----------------------------------------+------------------------------+---------|
+| 16981155886 | OFFSET..SCALE, ZOOM, RECTANG..          | 8 (OFFSET..SCALE)            | ZOOM    |
+| 16998925798 | OFFSET..SCALE, RECTANG, PLINE.., ZOOM   | 8 (OFFSET..SCALE)            | RECTANG |
+| 17026576122 | PLINE BREAK LENGTHEN OFFSET..SCALE ..   | 9 (PLINE..MIRROR)            | ROTATE  |
+
+In each run every completed command's log carries the same second as the
+start, and then the job sits silent until alfe's --timeout 300 expires (the
+probe step lasts ~5 min 20 s). So it is a hang, not a crash, and it is
+neither a particular command (ROTATE completed after MIRROR in the first two
+runs; it hung after MIRROR in the third) nor the Nth command (8 vs 9). The
+same probe on BricsCAD V25 Windows (job 17026576124) completes all 13.
+
+* Problem (suspected cause -- not yet proven)
+
+backend-autocad.lisp launches accoreconsole with =:output :stream
+:error-output :stream= (START-ENGINE, CALL-LAUNCHER) and reads those pipes
+only once the process is DEAD (PROCESS-EXIT-DETAILS,
+LAUNCHER-FAILURE-DETAILS). Nothing reads them while the engine runs: the
+payload comes through the file protocol. accoreconsole writes its whole
+command line to that console (UTF-16LE: every command echo, prompt and cancel
+-- 2 bytes a character). Once the pipe's buffer is full, accoreconsole's next
+console write blocks for ever: the hang depends on the cumulative console
+OUTPUT, which is what the three runs show (a fixed amount reached at a
+different command depending on what came before). The output volumes before
+the three hang points are close (about 3.6k-4.0k characters of probe output)
+but my estimate of what the console itself receives is too rough to pin one
+capacity, hence "suspected".
+
+Any long accoreconsole run with chatty commands (command-driving probes,
+user scripts run through alfe --mode batch) is exposed.
+
+* Proposal
+
+1. Confirm: a probe that only PRINCs (no command) N kilobytes in one
+   accoreconsole session, for N = 2, 4, 8, 16: a cliff at a fixed N confirms
+   the pipe; no cliff refutes it.
+2. Fix: drain accoreconsole's stdout/stderr WHILE it runs -- a reader thread
+   per pipe accumulating into a buffer (kept for the diagnostics that now
+   read the pipes after exit), or launch with =:output= / =:error-output=
+   pointing at files in the workdir and read those after exit.
+3. Meanwhile the optkw wrapper runs accoreconsole one command per session
+   (scripts/run-optkw-probe.ps1, OPTKW_COMMANDS), which keeps each session's
+   output small.
+
+* Acceptance criteria
+
+- The N-kilobyte probe (or the optkw probe in ONE session) completes on
+  AutoCAD 2022's accoreconsole.
+- The launch diagnostics (exit details, failure details) still show the
+  console text.

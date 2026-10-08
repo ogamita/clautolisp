@@ -191,6 +191,24 @@
   (is (string= "Ecart" (local-option-keyword "_CHAMFER" "Distance" "fr_FR" :product :autocad)))
   (is (string= "Distance" (local-option-keyword "_CHAMFER" "Distance" "fr_FR" :product :bricscad))))
 
+;; LENGTHEN, harvested 2026-10-08 (AutoCAD job 17026576122, BricsCAD job
+;; 17026576124): the two products' first prompts differ too.
+(test fr-option-keywords-lengthen-per-product
+  ;; AutoCAD 2022 fr: [DIfférence/Pourcentage/TOtal/DYnamique].
+  (is (string= "Delta"   (international-option-keyword "_LENGTHEN" "DIfférence" "fr_FR" :product :autocad)))
+  (is (string= "Delta"   (international-option-keyword "_LENGTHEN" "DI" "fr_FR" :product :autocad)))
+  (is (string= "Percent" (international-option-keyword "_LENGTHEN" "P" "fr_FR" :product :autocad)))
+  (is (string= "Total"   (international-option-keyword "_LENGTHEN" "to" "fr_FR" :product :autocad)))
+  (is (string= "Dynamic" (international-option-keyword "_LENGTHEN" "DY" "fr_FR" :product :autocad)))
+  (is (string= "TOtal"   (local-option-keyword "_LENGTHEN" "Total" "fr_FR" :product :autocad)))
+  ;; BricsCAD V25 fr: [DYnamique/Incrément/Pourcentage/Total] -- no Delta.
+  (is (string= "Increment" (international-option-keyword "_LENGTHEN" "I" "fr_FR" :product :bricscad)))
+  (is (string= "Total"     (international-option-keyword "_LENGTHEN" "T" "fr_FR" :product :bricscad)))
+  (is (string= "DYnamic"   (international-option-keyword "_LENGTHEN" "DY" "fr_FR" :product :bricscad)))
+  (is (string= "Pourcentage" (local-option-keyword "_LENGTHEN" "Percent" "fr_FR" :product :bricscad)))
+  ;; PLINE and BREAK offer no keyword at their first prompt on AutoCAD: identity.
+  (is (string= "Par" (international-option-keyword "_BREAK" "Par" "fr_FR" :product :autocad))))
+
 (test option-keywords-fall-back-and-force-the-international-form
   ;; _ forces the international form, canonicalised against the dictionary.
   (is (string= "Undo"  (international-option-keyword "_CHAMFER" "_undo" "fr_FR" :product :autocad)))

@@ -57,10 +57,11 @@ separate binary for tool integrators.
   clautolisp follows LibreDWG's *stable* releases (not the per-commit
   prerelease snapshots); the followed release is recorded in
   =clautolisp/third-party/libredwg.release=.
-- cadtui French option keywords (2.2.229): ~--host cadtui~ now ships an
-  fr_FR option-keyword dictionary, per product -- the French keywords
-  measured on French AutoCAD 2022 and BricsCAD V25 installs (OFFSET, TRIM,
-  EXTEND, FILLET, CHAMFER; plus RECTANG and ZOOM on BricsCAD), each paired
+- cadtui French option keywords (2.2.229; LENGTHEN 2.3.6): ~--host cadtui~
+  now ships an fr_FR option-keyword dictionary, per product -- the French
+  keywords measured on French AutoCAD 2022 and BricsCAD V25 installs
+  (OFFSET, TRIM, EXTEND, FILLET, CHAMFER, LENGTHEN; plus RECTANG and ZOOM on
+  BricsCAD), each paired
   with its international keyword from the vendor's English command
   reference: a French keyword, whole or abbreviated (~N~ for ~aNnuler~),
   resolves to the international one. user-manual § /cadtui localisation

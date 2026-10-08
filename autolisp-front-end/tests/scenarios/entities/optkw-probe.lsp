@@ -45,10 +45,30 @@
 ;; stops at the 9th command (now MIRROR) says the limit is positional, one that
 ;; stops at RECTANG says RECTANG wedges the console. OPTKW-TRY names each
 ;; command before it is entered, so the transcript shows where it stopped.
+;; 2026-10-08, job 17026576122 with this order: NINE commands completed and
+;; it hung at ROTATE -- neither "the 9th command" nor a particular command
+;; (MIRROR -> ROTATE passed in the two earlier runs). See the ticket: the
+;; leading hypothesis is alfe not draining accoreconsole's console pipe, so
+;; the Windows wrapper now runs accoreconsole ONE COMMAND PER SESSION, handing
+;; the command in OPTKW_COMMANDS (comma-separated; unset = the whole list).
+;; REDRAW LAST, a flush: BricsCAD writes a command's prompt into the NEXT
+;; command's log, so the last command's prompt is lost (ZOOM, job 17026576124);
+;; REDRAW has no option of its own.
 (setq *optkw-cmds*
   (list "PLINE" "BREAK" "LENGTHEN"
         "OFFSET" "TRIM" "EXTEND" "FILLET" "CHAMFER" "MIRROR"
-        "ROTATE" "SCALE" "RECTANG" "ZOOM"))
+        "ROTATE" "SCALE" "RECTANG" "ZOOM" "REDRAW"))
+
+(defun optkw--split (s / i acc)
+  ;; "A,B" -> ("A" "B"), blanks dropped.
+  (while (setq i (vl-string-search "," s))
+    (setq acc (cons (substr s 1 i) acc)
+          s (substr s (+ i 2))))
+  (setq acc (cons s acc))
+  (vl-remove-if (function (lambda (x) (= x ""))) (reverse acc)))
+
+(if (and (getenv "OPTKW_COMMANDS") (/= (getenv "OPTKW_COMMANDS") ""))
+  (setq *optkw-cmds* (optkw--split (getenv "OPTKW_COMMANDS"))))
 
 (defun optkw--getvar (name / v)
   (setq v (vl-catch-all-apply 'getvar (list name)))
