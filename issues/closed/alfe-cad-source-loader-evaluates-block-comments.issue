@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-source-loader-evaluates-block-comments - documentation text is executed as AutoLISP
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: cad-runtime
 #+DEPENDS: -
@@ -135,3 +135,31 @@ the probe has run on the CADs.
 
 Not measured: whether AutoCAD's own LOAD accepts a file ending inside an
 open block comment; alfe reports it as an error, as clautolisp does.
+
+* Verified on the runners (2026-10-08, master pipeline 2927362381) -- DONE
+
+block-comment probe (alfe 2.3.14 on master, the fix of 2.3.13), every CAD
+read the whole file with no comment text evaluated:
+
+| job         | target                         | report                              |
+|-------------+--------------------------------+-------------------------------------|
+| 17037482805 | BricsCAD V25 Windows           | 5 BLKC ran, VALUES (1 2 3 4 5), DONE |
+| 17037482804 | BricsCAD V26 macOS             | 5 BLKC ran, VALUES (1 2 3 4 5), DONE |
+| 17037482806 | AutoCAD 2022 GUI               | 5 BLKC ran, VALUES (1 2 3 4 5), DONE |
+| 17037482807 | AutoCAD 2022 accoreconsole     | 5 BLKC ran, VALUES (1 2 3 4 5), DONE |
+
+#+begin_example
+BLKC leading-doc-block ran
+BLKC string-delimiters ;| not a comment |;
+BLKC after-multiline-block ran
+BLKC same-line-1 ran
+BLKC same-line-2 ran
+BLKC-VALUES (1 2 3 4 5)
+BLKC-DONE
+#+end_example
+
+(The MR !469 pipeline could not create its native child --
+downstream_pipeline_creation_failed, most likely the active-job limit with
+four stacked MRs pushed at once -- so the probe ran on master after the
+merge.) SCHMS: alfe 2.3.13 or later loads autolisp-test/vlisp-project.lsp
+past its documentation blocks.
