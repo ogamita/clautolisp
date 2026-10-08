@@ -2,7 +2,7 @@
 ;;;;
 ;;;; What TYPE does ENTGET give the DXF POINTER group codes?
 ;;;;
-;;;; issues/open/cador-entget-pointer-codes-are-handle-strings.issue:
+;;;; issues/closed/cador-entget-pointer-codes-are-handle-strings.issue:
 ;;;; under the clautolisp cador host, SCHMS stopped on
 ;;;;     ENTGET expects an ENAME, got "41"
 ;;;; because cador returned every pointer group (330 owner, 350/360

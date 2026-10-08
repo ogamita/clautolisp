@@ -303,7 +303,8 @@
          (view (host-entget mock ename (list (make-autolisp-string "MYAPP")))))
     (is (typep (cdr (assoc 5 view)) 'autolisp-string))
     (is (typep (cdr (assoc 105 view)) 'autolisp-string))
-    ;; 320-329 are arbitrary handle VALUES, not translated (TO MEASURE).
+    ;; 320-329 are arbitrary handle VALUES on AutoCAD (measured 2026-10-08;
+    ;; BricsCAD makes them enames -- pointer-dialect-tests).
     (is (typep (cdr (assoc 320 view)) 'autolisp-string))
     (let* ((group (first (cdr (assoc -3 view))))
            (h (cdr (assoc 1005 (rest group)))))

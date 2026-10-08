@@ -185,10 +185,15 @@ or NIL when the type is not in the registry."
     :required '(10 11 12 13)
     :subclasses '("AcDbTrace"))
   ;; --- Non-graphical objects reachable by ENTMAKE / ENTMAKEX ---
+  ;; SINCE-R13-P: MEASURED 2026-10-08 (probe-entget-pointers.lsp, jobs
+  ;; 17026569911 / 12 / 13): AutoCAD 2022 refuses an XRECORD whose ENTMAKEX
+  ;; data lacks (100 . "AcDbXrecord") (returns nil); BricsCAD V25 / V26
+  ;; synthesise the marker -- divergence D1, like the R13+ entities.
   (register-entity-family "XRECORD"
     :required '()
     :subclasses '("AcDbXrecord")
-    :graphical-p nil)
+    :graphical-p nil
+    :since-r13-p t)
   (register-entity-family "DICTIONARY"
     :required '()
     :subclasses '("AcDbDictionary")
@@ -381,10 +386,15 @@ note on ENTMAKE in the spec."
 ;;; and code that reads an xrecord back skips it positionally: SCHMS's
 ;;; xrecord decoder takes (cddr (member '(100 . "AcDbXrecord") data)), so
 ;;; without it the first data group was eaten ("Nom de classe attendu",
-;;; issues/open/cador-entget-pointer-codes-are-handle-strings.issue).
-;;; TO MEASURE (probes/sources/probe-entget-pointers.lsp): the 280 default
-;;; and position on AutoCAD and BricsCAD, and whether a 280 the caller puts
-;;; right after the marker is taken as the flag (assumed: yes, per DXF).
+;;; issues/closed/cador-entget-pointer-codes-are-handle-strings.issue).
+;;; MEASURED 2026-10-08 (probes/sources/probe-entget-pointers.lsp, jobs
+;;; 17026569911 AutoCAD 2022, 17026569912 / 17026569913 BricsCAD V25 / V26):
+;;; both vendors read back (100 . "AcDbXrecord") (280 . 1) <data>. A 280
+;;; supplied right after the marker is the flag: AutoCAD lists it as given;
+;;; BricsCAD lists no 280 at all then (applied per product in cador,
+;;; %BRICSCAD-XRECORD-DROP-EXPLICIT-280). Without the marker AutoCAD refuses
+;;; the create and BricsCAD synthesises marker + 280 (divergence D1, so
+;;; XRECORD is SINCE-R13-P).
 
 (defun %complete-xrecord-header (data)
   "DATA (an XRECORD create list) with (100 . \"AcDbXrecord\") (280 . 1)
@@ -431,10 +441,13 @@ dialects only -- the strict ones reject it upstream) is inserted with the
 (defun entity-family-expected-markers (family)
   "The ordered subclass-marker strings a marker-strict host (AutoCAD)
 requires in the ENTMAKE data for a FAMILY create: the base AcDbEntity
-(AcDbObject for a non-graphical object) marker followed by the
-per-class SUBCLASSES."
-  (cons (if (entity-family-graphical-p family) "AcDbEntity" "AcDbObject")
-        (entity-family-subclasses family)))
+marker (none for a non-graphical object) followed by the per-class
+SUBCLASSES."
+  (if (entity-family-graphical-p family)
+      (cons "AcDbEntity" (entity-family-subclasses family))
+      ;; An OBJECT carries no AcDbObject marker in DXF / ENTGET; AutoCAD
+      ;; accepts an XRECORD with only (100 . "AcDbXrecord") (measured).
+      (entity-family-subclasses family)))
 
 (defun %marker-present-p (data marker)
   "True iff DATA carries a (100 . MARKER) subclass-marker pair

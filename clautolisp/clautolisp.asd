@@ -608,6 +608,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "cador/tests/prompt-tests")
    (:file "cador/tests/command-tests")
    (:file "cador/tests/vlax-tests")
+   (:file "cador/tests/pointer-dialect-tests")
    (:file "cador/tests/reactor-tests")
    (:file "cador/tests/sysvar-catalogue-tests")
    (:file "cador/tests/registry-native-tests")

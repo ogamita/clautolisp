@@ -65663,11 +65663,17 @@ group is removed; applications absent from the cell are left untouched.
 clautolisp implementation deviation — not part of the normative
 specification above. Under the cador host (since clautolisp 2.3.7) the
 DXF pointer group codes 330-369, 390-399 and 480-481 are returned as
-entity names, as the vendors do; 5, 105, 320-329 and the xdata 1005
-stay handle strings, a pointer to an object that no longer exists (or
-the null handle) is still an entity name whose ~entget~ is ~nil~, and
-~entmake~/~entmod~ also accept a handle string in a pointer code. Where
-cador still deviates: an entity it created in model or paper space
+entity names, as the vendors do (measured 2026-10-08 on AutoCAD 2022
+and BricsCAD V25 / V26); 5, 105 and the xdata 1005 stay handle
+strings; 320-329 and the null owner of the named-object dictionary
+follow the dialect's product (AutoCAD: strings, ~<Entity name: 0>~;
+BricsCAD: entity names, pair omitted); a pointer to an erased object is
+still the same entity name, whose ~entget~ is ~nil~. A handle string in
+a pointer code is an error under the vendor dialects, as on both
+vendors; under ~--dialect clautolisp~ and ~strict~ it is stored with an
+~[entmake-pointer-value]~ warning, under ~lax~ silently -- that
+acceptance is the deviation. Where cador also deviates: an entity it
+created in model or paper space
 carries no ~(330 . <block record>)~ owner, and the header groups come
 in the order ~-1 5 0~ rather than the vendors' ~-1 0 5 … 330 100~
 (issues/open/cador-entget-owner-and-header-layout.issue). The corner

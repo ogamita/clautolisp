@@ -74,7 +74,7 @@
 (test validate-xrecord-puts-marker-and-280-before-the-data
   ;; ENTGET of an XRECORD reads (100 . "AcDbXrecord") (280 . 1) <data>:
   ;; the 280 cloning flag is supplied when absent, the marker precedes
-  ;; the data, and no AcDbObject marker is added (TO MEASURE, see
+  ;; the data, and no AcDbObject marker is added (measured 2026-10-08, see
   ;; cador-entget-pointer-codes-are-handle-strings.issue).
   (let ((data (validate-entity-dxf '((0 . "XRECORD") (100 . "AcDbXrecord")
                                      (1 . "Classe") (70 . 1)))))
@@ -120,8 +120,8 @@
 (test entity-family-expected-markers-lists-base-plus-subclasses
   (is (equal '("AcDbEntity" "AcDbEllipse")
              (entity-family-expected-markers (find-entity-family "ELLIPSE"))))
-  ;; A non-graphical object gets the AcDbObject base marker.
-  (is (equal '("AcDbObject" "AcDbXrecord")
+  ;; A non-graphical object has no base marker (no AcDbObject in DXF).
+  (is (equal '("AcDbXrecord")
              (entity-family-expected-markers (find-entity-family "XRECORD")))))
 
 (test entity-dxf-missing-markers-reports-absent-r13-markers

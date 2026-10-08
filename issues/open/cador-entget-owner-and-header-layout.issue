@@ -23,6 +23,36 @@ and the header order of entget differs:
   inserted after the FIRST stored group, which is the 5)
 - AutoCAD (documented examples): =-1 0 5 [102 {ACAD_REACTORS 330 102 }] 330 100 ...=
 
+* Measured 2026-10-08 (probe-entget-pointers.lsp)
+
+Jobs 17026569911 (AutoCAD 2022), 17026569912 (BricsCAD V25 Windows),
+17026569913 (BricsCAD V26 macOS); results under
+=probe-results/{autocad,bricscad}/*/20261008T*/results.sexp=.
+
+- LINE in model space: =330:ENAME=, =(entget 330)= -> =BLOCK_RECORD= on
+  all three (cador: no 330).
+- The pair order of an XRECORD (codes of =entget=):
+  - free XRECORD: AutoCAD =-1 0 330 5 100 280 ...= (it HAS an owner 330
+    before the 5 even outside a dictionary); BricsCAD =-1 0 5 100 280 ...=;
+    cador =-1 5 0 100 280 ...=.
+  - after dictadd + dictsearch: both vendors =-1 0 5 102 330 102 330 100
+    280 ...= (the {ACAD_REACTORS 330 102} reactor group, then the owner);
+    cador =-1 5 330 0 100 280 ...= (no reactor group).
+- Layer "0" record via =(entget (tblobjname "LAYER" "0"))=: AutoCAD
+  =5 360 330 390 347 348= (an extension dictionary, owner TABLE, plot
+  style ACDBPLACEHOLDER, material MATERIAL, 348); BricsCAD =5 330 390
+  347=; cador none of them. BLOCK record via tblobjname: =330 5= on all
+  vendors; cador none. tblsearch / tblnext views: no pointer codes on any
+  vendor (cador agrees).
+- INSERT with attributes: BricsCAD INSERT =5 330=, its ATTRIB's 330 ->
+  INSERT (cador agrees on the ATTRIB). AutoCAD: =(entget ins)= gave no
+  pointer pair at all ("none" -- not even a 5, so entget probably returned
+  nil for an INSERT entmakex-ed with 66 . 1 before its SEQEND) and the
+  ATTRIB's 330 -> BLOCK_RECORD. Unexplained; needs its own probe case
+  before cador follows it.
+- (entget (namedobjdict)) lists 16 350 entries on both vendors (the
+  default ACAD_* / Bricsys dictionaries); cador's fresh drawing has none.
+
 * Cause
 
 =clautolisp.drawing:add-entity= stores =(5 . handle)= at the head of the

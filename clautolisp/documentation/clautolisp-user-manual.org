@@ -1205,21 +1205,32 @@ ename is ~eq~ to every other ename of the same object, so
 they were handle strings and that ~entget~ failed with ~ENTGET expects an
 ENAME~.
 
-- Still strings: 5 and 105 (the object's own handle), 320-329 (arbitrary
-  handle values, which the database does not translate) and the xdata
-  1005 handle.
-- A pointer to an object that no longer exists (erased, or the null
-  handle ~0~ that owns the named-object dictionary) is still an ename;
-  ~entget~ of it returns ~nil~.
-- ~entmake~ / ~entmod~ accept an ename or a handle string in those codes.
+- Still strings: 5 and 105 (the object's own handle) and the xdata 1005
+  handle. 320-329 (arbitrary handles) are strings under the AutoCAD,
+  clautolisp, strict and lax dialects, as on AutoCAD; under the BricsCAD
+  dialects they are entity names, as on BricsCAD.
+- A pointer to an erased object is still the same (~eq~) ename; ~entget~
+  of it returns ~nil~ (both vendors).
+- The null pointer -- the named-object dictionary's owner -- is
+  ~(330 . <Entity name: 0>)~ as on AutoCAD (~entget~ of it is ~nil~); the
+  BricsCAD dialects omit the pair, as BricsCAD does.
+- ~entmake~ / ~entmakex~ / ~entmod~ want an ename in a pointer code (and a
+  string in 320-329 on AutoCAD). A value of the wrong kind there is an
+  error under the AutoCAD and BricsCAD dialects, worded as each vendor
+  words it (~bad DXF group: (340 . "2A")~; ~bad argument type
+  <(340 . "2A")> ; expected ENTITYNAME at [invalid DXF/XED data]~). The
+  clautolisp and strict dialects store it as given with an
+  ~[entmake-pointer-value]~ warning; ~lax~ stores it silently.
 - An XRECORD reads back with ~(280 . 1)~ (the duplicate-record cloning
-  flag) right after its ~(100 . "AcDbXrecord")~ marker, as on AutoCAD,
-  unless the data supplied a 280 there; code that skips the pair after
-  the marker therefore finds the first data group.
+  flag) right after its ~(100 . "AcDbXrecord")~ marker, as on both
+  vendors, so code that skips the pair after the marker finds the first
+  data group. A 280 supplied there is listed as given (AutoCAD) or not
+  listed at all (BricsCAD dialects). An XRECORD without the marker is
+  refused (~nil~), except under the BricsCAD dialects and ~lax~, which add
+  marker and flag.
 
-The exact vendor behaviour of the corner cases (the null pointer, the
-string accepted by entmake, the XRECORD flag on BricsCAD) is being
-measured by ~probes/sources/probe-entget-pointers.lsp~.
+Measured on AutoCAD 2022 and BricsCAD V25 / V26 by
+~probes/sources/probe-entget-pointers.lsp~ (2026-10-08).
 
 *** cadtui localisation dictionaries
 

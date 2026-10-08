@@ -54,12 +54,18 @@ separate binary for tool integrators.
   entmake/entmod echo return the codes 330-369, 390-399 and 480-481 (owner,
   soft/hard pointer, dictionary entries, plot style) as ENAMEs, so
   ~(entget (cdr (assoc 330 data)))~ works -- they were handle strings
-  (=ENTGET expects an ENAME, got "41"=). 5, 105, 320-329 and the xdata
-  1005 stay strings; a handle string is still accepted by entmake/entmod.
-  An XRECORD now reads back with ~(280 . 1)~ after its
-  ~(100 . "AcDbXrecord")~ marker, as AutoCAD does, and objects no longer
-  carry a trailing ~(100 . "AcDbObject")~. user-manual § /DXF pointer
-  group codes under cador/.
+  (=ENTGET expects an ENAME, got "41"=). 5, 105 and the xdata 1005 stay
+  strings; 320-329 are strings as on AutoCAD, enames under the BricsCAD
+  dialects as on BricsCAD; the null owner of the named-object dictionary
+  is =<Entity name: 0>= (AutoCAD) or absent (BricsCAD dialects). A handle
+  string in a pointer code is now an error in entmake/entmakex/entmod
+  under the AutoCAD and BricsCAD dialects, as on both vendors (clautolisp
+  and strict warn and store it). An XRECORD reads back with ~(280 . 1)~
+  after its ~(100 . "AcDbXrecord")~ marker, as on both vendors; without
+  the marker it is refused except under BricsCAD / lax; objects no longer
+  carry a trailing ~(100 . "AcDbObject")~. All measured on AutoCAD 2022
+  and BricsCAD V25 / V26. user-manual § /DXF pointer group codes under
+  cador/.
 - *The shipped LibreDWG reports its own version* (2.2.230): =LibreDWG
   0.14= (its =PACKAGE_VERSION=, =dwg_api_version_string()=, and the
   =999= comment of the DXF it writes), where it used to report

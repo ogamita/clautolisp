@@ -157,7 +157,8 @@
           (is (consp (host-entget mock (cdr p)))))
         (is (member x (mapcar #'cdr entries) :test #'eq))
         ;; The root dictionary's owner is the null handle: an ename (not
-        ;; a string), whose entget is NIL -- no error. TO MEASURE.
+        ;; a string), whose entget is NIL -- no error. Measured on AutoCAD 2022
+        ;; (2026-10-08); BricsCAD omits the pair (pointer-dialect-tests).
         (let ((owner (cdr (assoc 330 view))))
           (is (typep owner 'autolisp-ename))
           (is (null (host-entget mock owner)))))

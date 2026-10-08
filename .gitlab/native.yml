@@ -1374,7 +1374,7 @@ probe:suite:bricscad:windows:
 # 320-329, handle strings written through entmakex / entmod, and the XRECORD
 # read-back layout ((280 . 1) after the AcDbXrecord marker). The answer
 # settles the TO MEASURE points of
-# issues/open/cador-entget-pointer-codes-are-handle-strings.issue. The same
+# issues/closed/cador-entget-pointer-codes-are-handle-strings.issue. The same
 # suite also runs inside the full probe:suite:* jobs; these narrow jobs give
 # the answer without the rest of the suite's queue time. SOFT, like every
 # probe: it measures, it gates nothing.

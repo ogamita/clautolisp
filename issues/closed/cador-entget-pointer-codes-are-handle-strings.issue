@@ -1,5 +1,5 @@
 #+TITLE: cador: ENTGET returns DXF pointer group codes as handle strings, and XRECORDs lack (280 . 1)
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS:
@@ -123,6 +123,74 @@ family =entget-pointers= in scripts/ci-detect-probe-changes.py):
    synthesises where?).
 
 Status stays NEXT until the probe has run and its answers are folded in.
+
+* Measured 2026-10-08
+
+MR !460 pipeline, SHA b3b45ae6. Results committed under =probe-results/=:
+- job 17026569911 =probe:entget-pointers:autocad:windows= (AutoCAD 2022,
+  French): =probe-results/autocad/ms-windows/20261008T102105Z/results.sexp=
+- job 17026569912 =probe:entget-pointers:bricscad:windows= (BricsCAD V25):
+  =probe-results/bricscad/ms-windows/20261008T102152Z/results.sexp=
+- job 17026569913 =probe:entget-pointers:bricscad:macos= (BricsCAD V26):
+  =probe-results/bricscad/macos/20261008T101623Z/results.sexp=
+The two BricsCAD runs are identical on every case.
+
+| # | question | AutoCAD 2022 | BricsCAD V25 / V26 | clautolisp b3b45ae6 | clautolisp now |
+|---+----------+--------------+--------------------+---------------------+----------------|
+| 1 | pointer types (330 LINE/ATTRIB/XRECORD/layer, 350 NOD, 360 xdict, 390/347/348 layer 0) | all =ENAME=, entget-able | all =ENAME=, entget-able | =ENAME= for what cador stores | same |
+| 2 | NOD 330 | =(330 . <Nom d'entite: 0>)=, entget NIL | pair ABSENT (=nil=) | =<Entity name: 0>= | AutoCAD-family: =<Entity name: 0>=; BricsCAD dialects: absent |
+| 3 | 340 to an erased LINE | =340:ENAME=, entget NIL, eq T | same | same | same |
+| 4 | 320 | string written -> =320:STR=; ename written -> ERROR =groupe DXF incorrect: (320 . <Nom d'entite: 22ceba124a0>)= | string written -> ERROR =bad argument type <(320 . "95")> ; expected ENTITYNAME at [invalid DXF/XED data]=; ename written -> =320:ENAME= | STR both ways | per product (strings / enames), wrong kind refused under vendor dialects |
+| 5 | handle string in 340 (entmakex, entmod) | ERROR =groupe DXF incorrect: (340 . "2A2")= | ERROR =bad argument type <(340 . "95")> ; expected ENTITYNAME ...= | accepted, read back ENAME | ERROR under autocad / bricscad dialects (vendor wording); clautolisp, strict: stored + [entmake-pointer-value] warning; lax: stored |
+| 6a | XRECORD with marker | =-1 0 330 5 100 280 1 70=, pair after marker =(280 . 1)= | =-1 0 5 100 280 1 70=, =(280 . 1)= | =-1 5 0 100 280 1 70=, =(280 . 1)= | same (header order: see the other ticket) |
+| 6b | XRECORD without marker | entmakex =NIL= | =ENAME=, =-1 0 5 100 280 1 70= | =NIL= (clautolisp dialect) | autocad / clautolisp / strict: NIL; bricscad / lax: marker + (280 . 1) synthesised |
+| 6c | explicit =(280 . 0)= | listed as given, =(280 . 0)= | NO 280 listed at all (=-1 0 5 100 1=) | =(280 . 0)= | AutoCAD-family as given; BricsCAD dialects drop it |
+
+Raw evidence lines (case -> value), AutoCAD job 17026569911:
+- "(entget (namedobjdict)): 330 printed (null pointer?)" -> "(330 . <Nom d'entité: 0>)"
+- "XRECORD (340 . <handle string>): entmakex result" -> error "groupe DXF incorrect: (340 . \"2A2\")"
+- "XRECORD (320 . <ename>): entmakex + read-back" -> error "groupe DXF incorrect: (320 . <Nom d'entité: 22ceba124a0>)"
+- "XRECORD (340 . <ename>): read-back types" -> "330:ENAME 5:STR 340:ENAME 320:STR"
+- "XRECORD without 100 marker: entmakex" -> "NIL"
+- "XRECORD with explicit (280 . 0): entget codes and 280" -> "-1 0 330 5 100 280 1 | (280 . 0)"
+- "340 to an erased LINE: read-back" -> "330:ENAME 5:STR 340:ENAME | entget -> NIL | eq T"
+BricsCAD jobs 17026569912 / 17026569913:
+- "(entget (namedobjdict)): 330 printed (null pointer?)" -> "nil"
+- "XRECORD (340 . <ename>): read-back types" -> error "bad argument type <(320 . \"95\")> ; expected ENTITYNAME at [invalid DXF/XED data]"
+- "XRECORD (320 . <ename>): entmakex + read-back" -> "5:STR 320:ENAME"
+- "XRECORD without 100 marker: entget codes" -> "-1 0 5 100 280 1 70"
+- "XRECORD with explicit (280 . 0): entget codes and 280" -> "-1 0 5 100 1 | nil"
+- "entmod XRECORD 340 := handle string" -> error "bad argument type <(340 . \"95\")> ..."
+
+Side-by-side check: the same probe on the built clautolisp-sbcl (after
+the follow-up commit) with =--dialect autocad= and =--dialect bricscad=
+reproduces every row of the vendor columns for cases 2-6 (enames print
+=<Entity name: 10>= instead of the vendor's handles).
+
+* Resolution (clautolisp 2.3.7, 2026-10-08)
+
+Follow-up commit on the same branch, from the measurements:
+- 320-329 follow the product: strings (AutoCAD, and clautolisp / strict /
+  lax which take AutoCAD as normative), enames under the BricsCAD dialects
+  (=%ename-group-code-p=).
+- The null pointer "0" is omitted from the view under the BricsCAD
+  dialects, =<Entity name: 0>= otherwise.
+- =%vet-pointer-groups= (entmake, entmakex, entmod): a value of the wrong
+  kind in a pointer code (or in 320-329 per product) is the vendor's error
+  under the vendor dialects, accepted with the new registered warning
+  =[entmake-pointer-value]= under clautolisp and strict, silently under
+  lax -- the =%invalid-insert-policy= resolution, since the vendors agree.
+- XRECORD is =:since-r13-p= (divergence D1: AutoCAD refuses it without the
+  marker, BricsCAD synthesises it), and a non-graphical family's expected
+  markers no longer include AcDbObject.
+- BricsCAD dialects: an explicit 280 right after the marker is not listed
+  (=%bricscad-xrecord-drop-explicit-280=).
+Tests: =cador/tests/pointer-dialect-tests.lisp= (autocad, bricscad,
+clautolisp, lax, erased pointer on both products).
+
+Still open, filed separately: owners and header order
+(=issues/open/cador-entget-owner-and-header-layout.issue=, updated with
+what this probe showed).
 
 * Not fixed here (separate ticket)
 
