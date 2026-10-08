@@ -1266,6 +1266,68 @@ intersectwith:probe:bricscad:macos:
   # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
   rules:
     - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-intersectwith-probe.sh --backend bricscad
+
+intersectwith:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .intersectwith-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend bricscad
+
+intersectwith:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .intersectwith-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend autocad
+
+intersectwith:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .intersectwith-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend accoreconsole
+
 # --- real literals through alfe: every digit must reach the CAD -------------
 #
 # alfe-cad-transport-rounds-reals.issue. alfe's CAD-side loader used to PRINT
@@ -1290,7 +1352,7 @@ real-transport:probe:bricscad:macos:
   # a PROBE: automatic only when its family changed (and the runner is
   # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
   rules:
-    - if: '$$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
       when: on_success
       allow_failure: true
     - when: manual
@@ -1300,14 +1362,6 @@ real-transport:probe:bricscad:macos:
     GIT_SUBMODULE_STRATEGY: none
   script:
     - make -C autolisp-front-end build-alfe-sbcl
-    - bash scripts/run-intersectwith-probe.sh --backend bricscad
-
-intersectwith:probe:bricscad:windows:
-  extends: [.gate-windows-bricscad-soft, .intersectwith-artifacts]
-  # a PROBE: automatic only when its family changed (and the runner is
-  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
-  rules:
-    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
     - bash scripts/run-real-transport-probe.sh --backend bricscad
 
 real-transport:probe:bricscad:windows:
@@ -1315,7 +1369,7 @@ real-transport:probe:bricscad:windows:
   # a PROBE: automatic only when its family changed (and the runner is
   # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
   rules:
-    - if: '$$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
       when: on_success
       allow_failure: true
     - when: manual
@@ -1325,14 +1379,6 @@ real-transport:probe:bricscad:windows:
     GIT_SUBMODULE_STRATEGY: none
   script:
     - make -C autolisp-front-end build-alfe-sbcl
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend bricscad
-
-intersectwith:probe:autocad:windows:
-  extends: [.gate-windows-cad-soft, .intersectwith-artifacts]
-  # a PROBE: automatic only when its family changed (and the runner is
-  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
-  rules:
-    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-real-transport-probe.ps1 -Backend bricscad
 
 real-transport:probe:autocad:windows:
@@ -1340,7 +1386,7 @@ real-transport:probe:autocad:windows:
   # a PROBE: automatic only when its family changed (and the runner is
   # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
   rules:
-    - if: '$$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
       when: on_success
       allow_failure: true
     - when: manual
@@ -1350,14 +1396,6 @@ real-transport:probe:autocad:windows:
     GIT_SUBMODULE_STRATEGY: none
   script:
     - make -C autolisp-front-end build-alfe-sbcl
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend autocad
-
-intersectwith:probe:accoreconsole:windows:
-  extends: [.gate-windows-cad-soft, .intersectwith-artifacts]
-  # a PROBE: automatic only when its family changed (and the runner is
-  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
-  rules:
-    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-real-transport-probe.ps1 -Backend autocad
 
 real-transport:probe:accoreconsole:windows:
@@ -1365,7 +1403,7 @@ real-transport:probe:accoreconsole:windows:
   # a PROBE: automatic only when its family changed (and the runner is
   # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
   rules:
-    - if: '$$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
       when: on_success
       allow_failure: true
     - when: manual
@@ -1375,7 +1413,6 @@ real-transport:probe:accoreconsole:windows:
     GIT_SUBMODULE_STRATEGY: none
   script:
     - make -C autolisp-front-end build-alfe-sbcl
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend accoreconsole
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-real-transport-probe.ps1 -Backend accoreconsole
 
 # --- vendor probes on real BricsCAD / AutoCAD ------------------------------
