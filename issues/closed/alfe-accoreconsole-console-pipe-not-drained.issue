@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-accoreconsole-console-pipe-not-drained — a long accoreconsole run may block on its own console pipe (suspected)
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: windows-access (console-flood:probe:accoreconsole:windows to confirm on the AutoCAD runner)
@@ -186,3 +186,24 @@ Close this ticket when that job has reported FLOOD-VERDICT with this fix; then t
 session (and benchmark:autocad:windows, which also runs --mode batch and died
 mid-suite on 2026-09-28, can be re-run against it --
 autocad-com-fails-in-disconnected-windows-session.issue).
+
+* Verified on the runner (2026-10-08, job 17032195060) -- DONE
+
+console-flood:probe:accoreconsole:windows on MR !465 (alfe with the fix):
+
+#+begin_example
+FLOOD-ENGINE  acad 24.1
+FLOOD-DRIVER  prompt 200 added 0 dead
+FLOOD-DRIVER  princ 200 added 0 dead
+FLOOD-DRIVER  setvar 4200 added 1053916 live
+FLOOD-DONE    1055866 (1053916 added)
+FLOOD-RUN     alfe exit 0 after 12 s
+FLOOD-CONSOLE engine-console-stdout.txt = 1056196 bytes
+FLOOD-VERDICT complete, 1056196 console bytes in one session
+#+end_example
+
+About 1 MB of accoreconsole command echo (the CMDECHO SETVAR driver -- the
+kind of output that hung the single-session option-keyword runs after
+~4 KB) went through ONE session to the workdir file, and the run finished
+in 12 s. Neither (prompt ...) nor alfe's protocol-captured princ reaches the
+console; command echo does. The hypothesis is confirmed and the fix holds.
