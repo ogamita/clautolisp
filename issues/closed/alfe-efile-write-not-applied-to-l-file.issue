@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-efile-write-not-applied-to-l-file — -Efile-write never reaches the OPEN calls of the -l file (or -x forms) on the CAD backends, silently
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: CAD run (encoding:experiment:lispsys-bom:autocad:windows, encoding:experiment:bricscad:windows)
@@ -163,3 +163,35 @@ backend-cad-common.lisp comment, run-lispsys-bom-probe.ps1 and
 lispsys-forward-probe.lsp headers) is REPLACED on this branch: when the
 stacks are reconciled, keep this branch's wording (the cherry-picks merge as
 identical changes).
+
+* Verified on the runners (2026-10-08, MR !467) -- DONE
+
+All three Windows jobs ran the MR head; each FORWARD section is complete
+(ENC-PROBE DONE per way), no LAUNCH-ERROR / BOOTSTRAP-FAILED / ERROR.
+"AeB" with e-acute written "w", and e-acute appended "a" to a fresh file,
+with -Efile-write forwarded, through the three ways:
+
+| job | LISPSYS | alfe-load | -l | -x | verdict |
+|----------------------------------------+---------+----------------+----------------+----------------+---------|
+| 17033123932 lispsys-bom, AutoCAD 2022  | 0 | w3 a1 + 1 WARN | w3 a1 + 1 WARN | w3 a1 + 1 WARN | as rule |
+| 17033123932                            | 1 | w4 a2          | w4 a2          | w4 a2          | as rule |
+| 17033123932                            | 2 | w4 a2          | w4 a2          | w4 a2          | as rule |
+| 17033123931 autocad:windows (own LISPSYS 0) | 0 | w3 a1 + WARN | w3 a1 + WARN | w3 a1 + WARN | as rule |
+| 17033123930 bricscad:windows V25, CCS "UTF-8" | - | w7 a5 | w7 a5 | w7 a5 | as rule |
+
+#+begin_example
+[LISPSYS 1 forward -l] ENC E1F w SIZE 4
+[LISPSYS 1 forward -l] ENC E1F a SIZE 2
+[LISPSYS 2 forward -x] ENC E1F w SIZE 4
+[LISPSYS 0 forward -l] ENC E1F w SIZE 3
+[FORWARD -l] ENC E1F LISPSYS 0 FORWARDED-ARG nil FORWARDED-CCS "UTF-8"
+[FORWARD -l] ENC E1F w SIZE 7
+[FORWARD -l] ENC E1F a SIZE 5
+#+end_example
+
+BricsCAD bytes: e1f-w.txt = EF BB BF 41 C3 A9 42, e1f-a.txt = EF BB BF C3 A9
+(a fresh "a,ccs=UTF-8" file gets a BOM); AutoCAD at LISPSYS 0: 41 E9 42 /
+E9 (cp1252). The three ways never differ. Before the fix (job 16998925786)
+-l gave w3 / a1 at every level and no WARN. macOS BricsCAD (17033123929):
+the .sh experiment has no FORWARD step -- nothing is forwarded there, so it
+does not block; noted in encoding-probe-artifacts-and-macos-forward.
