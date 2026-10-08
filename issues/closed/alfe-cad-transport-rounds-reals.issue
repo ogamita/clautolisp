@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-transport-rounds-reals — alfe re-prints every loaded form for AutoCAD/BricsCAD, so real literals arrive rounded (6 significant digits on AutoCAD)
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -177,3 +177,29 @@ alfe's printer chose and whether it read back (=REALTX-PRINTER=). Expected
 after the fix: every =literal=, =normalised= and =x-request= line =exact=
 on all four. The second round of curve-geometry-probe (=reader= cases, MR
 !463) answers the same question for =cg-x=.
+
+* Verified on the runners (2026-10-08, MR !466) -- DONE for the source paths
+
+real-transport probe, 11 literals x 4 paths (top-level literal, normaliser-
+rewritten form, the CAD's own READ, an -x request):
+
+| target | literal | normalised | read | -x |
+|---------------------------------+---------+-------------------+---------+------|
+| BricsCAD V26 macOS (17033116727)  | 11/11 exact | 11/11 exact | 11/11 | 1/1 |
+| BricsCAD V25 Windows (17033116728) | 11/11 exact | 11/11 exact | 11/11 | 1/1 |
+| AutoCAD 2022 GUI (17033116729)     | 11/11 exact | 8/11 exact  | 11/11 | 1/1 |
+| AutoCAD accoreconsole (17033116730) | 11/11 exact | 8/11 exact | 11/11 | 1/1 |
+
+Every literal sent as SOURCE (-l forms, -x, REPL) now arrives exact on both
+products; before the fix AutoCAD received 6 significant digits. What remains
+is only the normaliser-REWRITTEN form on AutoCAD, where alfe must re-print and
+AutoCAD's rtos cannot render 17 significant digits nor a 3-digit exponent:
+
+#+begin_example
+REALTX b normalised differs REAL 1.570796326794895 1.570796326794895E+00
+REALTX i normalised differs REAL 1.797693134862313E+99 1.797693134862313E+99
+REALTX j normalised differs REAL 1.234567890123456E+17 1.234567890123456E+17
+#+end_example
+
+(pi/2 last digit; DBL_MAX exponent capped at 99; a 17-digit integer-valued
+real.) Moved to its own ticket: alfe-normalised-form-reals-autocad.issue.
