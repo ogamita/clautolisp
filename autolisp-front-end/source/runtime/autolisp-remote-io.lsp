@@ -179,6 +179,12 @@
     (if (= acc "")
       (setq acc line)
       (setq acc (strcat acc "\n" line))))
+  ;; Keep the request's TEXT: the server loop hands it to
+  ;; autolisp-eval-request-source with the form, so the CAD reads the
+  ;; request as it was written instead of a re-print of it, which kept
+  ;; only 6 (AutoCAD) or 14 (BricsCAD) digits of a real literal
+  ;; (alfe-cad-transport-rounds-reals).
+  (setq *AUTOLISP_PROTOCOL_REQUEST_TEXT* acc)
   (autolisp-protocol-read-from-text acc))
 
 ;; See autolisp-host-has-fn / autolisp-delay-ms in the bootstrap (loaded
@@ -282,6 +288,7 @@ context this side always has."
   (setq req-id 0)
   (autolisp-protocol-set-status "READY 0")
   (while (not *AUTOLISP_PROTOCOL_STOP*)
+    (setq *AUTOLISP_PROTOCOL_REQUEST_TEXT* nil)
     (setq form (vl-catch-all-apply 'autolisp-protocol-remote-read nil))
     (if (vl-catch-all-error-p form)
       (progn
@@ -305,7 +312,11 @@ context this side always has."
         (progn
           (setq req-id (+ req-id 1))
           (autolisp-protocol-set-status (strcat "RUNNING " (itoa req-id)))
-          (setq result (vl-catch-all-apply 'autolisp-eval-request-form (list form)))
+          (setq result (vl-catch-all-apply
+                         'autolisp-eval-request-source
+                         (list form
+                               (autolisp-first-form-text
+                                 *AUTOLISP_PROTOCOL_REQUEST_TEXT*))))
           (if (vl-catch-all-error-p result)
             (if (or (and (boundp '*AUTOLISP_QUIT_REQUESTED*)
                          *AUTOLISP_QUIT_REQUESTED*)

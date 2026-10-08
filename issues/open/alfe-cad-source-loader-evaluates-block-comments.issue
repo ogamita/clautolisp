@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-source-loader-evaluates-block-comments - documentation text is executed as AutoLISP
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P1
 #+TYPE: cad-runtime
 #+DEPENDS: -
@@ -87,3 +87,51 @@ removing documentation or defining a dummy SYMBOLE function.
   using the hosted protocol harness; verify AutoCAD and BricsCAD when available.
 - Loading =autolisp-test/vlisp-project.lsp= and the SCHMS ActiveX entry
   point proceeds beyond the documentation block on AutoCAD.
+
+* Fix (2026-10-08, clautolisp 2.3.13 / alfe 2.3.13)
+
+=autolisp-bootstrap.lsp=: the four scanners share one convention, held by
+=autolisp-source-block-open-p= / =autolisp-source-block-close-p=. A
+semicolon followed by =|= opens a BLOCK comment that only =|;= closes --
+across newlines; any other semicolon opens a line comment as before; both
+are ignored inside a string.
+
+- =autolisp-source-scan-text= reports the new state =incomplete-comment=
+  when the text ends inside a block, so the read loop keeps accumulating
+  lines (=empty= used to let it drop the text, and the block's next line was
+  then read as code). At end of file that state is the error /unexpected
+  end of file in a ;| block comment/, at the line the block opened.
+- =autolisp-source-first-form-end= skips blocks, and a comment now ends a
+  bare top-level atom as whitespace does.
+- =autolisp-source-trim-leading-junk= and =autolisp-source-leading-symbols=
+  skip leading blocks (so the =defun= name of a form preceded by its
+  documentation block is still found).
+- The loader's own READ gets the form with its block comments replaced by a
+  space (=autolisp-source-strip-block-comments=), so nothing depends on how
+  a CAD's READ treats =;|= inside a form. The text that reaches the CAD's
+  native LOAD (alfe-cad-transport-rounds-reals) keeps them: LOAD reads them
+  natively.
+
+Tests (=file-protocol-tests.lisp=, hosted clautolisp, seen red -- 8 checks
+-- against the 2.3.12 bootstrap):
+- =protocol-loaded-file-ignores-block-comments=: the doc block of this
+  ticket (with a quote and a parenthesis in the prose), an inline block
+  between two forms, a block inside a form, =;|= in a string, a multi-line
+  block followed by a form on its closing line, a block between two forms
+  on one line, a block opened after a form, =;|= inside a line comment;
+  every form runs once, in order, no =(boom)= runs.
+- =protocol-block-comment-keeps-source-lines=: a failure after a 3-line
+  block is reported at its own line 5; an unterminated block is an EOF
+  error naming the block comment.
+
+Probe: =tests/scenarios/entities/block-comment-probe.lsp= +
+=scripts/run-block-comment-probe.*=, jobs
+=block-comment:probe:{bricscad:macos,bricscad:windows,autocad:windows,
+accoreconsole:windows}= (family =block-comment=). Expected on every CAD:
+every =BLKC ... ran= line, =BLKC-VALUES (1 2 3 4 5)=, =BLKC-DONE=. The
+=--clautolisp= backend loads with clautolisp's own reader, which always
+handled block comments, so it is only the baseline. Ticket stays NEXT until
+the probe has run on the CADs.
+
+Not measured: whether AutoCAD's own LOAD accepts a file ending inside an
+open block comment; alfe reports it as an error, as clautolisp does.

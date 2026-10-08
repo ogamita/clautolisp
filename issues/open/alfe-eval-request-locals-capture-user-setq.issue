@@ -1,0 +1,50 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-eval-request-locals-capture-user-setq -- a request's (setq f ...) / (setq text ...) / (setq form ...) on a CAD backend sets the request evaluator's LOCAL, and the value is gone
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS:
+#+BRANCH: fix-alfe-eval-request-locals-capture-user-setq
+#+DATE: 2026-10-08
+
+* Context
+
+Found 2026-10-08 while writing the tests of
+alfe-efile-write-not-applied-to-l-file (alfe 2.3.14): an -l file doing
+=(setq f (open p "w"))= and then =(write-char 65 f)= failed on the hosted
+engine with "WRITE-CHAR expects an open file descriptor". Same class as the
+closed alfe-load-user-setq-clobbers-loader-locals (alfe 2.2.155), which fixed
+the loader's read loop (alfe-- prefixed locals) but not the request evaluator
+the loop calls.
+
+* Problem
+
+AutoLISP binds a DEFUN's parameters and /-locals dynamically. Every protocol
+request -- each form of an -l file (via the deported loader), -x, --main, the
+REPL -- is evaluated by the CAD's native LOAD of alfe-eval.lsp, called from
+inside the emitted =autolisp-eval-request-source= (file-protocol.lisp,
+run-common.lsp), whose lambda list is
+=(form source / r err path text f normalized)=, itself called from the
+runtime server loop =autolisp-protocol-server-loop= (=keep form req-id result
+rc=, autolisp-remote-io.lsp). A user =setq= of any of those names during the
+request sets the LOCAL binding, which disappears when the request returns: the
+global is never set.
+
+* Repro (hosted clautolisp, the harness of file-protocol-tests.lisp)
+
+Requests "(setq f 42 text 43 r 44 path 45 zz 46 result 47 form 48)" then
+"(princ (vl-prin1-to-string (list f text r path zz result form)))":
+prints the evaluator's own values for F (the alfe-eval.lsp file descriptor),
+TEXT (the request text), R (nil), PATH (alfe-eval.lsp), FORM (the form) --
+only ZZ is 46. Any CAD backend runs the same emitted code (AutoCAD, BricsCAD),
+so a program using F, R, PATH, TEXT, ERR, FORM, SOURCE, NORMALIZED, RESULT,
+KEEP, REQ-ID or RC as a global breaks under alfe and not in the CAD itself.
+
+* Fix direction
+
+As for the loader: rename every parameter / local of the request path that
+runs while user code is evaluated to an =alfe--= prefixed name
+(=autolisp-eval-request-source=, =autolisp-eval-request-form= in run-common,
+=autolisp-protocol-server-loop=, =autolisp-run-eval-file=,
+=autolisp-run-main=, the REPL file loop), and add the repro above as a test
+over every such name.

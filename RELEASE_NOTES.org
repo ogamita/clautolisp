@@ -1822,6 +1822,19 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- *=;| block comments |;= are comments on AutoCAD and BricsCAD* (2.3.13).
+  alfe's CAD-side loader knew only the line comment, so an =-l= file with a
+  documentation block (=;| @Global ... |;=) had the block's later lines
+  evaluated, and its prose failed as code (/no function definition:
+  SYMBOLE/). Block comments are now skipped wherever they stand. See the
+  manual's /How a form reaches a CAD/.
+- *Real literals reach AutoCAD and BricsCAD with every digit* (2.3.12). alfe
+  handed each form of an =-l= file (and each =-x= / REPL form) to the CAD
+  PRINTED BACK with =princ=, which keeps 6 significant digits of a real on
+  AutoCAD and 14 on BricsCAD: =(setq a 1.5707963267948966)= ran as
+  =(setq a 1.5708)=. The CAD now reads the form's own text; a form alfe
+  must rewrite is printed with every real at full precision. See the
+  manual's /How a form reaches a CAD/.
 - *=alfe --list-hosts= answers.* It prints cador, cadtui and nihil with a
   one-line summary each and exits, like =--list-dialects=. The option was
   accepted and ignored before, so with no other action alfe opened its
@@ -2006,13 +2019,18 @@ file or COM), and forwards the workload.
   2.3.9 to write windows-1252 without a BOM). No log, or =--clautolisp=: a
   warning and no file. § /The CAD's log: --cad-log/.
 - ~-Efile-write UTF-8~ now reaches AutoCAD (alfe 2.2.231; ~"a"~ since
-  2.3.9): in code loaded with =alfe-load=, a plain ~(open f "w")~ /
-  ~(open f "a")~ becomes ~(open f "w" "utf8")~ / ~(open f "a" "utf8")~ when
-  the running AutoCAD's =LISPSYS= is 1 or 2 (measured: UTF-8 without a BOM,
-  and an append never adds a second BOM); at =LISPSYS= 0 it is warned about
-  once and the plain mode is used. The file given to =-l= is itself not
-  rewritten, so its own ~open~ calls are not forwarded: have it
-  =alfe-load= the code that writes.
+  2.3.9): a plain ~(open f "w")~ / ~(open f "a")~ becomes
+  ~(open f "w" "utf8")~ / ~(open f "a" "utf8")~ when the running AutoCAD's
+  =LISPSYS= is 1 or 2 (measured: UTF-8 without a BOM, and an append never
+  adds a second BOM); at =LISPSYS= 0 it is warned about once per run and
+  the plain mode is used.
+- ~-Efile-write~ reaches the ~open~ calls of EVERY action (alfe 2.3.14):
+  the file given to =-l=, =-x= forms, =--main=, REPL input, as well as code
+  loaded with =alfe-load= -- on AutoCAD (~"utf8"~) and on BricsCAD/Windows
+  (~,ccs=~). Before, only =alfe-load= forwarded it and an =-l= program's
+  own ~open~ calls silently got the CAD default. Each ~open~ is rewritten
+  in the source text, which otherwise reaches the CAD as written; nothing
+  changes without ~-Efile-write~. § /Encoding/.
 - Per-*situation* encoding CLI: ~-E<situation>[-<dir>] ENC~ /
   ~--<situation>-encoding ENC~ for ~source~ / ~file~ / ~console~ /
   ~cadstdio~ / ~log~ / ~terminal~, plus a bare ~-E ENC~ that sets them

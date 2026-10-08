@@ -1206,8 +1206,14 @@ default) emits nothing, so OPEN calls are never rewritten.
 
 OPEN-WRITE-ARG, when a non-empty string (\"utf8\", AutoCAD only), emits
 `(setq *ALFE-OPEN-WRITE-ARG* \"...\")': alfe-open* then passes it as the
-third argument of a plain \"w\" OPEN when the CAD's LISPSYS is 1 or 2, and
-warns once (on the error channel) when it is 0 or the mode is \"a\".
+third argument of a plain \"w\" or \"a\" OPEN when the CAD's LISPSYS is 1
+or 2, and warns once per run (on the error channel) when it is 0.
+
+Either one applies to EVERY action (alfe-efile-write-not-applied-to-l-file):
+code loaded with alfe-load, and every protocol request -- the -l file read
+by the deported loader, -x forms, --main, REPL input. A request's OPEN calls
+are rewritten in its source TEXT (alfe-open-request-text in the bootstrap),
+so the rest of the text reaches the CAD's LOAD as written.
 
 When CLI-OPTIONS is non-NIL, the CLI-derived *AUTOLISP-…* globals
 from transmit-options.issue are emitted at the *top* of the file
@@ -1444,6 +1450,25 @@ Returns the path of the emitted file."
       (write-line (strcat \"DEBUG=\" (if *AUTOLISP-DEBUG* \"1\" \"0\")) f)~%~
       (write-line (strcat \"VERBOSE=\" (if *AUTOLISP-VERBOSE* \"1\" \"0\")) f)~%~
       (close f))))~%~
+;; The text alfe-eval.lsp gets for FORM. SOURCE, the text FORM was read~%~
+;; from, is used only when normalize returned FORM itself (EQ: nothing~%~
+;; was rewritten) and SOURCE reads back EQUAL to FORM -- so the CAD never~%~
+;; evaluates anything but what was read. Otherwise the (normalised) form~%~
+;; is printed with autolisp-form-source-text, reals at full precision.~%~
+;; With -Efile-write forwarded, a form that calls OPEN gets its OPEN calls~%~
+;; rewritten into alfe-open* -- in its TEXT when that text is usable~%~
+;; (alfe-open-request-text, alfe-efile-write-not-applied-to-l-file).~%~
+(defun alfe-request-source-text (form normalized source / back)~%~
+  (cond~%~
+   ((alfe-open-request-p normalized)~%~
+    (alfe-open-request-text form normalized source))~%~
+   ((and source (eq normalized form))~%~
+    (progn~%~
+      (setq back (vl-catch-all-apply 'read (list source)))~%~
+      (if (and (not (vl-catch-all-error-p back)) (equal back form))~%~
+        source~%~
+        (autolisp-form-source-text normalized))))~%~
+   (T (autolisp-form-source-text normalized))))~%~
 ;; Wrap autolisp-eval-request-form so the publish fires after every~%~
 ;; protocol-driven evaluation. For non-LOAD forms, we no longer call~%~
 ;; `(eval form)' inline — BricsCAD V26 mis-dispatches embedded~%~
@@ -1460,14 +1485,26 @@ Returns the path of the emitted file."
 ;; full diagnosis. Performance: per-request file write + load adds~%~
 ;; a few ms on SSDs, well below the human perception threshold for~%~
 ;; a typed-form REPL turn.~%~
-(defun autolisp-eval-request-form (form / r err path text f)~%~
-  (setq form (autolisp-normalize-princ-call form))~%~
+;;~%~
+;; WHAT is written to alfe-eval.lsp: the form's own SOURCE TEXT whenever~%~
+;; the caller has it (the -l read loop, the protocol request, -x) and no~%~
+;; normaliser rewrote the form -- the CAD then reads exactly what the~%~
+;; user wrote. Printing the form back instead rendered every real with~%~
+;; PRINC, which keeps 6 significant digits on AutoCAD and 14 on BricsCAD:~%~
+;; (setq a 1.5707963267948966) reached AutoCAD as (setq a 1.5708). When~%~
+;; the form must be printed (no text, or normalize rebuilt it) it goes~%~
+;; through autolisp-form-source-text, which prints reals losslessly. See~%~
+;; alfe-cad-transport-rounds-reals.~%~
+(defun autolisp-eval-request-form (form)~%~
+  (autolisp-eval-request-source form nil))~%~
+(defun autolisp-eval-request-source (form source / r err path text f normalized)~%~
+  (setq normalized (autolisp-normalize-princ-call form))~%~
   (cond~%~
-    ((autolisp-load-form-p form)~%~
-      (setq r (autolisp-eval-load-form form)))~%~
+    ((autolisp-load-form-p normalized)~%~
+      (setq r (autolisp-eval-load-form normalized)))~%~
     (T~%~
       (setq path (strcat *AUTOLISP_PROTOCOL_DIR* \"alfe-eval.lsp\"))~%~
-      (setq text (autolisp-readable-text form))~%~
+      (setq text (alfe-request-source-text form normalized source))~%~
       (setq f (open path \"w\"))~%~
       (if f~%~
         (progn~%~

@@ -1,0 +1,31 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: encoding-probe-artifacts-and-macos-forward -- encoding probe artefacts carry other jobs' files; macOS has no FORWARD step
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-08
+
+* Symptom (found verifying MR !467, jobs 17033123929-32)
+
+1. The Windows runner reuses one build directory and the encoding probe
+   scripts never clean dist/encoding/, so each job's artefact also holds
+   older files of OTHER jobs: 17033123930's lispsys-bom-autocad-Windows.txt
+   and autocad-Windows.txt date from 15:07-15:08 (other runs), 17033123932's
+   e1f/* and autocad-Windows.txt were written by 17033123931, and
+   clautolisp-Linux.txt dates from 2026-08-21. A file cited from an
+   artefact must be checked by timestamp -- easy to cite the wrong run.
+2. run-lispsys-bom-probe.ps1 writes its forward files under dist/e1/,
+   which is not in the artefact: only the reported SIZE lines are evidence
+   for that job, not the bytes.
+3. scripts/run-encoding-experiment.sh (macOS) has no FORWARD step (only the
+   .ps1 has one), so "BricsCAD macOS forwards nothing" is never measured end
+   to end.
+4. The -x way prints only "-x LISPSYS n", not FORWARDED-ARG / -CCS.
+
+* Fix
+
+Clean dist/encoding/ (and dist/e1/) at the start of every encoding probe
+script, include dist/e1/ in the artefact paths, add the FORWARD step to the
+.sh experiment, print FORWARDED-ARG / -CCS on the -x way too.

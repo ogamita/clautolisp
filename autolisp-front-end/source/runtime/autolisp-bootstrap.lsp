@@ -175,6 +175,127 @@
 (defun autolisp-stdout-text (obj)
   (autolisp-readable-text obj))
 
+;; --- Printing a form back as SOURCE, losslessly ---------------------------
+;;
+;; alfe-cad-transport-rounds-reals: autolisp-readable-text renders an atom
+;; with vl-princ-to-string, which is right for what a program PRINTS (the
+;; user sees the digits the CAD's own princ would show) and wrong for SOURCE
+;; that the CAD will read again: PRINC of a REAL keeps 6 significant digits on
+;; AutoCAD (1.5707963267948966 -> 1.5708) and 14 on BricsCAD. A form that has
+;; to be written back as text (alfe-eval.lsp, when a normaliser rewrote it)
+;; goes through autolisp-form-source-text instead, which prints every REAL
+;; with as many digits as it takes to read back to the SAME double.
+;;
+;; The candidates are tried shortest first, and each is CHECKED in the CAD
+;; itself by reading it back -- the CAD's reader is the one that will read the
+;; file, so its verdict is the one that counts:
+;;   1. the plain princ text (3.0, 0.5: kept as the user would write them);
+;;   2. (rtos x 1 16): scientific, 17 significant digits -- enough for any
+;;      double -- and any magnitude (1.0e-300, 1.0e300);
+;;   3. (rtos x 2 16): decimal, for a CAD whose reader would not take 2.
+;; RTOS output depends on DIMZIN (its zero-suppression bits can drop the
+;; leading zero, ".5", or the trailing ones, "3" for 3.0), so it is normalised
+;; to always carry a digit before and after the point; a REAL stays a REAL.
+;; When no candidate reads back exactly, the readable one with the most
+;; digits is used, and failing that the plain text: never worse than before.
+
+;; The REAL that TEXT reads as, or NIL when it reads as anything else or
+;; does not read at all.
+(defun autolisp-real-text-value (text / r)
+  (setq r (vl-catch-all-apply 'read (list text)))
+  (if (and (not (vl-catch-all-error-p r)) (= (type r) 'REAL))
+    r
+    nil))
+
+(defun autolisp-real-text-reads-back-p (text x / r)
+  (setq r (autolisp-real-text-value text))
+  (and r (= r x)))
+
+;; Undo what DIMZIN's zero suppression does to RTOS output: ".5" -> "0.5",
+;; "-.5" -> "-0.5", "3" -> "3.0", "3." -> "3.0", "1E+00" -> "1.0E+00".
+(defun autolisp-real-text-normalize (text / epos mant expo)
+  (cond
+    ((= (substr text 1 1) ".") (setq text (strcat "0" text)))
+    ((= (substr text 1 2) "-.") (setq text (strcat "-0" (substr text 2)))))
+  (setq epos (vl-string-search "E" (strcase text)))
+  (if epos
+    (progn
+      (setq mant (substr text 1 epos))
+      (setq expo (substr text (+ epos 1))))
+    (progn
+      (setq mant text)
+      (setq expo "")))
+  (cond
+    ((not (vl-string-search "." mant)) (setq mant (strcat mant ".0")))
+    ((= (substr mant (strlen mant)) ".") (setq mant (strcat mant "0"))))
+  (strcat mant expo))
+
+;; (rtos X MODE 16), normalised, or NIL when RTOS refuses.
+(defun autolisp-real-rtos-text (x mode / s)
+  (setq s (vl-catch-all-apply 'rtos (list x mode 16)))
+  (if (or (vl-catch-all-error-p s) (/= (type s) 'STR) (= s ""))
+    nil
+    (autolisp-real-text-normalize s)))
+
+;; T when the REAL X is a negative zero. = cannot tell -0.0 from 0.0, but
+;; ATAN (atan2) can: (atan -0.0 -1.0) is -pi, (atan 0.0 -1.0) is +pi.
+(defun autolisp-real-negative-zero-p (x / r)
+  (and (= x 0.0)
+       (progn
+         (setq r (vl-catch-all-apply 'atan (list x -1.0)))
+         (and (not (vl-catch-all-error-p r)) (minusp r)))))
+
+;; Source text for the REAL X that reads back to X itself.
+(defun autolisp-real-source-text (x / plain sci dec)
+  (setq plain (autolisp-render x))
+  (cond
+    ;; Zero: every candidate reads back = to it whatever its sign, so the
+    ;; sign is decided here (RTOS drops it on some hosts).
+    ((= x 0.0) (if (autolisp-real-negative-zero-p x) "-0.0" "0.0"))
+    ((autolisp-real-text-reads-back-p plain x) plain)
+    ((and (setq sci (autolisp-real-rtos-text x 1))
+          (autolisp-real-text-reads-back-p sci x))
+     sci)
+    ((and (setq dec (autolisp-real-rtos-text x 2))
+          (autolisp-real-text-reads-back-p dec x))
+     dec)
+    ((and sci (autolisp-real-text-value sci)) sci)
+    ((and dec (autolisp-real-text-value dec)) dec)
+    (T plain)))
+
+;; autolisp-readable-text for SOURCE: the same rendering (strings quoted and
+;; escaped, dotted tails kept, symbols and integers as princ shows them)
+;; except that a REAL keeps all its digits.
+(defun autolisp-form-source-text (obj / acc first tail rest)
+  (cond
+    ((null obj)
+     "nil")
+    ((= (type obj) 'STR)
+     (strcat "\"" (autolisp-escape-string obj) "\""))
+    ((= (type obj) 'REAL)
+     (autolisp-real-source-text obj))
+    ((listp obj)
+     (setq acc "(")
+     (setq first T)
+     (setq tail obj)
+     (while tail
+       (if first
+         (setq first nil)
+         (setq acc (strcat acc " ")))
+       (setq acc (strcat acc (autolisp-form-source-text (car tail))))
+       (setq rest (cdr tail))
+       (cond
+         ((null rest)
+           (setq tail nil))
+         ((listp rest)
+           (setq tail rest))
+         (T
+           (setq acc (strcat acc " . " (autolisp-form-source-text rest)))
+           (setq tail nil))))
+     (strcat acc ")"))
+    (T
+     (autolisp-render obj))))
+
 (defun autolisp-emit-user-out (obj)
   (if *AUTOLISP_CAPTURE_STDOUT*
     (autolisp-write-line *AUTOLISP_OUTFILE*
@@ -214,7 +335,64 @@
     (autolisp-host-quit))
   code)
 
-(defun autolisp-source-scan-text (text / idx len depth in-string escape in-comment ch line col open-stack started top)
+;; AutoLISP has two comment forms: a semicolon comments out the rest of
+;; its line, and ;| opens a BLOCK comment that runs, across lines, to the
+;; next |; -- the documentation blocks of SCHMS and outils-autolisp are
+;; written that way. Every scanner below tracks both, so that the prose
+;; of a block comment -- parentheses, quotes and semicolons included --
+;; is never taken for code (alfe-cad-source-loader-evaluates-block-
+;; comments: `no function definition: SYMBOLE' was the word after a
+;; parenthesis in such a block). Delimiters inside a string are text.
+(defun autolisp-source-block-open-p (text idx)
+  (and (= (substr text idx 1) ";")
+       (= (substr text (+ idx 1) 1) "|")))
+
+(defun autolisp-source-block-close-p (text idx)
+  (and (= (substr text idx 1) "|")
+       (= (substr text (+ idx 1) 1) ";")))
+
+;; TEXT without its block comments, each replaced by one space, for the
+;; loader's own READ: what the CAD's READ makes of a block comment inside
+;; a form is not something the loader needs to depend on. TEXT is
+;; returned as is when it holds no ;| at all.
+(defun autolisp-source-strip-block-comments (text / idx len ch in-string escape in-line acc seg)
+  (if (not (vl-string-search ";|" text))
+    text
+    (progn
+      (setq idx 1)
+      (setq len (strlen text))
+      (setq in-string nil)
+      (setq escape nil)
+      (setq in-line nil)
+      (setq acc '())
+      (setq seg 1)
+      (while (<= idx len)
+        (setq ch (substr text idx 1))
+        (cond
+          (in-line
+           (if (= ch "\n") (setq in-line nil)))
+          (in-string
+           (cond
+             (escape (setq escape nil))
+             ((= ch "\\") (setq escape T))
+             ((= ch "\"") (setq in-string nil))))
+          ((= ch "\"") (setq in-string T))
+          ((autolisp-source-block-open-p text idx)
+           (setq acc (cons " " (cons (substr text seg (- idx seg)) acc)))
+           (setq idx (+ idx 2))
+           (while (and (<= idx len)
+                       (not (autolisp-source-block-close-p text idx)))
+             (setq idx (+ idx 1)))
+           ;; idx is on the | of |; (or past the end): skip that |, the
+           ;; loop step skips the ;.
+           (setq seg (+ idx 2)))
+          ((= ch ";") (setq in-line T)))
+        (setq idx (+ idx 1)))
+      (if (<= seg len)
+        (setq acc (cons (substr text seg) acc)))
+      (apply 'strcat (reverse acc)))))
+
+(defun autolisp-source-scan-text (text / idx len depth in-string escape in-comment ch line col open-stack started top block-line block-col)
   (setq *AUTOLISP_SOURCE_SCAN_STATE* 'empty)
   (setq *AUTOLISP_SOURCE_SCAN_LINE* 1)
   (setq *AUTOLISP_SOURCE_SCAN_COL* 1)
@@ -235,10 +413,17 @@
       ((= ch "\n")
        (setq line (+ line 1))
        (setq col 0)
-       (setq in-comment nil))
+       (if (eq in-comment 'line)
+         (setq in-comment nil)))
       (T
        (setq col (+ col 1))
        (cond
+         ((eq in-comment 'block)
+          (if (autolisp-source-block-close-p text idx)
+            (progn
+              (setq in-comment nil)
+              (setq idx (+ idx 1))
+              (setq col (+ col 1)))))
          (in-comment
           nil)
          (in-string
@@ -249,8 +434,14 @@
              (setq escape T))
             ((= ch "\"")
              (setq in-string nil))))
+         ((autolisp-source-block-open-p text idx)
+          (setq in-comment 'block)
+          (setq block-line line)
+          (setq block-col col)
+          (setq idx (+ idx 1))
+          (setq col (+ col 1)))
          ((= ch ";")
-          (setq in-comment T))
+          (setq in-comment 'line))
          ((member ch '(" " "\t" "\r"))
           nil)
          (T
@@ -272,9 +463,11 @@
                  (setq *AUTOLISP_SOURCE_SCAN_COL* col)))))))))
     (setq idx (+ idx 1)))
   (if (/= *AUTOLISP_SOURCE_SCAN_STATE* 'extra)
+    ;; in-string and open-stack imply started. A block comment still
+    ;; open at the end needs more lines even when no form has begun --
+    ;; 'empty would let the loader drop the text, and the comment's next
+    ;; line would then be read as code.
     (cond
-      ((not started)
-       (setq *AUTOLISP_SOURCE_SCAN_STATE* 'empty))
       (in-string
        (setq *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)
        (setq *AUTOLISP_SOURCE_SCAN_LINE* line)
@@ -284,6 +477,12 @@
        (setq *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete)
        (setq *AUTOLISP_SOURCE_SCAN_LINE* (car top))
        (setq *AUTOLISP_SOURCE_SCAN_COL* (cadr top)))
+      ((eq in-comment 'block)
+       (setq *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-comment)
+       (setq *AUTOLISP_SOURCE_SCAN_LINE* block-line)
+       (setq *AUTOLISP_SOURCE_SCAN_COL* block-col))
+      ((not started)
+       (setq *AUTOLISP_SOURCE_SCAN_STATE* 'empty))
       (T
        (setq *AUTOLISP_SOURCE_SCAN_STATE* 'complete)
        (setq *AUTOLISP_SOURCE_SCAN_LINE* line)
@@ -299,12 +498,21 @@
               (< (length tokens) count))
     (setq ch (substr text idx 1))
     (cond
+      ((eq in-comment 'block)
+       (if (autolisp-source-block-close-p text idx)
+         (progn
+           (setq in-comment nil)
+           (setq idx (+ idx 2)))
+         (setq idx (+ idx 1))))
       (in-comment
        (if (= ch "\n")
          (setq in-comment nil))
        (setq idx (+ idx 1)))
+      ((autolisp-source-block-open-p text idx)
+       (setq in-comment 'block)
+       (setq idx (+ idx 2)))
       ((= ch ";")
-       (setq in-comment T)
+       (setq in-comment 'line)
        (setq idx (+ idx 1)))
       ((member ch '(" " "\t" "\r" "\n" "(" ")"))
        (setq idx (+ idx 1)))
@@ -336,12 +544,21 @@
   (while (and (<= idx len) (not done))
     (setq ch (substr text idx 1))
     (cond
+      ((eq in-comment 'block)
+       (if (autolisp-source-block-close-p text idx)
+         (progn
+           (setq in-comment nil)
+           (setq idx (+ idx 2)))
+         (setq idx (+ idx 1))))
       (in-comment
        (if (= ch "\n")
          (setq in-comment nil))
        (setq idx (+ idx 1)))
+      ((autolisp-source-block-open-p text idx)
+       (setq in-comment 'block)
+       (setq idx (+ idx 2)))
       ((= ch ";")
-       (setq in-comment T)
+       (setq in-comment 'line)
        (setq idx (+ idx 1)))
       ((member ch '(" " "\t" "\r" "\n"))
        (setq idx (+ idx 1)))
@@ -598,7 +815,8 @@
 ;;
 ;; The conventions are autolisp-source-scan-text's: a string runs to its
 ;; unescaped closing quote, a semicolon comments out the rest of its line,
-;; everything else is structure. A form is a parenthesised list -- ending
+;; ;| comments out everything up to the next |;, everything else is
+;; structure. A form is a parenthesised list -- ending
 ;; at the paren that brings the depth back to zero -- or a bare atom,
 ;; which ends before the first whitespace after it, or at end of text.
 (defun autolisp-source-first-form-end
@@ -614,6 +832,11 @@
   (while (and (<= idx len) (not found))
     (setq ch (substr text idx 1))
     (cond
+      ((eq in-comment 'block)
+       (if (autolisp-source-block-close-p text idx)
+         (progn
+           (setq in-comment nil)
+           (setq idx (+ idx 1)))))
       (in-comment
        (if (= ch "\n") (setq in-comment nil)))
       (in-string
@@ -624,7 +847,13 @@
           (setq in-string nil)
           ;; A string at top level is a complete form by itself.
           (if (= depth 0) (setq found idx)))))
-      ((= ch ";") (setq in-comment T))
+      ((and started (= depth 0) (= ch ";"))
+       ;; A comment ends a bare atom begun at top level.
+       (setq found (- idx 1)))
+      ((autolisp-source-block-open-p text idx)
+       (setq in-comment 'block)
+       (setq idx (+ idx 1)))
+      ((= ch ";") (setq in-comment 'line))
       ((= ch "\"")
        (setq in-string T)
        (setq started T))
@@ -683,7 +912,8 @@
            (setq alfe--defun-name (autolisp-source-leading-defun-name alfe--piece))
            (setq alfe--form-read
                  (vl-catch-all-apply 'read
-                                     (list (autolisp-source-trim-leading-junk alfe--piece))))
+                                     (list (autolisp-source-strip-block-comments
+                                             (autolisp-source-trim-leading-junk alfe--piece)))))
            (if (vl-catch-all-error-p alfe--form-read)
              (progn
                (close alfe--f)
@@ -704,13 +934,17 @@
                ;; rewrites native ops to alfe-* and evaluates DIRECTLY, so the
                ;; form is never re-serialised to alfe-eval.lsp and native-loaded
                ;; (which re-introduces a high byte that chokes AutoCAD). The
-               ;; default protocol path keeps going through eval-request-form.
+               ;; default protocol path keeps going through eval-request-form,
+               ;; WITH the form's own text: on a CAD that text is what reaches
+               ;; the native LOAD, so a real literal keeps every digit the
+               ;; file gave it (alfe-cad-transport-rounds-reals).
                (setq alfe--eval-result
-                 (vl-catch-all-apply
-                   (if (and (boundp '*alfe-load-rewrite*) *alfe-load-rewrite*)
-                     'alfe-eval-rewritten-form
-                     'autolisp-eval-request-form)
-                   (list alfe--form-read)))
+                 (if (and (boundp '*alfe-load-rewrite*) *alfe-load-rewrite*)
+                   (vl-catch-all-apply 'alfe-eval-rewritten-form
+                                       (list alfe--form-read))
+                   (vl-catch-all-apply 'autolisp-eval-request-source
+                                       (list alfe--form-read
+                                             (autolisp-first-form-text alfe--piece)))))
                (setq *AUTOLISP_CAPTURE_STDOUT* alfe--capture-old)
                (if (vl-catch-all-error-p alfe--eval-result)
                  (if (or *AUTOLISP_QUIT_REQUESTED*
@@ -737,8 +971,9 @@
              (setq alfe--piece-end nil)))
            ;; What is left is either nothing of substance -- whitespace or
            ;; a trailing comment -- or the start of a form the next lines
-           ;; continue. Keep the latter, and let it own the current line.
-           (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete)
+           ;; continue -- or a block comment they continue. Keep the latter,
+           ;; and let it own the current line.
+           (if (member *AUTOLISP_SOURCE_SCAN_STATE* '(incomplete incomplete-comment))
              (setq alfe--form-start-line alfe--line-no)
              (progn
                (setq alfe--form-text "")
@@ -764,9 +999,13 @@
           ;; exists, so they cannot rely on it for their own decode.
           (if (/= *AUTOLISP_SOURCE_SCAN_STATE* 'empty)
             (autolisp-source-raise alfe--resolved
-                                   (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)
-                                     "unexpected end of file while reading string"
-                                     "unexpected end of file while reading form")
+                                   (cond
+                                     ((= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)
+                                      "unexpected end of file while reading string")
+                                     ((= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-comment)
+                                      "unexpected end of file in a ;| block comment")
+                                     (T
+                                      "unexpected end of file while reading form"))
                                    alfe--line-no
                                    1
                                    alfe--form-start-line
@@ -1023,6 +1262,186 @@
 (defun alfe-eval-rewritten-form (alfe--form)
   (eval (alfe-rewrite-form alfe--form)))
 
+;; --- -Efile-write on EVERY action, not only in alfe-loaded code ----------
+;;
+;; alfe-efile-write-not-applied-to-l-file (pjb 2026-10-08: "apply
+;; -Efile-write to -l and -x too"). The -l file, -x forms, --main, REPL input
+;; and every other protocol request reach the CAD through
+;; autolisp-eval-request-source, which hands the request's own TEXT to the
+;; CAD's native LOAD (alfe-cad-transport-rounds-reals: a re-print loses the
+;; digits of a real). So OPEN is rewritten there IN THE TEXT: each OPEN call
+;; "(open a b)" becomes "(alfe-open* (list a b))", and every other character
+;; of the source is kept as written. Shadowing OPEN itself cannot do it:
+;; AutoCAD has no &rest, and OPEN takes two or three arguments.
+;;
+;; Only OPEN, and only while -Efile-write is forwarded (alfe-open-rewrite-p):
+;; without it nothing here runs and no request changes. princ/print/prin1/
+;; load keep their own (request-path) handling -- unlike alfe-load, which
+;; rewrites them too.
+
+;; T iff FORM contains an OPEN call, outside QUOTE / FUNCTION. Walks without
+;; consing, like alfe-form-needs-rewrite-p, but for OPEN alone.
+(defun alfe-form-has-open-call-p (form / head s)
+  (cond
+    ((atom form) nil)
+    ((not (listp form)) nil)
+    ((null form) nil)
+    (T
+     (setq head (car form))
+     (cond
+       ((and (= (type head) 'SYM)
+             (progn (setq s (strcase (vl-symbol-name head)))
+                    (or (= s "QUOTE") (= s "FUNCTION"))))
+        nil)
+       ((and (= (type head) 'SYM) (= s "OPEN")) T)
+       ((alfe-form-has-open-call-p (car form)) T)
+       ((alfe-form-has-open-call-p (cdr form)) T)
+       (T nil)))))
+
+(defun alfe-rewrite-open-calls-impl (form / head s)
+  (cond
+    ((atom form) form)
+    ((not (listp form)) form)
+    ((null form) form)
+    (T
+     (setq head (car form))
+     (cond
+       ((and (= (type head) 'SYM)
+             (progn (setq s (strcase (vl-symbol-name head)))
+                    (or (= s "QUOTE") (= s "FUNCTION"))))
+        form)
+       ((and (= (type head) 'SYM) (= s "OPEN"))
+        (list 'alfe-open* (cons 'list (mapcar 'alfe-rewrite-open-calls (cdr form)))))
+       (T
+        (mapcar 'alfe-rewrite-open-calls form))))))
+
+;; FORM with its OPEN calls turned into alfe-open* calls -- the SAME conses
+;; when it has none (the cons-identity guard of alfe-rewrite-form).
+(defun alfe-rewrite-open-calls (form)
+  (if (alfe-form-has-open-call-p form)
+    (alfe-rewrite-open-calls-impl form)
+    form))
+
+;; T iff a request FORM must have its OPEN calls rewritten: -Efile-write is
+;; forwarded AND the form calls OPEN.
+(defun alfe-open-request-p (form)
+  (and (alfe-open-rewrite-p) (alfe-form-has-open-call-p form)))
+
+(defun alfe-open-text-delimiter-p (ch)
+  (member ch '(" " "\t" "\r" "\n" "(" ")" "'" "\"" ";")))
+
+;; The token heading the list whose open paren is at IDX of TEXT, as
+;; (START . TOKEN), or NIL when the list starts with no token.
+(defun alfe-open-text-head (text idx len / j start)
+  (setq j (+ idx 1))
+  (while (and (<= j len) (member (substr text j 1) '(" " "\t" "\r" "\n")))
+    (setq j (+ j 1)))
+  (setq start j)
+  (while (and (<= j len) (not (alfe-open-text-delimiter-p (substr text j 1))))
+    (setq j (+ j 1)))
+  (if (> j start) (cons start (substr text start (- j start))) nil))
+
+;; TEXT, the source of one form, with every OPEN call "(open ARGS)" written
+;; "(alfe-open* (list ARGS))" -- the textual twin of alfe-rewrite-open-calls:
+;; a list quoted by ' or headed by QUOTE / FUNCTION is left alone, strings and
+;; comments (; and ;| |;) are skipped. Nothing else of TEXT changes, so a real
+;; literal keeps every digit it was written with.
+(defun alfe-open-rewrite-text (text / idx len ch nx stack quoted pending in-string escape in-comment in-block head s child-quoted open-p edits out pos e)
+  (setq idx 1)
+  (setq len (strlen text))
+  (setq stack nil)
+  (setq pending nil)
+  (setq in-string nil)
+  (setq escape nil)
+  (setq in-comment nil)
+  (setq in-block nil)
+  (setq edits nil)
+  (while (<= idx len)
+    (setq ch (substr text idx 1))
+    (setq nx (if (< idx len) (substr text (+ idx 1) 1) ""))
+    (cond
+      (in-block
+       (if (and (= ch "|") (= nx ";"))
+         (progn (setq in-block nil) (setq idx (+ idx 1)))))
+      (in-comment
+       (if (= ch "\n") (setq in-comment nil)))
+      (in-string
+       (cond
+         (escape (setq escape nil))
+         ((= ch "\\") (setq escape T))
+         ((= ch "\"") (setq in-string nil))))
+      ((= ch ";")
+       (if (= nx "|")
+         (progn (setq in-block T) (setq idx (+ idx 1)))
+         (setq in-comment T)))
+      ((= ch "\"")
+       (setq in-string T)
+       (setq pending nil))
+      ((= ch "'")
+       (setq pending T))
+      ((= ch "(")
+       (setq quoted (or pending (and stack (car (car stack)))))
+       (setq pending nil)
+       (setq child-quoted quoted)
+       (setq open-p nil)
+       (if (not quoted)
+         (progn
+           (setq head (alfe-open-text-head text idx len))
+           (if head
+             (progn
+               (setq s (strcase (cdr head)))
+               (cond
+                 ((= s "OPEN")
+                  (setq open-p T)
+                  (setq edits (cons (list (car head) (strlen (cdr head))
+                                          "alfe-open* (list")
+                                    edits)))
+                 ((or (= s "QUOTE") (= s "FUNCTION"))
+                  (setq child-quoted T)))))))
+       (setq stack (cons (list child-quoted open-p) stack)))
+      ((= ch ")")
+       (if stack
+         (progn
+           (if (cadr (car stack))
+             (setq edits (cons (list idx 0 ")") edits)))
+           (setq stack (cdr stack)))))
+      ((member ch '(" " "\t" "\r" "\n")) nil)
+      (T (setq pending nil)))
+    (setq idx (+ idx 1)))
+  ;; The edits were collected left to right; splice them in.
+  (setq out "")
+  (setq pos 1)
+  (foreach e (reverse edits)
+    (if (> (car e) pos)
+      (setq out (strcat out (substr text pos (- (car e) pos)))))
+    (setq out (strcat out (caddr e)))
+    (setq pos (+ (car e) (cadr e))))
+  (if (<= pos len)
+    (strcat out (substr text pos))
+    out))
+
+;; The text the CAD is given for a request FORM that calls OPEN while
+;; -Efile-write is forwarded. NORMALIZED is FORM after the princ normaliser,
+;; SOURCE the text FORM was read from (or NIL). When FORM was not rebuilt and
+;; its SOURCE is at hand, that source is rewritten textually -- and used only
+;; if it reads back EQUAL to the form-walk rewrite, so the CAD evaluates
+;; exactly what alfe-load would have. Otherwise (no text, or the normaliser
+;; rebuilt the form, which is then printed anyway) the rewritten form is
+;; printed with autolisp-form-source-text, reals at full precision.
+(defun alfe-open-request-text (form normalized source / rewritten text back)
+  (setq rewritten (alfe-rewrite-open-calls normalized))
+  (if (and source (eq normalized form))
+    (progn
+      (setq text (vl-catch-all-apply 'alfe-open-rewrite-text (list source)))
+      (if (vl-catch-all-error-p text)
+        (setq text nil))
+      (if text
+        (setq back (vl-catch-all-apply 'read (list text))))
+      (if (and text (not (vl-catch-all-error-p back)) (equal back rewritten))
+        text
+        (autolisp-form-source-text rewritten)))
+    (autolisp-form-source-text rewritten)))
+
 (defun autolisp-internal-protocol-load-p (path)
   (and (= (type path) 'STR)
        (wcmatch path "*protocol-request-*.lsp")))
@@ -1167,7 +1586,35 @@
   (setq alfe--form (autolisp-normalize-princ-call alfe--form))
   (if (autolisp-load-form-p alfe--form)
     (autolisp-eval-load-form alfe--form)
-    (eval alfe--form)))
+    ;; -Efile-write reaches the OPEN calls of every request
+    ;; (alfe-efile-write-not-applied-to-l-file); the form is untouched
+    ;; unless it is forwarded and the form calls OPEN.
+    (eval (if (alfe-open-request-p alfe--form)
+            (alfe-rewrite-open-calls alfe--form)
+            alfe--form))))
+
+;; The same request, with the SOURCE TEXT the form was read from (or NIL
+;; when there is none). Every caller that read the form from text passes
+;; that text along: alfe's run-common.lsp redefines this function to hand
+;; the TEXT itself to the CAD's native LOAD instead of printing the form
+;; back, which lost the digits of every real literal
+;; (alfe-cad-transport-rounds-reals). Here, with no such override, the
+;; text is not needed and the form is evaluated as before.
+(defun autolisp-eval-request-source (alfe--form alfe--text)
+  (autolisp-eval-request-form alfe--form))
+
+;; The text of the FIRST form in TEXT -- leading blanks and comments
+;; dropped, nothing after the form kept -- i.e. exactly what READ consumed
+;; from it. NIL when TEXT is not a string or holds no complete form.
+(defun autolisp-first-form-text (alfe--text / alfe--trimmed alfe--end)
+  (if (= (type alfe--text) 'STR)
+    (progn
+      (setq alfe--trimmed (autolisp-source-trim-leading-junk alfe--text))
+      (setq alfe--end (autolisp-source-first-form-end alfe--trimmed))
+      (if alfe--end
+        (substr alfe--trimmed 1 alfe--end)
+        nil))
+    nil))
 
 (defun autolisp-run-load (alfe--idx alfe--path / alfe--r alfe--olderr)
   (autolisp-mark-begin "LOAD" alfe--idx)
@@ -1230,7 +1677,9 @@
             (setq *AUTOLISP_ERROR_MSG* nil)
             (setq alfe--olderr *error*)
             (setq *error* autolisp-trap-error)
-            (setq alfe--r (autolisp-eval-request-form alfe--form-read))
+            (setq alfe--r (autolisp-eval-request-source
+                            alfe--form-read
+                            (autolisp-first-form-text alfe--form-text)))
             (setq *error* alfe--olderr)
             (setq *AUTOLISP_CAPTURE_STDOUT* nil)
             (if *AUTOLISP_QUIT_REQUESTED*
@@ -1560,7 +2009,9 @@
               (progn
                 (autolisp-log-out (strcat "EVAL " alfe--form-text))
                 (setq *AUTOLISP_CAPTURE_STDOUT* T)
-                (setq alfe--r (vl-catch-all-apply 'autolisp-eval-request-form (list alfe--form-read)))
+                (setq alfe--r (vl-catch-all-apply 'autolisp-eval-request-source
+                                                  (list alfe--form-read
+                                                        (autolisp-first-form-text alfe--form-text))))
                 (setq *AUTOLISP_CAPTURE_STDOUT* nil)
                 (if (vl-catch-all-error-p alfe--r)
                   (progn

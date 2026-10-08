@@ -12,9 +12,11 @@
 
     scripts/run-lispsys-bom-probe.ps1
 
-  At each level it also alfe-loads lispsys-forward-probe.lsp under
-  -Efile-write utf-8: alfe's forwarding of that request as OPEN's third
-  argument "utf8" (LISPSYS 1/2 only), checked end to end.
+  At each level it also runs lispsys-forward-probe.lsp under -Efile-write
+  utf-8 THREE ways -- alfe-loaded from an entry file, given to -l, and with
+  its OPEN calls in an -x form: alfe's forwarding of that request as OPEN's
+  third argument "utf8" (LISPSYS 1/2 only), checked end to end on every
+  action path (alfe-efile-write-not-applied-to-l-file).
 
   Output: dist/encoding/lispsys-bom-autocad-Windows.txt, every probe line
   prefixed with its LISPSYS level.
@@ -37,11 +39,13 @@ if ($alfe -like '*.exe') {
 
 $probe = Join-Path $root "autolisp-front-end/tests/scenarios/entities/lispsys-bom-probe.lsp"
 # alfe's -Efile-write UTF-8 forwarded as OPEN's third argument "utf8", run at
-# each level too (encoding-situations-cli-options): "w" 4 bytes and "a" 2 at
-# LISPSYS 1/2; 3 and 1 bytes and one WARN at 0. The probe is ALFE-LOADED from
-# a one-line entry file: only alfe-load rewrites OPEN into alfe-open*, the -l
-# file itself is not rewritten (the 2026-10-08 run, job 16998925786, loaded
-# the probe with -l directly and measured nothing forwarded).
+# each level too (encoding-situations-cli-options), three ways: ALFE-LOADED
+# from a one-line entry file, given to -l directly, and with the OPEN calls in
+# an -x form (the probe defines the helpers; E1F_MODE=x keeps it from running
+# at load). Expected for EACH way: "w" 4 bytes and "a" 2 at LISPSYS 1/2, no
+# WARN; 3 and 1 bytes and one WARN at 0. Before alfe 2.3.14 only alfe-load
+# rewrote OPEN (the 2026-10-08 run, job 16998925786, loaded the probe with -l
+# and measured nothing forwarded): alfe-efile-write-not-applied-to-l-file.
 $forward = Join-Path $root "autolisp-front-end/tests/scenarios/entities/lispsys-forward-probe.lsp"
 if (-not $env:ALFE_RUNTIME_LSP)   { $env:ALFE_RUNTIME_LSP   = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-remote-io.lsp") -replace '\\','/' }
 if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-bootstrap.lsp") -replace '\\','/' }
@@ -67,6 +71,14 @@ Write-Fixture "e1-utf8bom.lsp" ([byte[]]@(0xEF,0xBB,0xBF)) ([byte[]]@(0xC3, 0xA9
 $env:E1_DIR = $fixtures -replace '\\','/'
 $forwardEntry = Join-Path $fixtures "e1f-entry.lsp"
 Set-Content -Encoding ascii $forwardEntry ('(alfe-load "{0}")' -f ($forward -replace '\\','/'))
+# The -x way: no double quote in the form (Windows PowerShell 5.1 passes the
+# inner quotes of a native argument unescaped), hence the probe's helpers.
+$forwardX = "(e1f-x (open (e1f-xp 'w) (e1f-xm 'w)) (open (e1f-xp 'a) (e1f-xm 'a)))"
+$forwardWays = @(
+  @{ Label = "forward alfe-load"; Mode = "";  Args = @("-l", $forwardEntry) },
+  @{ Label = "forward -l";        Mode = "";  Args = @("-l", $forward) },
+  @{ Label = "forward -x";        Mode = "x"; Args = @("-l", $forward, "-x", $forwardX) }
+)
 
 # --- every AutoCAD profile's Variables key -----------------------------------
 $hkcu = [Microsoft.Win32.Registry]::CurrentUser
@@ -125,12 +137,18 @@ try {
         ForEach-Object { "[LISPSYS $level] $_" } |
         Tee-Object -FilePath $report -Append
     } catch { "[LISPSYS $level] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
-    try {
-      (& $alfe --no-init --autocad --mode batch -Efile-write utf-8 -l $forwardEntry 2>&1) |
-        Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|WARN|BOOTSTRAP-FAILED|FAILED' } |
-        ForEach-Object { "[LISPSYS $level forward] $_" } |
-        Tee-Object -FilePath $report -Append
-    } catch { "[LISPSYS $level forward] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+    foreach ($way in $forwardWays) {
+      $tag = "LISPSYS $level $($way.Label)"
+      $env:E1F_MODE = $way.Mode
+      try {
+        $fargs = @("--no-init","--autocad","--mode","batch","-Efile-write","utf-8") + $way.Args
+        (& $alfe @fargs 2>&1) |
+          Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|WARN|ERROR|BOOTSTRAP-FAILED|FAILED' } |
+          ForEach-Object { "[$tag] $_" } |
+          Tee-Object -FilePath $report -Append
+      } catch { "[$tag] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+      Remove-Item -Path Env:E1F_MODE -ErrorAction SilentlyContinue
+    }
   }
 } finally {
   foreach ($k in $keys) {

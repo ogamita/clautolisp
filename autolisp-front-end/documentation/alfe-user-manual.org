@@ -807,6 +807,47 @@ helper in your init file:
 alfe -l ~/.autolisp -x "(ep (quote (list 1 2 3)))"
 #+end_src
 
+** How a form reaches a CAD
+
+On the =--bricscad= and =--autocad= backends alfe does not hand an =-l=
+file to the CAD's own =LOAD=: its CAD-side loader reads the file one
+top-level form at a time, so that errors are reported with their file,
+line and enclosing =defun=, and passes each form to the CAD's native
+=LOAD= through a temporary file (=protocol/alfe-eval.lsp= in the
+workdir). =-x= expressions and the forms typed at the REPL take the same
+route.
+
+What that file holds is the form's own *text*, exactly as it was written:
+the CAD reads =(setq a 1.5707963267948966)= with its own reader, and
+=a= gets every digit. Only a form alfe has to rewrite is printed back from
+its value -- on AutoCAD, whose =defun= has no =&rest=, a call such as
+=(princ x)= is padded to =(princ x nil)= -- and then every real is printed
+with as many digits as it takes to read back to the same number
+(=1.5707963267948966E+00=), checked by the CAD's own reader.
+
+/Changed in alfe 2.3.12./ Every form used to be printed back with =princ=,
+which keeps 6 significant digits of a real on AutoCAD (=1.5708=) and 14 on
+BricsCAD (=1.5707963267949=), so real literals of a loaded file, of =-x=
+and of the REPL arrived rounded. Values the CAD computes, and digits held
+in a string, were never affected. =--clautolisp= was never affected.
+
+What a program *prints* is unchanged: =(print 1.5707963267948966)= on
+AutoCAD still shows =1.5708=, as AutoCAD's own =print= does.
+
+The loader knows both AutoLISP comments: a semicolon comments out the rest
+of its line, and =;|= opens a block comment that runs, across lines if
+need be, to the next =|;= -- the form of the documentation blocks
+(=;| @Global ... |;=) many projects put before each =defun=. Nothing inside
+a block comment is read, whatever parentheses, quotes or semicolons it
+holds; =;|= inside a string is text; forms before, after and between
+comments on one line each run once. A block comment still open at the end
+of the file is an error (/unexpected end of file in a ;| block comment/).
+
+/Changed in alfe 2.3.13./ The loader used to know only the line comment,
+so the lines of a block comment after its first were read as code, and a
+parenthesis in the prose was called as a function (/no function
+definition: SYMBOLE/). =--clautolisp= was never affected.
+
 ** Interactive REPL on CAD backends
 
 =alfe --interactive --bricscad= (and =--autocad=) drops into a live
@@ -923,8 +964,9 @@ still an error, but a fixed boundary is never silently wrong).
   =(open f "a" "utf8")= adds UTF-8, and ="utf8-bom"= on a file that already
   has its BOM adds no second one.
 
-  So alfe forwards the WRITE direction in two cases, in code loaded with
-  =alfe-load=, when =-Efile-write= (or =-Efile=, or the bare =-E=) asks for:
+  So alfe forwards the WRITE direction in two cases, on every action -- the
+  file given to =-l=, =-x= forms, =--main=, REPL input, and code loaded with
+  =alfe-load= -- when =-Efile-write= (or =-Efile=, or the bare =-E=) asks for:
   - BricsCAD/Windows, =UTF-8= or =UTF-16LE=: a plain =(open f "w")= /
     =(open f "a")= becomes ~(open f "w,ccs=UTF-8")~ (or =UTF-16LE=), so the
     file is written in that encoding *with a byte-order mark*; an append
@@ -937,11 +979,14 @@ still an error, but a fixed boundary is never silently wrong).
     in the CAD at the call, since =LISPSYS= is set when AutoCAD starts. At
     =LISPSYS= 0 the plain mode is used and a warning says why, once per run.
   A call that already names an encoding (a ~,ccs=~ of its own, a third
-  argument) or a read mode is left alone, and so is code that is not loaded
-  with =alfe-load= (the native =load=, =-x= forms) — including the file
-  given to =-l= itself: alfe hands it to the CAD as a =load= request, which
-  does not rewrite =open=. To have =-Efile-write= reach a program's =open=
-  calls, give =-l= a file that =alfe-load=-s the program. =cp1252= /
+  argument) or a read mode is left alone. alfe rewrites each =open= call
+  written in the code it is given into the bootstrap's =alfe-open*=, in the
+  source text (the rest of the text reaches the CAD as written); so an =open=
+  that only appears at run time -- =(apply 'open ...)=, a quoted
+  =(open ...)= evaluated later, a file read by a native =load= nested inside
+  an expression -- is not forwarded, while a top-level =(load ...)= in an
+  =-l= file or =-x= form, and =alfe-load= anywhere, are. Without
+  =-Efile-write= nothing is rewritten. =cp1252= /
   =windows-1252= is both Windows CADs' default and needs nothing. Every
   other request is warned about, once per run, with the measured reason,
   and not forwarded: any other write encoding on BricsCAD/Windows or on

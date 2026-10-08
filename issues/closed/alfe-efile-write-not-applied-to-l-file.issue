@@ -1,0 +1,197 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-efile-write-not-applied-to-l-file — -Efile-write never reaches the OPEN calls of the -l file (or -x forms) on the CAD backends, silently
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: CAD run (encoding:experiment:lispsys-bom:autocad:windows, encoding:experiment:bricscad:windows)
+#+BRANCH: alfe-efile-write-all-actions
+#+DATE: 2026-10-08
+
+* Context
+
+Found 2026-10-08 reading the end-to-end check of the AutoCAD -Efile-write
+forwarding (=encoding-situations-cli-options=, measurement 3). alfe forwards
+-Efile-write to the CAD's own OPEN by rewriting OPEN calls into the bootstrap's
+=alfe-open*= (",ccs=" on BricsCAD/Windows, the third argument "utf8" on
+AutoCAD at LISPSYS 1/2). The rewrite is done by =alfe-load= only
+(=*alfe-load-rewrite*= set, =alfe-eval-rewritten-form=).
+
+* Problem
+
+=alfe --autocad -Efile-write utf-8 -l prog.lsp= does not forward anything to
+the OPEN calls in =prog.lsp=, and says nothing. The =-l= action is sent as a
+=(load "<staged path>")= request (=backend-cad-common.lisp=, the =:load=
+branch); the CAD side evaluates it through =autolisp-eval-request-form= ->
+=autolisp-eval-load-form= -> =autolisp-source-load=, with
+=*alfe-load-rewrite*= NIL, so each form goes through
+=autolisp-eval-request-form=, which never rewrites OPEN. The same holds for
+=-x= forms and for a nested native =(load ...)= in such a file.
+
+Evidence: job 16998925786 (encoding:experiment:lispsys-bom:autocad:windows,
+pipeline 2922145991, AutoCAD 2022): =lispsys-forward-probe.lsp=, loaded with
+=-l= under =-Efile-write utf-8=, printed =FORWARDED-ARG "utf8"= (the variable
+was set) but =w SIZE 3= and =a SIZE 1= at LISPSYS 0, 1 and 2, and no WARN line
+at any level -- =alfe-open*= was never called (it warns unconditionally at
+LISPSYS 0).
+
+The user manual says the forwarding applies "in code loaded with =alfe-load="
+and that the native =load= and =-x= forms are left alone, but it never said
+the =-l= file itself is not loaded with =alfe-load= (2026-10-08: now it does,
+with the workaround: give =-l= a file that =alfe-load=-s the program).
+
+* Proposal
+
+Either (pjb):
+1. rewrite OPEN (only OPEN, only while =alfe-open-rewrite-p=) in the request
+   path too, so the =-l= file and =-x= forms are covered; the cons-identity
+   guard (=alfe-form-needs-rewrite-p=) already limits rebuilding to forms that
+   contain an OPEN call when forwarding is active. Needs a CAD run (AutoCAD and
+   BricsCAD/Windows) before it ships, since the request path's eval was the
+   one that broke on rebuilt conses ("division par zero") before the guard; or
+2. keep it as is (documented now) and warn once when -Efile-write is
+   forwarded but the run's =-l= file contains a literal OPEN call.
+
+* Acceptance criteria
+
+- =alfe --autocad -Efile-write utf-8 -l f.lsp= with =(open p "w")= in =f.lsp=
+  writes UTF-8 at LISPSYS 1/2 (option 1), or warns (option 2);
+- a unit test with the hosted clautolisp engine (as
+  =protocol-alfe-load-forwards-open-write-arg=) through the =:load= action.
+
+* Decision (pjb, 2026-10-08)
+
+"yes, apply -Efile-write to -l and -x too." -- option 1.
+
+* Resolution (clautolisp 2.3.14 / alfe 2.3.14, branch alfe-efile-write-all-actions)
+
+Implemented; stays NEXT until the CAD runs below verify it.
+
+** Where OPEN is rewritten, per action path
+
+Every action other than alfe-load reaches the CAD as a protocol request
+evaluated by =autolisp-eval-request-source=: =-l= (sent as
+=(load "<staged>")=, then each form of the file through the deported loader's
+read loop, =autolisp-source-load-run-body-impl=), =-x=, =--main= (=(main)=),
+REPL input (=(print TEXT)=), the batch request loops (=autolisp-run-eval-file=,
+the REPL file loop) and any other request. That function is the one place
+changed:
+
+- run-common.lsp's override (file-protocol.lisp): =alfe-request-source-text=
+  first asks =alfe-open-request-p= (-Efile-write forwarded, i.e.
+  =*ALFE-OPEN-WRITE-CCS*= or =*ALFE-OPEN-WRITE-ARG*= set, AND the form calls
+  OPEN outside QUOTE / FUNCTION); if so, the text written to alfe-eval.lsp is
+  =alfe-open-request-text='s;
+- the bootstrap's default =autolisp-eval-request-form= (direct eval, used
+  only without run-common's override) evaluates
+  =(alfe-rewrite-open-calls form)= under the same test;
+- alfe-load is unchanged (it already rewrote OPEN along with the rest).
+
+** Why a TEXT rewrite: the source is not re-printed
+
+Two other ways were rejected:
+1. evaluating in an environment where OPEN is alfe-open*: AutoCAD's DEFUN has
+   no &rest and OPEN takes 2 or 3 arguments, so no shadow can stand in for it
+   there (the very reason alfe-load rewrites calls instead of shadowing);
+2. the form walk alone, as alfe-load does: the request path hands TEXT to the
+   CAD's LOAD, so the rebuilt form would have to be printed back -- what
+   MR !466 (alfe-cad-transport-rounds-reals) removed.
+
+So =alfe-open-rewrite-text= (bootstrap) rewrites the source text itself:
+"(open ARGS)" becomes "(alfe-open* (list ARGS))" and nothing else changes --
+real literals keep every digit, comments and spacing stay. It skips strings,
+; and ;| |; comments, and lists quoted by ' or headed by QUOTE / FUNCTION:
+the textual twin of the OPEN-only form walk =alfe-rewrite-open-calls=. As a
+guard, the rewritten text is READ back and used only if it is EQUAL to the
+walk's result; otherwise -- and when there is no text, or when the AutoCAD
+princ normaliser already rebuilt the form (which is then printed anyway) --
+the walked form is printed with autolisp-form-source-text (lossless reals).
+Either way the CAD's LOAD reads fresh text, so no rebuilt cons is evaluated
+on the CAD (the "division par zero" concern above). Without -Efile-write none
+of this runs and no request changes.
+
+The measured semantics stay alfe-open*'s: AutoCAD "w"/"a" get "utf8" at
+LISPSYS 1/2, at LISPSYS 0 nothing is forwarded and ONE warning is given per
+run; BricsCAD/Windows ",ccs=UTF-8"/UTF-16LE on "w"/"a"; macOS BricsCAD
+nothing.
+
+Not reached (documented in the alfe manual): an OPEN that exists only at run
+time -- =(apply 'open ...)=, a quoted =(open ...)= evaluated later, a file
+read by a native LOAD nested inside an expression (a top-level =(load ...)=
+request goes through the deported loader and IS covered).
+
+** Tests (autolisp-front-end/tests/file-protocol-tests.lisp, hosted clautolisp)
+
+- protocol-open-write-arg-reaches-every-action: AutoCAD-style runtime
+  (fixed-arity shadows; dialect autocad-2022, whose default write is
+  cp1252), *ALFE-OPEN-WRITE-ARG* "utf8": the -l file's "w" and "a", --main,
+  -x and a REPL request all write UTF-8 at LISPSYS 1/2 (alfe-open* called 5
+  times, no warning); at LISPSYS 0 they write the default with exactly one
+  warning for the run; a quoted OPEN stays data; real literals exact; the -l
+  file is not re-printed.
+- protocol-open-write-ccs-reaches-every-action: BricsCAD-style (variadic),
+  *ALFE-OPEN-WRITE-CCS* "UTF-16LE": the same five, in UTF-16LE.
+- protocol-open-not-rewritten-without-efile-write: both runtimes without
+  -Efile-write: every file as the unrewritten reference, alfe-open* never
+  called, nothing re-printed.
+- protocol-open-rewrite-text-keeps-the-source: the text rewriter, 7 cases.
+- protocol-lispsys-forward-probe-three-ways: the CAD probe run the three ways
+  the CI script runs it, against the expectations the job is read with.
+Seen red: with alfe-open-request-p forced to NIL, 16 checks fail.
+
+** CAD verification -- NOT yet run (keep NEXT)
+
+- encoding:experiment:lispsys-bom:autocad:windows (run-lispsys-bom-probe.ps1)
+  runs lispsys-forward-probe.lsp three ways per LISPSYS level, report tags
+  =[LISPSYS n forward alfe-load]=, =[LISPSYS n forward -l]=,
+  =[LISPSYS n forward -x]=. Expected for EACH: LISPSYS 0 -> w SIZE 3,
+  a SIZE 1, one WARN; LISPSYS 1/2 -> w SIZE 4, a SIZE 2, no WARN.
+- encoding:experiment:bricscad:windows (run-encoding-experiment.ps1) has a
+  new FORWARD step, the same three ways: expected w SIZE 7 (BOM + UTF-8),
+  a SIZE 2 or 5 (fresh-file "a,ccs=UTF-8", not measured), no WARN; 3 / 1
+  would mean not forwarded. encoding:experiment:autocad:windows runs the same
+  step at the runner's own LISPSYS.
+Close (DONE, issues/closed/, TRIAGE row DONE) once those read as expected.
+
+** Reconciliation with MR !464
+
+This branch carries !464's three encoding commits cherry-picked unchanged
+(44763bb7, 1b5e1fe4, 18eb62a8: the "a" "utf8" forwarding, this ticket, the
+BricsCAD append measurement), because the measured "a" semantics and the
+probe's alfe-load entry pass are prerequisites. The "-l limitation /
+workaround" text !464 added (alfe user manual, alfe spec, RELEASE_NOTES,
+backend-cad-common.lisp comment, run-lispsys-bom-probe.ps1 and
+lispsys-forward-probe.lsp headers) is REPLACED on this branch: when the
+stacks are reconciled, keep this branch's wording (the cherry-picks merge as
+identical changes).
+
+* Verified on the runners (2026-10-08, MR !467) -- DONE
+
+All three Windows jobs ran the MR head; each FORWARD section is complete
+(ENC-PROBE DONE per way), no LAUNCH-ERROR / BOOTSTRAP-FAILED / ERROR.
+"AeB" with e-acute written "w", and e-acute appended "a" to a fresh file,
+with -Efile-write forwarded, through the three ways:
+
+| job | LISPSYS | alfe-load | -l | -x | verdict |
+|----------------------------------------+---------+----------------+----------------+----------------+---------|
+| 17033123932 lispsys-bom, AutoCAD 2022  | 0 | w3 a1 + 1 WARN | w3 a1 + 1 WARN | w3 a1 + 1 WARN | as rule |
+| 17033123932                            | 1 | w4 a2          | w4 a2          | w4 a2          | as rule |
+| 17033123932                            | 2 | w4 a2          | w4 a2          | w4 a2          | as rule |
+| 17033123931 autocad:windows (own LISPSYS 0) | 0 | w3 a1 + WARN | w3 a1 + WARN | w3 a1 + WARN | as rule |
+| 17033123930 bricscad:windows V25, CCS "UTF-8" | - | w7 a5 | w7 a5 | w7 a5 | as rule |
+
+#+begin_example
+[LISPSYS 1 forward -l] ENC E1F w SIZE 4
+[LISPSYS 1 forward -l] ENC E1F a SIZE 2
+[LISPSYS 2 forward -x] ENC E1F w SIZE 4
+[LISPSYS 0 forward -l] ENC E1F w SIZE 3
+[FORWARD -l] ENC E1F LISPSYS 0 FORWARDED-ARG nil FORWARDED-CCS "UTF-8"
+[FORWARD -l] ENC E1F w SIZE 7
+[FORWARD -l] ENC E1F a SIZE 5
+#+end_example
+
+BricsCAD bytes: e1f-w.txt = EF BB BF 41 C3 A9 42, e1f-a.txt = EF BB BF C3 A9
+(a fresh "a,ccs=UTF-8" file gets a BOM); AutoCAD at LISPSYS 0: 41 E9 42 /
+E9 (cp1252). The three ways never differ. Before the fix (job 16998925786)
+-l gave w3 / a1 at every level and no WARN. macOS BricsCAD (17033123929):
+the .sh experiment has no FORWARD step -- nothing is forwarded there, so it
+does not block; noted in encoding-probe-artifacts-and-macos-forward.

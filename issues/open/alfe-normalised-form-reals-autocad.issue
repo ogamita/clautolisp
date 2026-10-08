@@ -1,0 +1,32 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-normalised-form-reals-autocad -- a form alfe's normaliser rewrites still loses real digits on AutoCAD
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-08
+
+* Symptom
+
+After alfe-cad-transport-rounds-reals (2.3.12), literals sent as source reach
+the CAD exact, but a form the AutoCAD princ/load normaliser REWRITES (a
+1-argument princ/print/prin1/load padded to 2 arguments) is re-printed on
+the CAD side, and AutoCAD's rtos cannot render every double exactly
+(real-transport probe, jobs 17033116729 GUI / 17033116730 accoreconsole):
+
+#+begin_example
+REALTX b normalised differs REAL 1.570796326794895 1.570796326794895E+00
+REALTX i normalised differs REAL 1.797693134862313E+99 1.797693134862313E+99
+REALTX j normalised differs REAL 1.234567890123456E+17 1.234567890123456E+17
+#+end_example
+
+8 of 11 cases are exact; BricsCAD is exact on all 11.
+
+* Fix
+
+Do not re-print: rewrite the normalised call in the SOURCE TEXT, as
+alfe-open-rewrite-text does for OPEN (MR !467) -- pad `(princ X)` to
+`(princ X nil)` textually, leaving every other character (and every real
+literal) as written; fall back to the lossless printer only when the text
+rewrite cannot be verified by reading it back.

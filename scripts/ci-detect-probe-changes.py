@@ -74,6 +74,8 @@ FAMILIES = {
         "probes/scripts/**",
     ],
     "encoding": [f"{ENTITIES}/encoding-probe.lsp",
+                 # the FORWARD step of run-encoding-experiment.ps1
+                 f"{ENTITIES}/lispsys-forward-probe.lsp",
                  "scripts/run-encoding-experiment.*"],
     "lispsys-bom": [f"{ENTITIES}/lispsys-bom-probe.lsp",
                     f"{ENTITIES}/lispsys-forward-probe.lsp",
@@ -92,6 +94,10 @@ FAMILIES = {
                       "scripts/run-intersectwith-probe.*"],
     "console-flood": [f"{ENTITIES}/console-flood-probe.lsp",
                       "scripts/run-console-flood-probe.*"],
+    "real-transport": [f"{ENTITIES}/real-transport-probe.lsp",
+                       "scripts/run-real-transport-probe.*"],
+    "block-comment": [f"{ENTITIES}/block-comment-probe.lsp",
+                      "scripts/run-block-comment-probe.*"],
     "sysvars": ["autolisp-spec/autolisp/dump-sysvars.lsp"],
     "entget-pointers": ["probes/sources/probe-entget-pointers.lsp"],
 }
