@@ -226,3 +226,206 @@ REMAINS (the ticket stays open)
    - BricsCAD V26 macOS: no log in batch mode (measured, probe-logfile).
    Deeper prompts (the options offered after the first answer) are not driven.
 3. Other locales: like the getcname/pgp harvests, need localised installs.
+
+
+## AutoCAD re-run (2026-10-08, clautolisp 2.3.6): NOTHING NEW -- the 9th command ends the run
+
+optkw:probe:accoreconsole:windows was re-run (job 16998925798, master pipeline
+2922145991) with ZOOM moved last, to reach RECTANG, PLINE, BREAK, LENGTHEN.
+
+What it harvested: EXACTLY the 2026-10-06 set and nothing more. The transcript
+(dist/optkw/accoreconsole-Windows.txt: UTF-8 BOM + banner + UTF-16LE body,
+decoded with the converter) holds the blocks of OFFSET, TRIM, EXTEND, FILLET,
+CHAMFER, MIRROR, ROTATE, SCALE, then OPTKW-INCOMPLETE. Regenerated with the
+converter, the harvest is identical, keyword for keyword, to the committed
+probe-results/optkw/fr_FR/autocad-2022-windows.sexp (left as it is; same
+OFFSET [Par/Effacer/Calque], TRIM/EXTEND [mOde], FILLET and CHAMFER lists).
+MIRROR, ROTATE, SCALE again opened on a plain "Sélectionner des objets:" (no
+bracketed list). So: no new local keyword, no new pair; --pair regenerates
+fr_FR/option-keyword.sexp unchanged (57 pairs, 8 left to measure).
+
+The diagnosis of 2026-10-06 was WRONG: ZOOM did not end the run. The run ends
+after the 8th command, SCALE, whatever comes 9th -- ZOOM in job 16981155886,
+RECTANG in job 16998925798. Timing (trace.log): the probe starts at
+09:58:30Z, all eight logs carry the same second (11:58:36 local), and the job
+then sits silent until the wrapper's alfe --timeout 300 expires (the probe
+step ends 10:03:49Z). So the 9th command (or the 9th LOGFILEPATH redirection)
+WEDGES the console; it does not crash it. Two readings remain, and this run
+cannot tell them apart: (a) RECTANG and ZOOM each wedge accoreconsole, or
+(b) something positional (9th fresh log directory / 9th command) does.
+
+Probe adjusted (optkw-probe.lsp), to settle it on the next run:
+- order: PLINE BREAK LENGTHEN first (never reached on AutoCAD), then OFFSET
+  TRIM EXTEND FILLET CHAMFER MIRROR ROTATE SCALE, then RECTANG, ZOOM. A run
+  stopping at the 9th command (now MIRROR, harvested twice) means (b); one
+  stopping at RECTANG means (a); either way PLINE/BREAK/LENGTHEN come first.
+- OPTKW-TRY <command> is printed BEFORE each command is entered (before the
+  log redirection), so the transcript names the command a run died in. The
+  converter ignores the line.
+The family is optkw, so the jobs run automatically in the merge request
+pipeline of this change (PROBES_CHANGED); a plain branch push does not.
+
+REMAINS (unchanged otherwise)
+1. BricsCAD "sélectionner les options (?)" (8 commands): needs an ENGLISH
+   BricsCAD install.
+2. AutoCAD 2022: RECTANG, PLINE, BREAK, LENGTHEN, ZOOM still NOT HARVESTED --
+   re-run optkw:probe:accoreconsole:windows with the reordered probe, then
+   pair them against the Autodesk English command reference as on 2026-10-07.
+   MIRROR/ROTATE/SCALE: no bracketed first prompt (measured twice).
+   BricsCAD V25: PLINE and LENGTHEN gave no bracketed prompt.
+3. Other locales.
+
+
+## Reordered run (2026-10-08, MR !461, clautolisp 2.3.6): LENGTHEN paired; the hang is not a command
+
+Runs of the reordered probe (OPTKW-TRY markers): AutoCAD 2022 accoreconsole
+job 17026576122, BricsCAD V25 Windows job 17026576124, BricsCAD V26 macOS job
+17026576123.
+
+What they harvested
+- AutoCAD 2022: PLINE, BREAK, LENGTHEN, OFFSET, TRIM, EXTEND, FILLET,
+  CHAMFER, MIRROR completed (then hung at ROTATE, below).
+  NEW: LENGTHEN "Sélectionnez un objet à mesurer ou
+  [DIfférence/Pourcentage/TOtal/DYnamique] <TOtal>:".
+  PLINE "Spécifiez le point de départ:" and BREAK "Sélectionnez un objet:"
+  offer NO keyword at their first prompt (measured; not missing data).
+  The five already harvested are unchanged.
+- BricsCAD V25 Windows: all 13 commands completed, OPTKW-DONE (no hang; the
+  OPTKW-INCOMPLETE line in that transcript was the wrapper's false alarm:
+  Select-String over the BOM + UTF-16LE report missed the OPTKW-DONE that is
+  there -- fixed, the wrapper now checks the captured lines).
+  NEW: LENGTHEN "[DYnamique/Incrément/Pourcentage/Total]" (the earlier run
+  lost it: it was the LAST command, and BricsCAD writes a command's prompt
+  into the NEXT command's log). PLINE "Origine de la polyligne :" offers no
+  keyword. Every command the two runs share has the same keywords; ZOOM was
+  last this time and so was lost here (kept from job 16981155888).
+- BricsCAD V26 macOS: all 13 blocks empty, as before (no log in batch).
+
+The converter now MERGES several transcripts of one product (first run that
+offers keywords for a command wins; a differing later list is reported as a
+CONFLICT, never silently preferred -- none here). The committed harvests are
+regenerated from all runs:
+  autocad-2022-windows.sexp  <- jobs 16981155886 16998925798 17026576122
+  bricscad-v25-windows.sexp  <- jobs 16981155888 17026576124
+
+New pairs (international <- local [local abbreviation]); count, order and
+meaning agree with the English reference:
+  AutoCAD 2022 _LENGTHEN  Delta <- DIfférence [DI]; Percent <- Pourcentage [P];
+                          Total <- TOtal [TO]; Dynamic <- DYnamique [DY]
+    https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-76C74C62-DBAA-41E7-8422-F0EE7E769638.htm
+    (prompt headings: Object Selection, then Delta, Percent, Total, Dynamic;
+    Delta Length / Total Length / Angle are their sub-prompts)
+  BricsCAD V25 _LENGTHEN  DYnamic <- DYnamique [DY]; Increment <- Incrément [I];
+                          Percent <- Pourcentage [P]; Total <- Total [T]
+    https://help.bricsys.com/en-us/document/command-reference/l/lengthen-command?version=V25
+    (options: DYnamic, edit Mode, Increment, Angle, Percent, Total -- "edit
+    Mode" "returns to original prompt" and Angle belongs to Increment, so
+    both are sub-prompt options; the first prompt's four agree in order)
+option-keyword.sexp: 65 pairs (was 57), 8 left to measure (the "(?)" ones).
+Tests: fr-option-keywords-lengthen-per-product (11 checks).
+
+The accoreconsole hang, across the three runs
+| job         | completed before the hang    | hung at |
+|-------------+------------------------------+---------|
+| 16981155886 | 8: OFFSET .. SCALE           | ZOOM    |
+| 16998925798 | 8: OFFSET .. SCALE           | RECTANG |
+| 17026576122 | 9: PLINE BREAK LENGTHEN .. MIRROR | ROTATE |
+- Timing: every completed command's log has the start second (the probe
+  begins ~8 s after accoreconsole is launched); then nothing until alfe's
+  --timeout 300 (the step lasts 5 min 19-20 s in each run). A HANG, not a
+  crash, and not a time limit.
+- Not a particular command: ROTATE ran fine after MIRROR in the first two
+  runs and hung after MIRROR in the third; ZOOM/RECTANG hung there only
+  because they came 9th.
+- Not the Nth command: 8, 8, then 9.
+- Not state left by a predecessor: the last completed command differs
+  (SCALE, SCALE, MIRROR) and each block ends on "Commande:" -- the cancel
+  went through, no prompt left open; each command uses its own fresh
+  LOGFILEPATH directory, restored before printing.
+- BricsCAD runs the same 13 commands in one session without hanging.
+- What fits: a CUMULATIVE OUTPUT limit. alfe launches accoreconsole with its
+  stdout/stderr as pipes and reads them only after the process has exited;
+  accoreconsole writes its whole command line (UTF-16LE) there. A pipe
+  nobody reads blocks the writer once its buffer is full, at whatever
+  command the total crosses it. The output before the three hang points is
+  of the same order (3.6k-4.0k characters of probe output), but too roughly
+  known to pin a capacity: SUSPECTED, filed as
+  issues/open/alfe-accoreconsole-console-pipe-not-drained.issue (P1, with a
+  confirming probe and the fix: drain the pipes while the engine runs).
+
+Probe change (cheap, done): scripts/run-optkw-probe.ps1 runs accoreconsole
+ONE SESSION PER COMMAND (13 sessions, --timeout 120 each), passing the
+command in OPTKW_COMMANDS, which optkw-probe.lsp reads (comma-separated;
+unset = the whole list, as BricsCAD runs it). Each session's console output
+stays small, and a hang would cost one command, not the rest. If ROTATE,
+SCALE, RECTANG and ZOOM then all complete, that also supports the pipe
+hypothesis. The probe also ends with REDRAW, so BricsCAD's last real command
+(ZOOM) has a successor to carry its prompt.
+
+REMAINS
+1. BricsCAD "sélectionner les options (?)" (TRIM, EXTEND, FILLET, CHAMFER,
+   MIRROR, ROTATE, SCALE, BREAK; LENGTHEN does not offer it): needs an
+   ENGLISH BricsCAD install.
+2. AutoCAD 2022: RECTANG and ZOOM still NOT HARVESTED (ROTATE, SCALE
+   measured earlier: no keyword) -- re-run optkw:probe:accoreconsole:windows
+   with the per-command sessions, then pair against the Autodesk reference.
+3. The alfe pipe ticket (confirm, fix).
+4. Other locales.
+
+
+## One session per command (2026-10-08, MR !461, clautolisp 2.3.6): AutoCAD complete
+
+AutoCAD 2022 accoreconsole, job 17027498898 (scripts/run-optkw-probe.ps1 now
+runs ONE session per command): all 13 sessions reached OPTKW-DONE, no hang,
+about 7 s a session (log stamps 12:55:51 .. 12:57:20; the probe step took
+98 s, where the single-session runs sat 5 min 20 s on the timeout). That is
+the evidence the pipe hypothesis predicted -- recorded in
+alfe-accoreconsole-console-pipe-not-drained.issue.
+
+NEW (AutoCAD 2022):
+  RECTANG "Spécifiez le premier coin ou [Chanfrein/Elévation/Raccord/Hauteur/Largeur]:"
+  ZOOM    "Spécifiez le coin d'une fenêtre, entrez un facteur d'échelle (nX ou nXP) ou
+           [Tout/Centre/DYnamique/ETendu/Précédent/Echelle/Fenêtre/Objet] <temps réel>:"
+          (nX / nXP are prompt text, not keywords: outside the brackets)
+  ROTATE, SCALE, MIRROR, PLINE, BREAK: no keyword at the first prompt (again).
+  The other six commands: same keywords as before (no CONFLICT in the merge).
+  Note: RECTANG's block shows six "Commande:" lines -- optkw--cancel issued
+  its full six (command) cancels, so CMDACTIVE stayed non-zero after the
+  first; harmless in its own session, but a command that does not cancel at
+  the first try is worth remembering for deeper prompts.
+BricsCAD V25 Windows, job 17027498900 (REDRAW last): all 13 commands plus
+REDRAW, OPTKW-DONE, no false OPTKW-INCOMPLETE (the wrapper fix works); ZOOM's
+prompt is now kept (REDRAW carried it); every keyword equals the earlier
+runs. Nothing new to pair.
+BricsCAD V26 macOS, job 17027498899: empty blocks again (no batch log).
+
+Harvests regenerated by the converter's merge:
+  autocad-2022-windows.sexp  <- jobs 16981155886 16998925798 17026576122 17027498898
+                                (8 commands with keywords, 13 probed)
+  bricscad-v25-windows.sexp  <- jobs 16981155888 17026576124 17027498900
+
+New pairs (AutoCAD 2022); count, order and meaning agree with the reference:
+  _RECTANG  Chamfer <- Chanfrein [C]; Elevation <- Elévation [E];
+            Fillet <- Raccord [R]; Thickness <- Hauteur [H]; Width <- Largeur [L]
+    https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-188B2DDA-6CD8-4D37-BF26-E6CF27C34C75.htm
+    (the page quotes the prompt itself: "Specify first corner point or
+    [Chamfer/Elevation/Fillet/Thickness/Width]"; Hauteur is the extrusion
+    height, i.e. Thickness -- Elevation has its own keyword)
+  _ZOOM     All <- Tout [T]; Center <- Centre [C]; Dynamic <- DYnamique [DY];
+            Extents <- ETendu [ET]; Previous <- Précédent [P]; Scale <- Echelle [E];
+            Window <- Fenêtre [F]; Object <- Objet [O]
+    https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-66E7DB72-B2A7-4166-9970-9E19CC06F739.htm
+    (headings after the window corners: All, Center, Dynamic, Extents,
+    Previous, Scale / Scale factor, Window, Object, then Real Time = the
+    <temps réel> default, not a bracketed keyword)
+option-keyword.sexp: 78 pairs (was 65), 8 left to measure.
+Tests: fr-option-keywords-rectang-zoom-autocad (10 checks).
+
+REMAINS
+1. BricsCAD "sélectionner les options (?)" (TRIM, EXTEND, FILLET, CHAMFER,
+   MIRROR, ROTATE, SCALE, BREAK): needs an ENGLISH BricsCAD install. The only
+   unpaired keyword left of the 13-command scope.
+2. Deeper prompts (the options offered after the first answer) are not
+   driven; the scope is the first prompt of 13 commands.
+3. BricsCAD V26 macOS writes no log in batch mode.
+4. Other locales.

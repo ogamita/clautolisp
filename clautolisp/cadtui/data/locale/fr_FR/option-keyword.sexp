@@ -24,10 +24,16 @@
   ("_EXTEND" ("Mode" . "mOde"))
   ;; https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-64F8B700-23B3-4BD6-8C03-66121AA13E8F.htm
   ("_FILLET" ("Undo" . "aNnuler") ("Polyline" . "Polyligne") ("Radius" . "Rayon") ("Trim" . "Ajuster") ("Multiple" . "mUltiple"))
+  ;; https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-76C74C62-DBAA-41E7-8422-F0EE7E769638.htm
+  ("_LENGTHEN" ("Delta" . "DIfférence") ("Percent" . "Pourcentage") ("Total" . "TOtal") ("Dynamic" . "DYnamique"))
   ;; https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-C0E4246D-C420-42BD-A6FC-8B1852EFD005.htm
   ("_OFFSET" ("Through" . "Par") ("Erase" . "Effacer") ("Layer" . "Calque"))
+  ;; https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-188B2DDA-6CD8-4D37-BF26-E6CF27C34C75.htm
+  ("_RECTANG" ("Chamfer" . "Chanfrein") ("Elevation" . "Elévation") ("Fillet" . "Raccord") ("Thickness" . "Hauteur") ("Width" . "Largeur"))
   ;; https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-B1A185EF-07C6-4C53-A76F-05ADE11F5C32.htm
-  ("_TRIM" ("Mode" . "mOde")))
+  ("_TRIM" ("Mode" . "mOde"))
+  ;; https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-66E7DB72-B2A7-4166-9970-9E19CC06F739.htm
+  ("_ZOOM" ("All" . "Tout") ("Center" . "Centre") ("Dynamic" . "DYnamique") ("Extents" . "ETendu") ("Previous" . "Précédent") ("Scale" . "Echelle") ("Window" . "Fenêtre") ("Object" . "Objet")))
  (:BRICSCAD
   ;; https://help.bricsys.com/en-us/document/command-reference/c/chamfer-command?version=V25
   ("_CHAMFER" ("chamfer Settings" . "PAramètres du chanfrein...") ("Polyline" . "POlyligne") ("Angle" . "ANgle") ("Distance" . "Distance") ("mEthod" . "méthodE") ("Trim" . "AJuster") ("Undo" . "annUler") ("Multiple" . "Multiple"))
@@ -35,6 +41,8 @@
   ("_EXTEND" ("mOde" . "Mode"))
   ;; https://help.bricsys.com/en-us/document/command-reference/f/fillet-command?version=V25
   ("_FILLET" ("fillet Settings" . "PAramètres raccord...") ("Polyline" . "Polyligne") ("Radius" . "Rayon") ("Trim" . "Ajuster") ("Undo" . "annUler") ("Multiple" . "Multiple"))
+  ;; https://help.bricsys.com/en-us/document/command-reference/l/lengthen-command?version=V25
+  ("_LENGTHEN" ("DYnamic" . "DYnamique") ("Increment" . "Incrément") ("Percent" . "Pourcentage") ("Total" . "Total"))
   ;; https://help.bricsys.com/en-us/document/command-reference/o/offset-command?version=V25
   ("_OFFSET" ("Through point" . "Passer par le point") ("Erase" . "Effacer") ("Layer" . "Calque"))
   ;; https://help.bricsys.com/en-us/document/command-reference/r/rectang-command?version=V25

@@ -40,6 +40,21 @@
         "url": "https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-B1DCF991-90A7-4DB0-96FC-BDA3FB76337C.htm",
         "local":         ["aNnuler", "Polyligne", "Ecart",    "ANgle", "AJuster", "Méthode", "mUltiple"],
         "international": ["Undo",    "Polyline",  "Distance", "Angle", "Trim",    "Method",       "Multiple"]
+      },
+      "_LENGTHEN": {
+        "url": "https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-76C74C62-DBAA-41E7-8422-F0EE7E769638.htm",
+        "local":         ["DIfférence", "Pourcentage", "TOtal", "DYnamique"],
+        "international": ["Delta",      "Percent",     "Total", "Dynamic"]
+      },
+      "_RECTANG": {
+        "url": "https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-188B2DDA-6CD8-4D37-BF26-E6CF27C34C75.htm",
+        "local":         ["Chanfrein", "Elévation", "Raccord", "Hauteur",   "Largeur"],
+        "international": ["Chamfer",   "Elevation",      "Fillet",  "Thickness", "Width"]
+      },
+      "_ZOOM": {
+        "url": "https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-66E7DB72-B2A7-4166-9970-9E19CC06F739.htm",
+        "local":         ["Tout", "Centre", "DYnamique", "ETendu",  "Précédent", "Echelle", "Fenêtre", "Objet"],
+        "international": ["All",  "Center", "Dynamic",   "Extents", "Previous",       "Scale",   "Window",       "Object"]
       }
     }
   },
@@ -100,6 +115,11 @@
         "url": "https://help.bricsys.com/en-us/document/command-reference/z/zoom-command?version=V25",
         "local":         ["zoom Avant", "zoom aRrière", "TOUt", "Centre", "DYnamique", "étendu (ET)", "Gauche", "Précédent", "Droite", "Échelle (nx/nxp)", "Fenêtre", "ENtité"],
         "international": ["In",         "Out",              "All",  "Center", "Dynamic",   "Extents",           "Left",   "Previous",           "Right",  "Scale",                  "Window",       "ENtity"]
+      },
+      "_LENGTHEN": {
+        "url": "https://help.bricsys.com/en-us/document/command-reference/l/lengthen-command?version=V25",
+        "local":         ["DYnamique", "Incrément", "Pourcentage", "Total"],
+        "international": ["DYnamic",   "Increment", "Percent",     "Total"]
       }
     }
   }
