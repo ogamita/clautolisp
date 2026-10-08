@@ -209,6 +209,23 @@
   ;; PLINE and BREAK offer no keyword at their first prompt on AutoCAD: identity.
   (is (string= "Par" (international-option-keyword "_BREAK" "Par" "fr_FR" :product :autocad))))
 
+;; RECTANG and ZOOM on AutoCAD, harvested 2026-10-08 with one accoreconsole
+;; session per command (job 17027498898).
+(test fr-option-keywords-rectang-zoom-autocad
+  ;; RECTANG [Chanfrein/Elévation/Raccord/Hauteur/Largeur].
+  (is (string= "Thickness" (international-option-keyword "_RECTANG" "H" "fr_FR" :product :autocad)))
+  (is (string= "Fillet"    (international-option-keyword "_RECTANG" "Raccord" "fr_FR" :product :autocad)))
+  (is (string= "Width"     (international-option-keyword "_RECTANG" "L" "fr_FR" :product :autocad)))
+  (is (string= "Hauteur"   (local-option-keyword "_RECTANG" "Thickness" "fr_FR" :product :autocad)))
+  ;; ZOOM [Tout/Centre/DYnamique/ETendu/Précédent/Echelle/Fenêtre/Objet].
+  (is (string= "All"     (international-option-keyword "_ZOOM" "T" "fr_FR" :product :autocad)))
+  (is (string= "Extents" (international-option-keyword "_ZOOM" "ET" "fr_FR" :product :autocad)))
+  (is (string= "Scale"   (international-option-keyword "_ZOOM" "E" "fr_FR" :product :autocad)))
+  (is (string= "Object"  (international-option-keyword "_ZOOM" "o" "fr_FR" :product :autocad)))
+  ;; the products differ: AutoCAD's Extents is ETendu, BricsCAD's "étendu (ET)".
+  (is (string= "ETendu"  (local-option-keyword "_ZOOM" "Extents" "fr_FR" :product :autocad)))
+  (is (string= "étendu (ET)" (local-option-keyword "_ZOOM" "Extents" "fr_FR" :product :bricscad))))
+
 (test option-keywords-fall-back-and-force-the-international-form
   ;; _ forces the international form, canonicalised against the dictionary.
   (is (string= "Undo"  (international-option-keyword "_CHAMFER" "_undo" "fr_FR" :product :autocad)))

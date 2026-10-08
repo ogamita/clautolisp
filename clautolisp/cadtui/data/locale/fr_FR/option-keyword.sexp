@@ -28,8 +28,12 @@
   ("_LENGTHEN" ("Delta" . "DIfférence") ("Percent" . "Pourcentage") ("Total" . "TOtal") ("Dynamic" . "DYnamique"))
   ;; https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-C0E4246D-C420-42BD-A6FC-8B1852EFD005.htm
   ("_OFFSET" ("Through" . "Par") ("Erase" . "Effacer") ("Layer" . "Calque"))
+  ;; https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-188B2DDA-6CD8-4D37-BF26-E6CF27C34C75.htm
+  ("_RECTANG" ("Chamfer" . "Chanfrein") ("Elevation" . "Elévation") ("Fillet" . "Raccord") ("Thickness" . "Hauteur") ("Width" . "Largeur"))
   ;; https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-B1A185EF-07C6-4C53-A76F-05ADE11F5C32.htm
-  ("_TRIM" ("Mode" . "mOde")))
+  ("_TRIM" ("Mode" . "mOde"))
+  ;; https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Core/files/GUID-66E7DB72-B2A7-4166-9970-9E19CC06F739.htm
+  ("_ZOOM" ("All" . "Tout") ("Center" . "Centre") ("Dynamic" . "DYnamique") ("Extents" . "ETendu") ("Previous" . "Précédent") ("Scale" . "Echelle") ("Window" . "Fenêtre") ("Object" . "Objet")))
  (:BRICSCAD
   ;; https://help.bricsys.com/en-us/document/command-reference/c/chamfer-command?version=V25
   ("_CHAMFER" ("chamfer Settings" . "PAramètres du chanfrein...") ("Polyline" . "POlyligne") ("Angle" . "ANgle") ("Distance" . "Distance") ("mEthod" . "méthodE") ("Trim" . "AJuster") ("Undo" . "annUler") ("Multiple" . "Multiple"))

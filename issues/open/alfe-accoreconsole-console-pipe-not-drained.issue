@@ -64,3 +64,15 @@ user scripts run through alfe --mode batch) is exposed.
   AutoCAD 2022's accoreconsole.
 - The launch diagnostics (exit details, failure details) still show the
   console text.
+
+* Evidence (2026-10-08, MR !461)
+
+The optkw wrapper's workaround -- the SAME 13 commands, ONE accoreconsole
+session each (job 17027498898) -- completed every session (13 x OPTKW-DONE,
+about 7 s each, 98 s in all), including ROTATE, SCALE, RECTANG and ZOOM, each
+of which had been the one a single-session run hung at or never reached. The
+commands themselves are fine; what a single session adds is the cumulative
+console output. That supports the pipe hypothesis; it does not yet prove it
+(a per-session limit of another kind -- e.g. a count of LOGFILEPATH changes
+-- would also be cleared by short sessions). The N-kilobyte PRINC-only probe
+of the Proposal is still the discriminating test.

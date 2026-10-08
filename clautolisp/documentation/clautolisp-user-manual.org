@@ -1199,9 +1199,9 @@ under ~cadtui/data/locale/<locale>/~, baked into the executable. fr_FR ships
 four: ~verb~ / ~keyword~ (the interaction language: ~=activer(dessins[2])~),
 ~command~ (command names, measured with ~getcname~: ~LIGNE~ = ~_LINE~),
 ~alias~ (the French ~acad.pgp~), and, since 2.2.229, ~option-keyword~: the
-French option keywords of OFFSET, TRIM, EXTEND, FILLET, CHAMFER and (2.3.6)
-LENGTHEN on AutoCAD and of OFFSET, TRIM, EXTEND, FILLET, CHAMFER, LENGTHEN,
-RECTANG and ZOOM on BricsCAD,
+French option keywords of OFFSET, TRIM, EXTEND, FILLET, CHAMFER, LENGTHEN,
+RECTANG and ZOOM on AutoCAD and on BricsCAD (LENGTHEN, and AutoCAD's RECTANG
+and ZOOM, since 2.3.6),
 each paired with its international keyword *per product* (the two products
 offer different keyword sets: OFFSET's ~Par~ on AutoCAD is ~Passer par le
 point~ on BricsCAD). A French keyword, whole or abbreviated by its capitals
