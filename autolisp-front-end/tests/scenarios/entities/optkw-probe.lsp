@@ -28,6 +28,7 @@
 ;;;;
 ;;;; Output (stdout; the payload is the log lines between the markers):
 ;;;;   OPTKW-ENGINE  <PROGRAM>  <ACADVER>  <PLATFORM>  <LOCALE>
+;;;;   OPTKW-TRY     _<COMMAND>          (before entering it)
 ;;;;   OPTKW-BEGIN   _<COMMAND>
 ;;;;   OPTKW-LOG     <a line of the command's log>
 ;;;;   OPTKW-END     _<COMMAND>
@@ -36,12 +37,18 @@
 ;; A narrow set of command-line commands whose options show at the first prompt.
 ;; Dialog-prone commands (HATCH, ARRAY) are deliberately excluded: they can open
 ;; a modal dialog that a plain cancel will not clear, wedging the CAD runner.
-;; ZOOM LAST: entering it ended the whole accoreconsole run (job 16981155886,
-;; OPTKW-INCOMPLETE right after SCALE), so it can cost nothing but itself.
+;; ORDER (2026-10-08): AutoCAD 2022's accoreconsole run ends after the 8th
+;; command, SCALE, whatever comes 9th: ZOOM in job 16981155886, RECTANG in job
+;; 16998925798 once ZOOM was moved last (the eight logs are written within a
+;; second, then nothing until alfe's 300 s timeout). So the commands it never
+;; reached go FIRST and the already-harvested ones after them: a run that still
+;; stops at the 9th command (now MIRROR) says the limit is positional, one that
+;; stops at RECTANG says RECTANG wedges the console. OPTKW-TRY names each
+;; command before it is entered, so the transcript shows where it stopped.
 (setq *optkw-cmds*
-  (list "OFFSET" "TRIM" "EXTEND" "FILLET" "CHAMFER" "MIRROR"
-        "ROTATE" "SCALE" "RECTANG" "PLINE"
-        "BREAK" "LENGTHEN" "ZOOM"))
+  (list "PLINE" "BREAK" "LENGTHEN"
+        "OFFSET" "TRIM" "EXTEND" "FILLET" "CHAMFER" "MIRROR"
+        "ROTATE" "SCALE" "RECTANG" "ZOOM"))
 
 (defun optkw--getvar (name / v)
   (setq v (vl-catch-all-apply 'getvar (list name)))
@@ -77,6 +84,9 @@
         (t (strcat (optkw--getvar "LOGFILEPATH") file))))
 
 (defun probe-cmd (name / old-path old-mode dir lines)
+  ;; before the log is redirected: the transcript then names the command
+  ;; a run died in, even when its block never comes
+  (princ (strcat "\nOPTKW-TRY\t_" name "\n"))
   (setq old-path (optkw--getvar "LOGFILEPATH")
         old-mode (optkw--getvar "LOGFILEMODE")
         dir (strcat (optkw--getvar "TEMPPREFIX") "optkw-" name))

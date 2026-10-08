@@ -226,3 +226,51 @@ REMAINS (the ticket stays open)
    - BricsCAD V26 macOS: no log in batch mode (measured, probe-logfile).
    Deeper prompts (the options offered after the first answer) are not driven.
 3. Other locales: like the getcname/pgp harvests, need localised installs.
+
+
+## AutoCAD re-run (2026-10-08, clautolisp 2.3.6): NOTHING NEW -- the 9th command ends the run
+
+optkw:probe:accoreconsole:windows was re-run (job 16998925798, master pipeline
+2922145991) with ZOOM moved last, to reach RECTANG, PLINE, BREAK, LENGTHEN.
+
+What it harvested: EXACTLY the 2026-10-06 set and nothing more. The transcript
+(dist/optkw/accoreconsole-Windows.txt: UTF-8 BOM + banner + UTF-16LE body,
+decoded with the converter) holds the blocks of OFFSET, TRIM, EXTEND, FILLET,
+CHAMFER, MIRROR, ROTATE, SCALE, then OPTKW-INCOMPLETE. Regenerated with the
+converter, the harvest is identical, keyword for keyword, to the committed
+probe-results/optkw/fr_FR/autocad-2022-windows.sexp (left as it is; same
+OFFSET [Par/Effacer/Calque], TRIM/EXTEND [mOde], FILLET and CHAMFER lists).
+MIRROR, ROTATE, SCALE again opened on a plain "Sélectionner des objets:" (no
+bracketed list). So: no new local keyword, no new pair; --pair regenerates
+fr_FR/option-keyword.sexp unchanged (57 pairs, 8 left to measure).
+
+The diagnosis of 2026-10-06 was WRONG: ZOOM did not end the run. The run ends
+after the 8th command, SCALE, whatever comes 9th -- ZOOM in job 16981155886,
+RECTANG in job 16998925798. Timing (trace.log): the probe starts at
+09:58:30Z, all eight logs carry the same second (11:58:36 local), and the job
+then sits silent until the wrapper's alfe --timeout 300 expires (the probe
+step ends 10:03:49Z). So the 9th command (or the 9th LOGFILEPATH redirection)
+WEDGES the console; it does not crash it. Two readings remain, and this run
+cannot tell them apart: (a) RECTANG and ZOOM each wedge accoreconsole, or
+(b) something positional (9th fresh log directory / 9th command) does.
+
+Probe adjusted (optkw-probe.lsp), to settle it on the next run:
+- order: PLINE BREAK LENGTHEN first (never reached on AutoCAD), then OFFSET
+  TRIM EXTEND FILLET CHAMFER MIRROR ROTATE SCALE, then RECTANG, ZOOM. A run
+  stopping at the 9th command (now MIRROR, harvested twice) means (b); one
+  stopping at RECTANG means (a); either way PLINE/BREAK/LENGTHEN come first.
+- OPTKW-TRY <command> is printed BEFORE each command is entered (before the
+  log redirection), so the transcript names the command a run died in. The
+  converter ignores the line.
+The family is optkw, so the jobs run automatically in the merge request
+pipeline of this change (PROBES_CHANGED); a plain branch push does not.
+
+REMAINS (unchanged otherwise)
+1. BricsCAD "sélectionner les options (?)" (8 commands): needs an ENGLISH
+   BricsCAD install.
+2. AutoCAD 2022: RECTANG, PLINE, BREAK, LENGTHEN, ZOOM still NOT HARVESTED --
+   re-run optkw:probe:accoreconsole:windows with the reordered probe, then
+   pair them against the Autodesk English command reference as on 2026-10-07.
+   MIRROR/ROTATE/SCALE: no bracketed first prompt (measured twice).
+   BricsCAD V25: PLINE and LENGTHEN gave no bracketed prompt.
+3. Other locales.

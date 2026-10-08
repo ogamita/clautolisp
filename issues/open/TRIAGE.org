@@ -451,6 +451,10 @@ headless):
   Reste : « sélectionner les options (?) » de BricsCAD (8 commandes) à mesurer sur
   une installation ANGLAISE ; AutoCAD RECTANG/PLINE/BREAK/LENGTHEN/ZOOM et
   BricsCAD PLINE/LENGTHEN non récoltés.
+  MAJ 2026-10-08 (2.3.6) : relance AutoCAD (job 16998925798) = même récolte,
+  rien de nouveau : la console se fige au 9e ordre quel qu'il soit (ZOOM puis
+  RECTANG), timeout 300 s. Sonde réordonnée (PLINE/BREAK/LENGTHEN d'abord,
+  marqueur OPTKW-TRY) ; à relancer.
 
 ** Re-examine (block lifted 2026-08-15; await pjb confirm-close)
 - =drawing-data-structures-parity=, =selection-and-snapshot-parity= — headless work done
