@@ -1,0 +1,89 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-cad-source-loader-evaluates-block-comments - documentation text is executed as AutoLISP
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+BRANCH: fix-alfe-cad-source-loader-evaluates-block-comments
+#+DATE: 2026-10-08
+
+* Observed
+
+SCHMS CI job 529707, =test-cad-activex:autocad:windows=, uses ALFE
+2.2.227 and fails while loading the test harness, before any test runs:
+
+https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/529707
+
+#+begin_example
+while loading autolisp-test/vlisp-project.lsp
+(form starting at line 87) at line 87, column 1:
+no function definition: SYMBOLE
+#+end_example
+
+The nested load chain is =test-cad-activex.lsp= ->
+=tests/test-runner-commun.lsp= -> =autolisp-test/test-runner.lsp= ->
+=autolisp-test/vlisp-project.lsp=. The last file contains:
+
+#+begin_src lisp
+;| @Global
+  Nom d'une clé de propriété (symbole ou autre valeur), en majuscules.
+  @Param key A: clé lue dans la liste de propriétés
+  @Returns string: par exemple ":OWN-LIST"
+|;
+(defun vlisp-project--key-name (key)
+  (strcase
+    (if (= (type key) 'SYM)
+      (vl-symbol-name key)
+      (vl-princ-to-string key))))
+#+end_src
+
+=SYMBOLE= is prose inside a valid block comment, not a missing application
+function. The loader is treating =(symbole ou autre valeur)= as code.
+This documentation format is required by SCHMS and used by outils-autolisp.
+
+* Minimal regression case to run
+
+Save the following as =block-comment-repro.lsp= and load it through the
+CAD backend, for example =alfe -norc --autocad -l block-comment-repro.lsp=:
+
+#+begin_src lisp
+;| @Global
+  Description (symbole ou autre valeur).
+|;
+(setq block-comment-repro-ok T)
+(princ "BLOCK-COMMENT-OK")
+(princ)
+#+end_src
+
+Expected: the comment is ignored, the assignment executes and stdout
+contains =BLOCK-COMMENT-OK=. There must be no evaluation of =SYMBOLE=.
+This reduced case has not yet been run; the CI failure above is observed.
+
+* Cause identified by source inspection
+
+In =autolisp-front-end/source/runtime/autolisp-bootstrap.lsp=,
+=autolisp-source-scan-text=, =autolisp-source-leading-symbols=,
+=autolisp-source-trim-leading-junk= and
+=autolisp-source-first-form-end= only track line comments. A semicolon
+starts a comment, and a newline ends it. They do not recognise the
+=;|= / =|;= block-comment delimiters.
+
+Consequently the opening documentation line is discarded as a line
+comment, while subsequent prose, including its parentheses, is scanned
+as executable forms. Fix the shared lexical handling rather than
+removing documentation or defining a dummy SYMBOLE function.
+
+* Acceptance criteria
+
+- All CAD source scanning, trimming and form splitting agree on block
+  comments and preserve state across lines until =|;=.
+- Comment contents are never read or evaluated, including parentheses,
+  quotes and semicolons inside the block.
+- Delimiters inside string literals remain literal text; ordinary line
+  comments retain their semantics.
+- Forms before and after a block comment, including on the same line,
+  are each executed exactly once. Source locations remain accurate.
+- Add regression coverage in =autolisp-front-end/tests/file-protocol-tests.lisp=
+  using the hosted protocol harness; verify AutoCAD and BricsCAD when available.
+- Loading =autolisp-test/vlisp-project.lsp= and the SCHMS ActiveX entry
+  point proceeds beyond the documentation block on AutoCAD.
