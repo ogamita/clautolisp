@@ -1206,8 +1206,14 @@ default) emits nothing, so OPEN calls are never rewritten.
 
 OPEN-WRITE-ARG, when a non-empty string (\"utf8\", AutoCAD only), emits
 `(setq *ALFE-OPEN-WRITE-ARG* \"...\")': alfe-open* then passes it as the
-third argument of a plain \"w\" OPEN when the CAD's LISPSYS is 1 or 2, and
-warns once (on the error channel) when it is 0 or the mode is \"a\".
+third argument of a plain \"w\" or \"a\" OPEN when the CAD's LISPSYS is 1
+or 2, and warns once per run (on the error channel) when it is 0.
+
+Either one applies to EVERY action (alfe-efile-write-not-applied-to-l-file):
+code loaded with alfe-load, and every protocol request -- the -l file read
+by the deported loader, -x forms, --main, REPL input. A request's OPEN calls
+are rewritten in its source TEXT (alfe-open-request-text in the bootstrap),
+so the rest of the text reaches the CAD's LOAD as written.
 
 When CLI-OPTIONS is non-NIL, the CLI-derived *AUTOLISP-…* globals
 from transmit-options.issue are emitted at the *top* of the file
@@ -1449,14 +1455,20 @@ Returns the path of the emitted file."
 ;; was rewritten) and SOURCE reads back EQUAL to FORM -- so the CAD never~%~
 ;; evaluates anything but what was read. Otherwise the (normalised) form~%~
 ;; is printed with autolisp-form-source-text, reals at full precision.~%~
+;; With -Efile-write forwarded, a form that calls OPEN gets its OPEN calls~%~
+;; rewritten into alfe-open* -- in its TEXT when that text is usable~%~
+;; (alfe-open-request-text, alfe-efile-write-not-applied-to-l-file).~%~
 (defun alfe-request-source-text (form normalized source / back)~%~
-  (if (and source (eq normalized form))~%~
+  (cond~%~
+   ((alfe-open-request-p normalized)~%~
+    (alfe-open-request-text form normalized source))~%~
+   ((and source (eq normalized form))~%~
     (progn~%~
       (setq back (vl-catch-all-apply 'read (list source)))~%~
       (if (and (not (vl-catch-all-error-p back)) (equal back form))~%~
         source~%~
-        (autolisp-form-source-text normalized)))~%~
-    (autolisp-form-source-text normalized)))~%~
+        (autolisp-form-source-text normalized))))~%~
+   (T (autolisp-form-source-text normalized))))~%~
 ;; Wrap autolisp-eval-request-form so the publish fires after every~%~
 ;; protocol-driven evaluation. For non-LOAD forms, we no longer call~%~
 ;; `(eval form)' inline — BricsCAD V26 mis-dispatches embedded~%~

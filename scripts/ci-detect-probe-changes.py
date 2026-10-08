@@ -74,6 +74,8 @@ FAMILIES = {
         "probes/scripts/**",
     ],
     "encoding": [f"{ENTITIES}/encoding-probe.lsp",
+                 # the FORWARD step of run-encoding-experiment.ps1
+                 f"{ENTITIES}/lispsys-forward-probe.lsp",
                  "scripts/run-encoding-experiment.*"],
     "lispsys-bom": [f"{ENTITIES}/lispsys-bom-probe.lsp",
                     f"{ENTITIES}/lispsys-forward-probe.lsp",

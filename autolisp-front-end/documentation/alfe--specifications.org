@@ -1722,15 +1722,20 @@ directions, and resolution order live in the =clautolisp= CLI spec
 (=*encoding-situations*=).
 
 On the CAD backends two of them reach the CAD only where it was measured to
-honour them. =file=: a write encoding becomes, in code loaded with
-=alfe-load=, a ~,ccs=~ suffix on a plain ="w"= / ="a"= on BricsCAD/Windows
+honour them. =file=: a write encoding becomes, on every action (the =-l=
+file, =-x= forms, =--main=, REPL input, code loaded with =alfe-load=), a
+~,ccs=~ suffix on a plain ="w"= / ="a"= on BricsCAD/Windows
 (=*ALFE-OPEN-WRITE-CCS*=), and on AutoCAD the third argument ="utf8"= of a
 plain ="w"= or ="a"= (=*ALFE-OPEN-WRITE-ARG*=), passed by the CAD-side
 =alfe-open*= only when =LISPSYS= is 1 or 2 and warned about otherwise (an
-append with ="utf8"= / ="utf8-bom"= was measured to add no second BOM). The
-=-l= file itself is evaluated through the request path, which does not
-rewrite =open=; only code it (or =-x=) loads with =alfe-load= is
-forwarded. =log=: the CAD
+append with ="utf8"= / ="utf8-bom"= was measured to add no second BOM).
+=alfe-load= rewrites the =open= calls of the forms it reads; every protocol
+request (the =-l= file read by the deported loader, =-x=, =--main=, the
+REPL) has them rewritten in its source TEXT by
+=autolisp-eval-request-source= (=alfe-open-request-text=), the rest of the
+text reaching the CAD's =load= as written. Only =open= calls written in the
+code are reached, never one built at run time, and nothing is rewritten
+without a forwarded write encoding. =log=: the CAD
 writes its =LOGFILEMODE= log into the workdir's =logs/= in its own encoding;
 =--cad-log FILE= has alfe read it after the run
 (=ALFE.BACKEND:COLLECT-ENGINE-LOG=) and copy it to FILE in UTF-8, decoding

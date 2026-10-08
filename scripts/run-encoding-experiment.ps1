@@ -198,4 +198,41 @@ if ($Backend -ne "clautolisp") {
   }
 }
 
+# --- FORWARD: -Efile-write utf-8 reaching the CAD's OPEN on every action -----
+# (alfe-efile-write-not-applied-to-l-file, alfe 2.3.14). lispsys-forward-probe
+# run three ways -- alfe-loaded from an entry file, given to -l, and with its
+# OPEN calls in an -x form (E1F_MODE=x) -- each one alfe run. Expected for EACH
+# way: BricsCAD/Windows (",ccs=UTF-8") "w SIZE 7" (BOM + UTF-8; 3 would be the
+# unforwarded cp1252) and "a SIZE" 2 or 5 (UTF-8 on a fresh file, with or
+# without a BOM -- not measured yet; 1 is unforwarded), no WARN. AutoCAD: see
+# run-lispsys-bom-probe.ps1 (4 / 2 at LISPSYS 1/2, 3 / 1 and one WARN at 0).
+if ($Backend -ne "clautolisp") {
+  $forward = Join-Path $root "autolisp-front-end/tests/scenarios/entities/lispsys-forward-probe.lsp"
+  $e1fDir = Join-Path $outDir "e1f"
+  New-Item -ItemType Directory -Force $e1fDir | Out-Null
+  $savedE1 = $env:E1_DIR
+  $env:E1_DIR = $e1fDir -replace '\\','/'
+  $forwardEntry = Join-Path $e1fDir "e1f-entry.lsp"
+  Set-Content -Encoding ascii $forwardEntry ('(alfe-load "{0}")' -f ($forward -replace '\\','/'))
+  # No double quote in the -x form (see E3 above), hence the probe's helpers.
+  $forwardX = "(e1f-x (open (e1f-xp 'w) (e1f-xm 'w)) (open (e1f-xp 'a) (e1f-xm 'a)))"
+  $baseArgs = @($bargs | Where-Object { $_ -ne "-l" -and $_ -ne $probe }) + @("-Efile-write","utf-8")
+  foreach ($way in @(
+      @{ Label = "FORWARD alfe-load"; Mode = "";  Args = @("-l", $forwardEntry) },
+      @{ Label = "FORWARD -l";        Mode = "";  Args = @("-l", $forward) },
+      @{ Label = "FORWARD -x";        Mode = "x"; Args = @("-l", $forward, "-x", $forwardX) })) {
+    ("########## {0} ##########" -f $way.Label) | Tee-Object -FilePath $report -Append
+    $env:E1F_MODE = $way.Mode
+    try {
+      $fargs = $baseArgs + $way.Args
+      (& $alfe @fargs 2>&1) |
+        Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|WARN|ERROR|BOOTSTRAP-FAILED|FAILED' } |
+        ForEach-Object { "[$($way.Label)] $_" } |
+        Tee-Object -FilePath $report -Append
+    } catch { "[$($way.Label)] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+    Remove-Item -Path Env:E1F_MODE -ErrorAction SilentlyContinue
+  }
+  if ($null -ne $savedE1) { $env:E1_DIR = $savedE1 } else { Remove-Item -Path Env:E1_DIR -ErrorAction SilentlyContinue }
+}
+
 Write-Host "encoding experiment ($Backend) -> $report"

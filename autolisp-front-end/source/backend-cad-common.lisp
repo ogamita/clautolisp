@@ -1502,8 +1502,10 @@ version pick the right one. The virtual =autocad[-VER]= maps to =acad= or
 ;;; AutoCAD, UTF-8, by passing "utf8" as OPEN's third argument to a plain "w"
 ;;; or "a" -- in the CAD, only when LISPSYS is 1 or 2 (it is read at start-up,
 ;;; alfe cannot know it beforehand). Both are done by alfe-open* in the
-;;; bootstrap, in code loaded with alfe-load (the -l file itself is not
-;;; rewritten: alfe-efile-write-not-applied-to-l-file).
+;;; bootstrap, on every action: in code loaded with alfe-load, and in every
+;;; protocol request -- the -l file, -x, --main, the REPL -- whose OPEN calls
+;;; the emitted autolisp-eval-request-source rewrites in the source text
+;;; (alfe-efile-write-not-applied-to-l-file).
 ;;; Everything else is warned about, never silently dropped -- except a
 ;;; request for what the CAD does anyway.
 

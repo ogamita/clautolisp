@@ -1262,6 +1262,186 @@
 (defun alfe-eval-rewritten-form (alfe--form)
   (eval (alfe-rewrite-form alfe--form)))
 
+;; --- -Efile-write on EVERY action, not only in alfe-loaded code ----------
+;;
+;; alfe-efile-write-not-applied-to-l-file (pjb 2026-10-08: "apply
+;; -Efile-write to -l and -x too"). The -l file, -x forms, --main, REPL input
+;; and every other protocol request reach the CAD through
+;; autolisp-eval-request-source, which hands the request's own TEXT to the
+;; CAD's native LOAD (alfe-cad-transport-rounds-reals: a re-print loses the
+;; digits of a real). So OPEN is rewritten there IN THE TEXT: each OPEN call
+;; "(open a b)" becomes "(alfe-open* (list a b))", and every other character
+;; of the source is kept as written. Shadowing OPEN itself cannot do it:
+;; AutoCAD has no &rest, and OPEN takes two or three arguments.
+;;
+;; Only OPEN, and only while -Efile-write is forwarded (alfe-open-rewrite-p):
+;; without it nothing here runs and no request changes. princ/print/prin1/
+;; load keep their own (request-path) handling -- unlike alfe-load, which
+;; rewrites them too.
+
+;; T iff FORM contains an OPEN call, outside QUOTE / FUNCTION. Walks without
+;; consing, like alfe-form-needs-rewrite-p, but for OPEN alone.
+(defun alfe-form-has-open-call-p (form / head s)
+  (cond
+    ((atom form) nil)
+    ((not (listp form)) nil)
+    ((null form) nil)
+    (T
+     (setq head (car form))
+     (cond
+       ((and (= (type head) 'SYM)
+             (progn (setq s (strcase (vl-symbol-name head)))
+                    (or (= s "QUOTE") (= s "FUNCTION"))))
+        nil)
+       ((and (= (type head) 'SYM) (= s "OPEN")) T)
+       ((alfe-form-has-open-call-p (car form)) T)
+       ((alfe-form-has-open-call-p (cdr form)) T)
+       (T nil)))))
+
+(defun alfe-rewrite-open-calls-impl (form / head s)
+  (cond
+    ((atom form) form)
+    ((not (listp form)) form)
+    ((null form) form)
+    (T
+     (setq head (car form))
+     (cond
+       ((and (= (type head) 'SYM)
+             (progn (setq s (strcase (vl-symbol-name head)))
+                    (or (= s "QUOTE") (= s "FUNCTION"))))
+        form)
+       ((and (= (type head) 'SYM) (= s "OPEN"))
+        (list 'alfe-open* (cons 'list (mapcar 'alfe-rewrite-open-calls (cdr form)))))
+       (T
+        (mapcar 'alfe-rewrite-open-calls form))))))
+
+;; FORM with its OPEN calls turned into alfe-open* calls -- the SAME conses
+;; when it has none (the cons-identity guard of alfe-rewrite-form).
+(defun alfe-rewrite-open-calls (form)
+  (if (alfe-form-has-open-call-p form)
+    (alfe-rewrite-open-calls-impl form)
+    form))
+
+;; T iff a request FORM must have its OPEN calls rewritten: -Efile-write is
+;; forwarded AND the form calls OPEN.
+(defun alfe-open-request-p (form)
+  (and (alfe-open-rewrite-p) (alfe-form-has-open-call-p form)))
+
+(defun alfe-open-text-delimiter-p (ch)
+  (member ch '(" " "\t" "\r" "\n" "(" ")" "'" "\"" ";")))
+
+;; The token heading the list whose open paren is at IDX of TEXT, as
+;; (START . TOKEN), or NIL when the list starts with no token.
+(defun alfe-open-text-head (text idx len / j start)
+  (setq j (+ idx 1))
+  (while (and (<= j len) (member (substr text j 1) '(" " "\t" "\r" "\n")))
+    (setq j (+ j 1)))
+  (setq start j)
+  (while (and (<= j len) (not (alfe-open-text-delimiter-p (substr text j 1))))
+    (setq j (+ j 1)))
+  (if (> j start) (cons start (substr text start (- j start))) nil))
+
+;; TEXT, the source of one form, with every OPEN call "(open ARGS)" written
+;; "(alfe-open* (list ARGS))" -- the textual twin of alfe-rewrite-open-calls:
+;; a list quoted by ' or headed by QUOTE / FUNCTION is left alone, strings and
+;; comments (; and ;| |;) are skipped. Nothing else of TEXT changes, so a real
+;; literal keeps every digit it was written with.
+(defun alfe-open-rewrite-text (text / idx len ch nx stack quoted pending in-string escape in-comment in-block head s child-quoted open-p edits out pos e)
+  (setq idx 1)
+  (setq len (strlen text))
+  (setq stack nil)
+  (setq pending nil)
+  (setq in-string nil)
+  (setq escape nil)
+  (setq in-comment nil)
+  (setq in-block nil)
+  (setq edits nil)
+  (while (<= idx len)
+    (setq ch (substr text idx 1))
+    (setq nx (if (< idx len) (substr text (+ idx 1) 1) ""))
+    (cond
+      (in-block
+       (if (and (= ch "|") (= nx ";"))
+         (progn (setq in-block nil) (setq idx (+ idx 1)))))
+      (in-comment
+       (if (= ch "\n") (setq in-comment nil)))
+      (in-string
+       (cond
+         (escape (setq escape nil))
+         ((= ch "\\") (setq escape T))
+         ((= ch "\"") (setq in-string nil))))
+      ((= ch ";")
+       (if (= nx "|")
+         (progn (setq in-block T) (setq idx (+ idx 1)))
+         (setq in-comment T)))
+      ((= ch "\"")
+       (setq in-string T)
+       (setq pending nil))
+      ((= ch "'")
+       (setq pending T))
+      ((= ch "(")
+       (setq quoted (or pending (and stack (car (car stack)))))
+       (setq pending nil)
+       (setq child-quoted quoted)
+       (setq open-p nil)
+       (if (not quoted)
+         (progn
+           (setq head (alfe-open-text-head text idx len))
+           (if head
+             (progn
+               (setq s (strcase (cdr head)))
+               (cond
+                 ((= s "OPEN")
+                  (setq open-p T)
+                  (setq edits (cons (list (car head) (strlen (cdr head))
+                                          "alfe-open* (list")
+                                    edits)))
+                 ((or (= s "QUOTE") (= s "FUNCTION"))
+                  (setq child-quoted T)))))))
+       (setq stack (cons (list child-quoted open-p) stack)))
+      ((= ch ")")
+       (if stack
+         (progn
+           (if (cadr (car stack))
+             (setq edits (cons (list idx 0 ")") edits)))
+           (setq stack (cdr stack)))))
+      ((member ch '(" " "\t" "\r" "\n")) nil)
+      (T (setq pending nil)))
+    (setq idx (+ idx 1)))
+  ;; The edits were collected left to right; splice them in.
+  (setq out "")
+  (setq pos 1)
+  (foreach e (reverse edits)
+    (if (> (car e) pos)
+      (setq out (strcat out (substr text pos (- (car e) pos)))))
+    (setq out (strcat out (caddr e)))
+    (setq pos (+ (car e) (cadr e))))
+  (if (<= pos len)
+    (strcat out (substr text pos))
+    out))
+
+;; The text the CAD is given for a request FORM that calls OPEN while
+;; -Efile-write is forwarded. NORMALIZED is FORM after the princ normaliser,
+;; SOURCE the text FORM was read from (or NIL). When FORM was not rebuilt and
+;; its SOURCE is at hand, that source is rewritten textually -- and used only
+;; if it reads back EQUAL to the form-walk rewrite, so the CAD evaluates
+;; exactly what alfe-load would have. Otherwise (no text, or the normaliser
+;; rebuilt the form, which is then printed anyway) the rewritten form is
+;; printed with autolisp-form-source-text, reals at full precision.
+(defun alfe-open-request-text (form normalized source / rewritten text back)
+  (setq rewritten (alfe-rewrite-open-calls normalized))
+  (if (and source (eq normalized form))
+    (progn
+      (setq text (vl-catch-all-apply 'alfe-open-rewrite-text (list source)))
+      (if (vl-catch-all-error-p text)
+        (setq text nil))
+      (if text
+        (setq back (vl-catch-all-apply 'read (list text))))
+      (if (and text (not (vl-catch-all-error-p back)) (equal back rewritten))
+        text
+        (autolisp-form-source-text rewritten)))
+    (autolisp-form-source-text rewritten)))
+
 (defun autolisp-internal-protocol-load-p (path)
   (and (= (type path) 'STR)
        (wcmatch path "*protocol-request-*.lsp")))
@@ -1406,7 +1586,12 @@
   (setq alfe--form (autolisp-normalize-princ-call alfe--form))
   (if (autolisp-load-form-p alfe--form)
     (autolisp-eval-load-form alfe--form)
-    (eval alfe--form)))
+    ;; -Efile-write reaches the OPEN calls of every request
+    ;; (alfe-efile-write-not-applied-to-l-file); the form is untouched
+    ;; unless it is forwarded and the form calls OPEN.
+    (eval (if (alfe-open-request-p alfe--form)
+            (alfe-rewrite-open-calls alfe--form)
+            alfe--form))))
 
 ;; The same request, with the SOURCE TEXT the form was read from (or NIL
 ;; when there is none). Every caller that read the form from text passes

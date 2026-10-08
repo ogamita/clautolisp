@@ -2223,6 +2223,365 @@ clautolisp-sbcl is not on disk."
                        "the warning is given once: ~S" stderr)))
             (delete-workdir outdir))))))
 
+;;; --- -Efile-write on every action -----------------------------------
+;;;
+;;; alfe-efile-write-not-applied-to-l-file (pjb 2026-10-08: "yes, apply
+;;; -Efile-write to -l and -x too"). Until then only alfe-load rewrote OPEN;
+;;; the -l file (sent as a (load ...) request and read by the deported
+;;; loader), -x forms, --main and REPL input went through
+;;; autolisp-eval-request-source, which never did. Now that function rewrites
+;;; OPEN in the request's source TEXT, so the CAD still loads what the user
+;;; wrote (alfe-cad-transport-rounds-reals) apart from the OPEN calls.
+
+(defun %efw-out (outdir name)
+  (namestring (merge-pathnames name outdir)))
+
+(defun %drive-open-actions (binary outdir &key ccs arg unicode-p assume-no-rest-p dialect)
+  "Host the real runtime with *ALFE-OPEN-WRITE-CCS* = CCS and
+*ALFE-OPEN-WRITE-ARG* = ARG (alfe-lispsys-unicode-p answering UNICODE-P) and
+write \"A\" e-acute through a plain (open P \"w\") from every kind of action:
+a file given to -l (sent as alfe does, (load P), and read by the deported
+loader) into l-w.txt, plus an e-acute appended with (open P \"a\") into
+l-a.txt; a function that file defines, called as --main calls it, into
+main-w.txt; an -x form into x-w.txt; a REPL request (wrapped in (print ...) as
+the REPL does) into repl-w.txt; and, as the reference, an unrewritten
+(apply 'open ...) into ref.txt. The engine's PRINC keeps 6 digits (as
+AutoCAD's does) and the re-printer autolisp-form-source-text is counted, so
+the result tells whether the source text was kept; alfe-open* is wrapped to
+count its calls (OPENSTAR line). DIALECT is the run's --dialect: under
+autocad-2022 the hosted clautolisp writes cp1252 by default, as AutoCAD does,
+so a forwarded \"utf8\" shows in the octets. Returns (values statuses stdout
+stderr)."
+  (drive-hosted-engine
+   binary nil
+   :open-write-ccs ccs
+   :open-write-arg arg
+   :assume-no-rest-p assume-no-rest-p
+   :dialect dialect
+   :forms-fn
+   (lambda (workdir)
+     (let ((lfile (merge-pathnames "efw-plain-l.lsp" workdir)))
+       (with-open-file (out lfile :direction :output
+                                  :if-exists :supersede
+                                  :if-does-not-exist :create
+                                  :external-format :utf-8)
+         ;; An OPEN call and a real literal in one form: the form is
+         ;; rewritten, and its literal must still arrive with every digit.
+         (format out "(progn (setq efw-r 1.5707963267948966)~%       (setq efw-f (open ~S \"w\")))~%(write-char 65 efw-f) (write-char 233 efw-f) (close efw-f)~%"
+                 (%efw-out outdir "l-w.txt"))
+         (format out "(setq efw-g (open ~S \"a\")) (write-char 233 efw-g) (close efw-g)~%"
+                 (%efw-out outdir "l-a.txt"))
+         (format out "(defun efw-main (/ m)~%  (setq m (open ~S \"w\"))~%  (write-char 65 m) (write-char 233 m) (close m) T)~%"
+                 (%efw-out outdir "main-w.txt"))
+         ;; Quoted OPEN calls are data: never rewritten.
+         (format out "(setq efw-q '(open \"q\" \"w\") efw-q2 (quote (open \"q\" \"w\")))~%"))
+       (list
+        (if unicode-p
+            "(defun alfe-lispsys-unicode-p () T)"
+            "(defun alfe-lispsys-unicode-p () nil)")
+        +lossy-render-form+
+        (concatenate 'string
+                     "(progn (setq *efw-printed* 0)"
+                     " (setq efw-orig-fst autolisp-form-source-text)"
+                     " (defun autolisp-form-source-text (obj)"
+                     " (setq *efw-printed* (1+ *efw-printed*))"
+                     " (efw-orig-fst obj)))")
+        (concatenate 'string
+                     "(progn (setq *efw-openstar* 0)"
+                     " (setq efw-orig-open* alfe-open*)"
+                     " (defun alfe-open* (args)"
+                     " (setq *efw-openstar* (1+ *efw-openstar*))"
+                     " (efw-orig-open* args)))")
+        ;; -l
+        (format nil "(load ~S)" (namestring lfile))
+        "(princ (strcat \"PRINTED-L \" (itoa *efw-printed*) \"\\n\") nil)"
+        ;; --main
+        "(efw-main)"
+        ;; -x
+        (format nil "(progn (setq efw-xf (open ~S \"w\")) (write-char 65 efw-xf) (write-char 233 efw-xf) (close efw-xf) (setq efw-x 0.7853981633974483))"
+                (%efw-out outdir "x-w.txt"))
+        ;; REPL input, as backend-cad-common wraps it
+        (format nil "(print (progn (setq efw-k (open ~S \"w\")) (write-char 65 efw-k) (write-char 233 efw-k) (close efw-k) 'done))"
+                (%efw-out outdir "repl-w.txt"))
+        ;; the reference: OPEN reached through APPLY of a quoted symbol
+        (format nil "(progn (setq efw-h (apply 'open (list ~S \"w\"))) (write-char 65 efw-h) (write-char 233 efw-h) (close efw-h))"
+                (%efw-out outdir "ref.txt"))
+        (concatenate
+         'string
+         "(princ (strcat"
+         " \"\\nEFW R \" (if (= efw-r (read \"1.5707963267948966\")) \"EXACT\" \"ROUNDED\")"
+         " \" X \" (if (= efw-x (read \"0.7853981633974483\")) \"EXACT\" \"ROUNDED\")"
+         " \" Q \" (vl-symbol-name (car efw-q)) \" \" (vl-symbol-name (car efw-q2))"
+         " \"\\nOPENSTAR \" (itoa *efw-openstar*)"
+         " \"\\n\") nil)"))))))
+
+(defun %efw-octets (outdir name)
+  (let ((p (merge-pathnames name outdir)))
+    (and (probe-file p) (%file-octets p))))
+
+(defun %count-occurrences (needle haystack)
+  (loop with start = 0
+        for hit = (search needle haystack :start2 start)
+        while hit
+        count t
+        do (setf start (1+ hit))))
+
+(defun %efw-clear (outdir)
+  (dolist (name '("l-w.txt" "l-a.txt" "main-w.txt" "x-w.txt" "repl-w.txt" "ref.txt"))
+    (let ((p (merge-pathnames name outdir)))
+      (when (probe-file p) (delete-file p)))))
+
+(defun %autolisp-string-literal (string)
+  "STRING as an AutoLISP string literal on ONE line: backslash, double quote
+and newline escaped."
+  (with-output-to-string (out)
+    (write-char #\" out)
+    (loop for ch across string
+          do (case ch
+               (#\\ (write-string "\\\\" out))
+               (#\" (write-string "\\\"" out))
+               (#\Newline (write-string "\\n" out))
+               (t (write-char ch out))))
+    (write-char #\" out)))
+
+(defparameter +efw-written-files+ '("l-w.txt" "main-w.txt" "x-w.txt" "repl-w.txt"))
+
+(test protocol-open-write-arg-reaches-every-action
+  "Acceptance, AutoCAD-style runtime (fixed-arity shadows) with
+*ALFE-OPEN-WRITE-ARG* \"utf8\" under a hosted clautolisp: at LISPSYS 1/2 a plain
+(open P \"w\") writes A e-acute as 41 C3 A9 from the -l file, from --main, from
+an -x form and from a REPL request, and (open P \"a\") in the -l file appends
+C3 A9, with no warning; at LISPSYS 0 every file is written like the
+unrewritten reference and ONE warning names LISPSYS for the whole run. A
+quoted (open ...) stays data, and the real literals of the -l file and of the
+-x form arrive with every digit. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; -Efile-write on every action test skipped.")
+        (let ((outdir (make-test-workdir "efw-arg-out")))
+          (unwind-protect
+               (progn
+                 ;; 1. LISPSYS 1/2
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-actions binary outdir :arg "utf8" :unicode-p t
+                                                        :assume-no-rest-p t
+                                                        :dialect "autocad-2022")
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (dolist (name +efw-written-files+)
+                     (is (equal '(65 195 169) (%efw-octets outdir name))
+                         "~A: (open P \"w\") must write UTF-8 through \"utf8\": ~S"
+                         name (%efw-octets outdir name)))
+                   (is (equal '(195 169) (%efw-octets outdir "l-a.txt"))
+                       "l-a.txt: (open P \"a\") must append UTF-8: ~S"
+                       (%efw-octets outdir "l-a.txt"))
+                   (is (not (equal '(65 195 169) (%efw-octets outdir "ref.txt")))
+                       "the reference must NOT be forwarded: ~S"
+                       (%efw-octets outdir "ref.txt"))
+                   (is (not (search "-Efile-write" stderr)) "no warning: ~S" stderr)
+                   (is (equal '("R EXACT X EXACT Q OPEN OPEN")
+                              (%prefixed-lines "EFW " stdout))
+                       "literals and quoted data: ~S" stdout)
+                 (is (equal '("5") (%prefixed-lines "OPENSTAR " stdout))
+                     "-l w, -l a, --main, -x and REPL each call alfe-open*: ~S" stdout)
+                   (is (equal '("5") (%prefixed-lines "OPENSTAR " stdout))
+                       "-l w, -l a, --main, -x and REPL each call alfe-open*: ~S" stdout)
+                   ;; The -l file travelled as its text: not re-printed.
+                   (is (equal '("0") (%prefixed-lines "PRINTED-L " stdout))
+                       "the -l file must be rewritten in its text: ~S" stdout))
+                 ;; 2. LISPSYS 0: nothing forwarded, one warning per run
+                 (%efw-clear outdir)
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-actions binary outdir :arg "utf8" :unicode-p nil
+                                                        :assume-no-rest-p t
+                                                        :dialect "autocad-2022")
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (dolist (name +efw-written-files+)
+                     (is (equal (%efw-octets outdir "ref.txt") (%efw-octets outdir name))
+                         "~A: at LISPSYS 0 must write the default: ~S"
+                         name (%efw-octets outdir name)))
+                   (is (equal (rest (%efw-octets outdir "ref.txt"))
+                              (%efw-octets outdir "l-a.txt"))
+                       "at LISPSYS 0 (open P \"a\") must append in the default")
+                   (is (= 1 (%count-occurrences "-Efile-write: not forwarded, LISPSYS is" stderr))
+                       "one warning for the whole run: ~S" stderr)
+                   (is (equal '("R EXACT X EXACT Q OPEN OPEN")
+                              (%prefixed-lines "EFW " stdout))
+                       "literals and quoted data: ~S" stdout)
+                 (is (equal '("5") (%prefixed-lines "OPENSTAR " stdout))
+                     "-l w, -l a, --main, -x and REPL each call alfe-open*: ~S" stdout)
+                   (is (equal '("5") (%prefixed-lines "OPENSTAR " stdout))
+                       "-l w, -l a, --main, -x and REPL each call alfe-open*: ~S" stdout)))
+            (delete-workdir outdir))))))
+
+(test protocol-open-write-ccs-reaches-every-action
+  "Acceptance, BricsCAD-style runtime (variadic shadows) with
+*ALFE-OPEN-WRITE-CCS* \"UTF-16LE\" under a hosted clautolisp: a plain (open P
+\"w\") writes UTF-16LE from the -l file, --main, an -x form and a REPL request,
+and (open P \"a\") in the -l file appends UTF-16LE; no request is re-printed
+(every OPEN is rewritten in the source text). Skipped when clautolisp-sbcl is
+not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; -Efile-write on every action test skipped.")
+        (let ((outdir (make-test-workdir "efw-ccs-out")))
+          (unwind-protect
+               (multiple-value-bind (statuses stdout stderr)
+                   (%drive-open-actions binary outdir :ccs "UTF-16LE"
+                                                     :dialect "bricscad-v25")
+                 (is (every (lambda (s) (search " OK" s)) statuses)
+                     "every request must succeed: ~S~%~A" statuses stderr)
+                 (dolist (name +efw-written-files+)
+                   (is (member (%efw-octets outdir name)
+                               '((65 0 233 0) (255 254 65 0 233 0)) :test #'equal)
+                       "~A: (open P \"w\") must write UTF-16LE: ~S"
+                       name (%efw-octets outdir name)))
+                 (is (member (%efw-octets outdir "l-a.txt")
+                             '((233 0) (255 254 233 0)) :test #'equal)
+                     "l-a.txt: (open P \"a\") must append UTF-16LE: ~S"
+                     (%efw-octets outdir "l-a.txt"))
+                 (is (equal '("R EXACT X EXACT Q OPEN OPEN")
+                            (%prefixed-lines "EFW " stdout))
+                     "literals and quoted data: ~S" stdout)
+                 (is (equal '("5") (%prefixed-lines "OPENSTAR " stdout))
+                     "-l w, -l a, --main, -x and REPL each call alfe-open*: ~S" stdout)
+                 (is (equal '("0") (%prefixed-lines "PRINTED-L " stdout))
+                     "the -l file must be rewritten in its text: ~S" stdout))
+            (delete-workdir outdir))))))
+
+(test protocol-open-not-rewritten-without-efile-write
+  "Without -Efile-write (neither *ALFE-OPEN-WRITE-CCS* nor *ALFE-OPEN-WRITE-ARG*)
+nothing changes, on either runtime: every action writes exactly like the
+unrewritten reference, no warning, and nothing is re-printed. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; -Efile-write on every action test skipped.")
+        (let ((outdir (make-test-workdir "efw-none-out")))
+          (unwind-protect
+               (dolist (no-rest '(nil t))
+                 (%efw-clear outdir)
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-actions binary outdir :assume-no-rest-p no-rest
+                                                        :dialect "autocad-2022")
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (dolist (name +efw-written-files+)
+                     (is (equal (%efw-octets outdir "ref.txt") (%efw-octets outdir name))
+                         "~:[variadic~;fixed-arity~] ~A: must write the default: ~S"
+                         no-rest name (%efw-octets outdir name)))
+                   (is (not (search "-Efile-write" stderr)) "no warning: ~S" stderr)
+                   (is (equal '("0") (%prefixed-lines "PRINTED-L " stdout))
+                       "nothing re-printed: ~S" stdout)
+                   (is (equal '("0") (%prefixed-lines "OPENSTAR " stdout))
+                       "alfe-open* never called: ~S" stdout)))
+            (delete-workdir outdir))))))
+
+(defun %forward-probe-run (binary e1-dir way unicode-p)
+  "Run lispsys-forward-probe.lsp the WAY run-lispsys-bom-probe.ps1 does
+(:alfe-load, :l or :x) on the hosted engine, AutoCAD-style, with
+*ALFE-OPEN-WRITE-ARG* \"utf8\" and alfe-lispsys-unicode-p answering UNICODE-P.
+Returns (values statuses stdout stderr)."
+  (let ((probe (namestring
+                (asdf:system-relative-pathname
+                 "autolisp-front-end"
+                 "tests/scenarios/entities/lispsys-forward-probe.lsp")))
+        (previous-dir (set-environment-variable "E1_DIR" e1-dir))
+        (previous-mode (set-environment-variable "E1F_MODE"
+                                                 (if (eq way :x) "x" ""))))
+    (unwind-protect
+         (drive-hosted-engine
+          binary
+          (append
+           (list (if unicode-p
+                     "(defun alfe-lispsys-unicode-p () T)"
+                     "(defun alfe-lispsys-unicode-p () nil)"))
+           (ecase way
+             (:alfe-load (list (format nil "(alfe-load ~S)" probe)))
+             (:l (list (format nil "(load ~S)" probe)))
+             (:x (list (format nil "(load ~S)" probe)
+                       "(e1f-x (open (e1f-xp 'w) (e1f-xm 'w)) (open (e1f-xp 'a) (e1f-xm 'a)))"))))
+          :open-write-arg "utf8"
+          :assume-no-rest-p t
+          :dialect "autocad-2022")
+      (set-environment-variable "E1_DIR" (or previous-dir ""))
+      (set-environment-variable "E1F_MODE" (or previous-mode "")))))
+
+(test protocol-lispsys-forward-probe-three-ways
+  "The CAD probe itself, run the three ways run-lispsys-bom-probe.ps1 runs it
+(alfe-load entry, plain -l, -x), on the hosted engine as AutoCAD 2022: at
+LISPSYS 1/2 every way reports \"w SIZE 4\" and \"a SIZE 2\" with no WARN, at
+LISPSYS 0 \"w SIZE 3\", \"a SIZE 1\" and one WARN -- the expectations the CAD
+job is read against. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; forward probe test skipped.")
+        (let ((e1-dir (make-test-workdir "e1f-dir")))
+          (unwind-protect
+               (dolist (way '(:alfe-load :l :x))
+                 (dolist (unicode-p '(t nil))
+                   (multiple-value-bind (statuses stdout stderr)
+                       (%forward-probe-run binary
+                                           (string-right-trim "/" (namestring e1-dir))
+                                           way unicode-p)
+                     (let ((lines (%prefixed-lines "ENC E1F " (without-returns stdout))))
+                       (is (every (lambda (s) (search " OK" s)) statuses)
+                           "~A: every request must succeed: ~S~%~A" way statuses stderr)
+                       (is (member (if unicode-p "w SIZE 4" "w SIZE 3") lines :test #'string=)
+                           "~A LISPSYS ~:[0~;1/2~]: ~S" way unicode-p lines)
+                       (is (member (if unicode-p "a SIZE 2" "a SIZE 1") lines :test #'string=)
+                           "~A LISPSYS ~:[0~;1/2~]: ~S" way unicode-p lines)
+                       (is (= (if unicode-p 0 1)
+                              (%count-occurrences "WARN -Efile-write" stderr))
+                           "~A LISPSYS ~:[0~;1/2~]: WARN count: ~S" way unicode-p stderr)))))
+            (delete-workdir e1-dir))))))
+
+(test protocol-open-rewrite-text-keeps-the-source
+  "alfe-open-rewrite-text, the CAD-side textual OPEN rewrite: an OPEN call is
+wrapped as (alfe-open* (list ...)) and everything else of the text is kept
+-- real literals, case, spacing, comments; quoted lists (' and QUOTE /
+FUNCTION), strings and comments (; and ;| |;) are never rewritten; nested
+OPEN calls are all rewritten. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary))
+        (cases
+          '(("(setq f (open p \"w\"))"
+             "(setq f (alfe-open* (list p \"w\")))")
+            ("(OPEN)" "(alfe-open* (list))")
+            ("(setq r 1.5707963267948966  f ( Open  p \"a\" ) )"
+             "(setq r 1.5707963267948966  f ( alfe-open* (list  p \"a\" )) )")
+            ("(list '(open a) (quote (open b)) (function (lambda () (open c))) \"(open d\" (open e))"
+             "(list '(open a) (quote (open b)) (function (lambda () (open c))) \"(open d\" (alfe-open* (list e)))")
+            (#.(format nil "(progn ;| (open x) |; (open y \"w\") ; (open z~% (opened 1))")
+             #.(format nil "(progn ;| (open x) |; (alfe-open* (list y \"w\")) ; (open z~% (opened 1))"))
+            ("(foo (open (open a \"r\") \"w\"))"
+             "(foo (alfe-open* (list (alfe-open* (list a \"r\")) \"w\")))")
+            ("(setq s \"\\\"(open\" t (open s \"w\"))"
+             "(setq s \"\\\"(open\" t (alfe-open* (list s \"w\")))"))))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; OPEN text rewrite test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary
+             (loop for (in expected) in cases
+                   for i from 1
+                   collect (format nil "(progn (setq txt (alfe-open-rewrite-text ~A)) (princ (strcat \"TXT~D \" (if (= txt ~A) \"SAME\" (vl-prin1-to-string txt)) \"\\n\") nil))"
+                                   (%autolisp-string-literal in) i
+                                   (%autolisp-string-literal expected))))
+          (is (every (lambda (s) (search " OK" s)) statuses)
+              "every request must succeed: ~S~%~A" statuses stderr)
+          (loop for (in expected) in cases
+                for i from 1
+                do (let ((got (first (%prefixed-lines (format nil "TXT~D " i)
+                                                      stdout))))
+                     (is (equal "SAME" got)
+                         "case ~D: ~S expected ~S, got ~A" i in expected got)))))))
+
 (test protocol-autocad-source-open-takes-no-third-argument
   "G3 on AutoCAD: the deported loader opens a source with a plain (open P \"r\"),
 never (open P \"r\" \"utf8\") -- measured on AutoCAD 2022: the third argument is
