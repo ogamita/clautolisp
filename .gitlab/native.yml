@@ -1931,3 +1931,87 @@ build:alfe:windows:
     # CommandNotFoundException (confirmed on MR !111).
     - '& "$env:CI_PROJECT_DIR\autolisp-front-end\tools\alfe\bin\alfe-sbcl.exe" --version'
     - 'if ($LASTEXITCODE -ne 0) { throw "alfe-sbcl.exe --version failed ($LASTEXITCODE)" }'
+
+# --- ;| block comments |; through alfe's CAD-side loader ---------------------
+#
+# alfe-cad-source-loader-evaluates-block-comments.issue. alfe splits an -l
+# file into forms itself, and up to 2.3.12 its scanners knew only the line
+# comment: the lines of a ;| ... |; block after the first were read as code
+# (SCHMS job 529707, `no function definition: SYMBOLE'). These jobs load a
+# file with block comments in every position on the real CADs; any comment
+# text evaluated fails the load before BLKC-DONE. Soft: a probe never gates.
+.block-comment-artifacts:
+  interruptible: true
+  artifacts:
+    name: "block-comment-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/block-comment/]
+    expire_in: 30 days
+
+block-comment:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .block-comment-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,block-comment,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-block-comment-probe.sh --backend bricscad
+
+block-comment:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .block-comment-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,block-comment,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-block-comment-probe.ps1 -Backend bricscad
+
+block-comment:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .block-comment-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,block-comment,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-block-comment-probe.ps1 -Backend autocad
+
+block-comment:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .block-comment-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,block-comment,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-block-comment-probe.ps1 -Backend accoreconsole

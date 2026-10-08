@@ -1822,6 +1822,12 @@ file or COM), and forwards the workload.
 
 ** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
 
+- *=;| block comments |;= are comments on AutoCAD and BricsCAD* (2.3.13).
+  alfe's CAD-side loader knew only the line comment, so an =-l= file with a
+  documentation block (=;| @Global ... |;=) had the block's later lines
+  evaluated, and its prose failed as code (/no function definition:
+  SYMBOLE/). Block comments are now skipped wherever they stand. See the
+  manual's /How a form reaches a CAD/.
 - *Real literals reach AutoCAD and BricsCAD with every digit* (2.3.12). alfe
   handed each form of an =-l= file (and each =-x= / REPL form) to the CAD
   PRINTED BACK with =princ=, which keeps 6 significant digits of a real on

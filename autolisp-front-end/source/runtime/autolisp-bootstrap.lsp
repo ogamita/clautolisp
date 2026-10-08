@@ -335,7 +335,64 @@
     (autolisp-host-quit))
   code)
 
-(defun autolisp-source-scan-text (text / idx len depth in-string escape in-comment ch line col open-stack started top)
+;; AutoLISP has two comment forms: a semicolon comments out the rest of
+;; its line, and ;| opens a BLOCK comment that runs, across lines, to the
+;; next |; -- the documentation blocks of SCHMS and outils-autolisp are
+;; written that way. Every scanner below tracks both, so that the prose
+;; of a block comment -- parentheses, quotes and semicolons included --
+;; is never taken for code (alfe-cad-source-loader-evaluates-block-
+;; comments: `no function definition: SYMBOLE' was the word after a
+;; parenthesis in such a block). Delimiters inside a string are text.
+(defun autolisp-source-block-open-p (text idx)
+  (and (= (substr text idx 1) ";")
+       (= (substr text (+ idx 1) 1) "|")))
+
+(defun autolisp-source-block-close-p (text idx)
+  (and (= (substr text idx 1) "|")
+       (= (substr text (+ idx 1) 1) ";")))
+
+;; TEXT without its block comments, each replaced by one space, for the
+;; loader's own READ: what the CAD's READ makes of a block comment inside
+;; a form is not something the loader needs to depend on. TEXT is
+;; returned as is when it holds no ;| at all.
+(defun autolisp-source-strip-block-comments (text / idx len ch in-string escape in-line acc seg)
+  (if (not (vl-string-search ";|" text))
+    text
+    (progn
+      (setq idx 1)
+      (setq len (strlen text))
+      (setq in-string nil)
+      (setq escape nil)
+      (setq in-line nil)
+      (setq acc '())
+      (setq seg 1)
+      (while (<= idx len)
+        (setq ch (substr text idx 1))
+        (cond
+          (in-line
+           (if (= ch "\n") (setq in-line nil)))
+          (in-string
+           (cond
+             (escape (setq escape nil))
+             ((= ch "\\") (setq escape T))
+             ((= ch "\"") (setq in-string nil))))
+          ((= ch "\"") (setq in-string T))
+          ((autolisp-source-block-open-p text idx)
+           (setq acc (cons " " (cons (substr text seg (- idx seg)) acc)))
+           (setq idx (+ idx 2))
+           (while (and (<= idx len)
+                       (not (autolisp-source-block-close-p text idx)))
+             (setq idx (+ idx 1)))
+           ;; idx is on the | of |; (or past the end): skip that |, the
+           ;; loop step skips the ;.
+           (setq seg (+ idx 2)))
+          ((= ch ";") (setq in-line T)))
+        (setq idx (+ idx 1)))
+      (if (<= seg len)
+        (setq acc (cons (substr text seg) acc)))
+      (apply 'strcat (reverse acc)))))
+
+(defun autolisp-source-scan-text (text / idx len depth in-string escape in-comment ch line col open-stack started top block-line block-col)
   (setq *AUTOLISP_SOURCE_SCAN_STATE* 'empty)
   (setq *AUTOLISP_SOURCE_SCAN_LINE* 1)
   (setq *AUTOLISP_SOURCE_SCAN_COL* 1)
@@ -356,10 +413,17 @@
       ((= ch "\n")
        (setq line (+ line 1))
        (setq col 0)
-       (setq in-comment nil))
+       (if (eq in-comment 'line)
+         (setq in-comment nil)))
       (T
        (setq col (+ col 1))
        (cond
+         ((eq in-comment 'block)
+          (if (autolisp-source-block-close-p text idx)
+            (progn
+              (setq in-comment nil)
+              (setq idx (+ idx 1))
+              (setq col (+ col 1)))))
          (in-comment
           nil)
          (in-string
@@ -370,8 +434,14 @@
              (setq escape T))
             ((= ch "\"")
              (setq in-string nil))))
+         ((autolisp-source-block-open-p text idx)
+          (setq in-comment 'block)
+          (setq block-line line)
+          (setq block-col col)
+          (setq idx (+ idx 1))
+          (setq col (+ col 1)))
          ((= ch ";")
-          (setq in-comment T))
+          (setq in-comment 'line))
          ((member ch '(" " "\t" "\r"))
           nil)
          (T
@@ -393,9 +463,11 @@
                  (setq *AUTOLISP_SOURCE_SCAN_COL* col)))))))))
     (setq idx (+ idx 1)))
   (if (/= *AUTOLISP_SOURCE_SCAN_STATE* 'extra)
+    ;; in-string and open-stack imply started. A block comment still
+    ;; open at the end needs more lines even when no form has begun --
+    ;; 'empty would let the loader drop the text, and the comment's next
+    ;; line would then be read as code.
     (cond
-      ((not started)
-       (setq *AUTOLISP_SOURCE_SCAN_STATE* 'empty))
       (in-string
        (setq *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)
        (setq *AUTOLISP_SOURCE_SCAN_LINE* line)
@@ -405,6 +477,12 @@
        (setq *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete)
        (setq *AUTOLISP_SOURCE_SCAN_LINE* (car top))
        (setq *AUTOLISP_SOURCE_SCAN_COL* (cadr top)))
+      ((eq in-comment 'block)
+       (setq *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-comment)
+       (setq *AUTOLISP_SOURCE_SCAN_LINE* block-line)
+       (setq *AUTOLISP_SOURCE_SCAN_COL* block-col))
+      ((not started)
+       (setq *AUTOLISP_SOURCE_SCAN_STATE* 'empty))
       (T
        (setq *AUTOLISP_SOURCE_SCAN_STATE* 'complete)
        (setq *AUTOLISP_SOURCE_SCAN_LINE* line)
@@ -420,12 +498,21 @@
               (< (length tokens) count))
     (setq ch (substr text idx 1))
     (cond
+      ((eq in-comment 'block)
+       (if (autolisp-source-block-close-p text idx)
+         (progn
+           (setq in-comment nil)
+           (setq idx (+ idx 2)))
+         (setq idx (+ idx 1))))
       (in-comment
        (if (= ch "\n")
          (setq in-comment nil))
        (setq idx (+ idx 1)))
+      ((autolisp-source-block-open-p text idx)
+       (setq in-comment 'block)
+       (setq idx (+ idx 2)))
       ((= ch ";")
-       (setq in-comment T)
+       (setq in-comment 'line)
        (setq idx (+ idx 1)))
       ((member ch '(" " "\t" "\r" "\n" "(" ")"))
        (setq idx (+ idx 1)))
@@ -457,12 +544,21 @@
   (while (and (<= idx len) (not done))
     (setq ch (substr text idx 1))
     (cond
+      ((eq in-comment 'block)
+       (if (autolisp-source-block-close-p text idx)
+         (progn
+           (setq in-comment nil)
+           (setq idx (+ idx 2)))
+         (setq idx (+ idx 1))))
       (in-comment
        (if (= ch "\n")
          (setq in-comment nil))
        (setq idx (+ idx 1)))
+      ((autolisp-source-block-open-p text idx)
+       (setq in-comment 'block)
+       (setq idx (+ idx 2)))
       ((= ch ";")
-       (setq in-comment T)
+       (setq in-comment 'line)
        (setq idx (+ idx 1)))
       ((member ch '(" " "\t" "\r" "\n"))
        (setq idx (+ idx 1)))
@@ -719,7 +815,8 @@
 ;;
 ;; The conventions are autolisp-source-scan-text's: a string runs to its
 ;; unescaped closing quote, a semicolon comments out the rest of its line,
-;; everything else is structure. A form is a parenthesised list -- ending
+;; ;| comments out everything up to the next |;, everything else is
+;; structure. A form is a parenthesised list -- ending
 ;; at the paren that brings the depth back to zero -- or a bare atom,
 ;; which ends before the first whitespace after it, or at end of text.
 (defun autolisp-source-first-form-end
@@ -735,6 +832,11 @@
   (while (and (<= idx len) (not found))
     (setq ch (substr text idx 1))
     (cond
+      ((eq in-comment 'block)
+       (if (autolisp-source-block-close-p text idx)
+         (progn
+           (setq in-comment nil)
+           (setq idx (+ idx 1)))))
       (in-comment
        (if (= ch "\n") (setq in-comment nil)))
       (in-string
@@ -745,7 +847,13 @@
           (setq in-string nil)
           ;; A string at top level is a complete form by itself.
           (if (= depth 0) (setq found idx)))))
-      ((= ch ";") (setq in-comment T))
+      ((and started (= depth 0) (= ch ";"))
+       ;; A comment ends a bare atom begun at top level.
+       (setq found (- idx 1)))
+      ((autolisp-source-block-open-p text idx)
+       (setq in-comment 'block)
+       (setq idx (+ idx 1)))
+      ((= ch ";") (setq in-comment 'line))
       ((= ch "\"")
        (setq in-string T)
        (setq started T))
@@ -804,7 +912,8 @@
            (setq alfe--defun-name (autolisp-source-leading-defun-name alfe--piece))
            (setq alfe--form-read
                  (vl-catch-all-apply 'read
-                                     (list (autolisp-source-trim-leading-junk alfe--piece))))
+                                     (list (autolisp-source-strip-block-comments
+                                             (autolisp-source-trim-leading-junk alfe--piece)))))
            (if (vl-catch-all-error-p alfe--form-read)
              (progn
                (close alfe--f)
@@ -862,8 +971,9 @@
              (setq alfe--piece-end nil)))
            ;; What is left is either nothing of substance -- whitespace or
            ;; a trailing comment -- or the start of a form the next lines
-           ;; continue. Keep the latter, and let it own the current line.
-           (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete)
+           ;; continue -- or a block comment they continue. Keep the latter,
+           ;; and let it own the current line.
+           (if (member *AUTOLISP_SOURCE_SCAN_STATE* '(incomplete incomplete-comment))
              (setq alfe--form-start-line alfe--line-no)
              (progn
                (setq alfe--form-text "")
@@ -889,9 +999,13 @@
           ;; exists, so they cannot rely on it for their own decode.
           (if (/= *AUTOLISP_SOURCE_SCAN_STATE* 'empty)
             (autolisp-source-raise alfe--resolved
-                                   (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)
-                                     "unexpected end of file while reading string"
-                                     "unexpected end of file while reading form")
+                                   (cond
+                                     ((= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)
+                                      "unexpected end of file while reading string")
+                                     ((= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-comment)
+                                      "unexpected end of file in a ;| block comment")
+                                     (T
+                                      "unexpected end of file while reading form"))
                                    alfe--line-no
                                    1
                                    alfe--form-start-line

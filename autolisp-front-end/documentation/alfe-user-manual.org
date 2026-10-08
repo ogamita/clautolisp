@@ -834,6 +834,20 @@ in a string, were never affected. =--clautolisp= was never affected.
 What a program *prints* is unchanged: =(print 1.5707963267948966)= on
 AutoCAD still shows =1.5708=, as AutoCAD's own =print= does.
 
+The loader knows both AutoLISP comments: a semicolon comments out the rest
+of its line, and =;|= opens a block comment that runs, across lines if
+need be, to the next =|;= -- the form of the documentation blocks
+(=;| @Global ... |;=) many projects put before each =defun=. Nothing inside
+a block comment is read, whatever parentheses, quotes or semicolons it
+holds; =;|= inside a string is text; forms before, after and between
+comments on one line each run once. A block comment still open at the end
+of the file is an error (/unexpected end of file in a ;| block comment/).
+
+/Changed in alfe 2.3.13./ The loader used to know only the line comment,
+so the lines of a block comment after its first were read as code, and a
+parenthesis in the prose was called as a function (/no function
+definition: SYMBOLE/). =--clautolisp= was never affected.
+
 ** Interactive REPL on CAD backends
 
 =alfe --interactive --bricscad= (and =--autocad=) drops into a live

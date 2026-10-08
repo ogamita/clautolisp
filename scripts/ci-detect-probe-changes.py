@@ -94,6 +94,8 @@ FAMILIES = {
                       "scripts/run-console-flood-probe.*"],
     "real-transport": [f"{ENTITIES}/real-transport-probe.lsp",
                        "scripts/run-real-transport-probe.*"],
+    "block-comment": [f"{ENTITIES}/block-comment-probe.lsp",
+                      "scripts/run-block-comment-probe.*"],
     "sysvars": ["autolisp-spec/autolisp/dump-sysvars.lsp"],
     "entget-pointers": ["probes/sources/probe-entget-pointers.lsp"],
 }

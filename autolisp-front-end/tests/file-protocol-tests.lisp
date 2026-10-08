@@ -2387,6 +2387,106 @@ clautolisp-sbcl is not on disk."
               "every form must run, in order: ~S" stdout)
           (is (string= "" stderr))))))
 
+;;; --- a ;| block comment |; is a comment ------------------------------
+;;;
+;;; alfe-cad-source-loader-evaluates-block-comments. The CAD-side
+;;; scanners knew only the line comment: `;|' opened a comment that the
+;;; newline closed, and the next lines of the block -- SCHMS documents
+;;; every function that way -- were read as code. SCHMS job 529707 died
+;;; with `no function definition: SYMBOLE', the word after a parenthesis
+;;; in the prose `(symbole ou autre valeur)'.
+
+(defun %write-lsp (path text)
+  (with-open-file (out path :direction :output
+                            :if-exists :supersede
+                            :if-does-not-exist :create
+                            :external-format :utf-8)
+    (write-string text out)))
+
+(defparameter +block-comment-file+
+  (format nil "~{~A~%~}"
+          '(";| @Global"
+            "  Nom d'une cle (symbole ou autre valeur) ; \"quote ( paren"
+            "  @Returns string: par exemple \":OWN-LIST\""
+            "|;"
+            "(setq a 1) ;| inline (boom) |; (setq b 2)"
+            "(princ \";| not a comment |;\")"
+            "(setq c ;| inside (boom) |; 3)"
+            ";| several"
+            "(boom)"
+            "|; (princ \"w\")"
+            "(princ \"x\");|tail (boom)|;(princ \"y\")"
+            "(setq d 4) ;| opened after a form"
+            "(boom)"
+            "|;"
+            "; a line comment ;| does not open a block"
+            "(setq e 5)"))
+  "Block comments in every position the acceptance criteria name; any
+(boom) that is evaluated fails the load.")
+
+(test protocol-loaded-file-ignores-block-comments
+  "Acceptance: the prose of a ;| ... |; block comment is never read or
+evaluated -- parentheses, quotes and semicolons included, on one line or
+many, before, between, after and inside forms -- while ;| inside a string
+stays text and the forms around each comment run exactly once, in order.
+Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; block-comment test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :forms-fn
+             (lambda (workdir)
+               (let ((f (merge-pathnames "blockcomments.lsp" workdir)))
+                 (%write-lsp f +block-comment-file+)
+                 (list (format nil "(load ~S)" (namestring f))
+                       "(princ (list a b c d e))"))))
+          (is (search " OK" (first statuses))
+              "the load must succeed, got ~S -- ~S" (first statuses) stderr)
+          (is (search " OK" (second statuses)))
+          (is (string= ";| not a comment |;wxy(1 2 3 4 5)"
+                       (without-returns stdout))
+              "every form must run once, in order, and no comment: ~S" stdout)
+          (is (string= "" stderr))))))
+
+(test protocol-block-comment-keeps-source-lines
+  "A failure after a multi-line block comment is reported at ITS line,
+and an unterminated block comment is an end-of-file error, not code.
+Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; block-comment line test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :forms-fn
+             (lambda (workdir)
+               (let ((fails (merge-pathnames "blockfail.lsp" workdir))
+                     (unclosed (merge-pathnames "blockopen.lsp" workdir)))
+                 (%write-lsp fails (format nil "~{~A~%~}"
+                                           '(";| one" "(two)" "three |;"
+                                             "(princ \"before\")"
+                                             "(no_such_function_after_block)")))
+                 (%write-lsp unclosed (format nil "~{~A~%~}"
+                                          '("(princ \"ran\")" ";| never closed"
+                                            "(boom)")))
+                 (list (format nil "(load ~S)" (namestring fails))
+                       (format nil "(load ~S)" (namestring unclosed))))))
+          (is (search " FAIL" (first statuses)))
+          (is (search "line 5" stderr)
+              "the failing form is on line 5: ~S" stderr)
+          (is (search "NO_SUCH_FUNCTION_AFTER_BLOCK" stderr))
+          (is (not (search "BOOM" stderr))
+              "no comment text may be evaluated: ~S" stderr)
+          (is (search " FAIL" (second statuses)))
+          (is (search "block comment" stderr)
+              "an unterminated block comment must say so: ~S" stderr)
+          (is (string= "beforeran" (without-returns stdout))
+              "the forms before each failure ran: ~S" stdout)))))
+
 ;;; --- a failure is reported ONCE --------------------------------------
 ;;;
 ;;; alfe-cad-error-reported-twice-on-stderr. The server loop wrote each
