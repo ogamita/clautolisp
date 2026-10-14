@@ -1470,6 +1470,20 @@ before `make build-clautolisp-sbcl`)."
 ;;; them by BYTES, with :assume-no-rest-p selecting the AutoCAD path on
 ;;; a host that does support &rest.
 
+(defun %hosted-engine-miss-record (session engine elapsed)
+  "The status entry DRIVE-HOSTED-ENGINE records when a request's DONE
+line was not seen in time: the status that IS current, then whether
+stdin.txt still holds the unread request, whether ENGINE is alive, and
+the ELAPSED seconds of the wait, e.g.
+\"READY 0 [miss: stdin-present=yes engine-alive=yes elapsed=30.1s]\".
+The status comes first so prefix checks such as \" OK\" / \" FAIL\" read
+it unchanged."
+  (format nil "~A [miss: stdin-present=~:[no~;yes~] engine-alive=~:[no~;yes~] elapsed=~,1Fs]"
+          (or (alfe.protocol.file:read-current-status session) "(timeout)")
+          (probe-file (alfe.protocol.file:protocol-session-stdin-path session))
+          (and engine (ignore-errors (uiop:process-alive-p engine)))
+          (or elapsed 0)))
+
 (defun drive-hosted-engine (binary forms &key assume-no-rest-p dialect
                                               (explicit-no-rest-p t)
                                               open-write-ccs
@@ -1525,18 +1539,21 @@ OPEN-WRITE-CCS is emitted as *ALFE-OPEN-WRITE-CCS*, OPEN-WRITE-ARG as
                       (multiple-value-bind (ok elapsed last)
                           (alfe.protocol.file:wait-for-status-prefix
                            session (format nil "DONE ~D" i) :timeout 30)
-                        (declare (ignore elapsed))
                         ;; A DONE line can be overwritten before the
                         ;; poll sees it -- a quit publishes DONE n QUIT
                         ;; and then STOPPED at once -- so on a miss
                         ;; record the status that IS there rather than a
                         ;; bare "(timeout)", which would hide a
-                        ;; legitimate terminal state.
+                        ;; legitimate terminal state. A miss also says
+                        ;; whether the request is still unread in
+                        ;; stdin.txt, whether the engine is alive, and
+                        ;; how long the wait lasted: a stall before
+                        ;; RUNNING is otherwise indistinguishable from a
+                        ;; lost request (hosted-engine-first-request-stall).
                         (push (if ok
                                   last
-                                  (or (alfe.protocol.file:read-current-status
-                                       session)
-                                      "(timeout)"))
+                                  (%hosted-engine-miss-record
+                                   session engine elapsed))
                               statuses)))
              (let ((out (alfe.protocol.file:read-file-as-string
                          (alfe.protocol.file:protocol-session-stdout-path
@@ -1762,7 +1779,8 @@ clautolisp-sbcl is not on disk."
           ;; right answer; what must NOT appear is FAIL, which is what a
           ;; quit raised through a missing ERROR would have produced.
           (is (or (search " QUIT" (third statuses))
-                  (string= "STOPPED" (third statuses)))
+                  ;; a miss record starts with the current status.
+                  (eql 0 (search "STOPPED" (third statuses))))
               "(quit) must quit, got ~S" (third statuses))
           (is (not (search " FAIL" (third statuses)))
               "(quit) must not be reported as a failure: ~S"
