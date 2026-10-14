@@ -5316,6 +5316,17 @@ UTF-8, :ANSI for windows-1252, NIL (plain decoding) for anything else."
                                 (runtime-session-default-source-encoding
                                  session)))
          (dialect (current-evaluation-dialect context))
+         ;; LOAD must tokenize like the active session, just like the CLI's
+         ;; entry file. Preserve explicit caller options (first keyword wins).
+         ;; Otherwise vendor literals such as 1e-6 become strict-mode symbols.
+         (read-options
+          (append read-options
+                  (list :token-mode
+                        (clautolisp.autolisp-reader:autolisp-dialect-token-mode dialect)
+                        :extended-string-escapes-p
+                        (clautolisp.autolisp-reader:autolisp-dialect-extended-string-escapes-p dialect)
+                        :warn-on-integer-overflow-p
+                        (clautolisp.autolisp-reader:autolisp-dialect-warn-on-integer-overflow-p dialect))))
          (effective-encoding
           (cond
             (options-have-external-format nil) ; caller supplied one
