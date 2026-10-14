@@ -384,7 +384,7 @@ check-libredwg-release:  ## Fail if clautolisp/third-party/libredwg.release disa
 check-libredwg-stable-release:  ## Ask GitHub whether LibreDWG has a newer STABLE release than the one we follow (network; manual/periodic).
 	python3 scripts/check-libredwg-stable-release.py
 
-check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep check-libredwg-release  ## Every release-packaging check.
+check-release: check-embedded-engine-version check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep check-libredwg-release  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
 # (no PowerShell, pjb 2026-08-16: do not install it). A container gives the
@@ -1059,3 +1059,9 @@ save-sysvars: ## Dumps the sysvars of various implementations and configuration 
 			-l autolisp-spec/autolisp/dump-sysvars.lsp \
 			-x "(dump-sysvars \"sysvars-clautolisp-$$(uname)-$${dialect}.txt\")"  || true ;\
 	done
+
+.PHONY: check-embedded-engine-version
+check-embedded-engine-version:  ## ALFE embeds the engine: both programs must share a version.
+	@alfe_version=$$(sed -n 's/.*\*version\* *"\([0-9.]*\)".*/\1/p' autolisp-front-end/tools/alfe/source/version.lisp); \
+	 test "$$alfe_version" = "$(VERSION)" || { \
+	   printf 'Version mismatch: clautolisp=%s alfe=%s\n' '$(VERSION)' "$$alfe_version" >&2; exit 1; }

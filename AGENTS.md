@@ -849,8 +849,9 @@ normative **Dialect Divergence and Warnings** section above.
 every commit that touches source** — any file outside `documentation/` and
 `issues/` (lisp sources, tests, `.asd`, Makefiles). Docs-only / issues-only
 commits do **not** bump. Put the version in the commit subject (e.g.
-`clautolisp 1.7.18: …`). alfe carries its own version axis (see the
-Programs-versus-release note above). Watch for version-bump **conflicts**
+`clautolisp 1.7.18: …`). alfe embeds the clautolisp runtime: keep both program versions exactly
+aligned, and increment both whenever either program or its embedded libraries
+change (pjb, 2026-10-14). Watch for version-bump **conflicts**
 when merging parallel work branches — resolve to the higher DEVELOP.
 
 ## CI — GitLab is source of truth; mirror common lanes to GitHub
