@@ -897,6 +897,13 @@ interpreted or compiled:
   or leaving the variable unset, keeps it on.
 - A dialect whose portability-warning mode is =error= makes it an error.
 
+=error= is the one such operator owned by clautolisp itself: neither
+vendor documents it, AutoCAD has none, and BricsCAD's is not yet
+established. It reads =ERROR is a clautolisp-only operator=, warns under
+=strict= and both vendors' dialects, and is silent under =clautolisp= and
+=lax=. Portable code raises an error with an operation that fails on
+every host instead.
+
 Unknown dialect names produce a diagnostic on standard error and exit
 code 1.
 

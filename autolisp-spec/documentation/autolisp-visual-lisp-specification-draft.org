@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.14.1
+#+VERSION: 0.14.2
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -9315,6 +9315,87 @@ Displays a user-interface alert; on some platforms Autodesk documents degraded b
 - [Error-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/KOR/AutoCAD-MAC-AutoLISP-Reference/files/GUID-D114F1C4-DE8E-422D-8F3F-C43707B8212B.htm)
 - [About Using the *error* Function (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP/files/GUID-2AC47A3C-7E80-414D-9134-EABA0003193F.htm)
 - Status: documented.
+
+#+LATEX: \newpage
+
+** Function Entry: ERROR
+*** Name
+`error`
+
+*** Class
+Function
+
+*** Syntax
+#+begin_example
+(error message)
+#+end_example
+
+*** Arguments and Values
+- ~message~ — a string (or any value) describing the error.
+
+*** Description
+Signals an AutoLISP error from user code: the current evaluation aborts as
+for any runtime error, ~*error*~ handlers run, and ~vl-catch-all-apply~ traps
+it as a catch-all error object.
+
+Neither vendor documents this function. AutoCAD has none: resolving the
+symbol fails with "no function definition: ERROR" -- an error raised while
+resolving the operator, which can escape ~vl-catch-all-apply~. Whether
+BricsCAD has one is not established (see /Tested Behaviour/). Portable code
+raises with an operation that fails on every host instead (alfe's CAD-side
+runtime raises with ~(itoa MSG)~ / ~(/ 1 0)~; see
+~issues/closed/alfe-autocad-error-primitive-masks-load-failure.issue~).
+
+*** Return Values
+Does not return normally.
+
+*** Side Effects
+Aborts the running evaluation; ~*error*~ handlers may run.
+
+*** Tested Behaviour (inconclusive, 2026-10-15)
+- AutoCAD 2022 / Windows: no ~error~ function. The deported loader failed with
+  "no function definition: ERROR" (SCHME+ pipeline 86651), and the encoding
+  probe's =error-primitive.bound= is =no= (jobs 16776117747, 17033123931).
+- BricsCAD V25 / Windows (job 17033123930) and V26 / macOS (job 17034595786):
+  the encoding probe reports =error-primitive.bound = yes= and
+  =error-primitive.call = raised: error=. Neither proves a function: the
+  first tests ~atoms-family~, which may list a symbol that is merely interned
+  (the probe source itself reads ~error~), and BricsCAD reports the bare word
+  "error" for an undefined function too
+  (~issues/closed/alfe-cad-load-error-message-says-only-error.issue~).
+- The deciding probe is =probes/sources/probe-error-function.lsp= (~(type
+  error)~, and the message of ~(error "x")~ next to that of an undefined
+  function); not yet run on a vendor host.
+
+*** Availability
+- AutoCAD 2022: not available (no function definition: ERROR).
+- AutoCAD 2026: not documented.
+- BricsCAD V26: not documented; presence unverified (probe pending).
+- Status: undocumented by either vendor; treated as a clautolisp extension
+  until the probe has run.
+
+*** clautolisp
+clautolisp implementation deviation -- not part of the normative
+specification above.
+
+clautolisp provides ~error~ as a builtin under every dialect; the message of
+the error it signals is the text of ~message~. Until a vendor is shown to
+provide it, it is a clautolisp extension (chapter 25, case 1) owned by
+clautolisp: a call emits the once-per-session ~[vendor-operator]~ notice
+(~ERROR is a clautolisp-only operator~) under ~--strict~, ~--autocad~ and
+~--bricscad~, and is silent under ~--clautolisp~ and ~--lax~; the call
+proceeds in every dialect. Should the probe show a BricsCAD ~error~, this
+entry credits BricsCAD and ~--bricscad~ goes silent too
+(~issues/closed/clautolisp-error-silent-under-autocad.issue~,
+~issues/open/deferred-spec-research.issue~, ERROR).
+
+*** See Also
+- ~*error*~ -- the user error handler.
+- ~exit~, ~quit~ -- documented non-local exits.
+- ~vl-exit-with-error~ -- the documented VLX-scoped error exit.
+
+*** Source Notes
+- No vendor reference page; behaviour from the observations cited above.
 
 #+LATEX: \newpage
 

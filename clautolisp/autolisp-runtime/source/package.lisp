@@ -220,6 +220,8 @@
    #:autolisp-subr-version-gate
    #:version-gated-operator-gates
    #:vendor-only-operator-owner
+   #:clautolisp-only-operator-owner
+   #:*clautolisp-only-operators*
    #:*vendor-only-operators*
    #:emit-vendor-operator-warning
    #:autolisp-runtime-error

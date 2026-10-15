@@ -396,7 +396,7 @@ and names the vendor's own variable where there is one."
  :title "vendor-only operator called out of its dialect"
  :kind :portability
  :message "~A is a ~A-only operator, not portable to ~(~A~)"
- :arguments "the operator's name, the vendor that owns it (AutoCAD or BricsCAD), the dialect name"
+ :arguments "the operator's name, the vendor that owns it (AutoCAD or BricsCAD, or clautolisp), the dialect name"
  :example ": [vendor-operator] in PARSE-CSV: VLE-STRING-SPLIT is a BricsCAD-only operator, not portable to strict"
  :dialects
  "clautolisp implements operators of BOTH vendors -- BricsCAD's VLE-*
@@ -421,6 +421,12 @@ except its owner's and lax):
   spelling, matched on the PRODUCT, so bricscad-mac is BricsCAD), and
   never under --lax.
 
+A few operators that are not CLAL-* are owned by clautolisp itself, because
+the spec credits no vendor with them (*CLAUTOLISP-ONLY-OPERATORS*, today only
+ERROR, whose BricsCAD presence is unverified): they read `a clautolisp-only
+operator', warn under every vendor dialect and strict, and are silent under
+--clautolisp and --lax.
+
 Once per operator per session, at its first CALL (interpreted or
 compiled), never at read time. (setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)
 silences it; portability-warning-mode :error makes it an error instead."
@@ -432,7 +438,8 @@ customer's AutoCAD."
  :references
  '(("autolisp-spec: ch.25 Dialect Portability Warnings, case 1 (Extension)" . "autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org")
    ("clautolisp: the table (generated)" . "clautolisp/autolisp-runtime/source/operator-availability.lisp")
-   ("clautolisp: the ticket" . "issues/closed/deferred-clautolisp-out-of-dialect-warnings.issue")))
+   ("clautolisp: the ticket" . "issues/closed/deferred-clautolisp-out-of-dialect-warnings.issue")
+   ("clautolisp: ERROR, clautolisp-owned" . "issues/closed/clautolisp-error-silent-under-autocad.issue")))
 
 (register-dialect-warning
  :tag "version-operator"

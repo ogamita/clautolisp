@@ -327,7 +327,10 @@ really is the implementation this file names for it. NIL otherwise."
       (setf (clautolisp.autolisp-runtime:autolisp-subr-lexically-safe subr) t))
     ;; The vendor that alone provides NAME, per the spec: the call site warns
     ;; when it is used out of that vendor's dialect.
-    (let ((owner (clautolisp.autolisp-runtime:vendor-only-operator-owner name)))
+    ;; Or clautolisp alone, for the few non-CLAL operators no vendor is known
+    ;; to provide (ERROR).
+    (let ((owner (or (clautolisp.autolisp-runtime:vendor-only-operator-owner name)
+                     (clautolisp.autolisp-runtime:clautolisp-only-operator-owner name))))
       (when owner
         (setf (clautolisp.autolisp-runtime:autolisp-subr-owner subr) owner)))
     ;; An operator a product version added or removed (operator-versions.lisp).

@@ -1654,6 +1654,11 @@ separate binary for tool integrators.
 - ~vl-infp~, ~vl-nanp~ and ~vla-postcommand~ no longer warn
   ~[vendor-operator]~ under the AutoCAD dialects: AutoCAD 2022 has all three
   (measured), so the spec now lists them for both vendors.
+- ~error~ is documented by neither vendor and AutoCAD has none, so it is now
+  a clautolisp-owned operator: it warns ~[vendor-operator]~ (~ERROR is a
+  clautolisp-only operator~) under ~--strict~, ~--autocad~ and ~--bricscad~,
+  and stays silent under ~--clautolisp~ and ~--lax~ (autolisp-spec, ~error~
+  entry). Whether BricsCAD has one is still being probed.
 - Dialect versions carry the documented version differences: an operator
   a release added or removed (~acet-load-expresstools~ is AutoCAD 2025+,
   BricsCAD V26 removed ~mod~ / ~round~, ...) warns ~[version-operator]~ when
@@ -2083,6 +2088,8 @@ file or COM), and forwards the workload.
   position) as the error message, instead of =divide by zero=. On AutoCAD,
   which has no =error= function, that diagnostic is quoted inside a
   bad-argument message.
+  The raise gives no ~[vendor-operator]~ notice for its own use of
+  ~error~ on a clautolisp engine.
 
 ** Request timeout (alfe-user-manual § /Troubleshooting/)
 

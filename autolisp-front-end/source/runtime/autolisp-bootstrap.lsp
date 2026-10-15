@@ -630,10 +630,19 @@
 ;;;   and quotes the string in the message is expected, not yet measured on
 ;;;   AutoCAD (issues/open/deferred-spec-research.issue, autolisp-force-error).
 ;;;
+;;; No vendor documents ERROR (autolisp-spec, ERROR entry), so clautolisp
+;;; treats it as its own extension and gives a [vendor-operator] notice for
+;;; it under any dialect but clautolisp and lax -- including the strict
+;;; default of a hosted engine. The
+;;; call is the RUNTIME's, not the user's, so it must not earn the user that
+;;; notice: the local *AUTOLISP-WARN-OUT-OF-DIALECT* (nil, dynamically bound)
+;;; silences it for this call only (clautolisp-error-silent-under-autocad).
+;;; Elsewhere it is an ordinary unused local.
+;;;
 ;;; The statements after make the abort certain even on a host that would
 ;;; tolerate all of the above: the last is an undefined function, which no
 ;;; host survives. They are unreachable on every host we know.
-(defun autolisp-force-error (alfe--msg)
+(defun autolisp-force-error (alfe--msg / *AUTOLISP-WARN-OUT-OF-DIALECT*)
   (if (= (type error) 'SUBR)
     (error alfe--msg))
   (itoa alfe--msg)

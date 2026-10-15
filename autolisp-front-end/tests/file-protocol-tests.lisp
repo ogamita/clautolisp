@@ -1740,7 +1740,7 @@ function (alfe-runtime-raise-says-division-by-zero)."
                        (alfe.protocol.file:protocol-session-bootstrap-lsp-staged
                         session))))
             (is (search "(defun autolisp-raise (alfe--msg)" boot))
-            (is (search "(defun autolisp-force-error (alfe--msg)" boot))
+            (is (search "(defun autolisp-force-error (alfe--msg / *AUTOLISP-WARN-OUT-OF-DIALECT*)" boot))
             ;; ... and its one ERROR call is the guarded one.
             (is (search "(if (= (type error) 'SUBR)
     (error alfe--msg))" boot))))
@@ -2701,10 +2701,18 @@ is not on disk."
   "The prefix every parameter, /-local, LAMBDA parameter and FOREACH
 variable of alfe's CAD-side runtime must carry.")
 
-(defparameter *alfe-runtime-binding-allow-list* '()
+(defparameter *alfe-runtime-binding-allow-list*
+  '(;; autolisp-force-error binds it nil around its own (error MSG), so the
+    ;; runtime's raise earns no [vendor-operator] notice on a clautolisp
+    ;; engine (clautolisp-error-silent-under-autocad). The NAME is the point:
+    ;; it is the variable clautolisp reads. No user code runs while it is
+    ;; bound: before the call only (type error) runs, and clautolisp unwinds
+    ;; the binding before a *error* handler or a vl-catch-all-apply caller
+    ;; gets control. The vendors do not read the variable at all.
+    "*AUTOLISP-WARN-OUT-OF-DIALECT*")
   "Names alfe's CAD-side runtime may bind WITHOUT the alfe-- prefix, as
-case-insensitive strings. Empty on purpose: a name belongs here only with
-a comment saying why no user code can ever run while it is bound.")
+case-insensitive strings. A name belongs here only with a comment saying
+why no user code can ever run while it is bound.")
 
 (defun %lsp-tokens (text)
   "AutoLISP TEXT as a list of tokens: :OPEN, :CLOSE, :QUOTE, (:STRING s)
@@ -3061,7 +3069,7 @@ fallback. Skipped when clautolisp-sbcl is not on disk."
             "clautolisp-sbcl not present; runtime-raise test skipped.")
         (loop for (no-rest dialect unbind-error-p)
                 in '((t "autocad" nil) (nil "bricscad" nil) (t "autocad" t))
-              do (multiple-value-bind (statuses stdout)
+              do (multiple-value-bind (statuses stdout stderr engine-diagnostics)
                      (drive-hosted-engine
                       binary
                       (append
@@ -3073,7 +3081,7 @@ fallback. Skipped when clautolisp-sbcl is not on disk."
                         "(princ (strcat \"<\" (vl-catch-all-error-message (vl-catch-all-apply (quote alfe-load) (list \"/no/such/file-xyz\"))) \">\"))"
                         "(progn (defun *error* (m) (princ (strcat \"[\" m \"]\"))) (alfe-load \"/no/such/file-xyz\"))"))
                       :assume-no-rest-p no-rest :dialect dialect)
-                   (declare (ignore statuses))
+                   (declare (ignore statuses stderr))
                    (let ((out (without-returns stdout))
                          (label (format nil "~A~:[~;, ERROR unbound~]"
                                         dialect unbind-error-p)))
@@ -3091,7 +3099,14 @@ fallback. Skipped when clautolisp-sbcl is not on disk."
                          label out)
                      ;; Both handlers ran, each with the message.
                      (is (and (search "<" out) (search "[" out))
-                         "~A: both handlers must run: ~S" label out)))))))
+                         "~A: both handlers must run: ~S" label out)
+                     ;; ERROR is a clautolisp extension (clautolisp-error-
+                     ;; silent-under-autocad): the runtime's own raise must not earn the
+                     ;; user a [vendor-operator] notice from the engine, which
+                     ;; runs under its strict default.
+                     (is (not (search "[vendor-operator]" engine-diagnostics))
+                         "~A: the runtime's raise must not warn: ~S"
+                         label engine-diagnostics)))))))
 
 (test protocol-loaded-file-runs-every-form-on-a-line
   "Acceptance: a loaded file whose line carries two forms runs BOTH, in

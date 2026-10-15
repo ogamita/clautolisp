@@ -1854,6 +1854,22 @@ Availability: :AUTOCAD, :BRICSCAD, or NIL for a portable operator (or one
 the spec does not describe)."
   (values (gethash name *vendor-only-operator-table*)))
 
+;;; SPEC-UNCERTAIN: ERROR is documented by neither vendor. AutoCAD 2022 has
+;;; none (alfe-autocad-error-primitive-masks-load-failure); whether BricsCAD
+;;; has one is not established (the encoding probe's evidence is ambiguous).
+;;; Until probes/sources/probe-error-function.lsp has run on both, clautolisp
+;;; owns it: it warns [vendor-operator] in every dialect but clautolisp and
+;;; lax (clautolisp-error-silent-under-autocad; deferred-spec-research, ERROR).
+;;; Not generated: the spec credits no vendor, so there is nothing to derive.
+(defparameter *clautolisp-only-operators* '("ERROR")
+  "Operators that are neither CLAL-* nor credited to a vendor by the spec,
+which clautolisp alone is known to provide. Owner :CLAUTOLISP.")
+
+(defun clautolisp-only-operator-owner (name)
+  ":CLAUTOLISP when NAME is in *CLAUTOLISP-ONLY-OPERATORS*, else NIL."
+  (and (member name *clautolisp-only-operators* :test #'string-equal)
+       :clautolisp))
+
 (defun autolisp-usubr-lexical-body (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-lexical-body object))
 
@@ -3372,12 +3388,15 @@ cannot be what silences. Re-read at each decision, like
 (defun %vendor-operator-silent-p (owner dialect)
   "True when a call to an operator OWNER alone provides is silent under
 DIALECT: under --lax, and under any dialect of the owner's PRODUCT (matched on
-the product, so bricscad-mac and bricscad-v25 are BricsCAD too). Strict and
-clautolisp warn: strict is the portable subset, clautolisp is strict plus
+the product, so bricscad-mac and bricscad-v25 are BricsCAD too), and, for
+an OWNER of :CLAUTOLISP, under --clautolisp only. Strict and clautolisp warn
+for a vendor's operator: strict is the portable subset, clautolisp is strict plus
 clautolisp's own extensions, not the vendors' (spec ch.25 case 1)."
   (or (null dialect)
       (eq :lax (clautolisp.autolisp-reader:autolisp-dialect-name dialect))
-      (eq owner (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+      (if (eq owner :clautolisp)
+          (eq :clautolisp (clautolisp.autolisp-reader:autolisp-dialect-name dialect))
+          (eq owner (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
 
 (defun %vendor-operator-warning-seen-p (name)
   "T when the `vendor-operator' notice already fired for NAME in this
@@ -3400,7 +3419,7 @@ seen (always emit)."
 
 (defun emit-vendor-operator-warning (subr owner)
   "The `[vendor-operator]' notice for a call of SUBR, whose operator only
-OWNER (:AUTOCAD / :BRICSCAD) provides, when the active dialect is not the
+OWNER (:AUTOCAD / :BRICSCAD, or :CLAUTOLISP) provides, when the active dialect is not the
 owner's. Once per operator per session on *ERROR-OUTPUT*; the call proceeds.
 Under PORTABILITY-WARNING-MODE :error it signals :non-portable-construct
 instead, at every call. Silenced by *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL."
@@ -3417,7 +3436,8 @@ instead, at every call. Silenced by *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL."
                            "vendor-operator"
                            (%portability-warning-location nil)
                            name
-                           (ecase owner (:autocad "AutoCAD") (:bricscad "BricsCAD"))
+                           (ecase owner (:autocad "AutoCAD") (:bricscad "BricsCAD")
+                             (:clautolisp "clautolisp"))
                            (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
             (when (eq mode :error)
               (signal-autolisp-runtime-error :non-portable-construct "~A" message))

@@ -105,3 +105,31 @@ STDERR)."
                   :no-error)
               (clautolisp.autolisp-runtime:autolisp-runtime-error (c)
                 (clautolisp.autolisp-runtime:autolisp-runtime-error-code c)))))))
+
+;;;; clautolisp-error-silent-under-autocad: no vendor documents ERROR,
+;;;; AutoCAD 2022 has none, and BricsCAD's is unverified (probe pending:
+;;;; probes/sources/probe-error-function.lsp). The spec had no entry for it,
+;;;; so it had no owner and ran silently under --dialect autocad. Until the
+;;;; probe has run it is clautolisp's own operator.
+
+(defparameter +error-call+
+  "(if (vl-catch-all-error-p (vl-catch-all-apply 'error (list \"x\"))) 1 0)"
+  "A trapped call of ERROR: the call happens, the error does not escape.")
+
+(test vendor-operator-error-is-clautolisp-only
+  (is (null (clautolisp.autolisp-runtime:vendor-only-operator-owner "ERROR"))
+      "the spec credits no vendor")
+  (is (eq :clautolisp (clautolisp.autolisp-runtime:clautolisp-only-operator-owner "error"))))
+
+(test vendor-operator-error-warns-out-of-clautolisp
+  (dolist (dialect '(:autocad :autocad-2022 :strict :bricscad :bricscad-mac))
+    (multiple-value-bind (result stderr) (%vendor-run dialect +error-call+)
+      (is (eql 1 result) "~A: ~S" dialect result)
+      (is (eql 1 (%occurrences "ERROR is a clautolisp-only operator" stderr))
+          "~A: ~S" dialect stderr))))
+
+(test vendor-operator-error-is-silent-under-clautolisp-and-lax
+  (dolist (dialect '(:clautolisp :lax))
+    (multiple-value-bind (result stderr) (%vendor-run dialect +error-call+)
+      (is (eql 1 result) "~A: ~S" dialect result)
+      (is (not (search "[vendor-operator]" stderr)) "~A: ~S" dialect stderr))))
