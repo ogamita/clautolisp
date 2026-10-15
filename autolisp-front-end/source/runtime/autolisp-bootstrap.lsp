@@ -614,10 +614,29 @@
 ;;; so the inner pathname, line, column, form start and nested load stack
 ;;; all survive.
 ;;;
-;;; The three statements make the abort certain even on a host that would
-;;; tolerate a division by zero: the last is an undefined function, which
-;;; no host survives. It is unreachable on every host we know.
-(defun autolisp-force-error ()
+;;; The abort also CARRIES the message, so that a USER handler -- a
+;;; vl-catch-all-apply around alfe-load, a *error* function, the clautolisp
+;;; debugger -- sees what went wrong instead of "divide by zero"
+;;; (alfe-runtime-raise-says-division-by-zero):
+;;;
+;;; - a host whose ERROR is a real function (BricsCAD, clautolisp) raises
+;;;   with it: the message is the host's error message, verbatim. Tested by
+;;;   TYPE, not by atoms-family, so a user's (defun error ...) is never
+;;;   called, and an AutoCAD without ERROR never resolves the symbol as a
+;;;   function (reading an unbound variable is nil, not an error);
+;;; - otherwise (AutoCAD) (itoa MSG) fails with a bad-argument error whose
+;;;   text quotes MSG, which a handler can show.
+;;;   SPEC-UNCERTAIN: that AutoCAD traps (itoa "...") in vl-catch-all-apply
+;;;   and quotes the string in the message is expected, not yet measured on
+;;;   AutoCAD (issues/open/deferred-spec-research.issue, autolisp-force-error).
+;;;
+;;; The statements after make the abort certain even on a host that would
+;;; tolerate all of the above: the last is an undefined function, which no
+;;; host survives. They are unreachable on every host we know.
+(defun autolisp-force-error (alfe--msg)
+  (if (= (type error) 'SUBR)
+    (error alfe--msg))
+  (itoa alfe--msg)
   (/ 1 0)
   (car 0)
   (__autolisp-force-error-no-such-function))
@@ -643,7 +662,13 @@
             (if (or (null alfe--msg) (/= (type alfe--msg) 'STR) (= (autolisp-str alfe--msg) ""))
                 "the engine supplied no message"
                 (autolisp-str alfe--msg)))))
-  (autolisp-force-error))
+  ;; The abort carries the message a handler should show: the quit signal
+  ;; itself for a quit, otherwise the context -- the source loader's
+  ;; full diagnostic when it assembled one, this message when not.
+  (autolisp-force-error
+    (if (autolisp-quit-signal-p alfe--msg)
+      (autolisp-str alfe--msg)
+      *AUTOLISP_LAST_ERROR_CONTEXT*)))
 
 (defun autolisp-effective-error-message (alfe--fallback)
   (if (and (boundp '*AUTOLISP_LAST_ERROR_CONTEXT*)

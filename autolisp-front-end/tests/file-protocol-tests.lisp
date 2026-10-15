@@ -1706,10 +1706,12 @@ target; each line names the construct needing an alternative:~%~{  ~A~%~}"
 
 (test protocol-emitted-runtime-never-calls-error
   "The emitted CAD-side runtime -- run-common.lsp AND the bootstrap and
-protocol runtime it stages -- must contain no `(error ' call. That is
+protocol runtime it stages -- must contain no `(error ' call but ONE: the
+one in autolisp-force-error, guarded by (= (type error) 'SUBR). That is
 the mechanical form of `no reachable dependency on an undefined ERROR
-function': AutoCAD has none, and a call that is never made cannot mask
-a diagnostic."
+function': AutoCAD has none, a call that is never made cannot mask a
+diagnostic, and the guarded call is never made where ERROR is not a
+function (alfe-runtime-raise-says-division-by-zero)."
   (let ((workdir (make-test-workdir "no-error-call")))
     (unwind-protect
         (multiple-value-bind (session path)
@@ -1720,7 +1722,15 @@ a diagnostic."
                               (alfe.protocol.file:protocol-session-runtime-lsp-staged
                                session)))
             (let* ((text (alfe.protocol.file:read-file-as-string file))
-                   (pos (search "(error " text)))
+                   (guarded "(if (= (type error) 'SUBR)
+    (error alfe--msg))")
+                   (allowed (search guarded text))
+                   (pos (loop for start = 0 then (1+ hit)
+                              for hit = (search "(error " text :start2 start)
+                              while hit
+                              unless (and allowed
+                                          (< allowed hit (+ allowed (length guarded))))
+                                return hit)))
               (is (null pos)
                   "~A calls ERROR at offset ~A: ~S"
                   (file-namestring file) pos
@@ -1730,7 +1740,10 @@ a diagnostic."
                        (alfe.protocol.file:protocol-session-bootstrap-lsp-staged
                         session))))
             (is (search "(defun autolisp-raise (alfe--msg)" boot))
-            (is (search "(defun autolisp-force-error ()" boot))))
+            (is (search "(defun autolisp-force-error (alfe--msg)" boot))
+            ;; ... and its one ERROR call is the guarded one.
+            (is (search "(if (= (type error) 'SUBR)
+    (error alfe--msg))" boot))))
       (delete-workdir workdir))))
 
 (test protocol-loader-failure-reports-its-diagnostic-without-error
@@ -3032,6 +3045,53 @@ later request. Skipped when clautolisp-sbcl is not on disk."
           ;; And the diagnostic is the engine's own, twice over.
           (is (search "Division by zero" stderr)
               "the original error text must be reported: ~S" stderr)))))
+
+(test protocol-runtime-raise-carries-its-message-to-user-handlers
+  "alfe-runtime-raise-says-division-by-zero: when alfe's CAD-side runtime
+raises (here alfe-load of a missing file), a USER handler -- a
+vl-catch-all-apply around the call, or a *error* function -- must see the
+runtime's own message, LOAD failed: \"...\", not the \"Division by zero\"
+of the arithmetic the runtime used to abort with. Run on the AutoCAD and
+the BricsCAD shadow paths, and once more with ERROR unbound, which is the
+AutoCAD host's situation (no ERROR function) and takes the portable
+fallback. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; runtime-raise test skipped.")
+        (loop for (no-rest dialect unbind-error-p)
+                in '((t "autocad" nil) (nil "bricscad" nil) (t "autocad" t))
+              do (multiple-value-bind (statuses stdout)
+                     (drive-hosted-engine
+                      binary
+                      (append
+                       (when unbind-error-p
+                         ;; AutoLISP is a Lisp-1: this is what a host
+                         ;; without an ERROR function looks like.
+                         (list "(setq error nil)"))
+                       (list
+                        "(princ (strcat \"<\" (vl-catch-all-error-message (vl-catch-all-apply (quote alfe-load) (list \"/no/such/file-xyz\"))) \">\"))"
+                        "(progn (defun *error* (m) (princ (strcat \"[\" m \"]\"))) (alfe-load \"/no/such/file-xyz\"))"))
+                      :assume-no-rest-p no-rest :dialect dialect)
+                   (declare (ignore statuses))
+                   (let ((out (without-returns stdout))
+                         (label (format nil "~A~:[~;, ERROR unbound~]"
+                                        dialect unbind-error-p)))
+                     ;; The fallback quotes the message inside the host's
+                     ;; bad-argument text, so its own quotes come back
+                     ;; escaped: look for its words there.
+                     (is (if unbind-error-p
+                             (and (search "LOAD failed: " out)
+                                  (search "/no/such/file-xyz" out))
+                             (search "LOAD failed: \"/no/such/file-xyz\"" out))
+                         "~A: a user handler must see the runtime's message: ~S"
+                         label out)
+                     (is (not (search "ivision by zero" out))
+                         "~A: the arithmetic used to abort must not show: ~S"
+                         label out)
+                     ;; Both handlers ran, each with the message.
+                     (is (and (search "<" out) (search "[" out))
+                         "~A: both handlers must run: ~S" label out)))))))
 
 (test protocol-loaded-file-runs-every-form-on-a-line
   "Acceptance: a loaded file whose line carries two forms runs BOTH, in

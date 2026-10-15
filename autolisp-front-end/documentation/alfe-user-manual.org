@@ -1064,6 +1064,25 @@ which takes the argument list, so any arity maps to a fixed-arity call
 
 =alfe-print*=, =alfe-prin1*= and =alfe-load*= follow the same shape.
 
+*** When an =alfe-*= operator fails
+
+A failure inside =alfe-load= (a file that cannot be found, a form that
+signals in the loaded file, a nested load) is an ordinary AutoLISP error,
+and your own handlers see alfe's diagnostic as its message:
+
+: (vl-catch-all-error-message
+:   (vl-catch-all-apply 'alfe-load (list "missing.lsp")))
+: ;; => "LOAD failed: \"missing.lsp\""
+
+The same text reaches a =*error*= function and, on the =clautolisp=
+host, the debugger. On BricsCAD and clautolisp the message is exactly
+alfe's. AutoCAD has no =error= function to raise it with, so there the
+message is AutoCAD's own bad-argument error, and it *quotes* alfe's
+diagnostic, along the lines of =bad argument type: fixnump: "LOAD failed:
+..."=. (Before alfe 2.3.20 a handler saw only =divide by zero=, which was
+the arithmetic alfe used to abort.) alfe's own request report always
+carries the full diagnostic, whatever the host.
+
 ** =alfe-load= rewrites the file it loads
 
 You do *not* have to convert a whole source tree by hand. =alfe-load=

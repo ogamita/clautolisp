@@ -2076,6 +2076,14 @@ file or COM), and forwards the workload.
   literals. (Before, a non-literal argument reached ~findfile~ unevaluated
   and failed with ~bad argument type~; confirmed fixed on real BricsCAD V26.)
 
+** A failing =alfe-load= tells your handler why (alfe-user-manual § /When an =alfe-*= operator fails/)
+
+- A =vl-catch-all-apply= or =*error*= around =alfe-load= now gets alfe's
+  diagnostic (=LOAD failed: "..."=, or the loaded file's error and its
+  position) as the error message, instead of =divide by zero=. On AutoCAD,
+  which has no =error= function, that diagnostic is quoted inside a
+  bad-argument message.
+
 ** Request timeout (alfe-user-manual § /Troubleshooting/)
 
 - ~--timeout~ / ~$AUTOLISP_WAIT_SECS~ now reaches the CAD backends'

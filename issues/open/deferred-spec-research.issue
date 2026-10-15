@@ -37,6 +37,20 @@ markers — keep it sorted by function name):
     with a symbol: does BricsCAD also reject (>= '(1) nil) and
     (>= T nil)? And does it reject (<= nil 'a), the mirror case?
 
+== ITOA of a string, as alfe's raise on AutoCAD (alfe-runtime-raise-says-division-by-zero) ==
+
+  * alfe's CAD-side autolisp-force-error raises with (error MSG) where
+    ERROR is a SUBR (BricsCAD, clautolisp), else with (itoa MSG) so the
+    message reaches a user's vl-catch-all-apply / *error*. That second
+    path exists for AutoCAD and is not yet measured there. Probe on
+    AutoCAD 2022: is (vl-catch-all-apply 'itoa (list "x")) trapped (an
+    error object, not an abort)? Does vl-catch-all-error-message quote
+    the string in full, e.g. bad argument type: fixnump: "x"? Is a
+    long string (200+ characters, with embedded quotes) quoted in full
+    or truncated? Does a *error* function get the same text? And is
+    (type error) nil there (no ERROR function at all), as
+    alfe-autocad-error-primitive-masks-load-failure reported?
+
 == TRANS (M2) ==
 
   * Behaviour when the source space (FROM) is not equal to the
