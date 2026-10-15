@@ -1707,7 +1707,7 @@ target; each line names the construct needing an alternative:~%~{  ~A~%~}"
 (test protocol-emitted-runtime-never-calls-error
   "The emitted CAD-side runtime -- run-common.lsp AND the bootstrap and
 protocol runtime it stages -- must contain no `(error ' call but ONE: the
-one in autolisp-force-error, guarded by (= (type error) 'SUBR). That is
+one in alfe-error, guarded by (= (type error) 'SUBR). That is
 the mechanical form of `no reachable dependency on an undefined ERROR
 function': AutoCAD has none, a call that is never made cannot mask a
 diagnostic, and the guarded call is never made where ERROR is not a
@@ -1740,7 +1740,7 @@ function (alfe-runtime-raise-says-division-by-zero)."
                        (alfe.protocol.file:protocol-session-bootstrap-lsp-staged
                         session))))
             (is (search "(defun autolisp-raise (alfe--msg)" boot))
-            (is (search "(defun autolisp-force-error (alfe--msg / *AUTOLISP-WARN-OUT-OF-DIALECT*)" boot))
+            (is (search "(defun alfe-error (alfe--msg / *AUTOLISP-WARN-OUT-OF-DIALECT*)" boot))
             ;; ... and its one ERROR call is the guarded one.
             (is (search "(if (= (type error) 'SUBR)
     (error alfe--msg))" boot))))
@@ -2702,7 +2702,7 @@ is not on disk."
 variable of alfe's CAD-side runtime must carry.")
 
 (defparameter *alfe-runtime-binding-allow-list*
-  '(;; autolisp-force-error binds it nil around its own (error MSG), so the
+  '(;; alfe-error binds it nil around its own (error MSG), so the
     ;; runtime's raise earns no [vendor-operator] notice on a clautolisp
     ;; engine (clautolisp-error-silent-under-autocad). The NAME is the point:
     ;; it is the variable clautolisp reads. No user code runs while it is
@@ -3100,12 +3100,55 @@ fallback. Skipped when clautolisp-sbcl is not on disk."
                      ;; Both handlers ran, each with the message.
                      (is (and (search "<" out) (search "[" out))
                          "~A: both handlers must run: ~S" label out)
-                     ;; ERROR is a clautolisp extension (clautolisp-error-
-                     ;; silent-under-autocad): the runtime's own raise must not earn the
+                     ;; ERROR is a BricsCAD operator clautolisp adopts, and
+                     ;; warns under strict (clautolisp-error-silent-under-
+                     ;; autocad): the runtime's own raise must not earn the
                      ;; user a [vendor-operator] notice from the engine, which
                      ;; runs under its strict default.
                      (is (not (search "[vendor-operator]" engine-diagnostics))
                          "~A: the runtime's raise must not warn: ~S"
+                         label engine-diagnostics)))))))
+
+(test protocol-alfe-error-signals-its-message-on-every-host
+  "alfe-error is alfe's portable raise: where ERROR is a function (BricsCAD,
+clautolisp) the message a handler gets is MSG verbatim, and where it is not
+(AutoCAD, simulated by unbinding ERROR) it is quoted inside the host's
+bad-argument error. alfe defines no ERROR of its own: unbound before, it is
+still unbound after. And it warns nothing on the engine, whose dialect is
+the strict default. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; alfe-error test skipped.")
+        (loop for (no-rest dialect unbind-error-p)
+                in '((t "autocad" nil) (nil "bricscad" nil) (t "autocad" t))
+              do (multiple-value-bind (statuses stdout stderr engine-diagnostics)
+                     (drive-hosted-engine
+                      binary
+                      (append
+                       (when unbind-error-p (list "(setq error nil)"))
+                       (list
+                        "(princ (strcat \"<\" (vl-catch-all-error-message (vl-catch-all-apply (quote alfe-error) (list \"How do you do\"))) \">\"))"
+                        "(progn (defun *error* (m) (princ (strcat \"[\" m \"]\"))) (alfe-error \"How do you do\"))"
+                        "(princ (strcat \"type=\" (vl-princ-to-string (type error))))"))
+                      :assume-no-rest-p no-rest :dialect dialect)
+                   (declare (ignore statuses stderr))
+                   (let ((out (without-returns stdout))
+                         (label (format nil "~A~:[~;, ERROR unbound~]"
+                                        dialect unbind-error-p)))
+                     (if unbind-error-p
+                         (progn
+                           (is (and (search "<" out) (search "How do you do" out))
+                               "~A: the message must be quoted: ~S" label out)
+                           (is (search "type=nil" out)
+                               "~A: alfe must not define ERROR: ~S" label out))
+                         (progn
+                           (is (search "<How do you do>" out)
+                               "~A: the catch must get MSG verbatim: ~S" label out)
+                           (is (search "[How do you do]" out)
+                               "~A: *error* must get MSG verbatim: ~S" label out)))
+                     (is (not (search "[vendor-operator]" engine-diagnostics))
+                         "~A: alfe-error must not warn: ~S"
                          label engine-diagnostics)))))))
 
 (test protocol-loaded-file-runs-every-form-on-a-line

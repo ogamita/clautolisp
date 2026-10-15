@@ -71,3 +71,35 @@ portable.
   =vendor-operator-error-is-silent-under-clautolisp-and-lax= (builtins-core),
   and =protocol-runtime-raise-carries-its-message-to-user-handlers= now
   requires no =[vendor-operator]= on the engine's stderr.
+
+* Revised (clautolisp / alfe 2.3.22, spec 0.14.3)
+
+pjb, 2026-10-15: ERROR IS implemented in BricsCAD V26 on macOS (assumed in
+the other versions; the BricsCAD Developer Reference V22-V25 has no page for
+it, only *error* and vl-exit-with-error):
+
+: (vl-catch-all-error-message
+:   (vl-catch-all-apply (function (lambda () (error "How do you do"))) nil))
+: => "How do you do"
+
+as in clautolisp. Only AutoCAD needs the dialect warning. So:
+
+- The spec's ERROR entry credits BricsCAD (Availability: BricsCAD V26
+  available, undocumented); the generated operator-availability table now
+  gives ERROR the owner :bricscad.
+- The clautolisp-only owner (*clautolisp-only-operators*, owner :clautolisp)
+  is gone. In its place *clautolisp-adopted-operators* lists vendor-only
+  operators clautolisp ALSO provides as its own extension; they are silent
+  under --clautolisp too. ERROR now warns ("ERROR is a BricsCAD-only
+  operator") under --autocad and --strict, and is silent under --bricscad,
+  --clautolisp and --lax.
+- alfe: the runtime's raise is now a public operator, (alfe-error MSG):
+  (error MSG) where ERROR is a function (BricsCAD, clautolisp), AutoCAD's
+  quoted bad-argument error otherwise. alfe still defines no ERROR on
+  AutoCAD, for compatibility with code that tests for it. autolisp-raise
+  calls alfe-error; the silencing binding moved with it.
+- Tests: vendor-operator-error-* rewritten for the BricsCAD ownership;
+  protocol-alfe-error-signals-its-message-on-every-host is new.
+- The deferred-spec-research ERROR entry is resolved; the AutoCAD ITOA
+  question stays open there.
+

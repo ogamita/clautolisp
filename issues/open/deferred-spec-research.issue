@@ -37,30 +37,9 @@ markers — keep it sorted by function name):
     with a symbol: does BricsCAD also reject (>= '(1) nil) and
     (>= T nil)? And does it reject (<= nil 'a), the mirror case?
 
-== ERROR -- is there one on BricsCAD? (clautolisp-error-silent-under-autocad) ==
-
-  * Neither vendor documents ERROR; AutoCAD 2022 has none. clautolisp
-    treats it as its own operator (*clautolisp-only-operators*,
-    SPEC-UNCERTAIN in autolisp-runtime api.lisp) until this is answered.
-    Run probes/sources/probe-error-function.lsp on BricsCAD V25 and V26
-    (and AutoCAD 2022, as the control):
-    - (type error): SUBR, or nil? The encoding probe's
-      error-primitive.bound=yes on BricsCAD used atoms-family and does not
-      tell an interned symbol from a function.
-    - If a function: is the catch-all message of (error "x") the text
-      "x", or the bare "error" the encoding probe saw -- and is that the
-      same text as for the undefined function called next to it (then the
-      probe still cannot tell)?
-    - By hand: what does a *error* handler receive for (error "x") at top
-      level, and what does the command line print?
-  * If BricsCAD has ERROR but drops its argument, alfe 2.3.20's
-    autolisp-force-error (bootstrap) raises with (error MSG) on BricsCAD
-    and a user handler there sees "error", not alfe's diagnostic; it would
-    then need the (itoa MSG) path on BricsCAD too.
-
 == ITOA of a string, as alfe's raise on AutoCAD (alfe-runtime-raise-says-division-by-zero) ==
 
-  * alfe's CAD-side autolisp-force-error raises with (error MSG) where
+  * alfe's CAD-side alfe-error raises with (error MSG) where
     ERROR is a SUBR (BricsCAD, clautolisp), else with (itoa MSG) so the
     message reaches a user's vl-catch-all-apply / *error*. That second
     path exists for AutoCAD and is not yet measured there. Probe on
@@ -71,6 +50,7 @@ markers — keep it sorted by function name):
     or truncated? Does a *error* function get the same text? And is
     (type error) nil there (no ERROR function at all), as
     alfe-autocad-error-primitive-masks-load-failure reported?
+    probes/sources/probe-error-function.lsp records (type error) there.
 
 == TRANS (M2) ==
 
@@ -233,3 +213,9 @@ uncertainty).
     2022 and BricsCAD V25/V26 -- both signal a type error for a number
     against a string, a symbol or a list; nil is the smallest value, not
     bottom. See issues/closed/comparison-operators-vendor-semantics.issue.
+
+  * ERROR on BricsCAD (clautolisp-error-silent-under-autocad): resolved
+    2026-10-15 by pjb on BricsCAD V26 macOS -- ERROR is a function and
+    (vl-catch-all-error-message (vl-catch-all-apply (function (lambda ()
+    (error "How do you do"))) nil)) returns "How do you do". The spec
+    credits BricsCAD; clautolisp warns only under autocad and strict.

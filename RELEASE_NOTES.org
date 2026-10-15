@@ -1654,11 +1654,11 @@ separate binary for tool integrators.
 - ~vl-infp~, ~vl-nanp~ and ~vla-postcommand~ no longer warn
   ~[vendor-operator]~ under the AutoCAD dialects: AutoCAD 2022 has all three
   (measured), so the spec now lists them for both vendors.
-- ~error~ is documented by neither vendor and AutoCAD has none, so it is now
-  a clautolisp-owned operator: it warns ~[vendor-operator]~ (~ERROR is a
-  clautolisp-only operator~) under ~--strict~, ~--autocad~ and ~--bricscad~,
-  and stays silent under ~--clautolisp~ and ~--lax~ (autolisp-spec, ~error~
-  entry). Whether BricsCAD has one is still being probed.
+- ~error~ is a BricsCAD operator (undocumented, present in V26) that
+  clautolisp provides too, and AutoCAD has none: it now warns
+  ~[vendor-operator]~ (~ERROR is a BricsCAD-only operator~) under ~--autocad~
+  and ~--strict~, and stays silent under ~--bricscad~, ~--clautolisp~ and
+  ~--lax~ (autolisp-spec, ~error~ entry).
 - Dialect versions carry the documented version differences: an operator
   a release added or removed (~acet-load-expresstools~ is AutoCAD 2025+,
   BricsCAD V26 removed ~mod~ / ~round~, ...) warns ~[version-operator]~ when
@@ -2081,13 +2081,17 @@ file or COM), and forwards the workload.
   literals. (Before, a non-literal argument reached ~findfile~ unevaluated
   and failed with ~bad argument type~; confirmed fixed on real BricsCAD V26.)
 
-** A failing =alfe-load= tells your handler why (alfe-user-manual § /When an =alfe-*= operator fails/)
+** A failing =alfe-load= tells your handler why; =alfe-error= (alfe-user-manual § /When an =alfe-*= operator fails, and =alfe-error=/)
 
 - A =vl-catch-all-apply= or =*error*= around =alfe-load= now gets alfe's
   diagnostic (=LOAD failed: "..."=, or the loaded file's error and its
   position) as the error message, instead of =divide by zero=. On AutoCAD,
   which has no =error= function, that diagnostic is quoted inside a
   bad-argument message.
+- New =(alfe-error msg)=: raises an error with message =msg= on every CAD --
+  =(error msg)= on BricsCAD and clautolisp, AutoCAD's quoted bad-argument
+  error there (alfe still defines no =error= on AutoCAD). alfe's own raises
+  use it, and it never earns a =[vendor-operator]= notice.
   The raise gives no ~[vendor-operator]~ notice for its own use of
   ~error~ on a clautolisp engine.
 

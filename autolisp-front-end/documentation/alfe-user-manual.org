@@ -1053,6 +1053,7 @@ protocol loop. So alfe does *not* shadow the builtins; it offers parallel
 | =(princ obj [file])=  | =(alfe-princ obj)=         | 1-arg convenience; output reaches alfe's stream.   |
 | =(print obj [file])=  | =(alfe-print obj)=         |                                                    |
 | =(prin1 obj [file])=  | =(alfe-prin1 obj)=         |                                                    |
+| =(error msg)=         | =(alfe-error msg)=         | Raises an error with message =msg= on every CAD (below). |
 
 For a call whose arity is not exactly one argument, use the *star* form,
 which takes the argument list, so any arity maps to a fixed-arity call
@@ -1064,7 +1065,7 @@ which takes the argument list, so any arity maps to a fixed-arity call
 
 =alfe-print*=, =alfe-prin1*= and =alfe-load*= follow the same shape.
 
-*** When an =alfe-*= operator fails
+*** When an =alfe-*= operator fails, and =alfe-error=
 
 A failure inside =alfe-load= (a file that cannot be found, a form that
 signals in the loaded file, a nested load) is an ordinary AutoLISP error,
@@ -1075,13 +1076,24 @@ and your own handlers see alfe's diagnostic as its message:
 : ;; => "LOAD failed: \"missing.lsp\""
 
 The same text reaches a =*error*= function and, on the =clautolisp=
-host, the debugger. On BricsCAD and clautolisp the message is exactly
-alfe's. AutoCAD has no =error= function to raise it with, so there the
-message is AutoCAD's own bad-argument error, and it *quotes* alfe's
-diagnostic, along the lines of =bad argument type: fixnump: "LOAD failed:
-..."=. (Before alfe 2.3.20 a handler saw only =divide by zero=, which was
-the arithmetic alfe used to abort.) alfe's own request report always
-carries the full diagnostic, whatever the host.
+host, the debugger. (Before alfe 2.3.20 a handler saw only =divide by
+zero=, which was the arithmetic alfe used to abort.) alfe's own request
+report always carries the full diagnostic, whatever the CAD.
+
+alfe raises these errors with =(alfe-error msg)=, which your code can
+call too. It signals an error whose message is =msg= on every CAD alfe
+drives:
+
+- On BricsCAD and clautolisp it is =(error msg)=: =error= exists there
+  (undocumented on BricsCAD), and every handler gets =msg= exactly.
+- AutoCAD has no =error= function, and alfe does not define one: code
+  that tests for it must keep seeing AutoCAD as it is. There
+  =alfe-error= raises AutoCAD's own bad-argument error, whose message
+  quotes =msg=, along the lines of =bad argument type: fixnump: "msg"=.
+
+Under =--clautolisp --dialect autocad= (or the default =strict=),
+clautolisp warns when your code calls =error= itself, since AutoCAD lacks
+it; =alfe-error= never warns.
 
 ** =alfe-load= rewrites the file it loads
 

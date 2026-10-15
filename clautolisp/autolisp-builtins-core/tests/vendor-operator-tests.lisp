@@ -106,30 +106,31 @@ STDERR)."
               (clautolisp.autolisp-runtime:autolisp-runtime-error (c)
                 (clautolisp.autolisp-runtime:autolisp-runtime-error-code c)))))))
 
-;;;; clautolisp-error-silent-under-autocad: no vendor documents ERROR,
-;;;; AutoCAD 2022 has none, and BricsCAD's is unverified (probe pending:
-;;;; probes/sources/probe-error-function.lsp). The spec had no entry for it,
-;;;; so it had no owner and ran silently under --dialect autocad. Until the
-;;;; probe has run it is clautolisp's own operator.
+;;;; clautolisp-error-silent-under-autocad (revised 2026-10-15):
+;;;; ERROR is undocumented by both vendors, but BricsCAD has it (pjb, V26
+;;;; macOS, 2026-10-15: the message of (error "How do you do") is "How do you
+;;;; do"), and AutoCAD 2022 has none. So the spec credits BricsCAD, and
+;;;; clautolisp adopts it as its own too: the notice fires only where the
+;;;; operator is missing -- AutoCAD, and strict, the portable subset.
 
 (defparameter +error-call+
   "(if (vl-catch-all-error-p (vl-catch-all-apply 'error (list \"x\"))) 1 0)"
   "A trapped call of ERROR: the call happens, the error does not escape.")
 
-(test vendor-operator-error-is-clautolisp-only
-  (is (null (clautolisp.autolisp-runtime:vendor-only-operator-owner "ERROR"))
-      "the spec credits no vendor")
-  (is (eq :clautolisp (clautolisp.autolisp-runtime:clautolisp-only-operator-owner "error"))))
+(test vendor-operator-error-is-bricscad-and-adopted-by-clautolisp
+  (is (eq :bricscad (clautolisp.autolisp-runtime:vendor-only-operator-owner "ERROR"))
+      "the spec credits BricsCAD")
+  (is (clautolisp.autolisp-runtime:clautolisp-adopted-operator-p "error")))
 
-(test vendor-operator-error-warns-out-of-clautolisp
-  (dolist (dialect '(:autocad :autocad-2022 :strict :bricscad :bricscad-mac))
+(test vendor-operator-error-warns-under-autocad-and-strict
+  (dolist (dialect '(:autocad :autocad-2022 :strict))
     (multiple-value-bind (result stderr) (%vendor-run dialect +error-call+)
       (is (eql 1 result) "~A: ~S" dialect result)
-      (is (eql 1 (%occurrences "ERROR is a clautolisp-only operator" stderr))
+      (is (eql 1 (%occurrences "ERROR is a BricsCAD-only operator" stderr))
           "~A: ~S" dialect stderr))))
 
-(test vendor-operator-error-is-silent-under-clautolisp-and-lax
-  (dolist (dialect '(:clautolisp :lax))
+(test vendor-operator-error-is-silent-where-it-exists
+  (dolist (dialect '(:bricscad :bricscad-mac :bricscad-v25 :clautolisp :lax))
     (multiple-value-bind (result stderr) (%vendor-run dialect +error-call+)
       (is (eql 1 result) "~A: ~S" dialect result)
       (is (not (search "[vendor-operator]" stderr)) "~A: ~S" dialect stderr))))

@@ -617,38 +617,46 @@
 ;;; The abort also CARRIES the message, so that a USER handler -- a
 ;;; vl-catch-all-apply around alfe-load, a *error* function, the clautolisp
 ;;; debugger -- sees what went wrong instead of "divide by zero"
-;;; (alfe-runtime-raise-says-division-by-zero):
+;;; (alfe-runtime-raise-says-division-by-zero). That is ALFE-ERROR, below.
+
+;;; (alfe-error MSG) -- signal an AutoLISP error whose message is MSG, on
+;;; every host alfe drives. It is what alfe's own CAD-side code raises with,
+;;; and what portable user code can raise with, instead of ERROR:
 ;;;
-;;; - a host whose ERROR is a real function (BricsCAD, clautolisp) raises
-;;;   with it: the message is the host's error message, verbatim. Tested by
-;;;   TYPE, not by atoms-family, so a user's (defun error ...) is never
+;;; - ERROR is a BricsCAD operator (undocumented; V26 verified by pjb,
+;;;   2026-10-15) that clautolisp provides too: where (type error) is SUBR,
+;;;   alfe-error calls ERROR on MSG, and every handler gets MSG verbatim. Tested
+;;;   by TYPE, not by atoms-family, so a user's (defun error ...) is never
 ;;;   called, and an AutoCAD without ERROR never resolves the symbol as a
-;;;   function (reading an unbound variable is nil, not an error);
-;;; - otherwise (AutoCAD) (itoa MSG) fails with a bad-argument error whose
-;;;   text quotes MSG, which a handler can show.
+;;;   function (reading an unbound variable is nil, not an error).
+;;; - AutoCAD has no ERROR, and alfe does NOT define one there: other code
+;;;   may test for it, and AutoCAD code must keep seeing AutoCAD. The
+;;;   equivalent there is (itoa MSG), which fails with a trappable
+;;;   bad-argument error whose text quotes MSG -- the nearest AutoCAD has to
+;;;   an error carrying a message of one's choosing.
 ;;;   SPEC-UNCERTAIN: that AutoCAD traps (itoa "...") in vl-catch-all-apply
 ;;;   and quotes the string in the message is expected, not yet measured on
-;;;   AutoCAD (issues/open/deferred-spec-research.issue, autolisp-force-error).
+;;;   AutoCAD (issues/open/deferred-spec-research.issue, ITOA).
 ;;;
-;;; No vendor documents ERROR (autolisp-spec, ERROR entry), so clautolisp
-;;; treats it as its own extension and gives a [vendor-operator] notice for
-;;; it under any dialect but clautolisp and lax -- including the strict
-;;; default of a hosted engine. The
-;;; call is the RUNTIME's, not the user's, so it must not earn the user that
-;;; notice: the local *AUTOLISP-WARN-OUT-OF-DIALECT* (nil, dynamically bound)
-;;; silences it for this call only (clautolisp-error-silent-under-autocad).
+;;; Under --dialect autocad (or strict) a clautolisp engine gives a
+;;; [vendor-operator] notice for ERROR. alfe-error's call is the RUNTIME's
+;;; portable raise, not a use of ERROR by the user, so it must not earn that
+;;; notice: the local *AUTOLISP-WARN-OUT-OF-DIALECT* (nil, dynamically
+;;; bound) silences it for this call only (clautolisp-error-silent-under-autocad).
 ;;; Elsewhere it is an ordinary unused local.
 ;;;
 ;;; The statements after make the abort certain even on a host that would
 ;;; tolerate all of the above: the last is an undefined function, which no
-;;; host survives. They are unreachable on every host we know.
-(defun autolisp-force-error (alfe--msg / *AUTOLISP-WARN-OUT-OF-DIALECT*)
+;;; host survives. They are unreachable on every host we know. alfe-error
+;;; never returns.
+(defun alfe-error (alfe--msg / *AUTOLISP-WARN-OUT-OF-DIALECT*)
+  (setq alfe--msg (autolisp-str alfe--msg))
   (if (= (type error) 'SUBR)
     (error alfe--msg))
   (itoa alfe--msg)
   (/ 1 0)
   (car 0)
-  (__autolisp-force-error-no-such-function))
+  (__alfe-error-no-such-function))
 
 (defun autolisp-raise (alfe--msg)
   (if (autolisp-quit-signal-p alfe--msg)
@@ -674,7 +682,7 @@
   ;; The abort carries the message a handler should show: the quit signal
   ;; itself for a quit, otherwise the context -- the source loader's
   ;; full diagnostic when it assembled one, this message when not.
-  (autolisp-force-error
+  (alfe-error
     (if (autolisp-quit-signal-p alfe--msg)
       (autolisp-str alfe--msg)
       *AUTOLISP_LAST_ERROR_CONTEXT*)))

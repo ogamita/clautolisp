@@ -8,7 +8,7 @@
 ;;;;     make -C clautolisp operator-availability
 ;;;; and `make -C clautolisp check-operator-availability' fails on drift.
 ;;;;
-;;;; 66 AutoCAD-only, 470 BricsCAD-only.
+;;;; 66 AutoCAD-only, 471 BricsCAD-only.
 
 (in-package #:clautolisp.autolisp-runtime)
 
@@ -322,6 +322,7 @@
     ("DOS_STRTRIM" . :bricscad)
     ("DOS_STRTRIMLEFT" . :bricscad)
     ("DOS_STRTRIMRIGHT" . :bricscad)
+    ("ERROR" . :bricscad)
     ("FLOOR" . :bricscad)
     ("FNSPLITL" . :bricscad)
     ("GETPID" . :bricscad)
