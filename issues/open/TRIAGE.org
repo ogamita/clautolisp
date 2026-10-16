@@ -591,6 +591,9 @@ retrofitted as they are touched.
 | vl-file-systime-parity                        | divergence      | DONE     | RESOLVED 1.8.23 / spec 0.9.3. The documentation scan overturned the premise: the "Sunday=1" Autodesk example was a bad datum (2003-09-10 is a Wednesday = 3, not 4), and NO vendor example falls on a Sunday — so Mon..Sat = 1..6 is all the docs establish and the divergence is one value wide (AutoCAD 0 = POSIX, BricsCAD 7 = ISO). Shipped: 8 elements everywhere, dialect-aware Sunday, ms seam returning 0, 56-check regression test, rewritten spec entry with a *** clautolisp note. Residual: probe more versions with a forced mtime — folded into vendor-probe-autocad-bricscad-divergences. issues/closed/ |
 
 * P2 — language / builtins completeness
+
+- DONE [[file:../closed/acad-strlsort-maxsort-truncates-catalogue.issue][acad-strlsort-maxsort-truncates-catalogue]] — 2026-10-16: remove false MAXSORT cap and vendor warning; pin dialect defaults and user overrides.
+
   :PROPERTIES:
   :Priority: P2
   :END:

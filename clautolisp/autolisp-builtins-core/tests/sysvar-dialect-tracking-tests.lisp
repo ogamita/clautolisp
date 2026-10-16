@@ -148,3 +148,20 @@ own INETLOCATION / INTERFERECOLOR, colours as #RRGGBB, no single-float noise."
     (is (equal "http://www.bricsys.com" (%sdt-getvar context "INETLOCATION")))
     (is (equal "#323638" (%sdt-getvar context "CMDLINEEDITBGCOLOR")))
     (is (eql 0.3d0 (%sdt-getvar context "AUTOCOMPLETEDELAY")))))
+
+(test maxsort-default-follows-dialect
+  "BricsCAD starts at 200; AutoCAD, clautolisp and lax use 1000."
+  (let ((context (%sdt-context)))
+    (dolist (entry '((bricscad-v26 . 200) (autocad-2022 . 1000)
+                     (clautolisp . 1000) (lax . 1000)))
+      (%sdt-eval context (format nil "(setq *AUTOLISP-DIALECT* '~A)" (car entry)))
+      (is (eql (cdr entry) (%sdt-getvar context "MAXSORT"))
+          "MAXSORT factory value for ~A." (car entry)))))
+
+(test maxsort-explicit-user-value-survives-dialect-switches
+  "A user's chosen GUI sorting limit takes precedence over factory defaults."
+  (let ((context (%sdt-context)))
+    (%sdt-eval context "(setvar \"MAXSORT\" 4096)")
+    (dolist (dialect '(bricscad-v26 autocad-2022 clautolisp lax))
+      (%sdt-eval context (format nil "(setq *AUTOLISP-DIALECT* '~A)" dialect))
+      (is (eql 4096 (%sdt-getvar context "MAXSORT"))))))

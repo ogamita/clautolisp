@@ -2645,18 +2645,15 @@ the host's prompt-output / command log after the run."
     ;; The command still ran: it is recorded in the log regardless.
     (is (= 1 (length (clautolisp.cador:cador-command-log host))))))
 
-;;; --- MAXSORT -> acad_strlsort length gate --------------------------
+;;; --- MAXSORT does not constrain AutoLISP sorting -------------------
 
-(test coupling-maxsort-caps-acad-strlsort
-  ;; acad_strlsort returns nil when the list is longer than MAXSORT.
-  (reset-autolisp-symbol-table)
-  (is (null (%al "(progn (setvar \"MAXSORT\" 2)
-                         (acad_strlsort (list \"c\" \"b\" \"a\")))")))
-  (reset-autolisp-symbol-table)
-  (is (equal '("a" "b" "c")
-             (mapcar #'autolisp-string-value
-                     (%al "(progn (setvar \"MAXSORT\" 1000)
-                                  (acad_strlsort (list \"c\" \"a\" \"b\")))")))))
+(test coupling-maxsort-does-not-cap-acad-strlsort
+  ;; MAXSORT concerns GUI name lists, not this AutoLISP function.
+  (dolist (limit '(0 2 1000))
+    (is (equal '("a" "b" "c")
+               (mapcar #'autolisp-string-value
+                       (%al (format nil "(setvar ~S ~D) (acad_strlsort '(~S ~S ~S))"
+                                    "MAXSORT" limit "c" "b" "a")))))))
 
 ;;; --- TILEMODE / CVPORT -> vports / setview -------------------------
 
@@ -7982,7 +7979,7 @@ itself fails loudly."
 ;;;; is case-sensitive, ordinal on character codes (ASCII digits <
 ;;;; upper < lower; code points > 127 after the ASCII range), duplicates
 ;;;; preserved, input list untouched, and the whole result is nil for
-;;;; invalid input or a list longer than the MAXSORT sysvar.
+;;;; invalid input. MAXSORT must never truncate or suppress the result.
 
 (defun %acad-strlsort-fn ()
   (autolisp-symbol-function (find-autolisp-symbol "ACAD_STRLSORT")))
@@ -8099,15 +8096,21 @@ itself fails loudly."
            :setup-fn #'%install-cador-and-core)))
     (is (equal '("a" "b" "c") (%al-string-values result)))))
 
-(test acad-strlsort-above-maxsort-returns-nil
-  ;; Length > MAXSORT: the Express Tools MAXSORT gate returns nil
-  ;; (list left unsorted). MAXSORT 2, a 3-element list -> nil.
-  (let ((result
-          (run-autolisp-string
-           "(setvar \"MAXSORT\" 2)
-            (acad_strlsort '(\"c\" \"b\" \"a\"))"
-           :setup-fn #'%install-cador-and-core)))
-    (is (null result))))
+(test acad-strlsort-large-catalogue-ignores-maxsort
+  ;; SCHMS enumerates 204 classes; the BricsCAD profile's MAXSORT is 200.
+  ;; Both native engines sort the whole list, also for MAXSORT=0. Cover
+  ;; the former host-less fallback ceiling of 1000 as well.
+  (dolist (count '(204 1001))
+    (let* ((names (loop for index downfrom count above 0
+                        collect (format nil "class-~4,'0D" index)))
+           (expected (reverse names)))
+      (dolist (limit '(0 2 200 1000))
+        (let ((actual
+                (%al-string-values
+                 (%al (format nil "(setvar ~S ~D) (acad_strlsort '~S)"
+                              "MAXSORT" limit names)))))
+          (is (equal expected actual)
+              "~D catalogue entries must sort with MAXSORT=~D." count limit))))))
 
 (test vla-getboundingbox-assigns-bare-safearrays
   ;; Vendor by-reference contract: (vla-getboundingbox obj 'll 'ur)

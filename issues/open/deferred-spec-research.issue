@@ -219,3 +219,11 @@ uncertainty).
     (vl-catch-all-error-message (vl-catch-all-apply (function (lambda ()
     (error "How do you do"))) nil)) returns "How do you do". The spec
     credits BricsCAD; clautolisp warns only under autocad and strict.
+
+* ACAD_STRLSORT: exact collation and memory failure
+MAXSORT independence is resolved on AutoCAD 2022 and BricsCAD V25 Windows
+(2026-10-16); it is not a size or memory budget for this function.
+Still probe the ordering of punctuation, case, accented and non-Latin
+strings under each LISPSYS/encoding combination, and establish whether
+vendor memory failures return nil or signal. No deliberate native OOM
+experiment is needed for the MAXSORT regression.

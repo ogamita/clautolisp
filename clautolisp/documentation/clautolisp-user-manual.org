@@ -879,8 +879,14 @@ produce warnings when compiled and when used.
 
 For the operators only one vendor provides, that warning is
 =[vendor-operator]=. BricsCAD's =vle-*= family and its other extensions
-belong to BricsCAD, and =acad_strlsort= and the Express Tools functions
+belong to BricsCAD, and AutoCAD-only Express Tools functions
 belong to AutoCAD; the specification's Availability sections decide which.
+The shared =acad_strlsort= function runs without a vendor warning. Its
+input length is independent of =MAXSORT=, which limits named-object lists
+in the CAD interface. Initial MAXSORT values are 1000 for AutoCAD,
+clautolisp and lax, and 200 for BricsCAD. Set it to match the size of GUI
+listings when needed; an explicit user value survives dialect switches.
+
 The first call of such an operator prints one notice for the session,
 interpreted or compiled:
 

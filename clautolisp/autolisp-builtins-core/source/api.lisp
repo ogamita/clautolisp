@@ -4436,16 +4436,8 @@ two answers are not portable.~%"
                     (autolisp-true-p
                      (call-autolisp-function function (cdr a) (cdr b))))))))
 
-(defun %acad-strlsort-maxsort ()
-  "The MAXSORT ceiling honoured by ACAD_STRLSORT. Read from the host
-system variable (spec §MAXSORT, whose Read/Written-By list names
-acad_strlsort); host-less unit-test contexts fall back to the vendor
-default of 1000."
-  (%host-sysvar-integer (ignore-errors (current-evaluation-host))
-                        "MAXSORT" 1000))
-
 (defun builtin-acad-strlsort (list)
-  ;; (acad_strlsort LST) — Express Tools string-list sort.
+  ;; (acad_strlsort LST) — shared AutoLISP string-list sort.
   ;;
   ;; Returns a NEW list holding LST's strings in ascending order,
   ;; leaving LST itself unmodified (VL-SORT-style copy-then-sort).
@@ -4460,9 +4452,8 @@ default of 1000."
   ;; spec function entry (§ Function Entry: ACAD_STRLSORT). Duplicate
   ;; strings are preserved: the vendor does not de-duplicate.
   ;;
-  ;; A live-CAD probe of the exact collation and the failure modes is
-  ;; BLOCKED (no CAD host in this environment); the ordinal rule is the
-  ;; deterministic, spec-correct headless behaviour.
+  ;; SPEC-UNCERTAIN: exact non-ASCII collation and memory-exhaustion
+  ;; parity remain unprobed; see deferred-spec-research.issue, ACAD_STRLSORT.
   ;;
   ;; Edge cases collapse to the vendor's documented failure mode of
   ;; returning nil (rather than raising), so a defensive caller — e.g.
@@ -4471,12 +4462,12 @@ default of 1000."
   ;;   - a non-list atom             -> nil
   ;;   - an improper (dotted) list   -> nil
   ;;   - any non-string element      -> nil
-  ;;   - length greater than MAXSORT -> nil (Express Tools MAXSORT gate,
-  ;;                                         see %ACAD-STRLSORT-MAXSORT)
+  ;; MAXSORT controls GUI name lists, not this function. AutoCAD 2022
+  ;; and BricsCAD V25 both sort 204 strings with MAXSORT=0 (2026-10-16,
+  ;; probe-acad-strlsort-maxsort.lsp). Do not impose a synthetic ceiling.
   (when (and (proper-list-p list)
              list
-             (every (lambda (x) (typep x 'autolisp-string)) list)
-             (<= (length list) (%acad-strlsort-maxsort)))
+             (every (lambda (x) (typep x 'autolisp-string)) list))
     (sort (copy-list list) #'string< :key #'autolisp-string-value)))
 
 (defun builtin-distance (point-a point-b)

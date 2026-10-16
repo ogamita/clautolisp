@@ -8,7 +8,7 @@
 ;;;;     make -C clautolisp operator-availability
 ;;;; and `make -C clautolisp check-operator-availability' fails on drift.
 ;;;;
-;;;; 66 AutoCAD-only, 471 BricsCAD-only.
+;;;; 65 AutoCAD-only, 471 BricsCAD-only.
 
 (in-package #:clautolisp.autolisp-runtime)
 
@@ -18,7 +18,6 @@
     ("ACAD-PUSH-DBMOD" . :autocad)
     ("ACAD_COLORDLG" . :autocad)
     ("ACAD_HELPDLG" . :autocad)
-    ("ACAD_STRLSORT" . :autocad)
     ("ACAD_TRUECOLORCLI" . :autocad)
     ("ACAD_TRUECOLORDLG" . :autocad)
     ("ACET-ACAD-REFRESH" . :bricscad)

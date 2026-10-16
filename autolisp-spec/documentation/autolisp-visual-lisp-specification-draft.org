@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.14.3
+#+VERSION: 0.14.4
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.13.0*.
+The current document version is *0.14.4*.
 
 Any modification of this document must increment its version number.
 
@@ -39893,11 +39893,18 @@ registry; saved in registry
 Sets the maximum number of items such as file names, layer names, and block names that are sorted alphabetically in dialog boxes, drop-down lists, and palettes.
 
 *** Read/Written By
-- acad_strlsort
+- getvar
+- setvar
+
+This GUI listing limit does not constrain `acad_strlsort`. When displaying
+large named-object lists, set MAXSORT to a value matching their size, within
+its supported range (0..32767).
 
 *** Compatibility
 AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
 Divergence: type AutoCAD Integer, BricsCAD Short; default AutoCAD 1000, BricsCAD 200.
+clautolisp and lax use the larger AutoCAD initial value, 1000. Explicit
+SETVAR values take precedence over factory defaults across dialect changes.
 
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7AD30968-4982-4E1C-9847-69A5EAEB7C63
@@ -76336,7 +76343,7 @@ Not documented in the current category page.
 `acad_strlsort`
 
 *** Class
-Express Tools Function
+AutoLISP Function
 
 *** Syntax
 #+begin_example
@@ -76356,13 +76363,13 @@ Vendor-defined.
 Not documented in the current category page.
 
 *** Availability
-- AutoCAD 2026: documented (Windows-only Express Tools; requires `(acet-load-expresstools)`).
-- BricsCAD V26: not documented.
-- Status: AutoCAD-only.
+- AutoCAD: documented on Windows, Mac OS and Web; measured on AutoCAD 2022.
+- BricsCAD: documented in V22; measured on BricsCAD V25 Windows.
+- Status: common to AutoCAD and BricsCAD.
 
 *** clautolisp
 clautolisp implements `acad_strlsort` as a pure, host-independent
-builtin (the Express Tools function is otherwise Windows-only). This
+builtin. This
 note records the concrete headless behaviour; it is not normative for
 the vendor function.
 
@@ -76374,18 +76381,21 @@ the vendor function.
   This mirrors the Express Tools byte-ordinal sort over the active
   ANSI code page (CP-1252 places the Latin-1 accented letters at
   0xC0–0xFF, i.e. after A–Z / a–z).
-- The list is gated by the `MAXSORT` system variable (whose
-  Read/Written-By list names `acad_strlsort`): a list longer than
-  `MAXSORT` (default 1000) returns nil, unsorted.
+- Case 0 (common behaviour): `MAXSORT` has no effect on this function.
+  AutoCAD 2022 and BricsCAD V25 Windows sort 204 strings with MAXSORT set
+  to 0, 1, 2, 200 or 1000 (native probes, 2026-10-16). The factory value
+  remains dialect-specific: 1000 for AutoCAD/clautolisp/lax, 200 for BricsCAD.
+  There is no portability warning for this shared operator.
 - Invalid input returns nil rather than raising: a non-list argument,
   an improper (dotted) list, `nil` / the empty list, or any non-string
   element all yield nil.
-- A live-CAD probe of the exact collation and failure modes is
-  pending (see `issues/closed/acad-strlsort-returns-nil.issue`); the
-  ordinal rule is the deterministic, spec-correct headless choice.
+- Exact non-ASCII collation and memory-exhaustion parity remain unprobed;
+  see `issues/open/deferred-spec-research.issue`. The MAXSORT independence
+  is verified by `probes/sources/probe-acad-strlsort-maxsort.lsp`.
 
 *** Source Notes
-- [acad_strlsort (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
+- [AutoCAD acad_strlsort](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-760DDC5B-9D89-4464-B695-9FCC963B5C12.htm)
+- [BricsCAD acad_strlsort](https://developer.bricsys.com/bricscad/help/en_US/V22/DevRef/source/acad_strlsort.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
 #+LATEX: \newpage
