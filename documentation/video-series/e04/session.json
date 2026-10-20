@@ -1,0 +1,82 @@
+{
+ "cmd": [
+  "/bin/bash",
+  "--norc",
+  "--noprofile"
+ ],
+ "cwd": "work",
+ "prompt": "\\$ ",
+ "rows": 28,
+ "cols": 100,
+ "steps": [
+  {
+   "type": "cat fact.lsp",
+   "after": 2.0
+  },
+  {
+   "type": "read-autolisp fact.lsp",
+   "after": 3.0
+  },
+  {
+   "type": "read-autolisp --canonical-case preserve fact.lsp",
+   "after": 3.0
+  },
+  {
+   "type": "clear",
+   "after": 0.5
+  },
+  {
+   "type": "cat jetons.lsp",
+   "after": 2.5
+  },
+  {
+   "type": "read-autolisp jetons.lsp",
+   "after": 3.0
+  },
+  {
+   "type": "read-autolisp --warn-on-integer-overflow jetons.lsp",
+   "after": 3.5
+  },
+  {
+   "type": "clear",
+   "after": 0.5
+  },
+  {
+   "type": "cat casse.lsp",
+   "after": 1.5
+  },
+  {
+   "type": "read-autolisp casse.lsp; echo $?",
+   "after": 3.5
+  },
+  {
+   "type": "clear",
+   "after": 0.5
+  },
+  {
+   "type": "file cp1252.lsp",
+   "after": 2.5
+  },
+  {
+   "type": "read-autolisp --external-format cp1252 cp1252.lsp",
+   "after": 3.0
+  },
+  {
+   "type": "clautolisp --autocad cp1252.lsp",
+   "after": 3.0
+  },
+  {
+   "type": "clautolisp --bricscad cp1252.lsp",
+   "after": 3.5
+  },
+  {
+   "type": "clautolisp --bricscad -Esource cp1252 cp1252.lsp",
+   "after": 3.0
+  },
+  {
+   "type": "exit",
+   "expect": "eof",
+   "after": 0
+  }
+ ]
+}

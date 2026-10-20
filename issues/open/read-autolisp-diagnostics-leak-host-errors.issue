@@ -1,0 +1,45 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: read-autolisp-diagnostics-leak-host-errors -- undecodable input prints an SBCL stream error; diagnostics name <source>, not the file
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-20
+
+* Symptom
+
+Found while preparing the E04 (read-autolisp) demo of the video series,
+on read-autolisp as installed by clautolisp 2.3.24:
+
+#+begin_example
+$ printf ';; cp1252\r\n(setq nom "R\xe9sum\xe9")\r\n' > cp1252.lsp
+$ read-autolisp cp1252.lsp
+ERROR: :UTF-8 stream decoding error on
+       #<SB-SYS:FD-STREAM for "file /.../cp1252.lsp" {10019D1D13}>:
+         the octet sequence #(233 115 117) cannot be decoded.
+$ read-autolisp --external-format bogus cp1252.lsp
+ERROR: Undefined external-format: :BOGUS
+$ printf '(setq x (+ 1 2)\n' > casse.lsp
+$ read-autolisp casse.lsp
+ERROR UNEXPECTED-EOF at <source>:2:1-2:1: Unexpected end of input inside list.
+#+end_example
+
+1. The first two print the host Lisp's condition text (an SBCL stream
+   object, an implementation keyword). clautolisp, on the same file,
+   answers =read error: bytes that are not valid in the source encoding
+   (choose the encoding with -Esource ENCODING)=.
+2. The reader diagnostic names =<source>= instead of =casse.lsp=: the
+   source name is not passed to the reader, so with several files on the
+   command line an error cannot be attributed.
+
+* To do
+
+- Failing tests first (tools/read-autolisp): a CP1252 file without
+  =--external-format= gets a one-line diagnostic naming the file and the
+  option to use, exit status 65; an unknown =--external-format= is a usage
+  error (64); the diagnostic span carries the file name.
+- Reuse the reader/CLI decoding-error path clautolisp already has rather
+  than a new message.
+- read-autolisp is a shipped program: bump it (AGENTS.md, "A changed
+  library is a changed program") and add a RELEASE_NOTES entry.

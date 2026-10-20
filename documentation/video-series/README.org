@@ -44,6 +44,7 @@ PATH=/opt/local/bin:$PATH AGG=path/to/agg \
 |---------+--------------------------------------------------------+----------|
 | E02     | REPL: arithmetic, lists, =load=, =defun=, =(quit N)=   | recorded |
 | E03     | dialects: one file under bricscad / autocad / strict   | recorded |
+| E04     | read-autolisp: case, tokens, errors, encodings         | recorded |
 
 E02 runs under =--dialect clautolisp=. Under the default =strict=
 dialect the same session prints two portability diagnostics -- an
@@ -59,3 +60,13 @@ portable rewrite with =sin= / =cos= runs clean under =--strict=. Then
 =--clautolisp=. The host profile is not shown: =ACADVER=, =PRODUCT= and
 =PLATFORM= read the same under every dialect, so there is nothing to see
 yet.
+
+E04 shows what the reader does before evaluation: symbols canonicalised
+to upper case (=--canonical-case preserve= keeps them), =2147483648= read
+as a real (=--warn-on-integer-overflow= says so), =0x10= read as a
+symbol, an unbalanced form reported with its position (exit status 65),
+and a CP1252 / CRLF file: read with =--external-format cp1252=, loaded
+as is under =--autocad=, refused under =--bricscad= until =-Esource
+cp1252=. Not shown: comments are not kept in read-autolisp's output, and
+a CP1252 file read without =--external-format= prints the host Lisp's
+stream error (=read-autolisp-diagnostics-leak-host-errors.issue=).
