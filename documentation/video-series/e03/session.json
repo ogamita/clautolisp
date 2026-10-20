@@ -1,0 +1,22 @@
+{
+ "cmd": ["/bin/bash", "--norc", "--noprofile"],
+ "cwd": "work",
+ "prompt": "\\$ ",
+ "rows": 28,
+ "cols": 100,
+ "steps": [
+  {"type": "clautolisp --list-dialects", "after": 3.0},
+  {"type": "clear", "after": 0.5},
+  {"type": "cat rampe.lsp", "after": 3.0},
+  {"type": "clautolisp --bricscad rampe.lsp", "after": 2.5},
+  {"type": "clautolisp --autocad rampe.lsp", "after": 3.0},
+  {"type": "clautolisp --strict rampe.lsp", "after": 3.0},
+  {"type": "clear", "after": 0.5},
+  {"type": "cat rampe-portable.lsp", "after": 3.0},
+  {"type": "clautolisp --strict rampe-portable.lsp", "after": 3.0},
+  {"type": "clear", "after": 0.5},
+  {"type": "clautolisp -x \"(quit 2)\"; echo $?", "after": 4.0},
+  {"type": "clautolisp --clautolisp -x \"(quit 2)\"; echo $?", "after": 3.0},
+  {"type": "exit", "expect": "eof", "after": 0}
+ ]
+}

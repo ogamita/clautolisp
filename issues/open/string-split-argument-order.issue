@@ -1,0 +1,40 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: string-split-argument-order -- STRING-SPLIT takes (separator string), the spec says (string delimiter)
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: builtin
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-20
+
+* Symptom
+
+Found while preparing the E03 (dialects) demo of the video series, on
+clautolisp 2.3.24:
+
+#+begin_example
+$ clautolisp --bricscad -x '(print (string-split "a,b,c" ","))'
+("" "")
+#+end_example
+
+The BricsCAD V26 DevRef, as recorded in autolisp-spec (Function Entry:
+STRING-SPLIT), gives the syntax =(string-split string delimiter)=; the
+expected result is =("a" "b" "c")=.
+
+* Cause
+
+=STRING-SPLIT= is registered on =builtin-vl-string-split=
+(=clautolisp/autolisp-builtins-core/source/api.lisp=), whose lambda list is
+=(separator source)= -- the order of BricsCAD's =VL-STRING-SPLIT=. The call
+above therefore splits ="," on any of "a,b,c"='s characters.
+
+* To do
+
+- Check the argument order of both =STRING-SPLIT= and =VL-STRING-SPLIT=
+  against the BricsCAD DevRef (and a vendor probe: =probes/sources/=) --
+  the comment in =builtin-vl-string-split= calls =string-split= an "ad-hoc
+  alias", which the spec contradicts.
+- Give =STRING-SPLIT= its own entry point with the documented order; add a
+  failing test first.
+- Whether a multi-character delimiter splits on the string or on each of
+  its characters is not documented: record it as SPEC-UNCERTAIN until probed.

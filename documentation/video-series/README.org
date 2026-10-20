@@ -43,9 +43,19 @@ PATH=/opt/local/bin:$PATH AGG=path/to/agg \
 | Episode | Demo                                                   | Status   |
 |---------+--------------------------------------------------------+----------|
 | E02     | REPL: arithmetic, lists, =load=, =defun=, =(quit N)=   | recorded |
+| E03     | dialects: one file under bricscad / autocad / strict   | recorded |
 
 E02 runs under =--dialect clautolisp=. Under the default =strict=
 dialect the same session prints two portability diagnostics -- an
 untrusted =LOAD= from the current directory (=[sec-untrusted-load]=) and
 =(quit N)= as a clautolisp extension (=[exit-status-extension]=). That is
 the faithful behaviour, and material for E03 (dialects).
+
+E03 shows the two kinds of diagnostic: =rampe.lsp= calls =TAN=, a
+BricsCAD-only operator -- silent under =--bricscad=, a =[vendor-operator]=
+warning under =--autocad= and =--strict=, same value everywhere; the
+portable rewrite with =sin= / =cos= runs clean under =--strict=. Then
+=(quit 2)=, a clautolisp extension, warns under =strict= and not under
+=--clautolisp=. The host profile is not shown: =ACADVER=, =PRODUCT= and
+=PLATFORM= read the same under every dialect, so there is nothing to see
+yet.
