@@ -1,0 +1,51 @@
+#+TITLE: clautolisp video series -- production pipeline
+
+Tooling for the Ogamita YouTube series /clautolisp -- du langage AutoLISP
+au CAD/ (13 episodes, E00 to E12). The episode plan and draft voice-over
+scripts build on [[file:../demonstration-script.org][demonstration-script.org]].
+
+* Layout
+
+- =type-session.py= -- drives an interactive program in a real pty and
+  types each command like a human (per-keystroke timing), copying the
+  child's output to stdout as it arrives.
+- =record-episode.sh EPISODE [OUTDIR]= -- records =EPISODE/session.json=
+  with =asciinema=, renders a GIF with =agg=, then an MP4 with =ffmpeg=.
+  Output goes to =out/= (ignored by git: rendered media are build
+  artefacts).
+- =eNN/session.json= -- the commands of one episode's demo; =eNN/work/=
+  -- the files the demo uses (its working directory).
+
+* Prerequisites
+
+The clautolisp programs, built with SBCL and the Debian-packaged Common
+Lisp libraries (no Quicklisp needed):
+
+#+begin_src sh
+apt-get install -y sbcl make git curl ffmpeg asciinema python3-pexpect \
+    cl-asdf cl-babel cl-bordeaux-threads cl-cffi cl-fiveam cl-quicklisp \
+    cl-trivial-gray-streams cl-usocket
+make install-programs PREFIX=/opt/local
+#+end_src
+
+=agg= is not packaged; take the static binary from its releases
+(=agg-x86_64-unknown-linux-gnu=, v1.5.0) and point =AGG= at it.
+
+* Recording an episode
+
+#+begin_src sh
+PATH=/opt/local/bin:$PATH AGG=path/to/agg \
+    documentation/video-series/record-episode.sh e02
+#+end_src
+
+* Episodes
+
+| Episode | Demo                                                   | Status   |
+|---------+--------------------------------------------------------+----------|
+| E02     | REPL: arithmetic, lists, =load=, =defun=, =(quit N)=   | recorded |
+
+E02 runs under =--dialect clautolisp=. Under the default =strict=
+dialect the same session prints two portability diagnostics -- an
+untrusted =LOAD= from the current directory (=[sec-untrusted-load]=) and
+=(quit N)= as a clautolisp extension (=[exit-status-extension]=). That is
+the faithful behaviour, and material for E03 (dialects).

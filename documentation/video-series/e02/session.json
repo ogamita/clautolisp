@@ -1,0 +1,54 @@
+{
+ "cmd": [
+  "/bin/bash",
+  "--norc",
+  "--noprofile"
+ ],
+ "cwd": "work",
+ "prompt": "\\$ ",
+ "rows": 24,
+ "cols": 90,
+ "steps": [
+  {
+   "type": "cat fact.lsp",
+   "after": 2.5
+  },
+  {
+   "type": "clautolisp --dialect clautolisp",
+   "expect": "_\\$ ",
+   "after": 2.0
+  },
+  {
+   "type": "(+ 1 2 3)"
+  },
+  {
+   "type": "(list 1 2 \"trois\")"
+  },
+  {
+   "type": "(mapcar (quote 1+) (list 10 20 30))"
+  },
+  {
+   "type": "(load \"fact.lsp\")"
+  },
+  {
+   "type": "(fact 5)"
+  },
+  {
+   "type": "(fact 10)",
+   "after": 2.0
+  },
+  {
+   "type": "(quit 3)",
+   "after": 1.0
+  },
+  {
+   "type": "echo $?",
+   "after": 2.5
+  },
+  {
+   "type": "exit",
+   "expect": "eof",
+   "after": 0
+  }
+ ]
+}
