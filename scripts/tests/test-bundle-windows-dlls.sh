@@ -14,6 +14,7 @@ printf '%s\n' "$DLL_TEST_WORK/system"
 SH
 cat > "$work/tools/objdump" <<'SH'
 #!/bin/sh
+if [ "$(head -c 2 "$2")" = '#!' ]; then exit 9; fi
 cat "$2"
 SH
 cat > "$work/tools/pacman" <<'SH'
@@ -29,6 +30,7 @@ chmod +x "$work/tools/"*
 export PATH="$work/tools:$work/search:$PATH"
 export OBJDUMP="$work/tools/objdump"
 printf ' DLL Name: first.dll\n DLL Name: KERNEL32.dll\n DLL Name: api-ms-win-test.dll\n' > "$work/stage with spaces/bin/program.exe"
+printf '#!/bin/sh\nexit 0\n' > "$work/stage with spaces/bin/helper.exe"
 printf ' DLL Name: second.dll\n' > "$work/search/first.dll"
 printf ' DLL Name: first.dll\n' > "$work/search/second.dll"
 bash "$root/scripts/bundle-windows-dlls.sh" "$work/stage with spaces" "$work/stage with spaces/dispatch"
@@ -43,7 +45,7 @@ fi
 grep -q 'Missing runtime DLL:.*missing-required.dll' "$work/error"
 printf ' DLL Name: msys-2.0.dll\n' > "$work/stage with spaces/bin/program.exe"
 if bash "$root/scripts/bundle-windows-dlls.sh" "$work/stage with spaces" > "$work/error" 2>&1; then
-    echo 'FAIL: MSYS runtime accepted'; exit 1
+    cat "$work/error"; echo 'FAIL: MSYS runtime accepted'; exit 1
 fi
 grep -q 'Non-native Windows dependency' "$work/error"
 printf ' DLL Name: unlicensed.dll\n' > "$work/stage with spaces/bin/program.exe"

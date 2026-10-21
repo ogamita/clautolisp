@@ -68,5 +68,8 @@ bundle() {
 }
 
 while IFS= read -r -d '' binary; do
+    # Existing install rules also suffix shell helpers with .exe on Windows.
+    # They have no PE imports; malformed native images must still fail above.
+    if [[ $(head -c 2 "$binary") == '#!' ]]; then continue; fi
     bundle "$binary" "$(dirname "$binary")"
 done < <(find "$stage" -type f \( -iname '*.exe' -o -iname '*.dll' \) -print0)
