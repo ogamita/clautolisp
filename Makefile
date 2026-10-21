@@ -384,7 +384,11 @@ check-libredwg-release:  ## Fail if clautolisp/third-party/libredwg.release disa
 check-libredwg-stable-release:  ## Ask GitHub whether LibreDWG has a newer STABLE release than the one we follow (network; manual/periodic).
 	python3 scripts/check-libredwg-stable-release.py
 
-check-release: check-embedded-engine-version check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep check-libredwg-release  ## Every release-packaging check.
+.PHONY: check-windows-runtime-dlls
+check-windows-runtime-dlls:  ## Test recursive Windows runtime DLL staging and missing-import failures.
+	bash scripts/tests/test-bundle-windows-dlls.sh
+
+check-release: check-windows-runtime-dlls check-embedded-engine-version check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep check-libredwg-release  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
 # (no PowerShell, pjb 2026-08-16: do not install it). A container gives the
@@ -890,6 +894,7 @@ stage-programs: build-programs  ## Build the programs and stage them (bin/, libe
 	"$(MAKE)" -C autolisp-front-end install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" INSTALL_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
 	"$(MAKE)" -C autolisp-benchmark install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" INSTALL_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
 	@$(call dispatch-layout,$(STAGE_PROGRAMS))
+	@if [ "$(REL_OS)" = windows ]; then bash scripts/bundle-windows-dlls.sh "$(STAGE_PROGRAMS)"; fi
 	@$(call stage-manifest,$(STAGE_PROGRAMS),programs)
 	@echo "staged: $(STAGE_PROGRAMS)"
 
@@ -897,6 +902,7 @@ stage-libraries: build-libraries  ## Build the native libraries and stage them w
 	rm -rf "$(STAGE_LIBRARIES)"
 	install -d "$(STAGE_LIBRARIES)"
 	"$(MAKE)" -C clautolisp         install-libraries PREFIX= DESTDIR="$(STAGE_LIBRARIES)" $(LISP_VARS)
+	@if [ "$(REL_OS)" = windows ]; then bash scripts/bundle-windows-dlls.sh "$(STAGE_LIBRARIES)" "$(STAGE_LIBRARIES)/libexec/clautolisp/binaries/$(REL_OS)/$(REL_ARCH)"; fi
 	@$(call stage-manifest,$(STAGE_LIBRARIES),libraries)
 	@echo "staged: $(STAGE_LIBRARIES)"
 

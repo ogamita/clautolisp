@@ -22,6 +22,18 @@ clautolisp-specific operators that go beyond that spec are listed in
 Operators" and in ~clautolisp/documentation/user-manual.org~
 §"clautolisp Extensions"; they are not redefined here either.
 
+* Windows delivery
+
+The Windows release must run with only Windows system directories on PATH,
+without HOME or an installed Common Lisp or MSYS2 runtime. Non-system PE
+imports must be collected recursively at staging time, including dependencies
+of the native DWG libraries. Dependencies required by dynamically loaded
+libraries must also be adjacent to the dispatch executables. Each bundled
+third-party runtime carries its package version and license notices.
+Unresolved imports and imports of the MSYS/Cygwin runtime fail staging.
+The release acceptance test extracts both archives into a relocated prefix
+with spaces and checks all launchers, Windows-home init loading and DWG save.
+
 * Synopsis
 #+BEGIN_EXAMPLE
 #+TEXINFO_FILENAME: clautolisp-specifications.info

@@ -87,6 +87,7 @@ command -v zip  >/dev/null 2>&1 || {
 }
 
 echo "--- build"
+make check-windows-runtime-dlls
 make build-libraries
 make build-programs
 
@@ -101,3 +102,13 @@ ls -l dist
 # one definition, in the Makefile -- so Windows cannot drift from the
 # others, and it checks the artefacts are non-empty, not merely present.
 make verify-release-artefacts
+
+# Exercise the ZIPs themselves, outside MSYS2's runtime environment.
+set -- dist/clautolisp-*-binaries-windows-*.zip
+binaries=$1
+set -- dist/clautolisp-*-libraries-windows-*.zip
+libraries=$1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File \
+    "$(cygpath -w scripts/test-windows-release.ps1)" \
+    -BinariesArchive "$(cygpath -w "$binaries")" \
+    -LibrariesArchive "$(cygpath -w "$libraries")"

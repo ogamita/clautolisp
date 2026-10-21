@@ -43,6 +43,30 @@ Both binaries are produced under
 surface. The rest of this manual treats them interchangeably and
 refers to the binary as ~clautolisp~.
 
+* Windows release installation
+
+Extract the Windows binaries and libraries archives into the same directory.
+Use =bin/clautolisp.cmd=, =bin/alfe.cmd= and =bin/read-autolisp.cmd= from
+PowerShell or Command Prompt. MSYS2 and a separate Common Lisp installation
+are not required to run these releases. Keep the directory tree intact:
+the executables carry their non-system runtime DLLs beside them, including
+the dependencies needed by the native DWG codec. Third-party notices and
+package versions are under =share/doc/clautolisp/runtime-licenses/=.
+
+User init files such as =~/.autolisp= use the runtime's home directory.
+For the Windows SBCL release, =HOME= overrides the Windows user profile;
+with =HOME= unset, the Windows user home is used. There is no fallback to
+another home merely because an init file is absent. To persistently select
+the Windows user profile from PowerShell:
+
+#+begin_src powershell
+[Environment]::SetEnvironmentVariable('HOME', $env:USERPROFILE, 'User')
+$env:HOME = $env:USERPROFILE
+#+end_src
+
+The first command affects future sessions; the second affects the current
+session and programs launched from it.
+
 * Modes of Operation
 ~clautolisp~ has three mutually exclusive modes; the mode is
 determined by the operands. In every mode the runtime installs the

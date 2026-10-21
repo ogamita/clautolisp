@@ -38,6 +38,10 @@ refactors with no user-visible effect do not require an entry.
 
 * clautolisp / read-autolisp (=clautolisp/documentation/clautolisp-user-manual.org=)
 
+- Windows releases bundle recursive non-system DLL dependencies and their
+  license notices, so startup and DWG saves work without MSYS2 on PATH.
+  See the user manual, /Windows release installation/.
+
 - =ACAD_STRLSORT= sorts complete catalogues independently of =MAXSORT= and no
   longer warns under BricsCAD. MAXSORT defaults remain 200 for BricsCAD and
   1000 for AutoCAD/clautolisp/lax; see the manual, /Dialect/.
