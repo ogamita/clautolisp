@@ -38,7 +38,7 @@ if [ -e dist ] && ! rm -rf dist; then
     echo "       outlived its job (accoreconsole/acad/bricscad). Check with:"
     echo "         Get-Process acad,accoreconsole,bricscad -ErrorAction SilentlyContinue"
     echo "       and stop it before retrying. See"
-    echo "       issues/open/cad-runner-wedged-by-modal-dialog.issue"
+    echo "       issues/closed/cad-runner-wedged-by-modal-dialog.issue"
     exit 1
 fi
 

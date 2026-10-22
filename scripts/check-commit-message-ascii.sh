@@ -63,7 +63,7 @@ of em dashes, "section 11" instead of a section sign, straight quotes, no
 backticks. The Windows runner's PowerShell executor turns CI_COMMIT_MESSAGE
 into code and fails to parse it, killing the job before it clones (and, once,
 running its script in the runner's own directory instead).
-See issues/open/windows-runner-commit-message-breaks-powershell.issue --
+See issues/closed/windows-runner-commit-message-breaks-powershell.issue --
 the real fix is the runner version, this is the rule until then.
 EOF
     exit 1

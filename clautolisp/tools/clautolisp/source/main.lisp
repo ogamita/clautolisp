@@ -857,7 +857,7 @@ not supplied)."
 ;;; --- the AUTOLISP interactor: REPL comma-commands -----------------------
 ;;;
 ;;; The Lisp REPL is the bottom interactor (interactors design,
-;;; issues/open/interactor-unification.issue): its reader takes a line
+;;; issues/closed/interactor-unification.issue): its reader takes a line
 ;;; starting with a comma as a command — `,date', `,quit' — and anything
 ;;; else as AutoLISP source. The comma keeps command names out of the
 ;;; expression namespace (at a toplevel read it is unambiguous: no
@@ -2310,7 +2310,7 @@ paths against the build directory rather than the directory the user
 launched it from. Re-reading the cwd here — and keeping Common Lisp's
 `*default-pathname-defaults*` in agreement — makes a relative path
 resolve against the live cwd / $PWD, matching POSIX and the CAD hosts.
-See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
+See issues/closed/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
   ;; The cwd sync AND the run-frame classification, from the runtime, so
   ;; that an EMBEDDER gets the same startup as this tool. They were both
   ;; written out here, and alfe copied only the first half — which is how

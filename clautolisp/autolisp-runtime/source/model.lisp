@@ -209,7 +209,7 @@ clautolisp-secureload-trust-model spec.")
   ;; via (autolisp-set-status N) and that (quit) — and the CLI's normal
   ;; end-of-run — pick up. Defaults to 0 (success). Mirrors the CAD-side
   ;; alfe `autolisp-set-status` bootstrap so a single C:MAIN is portable.
-  ;; See issues/open/autolisp-set-status-and-quit-status.issue.
+  ;; See issues/closed/autolisp-set-status-and-quit-status.issue.
   (exit-status 0 :type integer)
   current-document
   ;; The host document a lifecycle command (NEW / OPEN / Documents.Add ...)

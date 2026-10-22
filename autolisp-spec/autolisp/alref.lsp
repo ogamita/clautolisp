@@ -230,7 +230,7 @@ host cannot enumerate them. Uses the clautolisp extension
 CLAL-SYSVAR-APROPOS when present (probed with boundp, the CLAL-
 convention — autolisp-spec ch.16); AutoCAD / BricsCAD expose no
 sysvar enumeration, so there the sysvar pass contributes nothing
-(issues/open/alref-sysvars.issue).|;
+(issues/closed/alref-sysvars.issue).|;
 (defun alref-sysvar-names-matching (pattern / acc name)
   (setq acc nil)
   (if (boundp 'clal-sysvar-apropos)

@@ -469,7 +469,7 @@ left the last member in it.
 Both now call BIND-FOREACH-VARIABLE. What this pins is the AGREEMENT
 between the two loops, which is what the fix actually claims; vendor
 evidence for VLAX-FOR specifically does not exist and is
-issues/open/vlax-for-binding-rule-unprobed.issue."
+issues/closed/vlax-for-binding-rule-unprobed.issue."
   ;; BOTH PATHS, EXPLICITLY, and that is not belt-and-braces: the first
   ;; version of this test asserted the rule with the suite's own
   ;; settings, which compile a body eagerly -- so it exercised only the

@@ -539,7 +539,7 @@ separate binary for tool integrators.
   does not resolve, so a drawing read, modified and written back as DWG
   used to come back without the entities that had been added to it,
   reporting success. A drawing built entirely in a session is still
-  affected (=issues/open/dwg-round-trip-loses-entities.issue=).
+  affected (=issues/closed/dwg-round-trip-loses-entities.issue=).
 - *Saving a drawing as DWG works from a clautolisp session.* Two defects
   in the DXF header the DWG writer hands to libredwg made every such save
   fail: =$ACADVER= was written twice — once as the file-format version
@@ -550,7 +550,7 @@ separate binary for tool integrators.
   because its variables come from the file. The failure now also names
   libredwg's own error, e.g. =DWG_ERR_INVALIDDWG (code 2048)=, instead of
   a bare number. Note that entities do not yet survive a DWG round trip
-  (=issues/open/dwg-round-trip-loses-entities.issue=).
+  (=issues/closed/dwg-round-trip-loses-entities.issue=).
 - *The standalone program carries the DWG codec, and finds its native
   libraries beside itself.* An installation that contained
   =lib/clautolisp/<os>/<arch>/clal_dwg.*= still answered "no writer codec
@@ -762,7 +762,7 @@ separate binary for tool integrators.
   the environment variable of the same name; shared by ~--host cador~ and
   ~--host cadtui~. The version axis is recorded on the drawing but the
   DXF/DWG writers still emit a fixed version
-  (~issues/open/drawing-codec-version-output.issue~). Documented in the
+  (~issues/closed/drawing-codec-version-output.issue~). Documented in the
   autolisp-spec §§ /SAVEFORMAT/ and /CLAUTOLISPDEFAULTDRAWINGFORMAT/ and the
   clautolisp user manual (/Environment variables/, /Host backend/);
   ~issues/closed/saveformat-default-drawing-format.issue~.
@@ -823,7 +823,7 @@ separate binary for tool integrators.
 - ~(setq *AUTOLISP-DIALECT* 'DIALECT)~ switches the dialect live: the
   REPL reader and the debugger's / inspector's form reads consult the
   variable at each read (one shared reader entry,
-  ~issues/open/interactor-design-revision.issue~ D2), so a mid-session
+  ~issues/closed/interactor-design-revision.issue~ D2), so a mid-session
   switch takes effect on the very next line.
 - Predefined variables: the three the spec classifies as such are bound
   at startup — ~pi~ (the real 3.141592653589793, so ~(* 2 pi r)~ /
@@ -908,7 +908,7 @@ separate binary for tool integrators.
   BricsCAD. Other dialects keep the full AutoCAD-derived catalogue.
   Engine identity (~PROGRAM~ / ~ACADVER~ / …) and the dynamic codepage
   sysvars are unaffected. See
-  ~issues/open/bricscad-dialect-sysvar-parity.issue~.
+  ~issues/closed/bricscad-dialect-sysvar-parity.issue~.
 - Under ~--bricscad~, 43 shared variables report BricsCAD's factory
   default instead of AutoCAD's — ~PICKBOX~ 4, ~OSMODE~ 4135, ~MAXSORT~
   200, ~DRAGP1~ 10, ~FONTMAP~ "default.fmp", … — each measured on a
@@ -947,7 +947,7 @@ separate binary for tool integrators.
 - Optional warning→error escalation via the dialect
   ~:portability-warning-mode :error~ knob (default ~:warn~), mirroring
   ~:unbound-variable-mode :strict-error~; off unless opted in.
-  See ~issues/open/clautolisp-dialect-portability-warnings.issue~.
+  See ~issues/closed/clautolisp-dialect-portability-warnings.issue~.
 - One knowledge base. Every portability decision now comes from a
   single catalogue
   (~clautolisp/autolisp-runtime/source/portability.lisp~) instead of
@@ -1339,7 +1339,7 @@ separate binary for tool integrators.
   (the interactor framework): user commands live in a separate dictionary
   layered over it, so they can shadow any built-in.
 - One AutoLISP registration API for every interaction mode
-  (~issues/open/interactor-design-revision.issue~ D6/D7):
+  (~issues/closed/interactor-design-revision.issue~ D6/D7):
   =(clal-define-command "INTERACTOR" NAMES FN [DOC])= registers a user
   command of the named interactor's user dictionary —
   =(clal-list-interactor-names)= lists the valid names (=ALDO=, =NAVI=,
@@ -1389,7 +1389,7 @@ separate binary for tool integrators.
   variables silently resolved to stale outer values from then on (the
   reported infinite =fact= recursion). The frame push/pop now pairs
   exactly.
-- One loop for every interaction mode (=issues/open/interactor-unification.issue=):
+- One loop for every interaction mode (=issues/closed/interactor-unification.issue=):
   the debugger prompt, the form navigator, the line navigator, the
   inspector and the REPL all run on the interactor framework's single
   INTERACTOR-LOOP, with their vocabularies as stacked command
@@ -1417,7 +1417,7 @@ separate binary for tool integrators.
 - Setting a breakpoint twice on one poll-point is idempotent — one breakpoint,
   one decoration ("already set" on the repeat). See the three
   =issues/open/bug-aldo-*= tickets.
-- *Debugger CLI options* (=issues/open/debugger-public-interface-and-on-error.issue=
+- *Debugger CLI options* (=issues/closed/debugger-public-interface-and-on-error.issue=
   Parts B-D; user manual § /Options / Debugger (aldo)/): the three event
   policies =--on-error quit|debug|ignore= (default: =debug= at the
   interactive REPL, =quit= in batch), =--on-interrupt debug|ignore|quit=
@@ -1508,7 +1508,7 @@ separate binary for tool integrators.
   live application object whose ~ActiveDocument~ resolves — so
   ~(vla-get-activedocument (vlax-get-acad-object))~ works headless on
   ~--host mock~. See the user manual § /Host backend / The ActiveX / COM
-  object model/ and ~issues/open/vla-accessor-family.issue~.
+  object model/ and ~issues/closed/vla-accessor-family.issue~.
 - ActiveX ~vlax-*~ primitives are being promoted from nil-stubs to real
   implementations behind the same headless-CAD host. Point / matrix
   builders ~vlax-2d-point~, ~vlax-3d-point~ (Z defaults 0.0),
@@ -1539,7 +1539,7 @@ separate binary for tool integrators.
   straight-segment LWPOLYLINE / POLYLINE. ELLIPSE, SPLINE and the arc
   segments of a bulged polyline are not yet evaluated (they return nil,
   the documented failure value) — see the SPEC-UNCERTAIN notes in
-  ~issues/open/vla-accessor-family.issue~.
+  ~issues/closed/vla-accessor-family.issue~.
 - Collection iteration: ~vlax-for~ (a special form) and
   ~vlax-map-collection~ iterate an ActiveX collection, binding / applying
   to each member. With this, *every* ~vlax-*~ operator is now a real
@@ -1556,7 +1556,7 @@ separate binary for tool integrators.
   refuse). Fixes the SCHMS CAD suite's "AutoCAD.Document has no
   property named BLOCKS" failure on ~--host mock~. See the user manual
   § /Host backend / The ActiveX / COM object model/ and
-  ~issues/open/vla-accessor-family.issue~.
+  ~issues/closed/vla-accessor-family.issue~.
 - Layer, linetype and document object model (SCHME+ A1): an
   ~AutoCAD.Layer~ carries read/write ~Color~ and ~Linetype~ backed by
   the layer table record's DXF groups 62 / 6 — so ~tblsearch~,
@@ -1592,7 +1592,7 @@ separate binary for tool integrators.
   ~TextAlignmentPoint~ as VARIANT-wrapped double SAFEARRAYs
   (consumable by ~vlax-variant-value~ + ~vlax-safearray->list~, and
   writable from ~vlax-3d-point~ or a plain point list). See
-  ~issues/open/vla-entity-property-bridge.issue~.
+  ~issues/closed/vla-entity-property-bridge.issue~.
 - Block references end-to-end: ~InsertBlock~ on a space / block
   collection creates the INSERT — instantiating an ATTRIB (translated,
   scaled, rotated to the placement) per non-constant ATTDEF of the

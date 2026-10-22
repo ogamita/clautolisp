@@ -333,7 +333,7 @@ command below is these same commands, presented at a stop.
   closing a debug session. clautolisp assumes it is *always* debugging: when
   the AutoLISP system boots, the *aldo debugger thread is started right away
   and stays ready* for the lifetime of the process (see the architecture in
-  =issues/open/debugger-public-interface-and-on-error.issue= and the
+  =issues/closed/debugger-public-interface-and-on-error.issue= and the
   sequence diagram =clautolisp/documentation/aldo-architecture.png= /
   =aldo-debugger-interaction.puml=). gdb's =run= — launch the program under
   the debugger — has no analogue: the program is *already* running under
@@ -1013,7 +1013,7 @@ debugging disabled.
 - The *only* use of OS threads inside clautolisp is an implementation
   technicality — the aldo debugger runs in its own thread, alternating with
   the single main (debuggee) thread through a mutex (see the architecture in
-  =issues/open/debugger-public-interface-and-on-error.issue=). That is
+  =issues/closed/debugger-public-interface-and-on-error.issue=). That is
   invisible to the AutoLISP programmer: it is not an addressable "thread" to
   list or select, just the mechanism by which the one debuggee is paused and
   resumed. There is one debuggee, hence no per-thread breakpoints and no

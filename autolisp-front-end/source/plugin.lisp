@@ -7,7 +7,7 @@
 ;;;; (plugins/epure/, plugins/epuree/).
 ;;;;
 ;;;; Specified by documentation/alfe--specifications.org, chapter
-;;;; "Plug-ins", and by ../issues/open/alfe-plugin-model.issue (the epic)
+;;;; "Plug-ins", and by ../issues/closed/alfe-plugin-model.issue (the epic)
 ;;;; and its sub-issues alfe-plugin-{loader,options,hooks}.
 ;;;;
 ;;;; The file has five parts:

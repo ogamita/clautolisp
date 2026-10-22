@@ -199,7 +199,7 @@ doesn't load autolisp-builtins-core) so test snippets can use
      (intern-autolisp-symbol "LIST") list-subr)))
 
 (test function-of-lambda-via-parameter-resolves-to-lambda
-  "Regression for issues/open/function-value.issue. A parameter
+  "Regression for issues/closed/function-value.issue. A parameter
 bound to `(function (lambda …))' — i.e. an unevaluated lambda-form
 list, per the spec's FUNCTION ≡ QUOTE equivalence — must be
 callable in operator position. Before the fix, lookup-function
@@ -244,7 +244,7 @@ than (EXPECTED …)."
 
 ;;;; ----- M1 special operators: SET, TRACE, UNTRACE -----
 
-;;; --- Variadic functions via `&' (issues/open/variadic-functions.issue) ---
+;;; --- Variadic functions via `&' (issues/closed/variadic-functions.issue) ---
 
 (test defun-ampersand-rest-binds-list-of-extra-args
   "(defun foo (a & rest) ...) binds REST to the list of arguments
@@ -1648,7 +1648,7 @@ still binds it exactly once, and one POP will release it once."
 ;;;; agrees with AutoCAD on every case here. It could not answer before
 ;;;; that: it refused to LOAD the probe file, silently, for reasons that
 ;;;; had nothing to do with the question -- see
-;;;; issues/open/bricscad-refuses-to-load-what-it-will-run.issue. So the
+;;;; issues/closed/bricscad-refuses-to-load-what-it-will-run.issue. So the
 ;;;; rule below is now measured against BOTH vendors, not one.
 ;;;;
 ;;;; These tests exist because the change passed all 31 suites in both
@@ -1700,7 +1700,7 @@ clautolisp follows AutoCAD and the specification. Adopting one vendor's
 undocumented quirk as the default of a dialect-neutral implementation
 would be backwards; if it should hold under --dialect bricscad, that is
 a decision and it has a ticket:
-issues/open/foreach-empty-body-return-diverges.issue.
+issues/closed/foreach-empty-body-return-diverges.issue.
 
 An empty loop body is NOT exotic here -- `(while (setq i (cdr i)))' is
 how AutoLISP drains a list, and the same shape broke this compiler once

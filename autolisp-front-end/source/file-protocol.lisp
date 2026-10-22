@@ -3,7 +3,7 @@
 ;;;; alfe.protocol.file — the file-IPC driver shared by the BricsCAD
 ;;;; and AutoCAD backends. Phase 2 of the alfe rollout.
 ;;;;
-;;;; Specified by ../issues/open/alfe-file-protocol.issue and by
+;;;; Specified by ../issues/closed/alfe-file-protocol.issue and by
 ;;;; documentation/alfe--specifications.org sections "Protocole REPL
 ;;;; distant" and "Contrat AutoLISP côté runtime".
 ;;;;

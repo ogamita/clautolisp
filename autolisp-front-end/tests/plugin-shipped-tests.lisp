@@ -12,7 +12,7 @@
 ;;;; VBScript bridges, its refusals — under *HOST-OS-OVERRIDE* :windows, with
 ;;;; a fake CAD executable and --print-command's launcher seam. Whether the
 ;;;; real CADs then do what those lines ask is the business of
-;;;; issues/open/alfe-plugin-epure-windows-validation.issue.
+;;;; issues/closed/alfe-plugin-epure-windows-validation.issue.
 
 ;;; --- helpers -----------------------------------------------------------
 

@@ -999,7 +999,7 @@ explicitly.~%"))
 ;;; process-exit-status channel that mirrors the alfe CAD bootstrap
 ;;; `autolisp-set-status`, so a single C:MAIN reports pass/fail
 ;;; identically under BricsCAD, AutoCAD and clautolisp without engine
-;;; branches. See issues/open/autolisp-set-status-and-quit-status.issue.
+;;; branches. See issues/closed/autolisp-set-status-and-quit-status.issue.
 ;;;
 ;;; These are clautolisp extensions: silent under --clautolisp / --lax,
 ;;; and — only when the STATUS argument is actually supplied — flagged
@@ -3415,7 +3415,7 @@ BEHAVIOR is :skip (skip the comment, return the following object --
 clautolisp's own uniform, lenient choice) or :nil (return NIL
 immediately, matching a real vendor engine exactly).
 
-The matrix (issues/open/read-string-does-not-skip-comments.issue,
+The matrix (issues/closed/read-string-does-not-skip-comments.issue,
 confirmed live against both vendors):
 
   bricscad          -- :nil,  warn -- for BOTH kinds (real BricsCAD
@@ -3447,7 +3447,7 @@ confirmed live against both vendors):
 portability warning (autolisp-spec ch.25) -- READ was given a string
 whose first non-blank content is a `;' (COMMENT-KIND :line) or
 `;| ... |;' (COMMENT-KIND :block) comment. See
-issues/open/read-string-does-not-skip-comments.issue for the full
+issues/closed/read-string-does-not-skip-comments.issue for the full
 vendor matrix this reports.
 
 Not deduplicated: unlike a DEFUN/LAMBDA lambda-list, a READ call has no
@@ -4974,7 +4974,7 @@ Companion to %HOST-SYSVAR-STRING."
   ;; (snvalid STRING [FLAG]) -> T when STRING is a valid symbol-table
   ;; name, nil otherwise. The rules track the EXTNAMES sysvar (see the
   ;; SNVALID / EXTNAMES entries in the spec, and
-  ;; issues/open/system-variables.issue "Coupling"):
+  ;; issues/closed/system-variables.issue "Coupling"):
   ;;   EXTNAMES = 1 (default): extended naming — every character is
   ;;     accepted except the reserved set  < > / \ " : ? * | , = ` ;
   ;;     (spaces ARE allowed); FLAG with the 1 bit set additionally
@@ -7416,7 +7416,7 @@ string, matched case-insensitively:
                         is OS-dependent — the .arx / .brx slot.
 
 Signals :invalid-module-kind on any other KIND. See
-issues/open/clautolisp-module-app-extensions.issue."
+issues/closed/clautolisp-module-app-extensions.issue."
   (let ((k (string-downcase
             (autolisp-string-value
              (require-string kind "CLAL-MODULE-EXTENSION")))))

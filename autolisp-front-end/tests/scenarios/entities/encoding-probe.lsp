@@ -4,7 +4,7 @@
 ;;;; whatever target runs it (clautolisp / BricsCAD / accoreconsole, on
 ;;;; macOS / Windows / Linux) and REPORTS the exhibited bytes, so the
 ;;;; encoding-situations §7 defaults table can be filled from real runs
-;;;; (see issues/open/encoding-situations-cli-options.issue and
+;;;; (see issues/closed/encoding-situations-cli-options.issue and
 ;;;; encoding-consolidation.issue). The vendor harness archives its output.
 ;;;;
 ;;;; The SOURCE is pure ASCII: every non-ASCII test character is built with

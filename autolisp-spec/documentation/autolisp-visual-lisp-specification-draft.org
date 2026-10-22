@@ -927,7 +927,7 @@ Malformed syntax is erroneous.
 *** Compatibility
 This differs from Common Lisp `and`, which returns the value of the last subexpression when every test is true. AutoLISP `and` returns only `T` or `nil`. Confirmed against BricsCAD V26 by direct citation: the BricsCAD V26 `and` reference page documents the return as "T if all provided arguments evaluate as non-NIL; otherwise NIL". Because the truthy value does not flow through, `(and test expr)` is *not* a value-returning `when`: `(setq r (and ok (compute)))` stores `T`, not the computed value. Portable AutoLISP code that needs the computed value must use an explicit conditional, e.g. `(if ok (setq r (compute)))`.
 
-AutoLISP `and` and `or` are together the boolean special forms: both return only `T` or `nil` and neither returns a subexpression value, so neither can serve as Common Lisp `when` / `or-else` / `unless`. See "Special Form Entry: OR" for the companion rule, and issues/open/autolisp-spec-questions.issue ("AND, OR").
+AutoLISP `and` and `or` are together the boolean special forms: both return only `T` or `nil` and neither returns a subexpression value, so neither can serve as Common Lisp `when` / `or-else` / `unless`. See "Special Form Entry: OR" for the companion rule, and issues/closed/autolisp-spec-questions.issue ("AND, OR").
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -1191,7 +1191,7 @@ not portable. An empty list returns `nil` under every dialect — the
 hosts agree there, so nothing diverges and nothing warns. Implemented in
 ~clautolisp/autolisp-runtime/source/api.lisp~ (FOREACH-EMPTY-BODY-RESULT),
 called by both the interpreter and the compiler so the two cannot drift;
-see ~issues/open/foreach-empty-body-return-diverges.issue~.
+see ~issues/closed/foreach-empty-body-return-diverges.issue~.
 
 *** Side Effects
 Side effects are those of:
@@ -1248,7 +1248,7 @@ Expressions not reached because of short-circuiting are not evaluated and have n
 *** Compatibility
 This differs from Common Lisp `or`, which returns the first non-`nil` value. AutoLISP `or` returns only `T` or `nil`. Confirmed against BricsCAD V26 by direct citation: the BricsCAD V26 `or` reference page documents the return as "T if any provided argument evaluates as non-NIL; if all provided arguments evaluate as NIL, or if no argument is provided, NIL is returned" with examples `(or 123 nil) -> T`. Idioms ported from Common Lisp such as `(setq x (or x default))` *clobber* `x` with `T` rather than preserving the existing value; portable AutoLISP code must use `(if (not x) (setq x default))` instead.
 
-AutoLISP `and` and `or` are together the boolean special forms: both return only `T` or `nil` and neither returns a subexpression value, so neither can serve as Common Lisp `when` / `or-else` / `unless`. See "Special Form Entry: AND" for the companion rule, and issues/open/autolisp-spec-questions.issue ("AND, OR").
+AutoLISP `and` and `or` are together the boolean special forms: both return only `T` or `nil` and neither returns a subexpression value, so neither can serve as Common Lisp `when` / `or-else` / `unless`. See "Special Form Entry: AND" for the companion rule, and issues/closed/autolisp-spec-questions.issue ("AND, OR").
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -7390,7 +7390,7 @@ character read from disk) follows from them.
   representation per character. clautolisp already guarantees this; BricsCAD's
   native ~chr~ is correct (~(chr 233)~ = é) but a *file* char decoded with the
   wrong codec is not, so the two diverge — a front-end/host contract, not a
-  ~chr~ bug. See ~issues/open/cad-chr-vs-loaded-encoding.issue~.
+  ~chr~ bug. See ~issues/closed/cad-chr-vs-loaded-encoding.issue~.
 - *alfe consequence* — because ~load~ takes no encoding and ~SYSCODEPAGE~ is
   not settable, a ~-Esource ENC~ whose ~ENC~ is neither the host
   ~SYSCODEPAGE~ nor a BOM'd UTF-8/UTF-16 must be **converted before the CAD
@@ -8760,7 +8760,7 @@ ch. 25) wherever the effective behavior is a hazard on a real engine:
 - [read (AutoLISP), AutoCAD 2026](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm) — silent on comment-handling.
 - [read (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/read.htm) — silent on comment-handling.
 - [About Comments in AutoLISP Program Files](https://help.autodesk.com/cloudhelp/2015/ENU/AutoCAD-AutoLISP/files/GUID-4D4664AD-301F-4E6E-AD65-4B7CE6A258B8.htm) — the only vendor text on `;` / `;| |;` comments at all; framed around program *files*, not `read` on a string.
-- `issues/open/read-string-does-not-skip-comments.issue` — the product-tested vendor matrix and the clautolisp fix (dialect matrix, the `[read-leading-comment]` warning).
+- `issues/closed/read-string-does-not-skip-comments.issue` — the product-tested vendor matrix and the clautolisp fix (dialect matrix, the `[read-leading-comment]` warning).
 - Status: documented (basic contract); comment-handling divergence product-tested, not vendor-documented.
 
 #+LATEX: \newpage
@@ -13036,7 +13036,7 @@ file cannot be opened.
 - BricsCAD: NOT present.
 
 *** Source Notes
-- clautolisp-only extension (=issues/open/dribble.issue=). The bare
+- clautolisp-only extension (=issues/closed/dribble.issue=). The bare
   ~(dribble)~ alias seen in examples is user-defined (e.g. in
   =~/.autolisp=); clautolisp registers only ~clal-dribble~.
 
@@ -13915,7 +13915,7 @@ Signals ~:invalid-module-kind~ for any ~kind~ other than
 
 *** Source Notes
 - clautolisp-only extension; see
-  issues/open/clautolisp-module-app-extensions.issue.
+  issues/closed/clautolisp-module-app-extensions.issue.
 
 #+LATEX: \newpage
 ** Function Entry: CLAL-LOAD-ALDO-CONFIGURATION
@@ -60961,7 +60961,7 @@ so a program building a path from user input has a wider surface.
 *** Source Notes
 - No vendor reference. Requested from SCHMS+ after a failure that
   appeared only under Linux; specified and implemented per
-  ~issues/open/case-insensitive-pathname-resolution.issue~ in 1.8.52.
+  ~issues/closed/case-insensitive-pathname-resolution.issue~ in 1.8.52.
 - Widened to every dialect but ~--strict~ in 1.8.56, per
   ~issues/closed/case-insensitive-paths-ignored-in-cad-dialects.issue~:
   SCHMS+ runs its suites under ~--dialect bricscad-v26~, to exercise the
@@ -96441,7 +96441,7 @@ side effects.
 - [BricsCAD V25 Command Reference](https://help.bricsys.com/document/_commandreference--CMD_command_reference_intro/V25/EN_US)
 - ~autolisp-spec/documentation/commands-inventory.sexp~
   (machine-readable inventory; one plist per command)
-- ~issues/open/autolisp-spec-alref-commands.issue~ (this initiative)
+- ~issues/closed/autolisp-spec-alref-commands.issue~ (this initiative)
 
 #+LATEX: \newpage
 

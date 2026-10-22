@@ -6,7 +6,7 @@
 ;;;; generated from the AutoCAD-2026 system-variables inventory, so by
 ;;;; default `clautolisp --bricscad` reports the *AutoCAD* sysvar set —
 ;;;; every dialect answers GETVAR identically (see
-;;;; issues/open/bricscad-dialect-sysvar-parity.issue). This overlay
+;;;; issues/closed/bricscad-dialect-sysvar-parity.issue). This overlay
 ;;;; specialises the table for the bricscad dialect at launch time.
 ;;;;
 ;;;; Phase 1 (this file) covers *existence* only: the variables BricsCAD
@@ -202,7 +202,7 @@ returns nil. See the file header for provenance.")
 ;;;; re-harvest — a pristine BricsCAD profile plus a freshly-created
 ;;;; default drawing — classified with scripts/classify-sysvar-diff.py.
 ;;;; See the "Phase 2 runbook" in
-;;;; issues/open/bricscad-dialect-sysvar-parity.issue. Do NOT invent
+;;;; issues/closed/bricscad-dialect-sysvar-parity.issue. Do NOT invent
 ;;;; values: leave this empty until the pristine-profile dump is
 ;;;; classified and human-vetted for locale/template rows.
 

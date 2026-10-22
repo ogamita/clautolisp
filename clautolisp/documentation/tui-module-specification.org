@@ -23,8 +23,8 @@ AutoLISP) bound to keys (vdt) or invoked by name/abbreviation (tty). It does NOT
 reimplement emacs; it reuses the existing pieces below.
 
 Reconciles: =issues/open/ncurses-misc.issue= (frames/windows API),
-=issues/open/ncurses-windows.issue= (window commands, layout tree),
-=issues/open/ncurses-key-bindings.issue= (binding API), and
+=issues/closed/ncurses-windows.issue= (window commands, layout tree),
+=issues/closed/ncurses-key-bindings.issue= (binding API), and
 =cadtui/documentation/cadtui-specifications.org= (single-thread multiplexing,
 the console-as-interactor, the text/curses backend split).
 

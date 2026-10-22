@@ -1,6 +1,6 @@
 ;;;; clautolisp/tools/clautolisp/tests/optimize-option-tests.lisp
 ;;;;
-;;;; CLI parse tests for --optimize / -O (issues/open/compiler.issue).
+;;;; CLI parse tests for --optimize / -O (issues/closed/compiler.issue).
 ;;;;
 ;;;; The option is the command-line spelling of (CLAL-OPTIMIZE '((SPEED 3) …)),
 ;;;; and it exists for one reason: a (clal-optimize …) written inside a .lsp

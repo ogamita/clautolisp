@@ -4,7 +4,7 @@
 
 ;;;; FiveAM tests for the abstract backend protocol and the echo
 ;;;; backend. The acceptance criterion in
-;;;; ../../issues/open/alfe-backend-interface.issue calls for an
+;;;; ../../issues/closed/alfe-backend-interface.issue calls for an
 ;;;; end-to-end plan exercise:
 ;;;;
 ;;;;     (:eval "(+ 1 2)") → output "3"

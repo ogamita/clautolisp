@@ -1,7 +1,7 @@
 ;;;; autolisp-front-end/source/backend-autocad.lisp
 ;;;;
 ;;;; The AutoCAD backend — Phase 3 of the alfe rollout. Specified
-;;;; by ../issues/open/alfe-backend-autocad.issue and the spec's
+;;;; by ../issues/closed/alfe-backend-autocad.issue and the spec's
 ;;;; "Backend autocad" section.
 ;;;;
 ;;;; AutoCAD is Windows-only; on macOS / Linux this backend's DETECT
@@ -231,7 +231,7 @@ Order of precedence:
      install;
   5. NIL, in which case the caller raises :no-dwg.
 
-Step 3 is new (issues/open/empty-ressource.issue, pjb 2026-08-30). Every
+Step 3 is new (issues/closed/empty-ressource.issue, pjb 2026-08-30). Every
 run gets its OWN drawing because sharing one produces modal dialogs --
 \"in use by another instance\", \"open read-only?\" -- when a previous CAD
 still holds the lock or has modified the file, and a modal dialog in a
@@ -1615,7 +1615,7 @@ process-tree kill from the job. The bridge ends with `Don't call
 app.Quit here - ... the alfe-side poller decides on the lifecycle';
 this is the alfe side finally deciding. Until now nothing did, and
 every automation run left AutoCAD idle on an unnamed Dessin1.dwg
-(issues/open/alfe-autocad-automation-never-quits-acad.issue).
+(issues/closed/alfe-autocad-automation-never-quits-acad.issue).
 
 ONLY WHAT WE CREATED (pjb, 2026-09-16). The bridge attaches to a
 running AutoCAD when there is one, and on this runner that may be a

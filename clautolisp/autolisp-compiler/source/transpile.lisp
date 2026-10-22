@@ -836,7 +836,7 @@ Never fails: an unhandled form becomes an interpreter call on itself."
           ;; The binding is BIND-FOREACH-VARIABLE, the same function
           ;; FOREACH calls -- one rule, one place. It is asserted by
           ;; analogy rather than by a vendor probe; see
-          ;; issues/open/vlax-for-binding-rule-unprobed.issue.
+          ;; issues/closed/vlax-for-binding-rule-unprobed.issue.
           ;; The collection hook reaches the host's COM layer, which this
           ;; file cannot audit: no lexical fork around a VLAX-FOR.
           (when *lexical-locals*

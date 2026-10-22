@@ -5,7 +5,7 @@
 ;;;; FiveAM tests for the clautolisp backend (Phase 1).
 ;;;;
 ;;;; Acceptance criteria from
-;;;; ../../issues/open/alfe-backend-clautolisp.issue:
+;;;; ../../issues/closed/alfe-backend-clautolisp.issue:
 ;;;;
 ;;;;   - alfe --clautolisp -x '(+ 1 2)' → 3, exit 0
 ;;;;   - alfe --clautolisp -l fixture.lsp runs the file

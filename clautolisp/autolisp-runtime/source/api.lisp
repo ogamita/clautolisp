@@ -3004,7 +3004,7 @@ matches on :undefined-function is affected."
 (defun autolisp-ampersand-symbol-p (symbol)
   "T iff SYMBOL is the AutoLISP rest-parameter separator — either
 the bare `&' (clautolisp's original spelling proposed in
-`issues/open/variadic-functions.issue') or `&REST' (BricsCAD V26's
+`issues/closed/variadic-functions.issue') or `&REST' (BricsCAD V26's
 spelling, confirmed by Bricsys support and observed in the user's
 own `(defun foo (&rest args) …)' transcripts). Match is
 case-insensitive on the symbol name only; we do NOT implement a
@@ -4632,7 +4632,7 @@ is popped'. The implementation matched neither.
 The compiler needs no change for this: it open-codes FOREACH by CALLING
 this function rather than restating the rule, so both forks moved
 together the moment this line did. See
-issues/open/foreach-binding-vs-assignment.issue."
+issues/closed/foreach-binding-vs-assignment.issue."
   (bind-dynamic-variable name element context))
 
 ;;; FOREACH with NO BODY: the RETURN VALUE is the one case where the
@@ -4794,7 +4794,7 @@ builtins layer installs (the runtime cannot reach the host COM protocol)."
                ;; spec always described, and two loops differing on
                ;; their binding rule is far likelier to be an oversight
                ;; than a vendor quirk nobody documented. See
-               ;; issues/open/vlax-for-binding-rule-unprobed.issue.
+               ;; issues/closed/vlax-for-binding-rule-unprobed.issue.
                (bind-foreach-variable name element context)
                (setf result (if body (autolisp-eval-progn body context) nil))))
         (pop-dynamic-frame context)))))

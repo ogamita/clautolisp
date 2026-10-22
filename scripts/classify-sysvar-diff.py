@@ -2,7 +2,7 @@
 """classify-sysvar-diff.py -- triage a clautolisp-vs-BricsCAD sysvar dump diff.
 
 Companion tool for Phase 2 of
-issues/open/bricscad-dialect-sysvar-parity.issue. After the clean-profile
+issues/closed/bricscad-dialect-sysvar-parity.issue. After the clean-profile
 harvest job (harvest:sysvars:bricscad:* in .gitlab/native.yml) produces a
 pristine BricsCAD reference dump, run this against the clautolisp dump to
 sort the differing system variables into the issue's taxonomy buckets and,

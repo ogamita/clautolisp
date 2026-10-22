@@ -5,7 +5,7 @@
 ;;;; FiveAM tests for alfe.protocol.file (Phase 2).
 ;;;;
 ;;;; The acceptance criteria from
-;;;; ../../issues/open/alfe-file-protocol.issue:
+;;;; ../../issues/closed/alfe-file-protocol.issue:
 ;;;;
 ;;;;   - session bring-up produces the protocol/ layout the spec
 ;;;;     documents (filenames, initial contents).

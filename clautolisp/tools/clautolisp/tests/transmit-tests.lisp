@@ -2,7 +2,7 @@
 ;;;;
 ;;;; Regression tests for clautolisp.autolisp-cli:cli-options->transmit-bindings.
 ;;;; (The dedicated autolisp-cli test system is still missing — see
-;;;; issues/open/autolisp-cli-tests-missing.issue — so this interim home is
+;;;; issues/closed/autolisp-cli-tests-missing.issue — so this interim home is
 ;;;; the clautolisp-tool suite, which already depends on the shared CLI.)
 
 (in-package #:clautolisp.tools.clautolisp.tests)

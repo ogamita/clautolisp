@@ -1103,7 +1103,7 @@ the related source-marker discipline.
 
 All interaction loops (REPL / ALDO debugger / NAVI / LAVI / INSPECT / SEDIT)
 run on `clautolisp/autolisp-interactor` (package `clautolisp.interactor`,
-dependency-free). Design record: `issues/open/interactor-design-revision.issue`
+dependency-free). Design record: `issues/closed/interactor-design-revision.issue`
 (interactor-unification CLOSED at 1.6.1).
 
 - Interactors are **singletons**; `*interactor-stack*` holds **activations**

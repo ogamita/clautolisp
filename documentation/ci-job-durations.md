@@ -141,7 +141,7 @@ time. When the CAD machine is on battery, batch the pushes.
 without it the ceiling is the project default and one hung BricsCAD held the
 runner for 32 minutes on 2026-08-14, with 70 CAD jobs queued behind it. The
 30m figure is chosen from the table above: ~55% headroom over the real
-outlier. See `issues/open/cad-runner-wedged-by-modal-dialog.issue`.
+outlier. See `issues/closed/cad-runner-wedged-by-modal-dialog.issue`.
 
 ## Refreshing these numbers
 

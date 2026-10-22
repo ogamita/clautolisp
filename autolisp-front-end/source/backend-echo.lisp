@@ -1,7 +1,7 @@
 ;;;; autolisp-front-end/source/backend-echo.lisp
 ;;;;
 ;;;; The `echo` backend is the test-only mock specified by
-;;;; ../issues/open/alfe-backend-interface.issue (section "Mock
+;;;; ../issues/closed/alfe-backend-interface.issue (section "Mock
 ;;;; backend"). It implements every generic on ALFE.BACKEND:BACKEND
 ;;;; with a scripted answer table, letting alfe.cli tests drive an
 ;;;; end-to-end action plan without depending on a real evaluator.

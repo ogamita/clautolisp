@@ -44,7 +44,7 @@ if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "
 # (jobs 16981155886, 16998925798, 17026576122), after a different command
 # each time; the leading hypothesis is that alfe does not read accoreconsole's
 # console pipe while the engine runs, so a long run blocks once that pipe is
-# full (issues/open/alfe-accoreconsole-console-pipe-not-drained.issue). One
+# full (issues/closed/alfe-accoreconsole-console-pipe-not-drained.issue). One
 # command per session keeps each run's console output small, and a hang then
 # costs one command, not the rest. The probe reads its command list from
 # OPTKW_COMMANDS (comma-separated) when it is set.
