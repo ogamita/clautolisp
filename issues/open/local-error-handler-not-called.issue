@@ -1,0 +1,47 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: local-error-handler-not-called -- an *error* declared local in a defun is never called
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-21
+
+* Symptom
+
+Found while checking the transcripts of =clautolisp/documentation/tutorial.org=,
+on clautolisp 2.3.24, under =--strict= and =--autocad=, with =--on-error ignore=
+or =quit=:
+
+#+begin_example
+$ clautolisp --no-init -x '(defun *error* (msg) (princ (strcat "\nGLOBAL: " msg)) (princ)) (/ 1 0)'
+GLOBAL: Division by zero in /.                                  ; OK, exit 0
+$ clautolisp --no-init -x '(defun divise (a b / *error*)
+                             (defun *error* (msg) (princ (strcat "\nLOCAL: " msg)) (princ))
+                             (/ a b))
+                           (divise 1 0)'
+clautolisp: runtime error: DIVISION-BY-ZERO: Division by zero in /.   ; handler NOT called, exit 1
+#+end_example
+
+Same with =(setq *error* (lambda (msg) ...))= inside the function.
+
+* Expected
+
+Declaring =*error*= in the locals of a command and defining it inside is THE
+standard AutoCAD idiom (=(defun c:cmd (/ *error* ...) (defun *error* ...) ...)=):
+AutoCAD calls the =*error*= binding that is current when the error occurs,
+before unwinding the dynamic bindings. Programs relying on it lose their
+cleanup (restoring sysvars, closing files) under clautolisp.
+
+* Probable cause
+
+The error is handled after the stack has been unwound, so the local binding
+of =*error*= has already been undone and only the global value is seen.
+
+* To do
+
+1. Failing test: local =*error*= is called, with the message, and the value
+   of other locals of the function visible to it.
+2. Fix: look up =*error*= at signal time (before unwinding).
+3. Update the =*error*= paragraph of =clautolisp/documentation/tutorial.org=
+   (section Errors), which points at this issue.

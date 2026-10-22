@@ -57,6 +57,12 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *AutoLISP tutorial* (=clautolisp/documentation/tutorial.org=, French
+  translation =tutorial-fr.org=): an introduction to AutoLISP for
+  programmers new to Lisp, every example a replayable clautolisp session.
+  Installed under =share/doc/clautolisp/= as =.org=, =.pdf= and =.info=;
+  =make -C clautolisp tutorial= builds the two PDFs.
+
 - *ActiveX ~IntersectWith~ on the mock / cador host* (2.3.10): ~(vla-IntersectWith
   a b acExtendNone)~ returns a VARIANT holding a SAFEARRAY of doubles
   (X1 Y1 Z1 X2 ...), an *empty* one (upper bound -1) when the objects do
