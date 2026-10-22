@@ -57,6 +57,14 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *=entget= lists the header like the CADs* (2.3.30, cador host):
+  =-1 0 5=, then a dictionary member's ={ACAD_REACTORS …}= group, then the
+  owner =330=, then the rest -- as BricsCAD V26 was measured to list it.
+  A model-space entity now has its owner: =(330 . <*Model_Space
+  BLOCK_RECORD>)=. Before, the handle came before the type and a
+  model-space entity had no =330=. An =(entmod (entget e))= round trip
+  stores none of the groups added for the view.
+
 - *=while= and =repeat= return the last body value* (2.3.29): =(repeat 3
   (setq i 6))= is =6= and =(while (< k 3) (setq k (1+ k)) (* k 100))= is
   =300=, as the spec and AutoCAD's reference say and as BricsCAD V26 was

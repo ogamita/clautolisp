@@ -261,7 +261,27 @@ integer group code of each pair is kept; the value is converted."
             (if (consp pair)
                 (cons (car pair) (al->pure-value (cdr pair)))
                 pair))
-          data))
+          (%drop-view-only-groups data)))
+
+(defun %drop-view-only-groups (data)
+  "DATA (an entmake / entmod list) without the groups ENTGET synthesizes
+for the vendors' header (%VENDOR-HEADER-ORDER), so an (entmod (entget
+e)) or (entmake (cdr (entget e))) round trip stores none of them: the
+{ACAD_REACTORS ...} 102 groups (the drawing keeps ownership itself) and
+a 330 naming a symbol-table record (a main-space entity's owner, which
+the drawing keeps implicit)."
+  (let ((in-group nil) (out '()))
+    (dolist (pair data (nreverse out))
+      (cond
+        (in-group
+         (when (%reactor-group-end-p pair) (setf in-group nil)))
+        ((%reactor-group-start-p pair)
+         (setf in-group t))
+        ((and (consp pair) (group-code-equal-p (car pair) 330)
+              (typep (cdr pair) 'clautolisp.autolisp-runtime:autolisp-ename)
+              (symbolp (clautolisp.autolisp-runtime:autolisp-ename-value (cdr pair)))
+              (clautolisp.autolisp-runtime:autolisp-ename-value (cdr pair))))
+        (t (push pair out))))))
 
 ;;; --- XData (extended data) helpers ------------------------------
 ;;;
@@ -315,9 +335,95 @@ supplies the ename intern cache for the (-1 . ename) head."
                     (%filter-xdata-groups (cdr xdata-cell) names))))
     (append
      (list (cons -1 (handle->ename host (entity-handle-id entity))))
-     (pure-data->al-view host ordinary)
+     (%vendor-header-order host entity (pure-data->al-view host ordinary))
      (when kept
        (list (cons -3 (pure->al-value kept)))))))
+
+;;; --- The entget header: -1 0 5 [102 ...] 330 ---------------------
+;;;
+;;; cador-entget-owner-and-header-layout. Measured (entget-pointers
+;;; probe, section 10, BricsCAD V26 macOS job 17397066992): every
+;;; entget view starts -1 0 5, then the {ACAD_REACTORS ...} group of an
+;;; object owned by a dictionary, then the owner 330, then the rest --
+;;;   LINE in model space     -1 0 5 330 100 67 410 8 100 10 11 210
+;;;   free XRECORD            -1 0 5 100 280 ...
+;;;   XRECORD after dictadd   -1 0 5 102 330 102 330 100 280 ...
+;;; and a main-space entity's 330 is its space's BLOCK_RECORD. cador
+;;; stored (5 . handle) first and left a main-space entity's owner
+;;; implicit, so its view read -1 5 0 ... with no 330.
+
+(defun %reactor-group-start-p (pair)
+  (and (consp pair) (group-code-equal-p (car pair) 102)
+       (let ((v (cdr pair)))
+         (and (typep v 'clautolisp.autolisp-runtime:autolisp-string)
+              (let ((s (clautolisp.autolisp-runtime:autolisp-string-value v)))
+                (and (plusp (length s)) (char= #\{ (char s 0))))))))
+
+(defun %reactor-group-end-p (pair)
+  (and (consp pair) (group-code-equal-p (car pair) 102)
+       (let ((v (cdr pair)))
+         (and (typep v 'clautolisp.autolisp-runtime:autolisp-string)
+              (string= "}" (clautolisp.autolisp-runtime:autolisp-string-value v))))))
+
+(defun %synthesized-owner-ename (host entity)
+  "The ENAME of the BLOCK_RECORD owning the graphical ENTITY -- its
+space's (*Model_Space when unspecified) or its block definition's -- or
+NIL for a non-graphical object or an unknown record."
+  (let* ((type (%data-type-string (entity-handle-data entity)))
+         (family (and type (clautolisp.drawing:find-entity-family type))))
+    (when (and family (clautolisp.drawing:entity-family-graphical-p family))
+      (let ((record (cador-find-table-record
+                     host :block-record
+                     (or (entity-handle-block entity) "*Model_Space"))))
+        (and record (table-record->ename host record))))))
+
+(defun %dictionary-owner-p (host owner-ename)
+  "True iff OWNER-ENAME names a live dictionary of the active drawing."
+  (let ((id (and (typep owner-ename 'clautolisp.autolisp-runtime:autolisp-ename)
+                 (clautolisp.autolisp-runtime:autolisp-ename-value owner-ename))))
+    (and (stringp id)
+         (handler-case (clautolisp.drawing:find-dictionary
+                        (cador-active-drawing host) id)
+           (clautolisp.drawing:drawing-error () nil)))))
+
+(defun %vendor-header-order (host entity view)
+  "VIEW (the entget pairs after -1) reordered 0 5 [102 groups] 330 rest,
+the rest in stored order; the owner 330 synthesized for a graphical
+entity that stores none, and the {ACAD_REACTORS (330 . dict)} group for
+an object a dictionary owns."
+  (let ((zero nil) (five nil) (reactors '()) (owner nil) (rest '())
+        (in-group nil))
+    (dolist (pair view)
+      (cond
+        (in-group
+         (push pair reactors)
+         (when (%reactor-group-end-p pair) (setf in-group nil)))
+        ((%reactor-group-start-p pair)
+         (push pair reactors)
+         (setf in-group t))
+        ((and (null zero) (consp pair) (group-code-equal-p (car pair) 0))
+         (setf zero pair))
+        ((and (null five) (consp pair) (group-code-equal-p (car pair) 5))
+         (setf five pair))
+        ((and (null owner) (consp pair) (group-code-equal-p (car pair) 330))
+         (setf owner pair))
+        (t (push pair rest))))
+    (setf reactors (nreverse reactors)
+          rest (nreverse rest))
+    (unless owner
+      (let ((ename (%synthesized-owner-ename host entity)))
+        (when ename (setf owner (cons 330 ename)))))
+    (when (and owner (null reactors) (%dictionary-owner-p host (cdr owner)))
+      (setf reactors
+            (list (cons 102 (clautolisp.autolisp-runtime:make-autolisp-string
+                             "{ACAD_REACTORS"))
+                  (cons 330 (cdr owner))
+                  (cons 102 (clautolisp.autolisp-runtime:make-autolisp-string "}")))))
+    (append (and zero (list zero))
+            (and five (list five))
+            reactors
+            (and owner (list owner))
+            rest)))
 
 (defun extract-modified-handle (data operator-name &optional host)
   "Return the hex handle of the entity DATA refers to, from its

@@ -18,13 +18,16 @@
     (let ((head (first data)))
       (is (and (consp head) (eql -1 (car head))))
       (is (typep (cdr head) 'autolisp-ename)))
-    ;; Second entry is the (5 . HANDLE) string. The host wraps string
-    ;; values as autolisp-strings at the boundary (REVIEW-1); the
-    ;; drawing stores a pure CL string.
-    (let ((second (second data)))
-      (is (and (consp second) (eql 5 (car second))))
-      (is (typep (cdr second) 'autolisp-string))
-      (is (string= "10" (autolisp-string-value (cdr second)))))
+    ;; Then the vendors' header (cador-entget-owner-and-header-layout,
+    ;; BricsCAD V26 measured): (0 . TYPE), (5 . HANDLE), and the owner
+    ;; (330 . <model space BLOCK_RECORD>). The host wraps string values as
+    ;; autolisp-strings at the boundary (REVIEW-1); the drawing stores a
+    ;; pure CL string.
+    (is (equal '(-1 0 5 330) (mapcar #'car (subseq data 0 4))))
+    (let ((five (third data)))
+      (is (typep (cdr five) 'autolisp-string))
+      (is (string= "10" (autolisp-string-value (cdr five)))))
+    (is (eq (host-tblobjname mock "BLOCK" "*Model_Space") (cdr (fourth data))))
     ;; entlast surfaces the same ename as the entry just made.
     (let ((last-ename (host-entlast mock)))
       (is (typep last-ename 'autolisp-ename))
@@ -76,9 +79,14 @@
       (host-entmod mock updated)
       (let ((after (host-entget mock ename)))
         (is (string= "Mine" (autolisp-string-value (cdr (assoc 8 after)))))
-        ;; The host still injected its (-1 . ename) and (5 . handle).
-        (is (eql -1 (car (first after))))
-        (is (eql 5 (car (second after))))))))
+        ;; The host still injected its (-1 . ename) and (5 . handle), in
+        ;; the vendors' header order, and the round trip stored no
+        ;; synthesized owner: the view's 330 is still the synthesized one.
+        (is (equal '(-1 0 5 330) (mapcar #'car (subseq after 0 4))))
+        (is (null (find 330 (clautolisp.drawing:entity-handle-data
+                             (clautolisp.cador::cador-find-entity-by-handle
+                              mock (autolisp-ename-value ename)))
+                        :key (lambda (p) (and (consp p) (car p))))))))))
 
 (test entlast-and-entnext-walk-creation-order
   (let* ((mock (make-cador))
@@ -110,7 +118,7 @@
 (test handent-resolves-known-handle
   (let* ((mock (make-cador))
          (data (host-entmake mock (make-line-data)))
-         (handle (cdr (second data)))            ; an autolisp-string now
+         (handle (cdr (assoc 5 data)))           ; an autolisp-string now
          (ename (host-handent mock handle)))
     (is (typep ename 'autolisp-ename))
     (is (string= (autolisp-string-value handle) (autolisp-ename-value ename)))
@@ -238,9 +246,12 @@
         (is (string= poly-handle (autolisp-ename-value owner)))))
     ;; SEQEND is owned by the polyline too.
     (is (eq poly (cdr (assoc 330 (host-entget mock seq)))))
-    ;; A LINE created after the SEQEND does NOT get an owner (run closed).
+    ;; A LINE created after the SEQEND is NOT owned by the POLYLINE (run
+    ;; closed): its owner is model space's BLOCK_RECORD, as for any
+    ;; main-space entity (cador-entget-owner-and-header-layout).
     (let ((line (host-entmakex mock (make-line-data))))
-      (is (null (assoc 330 (host-entget mock line)))))
+      (is (eq (host-tblobjname mock "BLOCK" "*Model_Space")
+              (cdr (assoc 330 (host-entget mock line))))))
     ;; ENTNEXT walks the whole structure in creation order.
     (is (string= poly-handle (autolisp-ename-value (host-entnext mock nil))))
     (is (string= (autolisp-ename-value v1)
@@ -444,3 +455,52 @@
          (b (host-entmakex mock (make-line-data))))
     (is (not (eq a b)))
     (is (not (equal a b)))))
+
+;;; --- the entget header: -1 0 5 [102 ...] 330 ----------------------
+;;;
+;;; cador-entget-owner-and-header-layout. BricsCAD V26 (entget-pointers
+;;; probe section 10, job 17397066992) lists every object -1 0 5, then a
+;;; dictionary member's {ACAD_REACTORS ...} group, then the owner 330;
+;;; a main-space entity's owner is its space's BLOCK_RECORD.
+
+(defun %stored-codes (mock ename)
+  (mapcar (lambda (p) (and (consp p) (car p)))
+          (clautolisp.drawing:entity-handle-data
+           (clautolisp.cador::cador-find-entity-by-handle
+            mock (autolisp-ename-value ename)))))
+
+(test entget-round-trips-store-nothing-synthesized
+  "(entmod (entget e)) and (entmake (cdr (entget e))) carry the
+synthesized owner and reactor groups back in; neither may be stored."
+  (let* ((mock (make-cador))
+         (line (host-entmakex mock (make-line-data))))
+    (host-entmod mock (host-entget mock line))
+    (is (null (member 330 (%stored-codes mock line))))
+    (is (equal '(-1 0 5 330) (mapcar #'car (subseq (host-entget mock line) 0 4))))
+    (let ((copy (host-entmakex mock (rest (remove 5 (host-entget mock line)
+                                               :key (lambda (p) (and (consp p) (car p))))))))
+      (is (typep copy 'autolisp-ename))
+      (is (null (member 330 (%stored-codes mock copy))))
+      (is (eq (host-tblobjname mock "BLOCK" "*Model_Space")
+              (cdr (assoc 330 (host-entget mock copy))))))))
+
+(test entget-of-a-dictionary-member-has-the-reactor-group
+  (let* ((mock (make-cador))
+         (nod (host-namedobjdict mock))
+         (x (make-xrecord-ename mock "z")))
+    ;; Free: no owner (BricsCAD measured -1 0 5 100 ...).
+    (is (equal '(-1 0 5 100) (mapcar #'car (subseq (host-entget mock x) 0 4))))
+    (host-dictadd mock nod (mk-str "HDRK") x)
+    (let ((view (host-entget mock x)))
+      (is (equal '(-1 0 5 102 330 102 330 100)
+                 (mapcar #'car (subseq view 0 8))))
+      (is (string= "{ACAD_REACTORS" (autolisp-string-value (cdr (fourth view)))))
+      (is (eq nod (cdr (fifth view))))
+      (is (eq nod (cdr (seventh view))))
+      ;; entmod of that view stores no reactor group, and the owner once.
+      (host-entmod mock view)
+      (let ((stored (%stored-codes mock x)))
+        (is (null (member 102 stored)))
+        (is (= 1 (count 330 stored))))
+      (is (equal '(-1 0 5 102 330 102 330 100)
+                 (mapcar #'car (subseq (host-entget mock x) 0 8)))))))
