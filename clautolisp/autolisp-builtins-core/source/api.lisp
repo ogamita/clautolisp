@@ -5575,6 +5575,151 @@ point."
         (host-regapp (current-evaluation-host) app-string)
         nil)))
 
+;;; --- XDSIZE / XDROOM: extended-data size accounting ---------------
+;;;
+;;; (xdsize LST) returns the number of bytes the xdata list LST would
+;;; occupy once attached to an object; (xdroom ENAME) returns the room
+;;; left for xdata on ENAME, i.e. +XDATA-BYTE-BUDGET+ minus the size of
+;;; every application's xdata already attached (autolisp-spec, Function
+;;; Entries XDROOM / XDSIZE). The vendor caps xdata at 16383 bytes per
+;;; object, shared by all applications (the spec's xdroom example:
+;;; 16162 free = 221 of 16383 used).
+;;;
+;;; The per-group byte costs below are PROVISIONAL. Autodesk does not
+;;; publish them; they follow the in-memory xdata layout as commonly
+;;; described (one type byte per group, then the payload: a string as a
+;;; 2-byte length + its characters, a real as 8 bytes, a point as 3
+;;; reals, int16 / int32 as 2 / 4 bytes, a brace as 1 byte, a binary
+;;; chunk as a 1-byte length + its bytes) and must be MEASURED on
+;;; AutoCAD / BricsCAD -- probes/sources/probe-xdata.lsp, cases "xdsize
+;;; ..." and "xdroom ...". See issues/open/xdroom-xdsize-not-implemented.
+;;; issue. String lengths count characters (equal to bytes for ASCII;
+;;; the vendor's count for non-ASCII text is part of the measurement).
+
+(defconstant +xdata-byte-budget+ 16383
+  "Bytes of xdata one object may carry, all applications together.")
+
+(defun %xdata-fail (errno operator-name control-string &rest arguments)
+  "Set ERRNO to ERRNO (48, 49 or 50) and signal an AutoLISP error from
+OPERATOR-NAME, with the condition code AUTOLISP-RUNTIME-ERROR-ERRNO maps
+back to that same ERRNO."
+  (set-autolisp-errno errno)
+  (apply #'signal-builtin-argument-error
+         (ecase errno
+           (48 :xdata-unrecognized-type)
+           (49 :xdata-improper-nesting)
+           (50 :xdata-improper-appid))
+         operator-name control-string arguments))
+
+(defun %xdata-string-length (value)
+  (and (typep value 'autolisp-string)
+       (length (autolisp-string-value value))))
+
+(defun xdata-group-byte-size (code value operator-name)
+  "Provisional byte cost of the xdata pair (CODE . VALUE). Signals
+(ERRNO 48) on an unknown code or a value of the wrong type, and (ERRNO
+50) on a 1001 application name inside an application's pairs."
+  (flet ((bad ()
+           (%xdata-fail 48 operator-name
+                        "~A: invalid extended data group (~S . ~S)."
+                        operator-name code value)))
+    (unless (integerp code) (bad))
+    (case code
+      ((1000 1003 1005)                 ; string, layer name, handle
+       (let ((n (%xdata-string-length value)))
+         (if n (+ 3 n) (bad))))
+      (1001
+       (%xdata-fail 50 operator-name
+                    "~A: application name (1001) inside an application's xdata."
+                    operator-name))
+      (1002                             ; control string "{" / "}"
+       (let ((s (and (typep value 'autolisp-string)
+                     (autolisp-string-value value))))
+         (if (member s '("{" "}") :test #'equal) 2 (bad))))
+      (1004                             ; binary chunk, hex digits
+       (let ((n (%xdata-string-length value)))
+         (if n (+ 2 (ceiling n 2)) (bad))))
+      ((1010 1011 1012 1013)            ; points: 3 reals
+       (if (and (proper-list-p value)
+                (<= 2 (length value) 3)
+                (every #'realp value))
+           25
+           (bad)))
+      ((1040 1041 1042)                 ; real, distance, scale factor
+       (if (realp value) 9 (bad)))
+      (1070
+       (if (and (integerp value) (<= -32768 value 32767)) 3 (bad)))
+      (1071
+       (if (and (integerp value) (<= (- (expt 2 31)) value (1- (expt 2 31))))
+           5
+           (bad)))
+      (t (bad)))))
+
+(defun xdata-list-byte-size (xdata operator-name &key (check-registered t))
+  "Provisional byte size of XDATA, a list of (APPNAME pair ...) groups,
+optionally headed by the -3 sentinel. With CHECK-REGISTERED, each
+APPNAME must be registered (REGAPP) on the current host."
+  (let ((groups (if (and (consp xdata) (eql (car xdata) -3))
+                    (cdr xdata)
+                    xdata))
+        (total 0))
+    (unless (proper-list-p groups)
+      (%xdata-fail 49 operator-name "~A: improper xdata list ~S."
+                   operator-name xdata))
+    (dolist (group groups total)
+      (unless (and (consp group) (proper-list-p group)
+                   (typep (car group) 'autolisp-string))
+        (%xdata-fail 50 operator-name
+                     "~A: expected (APPNAME (code . value) ...), got ~S."
+                     operator-name group))
+      (let ((app (autolisp-string-value (car group)))
+            (depth 0))
+        (when (and check-registered
+                   (null (host-tblsearch (current-evaluation-host) "APPID" app)))
+          (%xdata-fail 50 operator-name
+                       "~A: application ~S is not registered (see REGAPP)."
+                       operator-name app))
+        (incf total (+ 3 (length app)))
+        (dolist (pair (cdr group))
+          (unless (consp pair)
+            (%xdata-fail 48 operator-name "~A: invalid extended data group ~S."
+                         operator-name pair))
+          (incf total (xdata-group-byte-size (car pair) (cdr pair) operator-name))
+          (when (eql (car pair) 1002)
+            (if (string= (autolisp-string-value (cdr pair)) "{")
+                (incf depth)
+                (decf depth))
+            (when (minusp depth)
+              (%xdata-fail 49 operator-name "~A: unbalanced 1002 braces in ~S."
+                           operator-name app))))
+        (unless (zerop depth)
+          (%xdata-fail 49 operator-name "~A: unbalanced 1002 braces in ~S."
+                       operator-name app))))))
+
+(defun builtin-xdsize (xdata)
+  ;; Documented to set ERRNO on failure (unregistered application,
+  ;; bad group, unbalanced braces) -- and to signal an error.
+  (unless (listp xdata)
+    (%xdata-fail 48 "XDSIZE" "XDSIZE expects an xdata list, got ~S." xdata))
+  (errno-and-return 0 (xdata-list-byte-size xdata "XDSIZE")))
+
+(defun builtin-xdroom (ename)
+  ;; The room left for xdata on ENAME: the budget minus the size of the
+  ;; xdata every application has attached. nil (ERRNO 2) when ENAME
+  ;; names no live object, as ENTGET.
+  (let ((data (host-entget (current-evaluation-host)
+                           (require-ename ename "XDROOM")
+                           (list (make-autolisp-string "*")))))
+    (if data
+        (let ((cell (find-if (lambda (pair) (and (consp pair) (eql (car pair) -3)))
+                             data)))
+          (errno-and-return
+           0 (- +xdata-byte-budget+
+                (if cell
+                    (xdata-list-byte-size (cdr cell) "XDROOM" :check-registered nil)
+                    0))))
+        (errno-and-return 2 nil))))
+
 ;;; --- Phase 11: sysvar access --------------------------------------
 
 (defun %dispatch-lispsys-foreign-dialect-diagnostic (operator-name)
@@ -11305,10 +11450,11 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     ;; Entity / selection-set / table / dictionary database.
     ;; DICTADD/DICTNEXT/DICTOBJNAME/DICTREMOVE/DICTRENAME/DICTSEARCH/
     ;; NAMEDOBJDICT/REGAPP are now real (drawing-data-structures parity);
-    ;; the ones left here stay nil stubs (interactive picking, or the
-    ;; xdata-room queries which the in-memory model does not bound).
+    ;; XDROOM/XDSIZE are real too (provisional byte table, see
+    ;; BUILTIN-XDSIZE); the ones left here stay nil stubs (interactive
+    ;; picking).
     "NENTSEL" "NENTSELP"
-    "SSNAMEX" "XDROOM" "XDSIZE"
+    "SSNAMEX"
     ;; DCL dialogs / tiles (3)
     "GET_ATTR" "INIT_DIALOG" "REDRAW_DIALOG"
     ;; Graphics primitives (GR*) (7)
@@ -11445,6 +11591,8 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "DICTRENAME"   #'builtin-dictrename)
    (make-core-builtin-subr "DICTOBJNAME"  #'builtin-dictobjname)
    (make-core-builtin-subr "REGAPP"       #'builtin-regapp)
+   (make-core-builtin-subr "XDSIZE"       #'builtin-xdsize)
+   (make-core-builtin-subr "XDROOM"       #'builtin-xdroom)
    (make-core-builtin-subr "GETVAR"     #'builtin-getvar)
    (make-core-builtin-subr "SETVAR"     #'builtin-setvar)
    ;; clautolisp exit-status channel: autolisp-set-status keeps the CAD

@@ -57,6 +57,13 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *=xdsize= and =xdroom= work* (2.3.34): they were stubs returning nil.
+  =(xdsize LIST)= gives the bytes an xdata list takes, =(xdroom ENAME)= the
+  room left of the 16383 bytes an object may hold; malformed xdata and
+  unregistered applications are errors (ERRNO 48 / 49 / 50). The per-group
+  byte costs follow AutoCAD's documented layout and are being measured on
+  the CADs (probe-xdata).
+
 - *HATCH, VIEWPORT and table-record angles from DXF too* (2.3.33): HATCH
   52 / 53 and its arc-edge 50/51, VIEWPORT 50/51, and the VPORT, VIEW and
   STYLE records =tblsearch= returns are converted between the file's

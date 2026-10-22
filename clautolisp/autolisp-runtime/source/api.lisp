@@ -919,6 +919,13 @@ CONTEXT's session. Returns VALUE."
            (eq code :subr-call-host-error)
            (eq code :builtin-error))
        6)
+      ;; XDSIZE's documented failures (Error Codes Reference 48-50).
+      ((eq code :xdata-unrecognized-type)
+       48)
+      ((eq code :xdata-improper-nesting)
+       49)
+      ((eq code :xdata-improper-appid)
+       50)
       ((or (eq code :wrong-number-of-arguments)
            (eq code :unsupported-special-operator)
            (eq code :invalid-form)
