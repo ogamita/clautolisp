@@ -223,4 +223,56 @@
       (entmod (append (entget line)
                       (list (list -3 (list app (cons 1005 (cdr (assoc 5 (entget line)))))))))
       (cad-probe--ep-kind (cdr (assoc 1005 (cdr (car (cdr (assoc -3 (entget line (list app))))))))))))
+
+  ;; 10. The full HEADER ORDER of entget (cador-entget-owner-and-header-
+  ;; layout): where -1 0 5 102 330 100 stand, for fresh objects of each
+  ;; kind -- the earlier sections recorded which pointers exist, not
+  ;; their order. Fresh entities: section 3 gave LINE an extension
+  ;; dictionary.
+  (cad-probe-capture "entget-pointers" "codes: fresh LINE in model space"
+    (function (lambda ()
+      (cad-probe--ep-codes
+        (entget (entmakex '((0 . "LINE") (8 . "0") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0))))))))
+  (cad-probe-capture "entget-pointers" "codes: fresh CIRCLE in model space"
+    (function (lambda ()
+      (cad-probe--ep-codes
+        (entget (entmakex '((0 . "CIRCLE") (8 . "0") (10 0.0 0.0 0.0) (40 . 1.0))))))))
+  (cad-probe-capture "entget-pointers" "codes: fresh TEXT in model space"
+    (function (lambda ()
+      (cad-probe--ep-codes
+        (entget (entmakex '((0 . "TEXT") (8 . "0") (10 0.0 0.0 0.0) (40 . 1.0) (1 . "t"))))))))
+  (cad-probe-capture "entget-pointers" "codes: INSERT without attributes"
+    (function (lambda ()
+      (cad-probe--ep-codes
+        (entget (entmakex (list '(0 . "INSERT") '(8 . "0") (cons 2 blk) '(10 9.0 9.0 0.0))))))))
+  (cad-probe-capture "entget-pointers" "codes: INSERT with ATTRIB (section 4), type of entget"
+    (function (lambda ( / d)
+      (setq d (entget ins))
+      (strcat (cad-probe--ep-kind d) " | " (if d (cad-probe--ep-codes d) "")))))
+  (cad-probe-capture "entget-pointers" "codes: ATTRIB of the INSERT"
+    (function (lambda () (cad-probe--ep-codes (entget (entnext ins))))))
+  (cad-probe-capture "entget-pointers" "codes: (entget (tblobjname \"LAYER\" \"0\"))"
+    (function (lambda () (cad-probe--ep-codes (entget (tblobjname "LAYER" "0"))))))
+  (cad-probe-capture "entget-pointers" "codes: (entget (tblobjname \"BLOCK\" blk))"
+    (function (lambda () (cad-probe--ep-codes (entget (tblobjname "BLOCK" blk))))))
+  (cad-probe-capture "entget-pointers" "codes: (entget (tblobjname \"BLOCK\" \"*Model_Space\"))"
+    (function (lambda ( / d)
+      (setq d (entget (tblobjname "BLOCK" "*Model_Space")))
+      (strcat (cad-probe--ep-codes d) " | 0=" (vl-prin1-to-string (cdr (assoc 0 d)))))))
+  (cad-probe-capture "entget-pointers" "codes: LINE's 330 target = tblobjname *Model_Space?"
+    (function (lambda ( / o m)
+      (setq o (cdr (assoc 330 (entget (entmakex '((0 . "LINE") (8 . "0")
+                                                  (10 0.0 0.0 0.0) (11 1.0 0.0 0.0)))))))
+      (setq m (tblobjname "BLOCK" "*Model_Space"))
+      (strcat "eq " (if (eq o m) "T" "NIL") " | "
+              (cad-probe--ep-follow o) " | "
+              (cad-probe--ep-codes (if o (entget o) nil))))))
+  (cad-probe-capture "entget-pointers" "codes: (entget (namedobjdict))"
+    (function (lambda () (cad-probe--ep-codes (entget nod)))))
+  (cad-probe-capture "entget-pointers" "codes: fresh XRECORD, then after dictadd (entget)"
+    (function (lambda ( / x k)
+      (setq x (entmakex '((0 . "XRECORD") (100 . "AcDbXrecord") (1 . "z"))))
+      (setq k (strcat "PRORD" tag))
+      (strcat (cad-probe--ep-codes (entget x)) " | "
+              (progn (dictadd nod k x) (cad-probe--ep-codes (entget x)))))))
   (princ))
