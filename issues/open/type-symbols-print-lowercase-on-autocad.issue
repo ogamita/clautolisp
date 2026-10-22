@@ -1,9 +1,9 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: type-symbols-print-lowercase-on-autocad — AutoCAD prints (type v) of a VARIANT / SAFEARRAY in lower case
-#+STATUS: TODO
+#+STATUS: BLOCKED
 #+PRIORITY: P3
 #+TYPE: divergence
-#+DEPENDS: -
+#+DEPENDS: a CAD run of probes/sources/probe-type-symbols.lsp on AutoCAD and BricsCAD
 #+BRANCH: fix-type-symbols-print-lowercase-on-autocad
 #+DATE: 2026-10-08
 
@@ -27,3 +27,38 @@ Measure which TYPE results AutoCAD prints in lower case (variant,
 safearray, maybe others) with vl-princ-to-string, prin1, princ and
 vl-symbol-name; if confirmed, print them that way under the AutoCAD
 dialects (a divergence to classify per AGENTS.md).
+
+* Status (2026-10-22)
+
+Not implemented: the measured evidence is not enough to decide WHAT to
+change. The only AutoCAD datum is one row of intersectwith-probe.lsp
+(job 17029587295): =(vl-princ-to-string (type v))= is "variant" /
+"safearray". probe-results/autocad/ holds no transcript of that run, and
+nothing measures:
+
+- =vl-prin1-to-string= and =vl-symbol-name= of those TYPE results, i.e.
+  whether the symbol's NAME is lower case (then =vl-symbol-name=, =strcat=
+  of it and =read= round trips all change) or only its printed form;
+- whether the literal symbol (='VARIANT=, =(read "VARIANT")=) prints in
+  lower case too on AutoCAD, i.e. whether the symbol is interned with a
+  lower-case name everywhere, independently of TYPE;
+- the other TYPE results (PICKSET, FILE, SUBR, USUBR, EXRXSUBR, INT, REAL,
+  STR, SYM, LIST). VLA-OBJECT and ENAME are known upper case on AutoCAD
+  (the observation above; block-walk probe, run 20261003T130228Z).
+
+The BricsCAD side is likewise vl-princ-to-string only.
+
+New probe suite: probes/sources/probe-type-symbols.lsp, registered in
+probes/sources/manifest.txt (=make probe=, or =PROBE_SUITES=type-symbols=).
+For every kind of value it records vl-princ-to-string, vl-prin1-to-string
+and vl-symbol-name of =(type v)=, and whether it is EQ to the upper-case
+symbol read back; for each type name, how the literal symbol prints (upper
+and lower case spellings, quoted in source) and atoms-family of VARIANT /
+SAFEARRAY. Checked under clautolisp (--dialect autocad-2022): every row
+runs, all upper case.
+
+Next: run it on AutoCAD 2022 and BricsCAD V26, commit the results under
+probe-results/, then implement exactly what they show under the AutoCAD
+dialects (printer only vs symbol name), with the --strict portability
+handling used for comparable divergences and a "*** clautolisp" note on
+the TYPE page of the specification.
