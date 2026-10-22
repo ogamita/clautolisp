@@ -10650,16 +10650,65 @@ installed the ActiveX constants: the second call installs nothing.")
           ((eq name :strict) :strict)
           (t :clautolisp))))
 
-(defun activex-enumeration-constants (&optional (product (%activex-constants-product)))
-  "A fresh list of (NAME VALUE) -- the ActiveX constants PRODUCT binds (see
-the section header)."
-  (loop for (name autocad bricscad) in *activex-measured-constants*
+(defun %activex-constants-for-product (table product)
+  "A fresh list of (NAME VALUE): the entries of TABLE, a list of (NAME
+AUTOCAD-VALUE BRICSCAD-VALUE), that PRODUCT binds."
+  (loop for (name autocad bricscad) in table
         for value = (ecase product
                       (:autocad autocad)
                       (:bricscad bricscad)
                       (:strict (and autocad bricscad (= autocad bricscad) autocad))
                       (:clautolisp (or autocad bricscad)))
         when value collect (list name value)))
+
+(defun activex-enumeration-constants (&optional (product (%activex-constants-product)))
+  "A fresh list of (NAME VALUE) -- the MEASURED ActiveX constants PRODUCT
+binds (see the section header)."
+  (%activex-constants-for-product *activex-measured-constants* product))
+
+;;; The vlax-vb* VarType constants (vlax-vb-constants-unbound.issue).
+;;;
+;;; DOCUMENTED, NOT YET MEASURED. The specification names them as the type
+;;; arguments of vlax-make-safearray / vlax-make-variant /
+;;; vlax-variant-change-type, and their values are the VB VarType codes. The
+;;; names are now in probe-activex-constants.lsp's inventory, so the next
+;;; AutoCAD / BricsCAD run measures them and the regenerated
+;;; *ACTIVEX-MEASURED-CONSTANTS* carries them. This hand-written table is
+;;; kept OUT of the generated activex-constants-table.lisp so a regeneration
+;;; cannot clobber it, and it yields to the measurement: a name the measured
+;;; table has (bound or not, per product) is taken from there, never from
+;;; here. Once the measured table has them all, this table can be deleted.
+
+(defparameter *activex-documented-constants*
+  '(("VLAX-VBEMPTY" 0 0)
+    ("VLAX-VBNULL" 1 1)
+    ("VLAX-VBINTEGER" 2 2)
+    ("VLAX-VBLONG" 3 3)
+    ("VLAX-VBSINGLE" 4 4)
+    ("VLAX-VBDOUBLE" 5 5)
+    ("VLAX-VBCURRENCY" 6 6)
+    ("VLAX-VBDATE" 7 7)
+    ("VLAX-VBSTRING" 8 8)
+    ("VLAX-VBOBJECT" 9 9)
+    ("VLAX-VBERROR" 10 10)
+    ("VLAX-VBBOOLEAN" 11 11)
+    ("VLAX-VBVARIANT" 12 12)
+    ("VLAX-VBDATAOBJECT" 13 13)
+    ("VLAX-VBDECIMAL" 14 14)
+    ("VLAX-VBBYTE" 17 17)
+    ("VLAX-VBARRAY" 8192 8192))
+  "DOCUMENTED (not yet measured) constants installed with the ActiveX ones:
+(NAME AUTOCAD-VALUE BRICSCAD-VALUE), as *ACTIVEX-MEASURED-CONSTANTS*. A name
+the measured table also has is ignored here (the measurement wins).")
+
+(defun activex-documented-constants (&optional (product (%activex-constants-product)))
+  "A fresh list of (NAME VALUE) -- the documented-not-yet-measured constants
+PRODUCT binds, less every name the measured table already records."
+  (%activex-constants-for-product
+   (remove-if (lambda (entry)
+                (assoc (first entry) *activex-measured-constants* :test #'string-equal))
+              *activex-documented-constants*)
+   product))
 
 (defun install-activex-enumeration-constants
     (&optional (context (clautolisp.autolisp-runtime:current-evaluation-context)))
@@ -10673,7 +10722,8 @@ of names bound (0 on a later call)."
          (count 0))
     (unless (gethash document *activex-constants-installed*)
       (setf (gethash document *activex-constants-installed*) t)
-      (loop for (name value) in (activex-enumeration-constants)
+      (loop for (name value) in (append (activex-enumeration-constants)
+                                        (activex-documented-constants))
             for symbol = (intern-autolisp-symbol (string-upcase name))
             when (null (clautolisp.autolisp-runtime:lookup-variable symbol context))
               do (clautolisp.autolisp-runtime:set-variable symbol value context)

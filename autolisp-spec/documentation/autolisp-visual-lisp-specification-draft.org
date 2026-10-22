@@ -71570,6 +71570,9 @@ Allocates automation-array storage.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+*** clautolisp
+clautolisp implementation note — not part of the normative specification above. ~(vl-load-com)~ binds the ~vlax-vb*~ type constants with the ActiveX enumeration constants (once per document, never over a non-nil value; from the start of the document under the BricsCAD dialects), under every dialect, to the VB VarType values: ~vlax-vbEmpty~ 0, ~vlax-vbNull~ 1, ~vlax-vbInteger~ 2, ~vlax-vbLong~ 3, ~vlax-vbSingle~ 4, ~vlax-vbDouble~ 5, ~vlax-vbCurrency~ 6, ~vlax-vbDate~ 7, ~vlax-vbString~ 8, ~vlax-vbObject~ 9, ~vlax-vbError~ 10, ~vlax-vbBoolean~ 11, ~vlax-vbVariant~ 12, ~vlax-vbDataObject~ 13, ~vlax-vbDecimal~ 14, ~vlax-vbByte~ 17, ~vlax-vbArray~ 8192. These values are DOCUMENTED, NOT YET MEASURED: the names are in ~probes/sources/probe-activex-constants.lsp~, and once a run is regenerated into ~activex-constants-table.lisp~ the measured per-product values replace them. Implemented in ~clautolisp/autolisp-builtins-core/source/api.lisp~ (~*ACTIVEX-DOCUMENTED-CONSTANTS*~); see ~issues/open/vlax-vb-constants-unbound.issue~.
+
 #+LATEX: \newpage
 
 ** Function Entry: VLAX-MAKE-VARIANT

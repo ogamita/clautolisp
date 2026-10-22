@@ -3274,6 +3274,56 @@ argument of AddAttribute (additive flags)."
   (is (null (%vla "(vl-load-com) (setq acAlignmentMiddleLeft nil) (vl-load-com)
                    acAlignmentMiddleLeft"))))
 
+;;; --- vlax-vb* VarType constants (vlax-vb-constants-unbound.issue) ---------
+
+(defparameter *vlax-vb-constants*
+  '(("vlax-vbEmpty" 0) ("vlax-vbNull" 1) ("vlax-vbInteger" 2) ("vlax-vbLong" 3)
+    ("vlax-vbSingle" 4) ("vlax-vbDouble" 5) ("vlax-vbCurrency" 6)
+    ("vlax-vbDate" 7) ("vlax-vbString" 8) ("vlax-vbObject" 9)
+    ("vlax-vbError" 10) ("vlax-vbBoolean" 11) ("vlax-vbVariant" 12)
+    ("vlax-vbDataObject" 13) ("vlax-vbDecimal" 14) ("vlax-vbByte" 17)
+    ("vlax-vbArray" 8192))
+  "The VB VarType values, written out independently of the runtime table.")
+
+(test vlax-vb-constants-bound-after-vl-load-com
+  "vlax-vb-constants-unbound: after (vl-load-com) every vlax-vb* name has
+its VB VarType value, under every dialect."
+  (dolist (dialect '("clautolisp" "autocad-2022" "bricscad-v26" "strict"))
+    (is (equal (mapcar #'second *vlax-vb-constants*)
+               (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com) (list ~{~A~^ ~})"
+                             dialect (mapcar #'first *vlax-vb-constants*))))
+        dialect)))
+
+(test vlax-vb-constants-yield-to-the-measured-table
+  "The vlax-vb* values are documented, not yet measured: once a regenerated
+*ACTIVEX-MEASURED-CONSTANTS* records a name, its measurement wins -- even a
+product's NIL (not bound there)."
+  (is (= 17 (length (clautolisp.autolisp-builtins-core:activex-documented-constants
+                     :autocad))))
+  (let ((clautolisp.autolisp-builtins-core::*activex-measured-constants*
+          '(("VLAX-VBINTEGER" nil 2))))
+    (is (null (assoc "VLAX-VBINTEGER"
+                     (clautolisp.autolisp-builtins-core:activex-documented-constants :autocad)
+                     :test #'string=)))
+    (is (null (assoc "VLAX-VBINTEGER"
+                     (clautolisp.autolisp-builtins-core:activex-enumeration-constants :autocad)
+                     :test #'string=)))
+    (is (= 16 (length (clautolisp.autolisp-builtins-core:activex-documented-constants
+                       :bricscad))))))
+
+(test vlax-vb-constants-drive-make-variant-and-safearray
+  "The canonical calls with the symbolic type: vlax-make-variant /
+vlax-variant-type, vlax-make-safearray."
+  (is (eql 2 (%vla "(vl-load-com) (vlax-variant-type (vlax-make-variant 1 vlax-vbInteger))")))
+  (is (eql 5 (%vla "(vl-load-com) (vlax-variant-type (vlax-make-variant 1.0 vlax-vbDouble))")))
+  (is (eql 8 (%vla "(vl-load-com) (vlax-variant-type (vlax-make-variant \"s\" vlax-vbString))")))
+  (is (eql 8197 (%vla "(vl-load-com)
+                       (vlax-variant-type
+                         (vlax-make-variant (vlax-make-safearray vlax-vbDouble '(0 . 2))))")))
+  (is (equal '(0 . 2) (%vla "(vl-load-com)
+                       (setq sa (vlax-make-safearray vlax-vbDouble '(0 . 2)))
+                       (cons (vlax-safearray-get-l-bound sa 1) (vlax-safearray-get-u-bound sa 1))"))))
+
 (test vla-addattribute-passes-the-six-vendor-arguments-through
   "cador-addattribute-argument-order. The AutoLISP façade must hand
 Block.AddAttribute's six arguments to the host in the VENDOR order --

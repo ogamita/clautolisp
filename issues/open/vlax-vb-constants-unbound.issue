@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: vlax-vb-constants-unbound — vlax-vbInteger, vlax-vbDouble ... are nil after (vl-load-com)
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: -
@@ -43,3 +43,29 @@ binding the names is all that is missing.
 
 - The measured values bound after (vl-load-com), per product.
 - =(vlax-variant-type (vlax-make-variant 1 vlax-vbInteger))= = 2.
+
+* Fix (2026-10-22)
+
+Partial: bound from the DOCUMENTED values, the vendor measurement pending.
+
+- probes/sources/probe-activex-constants.lsp: the 17 vlax-vb* names are
+  appended to the inventory, so the next AutoCAD / BricsCAD run records
+  (boundp value) for each, and the regenerated activex-constants-table.lisp
+  carries them per product.
+- clautolisp/autolisp-builtins-core/source/api.lisp: a hand-written
+  *ACTIVEX-DOCUMENTED-CONSTANTS* (NAME AUTOCAD BRICSCAD), same shape as the
+  generated *ACTIVEX-MEASURED-CONSTANTS*, kept OUT of the generated file so a
+  regeneration cannot clobber it. INSTALL-ACTIVEX-ENUMERATION-CONSTANTS
+  installs ACTIVEX-DOCUMENTED-CONSTANTS after the measured ones, same rules
+  (per product, once per document, never over a non-nil value), and a name
+  the measured table records is skipped: the measurement wins, even a
+  product's NIL. Once the measured table has all 17, the documented table
+  can be deleted.
+- Spec: a "*** clautolisp" note on VLAX-MAKE-SAFEARRAY.
+- Tests (autolisp-builtins-core): vlax-vb-constants-bound-after-vl-load-com,
+  vlax-vb-constants-yield-to-the-measured-table,
+  vlax-vb-constants-drive-make-variant-and-safearray --
+  (vlax-variant-type (vlax-make-variant 1 vlax-vbInteger)) = 2.
+
+Remaining: run probe-activex-constants on AutoCAD and BricsCAD, regenerate
+the table, check the values against the documented ones.

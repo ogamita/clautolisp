@@ -57,6 +57,13 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *=vlax-vbInteger=, =vlax-vbDouble=, … are bound after =(vl-load-com)=*
+  (2.3.32): the 17 =vlax-vb*= VarType constants were nil, so
+  =(vlax-make-safearray vlax-vbDouble '(0 . 2))= passed nil as the type.
+  They now have their documented values (=vlax-vbInteger= 2,
+  =vlax-vbDouble= 5, =vlax-vbString= 8, …); values measured on the CADs
+  take precedence once the ActiveX constants probe has run.
+
 - *DXF angles are degrees in the file, radians in =entget=* (2.3.31): the
   DXF codec copied file angles unconverted, so an ARC of 0..90 degrees
   from a vendor DXF (or DWG, which goes through DXF) read as 90 radians,

@@ -215,6 +215,7 @@
    #:find-core-builtin
    #:install-core-builtins
    #:activex-enumeration-constants
+   #:activex-documented-constants
    #:install-activex-enumeration-constants
    #:set-clal-optimization-levels
    #:autolisp-value->string
