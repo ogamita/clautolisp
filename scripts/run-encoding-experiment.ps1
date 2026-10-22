@@ -52,8 +52,16 @@ if (-not $env:ALFE_RUNTIME_LSP)   { $env:ALFE_RUNTIME_LSP   = (Join-Path $root "
 if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-bootstrap.lsp") -replace '\\','/' }
 
 $outDir = Join-Path $root "dist/encoding"
+# Start from an empty dist/encoding/: the Windows runner reuses its build
+# directory, so this job's artefact also carried older files of OTHER jobs
+# (encoding-probe-artifacts-and-macos-forward).
+if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $report = Join-Path $outDir "$Backend-Windows.txt"
+# Every write is Add-Content -Encoding utf8: Tee-Object -Append writes UTF-16
+# under Windows PowerShell 5, which left the 2026-10-08 reports mixed
+# (UTF-8 BOM + UTF-16LE body) and hid the DONE line from Select-String
+# (probe-ps1-done-check-misreads-utf16-report).
 Set-Content -Encoding utf8 $report ""
 
 $bargs = @("--no-init")
@@ -68,7 +76,7 @@ $bargs += @("-l",$probe)
 # EnvName/EnvValue optionally sets an env var. Output ENC lines are prefixed.
 function Run-Knob {
   param([string]$Label,[int]$CodePage = 0,[string]$EnvName = "",[string]$EnvValue = "")
-  ("########## KNOB: {0} ##########" -f $Label) | Tee-Object -FilePath $report -Append
+  ("########## KNOB: {0} ##########" -f $Label) | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
   $saved = $null
   if ($EnvName) { $saved = [Environment]::GetEnvironmentVariable($EnvName); Set-Item -Path "Env:$EnvName" -Value $EnvValue }
   # Invoke the real Windows cmd.exe by its absolute path ($env:ComSpec): a bare
@@ -80,10 +88,10 @@ function Run-Knob {
     (& $alfe @bargs 2>&1) |
       Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|BOOTSTRAP-FAILED|FAILED' } |
       ForEach-Object { "[$Label] $_" } |
-      Tee-Object -FilePath $report -Append
-  } catch { "[$Label] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+      ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  } catch { "[$Label] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
   if ($EnvName) { if ($null -ne $saved) { Set-Item -Path "Env:$EnvName" -Value $saved } else { Remove-Item -Path "Env:$EnvName" -ErrorAction SilentlyContinue } }
-  "" | Tee-Object -FilePath $report -Append
+  "" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 }
 
 # --- the Windows code-page / env knob matrix -------------------------------
@@ -114,19 +122,19 @@ if ($Backend -ne "clautolisp") {
   $e3lsp = Join-Path $outDir "e3-probe.lsp"
   Set-Content -Encoding ascii $e3lsp $e3
   $e3args = @($bargs | Where-Object { $_ -ne "-l" -and $_ -ne $probe }) + @("-l",($e3lsp -replace '\\','/'))
-  "########## E3: raw drain bytes ##########" | Tee-Object -FilePath $report -Append
+  "########## E3: raw drain bytes ##########" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
   try {
     (& $alfe @e3args 2>&1) |
       Where-Object { "$_" -match 'E3 |BOOTSTRAP-FAILED|FAILED' } |
       ForEach-Object { "[E3] $_" } |
-      Tee-Object -FilePath $report -Append
-  } catch { "[E3] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+      ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  } catch { "[E3] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
   if (Test-Path $raw) {
     $bytes = [System.IO.File]::ReadAllBytes($raw)
     ("[E3] {0} bytes: {1}" -f $bytes.Length, (($bytes | ForEach-Object { '{0:X2}' -f $_ }) -join ' ')) |
-      Tee-Object -FilePath $report -Append
+      ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
   } else {
-    "[E3] NO FILE: $raw" | Tee-Object -FilePath $report -Append
+    "[E3] NO FILE: $raw" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
   }
 }
 
@@ -154,24 +162,24 @@ if ($Backend -ne "clautolisp") {
   $logArgs = @($bargs | Where-Object { $_ -ne "-l" -and $_ -ne $probe }) +
              @("--keep-workdir", "--write-workdir-path", $wdFile,
                "--cad-log", $cadLog, "-l", ($logLsp -replace '\\','/'))
-  "########## LOG: --cad-log ##########" | Tee-Object -FilePath $report -Append
+  "########## LOG: --cad-log ##########" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
   try {
     (& $alfe @logArgs 2>&1) |
       Where-Object { "$_" -match 'LOG |cad-log|ERROR|BOOTSTRAP-FAILED|FAILED' } |
       ForEach-Object { "[LOG] $_" } |
-      Tee-Object -FilePath $report -Append
-  } catch { "[LOG] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+      ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  } catch { "[LOG] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
   if (Test-Path $cadLog) {
     $lines = [System.IO.File]::ReadAllLines($cadLog, [System.Text.Encoding]::UTF8)
-    ("[LOG] decoded: {0} lines" -f $lines.Count) | Tee-Object -FilePath $report -Append
+    ("[LOG] decoded: {0} lines" -f $lines.Count) | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
     $lines | Where-Object { $_ -match '[^\x00-\x7F]' } | Select-Object -First 8 | ForEach-Object {
       $chars = $_.ToCharArray()
       $high = ($chars | Where-Object { [int]$_ -gt 127 } | ForEach-Object { [int]$_ }) -join ' '
       $ascii = ($chars | ForEach-Object { if ([int]$_ -lt 128) { $_ } else { '?' } }) -join ''
-      ("[LOG] decoded line: {0} | high code points: {1}" -f $ascii, $high) | Tee-Object -FilePath $report -Append
+      ("[LOG] decoded line: {0} | high code points: {1}" -f $ascii, $high) | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
     }
   } else {
-    "[LOG] NO --cad-log FILE: $cadLog" | Tee-Object -FilePath $report -Append
+    "[LOG] NO --cad-log FILE: $cadLog" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
   }
   if (Test-Path $wdFile) {
     $wd = (Get-Content $wdFile -TotalCount 1).Trim()
@@ -189,10 +197,10 @@ if ($Backend -ne "clautolisp") {
           $around = ($bytes[$from..$to] | ForEach-Object { '{0:X2}' -f $_ }) -join ' '
         }
         ("[LOG] raw {0}: {1} bytes; first 16: {2}; first byte above 7F at offset {3}: {4}" -f $_.Name, $bytes.Length, $head, $i, $around) |
-          Tee-Object -FilePath $report -Append
+          ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
       }
     } else {
-      "[LOG] NO logs/ in $wd" | Tee-Object -FilePath $report -Append
+      "[LOG] NO logs/ in $wd" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
     }
     Remove-Item -Recurse -Force $wd -ErrorAction SilentlyContinue
   }
@@ -221,15 +229,15 @@ if ($Backend -ne "clautolisp") {
       @{ Label = "FORWARD alfe-load"; Mode = "";  Args = @("-l", $forwardEntry) },
       @{ Label = "FORWARD -l";        Mode = "";  Args = @("-l", $forward) },
       @{ Label = "FORWARD -x";        Mode = "x"; Args = @("-l", $forward, "-x", $forwardX) })) {
-    ("########## {0} ##########" -f $way.Label) | Tee-Object -FilePath $report -Append
+    ("########## {0} ##########" -f $way.Label) | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
     $env:E1F_MODE = $way.Mode
     try {
       $fargs = $baseArgs + $way.Args
       (& $alfe @fargs 2>&1) |
         Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|WARN|ERROR|BOOTSTRAP-FAILED|FAILED' } |
         ForEach-Object { "[$($way.Label)] $_" } |
-        Tee-Object -FilePath $report -Append
-    } catch { "[$($way.Label)] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+        ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+    } catch { "[$($way.Label)] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
     Remove-Item -Path Env:E1F_MODE -ErrorAction SilentlyContinue
   }
   if ($null -ne $savedE1) { $env:E1_DIR = $savedE1 } else { Remove-Item -Path Env:E1_DIR -ErrorAction SilentlyContinue }

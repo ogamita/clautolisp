@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: encoding-probe-artifacts-and-macos-forward -- encoding probe artefacts carry other jobs' files; macOS has no FORWARD step
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P3
 #+TYPE: infra
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: fix-probe-script-defects
 #+DATE: 2026-10-08
 
 * Symptom (found verifying MR !467, jobs 17033123929-32)
@@ -29,3 +29,37 @@
 Clean dist/encoding/ (and dist/e1/) at the start of every encoding probe
 script, include dist/e1/ in the artefact paths, add the FORWARD step to the
 .sh experiment, print FORWARDED-ARG / -CCS on the -x way too.
+
+* Fix (2026-10-22)
+
+1. Stale files: run-encoding-experiment.ps1 / .sh remove dist/encoding/ before
+   anything else, run-lispsys-bom-probe.ps1 removes dist/encoding/ AND
+   dist/e1/. Each encoding job runs exactly one of these scripts, so the
+   artefact now holds this job's files only.
+2. dist/e1/: encoding:experiment:lispsys-bom:autocad:windows (the one job that
+   runs run-lispsys-bom-probe.ps1) has its own artifacts paths
+   [dist/encoding/, dist/e1/]; the shared .encoding-artifacts template keeps
+   dist/encoding/ only, so the other encoding jobs never ship a stale e1/.
+3. macOS FORWARD: run-encoding-experiment.sh has the .ps1's FORWARD step for a
+   CAD backend: lispsys-forward-probe.lsp under -Efile-write utf-8, three alfe
+   runs ("FORWARD alfe-load" -l on an entry file holding (alfe-load "<probe>"),
+   "FORWARD -l" -l <probe>, "FORWARD -x" -l <probe> with E1F_MODE=x plus the
+   same -x form as the .ps1), E1_DIR = dist/encoding/e1f, the lines kept by the
+   same filter (ENC / ENC-PROBE DONE / WARN / ERROR / BOOTSTRAP-FAILED /
+   FAILED) and prefixed "[FORWARD ...] " like the .ps1. Checked locally with
+   bash -n and by running the step against the clautolisp backend (--host
+   nihil): the three runs start, E1_DIR / E1F_MODE / the -x form reach the
+   probe (the -x way runs e1f-x only, the -l way runs e1f-run at load); the
+   clautolisp backend has no alfe-load and no LISPSYS, which is why the step
+   is skipped for it, as in the .ps1.
+4. -x way: lispsys-forward-probe.lsp's e1f-x now prints the same header as
+   e1f-run, "-x LISPSYS n FORWARDED-ARG ... FORWARDED-CCS ..." (one helper,
+   e1f--header, for both).
+
+Closes when the next encoding run shows artefacts holding only that job's
+files (dist/e1/ included for lispsys-bom) and the macOS job reports the three
+FORWARD ways.
+
+Seen on the way, filed apart (deferred-probe-scripts-host-mock): the
+clautolisp backend of these probe scripts passes --host mock, which alfe now
+rejects (cador, cadtui, nihil), so a clautolisp run reports nothing.

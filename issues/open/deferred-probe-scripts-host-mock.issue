@@ -1,0 +1,26 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-probe-scripts-host-mock -- probe scripts' clautolisp backend passes --host mock, which alfe rejects
+#+STATUS: TODO
+#+PRIORITY: P4
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-22
+
+* Symptom
+
+Found while checking encoding-probe-artifacts-and-macos-forward
+(2026-10-22): every scripts/run-*-probe.{sh,ps1} and
+run-encoding-experiment.{sh,ps1} builds its clautolisp backend arguments as
+=--clautolisp --host mock=, and alfe now answers
+
+: alfe: --host: Unknown --host "mock" (expected cador, cadtui, nihil)
+
+so a clautolisp run of these scripts produces an empty report (only the
+headers). The CAD backends are unaffected; no CI job runs the clautolisp
+backend of these scripts (=grep -rl '"--host" "mock"' scripts= lists them).
+
+* Proposal
+
+Use =--host nihil= (or drop --host when the default fits) in those scripts,
+then check one clautolisp run per script locally.

@@ -51,6 +51,10 @@ if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "
 $outDir = Join-Path $root "dist/pathname"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $report = Join-Path $outDir "$Backend-Windows.txt"
+# Every write is Add-Content -Encoding utf8: Tee-Object -Append writes UTF-16
+# under Windows PowerShell 5, which left the 2026-10-08 reports mixed
+# (UTF-8 BOM + UTF-16LE body) and hid the DONE line from Select-String
+# (probe-ps1-done-check-misreads-utf16-report).
 Set-Content -Encoding utf8 $report ""
 
 $bargs = @("--no-init")
@@ -61,8 +65,8 @@ switch ($Backend) {
 }
 $bargs += @("-l",$probe)
 
-("########## BACKEND: {0} ##########" -f $Backend) | Tee-Object -FilePath $report -Append
+("########## BACKEND: {0} ##########" -f $Backend) | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value "$_" }
 (& $alfe @bargs 2>&1) |
   Where-Object { "$_" -match '^PATHPROBE |BOOTSTRAP-FAILED|FAILED' } |
-  Tee-Object -FilePath $report -Append
+  ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value "$_" }
 "pathname probe ($Backend) -> $report"

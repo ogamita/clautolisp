@@ -60,22 +60,27 @@ $bargs += @("-l", $probe)
 $outDir = Join-Path $root "dist/intersectwith"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $report = Join-Path $outDir "$Backend-Windows.txt"
+# Every write is Add-Content -Encoding utf8: Tee-Object -Append writes UTF-16
+# under Windows PowerShell 5, which left the 2026-10-08 reports mixed
+# (UTF-8 BOM + UTF-16LE body) and hid the DONE line from Select-String
+# (probe-ps1-done-check-misreads-utf16-report).
 Set-Content -Encoding utf8 $report ""
 
-"########## BACKEND: $Backend on Windows ##########" | Tee-Object -FilePath $report -Append
+"########## BACKEND: $Backend on Windows ##########" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 $lines = @(& $alfe $bargs 2>&1 |
   Select-String -Pattern '^IWPROBE|BOOTSTRAP-FAILED|FAILED' |
   ForEach-Object { $_.Line })
-$lines | Tee-Object -FilePath $report -Append
+$lines | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 
 # A run with no DONE line died mid-way; say so in the file, so a truncated run
 # is never read as an engine that finds no intersections. Decided on the lines
-# captured, NOT by re-reading $report: Tee-Object -Append writes UTF-16 after
-# the UTF-8 header, which Select-String -Path then misreads -- every run of
-# 2026-10-08 was flagged INCOMPLETE although it had reached IWPROBE-DONE.
+# captured (clautolisp 2.3.10): every run of 2026-10-08 was flagged INCOMPLETE
+# although it had reached IWPROBE-DONE, because the Tee-Object -Append writes
+# of then left a UTF-16 body that Select-String -Path misread. The report is
+# now all UTF-8 (above), so either check works; the captured one stays.
 if (-not ($lines | Where-Object { $_ -match '^IWPROBE-DONE' })) {
   "IWPROBE-INCOMPLETE  the probe did not reach its end" |
-    Tee-Object -FilePath $report -Append
+    ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 }
 
 Write-Host "intersectwith probe ($Backend) -> $report"
