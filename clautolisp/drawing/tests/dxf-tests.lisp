@@ -427,3 +427,126 @@ space."
   (is (string= "AC1027" (clautolisp.drawing::%dxf-acadver-string :bogus)))
   (is (string= "AC1027" (clautolisp.drawing::%dxf-acadver-string nil)))
   (is (string= "AC1015" (clautolisp.drawing::%dxf-acadver-string "ac1015"))))
+
+;;; --- Angle units (dxf-file-angle-units.issue) -----------------------
+;;; A DXF file stores entity angles in DEGREES; entget reports them in
+;;; RADIANS. The codec converts per entity type, on read and on write.
+
+(defun %angle-close-p (a b)
+  (and (realp a) (realp b) (< (abs (- a b)) 1d-9)))
+
+(defun %entities-by-type (drawing)
+  "Model-space entities of DRAWING as an alist type -> entity data."
+  (let ((acc '()))
+    (map-entities (lambda (e)
+                    (unless (entity-handle-block e)
+                      (push (cons (cdr (assoc 0 (entity-dxf e))) (entity-dxf e)) acc)))
+                  drawing)
+    (nreverse acc)))
+
+(defparameter +angle-sample-dxf+
+  (format nil "~{~A~%~}"
+          '("0" "SECTION" "2" "BLOCKS"
+            "0" "BLOCK" "5" "30" "2" "TAG" "70" "0"
+            "10" "0.0" "20" "0.0" "30" "0.0"
+            "0" "TEXT" "5" "31" "8" "0"
+            "10" "0.0" "20" "0.0" "30" "0.0" "40" "1.0" "1" "IN-BLOCK"
+            "50" "180.0"
+            "0" "ENDBLK"
+            "0" "ENDSEC"
+            "0" "SECTION" "2" "ENTITIES"
+            "0" "ARC" "5" "2A" "8" "0"
+            "10" "0.0" "20" "0.0" "30" "0.0" "40" "10.0"
+            "50" "0.0" "51" "90.0"
+            "0" "TEXT" "5" "2B" "8" "0"
+            "10" "1.0" "20" "2.0" "30" "0.0" "40" "2.5" "1" "HELLO"
+            "50" "45.0" "51" "15.0"
+            "0" "INSERT" "5" "2C" "8" "0" "2" "TAG"
+            "10" "5.0" "20" "5.0" "30" "0.0"
+            "50" "30.0"
+            "0" "ELLIPSE" "5" "2D" "8" "0"
+            "10" "0.0" "20" "0.0" "30" "0.0"
+            "11" "4.0" "21" "0.0" "31" "0.0" "40" "0.5"
+            "41" "0.0" "42" "3.141592653589793"
+            "0" "ENDSEC"
+            "0" "EOF")))
+
+(test dxf-read-converts-file-degrees-to-radians
+  "A vendor DXF says ARC 0..90, TEXT rotation 45 / oblique 15, INSERT
+rotation 30 -- in DEGREES. entget must see radians. ELLIPSE 41/42 are
+parameters (radians in the file too) and must not be touched."
+  (let* ((d (with-input-from-string (s +angle-sample-dxf+)
+              (dxf-read-drawing-from-stream s)))
+         (by-type (%entities-by-type d))
+         (arc (cdr (assoc "ARC" by-type :test #'equal)))
+         (text (cdr (assoc "TEXT" by-type :test #'equal)))
+         (insert (cdr (assoc "INSERT" by-type :test #'equal)))
+         (ellipse (cdr (assoc "ELLIPSE" by-type :test #'equal))))
+    (is (%angle-close-p 0d0 (cdr (assoc 50 arc))))
+    (is (%angle-close-p (/ pi 2) (cdr (assoc 51 arc)))
+        "ARC end angle 90 deg must read as pi/2, got ~S" (cdr (assoc 51 arc)))
+    (is (%angle-close-p (/ pi 4) (cdr (assoc 50 text)))
+        "TEXT rotation 45 deg must read as pi/4, got ~S" (cdr (assoc 50 text)))
+    (is (%angle-close-p (/ pi 12) (cdr (assoc 51 text))))
+    (is (%angle-close-p (/ pi 6) (cdr (assoc 50 insert)))
+        "INSERT rotation 30 deg must read as pi/6, got ~S" (cdr (assoc 50 insert)))
+    (is (%angle-close-p pi (cdr (assoc 42 ellipse)))
+        "ELLIPSE 42 is a parameter, already radians: ~S" (cdr (assoc 42 ellipse)))
+    ;; Block-owned entities are converted too.
+    (let ((owned (first (block-entities d "TAG"))))
+      (is (not (null owned)))
+      (is (%angle-close-p pi (cdr (assoc 50 (entity-dxf owned))))))))
+
+(defun %dxf-value-after (text code-line start-marker)
+  "The value line following the first CODE-LINE group after START-MARKER
+in the ASCII DXF TEXT, parsed as a double."
+  (let* ((from (search start-marker text))
+         (pos (and from (search (format nil "~%~A~%" code-line) text :start2 from))))
+    (when pos
+      (let* ((vstart (+ pos (length code-line) 2))
+             (vend (position #\Newline text :start vstart)))
+        (let ((*read-default-float-format* 'double-float))
+          (coerce (read-from-string (subseq text vstart vend)) 'double-float))))))
+
+(test dxf-write-emits-degrees
+  "An ARC of 0..pi/2 in entget units is written as 0 and 90 in the file,
+which is what AutoCAD / BricsCAD read; a lone LWPOLYLINE bulge 42 is not
+an angle and is written unchanged."
+  (let ((d (make-drawing :version :ac1027)))
+    (add-entity d (list (cons 0 "ARC") (cons 8 "0") (list 10 0d0 0d0 0d0)
+                        (cons 40 10d0) (cons 50 0d0) (cons 51 (/ pi 2))))
+    (add-entity d (list (cons 0 "LWPOLYLINE") (cons 8 "0") (cons 90 2) (cons 70 0)
+                        (list 10 0d0 0d0) (cons 42 1d0) (list 10 1d0 0d0)))
+    (let ((text (with-output-to-string (s) (dxf-write-drawing-to-stream d s))))
+      (let ((start (%dxf-value-after text "50" (format nil "~%ARC~%")))
+            (end (%dxf-value-after text "51" (format nil "~%ARC~%"))))
+        (is (%angle-close-p 0d0 start) "ARC 50 in the file: ~S" start)
+        (is (%angle-close-p 90d0 end) "ARC 51 in the file must be 90: ~S" end))
+      (is (%angle-close-p 1d0 (%dxf-value-after text "42" (format nil "~%LWPOLYLINE~%")))))))
+
+(test dxf-angle-round-trip
+  "Write then read: the entget angles come back (to rounding)."
+  (let ((d (make-drawing :version :ac1027)))
+    (add-entity d (list (cons 0 "ARC") (cons 8 "0") (list 10 0d0 0d0 0d0)
+                        (cons 40 10d0) (cons 50 (/ pi 3)) (cons 51 (* 1.5d0 pi))))
+    (add-entity d (list (cons 0 "INSERT") (cons 8 "0") (cons 2 "X")
+                        (list 10 0d0 0d0 0d0) (cons 50 0.7d0)))
+    (let* ((text (with-output-to-string (s) (dxf-write-drawing-to-stream d s)))
+           (restored (with-input-from-string (s text) (dxf-read-drawing-from-stream s)))
+           (by-type (%entities-by-type restored))
+           (arc (cdr (assoc "ARC" by-type :test #'equal)))
+           (insert (cdr (assoc "INSERT" by-type :test #'equal))))
+      (is (%angle-close-p (/ pi 3) (cdr (assoc 50 arc))))
+      (is (%angle-close-p (* 1.5d0 pi) (cdr (assoc 51 arc))))
+      (is (%angle-close-p 0.7d0 (cdr (assoc 50 insert))))
+      ;; The source drawing's data is not mutated by the writer.
+      (let ((src (cdr (assoc "ARC" (%entities-by-type d) :test #'equal))))
+        (is (%angle-close-p (* 1.5d0 pi) (cdr (assoc 51 src))))))))
+
+(test dxf-mtext-column-heights-are-not-angles
+  "MTEXT reuses 50 for column heights after its 75/76 column data; only a
+rotation 50 BEFORE that is an angle."
+  (let ((data '((0 . "MTEXT") (50 . 90d0) (75 . 2) (76 . 2) (50 . 3d0) (50 . 4d0))))
+    (let ((out (clautolisp.drawing::dxf-entity-from-file data)))
+      (is (%angle-close-p (/ pi 2) (cdr (second out))))
+      (is (equal '((75 . 2) (76 . 2) (50 . 3d0) (50 . 4d0)) (cddr out))))))

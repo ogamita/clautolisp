@@ -57,6 +57,13 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *DXF angles are degrees in the file, radians in =entget=* (2.3.31): the
+  DXF codec copied file angles unconverted, so an ARC of 0..90 degrees
+  from a vendor DXF (or DWG, which goes through DXF) read as 90 radians,
+  and a saved ARC of 0..pi/2 opened elsewhere as 0..1.57 degrees. ARC,
+  TEXT, ATTRIB, ATTDEF, SHAPE, MTEXT, INSERT, DIMENSION and VERTEX angles
+  are now converted both ways. See the manual, /Angles in DXF files/.
+
 - *=entget= lists the header like the CADs* (2.3.30, cador host):
   =-1 0 5=, then a dictionary member's ={ACAD_REACTORS …}= group, then the
   owner =330=, then the rest -- as BricsCAD V26 was measured to list it.

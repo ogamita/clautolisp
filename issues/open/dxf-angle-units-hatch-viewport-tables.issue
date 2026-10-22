@@ -1,0 +1,32 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: dxf-angle-units-hatch-viewport-tables -- the DXF codec still copies the degree angles of HATCH, VIEWPORT, table records and header variables unconverted
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: dxf-file-angle-units
+#+BRANCH: -
+#+DATE: 2026-10-22
+
+* Symptom
+
+dxf-file-angle-units (2.3.31) converts the entity angles of ARC, TEXT,
+ATTRIB, ATTDEF, SHAPE, MTEXT, INSERT, DIMENSION and VERTEX between the
+file's degrees and entget's radians. Still copied unconverted, per the DXF
+reference:
+
+- HATCH: 52 (pattern angle), 53 (pattern line angle), and the boundary
+  path's ARC / ELLIPSE edges' 50/51 (start / end angle) -- nested in the
+  boundary data, so the first-occurrence rule of *DXF-DEGREE-GROUPS* does
+  not fit them;
+- VIEWPORT 51 (twist angle);
+- table records: VPORT 50/51 (snap rotation, view twist), VIEW 50, UCS
+  /dimstyle angles as applicable;
+- header variables holding angles ($ANGBASE, $SNAPANG, ...) -- check the
+  unit of each against the reference and a vendor file.
+
+* To do
+
+Check each against the DXF reference and a vendor-written DXF (the
+dxf-file-angle-units ticket's vendor check can cover these too), then
+extend the codec: a structured walk for HATCH boundary edges, table-record
+and header tables alongside *DXF-DEGREE-GROUPS*.

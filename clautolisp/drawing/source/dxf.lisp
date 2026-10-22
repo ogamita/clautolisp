@@ -23,6 +23,9 @@
 ;;;;   * Points. DXF stores a point as separate X/Y/Z group codes
 ;;;;     (10, 20, 30). entget groups them into one pair (10 x y z).
 ;;;;     The reader coalesces; the writer expands.
+;;;;   * Angles. DXF stores entity angles in degrees, entget in radians;
+;;;;     a per-entity-type table (*DXF-DEGREE-GROUPS*) drives the
+;;;;     conversion in the entity loaders and the entity writer.
 
 ;;; --- Group-code value typing ------------------------------------
 
@@ -138,6 +141,81 @@ into single entget-style point pairs (10 x y z)."
                   (setf rest (cdr rest))))))
     (nreverse out)))
 
+;;; --- Angle units: degrees in the file, radians in entget ---------
+;;;
+;;; A DXF file stores most entity angles in DEGREES; entget (and so the
+;;; drawing's entity data, which every consumer -- vlax-curve-*, ActiveX,
+;;; the commands -- reads as entget) carries them in RADIANS. Which real
+;;; groups are angles depends on the entity type: ELLIPSE 41/42 are
+;;; parameters already in radians, LWPOLYLINE / VERTEX 42 is a bulge, an
+;;; MTEXT 50 after its column data is a column height. So the conversion
+;;; is driven by a per-type table, applied by the entity / block loaders
+;;; (degrees -> radians) and by the entity writer (radians -> degrees).
+;;; Table records, block headers and OBJECTS are not converted.
+;;;
+;;; Only the FIRST occurrence of each listed code is converted, and the
+;;; scan stops at a STOP code (an MTEXT 75/76 column section, a 101
+;;; embedded object, a 1001 XDATA application), so a later group that
+;;; reuses the code for something else is left alone. The DWG codec goes
+;;; through this DXF codec (libredwg's DXF is degree-valued too), so it
+;;; is converted by the same code.
+;;; See issues/open/dxf-file-angle-units.issue.
+
+(defparameter *dxf-degree-groups*
+  '(("ARC"       50 51)          ; start angle, end angle
+    ("TEXT"      50 51)          ; rotation, oblique angle
+    ("ATTRIB"    50 51)          ; rotation, oblique angle
+    ("ATTDEF"    50 51)          ; rotation, oblique angle
+    ("SHAPE"     50 51)          ; rotation, oblique angle
+    ("MTEXT"     50)             ; rotation (when written instead of 11)
+    ("INSERT"    50)             ; rotation
+    ("DIMENSION" 50 51 52 53)    ; rotation, horizontal dir, oblique, text rotation
+    ("VERTEX"    50))            ; curve-fit tangent direction
+  "Entity type -> the real group codes a DXF file stores in degrees and
+entget reports in radians (DXF reference). Deliberately absent: ELLIPSE
+41/42 (parameters, radians in the file too) and the 42 bulge of
+LWPOLYLINE / VERTEX.")
+
+(defparameter *dxf-degree-scan-stop-codes* '(75 76 101 1001)
+  "Group codes after which no angle conversion is done in an entity (MTEXT
+column data, embedded object, XDATA).")
+
+(defun dxf-convert-entity-angles (data function)
+  "DATA (an entity's group-code list, ENTGET shaped) with FUNCTION applied
+to the value of each degree-valued group of its type, first occurrence
+only, up to the first stop code. DATA is not modified."
+  (let* ((type (cdr (assoc 0 data)))
+         (codes (and (stringp type)
+                     (rest (assoc type *dxf-degree-groups* :test #'string-equal)))))
+    (if (null codes)
+        data
+        (let ((pending (copy-list codes)) (stopped nil))
+          (mapcar (lambda (pair)
+                    (cond
+                      ((or stopped (not (consp pair))) pair)
+                      ((member (car pair) *dxf-degree-scan-stop-codes*)
+                       (setf stopped t)
+                       pair)
+                      ((and (member (car pair) pending) (realp (cdr pair)))
+                       (setf pending (remove (car pair) pending))
+                       (cons (car pair) (funcall function (cdr pair))))
+                      (t pair)))
+                  data)))))
+
+(defun dxf-degrees->radians (degrees)
+  (* (coerce degrees 'double-float) (/ pi 180d0)))
+
+(defun dxf-radians->degrees (radians)
+  (* (coerce radians 'double-float) (/ 180d0 pi)))
+
+(defun dxf-entity-from-file (data)
+  "Entity DATA as read from a DXF file -> entget units (radians)."
+  (dxf-convert-entity-angles data #'dxf-degrees->radians))
+
+(defun dxf-entity-for-file (data)
+  "Entity DATA in entget units -> DXF file units (degrees)."
+  (dxf-convert-entity-angles data #'dxf-radians->degrees))
+
 ;;; --- Reader: section splitting ----------------------------------
 
 (defun dxf-split-objects (pairs starter-codes)
@@ -246,7 +324,7 @@ variable's value group(s)."
 run inside a block) to DRAWING, owned by BLOCK (NIL = model space)."
   (dolist (entity (dxf-split-objects (dxf-coalesce-points body) '(0)))
     (let ((handle-pair (find 5 entity :key #'car)))
-      (add-entity drawing entity
+      (add-entity drawing (dxf-entity-from-file entity)
                   :handle (and handle-pair (cdr handle-pair))
                   :block block))))
 
@@ -268,7 +346,7 @@ the entities are added with their :block owner set."
            (setf current-block nil))
           (current-block
            (let ((handle-pair (find 5 group :key #'car)))
-             (add-entity drawing group
+             (add-entity drawing (dxf-entity-from-file group)
                          :handle (and handle-pair (cdr handle-pair))
                          :block current-block))))))))
 
@@ -522,7 +600,8 @@ this takes the DRAWING -- the seed lives there."
   "ENTITY's group-code list with (330 . owner-handle) inserted after its
 handle when it carries no owner of its own. The owner is the entity's
 block, or model space for a model-space entity."
-  (let ((data (dxf-ordered-entity-data (entity-handle-data entity))))
+  (let ((data (dxf-entity-for-file
+               (dxf-ordered-entity-data (entity-handle-data entity)))))
     (if (assoc 330 data)
         data
         (let ((handle (dxf-owner-handle

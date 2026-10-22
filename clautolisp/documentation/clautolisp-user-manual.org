@@ -1234,6 +1234,20 @@ a per-session log; ~command~ returns ~nil~. Read the log back with
 signals ~:host-not-supported~ (~vl-cmdf~ instead returns ~nil~, per
 its T / nil success contract).
 
+*** Angles in DXF files
+
+A DXF file stores entity angles in *degrees*; ~entget~ reports them in
+*radians*, as on AutoCAD and BricsCAD. cador converts when it loads a
+DXF (or a DWG, which goes through DXF) and when it saves one, for: ARC
+50/51; TEXT, ATTRIB, ATTDEF and SHAPE 50/51 (rotation, oblique angle);
+MTEXT 50 and INSERT 50 (rotation); DIMENSION 50-53; VERTEX 50 (curve-fit
+tangent). ELLIPSE 41/42 (parameters) and a polyline 42 (bulge) are not
+angles and are copied as they are. Table records (VPORT, VIEW, ...),
+HATCH and the header variables are not converted. Up to 2.3.30 the
+file values were copied unconverted, so an ARC of 0..90 degrees from a
+vendor DXF read as ~(51 . 90.0)~ (90 radians), and a saved ARC of
+0..pi/2 opened elsewhere as 0..1.57 degrees.
+
 *** DXF pointer group codes under cador
 
 cador stores the drawing's object references as handles, but -- like
