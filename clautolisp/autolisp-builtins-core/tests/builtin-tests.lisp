@@ -8617,3 +8617,110 @@ OPEN-ARGUMENTS...) under DIALECT after PRELUDE, as a printed list."
     (is (typep (second r) 'autolisp-string))
     (is (not (null (third r))))
     (is (string= "STR" (autolisp-symbol-name (fourth r))))))
+
+;;; --- a LOCAL *error* is the one called ---------------------------
+;;;
+;;; local-error-handler-not-called. (defun c:cmd (/ *error* ...) (defun
+;;; *error* ...) ...) is THE AutoCAD idiom: the handler is local to the
+;;; command, and the binding current where the error happens is called,
+;;; with the command's other locals still visible. The error handler used
+;;; to unwind first, so only the global *error* was ever seen.
+
+(defun %error-handler-run (source)
+  "Evaluate SOURCE (AutoLISP text) under CALL-WITH-AUTOLISP-ERROR-HANDLER, as
+the toplevel does; return its value."
+  (let ((forms (clautolisp.autolisp-runtime:read-runtime-from-string source))
+        (context (clautolisp.autolisp-runtime:default-evaluation-context)))
+    (clautolisp.autolisp-runtime:call-with-autolisp-error-handler
+     (lambda () (clautolisp.autolisp-runtime::autolisp-eval-progn forms context))
+     context)))
+
+(defun %error-handler-value (name)
+  (let ((v (autolisp-symbol-value (intern-autolisp-symbol name))))
+    (if (typep v 'autolisp-string) (autolisp-string-value v) v)))
+
+(test local-error-handler-is-called-with-locals-visible
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun *error* (msg) (setq seen (strcat \"GLOBAL \" msg)))
+    (defun divise (a b / *error*)
+      (defun *error* (msg) (setq seen (strcat \"LOCAL \" msg \" a=\" (itoa a))))
+      (/ a b))")
+  (%error-handler-run "(divise 7 0)")
+  (is (equal "LOCAL Division by zero in /. a=7" (%error-handler-value "SEEN"))
+      "the local *error* must be called, seeing the local A: ~S"
+      (%error-handler-value "SEEN"))
+  ;; The local binding is undone on the way out: the global one is back.
+  (%error-handler-run "(/ 1 0)")
+  (is (equal "GLOBAL Division by zero in /." (%error-handler-value "SEEN"))))
+
+(test local-error-handler-set-by-setq-is-called
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun f (/ *error*)
+      (setq *error* (lambda (m) (setq seen (strcat \"SETQ \" m))))
+      (/ 1 0))")
+  (%error-handler-run "(f)")
+  (is (equal "SETQ Division by zero in /." (%error-handler-value "SEEN"))))
+
+(test error-handler-does-not-shadow-vl-catch-all-apply
+  ;; An error caught by vl-catch-all-apply never reaches *error*.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun *error* (msg) (setq seen msg))
+    (setq r (vl-catch-all-error-p (vl-catch-all-apply (quote /) (list 1 0))))")
+  (is (null (%error-handler-value "SEEN")))
+  (is (eq (find-autolisp-symbol "T") (%error-handler-value "R"))))
+
+;;; --- vl-exit-with-error / -value outside a VLX ----------------------
+;;;
+;;; vl-exit-with-error-leaks-host-condition. With no separate-namespace
+;;; boundary (clautolisp loads no VLX) the AUTOLISP-NAMESPACE-EXIT escaped
+;;; every AutoLISP handler and reached the host Lisp's debugger. In the
+;;; document namespace it is now an AutoLISP error with the message, and
+;;; vl-exit-with-value is the value of the toplevel form.
+
+(test vl-exit-with-error-at-toplevel-calls-error-handler
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun *error* (msg) (setq seen (strcat \"GLOBAL \" msg)))")
+  (%error-handler-run "(vl-exit-with-error \"boom\")")
+  (is (equal "GLOBAL boom" (%error-handler-value "SEEN")))
+  ;; ... a local one too, called before the locals are unwound.
+  (%error-handler-run
+   "(defun f (n / *error*)
+      (defun *error* (msg) (setq seen (strcat \"LOCAL \" msg \" n=\" (itoa n))))
+      (vl-exit-with-error \"inner\"))")
+  (%error-handler-run "(f 3)")
+  (is (equal "LOCAL inner n=3" (%error-handler-value "SEEN"))))
+
+(test vl-exit-with-error-without-handler-is-an-autolisp-error
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((caught (handler-case (progn (%error-handler-run "(vl-exit-with-error \"boom\")") nil)
+                  ;; ERROR, as the driver's own handlers do: the
+                  ;; namespace exit is a SERIOUS-CONDITION, not an ERROR,
+                  ;; so a boundary that handles it must ask for it.
+                  (error (c) c))))
+    (is (typep caught 'clautolisp.autolisp-runtime:autolisp-runtime-error)
+        "must surface as an AutoLISP error, not ~S" (type-of caught))
+    (when (typep caught 'clautolisp.autolisp-runtime:autolisp-runtime-error)
+      (is (equal "boom" (clautolisp.autolisp-runtime:autolisp-runtime-error-message caught))))))
+
+(test vl-exit-with-value-at-toplevel-is-the-forms-value
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (is (eql 42 (%error-handler-run "(list 1 (vl-exit-with-value 42) 2)")))
+  ;; Inside vl-catch-all-apply both keep their documented results.
+  (is (eql 5 (%error-handler-run "(vl-catch-all-apply (quote vl-exit-with-value) (list 5))")))
+  (is (equal "c" (autolisp-string-value
+                  (%error-handler-run
+                   "(vl-catch-all-error-message (vl-catch-all-apply (quote vl-exit-with-error) (list \"c\")))")))))

@@ -85,6 +85,13 @@ correct, but slower than the frame it saves."
                 (some (lambda (name)
                         (member (string-upcase (autolisp-symbol-name name))
                                 '("T" "NIL") :test #'string=))
+                      names)
+                ;; A local *ERROR* must live in a dynamic frame: ANY error
+                ;; signalled under this function -- by a builtin the audit
+                ;; calls safe, too -- makes the error handler look *ERROR*
+                ;; up by name (local-error-handler-not-called).
+                (some (lambda (name)
+                        (string= "*ERROR*" (string-upcase (autolisp-symbol-name name))))
                       names))
         (return-from compile-lexical-usubr nil))
       (let* ((*lexical-locals*

@@ -1,0 +1,42 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vl-exit-outside-vlx-caught-diverges -- outside a VLX, BricsCAD makes vl-exit-with-error AND vl-exit-with-value an error with an empty message
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: divergence
+#+DEPENDS: control-flow probe on AutoCAD (Windows runners)
+#+BRANCH: -
+#+DATE: 2026-10-22
+
+* Symptom
+
+Found measuring vl-exit-with-error-leaks-host-condition (control-flow
+probe, MR !471, job 17396028047, BricsCAD V26 macOS). Each case runs
+inside vl-catch-all-apply, in the document namespace (no VLX):
+
+| case                                   | BricsCAD V26  | clautolisp 2.3.28 |
+|----------------------------------------+---------------+-------------------|
+| (vl-exit-with-error "boom")            | ERROR ""      | ERROR "boom"      |
+| (vl-exit-with-value 42)                | ERROR ""      | VALUE 42          |
+| inside a defun, vl-exit-with-error     | ERROR ""      | ERROR "inner"     |
+| inside a defun, vl-exit-with-value     | ERROR ""      | VALUE 7           |
+
+So on BricsCAD, outside a separate-namespace VLX, both functions are an
+error whose message is EMPTY -- even vl-exit-with-value. clautolisp
+treats them as if a VLX boundary were there (the message, the value).
+Autodesk documents both only for a separate-namespace VLX's *error*
+handler; nothing documents the call outside one.
+
+The host-condition leak itself (an SBCL backtrace) is fixed in 2.3.28
+and is not this ticket.
+
+* To do
+
+1. Measure AutoCAD 2022 GUI + accoreconsole: the control-flow:probe jobs
+   on !471 (Windows runners back 2026-10-23). Also BricsCAD V25 Windows.
+2. If AutoCAD agrees with BricsCAD: make clautolisp's document-namespace
+   behaviour the vendors' (an error with an empty message for both
+   functions), keeping the message / value only where a VLX boundary
+   exists. If the vendors differ: discriminate by dialect per the Dialect
+   Divergence rules, with a portability warning under --strict.
+3. Record the measurement in the autolisp-spec entries' *** clautolisp
+   sections (VL-EXIT-WITH-ERROR, VL-EXIT-WITH-VALUE).

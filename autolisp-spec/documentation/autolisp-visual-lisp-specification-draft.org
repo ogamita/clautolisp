@@ -75795,6 +75795,16 @@ Transfers control across namespace/error boundaries.
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
 - Status: documented by family page.
 
+*** clautolisp
+clautolisp loads no VLX, so the only separate-namespace boundary is
+~vl-catch-all-apply~, which returns a catch-all error object carrying
+~msg~. With no such boundary -- in the document namespace -- the call is
+an AutoLISP error with message ~msg~, raised where ~vl-exit-with-error~
+was called: ~*error*~ is called with ~msg~ (a ~*error*~ local to the
+calling function included), and without one the error is reported and
+~--on-error~ applies. (Before 2.3.28 it escaped every handler to the host
+Lisp's debugger: issue =vl-exit-with-error-leaks-host-condition=.)
+
 #+LATEX: \newpage
 
 ** Function Entry: VL-EXIT-WITH-VALUE
@@ -75835,6 +75845,14 @@ Transfers control across namespace boundaries.
 - [vl-exit-with-value (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/DEU/AutoCAD-MAC-AutoLISP-Reference/files/GUID-80622A39-A5E8-4E68-824E-E66BD8D3E9DE.htm)
 - [About Handling Errors in a VLX Application Running in Its Own Namespace (Visual LISP IDE)](https://help.autodesk.com/cloudhelp/2026/ESP/AutoCAD-AutoLISP/files/GUID-B682DF97-DFD5-48B4-9FFF-8A0DF7CAC05F.htm)
 - Status: documented.
+
+*** clautolisp
+clautolisp loads no VLX, so the only separate-namespace boundary is
+~vl-catch-all-apply~, which returns ~value~. With no such boundary -- in
+the document namespace -- the toplevel form being evaluated (an ~-x~
+expression, a form of a loaded file, a REPL input) is abandoned and its
+value is ~value~. (Before 2.3.28 it escaped every handler to the host
+Lisp's debugger: issue =vl-exit-with-error-leaks-host-condition=.)
 
 #+LATEX: \newpage
 

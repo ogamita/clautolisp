@@ -1190,9 +1190,21 @@ _$ (defun *error* (msg)
 Large programs install their own =*error*= when a command starts and
 restore the previous one when it ends. In AutoCAD the usual way is to
 declare =*error*= as a local variable of the command function,
-=(defun c:mycommand (/ *error*) …)=, and define it inside. (clautolisp
-2.3 does not yet call an =*error*= declared local this way, only the
-global one: issue =local-error-handler-not-called=.)
+=(defun c:mycommand (/ *error*) …)=, and define it inside. The local
+=*error*= is called while the command's other local variables still
+hold their values, and the global one is back once the command is left:
+
+#+begin_example
+_$ (defun divise (a b / *error*)
+    (defun *error* (msg)
+      (princ (strcat "\nIn divise, a=" (itoa a) ": " msg))
+      (princ))
+    (/ a b))
+DIVISE
+_$ (divise 7 0)
+
+In divise, a=7: Division by zero in /.
+#+end_example
 
 To stop a program on purpose, call =(exit)= (or =(quit)=). In AutoCAD
 and BricsCAD this abandons the running program like an error — =*error*=

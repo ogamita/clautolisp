@@ -2950,20 +2950,45 @@ matches on :undefined-function is affected."
             nil
             (error condition))))))
 
+;;; *error* is looked up and called AT SIGNAL TIME, before the stack
+;;; unwinds: the standard idiom (defun c:cmd (/ *error* ...) (defun *error*
+;;; (msg) ...) ...) declares the handler LOCAL to the command, and AutoCAD
+;;; calls the binding current where the error happened, with the command's
+;;; other locals still visible to it. A HANDLER-CASE here unwound first, so
+;;; the local binding was already undone and only the global *error* was
+;;; ever seen (local-error-handler-not-called). With HANDLER-BIND, inner
+;;; handlers (vl-catch-all-apply, the debugger) still run first, an error
+;;; raised by *error* itself still propagates outwards, and with no *error*
+;;; the condition is declined -- the callers above see it as before.
+;;;
+;;; VL-EXIT-WITH-VALUE leaves a separate-namespace VLX with a value.
+;;; clautolisp loads no VLX, so outside VL-CATCH-ALL-APPLY nothing stopped
+;;; the AUTOLISP-NAMESPACE-EXIT it signals and it reached the host Lisp's
+;;; debugger (vl-exit-with-error-leaks-host-condition). Here, the document
+;;; namespace's toplevel, it is the value of the form. (VL-EXIT-WITH-ERROR
+;;; raises its AutoLISP error itself when no boundary takes the exit.)
 (defun call-with-autolisp-error-handler (thunk &optional (context (current-evaluation-context)))
-  (handler-case
+  (block handled
+    (handler-bind
+        ((autolisp-runtime-error
+           (lambda (condition)
+             (set-autolisp-errno (autolisp-runtime-error-errno condition) context)
+             (let ((handler (resolve-autolisp-error-handler context)))
+               (when handler
+                 (return-from handled
+                   (call-autolisp-function-in-context
+                    handler
+                    context
+                    (make-autolisp-string
+                     (autolisp-runtime-error-message condition))))))))
+         (autolisp-namespace-exit
+           (lambda (condition)
+             (when (eq :value (autolisp-namespace-exit-kind condition))
+               (set-autolisp-errno 0 context)
+               (return-from handled (autolisp-namespace-exit-value condition))))))
       (let ((result (funcall thunk)))
         (set-autolisp-errno 0 context)
-        result)
-    (autolisp-runtime-error (condition)
-      (set-autolisp-errno (autolisp-runtime-error-errno condition) context)
-      (let ((handler (resolve-autolisp-error-handler context)))
-        (if handler
-            (call-autolisp-function-in-context
-             handler
-             context
-             (make-autolisp-string (autolisp-runtime-error-message condition)))
-            (error condition))))))
+        result))))
 
 (defun autolisp-slash-symbol-p (symbol)
   (and (typep symbol 'autolisp-symbol)

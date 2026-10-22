@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: local-error-handler-not-called -- an *error* declared local in a defun is never called
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -45,3 +45,31 @@ of =*error*= has already been undone and only the global value is seen.
 2. Fix: look up =*error*= at signal time (before unwinding).
 3. Update the =*error*= paragraph of =clautolisp/documentation/tutorial.org=
    (section Errors), which points at this issue.
+
+* Fix (2026-10-22, clautolisp 2.3.28 / alfe 2.3.28) -- DONE
+
+CALL-WITH-AUTOLISP-ERROR-HANDLER (autolisp-runtime api.lisp) used
+HANDLER-CASE: the stack was unwound -- the function's dynamic frame popped
+-- before *error* was looked up, so only the global binding was ever seen.
+It now uses HANDLER-BIND: *error* is resolved and called AT SIGNAL TIME,
+with the failing function's locals still bound, then control leaves with
+the handler's value. Inner handlers (vl-catch-all-apply, the debugger)
+still run first; an error raised by *error* itself still propagates; with
+no *error* the condition is declined as before.
+
+Compiled code: a function whose lambda list names *ERROR* gets no
+LEXICAL fork (compile-function.lisp), so the local always lives in a
+dynamic frame the handler can find.
+
+Tests (builtin-tests.lisp): LOCAL-ERROR-HANDLER-IS-CALLED-WITH-LOCALS-
+VISIBLE (local *error* via defun, sees the local A, global back after),
+LOCAL-ERROR-HANDLER-SET-BY-SETQ-IS-CALLED, ERROR-HANDLER-DOES-NOT-SHADOW-
+VL-CATCH-ALL-APPLY. Red against 2.3.27, green now; also run by the
+compiled and lexical-locals whole-corpus lanes. Tutorial (en + fr), The
+*error* function: the caveat is replaced by a replayed transcript.
+
+Vendor evidence: not measurable through alfe -- alfe evaluates every
+request inside vl-catch-all-apply, so the CAD's top-level *error* call
+never happens there. The behaviour implemented is the documented AutoCAD
+idiom the ticket names ((defun c:cmd (/ *error* ...) (defun *error* ...)
+...)), which programs rely on.

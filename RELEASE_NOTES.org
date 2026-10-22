@@ -57,6 +57,21 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *A local =*error*= is called* (2.3.28): the AutoCAD idiom
+  =(defun c:cmd (/ *error* …) (defun *error* (msg) …) …)= now works --
+  =*error*= is looked up when the error happens, before the function's
+  local variables are unwound, so the local handler is the one called
+  and it still sees the other locals. Only the global =*error*= was ever
+  called before. See the tutorial, /The *error* function/.
+
+- *=vl-exit-with-error= and =vl-exit-with-value= no longer crash clautolisp*
+  (2.3.28): called outside =vl-catch-all-apply= they reached the host
+  Lisp's debugger and ended the run with an SBCL backtrace. Now
+  =vl-exit-with-error= is an AutoLISP error with its message (=*error*=
+  and =--on-error= apply), and =vl-exit-with-value= ends the toplevel form
+  with its value. What the CADs do outside a VLX is being measured
+  (issue =vl-exit-outside-vlx-caught-diverges=).
+
 - *=*AUTOLISP-LOAD-PATHNAME*= is absolute under =-l= too* (2.3.27): a
   file named relatively on the command line (=-l main.lsp=, or a
   positional file) bound the path as typed, so

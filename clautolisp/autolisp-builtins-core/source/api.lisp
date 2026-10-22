@@ -1116,7 +1116,15 @@ when no debug session is active (the hook declines)."
 
 (defun builtin-vl-exit-with-error (message)
   (let ((text (autolisp-string-value (require-string message "VL-EXIT-WITH-ERROR"))))
-    (error 'autolisp-namespace-exit :kind :error :value text)))
+    ;; A separate-namespace boundary (VL-CATCH-ALL-APPLY here; clautolisp
+    ;; loads no VLX) takes the exit and unwinds. When none does, this is
+    ;; the document namespace: the exit IS an AutoLISP error with MESSAGE,
+    ;; raised here, before any unwinding, so *error* (even a local one),
+    ;; --on-error and the debugger see it like any other error. It used to
+    ;; escape every handler to the host Lisp's debugger
+    ;; (vl-exit-with-error-leaks-host-condition).
+    (signal 'autolisp-namespace-exit :kind :error :value text)
+    (clautolisp.autolisp-runtime:signal-autolisp-runtime-error :user-error "~A" text)))
 
 (defun builtin-vl-exit-with-value (value)
   (error 'autolisp-namespace-exit :kind :value :value value))
