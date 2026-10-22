@@ -501,19 +501,21 @@
                                             (if (< left right)
                                                 (intern-autolisp-symbol "T")
                                                 nil))))
+    ;; Each yields its last body value (while-repeat-return-nil; the spec,
+    ;; AutoCAD's reference and BricsCAD V26 measured): the final SETQ's.
     (set-variable count 0)
-    (is (null
-         (autolisp-eval
-          (list while-symbol
-                (list less-symbol count 3)
-                (list setq-symbol count (list plus-symbol count 1))))))
+    (is (eql 3
+             (autolisp-eval
+              (list while-symbol
+                    (list less-symbol count 3)
+                    (list setq-symbol count (list plus-symbol count 1))))))
     (is (= 3 (autolisp-symbol-value count)))
     (set-variable count 0)
-    (is (null
-         (autolisp-eval
-          (list repeat-symbol
-                4
-                (list setq-symbol count (list plus-symbol count 2))))))
+    (is (eql 8
+             (autolisp-eval
+              (list repeat-symbol
+                    4
+                    (list setq-symbol count (list plus-symbol count 2))))))
     (is (= 8 (autolisp-symbol-value count)))))
 
 (test autolisp-eval-lambda

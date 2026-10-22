@@ -28,9 +28,27 @@
           (list rep-x rep-y))
   '(4 8))
 
-(deftest "repeat-returns-last-body-value"
+(deftest "repeat-body-side-effect-is-kept"
   '((operator . "REPEAT") (area . "special-forms") (profile . strict))
   '(progn (setq rep-tag 'init)
           (repeat 1 (setq rep-tag 'final))
           rep-tag)
   'final)
+
+;;; The VALUE of REPEAT is its final body value (spec, REPEAT Return
+;;; Values); it was nil always until while-repeat-return-nil.
+(deftest "repeat-returns-last-body-value"
+  '((operator . "REPEAT") (area . "special-forms") (profile . strict))
+  '(repeat 3 (setq rep-i 6))
+  6)
+
+(deftest "repeat-returns-last-form-of-last-pass"
+  '((operator . "REPEAT") (area . "special-forms") (profile . strict))
+  '(progn (setq rep-n 0)
+          (repeat 3 (setq rep-n (1+ rep-n)) (* rep-n 10)))
+  30)
+
+(deftest "repeat-last-form-nil-returns-nil"
+  '((operator . "REPEAT") (area . "special-forms") (profile . strict))
+  '(repeat 2 7 nil)
+  nil)

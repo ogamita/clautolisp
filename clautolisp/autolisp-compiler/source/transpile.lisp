@@ -583,10 +583,10 @@ Never fails: an unhandled form becomes an interpreter call on itself."
                    (intern-autolisp-symbol "T")
                    nil)))
 
-         ;; WHILE yields nil in this engine (EVAL-WHILE-FORM), not the last
-         ;; body value. Copied rather than reasoned about: the compiler's
-         ;; job is to agree with the interpreter, including where the
-         ;; interpreter is surprising.
+         ;; WHILE yields the last body value of the last iteration, nil when
+         ;; the body never runs -- as EVAL-WHILE-FORM does: the compiler's
+         ;; job is to agree with the interpreter. (Both yielded nil until
+         ;; while-repeat-return-nil.)
          ((string= name "WHILE")
           (if (null arguments)
               (%fallback form context-var)
@@ -595,11 +595,12 @@ Never fails: an unhandled form becomes an interpreter call on itself."
               ;; an AutoLISP idiom, not a degenerate case, and it used to
               ;; compile to (LOOP WHILE X DO NIL). See
               ;; issues/closed/compiled-loop-with-empty-body.issue.
-              `(progn
-                 (loop while (autolisp-true-p
-                              ,(transpile-form (first arguments) context-var))
-                       do ,(transpile-body (rest arguments) context-var))
-                 nil)))
+              (let ((result (gensym "WHILE-RESULT")))
+                `(let ((,result nil))
+                   (loop while (autolisp-true-p
+                                ,(transpile-form (first arguments) context-var))
+                         do (setf ,result ,(transpile-body (rest arguments) context-var)))
+                   ,result))))
 
          ;; REPEAT and FOREACH. Until these two, a compiled function
          ;; containing either ran the WHOLE loop -- body included --
@@ -614,14 +615,16 @@ Never fails: an unhandled form becomes an interpreter call on itself."
          ;; alternative was restating them here, and a second statement of
          ;; a rule is a second thing that can be wrong.
          ((string= name "REPEAT")
-          ;; (repeat COUNT body...) yields NIL, not the last body value.
+          ;; (repeat COUNT body...) yields the final body value, nil when
+          ;; the body never runs -- as EVAL-REPEAT-FORM does.
           (if (null arguments)
               (%fallback form context-var)
-              `(progn
-                 (loop repeat (check-repeat-count
-                               ,(transpile-form (first arguments) context-var))
-                       do ,(transpile-body (rest arguments) context-var))
-                 nil)))
+              (let ((result (gensym "REPEAT-RESULT")))
+                `(let ((,result nil))
+                   (loop repeat (check-repeat-count
+                                 ,(transpile-form (first arguments) context-var))
+                         do (setf ,result ,(transpile-body (rest arguments) context-var)))
+                   ,result))))
 
          ((string= name "FOREACH")
           ;; (foreach NAME LIST body...) yields the LAST BODY VALUE -- or,

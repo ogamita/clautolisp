@@ -155,7 +155,7 @@ up here as two different codes rather than as two passing branches."
     "(progn (setq t nil) (cond (t 42)))"
     "(progn (setq t nil) (if t 1 2))"
     "(progn (setq t nil) (and t))"
-    ;; while yields nil in this engine, not the last body value
+    ;; while yields its last body value (while-repeat-return-nil)
     "(progn (setq i 0) (while (< i 3) (setq i (+ i 1))))"
     "(progn (setq i 0) (while (< i 3) (setq i (+ i 1))) i)"
     ;; function calls

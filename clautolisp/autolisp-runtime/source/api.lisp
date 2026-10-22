@@ -4564,9 +4564,13 @@ COMMAND-S special forms and the VL-CMDF builtin."
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
      "WHILE expects at least one argument."))
-  (loop while (autolisp-true-p (autolisp-eval (first arguments) context))
-        do (autolisp-eval-progn (rest arguments) context))
-  nil)
+  ;; The value of the last body expression of the last iteration, nil when
+  ;; the body never runs (spec, WHILE Return Values; AutoCAD's while page).
+  ;; It used to be nil always (while-repeat-return-nil).
+  (let ((result nil))
+    (loop while (autolisp-true-p (autolisp-eval (first arguments) context))
+          do (setf result (autolisp-eval-progn (rest arguments) context)))
+    result))
 
 ;;; The pieces of REPEAT and FOREACH that DECIDE something, factored out
 ;;; so the compiler can emit the loop without restating any of it.
@@ -4683,9 +4687,12 @@ everywhere else, warning under bricscad and strict."
      :wrong-number-of-arguments
      "REPEAT expects at least one argument."))
   (let ((count (check-repeat-count (autolisp-eval (first arguments) context))))
-    (loop repeat count
-          do (autolisp-eval-progn (rest arguments) context))
-    nil))
+    ;; The final body value, nil when the body never runs (spec, REPEAT
+    ;; Return Values). It used to be nil always (while-repeat-return-nil).
+    (let ((result nil))
+      (loop repeat count
+            do (setf result (autolisp-eval-progn (rest arguments) context)))
+      result)))
 
 (defun eval-foreach-form (arguments context)
   (unless (>= (length arguments) 2)

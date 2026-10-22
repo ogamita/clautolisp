@@ -928,8 +928,11 @@ AutoLISP has three loops.
 
 #+begin_example
 _$ (repeat 3 (princ "hop "))
-hop hop hop nil
+hop hop hop "hop "
 #+end_example
+
+(The last ="hop "= is the value of the =repeat=: the value of the last
+evaluation of its body, here the value of =princ=.)
 
 =while= evaluates its body as long as its test is true:
 
@@ -938,7 +941,7 @@ _$ (setq a 4)
 4
 _$ (while (< a 8)
     (setq a (1+ a)))
-nil
+8
 _$ a
 8
 #+end_example
@@ -959,11 +962,11 @@ _$ (foreach n '(1 2 3) (* n 10))
 
 (The last =C= is the value of the =foreach=, printed by the REPL.)
 
-Do not rely on the value of =repeat= and =while=; use them for their
-effect, and keep results in variables. (AutoCAD returns the value of
-the last evaluation of the body; clautolisp 2.3 returns =nil=, as the
-transcripts above show: issue =while-repeat-return-nil=.) The idiom to empty a list one
-element at a time has no body at all:
+=repeat= and =while= return the value of the last evaluation of their
+body, or =nil= when the body is never evaluated; most programs use them
+for their effect and keep results in variables. (clautolisp before 2.3.29
+returned =nil= always.) The idiom to empty a list one element at a time
+has no body at all, and returns =nil=:
 
 #+begin_example
 _$ (setq l '(1 2 3))

@@ -57,6 +57,13 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *=while= and =repeat= return the last body value* (2.3.29): =(repeat 3
+  (setq i 6))= is =6= and =(while (< k 3) (setq k (1+ k)) (* k 100))= is
+  =300=, as the spec and AutoCAD's reference say and as BricsCAD V26 was
+  measured to answer; both returned =nil= always, interpreted and
+  compiled. A loop whose body never runs, or has no body, still returns
+  =nil=. See the tutorial, /Iteration/.
+
 - *A local =*error*= is called* (2.3.28): the AutoCAD idiom
   =(defun c:cmd (/ *error* …) (defun *error* (msg) …) …)= now works --
   =*error*= is looked up when the error happens, before the function's
