@@ -574,10 +574,10 @@ evaluation context.
 
 | # | Stem                                                     | Bare allowed? |
 |---+----------------------------------------------------------+---------------|
-| 1 | ~~/.autolisp{,rc}{,.lsp,.fas,.des,.vlx}~                | yes           |
-| 2 | ~~/.config/autolisp/init{,.lsp,.fas,.des,.vlx}~         | no            |
-| 3 | ~~/.clautolisp{,rc}{,.lsp,.fas,.des,.vlx}~              | yes           |
-| 4 | ~~/.config/clautolisp/init{,.lsp,.fas,.des,.vlx}~       | no            |
+| 1 | ~~/.autolisp{,.lsp,.fas,.des,.vlx}~                     | yes           |
+| 2 | ~~/.config/autolisp/init{.lsp,.fas,.des,.vlx}~         | no            |
+| 3 | ~~/.clautolisp{,.lsp,.fas,.des,.vlx}~                   | yes           |
+| 4 | ~~/.config/clautolisp/init{.lsp,.fas,.des,.vlx}~       | no            |
 
 Slots 1 and 2 are shared with the sibling ~alfe~ binary; a user
 who maintains a single ~~/.autolisp~ file sees it loaded by both.

@@ -1152,13 +1152,25 @@ functions on the stack, so this concerns the CAD backends only.
 
 * Init files
 
-On startup (unless =--no-init= / =-norc= is given), alfe loads
-the first init file it finds in this order:
+On startup (unless =--no-init= / =-norc= is given, or
+=$AUTOLISP_NO_INIT= / =$ALFE_NO_INIT= is set to =1=), alfe loads
+*every* init file that exists among these four, in this order, so a
+later one can redefine what an earlier one defined:
 
-1. =~/.alfe= or =~/.alferc=
-2. =~/.autolisp= or =~/.autolisprc=
-3. =~/.config/alfe/init=
-4. =~/.config/autolisp/init=
+1. =~/.autolisp=
+2. =~/.config/autolisp/init.lsp=
+3. =~/.alfe=
+4. =~/.config/alfe/init.lsp=
+
+The first two are shared with clautolisp, which loads them too; the
+last two are alfe's own. =~/.autolisp= and =~/.alfe= may have no
+extension; each may also be spelt with =.lsp= (=~/.alfe.lsp=), or be
+compiled (=.fas=, =.des=, =.vlx=), a compiled form being used only
+when it is newer than the =.lsp=. In =~/.config/= the extension is
+required: a file named just =init= is ignored. There are no =rc=
+variants (=~/.alferc=, =~/.autolisprc= are not read). The rules are
+those of clautolisp's init files, described in the /clautolisp User
+Manual/, section /Init files/.
 
 The init file runs under the selected dialect and backend; it's a
 natural place to put =alref-set-root= calls, custom helpers, REPL

@@ -57,6 +57,13 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *Init files documented* (2.3.26): the user manual has a new section,
+  /Init files/, on the four files loaded at startup (=~/.autolisp=,
+  =~/.config/autolisp/init.lsp=, =~/.clautolisp=,
+  =~/.config/clautolisp/init.lsp=). =--help=, the man page and alfe's
+  manual no longer list =rc= variants (=~/.clautolisprc=,
+  =~/.autolisprc=, =~/.alferc=), which were never read.
+
 - *AutoLISP tutorial* (=clautolisp/documentation/tutorial.org=, French
   translation =tutorial-fr.org=): an introduction to AutoLISP for
   programmers new to Lisp, every example a replayable clautolisp session.

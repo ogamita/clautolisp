@@ -10694,7 +10694,7 @@ Returns T."
 ;;; per document. BricsCAD: on_start.lsp / on_start_default.lsp once,
 ;;; on_doc_load.lsp / on_doc_load_default.lsp per document. clautolisp / lax:
 ;;; both products' files. strict: none. Then the VL-LOAD-ALL files, then
-;;; S::STARTUP when defined. clautolisp's own init file (clautolisprc) is
+;;; S::STARTUP when defined. clautolisp's own init files (~/.clautolisp ...) is
 ;;; separate and loads first, once.
 
 (defun %startup-hook-files (phase)

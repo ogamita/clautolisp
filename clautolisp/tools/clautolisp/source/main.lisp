@@ -129,8 +129,9 @@
   (format t "  -Eterminal ENC         Declared terminal-IO encoding (*AUTOLISP-TERMINAL-ENCODING*).~%")
   (format t "  -E ENC, --encoding ENC Every situation at once (source, terminal, ...).~%")
   (format t "Init files:~%")
-  (format t "  -norc, --no-init       Skip user init files (~~/.clautolisp{,rc}, ~~/.autolisp{,rc},~%")
-  (format t "                         ~~/.config/clautolisp/init, ~~/.config/autolisp/init).~%")
+  (format t "  -norc, --no-init       Skip the user init files, loaded in this order (all~%")
+  (format t "                         that exist): ~~/.autolisp, ~~/.config/autolisp/init.lsp,~%")
+  (format t "                         ~~/.clautolisp, ~~/.config/clautolisp/init.lsp.~%")
   (format t "                         Honoured equivalently via $AUTOLISP_NO_INIT or $CLAUTOLISP_NO_INIT.~%")
   (format t "Informational:~%")
   (format t "  -V, --version          Print the version string and exit.~%")
@@ -262,8 +263,8 @@ the REPL on the same context once the queue is drained. With no
 actions and no -i, the REPL is the implicit fallback.
 
 NO-INIT-P, when true, suppresses the user-init-file lookup
-(`~/.clautolisp{,rc}{...}`, `~/.config/clautolisp/init{...}`,
-plus the `~/.autolisp` and `~/.config/autolisp/init` siblings).
+(`~/.autolisp`, `~/.config/autolisp/init`, `~/.clautolisp`,
+`~/.config/clautolisp/init`, with their .lsp/.fas/.des/.vlx forms).
 Mirrors the `-norc` / `--no-init` flag of the legacy bash
 autolisp wrapper and matches alfe's flag of the same name.
 

@@ -1,7 +1,7 @@
 ;;;; clautolisp/autolisp-init-files/source/package.lisp
 ;;;;
 ;;;; clautolisp.autolisp-init-files — discovery + load-order policy
-;;;; for user init files (~/.clautolisp{,rc}{,.lsp,…},
+;;;; for user init files (~/.clautolisp{,.lsp,…},
 ;;;; ~/.config/clautolisp/init{,.lsp,…}, and the matching
 ;;;; ~/.autolisp / ~/.config/autolisp/init stems).
 ;;;;
@@ -14,7 +14,7 @@
 ;;;; per-stem extension preference (.lsp vs. compiled .fas/.des/.vlx
 ;;;; based on mtime) mirrors the legacy bash `autolisp` wrapper's
 ;;;; long-standing contract so users carrying an existing
-;;;; ~/.autolisprc see it loaded by the new binaries too.
+;;;; ~/.autolisp see it loaded by the new binaries too.
 
 (defpackage #:clautolisp.autolisp-init-files
   (:use #:cl)
