@@ -1,0 +1,47 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: load-pathname-relative-under-l -- -l binds *AUTOLISP-LOAD-PATHNAME* to the path as typed, not the absolute path
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-22
+
+* Symptom
+
+Found while documenting *AUTOLISP-LOAD-PATHNAME* (clautolisp 2.3.26).
+=(load ...)= and the init files bind it to the ABSOLUTE path of the file
+(builtins-core =api.lisp=, "Bind *AUTOLISP-LOAD-PATHNAME* to the ABSOLUTE
+pathname"), but a =-l= / positional file binds the string as typed:
+
+#+begin_example
+$ cd dir && clautolisp --no-init -l main.lsp
+;; in main.lsp: *AUTOLISP-LOAD-PATHNAME* => "main.lsp"
+$ clautolisp --no-init -x '(load "dir/main.lsp")'
+;; in main.lsp: *AUTOLISP-LOAD-PATHNAME* => "/.../dir/main.lsp"
+#+end_example
+
+So the idiom that loads a file beside the current one breaks under =-l=
+with a relative path:
+
+#+begin_src autolisp
+(load (strcat (vl-filename-directory *AUTOLISP-LOAD-PATHNAME*) "/helpers.lsp"))
+;; -l main.lsp => (vl-filename-directory "main.lsp") is "" => loads "/helpers.lsp"
+#+end_src
+
+* Cause
+
+The toplevel driver binds the variable itself around the =-l= action
+(=tools/clautolisp/source/main.lisp=, =call-with-dynamic-transmit-binding=
+with =(namestring path)=), with the path as parsed from the command line.
+alfe's =:direct= mode binds it in the same way (=backend-clautolisp.lisp=);
+not checked whether it resolves the path first.
+
+* To do
+
+1. Failing test: =-l REL.lsp= binds the absolute path, as =load= does.
+2. Bind the resolved absolute pathname in the clautolisp driver and in alfe's
+   =:direct= backend (or let the =-l= action go through the same binding as
+   =load=).
+3. Remove the caveat from the user manual, section /Image-introspection
+   variables/, which points at this issue.

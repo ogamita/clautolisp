@@ -1805,7 +1805,7 @@ state:
 | =*AUTOLISP-FILE-ENCODING*=     | Active source-file encoding (always a string). Empty string =""= means "no preference; fall through to the dialect default" — the documented degenerate case when neither =-Esource= nor any =LC_*= env var resolves an encoding. |
 | =*AUTOLISP-TERMINAL-ENCODING*= | Active terminal encoding (always a string, never empty — falls back to =US-ASCII= in the degenerate case). |
 | =*AUTOLISP-VERSION*=           | Version string of the running engine.                  |
-| =*AUTOLISP-LOAD-PATHNAME*=     | Set by =LOAD= during evaluation of the loaded file.    |
+| =*AUTOLISP-LOAD-PATHNAME*=     | The path of the file being loaded (init file, =-l= file, or =(load …)=), dynamically bound for the duration of its load; nil outside any load. |
 | =*AUTOLISP-EXPRESSION*=        | Set during evaluation of a =-x= expression.            |
 | =*AUTOLISP-INTERACTIVE*=       | =T= when the REPL is active, =NIL= otherwise.          |
 | =*AUTOLISP-PLUGIN-OPTIONS*=    | One symbol per /active/ plug-in, in activation order: =(EPURE)= under =--epure=. The empty list when no plug-in is active (see [[#plugins][Plug-ins]]). |

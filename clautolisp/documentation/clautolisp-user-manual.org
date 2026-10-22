@@ -2189,7 +2189,8 @@ clautolisp, it passes ~--no-init~ to it: in an alfe session, only
 alfe's init files run.
 
 *Errors.* An init file is loaded like any other file, under the
-selected dialect and source encoding. An error in one -- a missing
+selected dialect and source encoding, with ~*AUTOLISP-LOAD-PATHNAME*~
+naming it while it loads. An error in one -- a missing
 parenthesis, a failing call -- stops clautolisp before it runs your
 actions or opens the REPL, with the error message naming the file and
 the line (exit status 65 for a read error). Start with ~--no-init~ to
@@ -2423,20 +2424,38 @@ to subsequent ~boundp~/value lookups.
 
 ** Dynamic — bound only while the matching action runs
 - ~*AUTOLISP-LOAD-PATHNAME*~    :: The pathname of the file being
-                                   loaded by a ~-l~ action. Bound to
-                                   the path string for the duration
-                                   of the ~load~ call; reset to nil
-                                   on return (success or signal).
+                                   loaded, as a string, bound for the
+                                   duration of the load of /any/ file:
+                                   an init file, a ~-l~ or positional
+                                   file, or a file read by ~(load …)~.
+                                   It is the absolute path, except
+                                   for a ~-l~ or positional file,
+                                   which today binds the path as
+                                   written on the command line (issue
+                                   =load-pathname-relative-under-l=).
+                                   nil outside any load.
 - ~*AUTOLISP-EXPRESSION*~       :: The source text of a ~-x~ action,
                                    bound while the expression is
                                    evaluated. Cleared on return.
 - ~*AUTOLISP-INTERACTIVE*~      :: T while the REPL is active.
                                    Cleared on REPL exit.
 
-Code running inside an init file can therefore distinguish "loaded
-because of ~-l init.lsp~" (~*AUTOLISP-LOAD-PATHNAME*~ points at
-~init.lsp~) from "loaded as an init file from the standard search
-path" (~*AUTOLISP-LOAD-PATHNAME*~ is nil).
+The binding of ~*AUTOLISP-LOAD-PATHNAME*~ is dynamic: when a file
+being loaded loads another one, the variable names the inner file while
+it loads, then names the outer file again, and goes back to nil once the
+outermost load returns, whether it ends normally or with an error. A
+file can therefore find the files that sit beside it:
+
+#+begin_src autolisp
+;;; main.lsp -- loads helpers.lsp from its own directory
+(load (strcat (vl-filename-directory *AUTOLISP-LOAD-PATHNAME*)
+              "/helpers.lsp"))
+#+end_src
+
+(Until =load-pathname-relative-under-l= is fixed, this works only when
+the outermost file is given to ~-l~ with an absolute path, or loaded
+with ~load~ or as an init file.) Only the innermost load is visible:
+there is no access yet to the stack of the loads in progress.
 
 * Banner
 In REPL mode (and only in REPL mode) ~clautolisp~ prints a one-line
