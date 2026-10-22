@@ -1931,6 +1931,13 @@ file or COM), and forwards the workload.
   evaluated, and its prose failed as code (/no function definition:
   SYMBOLE/). Block comments are now skipped wherever they stand. See the
   manual's /How a form reaches a CAD/.
+- *A padded =princ= keeps its real literals on AutoCAD too* (2.3.36): the
+  call alfe pads for AutoCAD (=(princ X)= sent as =(princ X nil)=, since
+  AutoCAD's =defun= has no =&rest=) was printed back from its value, and
+  AutoCAD's =rtos= cannot render 17 significant digits or a 3-digit
+  exponent. alfe now pads the call in the source text, so every literal
+  arrives as written. See the manual's /How a form reaches a CAD/.
+
 - *Real literals reach AutoCAD and BricsCAD with every digit* (2.3.12). alfe
   handed each form of an =-l= file (and each =-x= / REPL form) to the CAD
   PRINTED BACK with =princ=, which keeps 6 significant digits of a real on

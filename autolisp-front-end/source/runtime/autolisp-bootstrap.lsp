@@ -1388,7 +1388,7 @@
 ;; a list quoted by ' or headed by QUOTE / FUNCTION is left alone, strings and
 ;; comments (; and ;| |;) are skipped. Nothing else of TEXT changes, so a real
 ;; literal keeps every digit it was written with.
-(defun alfe-open-rewrite-text (alfe--text / alfe--idx alfe--len alfe--ch alfe--nx alfe--stack alfe--quoted alfe--pending alfe--in-string alfe--escape alfe--in-comment alfe--in-block alfe--head alfe--s alfe--child-quoted alfe--open-p alfe--edits alfe--out alfe--pos alfe--e)
+(defun alfe-open-rewrite-text (alfe--text / alfe--idx alfe--len alfe--ch alfe--nx alfe--stack alfe--quoted alfe--pending alfe--in-string alfe--escape alfe--in-comment alfe--in-block alfe--head alfe--s alfe--child-quoted alfe--open-p alfe--edits)
   (setq alfe--idx 1)
   (setq alfe--len (strlen alfe--text))
   (setq alfe--stack nil)
@@ -1451,6 +1451,27 @@
       (T (setq alfe--pending nil)))
     (setq alfe--idx (+ alfe--idx 1)))
   ;; The edits were collected left to right; splice them in.
+  (alfe-text-splice-edits alfe--text alfe--edits))
+
+;; --- the princ/load normaliser, applied to the TEXT --------------------
+;;
+;; alfe-normalised-form-reals-autocad. On a host without &rest (AutoCAD),
+;; autolisp-normalize-princ-call pads a 1-argument princ/print/prin1/load
+;; to 2 arguments (and turns an empty (princ) into
+;; (autolisp-princ-newline)). That rebuilt FORM used to be PRINTED back
+;; for the CAD with autolisp-form-source-text, and AutoCAD's rtos cannot
+;; render 17 significant digits nor a 3-digit exponent: pi/2 lost its
+;; last digit. alfe-normalize-princ-text makes the same rewrite IN THE
+;; SOURCE TEXT -- "(princ X)" becomes "(princ X nil)" -- and leaves every
+;; other character as written, real literals included. Its result is used
+;; only when it reads back EQUAL to the normalised form
+;; (alfe-normalized-source-text); otherwise the form is printed as before.
+
+;; Splice EDITS into TEXT. EDITS is a list of (POS LEN NEW), most recent
+;; first, whose positions grow in discovery order: the LEN characters of
+;; TEXT at POS (1-based) are replaced by NEW.
+(defun alfe-text-splice-edits (alfe--text alfe--edits / alfe--out alfe--pos alfe--len alfe--e)
+  (setq alfe--len (strlen alfe--text))
   (setq alfe--out "")
   (setq alfe--pos 1)
   (foreach alfe--e (reverse alfe--edits)
@@ -1462,19 +1483,170 @@
     (strcat alfe--out (substr alfe--text alfe--pos))
     alfe--out))
 
+;; STACK with the element count of its top frame incremented. A frame is
+;; (QUOTED KIND COUNT HEAD-POS HEAD-LEN); see alfe-normalize-princ-text.
+(defun alfe-normalize-text-count (alfe--stack / alfe--f)
+  (if alfe--stack
+    (progn
+      (setq alfe--f (car alfe--stack))
+      (cons (list (nth 0 alfe--f) (nth 1 alfe--f) (+ 1 (nth 2 alfe--f))
+                  (nth 3 alfe--f) (nth 4 alfe--f))
+            (cdr alfe--stack)))
+    alfe--stack))
+
+;; TEXT, the source of one form, with the rewrite of
+;; autolisp-normalize-princ-call-impl made textually:
+;;   (princ)            -> (autolisp-princ-newline)
+;;   (print) / (prin1)  -> (print "" nil) / (prin1 "" nil)
+;;   (princ X) / (print X) / (prin1 X) / (load X)  -> (... X nil)
+;; Like the form walker, it leaves alone a list quoted by ' or headed by
+;; QUOTE / FUNCTION, and a list in the HEAD position of another list (the
+;; walker never descends into a head). Strings and comments (; and ;| |;)
+;; are skipped. The elements of each list are counted as the reader would
+;; see them ('X is one element). Anything this scan gets wrong (a dotted
+;; list, a reader syntax it does not know) is caught by the read-back check
+;; of alfe-normalized-source-text.
+(defun alfe-normalize-princ-text (alfe--text / alfe--idx alfe--len alfe--ch alfe--nx alfe--stack alfe--pending alfe--in-string alfe--escape alfe--in-comment alfe--in-block alfe--in-atom alfe--quoted alfe--child-quoted alfe--is-head alfe--kind alfe--head alfe--s alfe--f alfe--edits)
+  (setq alfe--idx 1)
+  (setq alfe--len (strlen alfe--text))
+  (setq alfe--stack nil)
+  (setq alfe--pending nil)
+  (setq alfe--in-string nil)
+  (setq alfe--escape nil)
+  (setq alfe--in-comment nil)
+  (setq alfe--in-block nil)
+  (setq alfe--in-atom nil)
+  (setq alfe--edits nil)
+  (while (<= alfe--idx alfe--len)
+    (setq alfe--ch (substr alfe--text alfe--idx 1))
+    (setq alfe--nx (if (< alfe--idx alfe--len) (substr alfe--text (+ alfe--idx 1) 1) ""))
+    (cond
+      (alfe--in-block
+       (if (and (= alfe--ch "|") (= alfe--nx ";"))
+         (progn (setq alfe--in-block nil) (setq alfe--idx (+ alfe--idx 1)))))
+      (alfe--in-comment
+       (if (= alfe--ch "\n") (setq alfe--in-comment nil)))
+      (alfe--in-string
+       (cond
+         (alfe--escape (setq alfe--escape nil))
+         ((= alfe--ch "\\") (setq alfe--escape T))
+         ((= alfe--ch "\"") (setq alfe--in-string nil))))
+      ((= alfe--ch ";")
+       (setq alfe--in-atom nil)
+       (if (= alfe--nx "|")
+         (progn (setq alfe--in-block T) (setq alfe--idx (+ alfe--idx 1)))
+         (setq alfe--in-comment T)))
+      ((= alfe--ch "\"")
+       (setq alfe--in-atom nil)
+       (if (not alfe--pending) (setq alfe--stack (alfe-normalize-text-count alfe--stack)))
+       (setq alfe--pending nil)
+       (setq alfe--in-string T))
+      ((= alfe--ch "'")
+       (setq alfe--in-atom nil)
+       (if (not alfe--pending) (setq alfe--stack (alfe-normalize-text-count alfe--stack)))
+       (setq alfe--pending T))
+      ((= alfe--ch "(")
+       (setq alfe--in-atom nil)
+       (setq alfe--is-head nil)
+       (if (not alfe--pending)
+         (progn
+           (setq alfe--stack (alfe-normalize-text-count alfe--stack))
+           (if (and alfe--stack (= (nth 2 (car alfe--stack)) 1))
+             (setq alfe--is-head T))))
+       (setq alfe--quoted (or alfe--pending alfe--is-head
+                              (and alfe--stack (car (car alfe--stack)))))
+       (setq alfe--pending nil)
+       (setq alfe--child-quoted alfe--quoted)
+       (setq alfe--kind nil)
+       (setq alfe--head nil)
+       (if (not alfe--quoted)
+         (progn
+           (setq alfe--head (alfe-open-text-head alfe--text alfe--idx alfe--len))
+           (if alfe--head
+             (progn
+               (setq alfe--s (strcase (cdr alfe--head)))
+               (cond
+                 ((member alfe--s '("PRINC" "PRINT" "PRIN1" "LOAD"))
+                  (setq alfe--kind alfe--s))
+                 ((or (= alfe--s "QUOTE") (= alfe--s "FUNCTION"))
+                  (setq alfe--child-quoted T)))))))
+       (setq alfe--stack
+             (cons (list alfe--child-quoted alfe--kind 0
+                         (if alfe--head (car alfe--head) 0)
+                         (if alfe--head (strlen (cdr alfe--head)) 0))
+                   alfe--stack)))
+      ((= alfe--ch ")")
+       (setq alfe--in-atom nil)
+       (setq alfe--pending nil)
+       (if alfe--stack
+         (progn
+           (setq alfe--f (car alfe--stack))
+           (setq alfe--kind (nth 1 alfe--f))
+           (cond
+             ((null alfe--kind) nil)
+             ((and (= alfe--kind "PRINC") (= (nth 2 alfe--f) 1))
+              (setq alfe--edits (cons (list (nth 3 alfe--f) (nth 4 alfe--f) "autolisp-princ-newline")
+                                      alfe--edits)))
+             ((and (= alfe--kind "LOAD") (= (nth 2 alfe--f) 2))
+              (setq alfe--edits (cons (list alfe--idx 0 " nil") alfe--edits)))
+             ((= alfe--kind "LOAD") nil)
+             ((= (nth 2 alfe--f) 1)
+              (setq alfe--edits (cons (list alfe--idx 0 " \"\" nil") alfe--edits)))
+             ((= (nth 2 alfe--f) 2)
+              (setq alfe--edits (cons (list alfe--idx 0 " nil") alfe--edits))))
+           (setq alfe--stack (cdr alfe--stack)))))
+      ((member alfe--ch '(" " "\t" "\r" "\n"))
+       (setq alfe--in-atom nil))
+      (T
+       (if (not alfe--in-atom)
+         (progn
+           (if (not alfe--pending) (setq alfe--stack (alfe-normalize-text-count alfe--stack)))
+           (setq alfe--pending nil)
+           (setq alfe--in-atom T)))))
+    (setq alfe--idx (+ alfe--idx 1)))
+  (alfe-text-splice-edits alfe--text alfe--edits))
+
+;; Source text for NORMALIZED -- FORM after autolisp-normalize-princ-call --
+;; made from SOURCE, the text FORM was read from, or NIL when there is none
+;; that can be trusted. When the normaliser left FORM alone (EQ), SOURCE
+;; itself, provided it reads back EQUAL to FORM. When it rebuilt FORM,
+;; SOURCE rewritten by alfe-normalize-princ-text, provided THAT reads back
+;; EQUAL to NORMALIZED: the CAD then evaluates exactly the normalised form,
+;; with every real literal as the user wrote it. NIL sends the caller to
+;; the printer (autolisp-form-source-text).
+(defun alfe-normalized-source-text (alfe--form alfe--normalized alfe--source / alfe--text alfe--back)
+  (cond
+    ((/= (type alfe--source) 'STR) nil)
+    ((eq alfe--normalized alfe--form)
+     (setq alfe--back (vl-catch-all-apply 'read (list alfe--source)))
+     (if (and (not (vl-catch-all-error-p alfe--back)) (equal alfe--back alfe--form))
+       alfe--source
+       nil))
+    (T
+     (setq alfe--text (vl-catch-all-apply 'alfe-normalize-princ-text (list alfe--source)))
+     (if (vl-catch-all-error-p alfe--text)
+       (setq alfe--text nil))
+     (if alfe--text
+       (setq alfe--back (vl-catch-all-apply 'read (list alfe--text))))
+     (if (and alfe--text (not (vl-catch-all-error-p alfe--back)) (equal alfe--back alfe--normalized))
+       alfe--text
+       nil))))
+
 ;; The text the CAD is given for a request FORM that calls OPEN while
 ;; -Efile-write is forwarded. NORMALIZED is FORM after the princ normaliser,
-;; SOURCE the text FORM was read from (or NIL). When FORM was not rebuilt and
-;; its SOURCE is at hand, that source is rewritten textually -- and used only
-;; if it reads back EQUAL to the form-walk rewrite, so the CAD evaluates
-;; exactly what alfe-load would have. Otherwise (no text, or the normaliser
-;; rebuilt the form, which is then printed anyway) the rewritten form is
-;; printed with autolisp-form-source-text, reals at full precision.
-(defun alfe-open-request-text (alfe--form alfe--normalized alfe--source / alfe--rewritten alfe--text alfe--back)
+;; SOURCE the text FORM was read from (or NIL). When a text for NORMALIZED
+;; can be made from SOURCE (alfe-normalized-source-text: SOURCE itself, or
+;; SOURCE with its princ calls padded), its OPEN calls are rewritten
+;; textually -- and the result used only if it reads back EQUAL to the
+;; form-walk rewrite, so the CAD evaluates exactly what alfe-load would have.
+;; Otherwise the rewritten form is printed with autolisp-form-source-text,
+;; reals at full precision.
+(defun alfe-open-request-text (alfe--form alfe--normalized alfe--source / alfe--rewritten alfe--base alfe--text alfe--back)
   (setq alfe--rewritten (alfe-rewrite-open-calls alfe--normalized))
-  (if (and alfe--source (eq alfe--normalized alfe--form))
+  (setq alfe--base (alfe-normalized-source-text alfe--form alfe--normalized alfe--source))
+  (if alfe--base
     (progn
-      (setq alfe--text (vl-catch-all-apply 'alfe-open-rewrite-text (list alfe--source)))
+      (setq alfe--text (vl-catch-all-apply 'alfe-open-rewrite-text (list alfe--base)))
       (if (vl-catch-all-error-p alfe--text)
         (setq alfe--text nil))
       (if alfe--text

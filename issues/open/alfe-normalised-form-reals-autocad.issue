@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-normalised-form-reals-autocad -- a form alfe's normaliser rewrites still loses real digits on AutoCAD
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: fix-alfe-normalised-form-reals
 #+DATE: 2026-10-08
 
 * Symptom
@@ -30,3 +30,66 @@ alfe-open-rewrite-text does for OPEN (MR !467) -- pad `(princ X)` to
 `(princ X nil)` textually, leaving every other character (and every real
 literal) as written; fall back to the lossless printer only when the text
 rewrite cannot be verified by reading it back.
+
+* Fix (2026-10-22)
+
+Branch fix-alfe-normalised-form-reals. Stays NEXT until the real-transport
+probe has MEASURED it on AutoCAD (jobs =real-transport:probe:autocad:windows=
+and =real-transport:probe:accoreconsole:windows= in =.gitlab/native.yml=;
+the Windows runners are back 2026-10-23): expected =normalised exact= on all
+11 cases, b, i and j included.
+
+** What
+
+The normalised form is no longer re-printed: its SOURCE TEXT is rewritten,
+as =alfe-open-rewrite-text= does for OPEN. In
+=autolisp-front-end/source/runtime/autolisp-bootstrap.lsp=:
+
+- =alfe-normalize-princ-text= -- the textual twin of
+  =autolisp-normalize-princ-call-impl=. It scans the text (strings, =;= and
+  =;| |;= comments skipped), counts the elements of each list as the reader
+  sees them (='X= is one), and at the closing parenthesis of an unquoted
+  call pads it: 1-argument princ/print/prin1/load get " nil" inserted
+  before the parenthesis; an empty (princ) has its head replaced by
+  =autolisp-princ-newline=; an empty (print) / (prin1) gets ~ "" nil~.
+  Lists quoted by ='= or headed by QUOTE / FUNCTION, and lists in HEAD
+  position (the form walker never descends into a head), are left alone,
+  as the walker does. Every other character -- every real literal -- is
+  kept as written.
+- =alfe-normalized-source-text (form normalized source)= -- the text for the
+  normalised form: SOURCE itself when the normaliser returned FORM (EQ),
+  else SOURCE through =alfe-normalize-princ-text=; in both cases used only
+  if READ of it is EQUAL to the (normalised) form, else NIL.
+- =alfe-text-splice-edits= -- the splice loop, now shared by both rewriters.
+- =alfe-open-request-text= starts from =alfe-normalized-source-text=, so a
+  form that calls OPEN AND was padded keeps its text too (it used to be
+  printed).
+
+In =source/file-protocol.lisp= the emitted =alfe-request-source-text= uses
+=alfe-normalized-source-text= and falls back to =autolisp-form-source-text=
+(the printer) only when that returns NIL: no source text (a form built in
+memory), or a rewrite that does not read back as the normalised form (a
+dotted list, a reader syntax the scan does not know).
+
+The user manual's "How a form reaches a CAD" section says so.
+
+** Tests (autolisp-front-end/tests/file-protocol-tests.lisp)
+
+- =protocol-normalize-princ-text-pads-in-the-source=: 12 textual cases
+  (1-arg princ/print/prin1/load padded, empty (princ) and (print), 2-arg
+  calls untouched, nested calls, strings, comments, quote / function, head
+  position) plus =alfe-normalized-source-text= returning the padded text for
+  the matching source and NIL for a non-matching or missing one.
+- =protocol-normalised-form-reals-reach-the-engine-exactly= (hosted
+  clautolisp-sbcl on the AutoCAD fixed-arity path, =:assume-no-rest-p t=,
+  the real printer stubbed to =(rtos x 1 15)= -- 16 significant digits, as
+  AutoCAD's rtos -- and counting its calls):
+  =(setq rtn-p (princ 1.5707963267948966))= and
+  =(progn (setq rtn-j 123456789012345678.0 rtn-e 1.2345678901234567) (princ ""))=
+  arrive exact, the printer called 0 times.
+  RED against the old code: =RTN P ROUNDED J ROUNDED E ROUNDED PRINTED 3=.
+  GREEN after: =RTN P EXACT J EXACT E EXACT PRINTED 0=.
+- =protocol-real-literals-reach-the-engine-exactly=: the fixed-arity path
+  now re-prints nothing either (=REPRINTED no= on both paths; it was =yes=).
+
+=make -C autolisp-front-end test-sbcl= and =test-ccl=: Fail: 0.

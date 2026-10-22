@@ -820,11 +820,21 @@ route.
 
 What that file holds is the form's own *text*, exactly as it was written:
 the CAD reads =(setq a 1.5707963267948966)= with its own reader, and
-=a= gets every digit. Only a form alfe has to rewrite is printed back from
-its value -- on AutoCAD, whose =defun= has no =&rest=, a call such as
-=(princ x)= is padded to =(princ x nil)= -- and then every real is printed
-with as many digits as it takes to read back to the same number
-(=1.5707963267948966E+00=), checked by the CAD's own reader.
+=a= gets every digit. A form alfe has to rewrite is rewritten in that text
+too: on AutoCAD, whose =defun= has no =&rest=, a call such as =(princ x)=
+is padded to =(princ x nil)= by inserting = nil= before its closing
+parenthesis, and every other character -- every real literal included --
+stays as written. alfe checks the rewritten text by reading it back; only
+when it does not read as the rewritten form, or when there is no text (a
+form built in memory), is the form printed back from its value, each real
+then with as many digits as the CAD's =rtos= can give and its own reader
+confirms (=1.5707963267948966E+00= on BricsCAD; AutoCAD's =rtos= stops at
+16 significant digits and a 2-digit exponent).
+
+/Changed in alfe 2.3.36./ A form the AutoCAD normaliser padded was
+always printed back, so on AutoCAD a literal such as =1.5707963267948966=
+in =(progn (setq a 1.5707963267948966) (princ a))= lost its last digit, and
+one beyond =1e99= its exponent.
 
 /Changed in alfe 2.3.12./ Every form used to be printed back with =princ=,
 which keeps 6 significant digits of a real on AutoCAD (=1.5708=) and 14 on
