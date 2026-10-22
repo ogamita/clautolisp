@@ -24,8 +24,9 @@
 ;;;;     (10, 20, 30). entget groups them into one pair (10 x y z).
 ;;;;     The reader coalesces; the writer expands.
 ;;;;   * Angles. DXF stores entity angles in degrees, entget in radians;
-;;;;     a per-entity-type table (*DXF-DEGREE-GROUPS*) drives the
-;;;;     conversion in the entity loaders and the entity writer.
+;;;;     per-type tables (*DXF-DEGREE-GROUPS*, *DXF-REPEATED-DEGREE-GROUPS*)
+;;;;     drive the conversion in the entity and table-record loaders and
+;;;;     writers.
 
 ;;; --- Group-code value typing ------------------------------------
 
@@ -150,16 +151,21 @@ into single entget-style point pairs (10 x y z)."
 ;;; parameters already in radians, LWPOLYLINE / VERTEX 42 is a bulge, an
 ;;; MTEXT 50 after its column data is a column height. So the conversion
 ;;; is driven by a per-type table, applied by the entity / block loaders
-;;; (degrees -> radians) and by the entity writer (radians -> degrees).
-;;; Table records, block headers and OBJECTS are not converted.
+;;; (degrees -> radians) and by the entity writer (radians -> degrees),
+;;; and to the symbol-table records (VPORT, VIEW, STYLE) by the TABLES
+;;; loader and writer, since tblsearch shows them as stored. Block
+;;; headers, OBJECTS and HEADER variables are not converted (cador's
+;;; getvar does not read the DXF header variables).
 ;;;
 ;;; Only the FIRST occurrence of each listed code is converted, and the
 ;;; scan stops at a STOP code (an MTEXT 75/76 column section, a 101
 ;;; embedded object, a 1001 XDATA application), so a later group that
 ;;; reuses the code for something else is left alone. The DWG codec goes
 ;;; through this DXF codec (libredwg's DXF is degree-valued too), so it
-;;; is converted by the same code.
-;;; See issues/open/dxf-file-angle-units.issue.
+;;; is converted by the same code. HATCH repeats its angle groups
+;;; (boundary edges, pattern lines): every occurrence is converted.
+;;; See issues/open/dxf-file-angle-units.issue and
+;;; issues/open/dxf-angle-units-hatch-viewport-tables.issue.
 
 (defparameter *dxf-degree-groups*
   '(("ARC"       50 51)          ; start angle, end angle
@@ -170,11 +176,35 @@ into single entget-style point pairs (10 x y z)."
     ("MTEXT"     50)             ; rotation (when written instead of 11)
     ("INSERT"    50)             ; rotation
     ("DIMENSION" 50 51 52 53)    ; rotation, horizontal dir, oblique, text rotation
-    ("VERTEX"    50))            ; curve-fit tangent direction
-  "Entity type -> the real group codes a DXF file stores in degrees and
-entget reports in radians (DXF reference). Deliberately absent: ELLIPSE
-41/42 (parameters, radians in the file too) and the 42 bulge of
-LWPOLYLINE / VERTEX.")
+    ("VERTEX"    50)             ; curve-fit tangent direction
+    ("VIEWPORT"  50 51)          ; snap angle, view twist angle
+    ;; Symbol-table records (TABLES section), shown as stored by
+    ;; tblsearch / tblnext:
+    ("VPORT"     50 51)          ; snap rotation angle, view twist angle
+    ("VIEW"      50)             ; twist angle
+    ("STYLE"     50))            ; oblique angle
+  "Entity / table-record type -> the real group codes a DXF file stores in
+degrees and entget / tblsearch report in radians (DXF reference: group
+codes 50-58 are angles, \"output in degrees to DXF files and radians
+through AutoLISP and ObjectARX applications\"). Deliberately absent:
+ELLIPSE 41/42 (parameters, radians in the file too) and the 42 bulge of
+LWPOLYLINE / VERTEX. HATCH is in *DXF-REPEATED-DEGREE-GROUPS*.")
+
+(defparameter *dxf-repeated-degree-groups*
+  '(("HATCH" 50 51 52 53))
+  "Types whose degree-valued groups REPEAT, so EVERY occurrence (up to a
+101 embedded object or 1001 XDATA) is converted. HATCH (DXF reference):
+52 pattern angle; 53 pattern line angle, once per pattern line (78
+lines); 50 / 51 start / end angle of each circular-arc (72 = 2) and
+elliptic-arc (72 = 3) boundary edge. No other HATCH group uses these
+codes (the polyline-path 72 / 73 flags, the spline-edge groups, the
+gradient 450-470 groups -- whose 460 angle is radians -- are distinct
+codes), and HATCH's own 75 / 76 come before 52 / 53, so the first
+occurrence / 75-76 stop rule of *DXF-DEGREE-GROUPS* does not fit it.")
+
+(defparameter *dxf-repeated-degree-scan-stop-codes* '(101 1001)
+  "Stop codes for *DXF-REPEATED-DEGREE-GROUPS* types (embedded object,
+XDATA).")
 
 (defparameter *dxf-degree-scan-stop-codes* '(75 76 101 1001)
   "Group codes after which no angle conversion is done in an entity (MTEXT
@@ -183,21 +213,31 @@ column data, embedded object, XDATA).")
 (defun dxf-convert-entity-angles (data function)
   "DATA (an entity's group-code list, ENTGET shaped) with FUNCTION applied
 to the value of each degree-valued group of its type, first occurrence
-only, up to the first stop code. DATA is not modified."
+only (every occurrence for a *DXF-REPEATED-DEGREE-GROUPS* type), up to
+the first stop code. DATA is not modified. Also used for symbol-table
+records, whose (0 . TYPE) names the record type."
   (let* ((type (cdr (assoc 0 data)))
-         (codes (and (stringp type)
-                     (rest (assoc type *dxf-degree-groups* :test #'string-equal)))))
+         (repeated (and (stringp type)
+                        (rest (assoc type *dxf-repeated-degree-groups*
+                                     :test #'string-equal))))
+         (codes (or repeated
+                    (and (stringp type)
+                         (rest (assoc type *dxf-degree-groups* :test #'string-equal)))))
+         (stop-codes (if repeated
+                         *dxf-repeated-degree-scan-stop-codes*
+                         *dxf-degree-scan-stop-codes*)))
     (if (null codes)
         data
         (let ((pending (copy-list codes)) (stopped nil))
           (mapcar (lambda (pair)
                     (cond
                       ((or stopped (not (consp pair))) pair)
-                      ((member (car pair) *dxf-degree-scan-stop-codes*)
+                      ((member (car pair) stop-codes)
                        (setf stopped t)
                        pair)
                       ((and (member (car pair) pending) (realp (cdr pair)))
-                       (setf pending (remove (car pair) pending))
+                       (unless repeated
+                         (setf pending (remove (car pair) pending)))
                        (cons (car pair) (funcall function (cdr pair))))
                       (t pair)))
                   data)))))
@@ -317,7 +357,9 @@ variable's value group(s)."
                (add-table-record
                 drawing
                 (make-symbol-table-record
-                 :kind current-kind :name rname :data group))))))))))
+                 :kind current-kind :name rname
+                 ;; Degrees -> radians (VPORT, VIEW, STYLE angles).
+                 :data (dxf-entity-from-file group)))))))))))
 
 (defun dxf-load-entities (drawing body &optional block)
   "Add the entities in a flat BODY (the ENTITIES section, or the entity
@@ -552,7 +594,9 @@ string used as-is (upcased), or the R2013 default (\"AC1027\") otherwise."
         (dxf-emit 70 (hash-table-count table))
         (maphash (lambda (name record)
                    (declare (ignore name))
-                   (dxf-write-object (symbol-table-record-data record)))
+                   ;; Radians -> degrees, on a copy.
+                   (dxf-write-object
+                    (dxf-entity-for-file (symbol-table-record-data record))))
                  table)
         (dxf-emit 0 "ENDTAB"))
       (drawing-tables drawing)))))

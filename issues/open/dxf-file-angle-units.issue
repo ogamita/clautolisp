@@ -119,4 +119,4 @@ confirm against one (entget of the same entities), in particular MTEXT 50
 it as degrees -- the table follows the latter) and DIMENSION 51/52. Not
 covered, left for a follow-up if needed: HATCH 52/53 and its boundary-edge
 arc angles, VIEWPORT 51, the VPORT / VIEW table records, header angle
-variables.
+variables -- see dxf-angle-units-hatch-viewport-tables.issue.

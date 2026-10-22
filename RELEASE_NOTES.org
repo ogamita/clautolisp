@@ -57,6 +57,11 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *HATCH, VIEWPORT and table-record angles from DXF too* (2.3.33): HATCH
+  52 / 53 and its arc-edge 50/51, VIEWPORT 50/51, and the VPORT, VIEW and
+  STYLE records =tblsearch= returns are converted between the file's
+  degrees and AutoLISP's radians, like the entity angles of 2.3.31.
+
 - *=vlax-vbInteger=, =vlax-vbDouble=, … are bound after =(vl-load-com)=*
   (2.3.32): the 17 =vlax-vb*= VarType constants were nil, so
   =(vlax-make-safearray vlax-vbDouble '(0 . 2))= passed nil as the type.

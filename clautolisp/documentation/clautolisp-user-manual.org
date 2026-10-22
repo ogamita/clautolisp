@@ -1241,9 +1241,17 @@ A DXF file stores entity angles in *degrees*; ~entget~ reports them in
 DXF (or a DWG, which goes through DXF) and when it saves one, for: ARC
 50/51; TEXT, ATTRIB, ATTDEF and SHAPE 50/51 (rotation, oblique angle);
 MTEXT 50 and INSERT 50 (rotation); DIMENSION 50-53; VERTEX 50 (curve-fit
-tangent). ELLIPSE 41/42 (parameters) and a polyline 42 (bulge) are not
-angles and are copied as they are. Table records (VPORT, VIEW, ...),
-HATCH and the header variables are not converted. Up to 2.3.30 the
+tangent); VIEWPORT 50/51 (snap angle, view twist); HATCH 52 (pattern
+angle), every 53 (one per pattern line) and the 50/51 start / end angles
+of every circular-arc and elliptic-arc boundary edge. The symbol-table
+records ~tblsearch~ and ~tblnext~ return are converted too: VPORT 50/51
+(snap rotation, view twist), VIEW 50 (twist) and STYLE 50 (oblique
+angle). ELLIPSE 41/42 (parameters), a polyline 42 (bulge) and the HATCH
+gradient angle 460 (radians in the file) are not degree angles and are
+copied as they are. The header variables (~$ANGBASE~, ~$SNAPANG~, ...)
+are not converted: cador's ~getvar~ does not read them from the file.
+Up to 2.3.30 the entity angles, and up to 2.3.32 the HATCH,
+VIEWPORT and table-record ones, the
 file values were copied unconverted, so an ARC of 0..90 degrees from a
 vendor DXF read as ~(51 . 90.0)~ (90 radians), and a saved ARC of
 0..pi/2 opened elsewhere as 0..1.57 degrees.

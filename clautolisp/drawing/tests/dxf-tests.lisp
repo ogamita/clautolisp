@@ -550,3 +550,157 @@ rotation 50 BEFORE that is an angle."
     (let ((out (clautolisp.drawing::dxf-entity-from-file data)))
       (is (%angle-close-p (/ pi 2) (cdr (second out))))
       (is (equal '((75 . 2) (76 . 2) (50 . 3d0) (50 . 4d0)) (cddr out))))))
+
+;;; --- Angle units: HATCH, VIEWPORT, table records ------------------
+;;; (dxf-angle-units-hatch-viewport-tables.issue) Group codes 50-58 are
+;;; angles: degrees in the DXF file, radians through AutoLISP. HATCH
+;;; repeats them (boundary arc / elliptic-arc edges 50/51, one 53 per
+;;; pattern line), so every occurrence is converted there.
+
+(defparameter +hatch-viewport-angle-dxf+
+  (format nil "~{~A~%~}"
+          '("0" "SECTION" "2" "TABLES"
+            "0" "TABLE" "2" "VPORT" "70" "1"
+            "0" "VPORT" "5" "40" "2" "*ACTIVE" "70" "0"
+            "10" "0.0" "20" "0.0" "11" "1.0" "21" "1.0"
+            "50" "15.0" "51" "30.0" "75" "0" "76" "0"
+            "0" "ENDTAB"
+            "0" "TABLE" "2" "VIEW" "70" "1"
+            "0" "VIEW" "5" "41" "2" "V1" "70" "0" "40" "10.0"
+            "10" "0.0" "20" "0.0" "41" "10.0"
+            "50" "45.0"
+            "0" "ENDTAB"
+            "0" "TABLE" "2" "STYLE" "70" "1"
+            "0" "STYLE" "5" "42" "2" "SLANT" "70" "0" "40" "0.0" "41" "1.0"
+            "50" "15.0" "71" "0" "42" "2.5" "3" "txt"
+            "0" "ENDTAB"
+            "0" "ENDSEC"
+            "0" "SECTION" "2" "ENTITIES"
+            "0" "HATCH" "5" "50" "8" "0"
+            "10" "0.0" "20" "0.0" "30" "0.0"
+            "2" "ANSI31" "70" "0" "71" "0" "91" "1"
+            "92" "1" "93" "3"
+            "72" "1" "10" "0.0" "20" "0.0" "11" "10.0" "21" "0.0"
+            "72" "2" "10" "0.0" "20" "0.0" "40" "10.0"
+            "50" "0.0" "51" "90.0" "73" "1"
+            "72" "3" "10" "0.0" "20" "0.0" "11" "10.0" "21" "0.0" "40" "0.5"
+            "50" "90.0" "51" "180.0" "73" "1"
+            "97" "0"
+            "75" "0" "76" "1" "52" "30.0" "41" "1.0" "77" "0" "78" "2"
+            "53" "75.0" "43" "0.0" "44" "0.0" "45" "-2.2" "46" "2.2" "79" "0"
+            "53" "165.0" "43" "0.0" "44" "0.0" "45" "-2.2" "46" "2.2" "79" "2"
+            "49" "1.0" "49" "-0.5"
+            "98" "0"
+            "0" "VIEWPORT" "5" "51" "8" "0"
+            "10" "5.0" "20" "5.0" "30" "0.0" "40" "10.0" "41" "8.0"
+            "68" "1" "69" "2" "45" "8.0"
+            "50" "10.0" "51" "20.0" "72" "100"
+            "0" "ENDSEC"
+            "0" "EOF")))
+
+(defun %all-values (code data)
+  (loop for pair in data when (eql (car pair) code) collect (cdr pair)))
+
+(test dxf-read-converts-hatch-and-viewport-angles
+  "HATCH 52 (pattern angle), every 53 (pattern line angle) and the 50/51
+of each arc / elliptic-arc boundary edge, VIEWPORT 50/51: degrees in the
+file, radians in entget. Lengths (40 radius, 41 scale, 45/46 offsets,
+49 dashes) are not touched."
+  (let* ((d (with-input-from-string (s +hatch-viewport-angle-dxf+)
+              (dxf-read-drawing-from-stream s)))
+         (by-type (%entities-by-type d))
+         (hatch (cdr (assoc "HATCH" by-type :test #'equal)))
+         (viewport (cdr (assoc "VIEWPORT" by-type :test #'equal))))
+    (is (%angle-close-p (/ pi 6) (cdr (assoc 52 hatch)))
+        "HATCH 52 = 30 deg must read as pi/6, got ~S" (cdr (assoc 52 hatch)))
+    (let ((l53 (%all-values 53 hatch)))
+      (is (= 2 (length l53)))
+      (is (%angle-close-p (* 5/12 pi) (first l53)) "first 53: ~S" (first l53))
+      (is (%angle-close-p (* 11/12 pi) (second l53)) "second 53: ~S" (second l53)))
+    (let ((l50 (%all-values 50 hatch))
+          (l51 (%all-values 51 hatch)))
+      (is (= 2 (length l50)))
+      (is (%angle-close-p 0d0 (first l50)))
+      (is (%angle-close-p (/ pi 2) (first l51))
+          "arc edge end 90 deg must read as pi/2, got ~S" (first l51))
+      (is (%angle-close-p (/ pi 2) (second l50))
+          "elliptic edge start 90 deg must read as pi/2, got ~S" (second l50))
+      (is (%angle-close-p pi (second l51))))
+    (is (equal '(10.0d0 0.5d0) (mapcar (lambda (x) (coerce x 'double-float))
+                                       (%all-values 40 hatch))))
+    (is (%angle-close-p 1d0 (cdr (assoc 41 hatch))))
+    (is (equal '(1.0d0 -0.5d0) (mapcar (lambda (x) (coerce x 'double-float))
+                                        (%all-values 49 hatch))))
+    (is (%angle-close-p (/ pi 18) (cdr (assoc 50 viewport))))
+    (is (%angle-close-p (/ pi 9) (cdr (assoc 51 viewport)))
+        "VIEWPORT 51 = 20 deg must read as pi/9, got ~S" (cdr (assoc 51 viewport)))))
+
+(test dxf-read-converts-table-record-angles
+  "tblsearch shows table records as stored: VPORT 50/51, VIEW 50 and
+STYLE 50 must be radians there, as on the vendors."
+  (let* ((d (with-input-from-string (s +hatch-viewport-angle-dxf+)
+              (dxf-read-drawing-from-stream s)))
+         (vport (symbol-table-record-data (find-table-record d :vport "*ACTIVE")))
+         (view (symbol-table-record-data (find-table-record d :view "V1")))
+         (style (symbol-table-record-data (find-table-record d :style "SLANT"))))
+    (is (%angle-close-p (/ pi 12) (cdr (assoc 50 vport)))
+        "VPORT 50 = 15 deg must read as pi/12, got ~S" (cdr (assoc 50 vport)))
+    (is (%angle-close-p (/ pi 6) (cdr (assoc 51 vport))))
+    (is (%angle-close-p (/ pi 4) (cdr (assoc 50 view))))
+    (is (%angle-close-p (/ pi 12) (cdr (assoc 50 style))))
+    (is (%angle-close-p 2.5d0 (cdr (assoc 42 style))))))
+
+(defun %cador-like-hatch ()
+  "A HATCH as cador's HATCH command builds it: every angle in radians."
+  (list (cons 0 "HATCH") (cons 8 "0") (list 10 0d0 0d0 0d0)
+        (cons 2 "ANSI31") (cons 70 0) (cons 71 0) (cons 91 1)
+        (cons 92 1) (cons 93 1) (cons 72 2) (list 10 0d0 0d0 0d0) (cons 40 10d0)
+        (cons 50 0d0) (cons 51 (/ pi 2)) (cons 73 1)
+        (cons 97 0) (cons 75 0) (cons 76 1)
+        (cons 52 (/ pi 6)) (cons 41 1d0) (cons 77 0) (cons 78 1)
+        (cons 53 (* 5/12 pi)) (cons 43 0d0) (cons 44 0d0) (cons 45 -2.2d0)
+        (cons 46 2.2d0) (cons 79 0) (cons 98 0)))
+
+(test dxf-write-emits-hatch-and-viewport-degrees
+  "HATCH and VIEWPORT angles in entget units are written in degrees."
+  (let ((d (make-drawing :version :ac1027)))
+    (add-entity d (%cador-like-hatch))
+    (add-entity d (list (cons 0 "VIEWPORT") (cons 8 "0") (list 10 5d0 5d0 0d0)
+                        (cons 40 10d0) (cons 41 8d0) (cons 68 1) (cons 69 2)
+                        (cons 50 0d0) (cons 51 (/ pi 9))))
+    (let ((text (with-output-to-string (s) (dxf-write-drawing-to-stream d s)))
+          (hatch (format nil "~%HATCH~%"))
+          (viewport (format nil "~%VIEWPORT~%")))
+      (is (%angle-close-p 90d0 (%dxf-value-after text "51" hatch))
+          "HATCH arc edge 51 in the file must be 90: ~S" (%dxf-value-after text "51" hatch))
+      (is (%angle-close-p 30d0 (%dxf-value-after text "52" hatch))
+          "HATCH 52 in the file must be 30: ~S" (%dxf-value-after text "52" hatch))
+      (is (%angle-close-p 75d0 (%dxf-value-after text "53" hatch)))
+      (is (%angle-close-p 10d0 (%dxf-value-after text "40" hatch)))
+      (is (%angle-close-p 20d0 (%dxf-value-after text "51" viewport))
+          "VIEWPORT 51 in the file must be 20: ~S" (%dxf-value-after text "51" viewport)))))
+
+(test dxf-hatch-viewport-table-angle-round-trip
+  "Write then read: HATCH, VIEWPORT and table-record angles come back."
+  (let ((d (with-input-from-string (s +hatch-viewport-angle-dxf+)
+             (dxf-read-drawing-from-stream s))))
+    (add-entity d (%cador-like-hatch))
+    (let* ((text (with-output-to-string (s) (dxf-write-drawing-to-stream d s)))
+           (restored (with-input-from-string (s text) (dxf-read-drawing-from-stream s)))
+           (hatches (loop for (type . data) in (%entities-by-type restored)
+                          when (equal type "HATCH") collect data))
+           (viewport (cdr (assoc "VIEWPORT" (%entities-by-type restored) :test #'equal)))
+           (vport (symbol-table-record-data
+                   (find-table-record restored :vport "*ACTIVE"))))
+      (is (= 2 (length hatches)))
+      (is (%angle-close-p (/ pi 6) (cdr (assoc 52 (first hatches)))))
+      (is (%angle-close-p (* 11/12 pi) (second (%all-values 53 (first hatches)))))
+      (is (%angle-close-p pi (second (%all-values 51 (first hatches)))))
+      (is (%angle-close-p (/ pi 2) (cdr (assoc 51 (second hatches)))))
+      (is (%angle-close-p (* 5/12 pi) (cdr (assoc 53 (second hatches)))))
+      (is (%angle-close-p (/ pi 9) (cdr (assoc 51 viewport))))
+      (is (%angle-close-p (/ pi 6) (cdr (assoc 51 vport))))
+      ;; The source drawing is not mutated by the writer.
+      (is (%angle-close-p (/ pi 6)
+                          (cdr (assoc 51 (symbol-table-record-data
+                                          (find-table-record d :vport "*ACTIVE")))))))))
