@@ -878,7 +878,10 @@ issues/open/autolisp-load-pathname-always-bound.issue."
              (t encoding))))
     (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
      context "*AUTOLISP-LOAD-PATHNAME*"
-     (clautolisp.autolisp-runtime:make-autolisp-string (namestring path))
+     ;; Absolute, as LOAD binds it (load-pathname-relative-under-l).
+     (clautolisp.autolisp-runtime:make-autolisp-string
+      (namestring (or (ignore-errors (truename path))
+                      (merge-pathnames path))))
      (lambda ()
        (if external-format
            (autolisp-load-file-in-context path context

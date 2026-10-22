@@ -2428,11 +2428,9 @@ to subsequent ~boundp~/value lookups.
                                    duration of the load of /any/ file:
                                    an init file, a ~-l~ or positional
                                    file, or a file read by ~(load …)~.
-                                   It is the absolute path, except
-                                   for a ~-l~ or positional file,
-                                   which today binds the path as
-                                   written on the command line (issue
-                                   =load-pathname-relative-under-l=).
+                                   It is always the absolute path,
+                                   even for a ~-l~ or positional file
+                                   named relatively (since 2.3.27).
                                    nil outside any load.
 - ~*AUTOLISP-EXPRESSION*~       :: The source text of a ~-x~ action,
                                    bound while the expression is
@@ -2452,9 +2450,9 @@ file can therefore find the files that sit beside it:
               "/helpers.lsp"))
 #+end_src
 
-(Until =load-pathname-relative-under-l= is fixed, this works only when
-the outermost file is given to ~-l~ with an absolute path, or loaded
-with ~load~ or as an init file.) Only the innermost load is visible:
+This works however the outermost file was named: ~-l main.lsp~ from
+its own directory binds the absolute path too. Only the innermost load
+is visible:
 there is no access yet to the stack of the loads in progress.
 
 * Banner

@@ -57,6 +57,14 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *=*AUTOLISP-LOAD-PATHNAME*= is absolute under =-l= too* (2.3.27): a
+  file named relatively on the command line (=-l main.lsp=, or a
+  positional file) bound the path as typed, so
+  =(vl-filename-directory *AUTOLISP-LOAD-PATHNAME*)= was =""= and a file
+  could not load its neighbours. It now binds the absolute path, as
+  =load= and the init files always did -- in =clautolisp= and in
+  =alfe --clautolisp=. See the manual, /Image-introspection variables/.
+
 - *Init files documented* (2.3.26): the user manual has a new section,
   /Init files/, on the four files loaded at startup (=~/.autolisp=,
   =~/.config/autolisp/init.lsp=, =~/.clautolisp=,

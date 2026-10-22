@@ -1235,9 +1235,16 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
       (:file
        (let ((options (derive-reader-options-for-dialect
                        dialect :source-name (namestring payload))))
+         ;; The ABSOLUTE pathname, as LOAD binds it: a file named
+         ;; relatively on the command line must still be able to find
+         ;; its neighbours through (vl-filename-directory
+         ;; *AUTOLISP-LOAD-PATHNAME*). See
+         ;; issues/closed/load-pathname-relative-under-l.issue.
          (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
           context "*AUTOLISP-LOAD-PATHNAME*"
-          (make-autolisp-string (namestring payload))
+          (make-autolisp-string
+           (namestring (or (ignore-errors (truename payload))
+                           (merge-pathnames payload))))
           (lambda ()
             (autolisp-load-file-in-context payload context :options options)))))
       (:expression
