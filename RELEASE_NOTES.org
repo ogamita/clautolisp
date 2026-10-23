@@ -1959,6 +1959,13 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *An unattended run never saves the CAD's drawing on quit* (2.3.44): alfe
+  ended every non-interactive AutoCAD / BricsCAD session with QUIT
+  answering "Save changes?" with Yes, so a drawing the run had modified
+  was saved -- or, unnamed, raised the Save As dialog, which nobody answers
+  on a build runner (AutoCAD was left open on a renamed drawing). The final
+  QUIT now discards, and asks only when the drawing is modified.
+
 - *DIMENSION and MTEXT angles from vendor DXF files* (2.3.43): checked
   against DXF files written by AutoCAD 2022 and BricsCAD V25 / V26. A
   DIMENSION's 50 / 53 loaded in degrees (the scan stopped at its earlier

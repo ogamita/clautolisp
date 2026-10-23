@@ -1,0 +1,36 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-windows-old-exe-left-suspended -- a suspended alfe.exe-old* process was left running on the Windows runner
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-23
+
+* Symptom
+
+pjb, 2026-10-23, on PF5S26B after the AutoCAD-left-open episode
+(alfe-cad-quit-saves-modified-drawing): a SUSPENDED process named
+alfe.exe-old* was still running; pjb terminated it.
+
+* What is known / supposed
+
+- On Windows a running .exe cannot be overwritten, so a rebuild of
+  alfe-sbcl.exe while an alfe still runs renames the old image aside --
+  hence the "-old" name (find which build step does the rename:
+  autolisp-front-end/Makefile / tools/alfe build, or the job scripts).
+- Its parent was most likely the alfe of the earlier dxf-angles AutoCAD run
+  whose AutoCAD sat on the Save changes prompt: alfe waits for the engine,
+  the job timed out or ended, and nothing killed the alfe process (a CI job
+  kill on Windows does not always reach grandchildren).
+- "Suspended": not known why -- it may be the state Windows shows for a
+  process whose console window was closed, or a debugger / a job object.
+
+* To do
+
+1. Find the rename (grep the build for "-old").
+2. Make the runner's pre-job sweep (scripts/sweep-orphaned-cad.ps1) also
+   end leftover alfe*.exe / alfe*.exe-old* processes from earlier jobs
+   (by image path under the runner's build directory), and report them.
+3. Check that a CI job that times out kills alfe and its CAD (job objects /
+   taskkill /T).

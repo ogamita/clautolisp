@@ -468,10 +468,19 @@
   (vl-load-com)
   (vla-SaveAs (vla-get-ActiveDocument (vlax-get-acad-object))
               *dxfang-path* (dxfang-saveas-type)))
-(setq *dxfang-r* (vl-catch-all-apply 'dxfang-export-com nil))
-(if (vl-catch-all-error-p *dxfang-r*)
-  (dxfang-say (strcat "EXPORT vla-SaveAs error " (vl-catch-all-error-message *dxfang-r*)))
-  (dxfang-export-report "vla-SaveAs"))
+;; AcCoreConsole has no COM, and there (vlax-get-acad-object) ends the run
+;; even inside vl-catch-all-apply (jobs 17409369692, 17411108963: every
+;; case, then nothing). Its PROGRAM is "acad" like the GUI's, so the run
+;; script says which backend it is (DXFANG_BACKEND).
+(setq *dxfang-no-com*
+      (= (vl-catch-all-apply 'getenv (list "DXFANG_BACKEND")) "accoreconsole"))
+(if *dxfang-no-com*
+  (dxfang-say "EXPORT vla-SaveAs skipped (accoreconsole: no COM)")
+  (progn
+    (setq *dxfang-r* (vl-catch-all-apply 'dxfang-export-com nil))
+    (if (vl-catch-all-error-p *dxfang-r*)
+      (dxfang-say (strcat "EXPORT vla-SaveAs error " (vl-catch-all-error-message *dxfang-r*)))
+      (dxfang-export-report "vla-SaveAs"))))
 
 ;; 2. commands, unguarded; the product's own form first.
 (setq *dxfang-bricscad*
@@ -488,7 +497,22 @@
   (if *dxfang-bricscad*
     (if (not (dxfang-export-dxfout)) (dxfang-export-saveas))
     (if (not (dxfang-export-saveas)) (dxfang-export-dxfout))))
-(dxfang-say (strcat "EXPORT-PATH " *dxfang-path*))
+;; The measured file is a COPY taken now: the document IS the exported file
+;; after a SaveAs, and the probe saves it once more at the very end (below,
+;; so that no quit ever finds it modified) -- with the sysvars restored by
+;; then, which would lose SNAPANG's 20 degrees from the artefact.
+(setq *dxfang-measured* (strcat (vl-filename-directory *dxfang-path*) "\\"
+                                (vl-filename-base *dxfang-path*) "-measured.dxf"))
+(if (not (wcmatch *dxfang-path* "*\\*"))
+  (setq *dxfang-measured* (strcat (vl-filename-directory *dxfang-path*) "/"
+                                  (vl-filename-base *dxfang-path*) "-measured.dxf")))
+(if (findfile *dxfang-measured*) (vl-catch-all-apply 'vl-file-delete (list *dxfang-measured*)))
+(if (and (dxfang-exported-p)
+         (not (vl-catch-all-error-p
+                (vl-catch-all-apply 'vl-file-copy (list *dxfang-path* *dxfang-measured*))))
+         (findfile *dxfang-measured*))
+  (dxfang-say (strcat "EXPORT-PATH " *dxfang-measured*))
+  (dxfang-say (strcat "EXPORT-PATH " *dxfang-path*)))
 
 ;; --- read the file back -------------------------------------------------------
 (defun dxfang-trim (s) (vl-string-trim " \t\r\n" s))
@@ -549,6 +573,26 @@
 (if *dxfang-old-snapang* (dxfang-setvar "SNAPANG" *dxfang-old-snapang*))
 (if *dxfang-old-clayer* (dxfang-setvar "CLAYER" *dxfang-old-clayer*))
 (if *dxfang-old-cmdecho* (dxfang-setvar "CMDECHO" *dxfang-old-cmdecho*))
+
+;; --- leave the document UNMODIFIED -------------------------------------------
+;; The export renamed the document (SaveAs) and the restores above changed
+;; it again: a document left modified makes whatever quits the CAD ask
+;; "Save changes?" -- AutoCAD sat on that prompt with dxf-angles-probe.dxf
+;; (2026-10-23). Save it (COM, its own format, no dialog) when DBMOD says it
+;; is modified, and report DBMOD before and after.
+(dxfang-say (strcat "INFO DBMOD-before-final-save " (dxfang-fmt (dxfang-getvar "DBMOD"))))
+;; (AcCoreConsole: no COM; its run script ends with QSAVE then QUIT.)
+(if (and (not *dxfang-no-com*)
+         (numberp (dxfang-getvar "DBMOD")) (/= 0 (dxfang-getvar "DBMOD")))
+  (progn
+    (setq *dxfang-r* (vl-catch-all-apply
+                       (function (lambda ()
+                         (vl-load-com)
+                         (vla-Save (vla-get-ActiveDocument (vlax-get-acad-object)))))
+                       nil))
+    (if (vl-catch-all-error-p *dxfang-r*)
+      (dxfang-say (strcat "INFO final-save error " (vl-catch-all-error-message *dxfang-r*))))))
+(dxfang-say (strcat "INFO DBMOD-at-end " (dxfang-fmt (dxfang-getvar "DBMOD"))))
 
 (princ "DXFANG-DONE\n")
 (princ)

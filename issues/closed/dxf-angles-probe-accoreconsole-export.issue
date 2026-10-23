@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: dxf-angles-probe-accoreconsole-export -- on accoreconsole the dxf-angles probe stops at the DXF export (COM SaveAs), before its SAVEAS fallback
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: infra
 #+DEPENDS: -
@@ -28,3 +28,11 @@ vlax-get-acad-object is not callable) and go straight to the
 prompt sequence on accoreconsole. Not needed for the angle verification
 (AutoCAD GUI is the same DXF writer and was measured), only to have the
 accoreconsole lane complete.
+
+* Fixed and verified (2026-10-23, MR !474, 2.3.44) -- DONE
+
+The probe skips COM when the run script says it is accoreconsole
+(DXFANG_BACKEND): dxf-angles:probe:accoreconsole:windows (job
+17414697754) printed "EXPORT vla-SaveAs skipped (accoreconsole: no COM)",
+then "EXPORT command-SAVEAS-DXF ok", read the file back and reached
+DXFANG-DONE; its DXF is in the artefact.

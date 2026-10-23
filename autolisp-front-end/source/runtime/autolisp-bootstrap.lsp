@@ -65,8 +65,17 @@
   (autolisp-bootstrap-write-line *AUTOLISP_STATUSFILE* "1")
   (autolisp-bootstrap-write-line *AUTOLISP_PROTOCOL_STATUSFILE*
                                  (strcat "FAILED " alfe--phase))
+  ;; Quit WITHOUT SAVING, as autolisp-host-quit does -- written out here
+  ;; because this runs when the bootstrap failed, maybe before that
+  ;; function was even defined. Answering QUIT's "Save changes?" with Y
+  ;; (as this did) saved what the failed run had modified, or opened the
+  ;; Save As dialog on an unattended runner.
   (if *AUTOLISP_QUIT_ON_FINISH*
-    (vl-catch-all-apply 'command (list "_QUIT" "_Y")))
+    (progn
+      (vl-catch-all-apply 'setvar (list "FILEDIA" 0))
+      (if (= 0 (getvar "DBMOD"))
+        (vl-catch-all-apply 'command (list "_.QUIT"))
+        (vl-catch-all-apply 'command (list "_.QUIT" "_N")))))
   1)
 
 (defun autolisp-write-line (alfe--path alfe--text / alfe--f)
@@ -1976,8 +1985,20 @@
               (autolisp-mark-end "MAIN" alfe--idx 0)
               T)))))))))
 
+;; Quit the CAD WITHOUT SAVING, and without a prompt left unanswered. This
+;; is alfe ending an unattended session (*AUTOLISP_QUIT_ON_FINISH*): it used
+;; to answer QUIT's "Save changes?" with Y, and a drawing the run had
+;; modified was then SAVED -- under the name of whatever the run last saved
+;; it as, or through the Save As dialog for an unnamed drawing (FILEDIA 1):
+;; a modal dialog nobody answers. The dxf-angles probe left AutoCAD stuck
+;; exactly so, on its renamed dxf-angles-probe.dxf (2026-10-23). QUIT asks
+;; only when there is something to save (DBMOD non-zero), so the answer is
+;; given only then: No -- discard.
 (defun autolisp-host-quit ()
-  (command "_QUIT" "_Y"))
+  (if (getvar "FILEDIA") (setvar "FILEDIA" 0))
+  (if (= 0 (getvar "DBMOD"))
+    (command "_.QUIT")
+    (command "_.QUIT" "_N")))
 
 (setq *AUTOLISP_QUIT_SIGNAL* "__AUTOLISP_QUIT_SIGNAL__")
 (setq *AUTOLISP_QUIT_REQUESTED* nil)
@@ -2276,5 +2297,5 @@
   ;; BricsCAD macOS batch quit can crash inside its own _QUIT handler.
   ;; Let the wrapper stop the launched process instead.
   (if *AUTOLISP_QUIT_ON_FINISH*
-    (command "_QUIT" "_Y")))
+    (autolisp-host-quit)))
 (autolisp-write-runtime-info)

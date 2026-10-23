@@ -53,10 +53,14 @@ dxf_copy="$out_dir/${backend}-$(uname).dxf"
 : > "$report"
 rm -f "$dxf_copy"
 
-# Where the CAD should write its DXF -- when it inherits the environment (a
-# CAD started through COM may not; the probe then falls back on TEMPPREFIX).
-# Either way the probe says where on its DXFANG EXPORT-PATH line.
-export DXFANG_DXF="$dxf_copy"
+# Where the CAD should write its DXF -- a WORK file, never the artefact: the
+# exported file BECOMES the CAD's document, which the probe saves again at
+# the end (so no quit finds it modified). The probe reports a copy of the
+# export as it was measured on its DXFANG EXPORT-PATH line, and that copy is
+# what goes into the artefact. A CAD started through COM may not inherit the
+# environment; the probe then falls back on TEMPPREFIX.
+export DXFANG_DXF="${TMPDIR:-/tmp}/dxfang-${backend}-export.dxf"
+export DXFANG_BACKEND="$backend"
 
 echo "########## BACKEND: $backend on $(uname) ##########" | tee -a "$report"
 "$alfe" "${bargs[@]}" 2>&1 \
