@@ -197,11 +197,18 @@ changes (measured: a toggle keeps the file, a new path makes a new one)."
 ;;; --- opening, writing, closing --------------------------------------------
 
 (defun %command-log-encoding ()
-  "-Elog when given, else the product's: windows-1252 for AutoCAD (measured),
-UTF-8 otherwise."
+  "-Elog when given, else the product's, both measured: windows-1252 without a
+BOM for AutoCAD and for BricsCAD on Windows (BricsCAD V25, job 16998925784:
+\"Départ\" logged with the single byte E9); UTF-8 otherwise -- the macOS /
+Linux BricsCAD dialects (BricsCAD V26 on macOS writes no log in batch mode,
+so UTF-8, the platform's own, stays) and clautolisp / strict / lax.
+Dispatched on the product and the platform, never on a dialect keyword."
   (or (clautolisp.autolisp-runtime:lookup-autolisp-encoding-variable
        "*AUTOLISP-LOG-ENCODING*")
-      (if (eq (%command-log-product) :autocad) :cp1252 :utf-8)))
+      (case (%command-log-product)
+        (:autocad :cp1252)
+        (:bricscad (if (eq (%current-dialect-platform) :windows) :cp1252 :utf-8))
+        (t :utf-8))))
 
 (defun %command-log-header (universal-time)
   (multiple-value-bind (second minute hour day month year day-of-week)

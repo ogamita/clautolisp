@@ -224,7 +224,7 @@ active dialect's product, as measured on AutoCAD 2022 and BricsCAD V25 / V26:
 | dialect          | LOGFILENAME                                    | logged                         | encoding     |
 |------------------+------------------------------------------------+--------------------------------+--------------|
 | AutoCAD          | ~<path>/<drawing>_1<8 hex>.log~                | the whole command line         | windows-1252 |
-| BricsCAD         | ~<path>/<drawing>_YYYY-MM-DD_HH-MM-SS.log~     | the command channel only       | UTF-8        |
+| BricsCAD         | ~<path>/<drawing>_YYYY-MM-DD_HH-MM-SS.log~     | the command channel only       | windows-1252 |
 | BricsCAD (macOS) | ~bricscad.log~ (in ~LOGFILEPATH~)              | the command channel only       | UTF-8        |
 | other dialects   | ~<path>/<drawing>_YYYY-MM-DD_HH-MM-SS.log~     | the whole command line         | UTF-8        |
 
@@ -234,11 +234,10 @@ line" adds the REPL's own output (~princ~ ...) and the lines typed at it.
 BricsCAD adds a trailing separator to ~LOGFILEPATH~; AutoCAD keeps it as
 given. ~-Elog ENC~ (~--log-encoding~) chooses the encoding.
 
-Known gap: BricsCAD V25 on Windows was since measured (2026-10-08) to write
-its log in windows-1252 without a byte-order mark, while clautolisp writes
-UTF-8 under every BricsCAD dialect; until that is aligned
-(=issues/open/cador-bricscad-windows-log-encoding.issue=), pass
-~-Elog windows-1252~ to get the bytes BricsCAD writes on Windows.
+"BricsCAD" is a Windows BricsCAD dialect (the unqualified ones, and
+~-win~): like AutoCAD it writes windows-1252 without a byte-order mark, as
+BricsCAD V25 on Windows was measured to do (2026-10-08). The macOS (and
+Linux) BricsCAD dialects write UTF-8.
 
 *** Recording the session: the dribble
 

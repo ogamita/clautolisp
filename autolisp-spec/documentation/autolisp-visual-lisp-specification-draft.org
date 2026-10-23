@@ -38850,6 +38850,9 @@ bytes =44 E9 70 61 72 74=). BricsCAD V25 logs only its command channel
 
 *** clautolisp
 One log per drawing; a registry preference, per product, read at launch.
+Written in windows-1252 without a byte-order mark under the AutoCAD and the
+Windows BricsCAD dialects, as measured; in UTF-8 under the macOS / Linux
+BricsCAD dialects and every other dialect; =-Elog= overrides it.
 See the clautolisp user manual, "The command-history log file".
 
 *** Source Notes

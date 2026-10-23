@@ -119,6 +119,42 @@ its own header, and the command channel only (not the REPL's PRINC output)."
                        "BricsCAD logs the command channel only"))))
           (set-runtime-session-host session saved-host))))))
 
+(defun %bricscad-log-octets (dialect)
+  "The octets of the log a prompt \"Départ: \" leaves under DIALECT."
+  (%with-log-sandbox (dir)
+    (%with-dialect (dialect)
+      (let* ((host (make-cador))
+             (session (evaluation-context-session (current-evaluation-context)))
+             (saved-host (runtime-session-host session)))
+        (unwind-protect
+             (progn
+               (set-runtime-session-host session host)
+               (clautolisp.cador:apply-command-log-preferences host)
+               (%log-setvar host "LOGFILEPATH" (concatenate 'string dir "logs"))
+               (%log-setvar host "LOGFILEMODE" 1)
+               (let ((name (%log-getvar host "LOGFILENAME")))
+                 (clautolisp.cador::cador-write-prompt
+                  host (format nil "D~Cpart: " (code-char 233)))
+                 (%log-setvar host "LOGFILEMODE" 0)
+                 (%file-octets (if (uiop:absolute-pathname-p name)
+                                   name
+                                   (concatenate 'string dir "logs/" name)))))
+          (set-runtime-session-host session saved-host))))))
+
+(test command-log-bricscad-encoding-follows-the-platform
+  "cador-bricscad-windows-log-encoding: BricsCAD V25 on Windows writes its log
+in windows-1252 without a BOM (\"Départ\" with the single byte E9, job
+16998925784); the macOS BricsCAD dialects keep UTF-8."
+  (let ((windows (%bricscad-log-octets :bricscad-v25)))
+    (is (search #(68 #xE9 112 97 114 116) windows)
+        "windows-1252 e-acute expected under bricscad-v25: ~S" windows)
+    (is (not (and (>= (length windows) 3)
+                  (equalp (subseq windows 0 3) #(#xEF #xBB #xBF))))
+        "no BOM"))
+  (let ((macos (%bricscad-log-octets :bricscad-mac)))
+    (is (search #(68 #xC3 #xA9 112 97 114 116) macos)
+        "UTF-8 e-acute expected under bricscad-mac: ~S" macos)))
+
 (test command-log-bricscad-macos-bare-name
   "BricsCAD macOS: LOGFILENAME is the bare \"bricscad.log\" (measured, V26)."
   (%with-log-sandbox (dir)
