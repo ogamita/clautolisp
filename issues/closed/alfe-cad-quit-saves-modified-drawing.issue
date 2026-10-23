@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-quit-saves-modified-drawing -- an unattended alfe run ended the CAD with QUIT Y: a modified drawing was saved, or the CAD sat on a save prompt
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -60,3 +60,22 @@ closes nothing afterwards. A run that renames or modifies the active
 document (as a SaveAs does) changes whatever drawing was active -- possibly
 a person's. Should an attached run work in a document of its own, and
 close it (without saving) at the end?
+
+* Verified on the runners (2026-10-23, MR !474) -- DONE
+
+dxf-angles probe on 2.3.44 (pipeline 2980965341): AutoCAD 2022 GUI (job
+17414697753) ended its run with the drawing still MODIFIED -- INFO
+DBMOD-before-final-save 4, DBMOD-at-end 4: AutoCAD's COM Save from inside
+the running LISP did not clear the "system variable modified" bit -- i.e.
+exactly the state in which the old QUIT _Y saved and hung. With 2.3.44's
+DBMOD-guarded QUIT _N the session ended: pjb checked PF5S26B afterwards, no
+AutoCAD left open. BricsCAD V25 Windows (17414697752) and V26 macOS
+(17414697751): DBMOD 5 -> 0 after the probe's own save, clean exit.
+
+pjb also found a suspended alfe.exe-old* process on the runner (left over
+from the earlier stuck run, presumably) and terminated it: see
+alfe-windows-old-exe-left-suspended.
+
+The open question on ATTACHED AutoCADs (runs in the active document,
+closes nothing) stays open; it is a design decision for pjb, not part of
+this fix.
