@@ -1,0 +1,1854 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: Conseils AutoLISP — une introduction à AutoLISP avec clautolisp
+#+AUTHOR: Ogamita Ltd
+#+LANGUAGE: fr
+#+OPTIONS: toc:2 num:t
+
+* À propos de ce tutoriel
+
+Ce tutoriel enseigne AutoLISP à des programmeurs qui connaissent déjà
+un autre langage (C, Python, JavaScript, VBA…) mais n'ont jamais écrit
+de Lisp. Il utilise *clautolisp*, une implémentation libre d'AutoLISP
+qui tourne dans un terminal, sans AutoCAD ni BricsCAD : tout ce qui est
+montré ici peut être tapé à l'invite de clautolisp et vérifié aussitôt.
+
+Sa forme est empruntée à /Common LISP Hints/, le court tutoriel de
+Geoffrey J. Gordon (1993), revu par Bruno Haible, distribué avec GNU
+CLISP sous le nom =doc/LISP-tutorial.txt= : une suite de sections
+brèves, chacune faite de quelques phrases et d'une session que vous
+pouvez rejouer. Le texte et les exemples sont nouveaux et portent sur
+AutoLISP, un langage bien plus petit que Common Lisp — et différent de
+lui sur des points où un programmeur Common Lisp trébucherait. Quand
+les deux langages diffèrent d'une façon qui compte, ce tutoriel le dit.
+
+AutoLISP est le langage d'extension d'AutoCAD (depuis 1986) et des
+logiciels de CAO compatibles, comme BricsCAD. L'essentiel du langage
+sert à calculer sur des nombres, des chaînes et des listes ; une plus
+petite partie parle au dessin. La première partie de ce tutoriel couvre
+le langage ; les dernières sections montrent comment un programme
+atteint le dessin.
+
+Ce document est la traduction française de =tutorial.org=.
+
+** Conventions
+
+Dans les sessions, =_$ = est l'invite de clautolisp (la même que celle
+de la console Visual LISP d'AutoCAD). Ce qui suit l'invite sur la même
+ligne est ce que vous tapez ; la ligne suivante est ce que clautolisp
+répond : la /valeur/ de ce que vous avez tapé.
+
+#+begin_example
+_$ (+ 1 2)          ; vous tapez ceci
+3                   ; clautolisp répond ceci
+#+end_example
+
+Le point-virgule =;= commence un commentaire : tout ce qui va de =;= à
+la fin de la ligne est ignoré. Les lignes indentées sous une ligne
+d'entrée en sont la suite : une expression peut s'étendre sur plusieurs
+lignes, et clautolisp attend que toutes ses parenthèses soient fermées
+avant de l'évaluer. Les longues lignes de sortie sont repliées ici pour
+tenir dans la page ; clautolisp les affiche sur une seule ligne.
+
+Toutes les sessions ont été produites par clautolisp 2.3 dans son
+dialecte par défaut (=strict=, voir [[*Dialectes][Dialectes]]). Les messages d'erreur
+de clautolisp sont en anglais.
+
+** Pour aller plus loin
+
+- La /AutoLISP Spec/ (=autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org=
+  dans le dépôt de clautolisp) décrit chaque fonction AutoLISP et Visual
+  LISP, avec les différences entre AutoCAD et BricsCAD.
+- Le /clautolisp User Manual/ (=clautolisp-user-manual.org=, ou
+  =info clautolisp-user-manual= une fois installé) décrit le programme :
+  ses options, sa boucle interactive, son débogueur.
+- Autodesk publie la /AutoLISP Reference/ et le /AutoLISP Developer's
+  Guide/ dans l'aide en ligne d'AutoCAD ; Bricsys publie la référence
+  /BricsCAD LISP/ sur son site pour développeurs.
+
+* Premiers pas
+
+Lancez clautolisp sans argument : il affiche une bannière et attend une
+expression.
+
+#+begin_example
+$ clautolisp
+Welcome to clautolisp Version 2.3.24
+...
+AUTOLISP REPL (STRICT dialect, cador host) — Ctrl-D to exit.
+_$ (+ 1 2)
+3
+_$
+#+end_example
+
+Cette boucle — lire une expression, l'évaluer, afficher sa valeur,
+recommencer — s'appelle la /boucle lecture-évaluation-affichage/, ou
+REPL (/read-eval-print loop/). Pour en sortir, tapez =Ctrl-D= sur une
+ligne vide, ou la commande REPL =,q=.
+
+clautolisp peut aussi tourner sans REPL ; c'est ainsi qu'on lance des
+programmes depuis un shell ou un script :
+
+#+begin_example
+$ clautolisp -x '(princ (* 6 7))'            # évaluer une expression
+42
+$ clautolisp bonjour.lsp                      # charger un fichier
+$ clautolisp -l bonjour.lsp -x '(c:bonjour)'  # charger, évaluer
+$ clautolisp -l bonjour.lsp -i                # charger, puis REPL
+#+end_example
+
+Par convention, les fichiers source AutoLISP ont l'extension =.lsp=.
+Écrivez-les avec n'importe quel éditeur de texte (voir [[*Éditer de l'AutoLISP avec Emacs][Éditer de
+l'AutoLISP avec Emacs]]).
+
+* Suivre le tutoriel dans AutoCAD
+
+Tous les exemples de ce tutoriel peuvent aussi être tapés dans AutoCAD,
+sous Windows, à l'un de ces deux endroits.
+
+*La ligne de commande.* Tapez directement à l'invite =Commande := une
+expression qui commence par une parenthèse, puis =Entrée= : AutoCAD
+l'évalue et affiche sa valeur. Tant qu'une parenthèse est ouverte, la
+barre d'espace insère une espace au lieu de valoir =Entrée=, et une
+expression incomplète se poursuit sur la ligne suivante. Pour voir la
+valeur d'une variable sans parenthèses, préfixez son nom par =!= :
+=!a=. La touche =F2= ouvre la fenêtre de texte, qui garde l'historique
+de la ligne de commande : on y lit les longs résultats et les lignes
+précédentes.
+
+#+begin_example
+Commande : (+ 1 2)
+3
+Commande : (setq a 5)
+5
+Commande : !a
+5
+#+end_example
+
+*La console Visual LISP.* La commande =VLIDE= (ou =VLISP=) ouvre
+l'environnement de développement AutoLISP. Lequel dépend de la variable
+système =LISPSYS= :
+
+- avec =LISPSYS= à =0=, c'est l'IDE Visual LISP classique. Ouvrez sa
+  console par le menu /Fenêtre/ (/Console Visual LISP/) : son invite est
+  =_$=, celle-là même qu'imite clautolisp, et les sessions de ce
+  tutoriel s'y lisent exactement comme ici. C'était le défaut jusqu'à
+  AutoCAD 2020 ;
+- avec =LISPSYS= à =1= ou =2= (le défaut depuis AutoCAD 2021), =VLIDE=
+  ouvre Visual Studio Code avec l'/AutoCAD AutoLISP Extension/
+  d'Autodesk, où l'on édite et débogue des fichiers ; les expressions
+  s'évaluent alors dans sa /Debug Console/ pendant qu'une session de
+  débogage est attachée à AutoCAD. Pour retrouver la console classique,
+  mettez =LISPSYS= à =0= et relancez AutoCAD.
+
+AutoCAD pour Mac n'a pas d'IDE Visual LISP : utilisez sa ligne de
+commande.
+
+* Suivre le tutoriel dans BricsCAD
+
+BricsCAD, sous Windows, Linux et macOS, évalue l'AutoLISP de la même
+façon :
+
+*La ligne de commande.* Tapez l'expression à l'invite =:= puis
+=Entrée= ; =!a= affiche la valeur de la variable =a=. La touche =F2=
+ouvre la fenêtre /Historique des invites/, qui garde tout ce qui a été
+tapé et affiché.
+
+*BLADE.* La commande =BLADE= (=VLIDE= et =VLISP= en sont des alias dans
+BricsCAD) ouvre le BricsCAD LISP Advanced Development Environment, un
+éditeur et débogueur doté de sa propre console, où l'on peut taper des
+expressions.
+
+** Ce qui diffère de clautolisp
+
+Le langage est le même, mais quelques éléments de ce tutoriel
+n'appartiennent qu'à clautolisp, ou s'affichent autrement dans un
+logiciel de CAO :
+
+- les commandes REPL qui commencent par une virgule (=,q=, =,break=,
+  =,trace=…), le débogueur /aldo/, =(clal-break)= et les options de
+  ligne de commande (=-x=, =--trace=, =--dialect=…) n'existent que dans
+  clautolisp ; les sections [[*Premiers pas][Premiers pas]] et [[*Débogage][Débogage]] ne s'appliquent
+  pas à AutoCAD ni à BricsCAD, qui ont leurs propres environnements de
+  développement ;
+- les logiciels de CAO affichent les réels avec moins de chiffres
+  (=1.41421= plutôt que =1.4142135623730951=), et formulent leurs
+  messages d'erreur autrement ;
+- un dépassement d'entier revient silencieusement à l'autre bout de
+  l'intervalle au lieu d'être signalé ;
+- =(exit)= revient à la ligne de commande au lieu de terminer le
+  programme ;
+- certaines fonctions =vl-= et toutes les fonctions =vla-= / =vlax-=
+  exigent d'avoir appelé une fois =(vl-load-com)= dans AutoCAD ;
+  l'appeler dans BricsCAD ou clautolisp ne fait pas de mal.
+
+* Formes et évaluation
+
+Tout ce que vous tapez dans la REPL est une /forme/ (une expression).
+Une forme est soit un /atome/ — un nombre, une chaîne, un symbole —,
+soit une /liste/ : une suite de formes entre parenthèses.
+
+Les atomes sont simples. Un nombre ou une chaîne a pour valeur
+lui-même :
+
+#+begin_example
+_$ 42
+42
+_$ "bonjour"
+"bonjour"
+#+end_example
+
+Une liste est un appel de fonction, écrit en /notation préfixe/ : la
+fonction vient d'abord, à l'intérieur des parenthèses, suivie de ses
+arguments, séparés par des espaces — sans virgules.
+
+#+begin_example
+_$ (+ 3 4)                    ; 3 + 4
+7
+_$ (* 2 (+ 3 4))              ; 2 * (3 + 4)
+14
+_$ (+ 1 2 3 4 5)              ; autant d'arguments qu'on veut
+15
+_$ (max 3 9 2)
+9
+#+end_example
+
+Pour évaluer une liste, AutoLISP évalue chaque argument, puis appelle
+la fonction avec ces valeurs. Dans =(* 2 (+ 3 4))=, il évalue =2= (qui
+vaut 2) et =(+ 3 4)= (qui vaut 7), puis appelle =*= avec 2 et 7.
+
+Il n'y a pas de règles de priorité des opérateurs à retenir : les
+parenthèses disent tout. Il n'y a pas non plus d'instructions : tout,
+y compris =if= et les boucles, est une forme qui rend une valeur.
+
+* Symboles et variables
+
+Un /symbole/ est un nom : =a=, =total=, =pt-debut=, =c:bonjour=. Les
+symboles nomment les variables et les fonctions. Lettres, chiffres et
+la plupart des signes de ponctuation sont permis, sauf =( ) . ' " ;= et
+l'espace. AutoLISP ne distingue pas majuscules et minuscules dans les
+symboles : =Longueur=, =longueur= et =LONGUEUR= sont le même symbole,
+et clautolisp l'affiche en majuscules.
+
+=setq= donne une valeur à une variable :
+
+#+begin_example
+_$ (setq a 5)                 ; ranger 5 dans a
+5
+_$ a                          ; la valeur de la variable a
+5
+_$ (+ a 6)
+11
+_$ (setq a 5 b 6)             ; setq accepte plusieurs paires
+6
+_$ (setq Longueur 12)
+12
+_$ longueur                   ; même symbole : la casse ne compte pas
+12
+#+end_example
+
+Une variable qui n'a jamais reçu de valeur n'est *pas* une erreur en
+AutoLISP : sa valeur est =nil=.
+
+#+begin_example
+_$ zzz
+nil
+#+end_example
+
+C'est commode et dangereux : une faute de frappe dans un nom de
+variable donne =nil= en silence au lieu d'une erreur. Mettre une
+variable à =nil= est la façon AutoLISP de la « supprimer ».
+
+** t et nil
+
+Deux symboles sont spéciaux. =nil= signifie /faux/, et aussi /la liste
+vide/ (voir [[*Listes][Listes]]). =t= signifie /vrai/. Tous deux ont pour valeur
+eux-mêmes. Toute valeur autre que =nil= compte pour vraie — y compris
+=0= et la chaîne vide =""=, contrairement au C ou à Python :
+
+#+begin_example
+_$ (if t 5 6)
+5
+_$ (if nil 5 6)
+6
+_$ (if 0 5 6)                 ; 0 est vrai !
+5
+#+end_example
+
+** Pas de mots-clés
+
+Si vous avez vu du code Common Lisp, vous connaissez peut-être des
+symboles commençant par deux-points, comme =:test=. AutoLISP n'a pas
+de tels /mots-clés/ : =:foo= est un symbole ordinaire sans valeur, il
+vaut donc =nil=. Ne vous en servez pas.
+
+* Nombres
+
+AutoLISP a deux sortes de nombres : les /entiers/ (=5=, =-34=, =+6=)
+et les /réels/ (virgule flottante, écrite avec un point : =3.1415=,
+=1.722e-15=, =2.0=). Il n'y a ni fractions ni nombres complexes.
+
+#+begin_example
+_$ (type 5)
+INT
+_$ (type 5.0)
+REAL
+#+end_example
+
+Les opérateurs usuels sont des fonctions : =+=, =-=, =*=, =/=. Si tous
+les arguments sont entiers, le résultat est entier — division comprise,
+qui tronque alors. Dès qu'un argument est réel, le résultat est réel :
+
+#+begin_example
+_$ (/ 7 2)                    ; division entière !
+3
+_$ (/ 7 2.0)
+3.5
+_$ (rem 7 2)                  ; reste
+1
+_$ (/ 7.0 2)
+3.5
+#+end_example
+
+=(/ total nombre)= est un bogue AutoLISP classique quand les deux sont
+entiers : écrivez =(/ total (float nombre))=.
+
+Les entiers sont sur 32 bits : de -2147483648 à 2147483647. clautolisp
+signale un dépassement comme une erreur (les logiciels de CAO
+reviennent silencieusement à l'autre bout de l'intervalle) ; utilisez
+des réels pour les valeurs plus grandes.
+
+#+begin_example
+_$ (* 65536 65536)
+clautolisp: runtime error: INTEGER-OVERFLOW: Arithmetic result is
+  outside the AutoLISP 32-bit integer range: 4294967296.
+#+end_example
+
+Quelques-unes des nombreuses fonctions numériques :
+
+| fonction                   | rôle                          | exemple                | valeur             |
+|----------------------------+-------------------------------+------------------------+--------------------|
+| =1+=, =1-=                 | ajouter / retirer un          | =(1+ 5)=               | =6=                |
+| =abs=                      | valeur absolue                | =(abs -3)=             | =3=                |
+| =min=, =max=               | plus petit / plus grand       | =(min 3 1 2)=          | =1=                |
+| =sqrt=                     | racine carrée                 | =(sqrt 2)=             | =1.4142135623730951= |
+| =expt=                     | puissance                     | =(expt 2 10)=          | =1024=             |
+| =sin=, =cos=, =atan=       | trigonométrie (radians)       | =(atan 1)=             | =0.7853981633974483= |
+| =fix=                      | réel → entier (tronque)       | =(fix 3.7)=            | =3=                |
+| =float=                    | entier → réel                 | =(float 3)=            | =3.0=              |
+| =gcd=                      | plus grand commun diviseur    | =(gcd 12 18)=          | =6=                |
+| =zerop=, =minusp=          | est-ce zéro ? négatif ?       | =(minusp -1)=          | =T=                |
+
+La variable =pi= contient π. En AutoLISP, les angles sont toujours en
+radians.
+
+Conversions entre nombres et chaînes :
+
+#+begin_example
+_$ (itoa 42)                  ; entier vers chaîne (integer to ASCII)
+"42"
+_$ (atoi "17")                ; chaîne vers entier
+17
+_$ (atof "3.5")               ; chaîne vers réel
+3.5
+_$ (rtos pi 2 4)              ; réel vers chaîne, 4 décimales
+"3.1416"
+#+end_example
+
+* Chaînes
+
+Une chaîne est une suite de caractères entre guillemets droits. Dans
+une chaîne, la barre oblique inverse introduit un échappement : =\"=
+est un guillemet, =\\= une barre oblique inverse, =\n= un saut de
+ligne, =\t= une tabulation.
+
+#+begin_example
+_$ (strlen "bonjour")
+7
+_$ (strlen "\"")              ; un seul caractère : un guillemet
+1
+_$ (strcat "abc" "def")       ; concaténer
+"abcdef"
+_$ (substr "bonjour" 4 3)     ; 3 caractères à partir de la position 4
+"jou"
+_$ (strcase "Bonjour")        ; en majuscules
+"BONJOUR"
+_$ (strcase "Bonjour" t)      ; en minuscules
+"bonjour"
+_$ (vl-string-search "jour" "bonjour")
+3
+#+end_example
+
+Attention : =substr= compte les positions à partir de *1*, alors que les
+fonctions =vl-string-...= (venues de Visual LISP) comptent à partir de
+*0*.
+
+Il n'y a pas de type caractère distinct : un caractère est représenté
+par son code, un entier.
+
+#+begin_example
+_$ (ascii "A")                ; code du premier caractère
+65
+_$ (chr 65)                   ; chaîne d'un caractère de ce code
+"A"
+#+end_example
+
+=strcat= n'accepte que des chaînes. Pour construire un message
+contenant un nombre, convertissez-le d'abord :
+
+#+begin_example
+_$ (strcat "Total : " (itoa 3))
+"Total : 3"
+#+end_example
+
+* Quote
+
+Puisqu'un symbole a pour valeur celle de sa variable et qu'une liste
+est un appel de fonction, comment parler du symbole =a= lui-même, ou de
+la liste =(a b c)= comme d'une donnée ? Avec =quote=, qui rend son
+argument sans l'évaluer. =(quote x)= est si courant qu'il a une
+abréviation : ='x=.
+
+#+begin_example
+_$ (setq a 3)
+3
+_$ a
+3
+_$ (quote a)
+A
+_$ 'a                         ; 'a abrège (quote a)
+A
+_$ '(a b c)                   ; une liste, pas un appel à a
+(A B C)
+#+end_example
+
+=eval= fait l'inverse : il évalue son argument une fois de plus.
+
+#+begin_example
+_$ (eval '(+ 1 2))
+3
+#+end_example
+
+* Conses et listes
+
+** Conses
+
+La brique de base des données Lisp est le /cons/ (ou /paire/) : un
+enregistrement à deux champs, appelés pour des raisons historiques le
+/car/ et le /cdr/. =cons= en construit un ; =car= et =cdr= lisent ses
+deux champs.
+
+#+begin_example
+_$ (cons 4 5)                 ; un cons dont le car est 4 et le cdr 5
+(4 . 5)
+_$ (car (cons 4 5))
+4
+_$ (cdr (cons 4 5))
+5
+_$ (cons (cons 4 5) 6)
+((4 . 5) . 6)
+#+end_example
+
+Un cons affiché =(4 . 5)= s'appelle une /paire pointée/. AutoLISP en
+utilise partout dans les données du dessin (voir [[*Parler au dessin][Parler au dessin]]).
+
+** Listes
+
+Une /liste/ est une chaîne de conses : le car de chaque cons contient
+un élément, et le cdr contient le cons suivant — ou =nil= à la fin.
+=list= en construit une :
+
+#+begin_example
+_$ (list 4 5 6)
+(4 5 6)
+#+end_example
+
+Lisp affiche ces chaînes de façon compacte : quand le cdr d'un cons est
+=nil=, il n'affiche ni le point ni le =nil= ; quand le cdr est un autre
+cons, il n'affiche ni le point ni les parenthèses de ce cons. Ainsi :
+
+#+begin_example
+_$ (cons 4 nil)
+(4)
+_$ (cons 4 (cons 5 6))
+(4 5 . 6)
+_$ (cons 4 (cons 5 (cons 6 nil)))
+(4 5 6)
+#+end_example
+
+Le dernier est exactement ce que construit =(list 4 5 6)=. =nil= est la
+liste sans élément : le cdr de =(b)= est =nil=. Le car et le cdr de
+=nil= valent =nil=.
+
+=cons= sert donc aussi à ajouter un élément en tête de liste :
+
+#+begin_example
+_$ (cons 4 '(5 6))
+(4 5 6)
+_$ (setq lst (list 3 1 2))
+(3 1 2)
+_$ (setq lst (cons 0 lst))    ; empiler 0 en tête
+(0 3 1 2)
+_$ (setq lst (cdr lst))       ; et le dépiler
+(3 1 2)
+#+end_example
+
+Une liste peut contenir des éléments de tout type, y compris d'autres
+listes :
+
+#+begin_example
+_$ (list 'a "b" 3.0)
+(A "b" 3.0)
+_$ (list 1 (list 2 3) "quatre")
+(1 (2 3) "quatre")
+#+end_example
+
+** Accéder aux éléments
+
+=car= est le premier élément et =cdr= le reste de la liste. Leurs
+combinaisons jusqu'à quatre niveaux ont un nom : =cadr= est
+=(car (cdr x))=, le deuxième élément ; =caddr= le troisième ; et ainsi
+de suite.
+
+#+begin_example
+_$ (car '(a b c))
+A
+_$ (cdr '(a b c))
+(B C)
+_$ (cadr '(a b c))
+B
+_$ (nth 1 '(a b c))           ; numérotés à partir de 0
+B
+_$ (last '(a b c))
+C
+_$ (length '(a b c))
+3
+#+end_example
+
+En AutoLISP, un point est simplement une liste de deux ou trois réels,
+si bien que ces fonctions servent sans arrêt :
+
+#+begin_example
+_$ (setq pt (list 10.0 20.0 0.0))
+(10.0 20.0 0.0)
+_$ (car pt)                   ; x
+10.0
+_$ (cadr pt)                  ; y
+20.0
+_$ (caddr pt)                 ; z
+0.0
+#+end_example
+
+** Quelques fonctions utiles sur les listes
+
+#+begin_example
+_$ (append '(1 2) '(3 4))     ; concaténer des listes
+(1 2 3 4)
+_$ (reverse '(1 2 3))
+(3 2 1)
+_$ (member 'c '(a b c d))     ; la fin de liste dès c, ou nil
+(C D)
+_$ (vl-position 'c '(a b c))  ; l'indice de l'élément, ou nil
+2
+_$ (subst 'x 'b '(a b c))     ; remplacer b par x
+(A X C)
+_$ (vl-remove-if-not 'numberp '(1 a 2 "b"))
+(1 2)
+#+end_example
+
+Aucune de ces fonctions ne modifie ses arguments : toutes construisent
+et rendent de nouvelles listes. Pour « modifier » une liste rangée dans
+une variable, réaffectez le résultat à la variable avec =setq=.
+
+* Listes d'association
+
+AutoLISP n'a ni enregistrements, ni structures, ni tableaux, ni tables
+de hachage. Là où un autre langage les emploierait, AutoLISP emploie des
+listes — le plus souvent une /liste d'association/ (/alist/) : une
+liste de paires pointées =(clé . valeur)=. =assoc= trouve la paire
+d'une clé.
+
+#+begin_example
+_$ (setq personne '((nom . "Ada") (age . 36)))
+((NOM . "Ada") (AGE . 36))
+_$ (assoc 'age personne)
+(AGE . 36)
+_$ (cdr (assoc 'age personne)) ; la valeur
+36
+_$ (subst (cons 'age 37) (assoc 'age personne) personne)
+((NOM . "Ada") (AGE . 37))
+#+end_example
+
+Retenez cet idiome, =(cdr (assoc clé alist))=, et la mise à jour
+=(subst nouveau ancien alist)= : toute la base de données du dessin est
+présentée à AutoLISP sous forme de listes d'association.
+
+N'éparpillez pas pour autant =(cdr (assoc 'age personne))= dans tout un
+programme : chacune de ces lignes dépendrait de cette représentation
+particulière. Une fois que vous saurez définir des fonctions, cachez la
+représentation derrière quelques-unes d'entre elles, comme le montre
+[[*Abstraction fonctionnelle][Abstraction fonctionnelle]].
+
+* Fonctions
+
+** Définir des fonctions
+
+=defun= définit une fonction : son nom, la liste de ses paramètres, et
+son corps. La fonction rend la valeur de la dernière forme de son
+corps ; il n'y a pas d'instruction =return=.
+
+#+begin_example
+_$ (defun foo (x y) (+ x y 5))
+FOO
+_$ (foo 5 0)
+10
+_$ (defun bar (x)             ; un corps de plusieurs formes
+    (setq x (* x 3))
+    (setq x (/ x 2))
+    (+ x 4))                  ; la dernière donne le résultat
+BAR
+_$ (bar 6)
+13
+#+end_example
+
+Une fonction doit être appelée avec exactement autant d'arguments
+qu'elle a de paramètres. AutoLISP n'a pas de paramètres optionnels ou
+nommés :
+
+#+begin_example
+_$ (foo 5)
+clautolisp: runtime error: WRONG-NUMBER-OF-ARGUMENTS: AutoLISP function
+  FOO expects 2 arguments, got 1.
+#+end_example
+
+Le contournement habituel est de passer =nil= pour un argument qu'on ne
+veut pas donner, et de le tester dans la fonction.
+
+** Récursivité
+
+Une fonction peut s'appeler elle-même. La récursivité est la façon
+naturelle de traiter les listes en Lisp : traiter le premier élément,
+et laisser la fonction traiter le reste.
+
+#+begin_example
+_$ (defun fact (n)
+    (if (> n 0)
+        (* n (fact (1- n)))
+        1))
+FACT
+_$ (fact 5)
+120
+_$ (defun somme (l)           ; somme d'une liste de nombres
+    (if (null l)
+        0
+        (+ (car l) (somme (cdr l)))))
+SOMME
+_$ (somme '(1 2 3 4))
+10
+_$ (defun aplatir (l)         ; (1 (2 (3 4)) 5) -> (1 2 3 4 5)
+    (cond ((null l) nil)
+          ((atom l) (list l))
+          (t (append (aplatir (car l)) (aplatir (cdr l))))))
+APLATIR
+_$ (aplatir '(1 (2 (3 4)) 5))
+(1 2 3 4 5)
+#+end_example
+
+(=(fact 13)= dépasse les entiers 32 bits ; =(fact 13.0)= calcule en
+réels et rend =6.2270208e9=.)
+
+** Variables locales
+
+Voici le premier piège important pour les débutants : *une variable
+affectée par =setq= dans une fonction est globale*, sauf si elle est
+déclarée locale. Les variables locales se déclarent dans la liste des
+paramètres, après une barre oblique =/= :
+
+#+begin_example
+_$ (defun fuite () (setq j 10) j)
+FUITE
+_$ (fuite)
+10
+_$ j                          ; j s'est échappée de la fonction !
+10
+_$ (defun compteur (/ i)      ; i est locale à compteur
+    (setq i 10)
+    i)
+COMPTEUR
+_$ (setq i 99)
+99
+_$ (compteur)
+10
+_$ i                          ; le i global est intact
+99
+#+end_example
+
+Dans =(defun nom (a b / x y) ...)=, =a= et =b= sont des paramètres, et
+=x= et =y= des variables locales ; celles-ci valent =nil= à l'entrée,
+et toutes retrouvent leur valeur précédente à la sortie. *Déclarez
+toujours chaque variable que vous affectez par =setq= dans une
+fonction* : les variables non déclarées sont la source de bogues la plus
+fréquente dans les programmes AutoLISP.
+
+* Portée dynamique
+
+Le deuxième piège important : les variables AutoLISP ont une /portée
+dynamique/. Une variable locale ou un paramètre est visible non
+seulement dans le corps de sa fonction, mais dans *toutes les fonctions
+appelées depuis elle*, tant que la fonction s'exécute.
+
+#+begin_example
+_$ (setq normale 5)
+5
+_$ (defun lire-normale () normale)
+LIRE-NORMALE
+_$ (lire-normale)
+5
+_$ (defun appelant (normale) (lire-normale))
+APPELANT
+_$ (appelant 6)               ; voit le paramètre d'appelant
+6
+_$ normale                    ; et la valeur globale revient ensuite
+5
+#+end_example
+
+En C, en Python ou en JavaScript (et en Common Lisp, pour les variables
+ordinaires), =lire-normale= verrait la variable globale =normale= et
+l'appel rendrait 5. En AutoLISP, elle voit la liaison de ce nom établie
+le plus récemment par une fonction encore active.
+
+Deux conséquences :
+
+- Une fonction qui utilise une variable qu'elle ne reçoit pas et ne
+  déclare pas dépend de qui l'appelle. Passez plutôt les valeurs en
+  arguments.
+- AutoLISP n'a pas de /fermetures/ (/closures/) : une fonction créée
+  dans une autre (avec =lambda=, voir plus loin) ne se souvient pas des
+  variables qui l'entouraient à sa création ; elle voit les liaisons
+  actives au moment où elle s'exécute.
+
+La variable de boucle de =foreach= (voir [[*Itération][Itération]]) suit la même
+règle : déclarez-la locale, elle aussi.
+
+** Préfixes défensifs
+
+Déclarer ses variables locales est nécessaire, mais ne suffit pas. Une
+variable locale reste visible de toutes les fonctions qu'appelle sa
+fonction, et une fonction appelée qui affecte une variable du même nom
+— croyant affecter sa propre variable globale — écrit en fait dans la
+variable locale de l'appelant. Ici, =bar= compte ses appels dans un
+=compteur= global, et =foo= boucle trois fois avec son propre
+=compteur= local :
+
+#+begin_src autolisp :eval no
+;|
+Un compteur des appels à bar :
+|;
+(setq compteur 0)
+
+(defun init-compteur (n)
+  (setq compteur n))
+
+(defun bar (x)
+  (setq compteur (+ compteur 1))      ; compter cet appel à bar
+  (list x x))
+
+(defun foo (x / l compteur)           ; compteur est locale à foo...
+  (setq compteur 3)
+  (setq l (list x))
+  (while (< 0 compteur)
+    (setq l (bar l))                  ; ...donc bar incrémente celle-ci
+    (setq compteur (- compteur 1)))
+  l)
+
+(progn
+  (init-compteur 0)
+  (print (foo 42))                    ; ne rend jamais la main !
+  compteur)
+#+end_src
+
+Chaque appel à =bar= ajoute un au =compteur= de =foo=, qui le retire
+ensuite : la boucle ne finit jamais. Aucune des deux fonctions n'est
+fausse lue seule ; le bogue est dans la collision de leurs noms, et il
+n'apparaît que quand l'une appelle l'autre.
+
+La défense est une convention : *dans une fonction qui appelle d'autres
+fonctions définies par l'utilisateur — directement, ou à travers une
+fonction d'ordre supérieur comme =mapcar=, =apply= ou l'une des vôtres
+— préfixez chaque paramètre et chaque variable locale par le nom de la
+fonction* (ou par un préfixe propre à votre programme). Ses noms ne
+peuvent alors plus entrer en collision avec ceux des fonctions qu'elle
+appelle :
+
+#+begin_src autolisp
+(setq compteur 0)
+
+(defun init-compteur (n)
+  (setq compteur n))
+
+(defun bar (x)
+  (setq compteur (+ compteur 1))
+  (list x x))
+
+(defun foo (foo-x / foo-l foo-compteur)
+  (setq foo-compteur 3)
+  (setq foo-l (list foo-x))
+  (while (< 0 foo-compteur)
+    (setq foo-l (bar foo-l))
+    (setq foo-compteur (- foo-compteur 1)))
+  foo-l)
+#+end_src
+
+#+begin_example
+_$ (progn
+    (init-compteur 0)
+    (print (foo 42))
+    compteur)
+
+((((42) (42)) ((42) (42))) (((42) (42)) ((42) (42)))) 3
+#+end_example
+
+=print= a affiché le résultat de =foo=, et la valeur du =progn=, =3=,
+est le =compteur= global : =bar= a été appelée trois fois, et a compté
+ses appels là où il fallait.
+
+C'est la même chose dans l'autre sens pour les fonctions qui reçoivent
+une fonction : une =lambda= passée à une fonction d'ordre supérieur
+voit les variables locales de celle-ci pendant qu'elle s'exécute. Si
+une fonction de bibliothèque =(defun map-arbre (fn arbre / resultat) …)=
+appelle =fn=, et que votre =lambda= utilise une variable =resultat= à
+vous, elle obtient celle de =map-arbre=. Les fonctions de bibliothèque
+qui appellent des fonctions reçues doivent donc préfixer toutes leurs
+variables.
+
+* Affichage
+
+La REPL affiche la valeur de chaque forme, mais un programme affiche
+avec des fonctions. Les quatre de base :
+
+| fonction  | affiche                                        | rend          |
+|-----------+------------------------------------------------+---------------|
+| =princ=   | son argument, pour un humain (chaînes sans guillemets, échappements interprétés) | son argument |
+| =prin1=   | son argument, pour Lisp (chaînes avec guillemets et échappements)                | son argument |
+| =print=   | un saut de ligne, puis comme =prin1=, puis une espace | son argument |
+| =terpri=  | un saut de ligne                                | =nil=         |
+
+#+begin_example
+_$ (princ "Il a dit \"oui\"")
+Il a dit "oui""Il a dit \"oui\""
+_$ (prin1 "Bonjour")
+"Bonjour""Bonjour"
+#+end_example
+
+L'affichage semble doublé parce que la REPL affiche ensuite la valeur
+que =princ= a rendue : son argument. Dans un programme, seule la
+première partie apparaît.
+
+Un idiome utile : =(princ)= sans argument n'affiche rien et rend une
+valeur que la REPL (et la ligne de commande d'AutoCAD) affichent comme
+rien. Les fonctions de commande se terminent ainsi pour finir « en
+silence » :
+
+#+begin_example
+_$ (defun c:bonjour () (princ "Bonjour le monde !") (princ))
+C:BONJOUR
+_$ (c:bonjour)
+Bonjour le monde !
+_$
+#+end_example
+
+Il n'y a ni =format= ni =printf= ; construisez le texte avec =strcat=,
+=itoa= et =rtos=, puis passez-le à =princ=. =vl-prin1-to-string=
+transforme n'importe quelle valeur en la chaîne qu'afficherait =prin1=.
+
+* Conditionnelles
+
+** if et progn
+
+=(if test alors sinon)= évalue =test= ; si sa valeur n'est pas =nil=,
+il évalue et rend =alors=, sinon =sinon= (ou =nil= s'il n'y a pas de
+=sinon=).
+
+#+begin_example
+_$ (if (> 3 2) "oui" "non")
+"oui"
+_$ (if (< 3 2) "oui")
+nil
+#+end_example
+
+=alors= et =sinon= sont des formes uniques. Pour faire plusieurs choses
+dans une branche, regroupez-les avec =progn=, qui évalue ses formes dans
+l'ordre et rend la valeur de la dernière :
+
+#+begin_example
+_$ (setq a 7 b 0 c 5)
+5
+_$ (if (> a 5)
+    (progn
+      (setq a (+ b 7))
+      (setq b (+ c 8)))
+    (setq b 4))
+13
+#+end_example
+
+** Comparaisons et logique
+
+Les fonctions de comparaison rendent =T= ou =nil= : === (nombres
+égaux), =/== (différents), =<=, =>=, =<==, =>==. Elles acceptent
+plusieurs arguments : =(< 1 2 3)= est vrai quand les arguments sont en
+ordre croissant. =and=, =or= et =not= combinent des conditions ; =and=
+et =or= arrêtent l'évaluation dès que le résultat est connu.
+
+#+begin_example
+_$ (and 1 2 nil 3)
+nil
+_$ (or nil 2 3)               ; or rend T, pas la première valeur vraie
+T
+_$ (not nil)
+T
+_$ (null '())                 ; null est un not, employé pour les listes
+T
+#+end_example
+
+** cond
+
+=cond= est le =if … else if … else= d'AutoLISP. Il prend des clauses ;
+chaque clause est une liste dont le premier élément est un test et dont
+les autres éléments sont évalués, dans l'ordre, quand le test est le
+premier vrai. La valeur du dernier d'entre eux est la valeur du =cond=.
+Une dernière clause de test =t= joue le rôle du =else=.
+
+#+begin_example
+_$ (setq a 3)
+3
+_$ (cond
+    ((= (rem a 2) 0) a)       ; si a est pair, rendre a
+    ((> a 7) (/ a 2))         ; sinon si a > 7, rendre a/2
+    ((< a 5) (- a 1))         ; sinon si a < 5, rendre a-1
+    (t 17))                   ; sinon rendre 17
+2
+#+end_example
+
+Une clause réduite à un test rend la valeur du test :
+
+#+begin_example
+_$ (cond ((+ 3 4)))
+7
+#+end_example
+
+Voici une fonction récursive écrite avec =cond=. Personne n'a encore
+prouvé qu'elle termine pour tout entier positif (c'est le problème de
+Syracuse) :
+
+#+begin_example
+_$ (defun syracuse (x etapes) ; moitié, ou triple plus un
+    (cond ((= x 1) etapes)
+          ((= (rem x 2) 1) (syracuse (+ 1 (* x 3)) (1+ etapes)))
+          (t (syracuse (/ x 2) (1+ etapes)))))
+SYRACUSE
+_$ (syracuse 7 0)
+16
+#+end_example
+
+AutoLISP n'a ni =when=, ni =unless=, ni =case=/=switch= : utilisez =if=
+avec =progn=, et =cond=.
+
+* Itération
+
+AutoLISP a trois boucles.
+
+=repeat= évalue son corps un nombre fixe de fois :
+
+#+begin_example
+_$ (repeat 3 (princ "hop "))
+hop hop hop "hop "
+#+end_example
+
+(Le dernier ="hop "= est la valeur du =repeat= : la valeur de la
+dernière évaluation de son corps, ici la valeur de =princ=.)
+
+=while= évalue son corps tant que son test est vrai :
+
+#+begin_example
+_$ (setq a 4)
+4
+_$ (while (< a 8)
+    (setq a (1+ a)))
+8
+_$ a
+8
+#+end_example
+
+=foreach= évalue son corps une fois par élément d'une liste, avec une
+variable liée à l'élément ; il rend la valeur de la dernière évaluation
+de son corps.
+
+#+begin_example
+_$ (foreach x '(a b c) (print x))
+
+A
+B
+C C
+_$ (foreach n '(1 2 3) (* n 10))
+30
+#+end_example
+
+(Le dernier =C= est la valeur du =foreach=, affichée par la REPL.)
+
+=repeat= et =while= rendent la valeur de la dernière évaluation de leur
+corps, ou =nil= quand le corps n'est jamais évalué ; la plupart des
+programmes les utilisent pour leur effet et gardent les résultats dans
+des variables. (clautolisp avant 2.3.29 rendait toujours =nil=.)
+L'idiome pour vider une liste un élément à la fois n'a pas de corps du
+tout, et rend =nil= :
+
+#+begin_example
+_$ (setq l '(1 2 3))
+(1 2 3)
+_$ (while (setq l (cdr l)))   ; l devient (2 3), puis (3), puis nil
+nil
+#+end_example
+
+Il n'y a ni =for= avec indice, ni =break=, ni =continue=. Comptez avec
+une variable, et arrêtez un =while= en rendant son test faux. Beaucoup
+de boucles s'écrivent mieux avec =mapcar= (section suivante) ou par
+récursivité.
+
+* Les fonctions comme données
+
+** Noms de fonctions et lambda
+
+En AutoLISP, une fonction est une valeur comme une autre, rangée dans
+le symbole qui la nomme. Pour passer une fonction à une autre fonction,
+passez son nom, quoté :
+
+#+begin_example
+_$ (apply '+ '(1 2 3))        ; appeler + avec les éléments de la liste
+6
+_$ (apply 'max '(3 9 2))
+9
+_$ (setq op '+)
++
+_$ (apply op '(1 2))
+3
+#+end_example
+
+=lambda= crée une fonction sans nom : =(lambda (paramètres) corps)=.
+On peut l'appeler directement, la ranger dans une variable, ou la
+passer à une autre fonction.
+
+#+begin_example
+_$ ((lambda (x) (+ x 3)) 5)
+8
+_$ (setq carre (lambda (x) (* x x)))
+#<USUBR LAMBDA>
+_$ (carre 4)                  ; appelle la fonction de carre
+16
+#+end_example
+
+Quand vous passez une =lambda= à une autre fonction, quotez-la, ou
+mieux enveloppez-la dans =function= : les deux marchent de la même façon
+dans l'interprète, mais =function= indique au compilateur Visual LISP
+que la liste est du code.
+
+** mapcar
+
+=mapcar= applique une fonction à chaque élément d'une liste et rend la
+liste des résultats. Avec plusieurs listes, il prend un élément de
+chacune.
+
+#+begin_example
+_$ (mapcar '1+ '(1 2 3))
+(2 3 4)
+_$ (mapcar '+ '(1 2 3) '(10 20 30))
+(11 22 33)
+_$ (mapcar '(lambda (x) (* x x)) '(1 2 3))
+(1 4 9)
+_$ (mapcar (function (lambda (x) (* x x))) '(1 2 3))
+(1 4 9)
+_$ (mapcar 'strcase '("a" "b"))
+("A" "B")
+#+end_example
+
+=vl-remove-if= et =vl-remove-if-not= filtrent une liste avec un
+prédicat :
+
+#+begin_example
+_$ (vl-remove-if '(lambda (x) (< x 3)) '(1 2 3 4 5))
+(3 4 5)
+#+end_example
+
+=mapcar=, =apply= et =lambda= remplacent ensemble beaucoup de boucles :
+
+#+begin_example
+_$ (defun moyenne (l) (/ (apply '+ l) (float (length l))))
+MOYENNE
+_$ (moyenne '(1 2 3 4))
+2.5
+#+end_example
+
+* Tri
+
+=vl-sort= trie une liste avec une fonction de comparaison ;
+=acad_strlsort= trie une liste de chaînes par ordre alphabétique ;
+=vl-sort-i= rend les /indices/ des éléments dans l'ordre trié.
+
+#+begin_example
+_$ (vl-sort '(2 1 5 4 6) '<)
+(1 2 4 5 6)
+_$ (vl-sort '(2 1 5 4 6) '>)
+(6 5 4 2 1)
+_$ (acad_strlsort '("poire" "abricot" "kiwi"))
+("abricot" "kiwi" "poire")
+_$ (vl-sort-i '(30 10 20) '<)
+(1 2 0)
+#+end_example
+
+Attention : dans AutoCAD, =vl-sort= peut supprimer les éléments en
+double. Quand les doublons comptent, triez les indices avec =vl-sort-i=
+et reconstruisez la liste avec =nth=.
+
+* Égalité
+
+AutoLISP a trois notions d'égalité :
+
+- === et =/= comparent les nombres par valeur (=(= 3 3.0)= est vrai) et
+  les chaînes par contenu.
+- =eq= est vrai quand ses deux arguments sont /le même objet/ : le même
+  symbole, ou la même liste (pas une copie).
+- =equal= est vrai quand ses arguments /se ressemblent/ : mêmes
+  nombres, mêmes chaînes, listes d'éléments =equal=. Un troisième
+  argument facultatif donne une tolérance pour comparer des réels.
+
+#+begin_example
+_$ (= 3 3.0)
+T
+_$ (= "abc" "abc")
+T
+_$ (eq 'a 'a)
+T
+_$ (eq '(a b) '(a b))         ; deux listes différentes de même contenu
+nil
+_$ (equal '(a b) '(a b))
+T
+_$ (setq l1 '(1 2))
+(1 2)
+_$ (setq l2 l1)               ; l2 est la même liste que l1
+(1 2)
+_$ (eq l1 l2)
+T
+_$ (equal 1.0 1.001 0.01)     ; égaux à 0.01 près
+T
+#+end_example
+
+Utilisez =equal= pour les listes et les points, === pour les nombres,
+et =equal= avec une tolérance pour les réels calculés :
+=(= (sqrt 2.0) 1.41421356)= est faux.
+
+* Types et prédicats
+
+=type= dit ce qu'est une valeur :
+
+#+begin_example
+_$ (type "x")
+STR
+_$ (type 'a)
+SYM
+_$ (type '(1 2))
+LIST
+_$ (type car)                 ; une fonction prédéfinie
+SUBR
+_$ (type (lambda (x) x))      ; une fonction définie par l'utilisateur
+USUBR
+#+end_example
+
+Autres types que vous rencontrerez : =ENAME= (une entité du dessin),
+=PICKSET= (un jeu de sélection), =FILE= (un fichier ouvert),
+=VLA-OBJECT= (un objet ActiveX). Les prédicats répondent par oui ou non
+à une question sur une valeur : =atom=, =listp=, =numberp=, =null=,
+=zerop=, =minusp=, =boundp= (ce symbole a-t-il une valeur non nil ?).
+
+#+begin_example
+_$ (atom 'a)
+T
+_$ (listp nil)                ; nil est une liste : la liste vide
+T
+_$ (boundp 'zzz)
+nil
+#+end_example
+
+* Erreurs
+
+Quand une forme échoue, AutoLISP arrête le calcul et signale une erreur.
+(clautolisp affiche aussi la pile des appels en cours, omise dans les
+sessions de ce tutoriel.)
+
+#+begin_example
+_$ (strcat "a" 1)
+clautolisp: runtime error: INVALID-STRING-ARGUMENT: STRCAT expects an
+  AutoLISP string, got 1.
+#+end_example
+
+Dans la REPL interactive, clautolisp s'arrête alors dans son débogueur,
+/aldo/, pour que vous puissiez examiner la situation : =lf= liste la
+pile des appels, =p expr= affiche une valeur, =h= liste les commandes,
+et =q= abandonne le calcul et revient à l'invite =_$=. La section suivante,
+[[*Débogage][Débogage]], le montre à l'œuvre. (Lancez
+clautolisp avec =--on-error quit= si vous préférez que l'erreur soit
+signalée sans entrer dans le débogueur ; c'est le comportement par
+défaut quand on exécute un fichier.)
+
+** Attraper les erreurs
+
+=vl-catch-all-apply= appelle une fonction comme =apply=, mais attrape
+une erreur au lieu de s'arrêter : il rend un /objet erreur/, que l'on
+teste avec =vl-catch-all-error-p= et que l'on lit avec
+=vl-catch-all-error-message=.
+
+#+begin_example
+_$ (setq r (vl-catch-all-apply '/ '(1 0)))
+#<catch-all-error "Division by zero in /.">
+_$ (vl-catch-all-error-p r)
+T
+_$ (vl-catch-all-error-message r)
+"Division by zero in /."
+_$ (vl-catch-all-apply '/ '(10 2))
+5
+#+end_example
+
+** La fonction *error*
+
+Quand une erreur n'est pas attrapée, AutoLISP appelle la fonction
+rangée dans la variable =*error*=, avec le message d'erreur en
+argument. Les programmes la définissent pour faire le ménage —
+restaurer les variables système, fermer les fichiers — et afficher un
+message lisible :
+
+#+begin_example
+_$ (defun *error* (msg)
+    (princ (strcat "\nErreur : " msg))
+    (princ))
+*ERROR*
+#+end_example
+
+Les gros programmes installent leur propre =*error*= au début d'une
+commande et restaurent le précédent à la fin. Dans AutoCAD, la façon
+habituelle est de déclarer =*error*= comme variable locale de la
+fonction de commande, =(defun c:macommande (/ *error*) …)=, et de la
+définir à l'intérieur. Le =*error*= local est appelé pendant que les
+autres variables locales de la commande ont encore leur valeur, et le
+global revient dès qu'on quitte la commande :
+
+#+begin_example
+_$ (defun divise (a b / *error*)
+    (defun *error* (msg)
+      (princ (strcat "\nDans divise, a=" (itoa a) " : " msg))
+      (princ))
+    (/ a b))
+DIVISE
+_$ (divise 7 0)
+
+Dans divise, a=7 : Division by zero in /.
+#+end_example
+
+Pour arrêter un programme exprès, appelez =(exit)= (ou =(quit)=). Dans
+AutoCAD et BricsCAD, cela abandonne le programme en cours comme une
+erreur — =*error*= est appelée avec le message ="quit / exit abort"= —
+et revient à la ligne de commande. Dans clautolisp, qui n'a pas de ligne
+de commande où revenir, cela termine le processus clautolisp.
+
+* Débogage
+
+clautolisp débogue en permanence : son débogueur, /aldo/, est prêt
+pendant toute la vie du processus. L'exécution s'y arrête quand une
+erreur n'est pas attrapée, quand elle atteint un /point d'arrêt/, quand
+le programme appelle =(clal-break)=, ou quand vous tapez =Ctrl-C=.
+Pendant l'arrêt, vous pouvez examiner les variables et la pile des
+appels, évaluer n'importe quelle expression, avancer pas à pas dans le
+code, puis reprendre ou abandonner le calcul.
+
+Les invites du débogueur sont =DBG>= pour ses messages et =NAV>= pour
+vos commandes : une commande courte (=h= les liste toutes) ou
+n'importe quelle forme AutoLISP, évaluée là où le programme s'est
+arrêté. Dans la ligne de source qu'il affiche, la forme sur le point
+d'être évaluée est marquée par =【 】=. Le débogueur parle anglais.
+
+Les sessions ci-dessous viennent de l'interface en mode ligne de
+clautolisp, celle par défaut. =--debugger-ui ncurses= donne une
+interface plein écran avec les mêmes commandes sur une seule touche, et
+=--debugger-ui aldb= pilote le débogueur depuis Emacs. Le /clautolisp
+User Manual/ (chapitre /Debugger/) et la /aldb Command Reference/
+décrivent l'ensemble.
+
+** Quand une erreur survient
+
+#+begin_example
+_$ (defun moy (l) (/ (apply '+ l) (length l)))
+MOY
+_$ (moy nil)
+DBG> clautolisp debugger attached (h for help)
+DBG> Error at MOY line 1 col 32 — Division by zero in /.
+DBG>   L = NIL
+DBG>   <stack: MOY ← <toplevel> ← top>
+DBG>   (q abort, r <form> return a value, c continue/run *error*)
+(DEFUN MOY (L) (/ (APPLY (QUOTE +) L) 【(LENGTH L)】))
+NAV> lf
+DBG>   0: MOY  MOY line 1 col 32
+DBG>   1: <toplevel>  <toplevel> line 1 col 1
+NAV> p l
+DBG> NIL
+NAV> r 0
+0
+_$
+#+end_example
+
+Le débogueur montre l'erreur, les variables locales de la fonction
+(=L = NIL= : =moy= a reçu une liste vide), la pile des appels, et la
+forme en cours d'évaluation. =lf= (/list frames/) liste la pile, et =p=
+affiche la valeur d'une expression. De là, vous pouvez :
+
+- =q= — abandonner le calcul et revenir à l'invite =_$= (il demande
+  confirmation) ;
+- =r FORME= — faire rendre à la forme fautive la valeur de =FORME= et
+  continuer comme s'il n'y avait pas eu d'erreur : ici =(moy nil)= a
+  rendu =0= ;
+- =c= — continuer, ce qui exécute la fonction =*error*= comme le ferait
+  AutoCAD.
+
+Vous pouvez corriger la fonction à l'invite =_$= (la redéfinir par
+=defun=) et l'appeler de nouveau : il n'y a rien à relancer.
+
+** Points d'arrêt et pas à pas
+
+La commande REPL =,break FONCTION= (=,b= en abrégé) pose un point
+d'arrêt à l'entrée d'une fonction ; l'exécution s'y arrête à chaque
+appel :
+
+#+begin_example
+_$ (defun fact (n) (if (> n 0) (* n (fact (1- n))) 1))
+FACT
+_$ ,break fact
+breakpoint pp2 on FACT (entry)
+_$ (fact 2)
+DBG> Hit breakpoint at FACT
+DBG>   N = 2
+DBG>   <stack: FACT ← <toplevel> ← top>
+(DEFUN FACT (N) 【(IF (> N 0) (* N (FACT (1- N))) 1)】)
+NAV> ll
+DBG> locals:
+DBG>   N = 2
+NAV> p (* n 10)
+DBG> 20
+NAV> c
+DBG> Hit breakpoint at FACT
+DBG>   N = 1
+DBG>   <stack: FACT ← FACT ← <toplevel> ← top>
+(DEFUN FACT (N) 【(IF (> N 0) (* N (FACT (1- N))) 1)】)
+NAV> c
+DBG> Hit breakpoint at FACT
+DBG>   N = 0
+DBG>   <stack: FACT ← FACT ← FACT ← <toplevel> ← top>
+(DEFUN FACT (N) 【(IF (> N 0) (* N (FACT (1- N))) 1)】)
+NAV> c
+2
+_$ ,lb
+pp2  FACT (entry)  enabled
+_$ ,rb ALL
+removed 1 breakpoint
+#+end_example
+
+=ll= (/list locals/) liste les variables locales, et =c= continue
+jusqu'au prochain arrêt. Regardez la pile grandir à chaque appel
+récursif. Pour parcourir le code une forme à la fois, utilisez plutôt
+=i= (entrer /into/ dans la forme suivante), =n= (/next/ : la passer
+d'un coup) et =o= (/out/ : finir la fonction courante) ; après l'une de
+ces commandes, =RET= seul la répète. =,lb= liste les points d'arrêt et
+=,rb= les supprime. =,break FICHIER:LIGNE= pose un point d'arrêt sur
+une ligne d'un fichier source.
+
+Vous pouvez aussi vous arrêter à un endroit précis en écrivant
+=(clal-break)= dans le code. C'est une extension de clautolisp :
+retirez-la avant d'exécuter le programme dans AutoCAD ou BricsCAD.
+
+#+begin_example
+_$ (defun f (x / y) (setq y (* x 2)) (clal-break) (+ y 1))
+F
+_$ (f 5)
+DBG> Break at F line 1 col 35
+DBG>   Y = 10
+DBG>   X = 5
+DBG>   <stack: F ← <toplevel> ← top>
+(DEFUN F (X / Y) (SETQ Y (* X 2)) 【(CLAL-BREAK)】 (+ Y 1))
+NAV> c
+11
+#+end_example
+
+** Traçage
+
+Sans s'arrêter, =,trace FONCTION= affiche une ligne à chaque appel de
+la fonction — suivie de la valeur d'une expression, si vous en donnez
+une — et =,untrace= arrête le traçage :
+
+#+begin_example
+_$ ,trace fact n
+tracing FACT
+_$ (fact 3)
+TRACE> FACT 3
+TRACE> FACT 2
+TRACE> FACT 1
+TRACE> FACT 0
+6
+_$ ,untrace
+untraced 1 function
+#+end_example
+
+L'option de ligne de commande =--trace= trace chaque appel, fonctions
+prédéfinies comprises, avec ses arguments et sa valeur, sur la sortie
+d'erreur (ici =fact.lsp= contient la définition de =fact=) :
+
+#+begin_example
+$ clautolisp --trace -l fact.lsp -x '(fact 1)'
+-> (FACT 1)
+  -> (> 1 0)
+  <- > => T
+  -> (1- 1)
+  <- 1- => 0
+  -> (FACT 0)
+    -> (> 0 0)
+    <- > => nil
+  <- FACT => 1
+  -> (* 1 1)
+  <- * => 1
+<- FACT => 1
+#+end_example
+
+Enfin, le plus ancien outil de débogage marche toujours, partout :
+quelques appels à =(print …)= placés dans le code.
+
+* Abstraction fonctionnelle
+
+Une liste d'association est une façon commode de représenter un objet
+structuré : une personne avec un nom, une année de naissance et un
+numéro de téléphone, par exemple :
+
+#+begin_example
+((classe . personne) (nom . "Jean") (annee-naissance . 1974)
+ (telephone . "01 23 45 67 89"))
+#+end_example
+
+Mais un programme qui écrit =(cdr (assoc 'nom p))= partout où il a
+besoin d'un nom dépend, à chacun de ces endroits, de cette
+représentation. À la place, on écrit un petit ensemble de fonctions —
+une /abstraction fonctionnelle/ — qui sont les seules à savoir comment
+une personne est faite, et le reste du programme n'utilise qu'elles :
+un /constructeur/ qui fabrique une personne, un /prédicat/ qui en
+reconnaît une, des /accesseurs/ qui lisent ses champs, et une fonction
+qui en rend une copie modifiée.
+
+Les accesseurs vérifient qu'on leur donne bien une personne, pour
+qu'une erreur soit signalée là où elle est commise au lieu de produire
+un =nil= silencieux bien plus loin. Pour la signaler, il faut une
+fonction qui déclenche une erreur avec un message. AutoLISP n'en a pas,
+nous en écrivons donc une : elle affiche le message, puis appelle
+=exit=, qui abandonne le programme en cours comme une erreur.
+
+#+begin_src autolisp
+(defun signaler-erreur (message)
+  (princ (strcat "\nErreur : " message))
+  (exit))
+
+(defun annee-courante ()
+  ;; CDATE est la date courante sous forme de réel : AAAAMMJJ.HHMMSS
+  (fix (/ (getvar "CDATE") 10000)))
+
+(defun verifier-classe (classe objet)
+  (if (not (and (listp objet)
+                (listp (car objet))
+                (eq classe (cdr (assoc 'classe objet)))))
+      (signaler-erreur (strcat "on attendait un objet de classe "
+                               (vl-princ-to-string classe)
+                               ", pas "
+                               (vl-prin1-to-string objet)))))
+
+(defun creer-personne (nom annee-naissance telephone)
+  (list (cons 'classe 'personne)
+        (cons 'nom nom)
+        (cons 'annee-naissance annee-naissance)
+        (cons 'telephone telephone)))
+
+(defun personne-p (objet)
+  (and (listp objet)
+       (listp (car objet))
+       (eq 'personne (cdr (assoc 'classe objet)))))
+
+(defun personne-nom (personne)
+  (verifier-classe 'personne personne)
+  (cdr (assoc 'nom personne)))
+
+(defun personne-annee-naissance (personne)
+  (verifier-classe 'personne personne)
+  (cdr (assoc 'annee-naissance personne)))
+
+(defun personne-telephone (personne)
+  (verifier-classe 'personne personne)
+  (cdr (assoc 'telephone personne)))
+
+(defun personne-avec-telephone (personne telephone)
+  (verifier-classe 'personne personne)
+  (subst (cons 'telephone telephone)
+         (assoc 'telephone personne)
+         personne))
+#+end_src
+
+Les fonctions qui ne font pas partie de l'abstraction s'écrivent avec
+ces seules fonctions :
+
+#+begin_src autolisp
+(defun personne-age (personne)
+  (- (annee-courante) (personne-annee-naissance personne)))
+#+end_src
+
+#+begin_example
+_$ (setq jean (creer-personne "Jean" 1974 "01 23 45 67 89"))
+((CLASSE . PERSONNE) (NOM . "Jean") (ANNEE-NAISSANCE . 1974)
+ (TELEPHONE . "01 23 45 67 89"))
+_$ (personne-nom jean)
+"Jean"
+_$ (personne-age jean)                ; en 2026
+52
+_$ (personne-telephone
+    (personne-avec-telephone jean "09 87 65 43 21"))
+"09 87 65 43 21"
+_$ (personne-p jean)
+T
+_$ (personne-p "Jean")
+nil
+_$ (vl-catch-all-apply 'personne-nom (list '(1 2 3)))
+Erreur : on attendait un objet de classe PERSONNE, pas (1 2 3)
+  #<catch-all-error "quit / exit abort">
+#+end_example
+
+Le dernier appel passe par =vl-catch-all-apply= parce que, dans
+clautolisp, =exit= au niveau supérieur termine tout le processus
+clautolisp (voir [[*Erreurs][Erreurs]]) ; =vl-catch-all-apply= l'attrape comme une
+erreur dont le message est ="quit / exit abort"=. Dans AutoCAD et
+BricsCAD, l'erreur abandonne la commande et revient à la ligne de
+commande.
+
+Supposons maintenant que nous voulions plus tard une représentation
+plus compacte — une liste dont le premier élément nomme la classe,
+suivi des champs dans un ordre fixe :
+
+#+begin_example
+(personne "Jean" 1974 "01 23 45 67 89")
+#+end_example
+
+Seule l'abstraction fonctionnelle change :
+
+#+begin_src autolisp
+(defun verifier-classe (classe objet)
+  (if (not (and (listp objet)
+                (eq classe (car objet))))
+      (signaler-erreur (strcat "on attendait un objet de classe "
+                               (vl-princ-to-string classe)
+                               ", pas "
+                               (vl-prin1-to-string objet)))))
+
+(defun creer-personne (nom annee-naissance telephone)
+  (list 'personne nom annee-naissance telephone))
+
+(defun personne-p (objet)
+  (and (listp objet)
+       (eq 'personne (car objet))))
+
+(defun personne-nom (personne)
+  (verifier-classe 'personne personne)
+  (cadr personne))
+
+(defun personne-annee-naissance (personne)
+  (verifier-classe 'personne personne)
+  (caddr personne))
+
+(defun personne-telephone (personne)
+  (verifier-classe 'personne personne)
+  (cadddr personne))
+
+(defun personne-avec-telephone (personne telephone)
+  (verifier-classe 'personne personne)
+  (list 'personne (personne-nom personne)
+        (personne-annee-naissance personne) telephone))
+#+end_src
+
+=personne-age=, et toutes les autres fonctions du programme qui
+utilisent des personnes, ne changent pas, et donnent les mêmes
+résultats :
+
+#+begin_example
+_$ (setq jean (creer-personne "Jean" 1974 "01 23 45 67 89"))
+(PERSONNE "Jean" 1974 "01 23 45 67 89")
+_$ (personne-nom jean)
+"Jean"
+_$ (personne-age jean)
+52
+_$ (personne-telephone
+    (personne-avec-telephone jean "09 87 65 43 21"))
+"09 87 65 43 21"
+#+end_example
+
+La même idée s'applique aux entités du dessin : une fonction
+=(entite-calque e)= qui cache =(cdr (assoc 8 (entget e)))= rend un
+programme plus facile à lire, et à modifier.
+
+* Fichiers
+
+=open= ouvre un fichier et rend un descripteur de fichier ; ="w"= écrit
+(en remplaçant le fichier), ="a"= ajoute à la fin, ="r"= lit.
+=write-line= et =read-line= écrivent et lisent une ligne ; =read-line=
+rend =nil= à la fin du fichier. Fermez toujours le fichier avec
+=close=.
+
+#+begin_example
+_$ (setq f (open "essai.txt" "w"))
+#<file essai.txt>
+_$ (write-line "ligne 1" f)
+"ligne 1"
+_$ (close f)
+nil
+_$ (setq f (open "essai.txt" "r"))
+#<file essai.txt>
+_$ (read-line f)
+"ligne 1"
+_$ (read-line f)              ; fin du fichier
+nil
+_$ (close f)
+nil
+#+end_example
+
+=read= transforme le texte d'une expression en la donnée
+correspondante — c'est le lecteur qu'utilise la REPL :
+
+#+begin_example
+_$ (read "(1 2 foo)")
+(1 2 FOO)
+#+end_example
+
+** Charger des programmes
+
+=load= lit et évalue toutes les formes d'un fichier source. Mettez ceci
+dans un fichier nommé =bonjour.lsp= :
+
+#+begin_src autolisp
+;;; bonjour.lsp -- un premier programme AutoLISP
+(defun c:bonjour ()
+  (princ "Bonjour depuis un fichier !")
+  (princ))
+
+(princ "\nbonjour.lsp est chargé ; tapez (c:bonjour)")
+(princ)
+#+end_src
+
+puis :
+
+#+begin_example
+$ clautolisp -l bonjour.lsp -x '(c:bonjour)'
+
+bonjour.lsp est chargé ; tapez (c:bonjour)Bonjour depuis un fichier !
+#+end_example
+
+Si les accents sortent mal (=chargÃ©=), clautolisp n'a pas lu le
+fichier en UTF-8 : il devine l'encodage des sources d'après la locale
+(=LANG=, =LC_ALL=, =LC_CTYPE=). Utilisez une locale UTF-8
+(=LANG=fr_FR.UTF-8=) ou passez l'option =-Esource utf-8=.
+
+Ou bien, dans la REPL, =(load "bonjour.lsp")=. clautolisp reproduit la
+protection =SECURELOAD= d'AutoCAD et peut afficher un avertissement
+quand vous chargez un fichier d'un dossier absent de =TRUSTEDPATHS= ;
+le fichier est chargé quand même.
+
+* Parler au dessin
+
+Jusqu'ici, tout était de la programmation ordinaire. Ce qui rend
+AutoLISP utile, c'est qu'il parle au dessin ouvert dans le logiciel de
+CAO. clautolisp contient un petit noyau de CAO sans interface (son
+/hôte/ par défaut, =cador=) qui garde un dessin en mémoire, si bien que
+ces fonctions marchent aussi dans un terminal.
+
+** Commandes
+
+Une fonction dont le nom commence par =c:= est une /commande/ : dans
+AutoCAD ou BricsCAD, l'utilisateur tape son nom (=bonjour=) sur la
+ligne de commande pour l'exécuter. Dans clautolisp, appelez-la comme
+une fonction : =(c:bonjour)=. Une commande ne prend pas d'argument ;
+elle demande ses données à l'utilisateur avec les fonctions =get…=
+(=getpoint=, =getreal=, =getstring=…), que clautolisp lit dans le
+terminal.
+
+=command= exécute les commandes du logiciel de CAO lui-même, comme si
+l'utilisateur les tapait :
+
+#+begin_example
+_$ (command "_.CIRCLE" (list 0 0) 5)
+
+Command: _.CIRCLE 0,0 5
+nil
+#+end_example
+
+(Le préfixe =_= demande le nom anglais de la commande, valable quelle
+que soit la langue du logiciel ; le =.= demande la commande d'origine
+même si elle a été redéfinie.)
+
+** Entités et codes DXF
+
+Chaque objet du dessin — une ligne, un cercle, un texte — est une
+/entité/. =entmake= en crée une à partir d'une liste d'association dont
+les clés sont des /codes de groupe DXF/ : 0 est le type, 8 le calque,
+10 le point de départ, 11 le point d'arrivée, 40 le rayon, etc.
+=entlast= rend la dernière entité créée, et =entget= sa liste
+d'association.
+
+#+begin_example
+_$ (entmake (list (cons 0 "LINE")
+                  (list 10 0.0 0.0 0.0)
+                  (list 11 10.0 5.0 0.0)))
+((0 . "LINE") (10 0.0 0.0 0.0) (11 10.0 5.0 0.0))
+_$ (setq d (entget (entlast)))
+((-1 . <Entity name: 10>) (5 . "10") (0 . "LINE") (10 0.0 0.0 0.0)
+ (11 10.0 5.0 0.0) (8 . "0") (100 . "AcDbEntity") (100 . "AcDbLine"))
+_$ (cdr (assoc 10 d))         ; le point de départ
+(0.0 0.0 0.0)
+_$ (distance (cdr (assoc 10 d)) (cdr (assoc 11 d)))
+11.180339887498949
+#+end_example
+
+(Les noms d'entités et les /handles/ que vous obtiendrez peuvent
+différer.) Remarquez que =(list 10 0.0 0.0 0.0)= est la paire pointée
+=(10 . (0.0 0.0 0.0))=, affichée =(10 0.0 0.0 0.0)= : une clé suivie
+d'un point.
+
+Pour modifier une entité, changez sa liste d'association avec =subst=
+et donnez-la à =entmod= :
+
+#+begin_src autolisp
+(setq d (entget (entlast)))
+(setq d (subst (cons 8 "AXES") (assoc 8 d) d))   ; calque AXES
+(entmod d)
+#+end_src
+
+** Jeux de sélection, géométrie et variables système
+
+=ssget= sélectionne des entités (="X"= les sélectionne toutes) et rend
+un /jeu de sélection/ ; =sslength= les compte et =ssname= rend la
+n-ième. Les fonctions géométriques travaillent sur des points :
+=distance=, =angle=, =polar= (le point situé à un angle et une distance
+donnés d'un autre), =inters= (intersection de deux droites). =getvar=
+et =setvar= lisent et changent les /variables système/ qui configurent
+le logiciel de CAO.
+
+#+begin_example
+_$ (sslength (ssget "X"))
+2
+_$ (polar (list 0.0 0.0) (/ pi 2) 10.0)
+(6.123233995736766e-16 10.0 0.0)
+_$ (getvar "CLAYER")          ; le calque courant
+"0"
+#+end_example
+
+Voici une commande petite mais complète : elle recense les entités du
+dessin par type.
+
+#+begin_src autolisp
+(defun c:recensement (/ ss i type comptes paire)
+  (setq ss (ssget "X")
+        i  0)
+  (if ss
+    (progn
+      (while (< i (sslength ss))
+        (setq type  (cdr (assoc 0 (entget (ssname ss i))))
+              paire (assoc type comptes))
+        (if paire
+          (setq comptes
+                (subst (cons type (1+ (cdr paire))) paire comptes))
+          (setq comptes (cons (cons type 1) comptes)))
+        (setq i (1+ i)))
+      (foreach paire comptes
+        (princ (strcat "\n" (car paire) " : " (itoa (cdr paire))))))
+    (princ "\nLe dessin est vide."))
+  (princ))
+#+end_src
+
+#+begin_example
+_$ (c:recensement)
+
+LINE : 1
+CIRCLE : 1
+#+end_example
+
+Remarquez la barre oblique dans sa liste de paramètres : toutes les
+variables qu'elle affecte, y compris la variable =paire= du =foreach=,
+sont locales.
+
+* Dialectes
+
+AutoCAD et BricsCAD ne se comportent pas à l'identique, et chaque
+version ajoute des fonctions. clautolisp peut imiter l'un ou l'autre ;
+choisissez par une option :
+
+| option          | se comporte comme                                       |
+|-----------------+---------------------------------------------------------|
+| =--strict=      | le défaut : seulement ce sur quoi AutoCAD et BricsCAD s'accordent, avec un avertissement pour le reste |
+| =--autocad=     | AutoCAD 2026                                            |
+| =--bricscad=    | BricsCAD V26                                            |
+| =--clautolisp=  | clautolisp, avec ses propres extensions                 |
+| =--lax=         | tout est permis, sans avertissement                     |
+
+Quand votre code utilise quelque chose qui n'est pas portable vers le
+dialecte choisi, clautolisp affiche un avertissement sur la sortie
+d'erreur et continue. Un code qui tourne sans avertissement sous
+=--strict= se comporte de la même façon dans les deux logiciels.
+=clautolisp --list-dialects= liste tous les noms de dialectes.
+
+* Ce qu'AutoLISP n'a pas
+
+Si vous venez d'un autre langage, vous chercherez ceci en vain :
+
+- tableaux, enregistrements, tables de hachage, objets — utilisez des
+  listes et des listes d'association (et les fonctions ActiveX =vla-=
+  pour les objets de la CAO) ;
+- des variables locales par défaut — déclarez-les après =/= ;
+- la portée lexicale et les fermetures — voir [[*Portée dynamique][Portée dynamique]] ;
+- des paramètres optionnels, nommés, ou en nombre variable ;
+- =return=, =break=, =continue=, =for=, =switch= ;
+- =printf= / =format= — utilisez =strcat=, =itoa=, =rtos= ;
+- des entiers de plus de 32 bits, des fractions, des nombres complexes.
+
+Il a à la place un langage petit et régulier, dans lequel les
+programmes sont des listes, et un accès immédiat au dessin. La plupart
+des programmes AutoLISP font de quelques dizaines à quelques centaines
+de lignes et automatisent une tâche de dessin ; la poignée d'idées de
+ce tutoriel suffit pour les lire et les écrire.
+
+* Éditer de l'AutoLISP avec Emacs
+
+Emacs édite les fichiers =.lsp= en =lisp-mode= (ajoutez
+=(add-to-list 'auto-mode-alist '("\\.lsp\\'" . lisp-mode))= à votre
+fichier d'initialisation s'il ne le fait pas de lui-même). Il peut
+aussi lancer clautolisp comme Lisp inférieur : mettez
+
+#+begin_src emacs-lisp
+(setq inferior-lisp-program "clautolisp")
+#+end_src
+
+dans votre fichier d'initialisation, et tapez =M-x run-lisp=. Vous
+pouvez alors envoyer à clautolisp, depuis un tampon source en
+=lisp-mode=, la forme qui précède le curseur (=C-x C-e=) ou le =defun=
+qui l'entoure (=C-M-x=), et voir le résultat dans le tampon
+=*inferior-lisp*=. =C-h m= dans un tampon en =lisp-mode= liste les
+autres commandes.
+
+N'importe quel éditeur qui apparie les parenthèses fera l'affaire ; ce
+qui compte est de le laisser indenter votre code, pour que
+l'indentation montre la structure que définissent les parenthèses.
+
+* Remerciements
+
+Ce tutoriel suit le plan de /Common LISP Hints/ de Geoffrey J. Gordon
+(1993), modifié par Bruno Haible et distribué avec GNU CLISP.

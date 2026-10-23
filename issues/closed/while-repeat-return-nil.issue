@@ -1,0 +1,86 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: while-repeat-return-nil -- WHILE and REPEAT always return nil instead of the last body value
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-21
+
+* Symptom
+
+Found while checking the transcripts of =clautolisp/documentation/tutorial.org=,
+on clautolisp 2.3.24 (every dialect, interpreted and compiled alike):
+
+#+begin_example
+$ clautolisp --no-init -x '(print (repeat 3 (setq i 6)))'
+nil
+$ clautolisp --no-init -x '(setq k 0)(print (while (< k 3) (setq k (1+ k)) (* k 100)))'
+nil
+#+end_example
+
+The AutoLISP Spec says otherwise:
+
+- Special Form Entry: WHILE, Return Values: "Returns the value of the last
+  body expression of the last iteration, or nil if the body is never run."
+  Expected above: =300=.
+- Special Form Entry: REPEAT, Return Values: "Returns the final body value
+  or nil if no body exists." Expected above: =6=.
+
+Both follow the AutoCAD reference pages cited in their Source Notes.
+
+* Cause
+
+=eval-while-form= and =eval-repeat-form= (=autolisp-runtime/source/api.lisp=)
+end with an explicit =nil=. The transpiler (=autolisp-compiler/source/transpile.lisp=)
+copies that on purpose -- its comment says "Copied rather than reasoned about:
+the compiler's job is to agree with the interpreter" -- so both paths must be
+fixed together, and the equivalence corpus updated.
+
+* To do
+
+1. Check probe evidence (AutoCAD, BricsCAD) for both forms; if a vendor
+   differs, classify per the Dialect Divergence rules.
+2. Add failing tests (interpreter and compiled), then fix both paths.
+3. Update the WHILE/REPEAT transcripts in =clautolisp/documentation/tutorial.org=
+   (section Iteration), which currently show =nil= and point at this issue.
+
+* Fix (2026-10-22, clautolisp 2.3.29 / alfe 2.3.29) -- NEXT until AutoCAD is measured
+
+EVAL-WHILE-FORM / EVAL-REPEAT-FORM (autolisp-runtime api.lisp) and the
+transpiler's open-coded WHILE / REPEAT (transpile.lisp) now return the
+value of the last body evaluation, nil when the body never runs -- both
+paths together, as the compiler must agree with the interpreter.
+
+Measured (control-flow probe, MR !471, job 17396028047, BricsCAD V26
+macOS) -- every case agrees with the spec and with the fix:
+
+| case                                             | BricsCAD V26 | 2.3.28 | 2.3.29 |
+|--------------------------------------------------+--------------+--------+--------|
+| (repeat 3 (setq i 6))                            | 6            | nil    | 6      |
+| (repeat 3 (setq n (1+ n)))                       | 3            | nil    | 3      |
+| (repeat 0 'never) / (repeat 2) / (repeat 2 7 nil) | nil          | nil    | nil    |
+| (while (< k 3) (setq k (1+ k)) (* k 100))        | 300          | nil    | 300    |
+| (while nil 'never)                               | nil          | nil    | nil    |
+| (while (< (setq k (1+ k)) 3)) -- no body          | nil          | nil    | nil    |
+| (while (< k 2) (setq k (1+ k)) "s")              | "s"          | nil    | "s"    |
+
+Tests: autolisp-test special-forms/repeat.lsp (repeat-returns-last-body-
+value now tests the VALUE; the side-effect check is renamed repeat-body-
+side-effect-is-kept; 2 more) and while.lsp (3 more, incl. the no-body
+case); model-tests AUTOLISP-EVAL-WHILE-AND-REPEAT asserted the old nil
+and now expects 3 and 8. The compiled and lexical-locals whole-corpus
+lanes run them through the transpiler. Tutorial (en + fr), Iteration: the
+transcripts replayed with 2.3.29 and the caveat removed.
+
+To close: the AutoCAD 2022 GUI / accoreconsole control-flow probe jobs
+(Windows runners, 2026-10-23).
+
+* AutoCAD measured (2026-10-23) -- DONE
+
+control-flow probe, all four targets identical to the spec and to 2.3.29
+on all 9 cases (repeat-last 6, repeat-counter 3, repeat-zero nil,
+repeat-empty-body nil, repeat-nil-last nil, while-last 300, while-never
+nil, while-test-only nil, while-string "s"): AutoCAD 2022 GUI (job
+17398575920), accoreconsole (17398575921), BricsCAD V25 Windows
+(17398575919), BricsCAD V26 macOS (17396028047).

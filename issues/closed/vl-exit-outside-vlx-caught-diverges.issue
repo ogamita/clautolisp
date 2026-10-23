@@ -1,0 +1,66 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vl-exit-outside-vlx-caught-diverges -- outside a VLX, BricsCAD makes vl-exit-with-error AND vl-exit-with-value an error with an empty message
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: divergence
+#+DEPENDS: control-flow probe on AutoCAD (Windows runners)
+#+BRANCH: -
+#+DATE: 2026-10-22
+
+* Symptom
+
+Found measuring vl-exit-with-error-leaks-host-condition (control-flow
+probe, MR !471, job 17396028047, BricsCAD V26 macOS). Each case runs
+inside vl-catch-all-apply, in the document namespace (no VLX):
+
+| case                                   | BricsCAD V26  | clautolisp 2.3.28 |
+|----------------------------------------+---------------+-------------------|
+| (vl-exit-with-error "boom")            | ERROR ""      | ERROR "boom"      |
+| (vl-exit-with-value 42)                | ERROR ""      | VALUE 42          |
+| inside a defun, vl-exit-with-error     | ERROR ""      | ERROR "inner"     |
+| inside a defun, vl-exit-with-value     | ERROR ""      | VALUE 7           |
+
+So on BricsCAD, outside a separate-namespace VLX, both functions are an
+error whose message is EMPTY -- even vl-exit-with-value. clautolisp
+treats them as if a VLX boundary were there (the message, the value).
+Autodesk documents both only for a separate-namespace VLX's *error*
+handler; nothing documents the call outside one.
+
+The host-condition leak itself (an SBCL backtrace) is fixed in 2.3.28
+and is not this ticket.
+
+* To do
+
+1. Measure AutoCAD 2022 GUI + accoreconsole: the control-flow:probe jobs
+   on !471 (Windows runners back 2026-10-23). Also BricsCAD V25 Windows.
+2. If AutoCAD agrees with BricsCAD: make clautolisp's document-namespace
+   behaviour the vendors' (an error with an empty message for both
+   functions), keeping the message / value only where a VLX boundary
+   exists. If the vendors differ: discriminate by dialect per the Dialect
+   Divergence rules, with a portability warning under --strict.
+3. Record the measurement in the autolisp-spec entries' *** clautolisp
+   sections (VL-EXIT-WITH-ERROR, VL-EXIT-WITH-VALUE).
+
+* AutoCAD measured (2026-10-23) -- DONE, 2.3.38
+
+control-flow probe on MR !471, every case inside vl-catch-all-apply:
+
+| case                               | AutoCAD 2022 GUI | accoreconsole | BricsCAD V25 Win | BricsCAD V26 mac |
+|------------------------------------+------------------+---------------+------------------+------------------|
+| (vl-exit-with-error "boom")        | ERROR nil        | ERROR nil     | ERROR ""         | ERROR ""         |
+| (vl-exit-with-value 42)            | ERROR nil        | ERROR nil     | ERROR ""         | ERROR ""         |
+| ... inside a defun (both)          | ERROR nil        | ERROR nil     | ERROR ""         | ERROR ""         |
+
+(jobs 17398575920, 17398575921, 17398575919, 17396028047.)
+
+So outside a separate-namespace VLX both functions are an error WITHOUT a
+message on every product; the products differ only in the empty value
+(nil vs ""). clautolisp loads no VLX, so 2.3.38 makes every call that:
+VL-EXIT-WITH-ERROR / -VALUE raise the AutoLISP error :VL-EXIT-OUTSIDE-VLX
+(message "") at the call site; vl-catch-all-apply's catch-all carries
+message nil except under the BricsCAD dialects ("") -- the catch-all's
+message slot now admits nil, and VL-CATCH-ALL-ERROR-MESSAGE returns nil for
+it. *error* (local or global) is called with "" -- what a CAD passes its
+*error* in this case is not measured (alfe cannot reach the CAD's top-level
+*error*). Tests: builtin-tests (4 rewritten), autolisp-test
+tests/error/vl-exit.lsp; spec *** clautolisp sections updated.

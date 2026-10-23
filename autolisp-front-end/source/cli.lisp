@@ -2,7 +2,7 @@
 ;;;;
 ;;;; alfe CLI — argument parsing, action sequencing, exit codes.
 ;;;;
-;;;; Specified by ../issues/open/alfe-cli.issue and
+;;;; Specified by ../issues/closed/alfe-cli.issue and
 ;;;; documentation/alfe--specifications.org (sections "Sélection du
 ;;;; moteur et matrice backend × système", "Variables d'environnement",
 ;;;; "Phases de bootstrap", "Invariants testés").
@@ -355,8 +355,9 @@ Bootstrap and runtime:
   --bootstrap-phase {marker,core,log,full}   Truncate the bootstrap.
   --workdir DIR          Override $AUTOLISP_WORKDIR.
   --timeout SECS         Per-action timeout.
-  --no-init, -norc       Skip user init files (~/.alfe{,rc}, ~/.autolisp{,rc},
-                         ~/.config/alfe/init, ~/.config/autolisp/init).
+  --no-init, -norc       Skip the user init files, loaded in this order (all
+                         that exist): ~/.autolisp, ~/.config/autolisp/init.lsp,
+                         ~/.alfe, ~/.config/alfe/init.lsp.
                          Mirrors $AUTOLISP_NO_INIT and $ALFE_NO_INIT.
   --no-color             Disable ANSI colour in AutoLISP value output. Honoured
                          equivalently via $NO_COLOR (https://no-color.org).

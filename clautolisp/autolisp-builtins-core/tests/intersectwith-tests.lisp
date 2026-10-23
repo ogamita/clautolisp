@@ -122,8 +122,8 @@
 
 (test vlax-variant-type-returns-the-vb-type-code
   ;; spec: "Integer type code" (vlax-variant-type-returns-a-symbol); it
-  ;; used to return the symbols ARRAY / INTEGER / REAL. Literal codes: the
-  ;; vlax-vb* constants are not bound yet (vlax-vb-constants-unbound).
+  ;; used to return the symbols ARRAY / INTEGER / REAL. Literal codes, on
+  ;; purpose: independent of the vlax-vb* constants.
   (is (equal '(8197 3 5 8 2 5 8197)
              (%vla "(vl-load-com)
                     (list (vlax-variant-type (vlax-3d-point 1 2 3))

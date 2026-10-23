@@ -1,0 +1,57 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-runtime-raise-says-division-by-zero: a user handler sees "divide by zero" when alfe's CAD-side runtime raises
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: alfe-backend
+#+DEPENDS: -
+#+BRANCH: master
+#+DATE: 2026-10-15
+
+* Symptom
+
+alfe's CAD-side runtime raises with arithmetic: autolisp-raise saves its
+message in *AUTOLISP_LAST_ERROR_CONTEXT* and calls autolisp-force-error,
+which does (/ 1 0). This is the fix from
+alfe-autocad-error-primitive-masks-load-failure, because AutoCAD has no
+ERROR function. alfe's own request report reads the saved context, so it
+was right. Any OTHER catcher got only the host's text for the arithmetic:
+a user vl-catch-all-apply around alfe-load, a user *error* function, and
+the clautolisp debugger ("DBG> Error at <unknown> -- Division by zero in
+/.").
+
+Reproduced on the hosted clautolisp engine (pjb, 2026-10-15) with
+: (vl-catch-all-error-message
+:   (vl-catch-all-apply 'alfe-load (list "/no/such/file-xyz")))
+: => "Division by zero in /."
+A *error* function saw the same text. The message the runtime had
+assembled, LOAD failed: "/no/such/file-xyz", was lost to both handlers.
+
+* Resolved (clautolisp / alfe 2.3.20)
+
+autolisp-force-error now takes the message, and autolisp-raise passes it:
+the quit signal for a quit, otherwise the saved context (the source
+loader's full diagnostic, or the bare message).
+
+- A host whose ERROR is a function, (= (type error) 'SUBR), raises with
+  (error MSG). This covers BricsCAD and clautolisp, and every catcher
+  sees the message verbatim. The test is on TYPE, so a user's (defun error
+  ...) is never called, and on AutoCAD the symbol is only read as a
+  variable (nil), never resolved as a function, so the
+  undefined-ERROR escape cannot come back.
+- Otherwise (AutoCAD) (itoa MSG) fails with a bad-argument error that
+  quotes MSG. That this holds on real AutoCAD is recorded as
+  SPEC-UNCERTAIN in issues/open/deferred-spec-research.issue (ITOA entry).
+- (/ 1 0), (car 0) and the undefined function stay behind them as the
+  last resort.
+
+Tests (autolisp-front-end/tests/file-protocol-tests.lisp):
+- protocol-runtime-raise-carries-its-message-to-user-handlers is new. It
+  covers the AutoCAD and BricsCAD shadow paths, plus ERROR unbound
+  (setq error nil), which takes the AutoCAD fallback. In each case both a
+  vl-catch-all-apply and a *error* handler see LOAD failed, and never
+  "Division by zero".
+- protocol-emitted-runtime-never-calls-error now allows exactly one
+  (error ...) call: the guarded one in autolisp-force-error.
+
+Documented in the alfe user manual, section "When an alfe-* operator
+fails", and in RELEASE_NOTES.org.

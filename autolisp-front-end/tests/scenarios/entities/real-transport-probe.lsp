@@ -1,5 +1,5 @@
 ;;;; real-transport-probe.lsp -- MEASURE how real literals reach the CAD when
-;;;; alfe loads a file (issues/open/alfe-cad-transport-rounds-reals.issue).
+;;;; alfe loads a file (issues/closed/alfe-cad-transport-rounds-reals.issue).
 ;;;;
 ;;;; alfe does not load an -l file with the CAD's own LOAD: its CAD-side loader
 ;;;; reads each top-level form and hands it to the CAD's native LOAD through a

@@ -38,6 +38,14 @@ refactors with no user-visible effect do not require an entry.
 
 * clautolisp / read-autolisp (=clautolisp/documentation/clautolisp-user-manual.org=)
 
+- Windows releases bundle recursive non-system DLL dependencies and their
+  license notices, so startup and DWG saves work without MSYS2 on PATH.
+  See the user manual, /Windows release installation/.
+
+- =ACAD_STRLSORT= sorts complete catalogues independently of =MAXSORT= and no
+  longer warns under BricsCAD. MAXSORT defaults remain 200 for BricsCAD and
+  1000 for AutoCAD/clautolisp/lax; see the manual, /Dialect/.
+
 - Missing and inaccessible input files retain status 66 across host Lisps;
   failed pathname access checks no longer report a missing file.
   See the user manual's /Exit Codes/ section. A =-l= DIRECTORY is refused as
@@ -48,6 +56,83 @@ refactors with no user-visible effect do not require an entry.
 clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
+
+- *=xdsize= and =xdroom= work* (2.3.34): they were stubs returning nil.
+  =(xdsize LIST)= gives the bytes an xdata list takes, =(xdroom ENAME)= the
+  room left of the 16383 bytes an object may hold; malformed xdata and
+  unregistered applications are errors (ERRNO 48 / 49 / 50). The per-group
+  byte costs follow AutoCAD's documented layout and are being measured on
+  the CADs (probe-xdata).
+
+- *HATCH, VIEWPORT and table-record angles from DXF too* (2.3.33): HATCH
+  52 / 53 and its arc-edge 50/51, VIEWPORT 50/51, and the VPORT, VIEW and
+  STYLE records =tblsearch= returns are converted between the file's
+  degrees and AutoLISP's radians, like the entity angles of 2.3.31.
+
+- *=vlax-vbInteger=, =vlax-vbDouble=, … are bound after =(vl-load-com)=*
+  (2.3.32): the 17 =vlax-vb*= VarType constants were nil, so
+  =(vlax-make-safearray vlax-vbDouble '(0 . 2))= passed nil as the type.
+  They now have their documented values (=vlax-vbInteger= 2,
+  =vlax-vbDouble= 5, =vlax-vbString= 8, …); values measured on the CADs
+  take precedence once the ActiveX constants probe has run.
+
+- *DXF angles are degrees in the file, radians in =entget=* (2.3.31): the
+  DXF codec copied file angles unconverted, so an ARC of 0..90 degrees
+  from a vendor DXF (or DWG, which goes through DXF) read as 90 radians,
+  and a saved ARC of 0..pi/2 opened elsewhere as 0..1.57 degrees. ARC,
+  TEXT, ATTRIB, ATTDEF, SHAPE, MTEXT, INSERT, DIMENSION and VERTEX angles
+  are now converted both ways. See the manual, /Angles in DXF files/.
+
+- *=entget= lists the header like the CADs* (2.3.30, cador host):
+  =-1 0 5=, then a dictionary member's ={ACAD_REACTORS …}= group, then the
+  owner =330=, then the rest -- as BricsCAD V26 was measured to list it.
+  A model-space entity now has its owner: =(330 . <*Model_Space
+  BLOCK_RECORD>)=. Before, the handle came before the type and a
+  model-space entity had no =330=. An =(entmod (entget e))= round trip
+  stores none of the groups added for the view.
+
+- *=while= and =repeat= return the last body value* (2.3.29): =(repeat 3
+  (setq i 6))= is =6= and =(while (< k 3) (setq k (1+ k)) (* k 100))= is
+  =300=, as the spec and AutoCAD's reference say and as BricsCAD V26 was
+  measured to answer; both returned =nil= always, interpreted and
+  compiled. A loop whose body never runs, or has no body, still returns
+  =nil=. See the tutorial, /Iteration/.
+
+- *A local =*error*= is called* (2.3.28): the AutoCAD idiom
+  =(defun c:cmd (/ *error* …) (defun *error* (msg) …) …)= now works --
+  =*error*= is looked up when the error happens, before the function's
+  local variables are unwound, so the local handler is the one called
+  and it still sees the other locals. Only the global =*error*= was ever
+  called before. See the tutorial, /The *error* function/.
+
+- *=vl-exit-with-error= and =vl-exit-with-value= no longer crash clautolisp*
+  (2.3.28): called outside =vl-catch-all-apply= they reached the host
+  Lisp's debugger and ended the run with an SBCL backtrace. Now
+  =vl-exit-with-error= is an AutoLISP error with its message (=*error*=
+  and =--on-error= apply), and =vl-exit-with-value= ends the toplevel form
+  with its value. What the CADs do outside a VLX is being measured
+  (issue =vl-exit-outside-vlx-caught-diverges=).
+
+- *=*AUTOLISP-LOAD-PATHNAME*= is absolute under =-l= too* (2.3.27): a
+  file named relatively on the command line (=-l main.lsp=, or a
+  positional file) bound the path as typed, so
+  =(vl-filename-directory *AUTOLISP-LOAD-PATHNAME*)= was =""= and a file
+  could not load its neighbours. It now binds the absolute path, as
+  =load= and the init files always did -- in =clautolisp= and in
+  =alfe --clautolisp=. See the manual, /Image-introspection variables/.
+
+- *Init files documented* (2.3.26): the user manual has a new section,
+  /Init files/, on the four files loaded at startup (=~/.autolisp=,
+  =~/.config/autolisp/init.lsp=, =~/.clautolisp=,
+  =~/.config/clautolisp/init.lsp=). =--help=, the man page and alfe's
+  manual no longer list =rc= variants (=~/.clautolisprc=,
+  =~/.autolisprc=, =~/.alferc=), which were never read.
+
+- *AutoLISP tutorial* (=clautolisp/documentation/tutorial.org=, French
+  translation =tutorial-fr.org=): an introduction to AutoLISP for
+  programmers new to Lisp, every example a replayable clautolisp session.
+  Installed under =share/doc/clautolisp/= as =.org=, =.pdf= and =.info=;
+  =make -C clautolisp tutorial= builds the two PDFs.
 
 - *ActiveX ~IntersectWith~ on the mock / cador host* (2.3.10): ~(vla-IntersectWith
   a b acExtendNone)~ returns a VARIANT holding a SAFEARRAY of doubles
@@ -454,7 +539,7 @@ separate binary for tool integrators.
   does not resolve, so a drawing read, modified and written back as DWG
   used to come back without the entities that had been added to it,
   reporting success. A drawing built entirely in a session is still
-  affected (=issues/open/dwg-round-trip-loses-entities.issue=).
+  affected (=issues/closed/dwg-round-trip-loses-entities.issue=).
 - *Saving a drawing as DWG works from a clautolisp session.* Two defects
   in the DXF header the DWG writer hands to libredwg made every such save
   fail: =$ACADVER= was written twice — once as the file-format version
@@ -465,7 +550,7 @@ separate binary for tool integrators.
   because its variables come from the file. The failure now also names
   libredwg's own error, e.g. =DWG_ERR_INVALIDDWG (code 2048)=, instead of
   a bare number. Note that entities do not yet survive a DWG round trip
-  (=issues/open/dwg-round-trip-loses-entities.issue=).
+  (=issues/closed/dwg-round-trip-loses-entities.issue=).
 - *The standalone program carries the DWG codec, and finds its native
   libraries beside itself.* An installation that contained
   =lib/clautolisp/<os>/<arch>/clal_dwg.*= still answered "no writer codec
@@ -677,7 +762,7 @@ separate binary for tool integrators.
   the environment variable of the same name; shared by ~--host cador~ and
   ~--host cadtui~. The version axis is recorded on the drawing but the
   DXF/DWG writers still emit a fixed version
-  (~issues/open/drawing-codec-version-output.issue~). Documented in the
+  (~issues/closed/drawing-codec-version-output.issue~). Documented in the
   autolisp-spec §§ /SAVEFORMAT/ and /CLAUTOLISPDEFAULTDRAWINGFORMAT/ and the
   clautolisp user manual (/Environment variables/, /Host backend/);
   ~issues/closed/saveformat-default-drawing-format.issue~.
@@ -738,7 +823,7 @@ separate binary for tool integrators.
 - ~(setq *AUTOLISP-DIALECT* 'DIALECT)~ switches the dialect live: the
   REPL reader and the debugger's / inspector's form reads consult the
   variable at each read (one shared reader entry,
-  ~issues/open/interactor-design-revision.issue~ D2), so a mid-session
+  ~issues/closed/interactor-design-revision.issue~ D2), so a mid-session
   switch takes effect on the very next line.
 - Predefined variables: the three the spec classifies as such are bound
   at startup — ~pi~ (the real 3.141592653589793, so ~(* 2 pi r)~ /
@@ -823,7 +908,7 @@ separate binary for tool integrators.
   BricsCAD. Other dialects keep the full AutoCAD-derived catalogue.
   Engine identity (~PROGRAM~ / ~ACADVER~ / …) and the dynamic codepage
   sysvars are unaffected. See
-  ~issues/open/bricscad-dialect-sysvar-parity.issue~.
+  ~issues/closed/bricscad-dialect-sysvar-parity.issue~.
 - Under ~--bricscad~, 43 shared variables report BricsCAD's factory
   default instead of AutoCAD's — ~PICKBOX~ 4, ~OSMODE~ 4135, ~MAXSORT~
   200, ~DRAGP1~ 10, ~FONTMAP~ "default.fmp", … — each measured on a
@@ -862,7 +947,7 @@ separate binary for tool integrators.
 - Optional warning→error escalation via the dialect
   ~:portability-warning-mode :error~ knob (default ~:warn~), mirroring
   ~:unbound-variable-mode :strict-error~; off unless opted in.
-  See ~issues/open/clautolisp-dialect-portability-warnings.issue~.
+  See ~issues/closed/clautolisp-dialect-portability-warnings.issue~.
 - One knowledge base. Every portability decision now comes from a
   single catalogue
   (~clautolisp/autolisp-runtime/source/portability.lisp~) instead of
@@ -1254,7 +1339,7 @@ separate binary for tool integrators.
   (the interactor framework): user commands live in a separate dictionary
   layered over it, so they can shadow any built-in.
 - One AutoLISP registration API for every interaction mode
-  (~issues/open/interactor-design-revision.issue~ D6/D7):
+  (~issues/closed/interactor-design-revision.issue~ D6/D7):
   =(clal-define-command "INTERACTOR" NAMES FN [DOC])= registers a user
   command of the named interactor's user dictionary —
   =(clal-list-interactor-names)= lists the valid names (=ALDO=, =NAVI=,
@@ -1304,7 +1389,7 @@ separate binary for tool integrators.
   variables silently resolved to stale outer values from then on (the
   reported infinite =fact= recursion). The frame push/pop now pairs
   exactly.
-- One loop for every interaction mode (=issues/open/interactor-unification.issue=):
+- One loop for every interaction mode (=issues/closed/interactor-unification.issue=):
   the debugger prompt, the form navigator, the line navigator, the
   inspector and the REPL all run on the interactor framework's single
   INTERACTOR-LOOP, with their vocabularies as stacked command
@@ -1332,7 +1417,7 @@ separate binary for tool integrators.
 - Setting a breakpoint twice on one poll-point is idempotent — one breakpoint,
   one decoration ("already set" on the repeat). See the three
   =issues/open/bug-aldo-*= tickets.
-- *Debugger CLI options* (=issues/open/debugger-public-interface-and-on-error.issue=
+- *Debugger CLI options* (=issues/closed/debugger-public-interface-and-on-error.issue=
   Parts B-D; user manual § /Options / Debugger (aldo)/): the three event
   policies =--on-error quit|debug|ignore= (default: =debug= at the
   interactive REPL, =quit= in batch), =--on-interrupt debug|ignore|quit=
@@ -1423,7 +1508,7 @@ separate binary for tool integrators.
   live application object whose ~ActiveDocument~ resolves — so
   ~(vla-get-activedocument (vlax-get-acad-object))~ works headless on
   ~--host mock~. See the user manual § /Host backend / The ActiveX / COM
-  object model/ and ~issues/open/vla-accessor-family.issue~.
+  object model/ and ~issues/closed/vla-accessor-family.issue~.
 - ActiveX ~vlax-*~ primitives are being promoted from nil-stubs to real
   implementations behind the same headless-CAD host. Point / matrix
   builders ~vlax-2d-point~, ~vlax-3d-point~ (Z defaults 0.0),
@@ -1454,7 +1539,7 @@ separate binary for tool integrators.
   straight-segment LWPOLYLINE / POLYLINE. ELLIPSE, SPLINE and the arc
   segments of a bulged polyline are not yet evaluated (they return nil,
   the documented failure value) — see the SPEC-UNCERTAIN notes in
-  ~issues/open/vla-accessor-family.issue~.
+  ~issues/closed/vla-accessor-family.issue~.
 - Collection iteration: ~vlax-for~ (a special form) and
   ~vlax-map-collection~ iterate an ActiveX collection, binding / applying
   to each member. With this, *every* ~vlax-*~ operator is now a real
@@ -1471,7 +1556,7 @@ separate binary for tool integrators.
   refuse). Fixes the SCHMS CAD suite's "AutoCAD.Document has no
   property named BLOCKS" failure on ~--host mock~. See the user manual
   § /Host backend / The ActiveX / COM object model/ and
-  ~issues/open/vla-accessor-family.issue~.
+  ~issues/closed/vla-accessor-family.issue~.
 - Layer, linetype and document object model (SCHME+ A1): an
   ~AutoCAD.Layer~ carries read/write ~Color~ and ~Linetype~ backed by
   the layer table record's DXF groups 62 / 6 — so ~tblsearch~,
@@ -1507,7 +1592,7 @@ separate binary for tool integrators.
   ~TextAlignmentPoint~ as VARIANT-wrapped double SAFEARRAYs
   (consumable by ~vlax-variant-value~ + ~vlax-safearray->list~, and
   writable from ~vlax-3d-point~ or a plain point list). See
-  ~issues/open/vla-entity-property-bridge.issue~.
+  ~issues/closed/vla-entity-property-bridge.issue~.
 - Block references end-to-end: ~InsertBlock~ on a space / block
   collection creates the INSERT — instantiating an ATTRIB (translated,
   scaled, rotated to the placement) per non-constant ATTDEF of the
@@ -1654,6 +1739,11 @@ separate binary for tool integrators.
 - ~vl-infp~, ~vl-nanp~ and ~vla-postcommand~ no longer warn
   ~[vendor-operator]~ under the AutoCAD dialects: AutoCAD 2022 has all three
   (measured), so the spec now lists them for both vendors.
+- ~error~ is a BricsCAD operator (undocumented, present in V26) that
+  clautolisp provides too, and AutoCAD has none: it now warns
+  ~[vendor-operator]~ (~ERROR is a BricsCAD-only operator~) under ~--autocad~
+  and ~--strict~, and stays silent under ~--bricscad~, ~--clautolisp~ and
+  ~--lax~ (autolisp-spec, ~error~ entry).
 - Dialect versions carry the documented version differences: an operator
   a release added or removed (~acet-load-expresstools~ is AutoCAD 2025+,
   BricsCAD V26 removed ~mod~ / ~round~, ...) warns ~[version-operator]~ when
@@ -1841,6 +1931,78 @@ file or COM), and forwards the workload.
   evaluated, and its prose failed as code (/no function definition:
   SYMBOLE/). Block comments are now skipped wherever they stand. See the
   manual's /How a form reaches a CAD/.
+- *=vl-exit-with-error= / =vl-exit-with-value= outside a VLX behave like the
+  CADs* (2.3.38): measured on AutoCAD 2022 and BricsCAD V25 / V26, both are
+  an error without a message -- even =vl-exit-with-value= --
+  =vl-catch-all-apply= returns a catch-all error whose message is =nil= on
+  AutoCAD and =""= on BricsCAD. clautolisp, which loads no VLX, now does
+  the same per dialect; from 2.3.28 it had kept the message and returned
+  the value.
+
+- *=entget= puts the owner where each CAD does* (2.3.37, cador host):
+  AutoCAD 2022 lists a LINE as =-1 0 330 5 …= (owner before handle),
+  BricsCAD as =-1 0 5 330 …=; both list a dictionary member =-1 0 5 102
+  330 102 330 …=. Measured on both, and followed per dialect: the BricsCAD
+  dialects take BricsCAD's order, every other dialect AutoCAD's.
+
+- *=xdsize= / =xdroom= give the CADs' numbers* (2.3.40): measured on
+  AutoCAD 2022 and BricsCAD V25 / V26 and followed per dialect. AutoCAD: 3
+  bytes per application with data, strings 3 + 2 per UTF-16 unit, points 25,
+  reals 9, ...; an unregistered application or an unknown code gives =nil=.
+  BricsCAD: only the first application is sized, strings cost 2 bytes per
+  character on Windows and 4 on macOS, nothing is validated. The 2.3.34
+  sizes were provisional.
+
+- *=vlax-vb*= constants as each CAD binds them* (2.3.41): measured on
+  AutoCAD 2022 and BricsCAD V25 / V26. Every value a CAD binds is the
+  documented VarType value; AutoCAD binds no =vlax-vbDecimal=, neither binds
+  =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
+  all 17 from the documentation).
+
+- *Native CAD batch isolation and shutdown* (2.3.46): BricsCAD batch
+  launches honor =--dwg= and otherwise stage a private empty drawing.
+  Shutdown restores the native printer functions after the protocol loop,
+  closes documents without saving, retries transient AutoCAD COM rejections
+  and bounds process cleanup. This does not resolve the intermittent EPURE
+  WPF exception observed at AutoCAD exit.
+
+- *An unattended run never saves the CAD's drawing on quit* (2.3.44): alfe
+  ended every non-interactive AutoCAD / BricsCAD session with QUIT
+  answering "Save changes?" with Yes, so a drawing the run had modified
+  was saved -- or, unnamed, raised the Save As dialog, which nobody answers
+  on a build runner (AutoCAD was left open on a renamed drawing). The final
+  QUIT now discards, and asks only when the drawing is modified.
+
+- *DIMENSION and MTEXT angles from vendor DXF files* (2.3.43): checked
+  against DXF files written by AutoCAD 2022 and BricsCAD V25 / V26. A
+  DIMENSION's 50 / 53 loaded in degrees (the scan stopped at its earlier
+  75); an MTEXT, which the CADs write with its 11 direction only, loaded
+  with no 50 although their =entget= lists one. Both are fixed: 50 is
+  derived from 11 on load, and left out on save when 11 is there, as the
+  CADs do. Every other angle the codec converts was confirmed on the
+  vendor files.
+
+- *=variant= and =safearray= are lower case, as on AutoCAD* (2.3.42):
+  AutoCAD 2022 names the TYPE symbols VARIANT and SAFEARRAY in lower case
+  -- =vl-symbol-name=, =princ= and =prin1= give "variant" / "safearray",
+  even for a quoted ='VARIANT= -- while reading stays case-insensitive and
+  =(eq (type v) 'VARIANT)= is still T. Measured; clautolisp does the same
+  under every dialect but the BricsCAD ones (BricsCAD is upper case).
+
+- *A failing request is never reported OK on AutoCAD* (2.3.39): AutoCAD
+  can catch an error whose message is =nil= (=vl-exit-with-error= outside
+  a VLX, measured), and alfe took that =nil= for "no error": the failed
+  =-x= / REPL request reported =DONE OK= and a failing form of a loaded
+  file was skipped silently. Such an error now fails with "the engine
+  supplied no message" and the form that failed.
+
+- *A padded =princ= keeps its real literals on AutoCAD too* (2.3.36): the
+  call alfe pads for AutoCAD (=(princ X)= sent as =(princ X nil)=, since
+  AutoCAD's =defun= has no =&rest=) was printed back from its value, and
+  AutoCAD's =rtos= cannot render 17 significant digits or a 3-digit
+  exponent. alfe now pads the call in the source text, so every literal
+  arrives as written. See the manual's /How a form reaches a CAD/.
+
 - *Real literals reach AutoCAD and BricsCAD with every digit* (2.3.12). alfe
   handed each form of an =-l= file (and each =-x= / REPL form) to the CAD
   PRINTED BACK with =princ=, which keeps 6 significant digits of a real on
@@ -2075,6 +2237,20 @@ file or COM), and forwards the workload.
   ~(load p)~ and ~(load (strcat dir "f.lsp"))~ work, not only string
   literals. (Before, a non-literal argument reached ~findfile~ unevaluated
   and failed with ~bad argument type~; confirmed fixed on real BricsCAD V26.)
+
+** A failing =alfe-load= tells your handler why; =alfe-error= (alfe-user-manual § /When an =alfe-*= operator fails, and =alfe-error=/)
+
+- A =vl-catch-all-apply= or =*error*= around =alfe-load= now gets alfe's
+  diagnostic (=LOAD failed: "..."=, or the loaded file's error and its
+  position) as the error message, instead of =divide by zero=. On AutoCAD,
+  which has no =error= function, that diagnostic is quoted inside a
+  bad-argument message.
+- New =(alfe-error msg)=: raises an error with message =msg= on every CAD --
+  =(error msg)= on BricsCAD and clautolisp, AutoCAD's quoted bad-argument
+  error there (alfe still defines no =error= on AutoCAD). alfe's own raises
+  use it, and it never earns a =[vendor-operator]= notice.
+  The raise gives no ~[vendor-operator]~ notice for its own use of
+  ~error~ on a clautolisp engine.
 
 ** Request timeout (alfe-user-manual § /Troubleshooting/)
 

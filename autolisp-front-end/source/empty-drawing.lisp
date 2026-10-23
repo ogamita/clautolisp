@@ -2,7 +2,7 @@
 ;;;;
 ;;;; The empty drawing alfe hands a CAD, as a resource in the image.
 ;;;;
-;;;; WHY A FRESH FILE EVERY TIME (issues/open/empty-ressource.issue, pjb
+;;;; WHY A FRESH FILE EVERY TIME (issues/closed/empty-ressource.issue, pjb
 ;;;; 2026-08-30). Passing the same empty.dwg to successive runs produces
 ;;;; MODAL DIALOGS -- "the drawing is in use by another instance", "open
 ;;;; read-only?" -- because a previous CAD still holds the lock, or left

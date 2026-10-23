@@ -840,11 +840,21 @@ route.
 
 What that file holds is the form's own *text*, exactly as it was written:
 the CAD reads =(setq a 1.5707963267948966)= with its own reader, and
-=a= gets every digit. Only a form alfe has to rewrite is printed back from
-its value -- on AutoCAD, whose =defun= has no =&rest=, a call such as
-=(princ x)= is padded to =(princ x nil)= -- and then every real is printed
-with as many digits as it takes to read back to the same number
-(=1.5707963267948966E+00=), checked by the CAD's own reader.
+=a= gets every digit. A form alfe has to rewrite is rewritten in that text
+too: on AutoCAD, whose =defun= has no =&rest=, a call such as =(princ x)=
+is padded to =(princ x nil)= by inserting = nil= before its closing
+parenthesis, and every other character -- every real literal included --
+stays as written. alfe checks the rewritten text by reading it back; only
+when it does not read as the rewritten form, or when there is no text (a
+form built in memory), is the form printed back from its value, each real
+then with as many digits as the CAD's =rtos= can give and its own reader
+confirms (=1.5707963267948966E+00= on BricsCAD; AutoCAD's =rtos= stops at
+16 significant digits and a 2-digit exponent).
+
+/Changed in alfe 2.3.36./ A form the AutoCAD normaliser padded was
+always printed back, so on AutoCAD a literal such as =1.5707963267948966=
+in =(progn (setq a 1.5707963267948966) (princ a))= lost its last digit, and
+one beyond =1e99= its exponent.
 
 /Changed in alfe 2.3.12./ Every form used to be printed back with =princ=,
 which keeps 6 significant digits of a real on AutoCAD (=1.5708=) and 14 on
@@ -1073,6 +1083,7 @@ protocol loop. So alfe does *not* shadow the builtins; it offers parallel
 | =(princ obj [file])=  | =(alfe-princ obj)=         | 1-arg convenience; output reaches alfe's stream.   |
 | =(print obj [file])=  | =(alfe-print obj)=         |                                                    |
 | =(prin1 obj [file])=  | =(alfe-prin1 obj)=         |                                                    |
+| =(error msg)=         | =(alfe-error msg)=         | Raises an error with message =msg= on every CAD (below). |
 
 For a call whose arity is not exactly one argument, use the *star* form,
 which takes the argument list, so any arity maps to a fixed-arity call
@@ -1083,6 +1094,36 @@ which takes the argument list, so any arity maps to a fixed-arity call
 : (alfe-load*  (list "f.lsp"))      ; = (load "f.lsp")
 
 =alfe-print*=, =alfe-prin1*= and =alfe-load*= follow the same shape.
+
+*** When an =alfe-*= operator fails, and =alfe-error=
+
+A failure inside =alfe-load= (a file that cannot be found, a form that
+signals in the loaded file, a nested load) is an ordinary AutoLISP error,
+and your own handlers see alfe's diagnostic as its message:
+
+: (vl-catch-all-error-message
+:   (vl-catch-all-apply 'alfe-load (list "missing.lsp")))
+: ;; => "LOAD failed: \"missing.lsp\""
+
+The same text reaches a =*error*= function and, on the =clautolisp=
+host, the debugger. (Before alfe 2.3.20 a handler saw only =divide by
+zero=, which was the arithmetic alfe used to abort.) alfe's own request
+report always carries the full diagnostic, whatever the CAD.
+
+alfe raises these errors with =(alfe-error msg)=, which your code can
+call too. It signals an error whose message is =msg= on every CAD alfe
+drives:
+
+- On BricsCAD and clautolisp it is =(error msg)=: =error= exists there
+  (undocumented on BricsCAD), and every handler gets =msg= exactly.
+- AutoCAD has no =error= function, and alfe does not define one: code
+  that tests for it must keep seeing AutoCAD as it is. There
+  =alfe-error= raises AutoCAD's own bad-argument error, whose message
+  quotes =msg=, along the lines of =bad argument type: fixnump: "msg"=.
+
+Under =--clautolisp --dialect autocad= (or the default =strict=),
+clautolisp warns when your code calls =error= itself, since AutoCAD lacks
+it; =alfe-error= never warns.
 
 ** =alfe-load= rewrites the file it loads
 
@@ -1141,13 +1182,25 @@ functions on the stack, so this concerns the CAD backends only.
 
 * Init files
 
-On startup (unless =--no-init= / =-norc= is given), alfe loads
-the first init file it finds in this order:
+On startup (unless =--no-init= / =-norc= is given, or
+=$AUTOLISP_NO_INIT= / =$ALFE_NO_INIT= is set to =1=), alfe loads
+*every* init file that exists among these four, in this order, so a
+later one can redefine what an earlier one defined:
 
-1. =~/.alfe= or =~/.alferc=
-2. =~/.autolisp= or =~/.autolisprc=
-3. =~/.config/alfe/init=
-4. =~/.config/autolisp/init=
+1. =~/.autolisp=
+2. =~/.config/autolisp/init.lsp=
+3. =~/.alfe=
+4. =~/.config/alfe/init.lsp=
+
+The first two are shared with clautolisp, which loads them too; the
+last two are alfe's own. =~/.autolisp= and =~/.alfe= may have no
+extension; each may also be spelt with =.lsp= (=~/.alfe.lsp=), or be
+compiled (=.fas=, =.des=, =.vlx=), a compiled form being used only
+when it is newer than the =.lsp=. In =~/.config/= the extension is
+required: a file named just =init= is ignored. There are no =rc=
+variants (=~/.alferc=, =~/.autolisprc= are not read). The rules are
+those of clautolisp's init files, described in the /clautolisp User
+Manual/, section /Init files/.
 
 The init file runs under the selected dialect and backend; it's a
 natural place to put =alref-set-root= calls, custom helpers, REPL
@@ -1782,7 +1835,7 @@ state:
 | =*AUTOLISP-FILE-ENCODING*=     | Active source-file encoding (always a string). Empty string =""= means "no preference; fall through to the dialect default" — the documented degenerate case when neither =-Esource= nor any =LC_*= env var resolves an encoding. |
 | =*AUTOLISP-TERMINAL-ENCODING*= | Active terminal encoding (always a string, never empty — falls back to =US-ASCII= in the degenerate case). |
 | =*AUTOLISP-VERSION*=           | Version string of the running engine.                  |
-| =*AUTOLISP-LOAD-PATHNAME*=     | Set by =LOAD= during evaluation of the loaded file.    |
+| =*AUTOLISP-LOAD-PATHNAME*=     | The path of the file being loaded (init file, =-l= file, or =(load …)=), dynamically bound for the duration of its load; nil outside any load. |
 | =*AUTOLISP-EXPRESSION*=        | Set during evaluation of a =-x= expression.            |
 | =*AUTOLISP-INTERACTIVE*=       | =T= when the REPL is active, =NIL= otherwise.          |
 | =*AUTOLISP-PLUGIN-OPTIONS*=    | One symbol per /active/ plug-in, in activation order: =(EPURE)= under =--epure=. The empty list when no plug-in is active (see [[#plugins][Plug-ins]]). |

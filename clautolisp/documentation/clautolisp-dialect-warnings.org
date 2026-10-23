@@ -66,7 +66,7 @@ that is never reached never warns.
 
 *** References
 
-- clautolisp: the governing issue: issues/open/clautolisp-dialect-portability-warnings.issue
+- clautolisp: the governing issue: issues/closed/clautolisp-dialect-portability-warnings.issue
 - clautolisp: harvest evidence: autolisp-spec/documentation/bricscad-undocumented-extensions.org
 - clautolisp: normative rules: autolisp-spec chapter 25, "Normative Rules: Dialect Portability Warnings"
 
@@ -224,7 +224,7 @@ merely sweep the problem under the carpet.
 
 *** References
 
-- clautolisp: the request and its incident: issues/open/case-insensitive-pathname-resolution.issue
+- clautolisp: the request and its incident: issues/closed/case-insensitive-pathname-resolution.issue
 - clautolisp: the `..' warning this is modelled on: issues/closed/cad-path-dotdot-resolution.issue
 
 ** =[vendor-operator]= --- vendor-only operator called out of its dialect
@@ -260,6 +260,12 @@ except its owner's and lax):
   spelling, matched on the PRODUCT, so bricscad-mac is BricsCAD), and
   never under --lax.
 
+A few vendor-only operators are ADOPTED by clautolisp as its own extension
+as well (*CLAUTOLISP-ADOPTED-OPERATORS*, today only ERROR, which BricsCAD has
+and AutoCAD lacks): they keep their vendor owner, and are silent under
+--clautolisp too, so they warn only where they are missing -- the other
+vendor's dialects -- and under strict.
+
 Once per operator per session, at its first CALL (interpreted or
 compiled), never at read time. (setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)
 silences it; portability-warning-mode :error makes it an error instead.
@@ -276,6 +282,7 @@ customer's AutoCAD.
 - autolisp-spec: ch.25 Dialect Portability Warnings, case 1 (Extension): autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
 - clautolisp: the table (generated): clautolisp/autolisp-runtime/source/operator-availability.lisp
 - clautolisp: the ticket: issues/closed/deferred-clautolisp-out-of-dialect-warnings.issue
+- clautolisp: ERROR, adopted from BricsCAD: issues/closed/clautolisp-error-silent-under-autocad.issue
 
 ** =[version-operator]= --- operator not in the dialect's version of the product
 
@@ -649,7 +656,7 @@ BricsCAD-targeted code get BricsCAD's answer.
 *** References
 
 - clautolisp: emitted by: clautolisp/autolisp-runtime/source/api.lisp, EMIT-FOREACH-EMPTY-BODY-DIVERGENCE-WARNING
-- clautolisp: the ticket: issues/open/foreach-empty-body-return-diverges.issue
+- clautolisp: the ticket: issues/closed/foreach-empty-body-return-diverges.issue
 
 ** =[read-leading-comment]= --- READ on a string starting with a comment
 
@@ -701,7 +708,7 @@ several calls later.
 
 *** References
 
-- clautolisp: the governing issue: issues/open/read-string-does-not-skip-comments.issue
+- clautolisp: the governing issue: issues/closed/read-string-does-not-skip-comments.issue
 - clautolisp: emitted by: clautolisp/autolisp-builtins-core/source/api.lisp, EMIT-READ-LEADING-COMMENT-WARNING
 - Autodesk: read (AutoLISP), 2026 CHS: https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm
 - Bricsys: read (DevRef V26): https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/read.htm
@@ -734,7 +741,7 @@ the only sign.
 *** References
 
 - clautolisp: authoritative descriptions: issues/closed/encoding-dispatch.issue, section "Diagnostics"
-- clautolisp: the situation model: issues/open/encoding-situations-cli-options.issue
+- clautolisp: the situation model: issues/closed/encoding-situations-cli-options.issue
 
 ** =[enc-extension-used]= --- Any encoding extension, under --strict
 
@@ -856,7 +863,7 @@ with no error. Two levels of silence stacked on each other.
 
 *** References
 
-- clautolisp: measured behaviour: issues/open/encoding-situations-cli-options.issue, experiment E1
+- clautolisp: measured behaviour: issues/closed/encoding-situations-cli-options.issue, experiment E1
 - clautolisp: authoritative descriptions: issues/closed/encoding-dispatch.issue, section "Diagnostics"
 
 ** =[enc-codepage-mismatch]= --- DWGCODEPAGE differs from SYSCODEPAGE

@@ -1,0 +1,195 @@
+#+STATUS: DONE
+#+DEPENDS: xdata:probe:xdsize / xdroom cases (MEASURED 2026-10-23)
+#+BRANCH: fix-xdroom-xdsize
+xdroom-xdsize-not-implemented — XDROOM / XDSIZE are still nil stubs
+==================================================================
+
+Status: DONE -- implemented on the MEASURED vendor byte models (AutoCAD,
+BricsCAD; see "* Measured (2026-10-23)") (was DEFERRED, schms-data-selection 1.6.8). Parent:
+drawing-data-structures-parity.
+
+XDROOM (remaining xdata capacity, in bytes, for an entity) and XDSIZE
+(the byte size a supplied xdata list would occupy) are registered as M6
+nil-returning stubs in autolisp-builtins-core/source/api.lisp
+(*m6-stub-names*). The full XData read/write path (regapp + the 1000..1071
+codec through entget/entmod) is implemented; only these two size-accounting
+queries are missing.
+
+To implement, the model would need a byte-cost function over an xdata
+group list (AutoCAD budgets ~16 KB per entity per application) and XDROOM
+= budget - used. The in-memory model does not currently bound xdata, so a
+faithful XDROOM needs the vendor's per-code byte sizes:
+  1000 string: 3 + strlen ; 1001 appname: 3 + strlen ; 1002 brace: 1 ;
+  1003 layer: 1+? ; 1004 binary: 1 + nbytes ; 1005 handle: like 1000 ;
+  1010/1011/1012/1013 point: 25 ; 1040/1041/1042 real: 9 ;
+  1070 int16: 3 ; 1071 int32: 5. Verify the exact table against the
+AutoCAD/BricsCAD reference before shipping numbers.
+
+SCHMS does not call XDROOM/XDSIZE (inventory: 0 sites), so this is low
+priority; filed so it is not silently skipped.
+
+* Fix (2026-10-22)
+
+XDSIZE and XDROOM are real builtins now (no longer M6 nil stubs):
+
+- autolisp-builtins-core/source/api.lisp: BUILTIN-XDSIZE, BUILTIN-XDROOM,
+  XDATA-LIST-BYTE-SIZE, XDATA-GROUP-BYTE-SIZE, +XDATA-BYTE-BUDGET+ (16383,
+  from the spec's xdroom example: 16162 free = 221 of 16383 used).
+  - (xdsize LST): LST is ((APP pair ...) ...), optionally headed by -3 (so
+    (assoc -3 (entget e '("*"))) is accepted). Each APP must be registered
+    (checked through HOST-TBLSEARCH "APPID"). Failures signal an AutoLISP
+    error AND set ERRNO, per the Error Codes Reference: 48 unknown group
+    code / wrong value type, 49 unbalanced 1002 braces, 50 group not
+    headed by an application name, unregistered application, or a 1001
+    inside an application's pairs. Success sets ERRNO 0.
+  - (xdroom ENAME): 16383 minus the XDSIZE of every application's xdata
+    on ENAME, read through HOST-ENTGET with the "*" application list (so
+    no new host generic: cador answers through its existing ENTGET, the
+    nihil host signals host-not-supported as for every drawing access).
+    A non-ename is an argument error; an ename that names no live object
+    returns nil with ERRNO 2, as ENTGET.
+- autolisp-runtime/source/api.lisp: AUTOLISP-RUNTIME-ERROR-ERRNO maps the
+  new condition codes :xdata-unrecognized-type / :xdata-improper-nesting /
+  :xdata-improper-appid to 48 / 49 / 50 (otherwise the error path would
+  overwrite ERRNO with the generic 4).
+
+Byte table used (PROVISIONAL -- one type byte per group + payload; a
+string payload = 2-byte length + characters; source: the in-memory/DWG
+xdata layout as commonly described, consistent with the costs listed
+above, except the brace which is 2 = type byte + 1, not 1):
+
+| group                              | bytes          |
+|------------------------------------+----------------|
+| application header (APPNAME)       | 3 + len(name)  |
+| 1000 string, 1003 layer, 1005 hdl  | 3 + len        |
+| 1002 "{" / "}"                     | 2              |
+| 1004 binary (hex digits)           | 2 + ceil(n/2)  |
+| 1010 / 1011 / 1012 / 1013 point    | 25             |
+| 1040 / 1041 / 1042 real            | 9              |
+| 1070 int16                         | 3              |
+| 1071 int32                         | 5              |
+| budget per object                  | 16383          |
+
+Lengths count characters (= bytes for ASCII). Calibration hint: the R12
+viewport ACAD xdata (1000 "MVIEW", 2 braces pairs, 9x1070, 2x1010,
+13x1040) costs 217 under this table vs the spec example's 221 -- close but
+not proven, so the table is NOT final.
+
+To MEASURE (why this stays NEXT): probes/sources/probe-xdata.lsp now runs
+CAD-PROBE-RUN-XDSIZE-PROBES (suite "xdsize" / "xdroom"): bare header and
+header+1 char, each group code alone (1000 empty/3/10 chars and one
+non-ASCII char, brace pair, 1003, 1004 4 bytes, 1005 1 and 2 chars, 1010,
+1011, 1040-1042, 1070, 1071), two applications, the documented example,
+the three error cases (with ERRNO), and xdroom of a fresh circle / after a
+known payload / xdsize of that payload. Run make probe-autocad and
+probe-bricscad, then adjust XDATA-GROUP-BYTE-SIZE (and the header cost and
+budget) to the measured numbers and update the tests in
+autolisp-builtins-core/tests/drawing-data-tests.lisp (dd-xdsize-*,
+dd-xdroom-*). Also open: whether XDROOM on a non-graphical object
+(dictionary, xrecord) and XDSIZE of an empty list behave as here (0).
+
+Tests: autolisp-builtins-core/tests/drawing-data-tests.lisp
+dd-xdsize-sizes-xdata-lists, dd-xdsize-argument-errors,
+dd-xdroom-reports-remaining-xdata-room, dd-xdroom-argument-errors,
+dd-xdsize-on-the-nihil-host -- red before (nil stubs), green after.
+
+* Measured (2026-10-23)
+
+probes/sources/probe-xdata.lsp, suites "xdsize" / "xdroom", run on
+AutoCAD 2022 Windows (suite-a 20261023T074943Z), BricsCAD V25 Windows
+(suite-bw 20261023T075150Z) and BricsCAD V26 macOS (suite-bm
+20261023T031215Z). APP = "CLAUTOLISP_XDP" (14 chars), APP2 =
+"CLAUTOLISP_XDPX" (15). Every case returned (STATUS ok): no case
+signalled, so no ERRNO was recorded.
+
+| case (xdsize argument)                     | AutoCAD 2022 | BCAD V25 Win | BCAD V26 mac |
+|--------------------------------------------+--------------+--------------+--------------|
+| header ((APP))                             |            0 |           30 |           60 |
+| header +1 char ((APP2))                    |            0 |           32 |           64 |
+| -3 sentinel form (-3 (APP))                |            0 |           30 |           60 |
+| 1000 ""                                    |            6 |           30 |           60 |
+| 1000 "abc"                                 |           12 |           36 |           72 |
+| 1000 "abcdefghij"                          |           26 |           50 |          100 |
+| 1000 (chr 233), 1 non-ASCII char           |            8 |           32 |           64 |
+| 1002 "{" + 1002 "}"                        |            7 |           34 |           68 |
+| 1003 "0"                                   |            6 |           32 |           64 |
+| 1004 "DEADBEEF" (4 bytes)                  |            9 |           46 |           92 |
+| 1005 "1"                                   |           12 |           32 |           64 |
+| 1005 "2A"                                  |           12 |           34 |           68 |
+| 1010 (1.0 2.0 3.0)                         |           28 |           55 |           85 |
+| 1011 (1.0 2.0 3.0)                         |           28 |           55 |           85 |
+| 1040 1.5                                   |           12 |           39 |           69 |
+| 1041 1.5                                   |           12 |           39 |           69 |
+| 1042 1.5                                   |           12 |           39 |           69 |
+| 1070 42                                    |            6 |           33 |           63 |
+| 1071 100000                                |            8 |           35 |           65 |
+| two apps (APP 1000 "abc") (APP2 1040 1.5)  |           24 |           36 |           72 |
+| documented example (SUITOFARMOR, braces..) |           50 |           74 |          130 |
+| unregistered app (1000 "x")                |          NIL |           54 |          108 |
+| unknown code (1099 . 1)                    |          NIL |           30 |           60 |
+| unbalanced brace (1002 "{")                |            5 |           32 |           64 |
+| xdroom fresh circle                        |        16383 |        16383 |        16383 |
+| xdroom after 1000 "abc" + 1070 1 + 1040 1.5|        16359 |        16352 |        16352 |
+| xdsize of that attached xdata              |           24 |           48 |           84 |
+
+Model (implemented: XDATA-GROUP-BYTE-SIZE, XDATA-LIST-BYTE-SIZE,
+XDATA-ATTACHED-BYTE-SIZE, %XDATA-SIZE-MODEL in
+autolisp-builtins-core/source/api.lisp; the dialect product selects it,
+BricsCAD dialects follow BricsCAD, every other dialect AutoCAD; the
+BricsCAD platform selects W):
+
+AutoCAD -- XDSIZE = sum over applications of (0 if the application
+has no pair, else 3 + sum of its groups); group = 1 type byte + payload:
+
+| group                       | AutoCAD bytes          | BricsCAD bytes (W = 2 Win, 4 mac/linux) |
+|-----------------------------+------------------------+-----------------------------------------|
+| application header          | 0 bare, 3 if non-empty | W x (len(name) + 1), FIRST app only     |
+| 1000 string                 | 3 + 2 x UTF-16 units   | W x len                                 |
+| 1002 brace                  | 2                      | W                                       |
+| 1003 layer name             | 3 (fixed)              | W x len                                 |
+| 1004 binary (hex digits h)  | 2 + ceil(h/2)          | W x h (the hex string's characters)     |
+| 1005 handle                 | 9 (fixed)              | W x len                                 |
+| 1010-1013 point             | 25                     | 25                                      |
+| 1040-1042 real              | 9                      | 9                                       |
+| 1070 int16                  | 3                      | 3                                       |
+| 1071 int32                  | 5                      | 5                                       |
+| unknown code / bad value    | XDSIZE -> NIL          | 0                                       |
+| unregistered application    | XDSIZE -> NIL          | sized normally                          |
+| unbalanced 1002 braces      | not checked            | not checked                             |
+| XDROOM used                 | = XDSIZE (all apps)    | sum over ALL apps of 10 + AutoCAD groups|
+| budget                      | 16383                  | 16383                                   |
+
+Checks: AutoCAD "abc" 3 + (3+6) = 12; brace pair 3 + 2 + 2 = 7; lone
+brace 3 + 2 = 5; two apps (3+9) + (3+9) = 24; documented example
+3 + 25 + 2 + 9 + 9 + 2 = 50; attached payload 3 + 9 + 3 + 9 = 24 =
+16383 - 16359. BricsCAD Windows header 2 x 15 = 30, APP2 2 x 16 = 32,
+unregistered name (25 chars) 2 x 26 + 2 = 54; two apps = APP + "abc"
+only = 30 + 6 = 36 (the second application is ignored); documented
+example 30 + 22 + 2 + 9 + 9 + 2 = 74; 1099 costs 0 -> 30; attached
+payload 30 + 6 + 3 + 9 = 48 (macOS 60 + 12 + 3 + 9 = 84), but XDROOM
+deducts 31 on both platforms = 10 + 9 + 3 + 9.
+
+The model reproduces EVERY measured case on every product.
+
+Not constrained by the measurements (extrapolated, called out here so
+a later probe can pin them):
+- BricsCAD XDROOM: one data point. The 10-byte per-application overhead
+  (handle + length?) and the AutoCAD group costs it is combined with are
+  a fit of 31 = 10 + 9 + 3 + 9; any split giving 31 fits as well.
+- AutoCAD 1003 is 3 and 1005 is 9 whatever the string (1005 measured
+  with 1 and 2 chars; 1003 only with "0"); 1004 = 2 + bytes from one
+  4-byte sample.
+- ERRNO after AutoCAD's NIL (kept at 50 for an application, 48 for a
+  group, per the Error Codes Reference) and the result for a value of
+  the wrong type (treated like an unknown code: AutoCAD NIL, BricsCAD 0).
+- XDSIZE of '() (0 here) and XDROOM on a non-graphical object.
+- The previous 49 "unbalanced braces" error is gone: neither vendor
+  checks brace balance in XDSIZE.
+
+Tests (replacing the provisional ones):
+autolisp-builtins-core/tests/drawing-data-tests.lisp
+dd-xdsize-measured-vendor-sizes (every case above x :autocad /
+:bricscad / :bricscad-mac), dd-xdroom-measured-vendor-room,
+dd-xdsize-autocad-nil-sets-errno, dd-xdsize-default-dialect-follows-autocad,
+dd-xdsize-argument-errors, dd-xdroom-reports-remaining-xdata-room,
+dd-xdroom-argument-errors, dd-xdsize-on-the-nihil-host.

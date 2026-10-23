@@ -1,0 +1,37 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: Vendor-written DXF fixtures (angle units)
+
+This directory holds DXF files WRITTEN BY AutoCAD / BricsCAD, each with
+the dxf-angles probe report it came with. The test
+=dxf-vendor-fixtures-angle-units= (=clautolisp/drawing/tests/dxf-tests.lisp=)
+loads every =*.dxf= here with clautolisp's DXF codec and checks, for each
+probe object (entities on layer =DXFANG=, the VPORT =*Active=, STYLE
+=DXFANG= and VIEW =DXFANG= records), that the claimed angle groups
+(ARC 50/51, TEXT / ATTRIB / ATTDEF 50/51, MTEXT 50, INSERT 50, DIMENSION
+50-53, VERTEX 50, HATCH 50-53, VPORT 50/51, VIEW 50, STYLE 50) load as
+the file's degrees converted to radians, and -- when =<name>.txt= sits
+beside =<name>.dxf= -- equal the vendor's own entget values from its
+=DXFANG ENTGET= lines. With no fixture the test checks nothing.
+
+* How files get here
+
+1. Run the probe on a CAD: the CI jobs =dxf-angles:probe:*= in
+   =.gitlab/native.yml= (automatic when the probe changes, else manual),
+   or by hand:
+   #+begin_src sh
+   make -C autolisp-front-end build-alfe-sbcl
+   scripts/run-dxf-angles-probe.sh --backend bricscad      # macOS
+   #+end_src
+   #+begin_src powershell
+   scripts/run-dxf-angles-probe.ps1 -Backend autocad        # Windows
+   #+end_src
+2. Take =dist/dxf-angles/<backend>-<os>.dxf= and =<backend>-<os>.txt=
+   from the job artefact (both are written there; the report must hold
+   =DXFANG-DONE= and a =DXFANG-COPIED= line).
+3. Copy BOTH here, under the same base name, e.g.
+   =autocad-2025-windows.dxf= + =autocad-2025-windows.txt=, and run
+   =make -C clautolisp test-sbcl TEST_SYSTEM=clautolisp/drawing/tests=.
+
+Only vendor-written files belong here: a DXF clautolisp wrote would test
+the codec against itself (the =--backend clautolisp= run is the baseline
+column of the probe, not a fixture).

@@ -36,3 +36,26 @@
   '((operator . "WHILE") (area . "special-forms") (profile . strict))
   '(while nil 'never)
   nil)
+
+;;; The VALUE of WHILE is the last body value of the last iteration, nil
+;;; when the body never runs (spec, WHILE Return Values); it was nil always
+;;; until while-repeat-return-nil.
+(deftest "while-returns-last-body-value"
+  '((operator . "WHILE") (area . "special-forms") (profile . strict))
+  '(progn (setq while-k 0)
+          (while (< while-k 3) (setq while-k (1+ while-k)) (* while-k 100)))
+  300)
+
+(deftest "while-returns-string-body-value"
+  '((operator . "WHILE") (area . "special-forms") (profile . strict))
+  '(progn (setq while-k 0)
+          (while (< while-k 2) (setq while-k (1+ while-k)) "s"))
+  "s")
+
+;;; No body at all: nil (BricsCAD V26 measured nil, control-flow probe,
+;;; job 17396028047).
+(deftest "while-test-only-returns-nil"
+  '((operator . "WHILE") (area . "special-forms") (profile . strict))
+  '(progn (setq while-k 0)
+          (while (< (setq while-k (1+ while-k)) 3)))
+  nil)

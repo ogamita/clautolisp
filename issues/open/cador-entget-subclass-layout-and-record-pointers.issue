@@ -1,0 +1,48 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-entget-subclass-layout-and-record-pointers -- after the header, cador's entget layout and its table records still differ from the vendors
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: cador-entget-owner-and-header-layout
+#+BRANCH: -
+#+DATE: 2026-10-22
+
+* Symptom
+
+Measured with the entget-pointers probe, section 10 (MR !471, BricsCAD V26
+macOS job 17397066992), against cador 2.3.30, whose HEADER (-1 0 5 [102]
+330) now matches:
+
+| object                        | BricsCAD V26                                        | cador 2.3.30                |
+|-------------------------------+-----------------------------------------------------+-----------------------------|
+| LINE                          | -1 0 5 330 100 67 410 8 100 10 11 210               | -1 0 5 330 8 10 11 100 100  |
+| TEXT                          | ... 100 67 410 8 100 10 40 1 50 41 51 7 71 72 11 210 100 73 | ... 8 10 40 1 100 100 100 |
+| layer 0 record (tblobjname)   | -1 0 5 330 100 100 2 70 62 6 290 370 390 347        | -1 0 2                      |
+| block record (tblobjname)     | -1 0 5 330 100 67 8 100 2 70 71 10 3 1 -2 (a BLOCK) | -1 0 2 70 10 -2             |
+| (tblobjname "BLOCK" "*Model_Space") | 0 = "BLOCK" (the BLOCK entity)                | 0 = "BLOCK_RECORD"          |
+| (entget (namedobjdict))       | 16 default 3/350 entries (ACAD_* / Bricsys)         | none                        |
+
+1. Subclass markers: cador appends the (100 . "AcDbEntity") / (100 .
+   "AcDb<Type>") markers at the END; the vendors put AcDbEntity right after
+   the owner, with the common groups (67, 410, 8) under it, and the
+   type's marker before its own groups (entmake-duplicates-subclass-markers
+   is the related write-side ticket).
+2. Defaults the vendors list: 67 (space), 410 (layout name), 210
+   (extrusion), and per type (TEXT 50 41 51 7 71 72 73 ...).
+3. Table records have no 5 / 330 (owner TABLE) / 100 markers, nor the
+   layer's 390 (ACDBPLACEHOLDER) and 347 (MATERIAL) pointers; their ids are
+   gensyms (TBL-n), not handles, so handent cannot reach them.
+4. tblobjname "BLOCK" returns the BLOCK *entity* on BricsCAD (its 330 is
+   the BLOCK_RECORD a LINE's 330 names -- "eq NIL" in the probe), the
+   BLOCK_RECORD on cador.
+5. The named-object dictionary of a fresh drawing has the vendors'
+   default entries (ACAD_GROUP, ACAD_LAYOUT, ...).
+
+AutoCAD 2022: to measure with the same section (Windows runners); its
+2026-10-08 data put a free XRECORD's 330 BEFORE its 5.
+
+* To do
+
+Measure AutoCAD, then take the items one at a time (each changes what
+entget shows, so each needs the entmake / entmod round trip kept
+storing nothing synthesized -- see %DROP-VIEW-ONLY-GROUPS).

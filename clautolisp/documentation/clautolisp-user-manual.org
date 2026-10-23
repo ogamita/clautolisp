@@ -43,6 +43,30 @@ Both binaries are produced under
 surface. The rest of this manual treats them interchangeably and
 refers to the binary as ~clautolisp~.
 
+* Windows release installation
+
+Extract the Windows binaries and libraries archives into the same directory.
+Use =bin/clautolisp.cmd=, =bin/alfe.cmd= and =bin/read-autolisp.cmd= from
+PowerShell or Command Prompt. MSYS2 and a separate Common Lisp installation
+are not required to run these releases. Keep the directory tree intact:
+the executables carry their non-system runtime DLLs beside them, including
+the dependencies needed by the native DWG codec. Third-party notices and
+package versions are under =share/doc/clautolisp/runtime-licenses/=.
+
+User init files such as =~/.autolisp= use the runtime's home directory.
+For the Windows SBCL release, =HOME= overrides the Windows user profile;
+with =HOME= unset, the Windows user home is used. There is no fallback to
+another home merely because an init file is absent. To persistently select
+the Windows user profile from PowerShell:
+
+#+begin_src powershell
+[Environment]::SetEnvironmentVariable('HOME', $env:USERPROFILE, 'User')
+$env:HOME = $env:USERPROFILE
+#+end_src
+
+The first command affects future sessions; the second affects the current
+session and programs launched from it.
+
 * Modes of Operation
 ~clautolisp~ has three mutually exclusive modes; the mode is
 determined by the operands. In every mode the runtime installs the
@@ -879,8 +903,14 @@ produce warnings when compiled and when used.
 
 For the operators only one vendor provides, that warning is
 =[vendor-operator]=. BricsCAD's =vle-*= family and its other extensions
-belong to BricsCAD, and =acad_strlsort= and the Express Tools functions
+belong to BricsCAD, and AutoCAD-only Express Tools functions
 belong to AutoCAD; the specification's Availability sections decide which.
+The shared =acad_strlsort= function runs without a vendor warning. Its
+input length is independent of =MAXSORT=, which limits named-object lists
+in the CAD interface. Initial MAXSORT values are 1000 for AutoCAD,
+clautolisp and lax, and 200 for BricsCAD. Set it to match the size of GUI
+listings when needed; an explicit user value survives dialect switches.
+
 The first call of such an operator prints one notice for the session,
 interpreted or compiled:
 
@@ -896,6 +926,13 @@ interpreted or compiled:
 - =(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)= silences it. Any other value,
   or leaving the variable unset, keeps it on.
 - A dialect whose portability-warning mode is =error= makes it an error.
+
+=error= is a BricsCAD operator (undocumented, present in V26) that
+clautolisp provides as its own too, and AutoCAD has none. It reads
+=ERROR is a BricsCAD-only operator=, warns under =strict= and the AutoCAD
+dialects, and is silent under =bricscad=, =clautolisp= and =lax=. Code
+that must also run on AutoCAD raises an error with an operation that
+fails on every host instead.
 
 Unknown dialect names produce a diagnostic on standard error and exit
 code 1.
@@ -1196,6 +1233,28 @@ a per-session log; ~command~ returns ~nil~. Read the log back with
 ~--host nihil~ every ~command~ call
 signals ~:host-not-supported~ (~vl-cmdf~ instead returns ~nil~, per
 its T / nil success contract).
+
+*** Angles in DXF files
+
+A DXF file stores entity angles in *degrees*; ~entget~ reports them in
+*radians*, as on AutoCAD and BricsCAD. cador converts when it loads a
+DXF (or a DWG, which goes through DXF) and when it saves one, for: ARC
+50/51; TEXT, ATTRIB, ATTDEF and SHAPE 50/51 (rotation, oblique angle);
+MTEXT 50 and INSERT 50 (rotation); DIMENSION 50-53; VERTEX 50 (curve-fit
+tangent); VIEWPORT 50/51 (snap angle, view twist); HATCH 52 (pattern
+angle), every 53 (one per pattern line) and the 50/51 start / end angles
+of every circular-arc and elliptic-arc boundary edge. The symbol-table
+records ~tblsearch~ and ~tblnext~ return are converted too: VPORT 50/51
+(snap rotation, view twist), VIEW 50 (twist) and STYLE 50 (oblique
+angle). ELLIPSE 41/42 (parameters), a polyline 42 (bulge) and the HATCH
+gradient angle 460 (radians in the file) are not degree angles and are
+copied as they are. The header variables (~$ANGBASE~, ~$SNAPANG~, ...)
+are not converted: cador's ~getvar~ does not read them from the file.
+Up to 2.3.30 the entity angles, and up to 2.3.32 the HATCH,
+VIEWPORT and table-record ones, the
+file values were copied unconverted, so an ARC of 0..90 degrees from a
+vendor DXF read as ~(51 . 90.0)~ (90 radians), and a saved ARC of
+0..pi/2 opened elsewhere as 0..1.57 degrees.
 
 *** DXF pointer group codes under cador
 
@@ -2103,6 +2162,79 @@ with =Undefined external-format: :MACROMAN= — on an SBCL build only.
                             one backend and not another. See
                             /Source-file and terminal encoding/ above.
 
+* Init files
+
+At startup, before the first ~-l~ / ~-x~ / positional file, and before
+the REPL, clautolisp loads your /init files/: AutoLISP files where you
+put the definitions, variables and settings you want in every session.
+It looks for four of them, in this order, and loads *every one that
+exists* (not only the first found), so a later file can redefine what
+an earlier one defined:
+
+| order | file                                    | shared with alfe |
+|-------+-----------------------------------------+------------------|
+|     1 | =~/.autolisp=                           | yes              |
+|     2 | =~/.config/autolisp/init.lsp=           | yes              |
+|     3 | =~/.clautolisp=                         | no               |
+|     4 | =~/.config/clautolisp/init.lsp=         | no               |
+
+The first two are shared with alfe, which loads them too (alfe's own
+pair is =~/.alfe= and =~/.config/alfe/init.lsp=); put there what both
+programs should see, and in the =clautolisp= pair what only clautolisp
+should see. The =~/.config/= paths are fixed: they do not follow
+=$XDG_CONFIG_HOME=.
+
+*Which file is loaded for each entry.* Each line of the table is a
+/stem/, completed as follows:
+
+- =~/.autolisp= and =~/.clautolisp= may be used as they are, without an
+  extension; when such a file exists, it is the one loaded;
+- otherwise the stem with the extension =.lsp= (=~/.autolisp.lsp=,
+  =~/.clautolisp.lsp=), or a compiled form of it with the extension
+  =.fas=, =.des= or =.vlx= -- the compiled form is chosen only when it is
+  more recent than the =.lsp=, so editing the source makes clautolisp
+  use it again until you recompile;
+- in =~/.config/autolisp/= and =~/.config/clautolisp/=, the file must
+  have an extension: =init.lsp= (or =init.fas=, =init.des=,
+  =init.vlx=); a file named just =init= is ignored.
+
+There are no =rc= variants: =~/.clautolisprc= and =~/.autolisprc= are
+not read. (The =--help= text of clautolisp up to 2.3.25 said otherwise.)
+
+*Skipping them.* ~-norc~ / ~--no-init~ skips all four, as does setting
+=$AUTOLISP_NO_INIT= or =$CLAUTOLISP_NO_INIT= to =1= (or =yes=, =true=,
+=on=). Scripts, Makefiles and tests should always pass ~--no-init~, so
+that a personal init file cannot change their results. The variable
+~*AUTOLISP-NO-INIT*~ tells AutoLISP code whether the init files were
+skipped (see /Image-introspection variables/). When alfe drives
+clautolisp, it passes ~--no-init~ to it: in an alfe session, only
+alfe's init files run.
+
+*Errors.* An init file is loaded like any other file, under the
+selected dialect and source encoding, with ~*AUTOLISP-LOAD-PATHNAME*~
+naming it while it loads. An error in one -- a missing
+parenthesis, a failing call -- stops clautolisp before it runs your
+actions or opens the REPL, with the error message naming the file and
+the line (exit status 65 for a read error). Start with ~--no-init~ to
+get a REPL anyway and fix the file.
+
+*Other startup files.* After the init files, clautolisp runs the CAD
+products' own startup files found on the support path (~acad.lsp~,
+~acaddoc.lsp~, ~on_start.lsp~, ~on_doc_load.lsp~…, depending on the
+dialect; see /Host backend/), then ~S::STARTUP~ when it is defined;
+~--no-init~ skips them too. The REPL and debugger /settings/ are not
+kept in init files but in =lisp.conf= and =aldo.conf= (see
+/Settings and configuration/).
+
+A small init file, for example:
+
+#+begin_src autolisp
+;;; ~/.clautolisp -- loaded by every clautolisp session
+(setq *AUTOLISP-DIALECT* 'clautolisp)   ; clautolisp extensions, no warnings
+(defun c:hello () (princ "Hello!") (princ))
+(princ)
+#+end_src
+
 * Environment variables
 Two kinds live here, and the difference matters: *knobs* you set to
 change what clautolisp does, and *probes* clautolisp reads to find out
@@ -2314,20 +2446,36 @@ to subsequent ~boundp~/value lookups.
 
 ** Dynamic — bound only while the matching action runs
 - ~*AUTOLISP-LOAD-PATHNAME*~    :: The pathname of the file being
-                                   loaded by a ~-l~ action. Bound to
-                                   the path string for the duration
-                                   of the ~load~ call; reset to nil
-                                   on return (success or signal).
+                                   loaded, as a string, bound for the
+                                   duration of the load of /any/ file:
+                                   an init file, a ~-l~ or positional
+                                   file, or a file read by ~(load …)~.
+                                   It is always the absolute path,
+                                   even for a ~-l~ or positional file
+                                   named relatively (since 2.3.27).
+                                   nil outside any load.
 - ~*AUTOLISP-EXPRESSION*~       :: The source text of a ~-x~ action,
                                    bound while the expression is
                                    evaluated. Cleared on return.
 - ~*AUTOLISP-INTERACTIVE*~      :: T while the REPL is active.
                                    Cleared on REPL exit.
 
-Code running inside an init file can therefore distinguish "loaded
-because of ~-l init.lsp~" (~*AUTOLISP-LOAD-PATHNAME*~ points at
-~init.lsp~) from "loaded as an init file from the standard search
-path" (~*AUTOLISP-LOAD-PATHNAME*~ is nil).
+The binding of ~*AUTOLISP-LOAD-PATHNAME*~ is dynamic: when a file
+being loaded loads another one, the variable names the inner file while
+it loads, then names the outer file again, and goes back to nil once the
+outermost load returns, whether it ends normally or with an error. A
+file can therefore find the files that sit beside it:
+
+#+begin_src autolisp
+;;; main.lsp -- loads helpers.lsp from its own directory
+(load (strcat (vl-filename-directory *AUTOLISP-LOAD-PATHNAME*)
+              "/helpers.lsp"))
+#+end_src
+
+This works however the outermost file was named: ~-l main.lsp~ from
+its own directory binds the absolute path too. Only the innermost load
+is visible:
+there is no access yet to the stack of the loads in progress.
 
 * Banner
 In REPL mode (and only in REPL mode) ~clautolisp~ prints a one-line

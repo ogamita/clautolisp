@@ -1,6 +1,6 @@
 # verify-autocad-x-output.ps1 -- does output printed by a function CALLED
 # through -x reach alfe on AutoCAD accoreconsole?
-# (issues/open/autocad-no-rest-output-capture.issue)
+# (issues/closed/autocad-no-rest-output-capture.issue)
 #
 # The ticket's last open half: a function DEFINED by -l and CALLED by -x --
 # the eval-request path, which writes the form to protocol\alfe-eval.lsp and

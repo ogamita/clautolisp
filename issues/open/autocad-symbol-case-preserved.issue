@@ -1,0 +1,26 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: autocad-symbol-case-preserved -- AutoCAD keeps the case its own code interned a symbol with (vlax-vbEmpty, variant, safearray)
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: divergence
+#+DEPENDS: type-symbols-print-lowercase-on-autocad
+#+BRANCH: -
+#+DATE: 2026-10-23
+
+* Symptom
+
+Found reconciling type-symbols-print-lowercase-on-autocad and
+vlax-vb-constants-unbound (AutoCAD 2022 suite run 20261023T074943Z):
+(vl-symbol-name 'vlax-vbempty) is "vlax-vbEmpty" on AutoCAD -- the case
+AutoCAD's own code interned the symbol with, not the upper case the
+reader would give. VARIANT / SAFEARRAY ("variant" / "safearray") are the
+same mechanism; clautolisp 2.3.42 implements only those two (a print-name
+override; identity and reading unchanged). BricsCAD upper-cases all of
+them.
+
+* To do
+
+Probe the print name of every symbol AutoCAD predefines (atoms-family 0
+on a fresh drawing, vl-symbol-name of each) to find which are not upper
+case, then generalise AUTOLISP-SYMBOL-PRINT-NAME to a measured table
+(AutoCAD dialects only), as for VARIANT / SAFEARRAY.

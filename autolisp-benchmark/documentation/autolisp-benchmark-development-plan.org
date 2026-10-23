@@ -67,7 +67,7 @@ on clautolisp's in-memory drawing database and on real CAD drawings.
 =(command …)= is avoided: clautolisp does not implement it, and it
 would drag in an interactive command loop. The entity name is taken
 from =(entlast)= rather than the =(entmakex)= return value to sidestep
-=issues/open/entmakex-returns-list.issue= (clautolisp's =entmakex=
+=issues/closed/entmakex-returns-list.issue= (clautolisp's =entmakex=
 returns the DXF list instead of an ename); =(entlast)= returns an ename
 on every target.
 

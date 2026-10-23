@@ -26,10 +26,37 @@
     ((and (fboundp 'vl-catch-all-error-message)
           (not (vl-catch-all-error-p
                  (setq alfe--msg (vl-catch-all-apply 'vl-catch-all-error-message
-                                               (list alfe--err))))))
+                                               (list alfe--err)))))
+          ;; AutoCAD answers NIL for some caught errors (BricsCAD ""):
+          ;; neither may reach the strcat in autolisp-bootstrap-mark-fatal.
+          (= (type alfe--msg) 'STR)
+          (/= alfe--msg ""))
      alfe--msg)
     (T
      "<bootstrap failure>")))
+
+;; (alfe-catch-all-message E) -- the message of the caught error object E
+;; (a vl-catch-all-apply result that satisfied vl-catch-all-error-p), or
+;; the fixed text "the engine supplied no message" when the host has none.
+;;
+;; AutoCAD 2022 answers NIL from vl-catch-all-error-message for some
+;; caught errors (vl-exit-with-error / vl-exit-with-value outside a VLX,
+;; jobs 17398575920 / 17398575921); BricsCAD answers "". A NIL there made
+;; the request evaluator report a FAILED request as DONE OK, and made
+;; every (strcat "ERROR ..." message) fail inside its own error path.
+;; Every site that needs the message as a string goes through here; the
+;; empty string is mapped to the same text, which is what autolisp-raise
+;; and autolisp-request-failure-text already showed for it, and that text
+;; is one autolisp-vague-error-message-p recognises, so a failed request
+;; still names its form. Defined here, in the first file loaded on the
+;; CAD; run-common.lsp emits the same defun before it loads this file,
+;; for its own bootstrap-load diagnostics. See
+;; issues/open/alfe-cad-nil-catch-all-message.issue.
+(defun alfe-catch-all-message (alfe--e / alfe--m)
+  (setq alfe--m (vl-catch-all-error-message alfe--e))
+  (if (and (= (type alfe--m) 'STR) (/= alfe--m ""))
+    alfe--m
+    "the engine supplied no message"))
 
 (defun autolisp-bootstrap-mark-fatal (alfe--phase alfe--err / alfe--msg)
   (setq alfe--msg (autolisp-bootstrap-render-error alfe--err))
@@ -38,8 +65,17 @@
   (autolisp-bootstrap-write-line *AUTOLISP_STATUSFILE* "1")
   (autolisp-bootstrap-write-line *AUTOLISP_PROTOCOL_STATUSFILE*
                                  (strcat "FAILED " alfe--phase))
+  ;; Quit WITHOUT SAVING, as autolisp-host-quit does -- written out here
+  ;; because this runs when the bootstrap failed, maybe before that
+  ;; function was even defined. Answering QUIT's "Save changes?" with Y
+  ;; (as this did) saved what the failed run had modified, or opened the
+  ;; Save As dialog on an unattended runner.
   (if *AUTOLISP_QUIT_ON_FINISH*
-    (vl-catch-all-apply 'command (list "_QUIT" "_Y")))
+    (progn
+      (vl-catch-all-apply 'setvar (list "FILEDIA" 0))
+      (if (= 0 (getvar "DBMOD"))
+        (vl-catch-all-apply 'command (list "_.QUIT"))
+        (vl-catch-all-apply 'command (list "_.QUIT" "_N")))))
   1)
 
 (defun autolisp-write-line (alfe--path alfe--text / alfe--f)
@@ -614,13 +650,49 @@
 ;;; so the inner pathname, line, column, form start and nested load stack
 ;;; all survive.
 ;;;
-;;; The three statements make the abort certain even on a host that would
-;;; tolerate a division by zero: the last is an undefined function, which
-;;; no host survives. It is unreachable on every host we know.
-(defun autolisp-force-error ()
+;;; The abort also CARRIES the message, so that a USER handler -- a
+;;; vl-catch-all-apply around alfe-load, a *error* function, the clautolisp
+;;; debugger -- sees what went wrong instead of "divide by zero"
+;;; (alfe-runtime-raise-says-division-by-zero). That is ALFE-ERROR, below.
+
+;;; (alfe-error MSG) -- signal an AutoLISP error whose message is MSG, on
+;;; every host alfe drives. It is what alfe's own CAD-side code raises with,
+;;; and what portable user code can raise with, instead of ERROR:
+;;;
+;;; - ERROR is a BricsCAD operator (undocumented; V26 verified by pjb,
+;;;   2026-10-15) that clautolisp provides too: where (type error) is SUBR,
+;;;   alfe-error calls ERROR on MSG, and every handler gets MSG verbatim. Tested
+;;;   by TYPE, not by atoms-family, so a user's (defun error ...) is never
+;;;   called, and an AutoCAD without ERROR never resolves the symbol as a
+;;;   function (reading an unbound variable is nil, not an error).
+;;; - AutoCAD has no ERROR, and alfe does NOT define one there: other code
+;;;   may test for it, and AutoCAD code must keep seeing AutoCAD. The
+;;;   equivalent there is (itoa MSG), which fails with a trappable
+;;;   bad-argument error whose text quotes MSG -- the nearest AutoCAD has to
+;;;   an error carrying a message of one's choosing.
+;;;   SPEC-UNCERTAIN: that AutoCAD traps (itoa "...") in vl-catch-all-apply
+;;;   and quotes the string in the message is expected, not yet measured on
+;;;   AutoCAD (issues/open/deferred-spec-research.issue, ITOA).
+;;;
+;;; Under --dialect autocad (or strict) a clautolisp engine gives a
+;;; [vendor-operator] notice for ERROR. alfe-error's call is the RUNTIME's
+;;; portable raise, not a use of ERROR by the user, so it must not earn that
+;;; notice: the local *AUTOLISP-WARN-OUT-OF-DIALECT* (nil, dynamically
+;;; bound) silences it for this call only (clautolisp-error-silent-under-autocad).
+;;; Elsewhere it is an ordinary unused local.
+;;;
+;;; The statements after make the abort certain even on a host that would
+;;; tolerate all of the above: the last is an undefined function, which no
+;;; host survives. They are unreachable on every host we know. alfe-error
+;;; never returns.
+(defun alfe-error (alfe--msg / *AUTOLISP-WARN-OUT-OF-DIALECT*)
+  (setq alfe--msg (autolisp-str alfe--msg))
+  (if (= (type error) 'SUBR)
+    (error alfe--msg))
+  (itoa alfe--msg)
   (/ 1 0)
   (car 0)
-  (__autolisp-force-error-no-such-function))
+  (__alfe-error-no-such-function))
 
 (defun autolisp-raise (alfe--msg)
   (if (autolisp-quit-signal-p alfe--msg)
@@ -643,7 +715,13 @@
             (if (or (null alfe--msg) (/= (type alfe--msg) 'STR) (= (autolisp-str alfe--msg) ""))
                 "the engine supplied no message"
                 (autolisp-str alfe--msg)))))
-  (autolisp-force-error))
+  ;; The abort carries the message a handler should show: the quit signal
+  ;; itself for a quit, otherwise the context -- the source loader's
+  ;; full diagnostic when it assembled one, this message when not.
+  (alfe-error
+    (if (autolisp-quit-signal-p alfe--msg)
+      (autolisp-str alfe--msg)
+      *AUTOLISP_LAST_ERROR_CONTEXT*)))
 
 (defun autolisp-effective-error-message (alfe--fallback)
   (if (and (boundp '*AUTOLISP_LAST_ERROR_CONTEXT*)
@@ -743,7 +821,7 @@
       (setq *AUTOLISP-LOAD-PATHNAME* alfe--prev-load-pathname)
       (setq *AUTOLISP_LOAD_PATHNAME* alfe--prev-load-pathname)
       (if (vl-catch-all-error-p alfe--catch-result)
-        (autolisp-raise (vl-catch-all-error-message alfe--catch-result))
+        (autolisp-raise (alfe-catch-all-message alfe--catch-result))
         alfe--catch-result))))
 
 ;; --- G3: native (load) honours the resolved `source' encoding -------------
@@ -919,7 +997,7 @@
                (close alfe--f)
                (autolisp-source-raise alfe--resolved
                                       (autolisp-effective-error-message
-                                        (vl-catch-all-error-message alfe--form-read))
+                                        (alfe-catch-all-message alfe--form-read))
                                       alfe--line-no
                                       1
                                       alfe--form-start-line
@@ -958,7 +1036,7 @@
                      (close alfe--f)
                      (autolisp-source-raise alfe--resolved
                                             (autolisp-effective-error-message
-                                              (vl-catch-all-error-message alfe--eval-result))
+                                              (alfe-catch-all-message alfe--eval-result))
                                             alfe--form-start-line
                                             1
                                             alfe--form-start-line
@@ -1088,7 +1166,7 @@
   (setq alfe--result (vl-catch-all-apply 'autolisp-source-load (list alfe--path)))
   (setq *alfe-load-rewrite* alfe--prev)
   (if (vl-catch-all-error-p alfe--result)
-    (autolisp-raise (vl-catch-all-error-message alfe--result))
+    (autolisp-raise (alfe-catch-all-message alfe--result))
     alfe--result))
 
 (defun alfe-load-onfailure (alfe--path alfe--onfailure / alfe--prev alfe--result)
@@ -1099,7 +1177,7 @@
                             (list alfe--path alfe--onfailure)))
   (setq *alfe-load-rewrite* alfe--prev)
   (if (vl-catch-all-error-p alfe--result)
-    (autolisp-raise (vl-catch-all-error-message alfe--result))
+    (autolisp-raise (alfe-catch-all-message alfe--result))
     alfe--result))
 
 (defun alfe-load* (alfe--args)
@@ -1346,7 +1424,7 @@
 ;; a list quoted by ' or headed by QUOTE / FUNCTION is left alone, strings and
 ;; comments (; and ;| |;) are skipped. Nothing else of TEXT changes, so a real
 ;; literal keeps every digit it was written with.
-(defun alfe-open-rewrite-text (alfe--text / alfe--idx alfe--len alfe--ch alfe--nx alfe--stack alfe--quoted alfe--pending alfe--in-string alfe--escape alfe--in-comment alfe--in-block alfe--head alfe--s alfe--child-quoted alfe--open-p alfe--edits alfe--out alfe--pos alfe--e)
+(defun alfe-open-rewrite-text (alfe--text / alfe--idx alfe--len alfe--ch alfe--nx alfe--stack alfe--quoted alfe--pending alfe--in-string alfe--escape alfe--in-comment alfe--in-block alfe--head alfe--s alfe--child-quoted alfe--open-p alfe--edits)
   (setq alfe--idx 1)
   (setq alfe--len (strlen alfe--text))
   (setq alfe--stack nil)
@@ -1409,6 +1487,27 @@
       (T (setq alfe--pending nil)))
     (setq alfe--idx (+ alfe--idx 1)))
   ;; The edits were collected left to right; splice them in.
+  (alfe-text-splice-edits alfe--text alfe--edits))
+
+;; --- the princ/load normaliser, applied to the TEXT --------------------
+;;
+;; alfe-normalised-form-reals-autocad. On a host without &rest (AutoCAD),
+;; autolisp-normalize-princ-call pads a 1-argument princ/print/prin1/load
+;; to 2 arguments (and turns an empty (princ) into
+;; (autolisp-princ-newline)). That rebuilt FORM used to be PRINTED back
+;; for the CAD with autolisp-form-source-text, and AutoCAD's rtos cannot
+;; render 17 significant digits nor a 3-digit exponent: pi/2 lost its
+;; last digit. alfe-normalize-princ-text makes the same rewrite IN THE
+;; SOURCE TEXT -- "(princ X)" becomes "(princ X nil)" -- and leaves every
+;; other character as written, real literals included. Its result is used
+;; only when it reads back EQUAL to the normalised form
+;; (alfe-normalized-source-text); otherwise the form is printed as before.
+
+;; Splice EDITS into TEXT. EDITS is a list of (POS LEN NEW), most recent
+;; first, whose positions grow in discovery order: the LEN characters of
+;; TEXT at POS (1-based) are replaced by NEW.
+(defun alfe-text-splice-edits (alfe--text alfe--edits / alfe--out alfe--pos alfe--len alfe--e)
+  (setq alfe--len (strlen alfe--text))
   (setq alfe--out "")
   (setq alfe--pos 1)
   (foreach alfe--e (reverse alfe--edits)
@@ -1420,19 +1519,170 @@
     (strcat alfe--out (substr alfe--text alfe--pos))
     alfe--out))
 
+;; STACK with the element count of its top frame incremented. A frame is
+;; (QUOTED KIND COUNT HEAD-POS HEAD-LEN); see alfe-normalize-princ-text.
+(defun alfe-normalize-text-count (alfe--stack / alfe--f)
+  (if alfe--stack
+    (progn
+      (setq alfe--f (car alfe--stack))
+      (cons (list (nth 0 alfe--f) (nth 1 alfe--f) (+ 1 (nth 2 alfe--f))
+                  (nth 3 alfe--f) (nth 4 alfe--f))
+            (cdr alfe--stack)))
+    alfe--stack))
+
+;; TEXT, the source of one form, with the rewrite of
+;; autolisp-normalize-princ-call-impl made textually:
+;;   (princ)            -> (autolisp-princ-newline)
+;;   (print) / (prin1)  -> (print "" nil) / (prin1 "" nil)
+;;   (princ X) / (print X) / (prin1 X) / (load X)  -> (... X nil)
+;; Like the form walker, it leaves alone a list quoted by ' or headed by
+;; QUOTE / FUNCTION, and a list in the HEAD position of another list (the
+;; walker never descends into a head). Strings and comments (; and ;| |;)
+;; are skipped. The elements of each list are counted as the reader would
+;; see them ('X is one element). Anything this scan gets wrong (a dotted
+;; list, a reader syntax it does not know) is caught by the read-back check
+;; of alfe-normalized-source-text.
+(defun alfe-normalize-princ-text (alfe--text / alfe--idx alfe--len alfe--ch alfe--nx alfe--stack alfe--pending alfe--in-string alfe--escape alfe--in-comment alfe--in-block alfe--in-atom alfe--quoted alfe--child-quoted alfe--is-head alfe--kind alfe--head alfe--s alfe--f alfe--edits)
+  (setq alfe--idx 1)
+  (setq alfe--len (strlen alfe--text))
+  (setq alfe--stack nil)
+  (setq alfe--pending nil)
+  (setq alfe--in-string nil)
+  (setq alfe--escape nil)
+  (setq alfe--in-comment nil)
+  (setq alfe--in-block nil)
+  (setq alfe--in-atom nil)
+  (setq alfe--edits nil)
+  (while (<= alfe--idx alfe--len)
+    (setq alfe--ch (substr alfe--text alfe--idx 1))
+    (setq alfe--nx (if (< alfe--idx alfe--len) (substr alfe--text (+ alfe--idx 1) 1) ""))
+    (cond
+      (alfe--in-block
+       (if (and (= alfe--ch "|") (= alfe--nx ";"))
+         (progn (setq alfe--in-block nil) (setq alfe--idx (+ alfe--idx 1)))))
+      (alfe--in-comment
+       (if (= alfe--ch "\n") (setq alfe--in-comment nil)))
+      (alfe--in-string
+       (cond
+         (alfe--escape (setq alfe--escape nil))
+         ((= alfe--ch "\\") (setq alfe--escape T))
+         ((= alfe--ch "\"") (setq alfe--in-string nil))))
+      ((= alfe--ch ";")
+       (setq alfe--in-atom nil)
+       (if (= alfe--nx "|")
+         (progn (setq alfe--in-block T) (setq alfe--idx (+ alfe--idx 1)))
+         (setq alfe--in-comment T)))
+      ((= alfe--ch "\"")
+       (setq alfe--in-atom nil)
+       (if (not alfe--pending) (setq alfe--stack (alfe-normalize-text-count alfe--stack)))
+       (setq alfe--pending nil)
+       (setq alfe--in-string T))
+      ((= alfe--ch "'")
+       (setq alfe--in-atom nil)
+       (if (not alfe--pending) (setq alfe--stack (alfe-normalize-text-count alfe--stack)))
+       (setq alfe--pending T))
+      ((= alfe--ch "(")
+       (setq alfe--in-atom nil)
+       (setq alfe--is-head nil)
+       (if (not alfe--pending)
+         (progn
+           (setq alfe--stack (alfe-normalize-text-count alfe--stack))
+           (if (and alfe--stack (= (nth 2 (car alfe--stack)) 1))
+             (setq alfe--is-head T))))
+       (setq alfe--quoted (or alfe--pending alfe--is-head
+                              (and alfe--stack (car (car alfe--stack)))))
+       (setq alfe--pending nil)
+       (setq alfe--child-quoted alfe--quoted)
+       (setq alfe--kind nil)
+       (setq alfe--head nil)
+       (if (not alfe--quoted)
+         (progn
+           (setq alfe--head (alfe-open-text-head alfe--text alfe--idx alfe--len))
+           (if alfe--head
+             (progn
+               (setq alfe--s (strcase (cdr alfe--head)))
+               (cond
+                 ((member alfe--s '("PRINC" "PRINT" "PRIN1" "LOAD"))
+                  (setq alfe--kind alfe--s))
+                 ((or (= alfe--s "QUOTE") (= alfe--s "FUNCTION"))
+                  (setq alfe--child-quoted T)))))))
+       (setq alfe--stack
+             (cons (list alfe--child-quoted alfe--kind 0
+                         (if alfe--head (car alfe--head) 0)
+                         (if alfe--head (strlen (cdr alfe--head)) 0))
+                   alfe--stack)))
+      ((= alfe--ch ")")
+       (setq alfe--in-atom nil)
+       (setq alfe--pending nil)
+       (if alfe--stack
+         (progn
+           (setq alfe--f (car alfe--stack))
+           (setq alfe--kind (nth 1 alfe--f))
+           (cond
+             ((null alfe--kind) nil)
+             ((and (= alfe--kind "PRINC") (= (nth 2 alfe--f) 1))
+              (setq alfe--edits (cons (list (nth 3 alfe--f) (nth 4 alfe--f) "autolisp-princ-newline")
+                                      alfe--edits)))
+             ((and (= alfe--kind "LOAD") (= (nth 2 alfe--f) 2))
+              (setq alfe--edits (cons (list alfe--idx 0 " nil") alfe--edits)))
+             ((= alfe--kind "LOAD") nil)
+             ((= (nth 2 alfe--f) 1)
+              (setq alfe--edits (cons (list alfe--idx 0 " \"\" nil") alfe--edits)))
+             ((= (nth 2 alfe--f) 2)
+              (setq alfe--edits (cons (list alfe--idx 0 " nil") alfe--edits))))
+           (setq alfe--stack (cdr alfe--stack)))))
+      ((member alfe--ch '(" " "\t" "\r" "\n"))
+       (setq alfe--in-atom nil))
+      (T
+       (if (not alfe--in-atom)
+         (progn
+           (if (not alfe--pending) (setq alfe--stack (alfe-normalize-text-count alfe--stack)))
+           (setq alfe--pending nil)
+           (setq alfe--in-atom T)))))
+    (setq alfe--idx (+ alfe--idx 1)))
+  (alfe-text-splice-edits alfe--text alfe--edits))
+
+;; Source text for NORMALIZED -- FORM after autolisp-normalize-princ-call --
+;; made from SOURCE, the text FORM was read from, or NIL when there is none
+;; that can be trusted. When the normaliser left FORM alone (EQ), SOURCE
+;; itself, provided it reads back EQUAL to FORM. When it rebuilt FORM,
+;; SOURCE rewritten by alfe-normalize-princ-text, provided THAT reads back
+;; EQUAL to NORMALIZED: the CAD then evaluates exactly the normalised form,
+;; with every real literal as the user wrote it. NIL sends the caller to
+;; the printer (autolisp-form-source-text).
+(defun alfe-normalized-source-text (alfe--form alfe--normalized alfe--source / alfe--text alfe--back)
+  (cond
+    ((/= (type alfe--source) 'STR) nil)
+    ((eq alfe--normalized alfe--form)
+     (setq alfe--back (vl-catch-all-apply 'read (list alfe--source)))
+     (if (and (not (vl-catch-all-error-p alfe--back)) (equal alfe--back alfe--form))
+       alfe--source
+       nil))
+    (T
+     (setq alfe--text (vl-catch-all-apply 'alfe-normalize-princ-text (list alfe--source)))
+     (if (vl-catch-all-error-p alfe--text)
+       (setq alfe--text nil))
+     (if alfe--text
+       (setq alfe--back (vl-catch-all-apply 'read (list alfe--text))))
+     (if (and alfe--text (not (vl-catch-all-error-p alfe--back)) (equal alfe--back alfe--normalized))
+       alfe--text
+       nil))))
+
 ;; The text the CAD is given for a request FORM that calls OPEN while
 ;; -Efile-write is forwarded. NORMALIZED is FORM after the princ normaliser,
-;; SOURCE the text FORM was read from (or NIL). When FORM was not rebuilt and
-;; its SOURCE is at hand, that source is rewritten textually -- and used only
-;; if it reads back EQUAL to the form-walk rewrite, so the CAD evaluates
-;; exactly what alfe-load would have. Otherwise (no text, or the normaliser
-;; rebuilt the form, which is then printed anyway) the rewritten form is
-;; printed with autolisp-form-source-text, reals at full precision.
-(defun alfe-open-request-text (alfe--form alfe--normalized alfe--source / alfe--rewritten alfe--text alfe--back)
+;; SOURCE the text FORM was read from (or NIL). When a text for NORMALIZED
+;; can be made from SOURCE (alfe-normalized-source-text: SOURCE itself, or
+;; SOURCE with its princ calls padded), its OPEN calls are rewritten
+;; textually -- and the result used only if it reads back EQUAL to the
+;; form-walk rewrite, so the CAD evaluates exactly what alfe-load would have.
+;; Otherwise the rewritten form is printed with autolisp-form-source-text,
+;; reals at full precision.
+(defun alfe-open-request-text (alfe--form alfe--normalized alfe--source / alfe--rewritten alfe--base alfe--text alfe--back)
   (setq alfe--rewritten (alfe-rewrite-open-calls alfe--normalized))
-  (if (and alfe--source (eq alfe--normalized alfe--form))
+  (setq alfe--base (alfe-normalized-source-text alfe--form alfe--normalized alfe--source))
+  (if alfe--base
     (progn
-      (setq alfe--text (vl-catch-all-apply 'alfe-open-rewrite-text (list alfe--source)))
+      (setq alfe--text (vl-catch-all-apply 'alfe-open-rewrite-text (list alfe--base)))
       (if (vl-catch-all-error-p alfe--text)
         (setq alfe--text nil))
       (if alfe--text
@@ -1735,8 +1985,20 @@
               (autolisp-mark-end "MAIN" alfe--idx 0)
               T)))))))))
 
+;; Quit the CAD WITHOUT SAVING, and without a prompt left unanswered. This
+;; is alfe ending an unattended session (*AUTOLISP_QUIT_ON_FINISH*): it used
+;; to answer QUIT's "Save changes?" with Y, and a drawing the run had
+;; modified was then SAVED -- under the name of whatever the run last saved
+;; it as, or through the Save As dialog for an unnamed drawing (FILEDIA 1):
+;; a modal dialog nobody answers. The dxf-angles probe left AutoCAD stuck
+;; exactly so, on its renamed dxf-angles-probe.dxf (2026-10-23). QUIT asks
+;; only when there is something to save (DBMOD non-zero), so the answer is
+;; given only then: No -- discard.
 (defun autolisp-host-quit ()
-  (command "_QUIT" "_Y"))
+  (if (getvar "FILEDIA") (setvar "FILEDIA" 0))
+  (if (= 0 (getvar "DBMOD"))
+    (command "_.QUIT")
+    (command "_.QUIT" "_N")))
 
 (setq *AUTOLISP_QUIT_SIGNAL* "__AUTOLISP_QUIT_SIGNAL__")
 (setq *AUTOLISP_QUIT_REQUESTED* nil)
@@ -1821,7 +2083,7 @@
     (setq *AUTOLISP_LOG_STATE* nil)
     (autolisp-log-err
       (strcat "WARN log-setup: "
-              (vl-catch-all-error-message _autolisp_log_setup_result))))
+              (alfe-catch-all-message _autolisp_log_setup_result))))
   (setq *AUTOLISP_LOG_STATE* _autolisp_log_setup_result))
 ;; Write TEXT verbatim to an already-open file descriptor FILE, one
 ;; character at a time. write-char is NOT shadowed by the bootstrap, so
@@ -1997,7 +2259,7 @@
           (vl-file-delete *AUTOLISP_INPFILE*)
           (if (vl-catch-all-error-p alfe--form-read)
             (progn
-              (autolisp-log-err (strcat "ERROR read repl request: " (vl-catch-all-error-message alfe--form-read)))
+              (autolisp-log-err (strcat "ERROR read repl request: " (alfe-catch-all-message alfe--form-read)))
               (autolisp-note-fail)
               (autolisp-log-out (autolisp-summary-line))
               (autolisp-set-status-text (strcat "READY " alfe--req-id))
@@ -2015,7 +2277,7 @@
                 (setq *AUTOLISP_CAPTURE_STDOUT* nil)
                 (if (vl-catch-all-error-p alfe--r)
                   (progn
-                    (autolisp-log-err (strcat "ERROR eval " alfe--form-text ": " (vl-catch-all-error-message alfe--r)))
+                    (autolisp-log-err (strcat "ERROR eval " alfe--form-text ": " (alfe-catch-all-message alfe--r)))
                     (autolisp-note-fail))
                   (progn
                     (autolisp-log-out (strcat "RESULT " (autolisp-stdout-text alfe--r)))
@@ -2035,5 +2297,5 @@
   ;; BricsCAD macOS batch quit can crash inside its own _QUIT handler.
   ;; Let the wrapper stop the launched process instead.
   (if *AUTOLISP_QUIT_ON_FINISH*
-    (command "_QUIT" "_Y")))
+    (autolisp-host-quit)))
 (autolisp-write-runtime-info)

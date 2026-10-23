@@ -148,6 +148,24 @@ available when the system package lags behind upstream.
 
 * Windows / MSYS2
 
+MSYS2 is a build dependency, not a runtime requirement for the Windows
+release. Extract both binaries and libraries ZIPs into the same prefix
+and use the =bin/*.cmd= launchers. Staging recursively inspects PE imports
+with =objdump= (GNU binutils), copies non-system DLLs app-locally, and
+records the owning MSYS2 packages and their licenses. Packaging fails on
+unresolved imports, missing license notices, or MSYS/Cygwin runtime imports.
+The release script tests the extracted ZIPs using native PowerShell with
+=HOME= absent and only Windows directories on =PATH=, including startup
+init loading and a native DWG save.
+
+The packaging tools, in addition to the compiler below, are:
+
+#+begin_src sh
+pacman -S --needed bash zip unzip mingw-w64-x86_64-binutils
+#+end_src
+
+Native Windows PowerShell is used for the release acceptance test.
+
 Building the optional LibreDWG codec requires the native MINGW64 GCC
 package:
 

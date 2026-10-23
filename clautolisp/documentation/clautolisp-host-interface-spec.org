@@ -13,7 +13,7 @@
   :END:
 
 This is deliverable *D1* of the =cador-multidocument-host= epic (see
-=issues/open/cador-multidocument-host.issue=, hereafter "the epic"). It
+=issues/closed/cador-multidocument-host.issue=, hereafter "the epic"). It
 specifies the *Host Abstraction Layer* (HAL): the single interface through
 which clautolisp reaches every CAD and GUI facility. It also carries
 deliverable *D5*, the naming and architecture note (§2), and the *formal
@@ -1083,9 +1083,9 @@ to query* (D2 §I.10, epic §8).
 
 * 17. References
 
-- =issues/open/cador-multidocument-host.issue= — the epic (D1/D2/D5 structure,
+- =issues/closed/cador-multidocument-host.issue= — the epic (D1/D2/D5 structure,
   C1–C8, §9 open questions).
-- =issues/open/cador-3-host-interface-protocol-spec.issue= — this sub-task.
+- =issues/closed/cador-3-host-interface-protocol-spec.issue= — this sub-task.
 - =clautolisp/documentation/clautolisp-multidocument-analysis.org= — R1–R21,
   E1–E10, and all A/B/C/V vendor claims cited above.
 - =clautolisp/documentation/clautolisp-cador-spec.org= — D2, the =cador= host.

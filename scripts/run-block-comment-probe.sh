@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run-block-comment-probe.sh -- VERIFY that alfe's CAD-side loader skips
 # AutoLISP ;| ... |; block comments when it loads a file (-l)
-# (issues/open/alfe-cad-source-loader-evaluates-block-comments.issue). macOS/Linux twin of
+# (issues/closed/alfe-cad-source-loader-evaluates-block-comments.issue). macOS/Linux twin of
 # run-block-comment-probe.ps1.
 #
 #   scripts/run-block-comment-probe.sh --backend {clautolisp|bricscad|autocad|accoreconsole}

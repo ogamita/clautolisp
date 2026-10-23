@@ -2,7 +2,7 @@
   run-block-comment-probe.ps1 -- Windows twin of run-block-comment-probe.sh.
   VERIFIES that alfe's CAD-side loader skips AutoLISP ;| ... |; block
   comments when it loads a file (-l)
-  (issues/open/alfe-cad-source-loader-evaluates-block-comments.issue).
+  (issues/closed/alfe-cad-source-loader-evaluates-block-comments.issue).
 
     scripts/run-block-comment-probe.ps1 -Backend {clautolisp|bricscad|autocad|accoreconsole}
 

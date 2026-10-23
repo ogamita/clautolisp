@@ -22,6 +22,7 @@ RUN apt-get update \
       libc6-dev \
       make \
       m4 \
+      python3-yaml \
       sbcl \
       tar \
       texinfo \

@@ -220,6 +220,8 @@
    #:autolisp-subr-version-gate
    #:version-gated-operator-gates
    #:vendor-only-operator-owner
+   #:clautolisp-adopted-operator-p
+   #:*clautolisp-adopted-operators*
    #:*vendor-only-operators*
    #:emit-vendor-operator-warning
    #:autolisp-runtime-error
@@ -374,6 +376,7 @@
    #:autolisp-type
    #:autolisp-vl-symbolp
    #:autolisp-vl-symbol-name
+   #:autolisp-symbol-print-name
    #:autolisp-vl-symbol-value
    #:autolisp-function-list-definition
    #:set-autolisp-function-list-definition

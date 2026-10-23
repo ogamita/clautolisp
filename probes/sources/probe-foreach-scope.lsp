@@ -17,7 +17,7 @@
 ;;;; binding anywhere in the chain, and only binds afresh otherwise. That
 ;;;; is observable, inconsistent between cases, and unverified against
 ;;;; either vendor -- which is what these probes are for. See
-;;;; issues/open/foreach-binding-vs-assignment.issue.
+;;;; issues/closed/foreach-binding-vs-assignment.issue.
 ;;;;
 ;;;; Each case is written so the ANSWER ITSELF says which semantics the
 ;;;; engine has, without needing to know the engine: case 1 yields BEFORE

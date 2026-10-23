@@ -518,7 +518,7 @@
   ;; navigator and the stop; its `q' above the debugger asks before aborting
   ;; (T4), and `aldo c' from inside resumes — the directive cascades out.
   ;; (the function's last body form is a LIST: a bare-atom tail trips the
-  ;; span bug filed as issues/open/nav-edit-span-atom-tail.issue)
+  ;; span bug filed as issues/closed/nav-edit-span-atom-tail.issue)
   (let* ((context (fresh-context))
          (source (format nil "(defun id (a) a)~%(defun grob (x)~%  (id (id x)))"))
          (metas (load-and-instrument context source "GROB" "ID"))

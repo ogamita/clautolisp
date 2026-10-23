@@ -344,7 +344,7 @@ silently no-ops on hosts (or sysvar subsets) that lack the cell.
 Reached only by the clautolisp engine: alfe's bricscad/autocad
 backends drive a real CAD and never call INSTALL-TRANSMIT-VARIABLES on
 a local context, so this never clobbers a genuine CAD's identity.
-See issues/open/clcador-getvar.issue."
+See issues/closed/clautolisp-mock-host-getvar.issue."
   (when context
     (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
       (when host
@@ -546,7 +546,7 @@ reports BricsCAD's sysvar *set* rather than AutoCAD's. Other dialects are
 left on the AutoCAD-derived catalogue. Reached only by the clautolisp
 engine (alfe's CAD backends never install transmit variables on a local
 context), so this never touches a real CAD's sysvars.
-See issues/open/bricscad-dialect-sysvar-parity.issue."
+See issues/closed/bricscad-dialect-sysvar-parity.issue."
   (when context
     (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
       ;; Any spelling of the product -- bricscad-mac, bricscad-linux,

@@ -48,17 +48,21 @@ $bargs += @("-l", $probe)
 $outDir = Join-Path $root "dist/pgp"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $report = Join-Path $outDir "$Backend-Windows.txt"
+# Every write is Add-Content -Encoding utf8: Tee-Object -Append writes UTF-16
+# under Windows PowerShell 5, which left the 2026-10-08 reports mixed
+# (UTF-8 BOM + UTF-16LE body) and hid the DONE line from Select-String
+# (probe-ps1-done-check-misreads-utf16-report).
 Set-Content -Encoding utf8 $report ""
 
-"########## BACKEND: $Backend on Windows ##########" | Tee-Object -FilePath $report -Append
+"########## BACKEND: $Backend on Windows ##########" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 & $alfe $bargs 2>&1 |
   Select-String -Pattern '^PGP|BOOTSTRAP-FAILED|FAILED' |
   ForEach-Object { $_.Line } |
-  Tee-Object -FilePath $report -Append
+  ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 
 if (-not (Select-String -Path $report -Pattern '^PGP-DONE' -Quiet)) {
   "PGP-INCOMPLETE  the probe did not reach its end" |
-    Tee-Object -FilePath $report -Append
+    ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 }
 
 Write-Host "pgp probe ($Backend) -> $report"

@@ -501,19 +501,21 @@
                                             (if (< left right)
                                                 (intern-autolisp-symbol "T")
                                                 nil))))
+    ;; Each yields its last body value (while-repeat-return-nil; the spec,
+    ;; AutoCAD's reference and BricsCAD V26 measured): the final SETQ's.
     (set-variable count 0)
-    (is (null
-         (autolisp-eval
-          (list while-symbol
-                (list less-symbol count 3)
-                (list setq-symbol count (list plus-symbol count 1))))))
+    (is (eql 3
+             (autolisp-eval
+              (list while-symbol
+                    (list less-symbol count 3)
+                    (list setq-symbol count (list plus-symbol count 1))))))
     (is (= 3 (autolisp-symbol-value count)))
     (set-variable count 0)
-    (is (null
-         (autolisp-eval
-          (list repeat-symbol
-                4
-                (list setq-symbol count (list plus-symbol count 2))))))
+    (is (eql 8
+             (autolisp-eval
+              (list repeat-symbol
+                    4
+                    (list setq-symbol count (list plus-symbol count 2))))))
     (is (= 8 (autolisp-symbol-value count)))))
 
 (test autolisp-eval-lambda
@@ -1256,3 +1258,30 @@ binding must win, and popping must reveal the outer one -- unchanged."
     (is (eql 1 (%frame-binding-count "SHADOWED")))
     (pop-dynamic-frame context)
     (is (zerop (%frame-binding-count "SHADOWED")))))
+
+(test load-file-inherits-session-reader-dialect
+  ;; SCHMS CAD sampling uses 1e-6 in a nested LOAD. Strict tokenization
+  ;; silently turns this literal into an unbound symbol instead of a real.
+  (reset-autolisp-symbol-table)
+  (let ((path (merge-pathnames
+               (format nil "load-dialect-~36R.lsp" (random (expt 36 6)))
+               (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (stream path :direction :output :if-exists :supersede)
+             (write-line "(quote 1e-6)" stream))
+           (dolist (name '(:bricscad-v26 :bricscad-v25))
+             (let* ((session (make-runtime-session
+                              :dialect (clautolisp.autolisp-reader:find-autolisp-dialect name)))
+                    (context (make-evaluation-context :session session))
+                    (value (autolisp-load-file-in-context path context)))
+               (is (numberp value))
+               (when (numberp value) (is (< (abs (- value 1d-6)) 1d-15)))
+               ;; An explicitly requested token mode still takes precedence.
+               (is (typep (autolisp-load-file-in-context path context :token-mode :strict)
+                          'autolisp-symbol))))
+           (let ((context (make-evaluation-context
+                           :session (make-runtime-session
+                                     :dialect (clautolisp.autolisp-reader:autolisp-dialect-strict)))))
+             (is (typep (autolisp-load-file-in-context path context) 'autolisp-symbol))))
+      (when (probe-file path) (delete-file path)))))

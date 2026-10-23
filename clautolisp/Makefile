@@ -159,7 +159,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
         run-file-compat run-file-compat-sbcl run-file-compat-ccl \
         run-file-compat-autocad run-file-compat-bricscad \
         audit-file-compat-autocad audit-file-compat-bricscad \
-        documentation user-manual clean-pdf specifications builtins-coverage \
+        documentation user-manual tutorial clean-pdf specifications builtins-coverage \
         run-file-compat-bricscad-macos run-file-compat-bricscad-windows \
         run-file-compat-autocad-windows
 ifneq ($(HAVE_QT6_GUI),yes)
@@ -406,6 +406,7 @@ documentation: $(PDF_FILES) $(INFO_FILES) $(BUILD_DIR)/documentation/RELEASE_NOT
 
 user-manual: $(BUILD_DIR)/documentation/clautolisp-user-manual.pdf $(BUILD_DIR)/documentation/clautolisp-user-manual.info
 specifications: $(BUILD_DIR)/documentation/clautolisp-specifications.pdf $(BUILD_DIR)/documentation/clautolisp-specifications.info
+tutorial: $(BUILD_DIR)/documentation/tutorial.pdf $(BUILD_DIR)/documentation/tutorial-fr.pdf
 
 # The dialect-warnings annex is GENERATED from the register in
 # autolisp-runtime/source/portability.lisp, so a warning's wording,

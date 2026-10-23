@@ -368,6 +368,15 @@ check-native-pipeline-changes:  ## Fail if a tracked path is classified by neith
 	python3 scripts/check-native-pipeline-changes.py
 	python3 scripts/tests/test-check-native-pipeline-changes.py
 
+# .gitlab/native.yml is the CHILD pipeline: `glab ci lint' never sees it, and
+# when GitLab refuses it the native:pipeline bridge fails with
+# downstream_pipeline_creation_failed -- every macOS/Windows job skipped, the
+# YAML never named. MR !462's  if: '$$MACOS_RUNNER ...'  did exactly that
+# (native-pipeline-yaml-not-linted). Offline; GITLAB_TOKEN adds the ci/lint API.
+check-native-pipeline-yaml:  ## Fail if GitLab would refuse .gitlab/native.yml (rules: if: syntax, extends:, script:, needs:).
+	python3 scripts/check-native-pipeline-yaml.py
+	python3 scripts/tests/test-check-native-pipeline-yaml.py
+
 check-probe-families:  ## Fail if a probe file is in no family, or a family is gated by no probe job (ci-detect-probe-changes.py).
 	python3 scripts/ci-detect-probe-changes.py check
 	python3 scripts/tests/test-ci-detect-probe-changes.py
@@ -384,7 +393,11 @@ check-libredwg-release:  ## Fail if clautolisp/third-party/libredwg.release disa
 check-libredwg-stable-release:  ## Ask GitHub whether LibreDWG has a newer STABLE release than the one we follow (network; manual/periodic).
 	python3 scripts/check-libredwg-stable-release.py
 
-check-release: check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep check-libredwg-release  ## Every release-packaging check.
+.PHONY: check-windows-runtime-dlls
+check-windows-runtime-dlls:  ## Test recursive Windows runtime DLL staging and missing-import failures.
+	bash scripts/tests/test-bundle-windows-dlls.sh
+
+check-release: check-windows-runtime-dlls check-embedded-engine-version check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep check-libredwg-release  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
 # (no PowerShell, pjb 2026-08-16: do not install it). A container gives the
@@ -890,6 +903,7 @@ stage-programs: build-programs  ## Build the programs and stage them (bin/, libe
 	"$(MAKE)" -C autolisp-front-end install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" INSTALL_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
 	"$(MAKE)" -C autolisp-benchmark install-programs PREFIX= DESTDIR="$(STAGE_PROGRAMS)" INSTALL_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
 	@$(call dispatch-layout,$(STAGE_PROGRAMS))
+	@if [ "$(REL_OS)" = windows ]; then bash scripts/bundle-windows-dlls.sh "$(STAGE_PROGRAMS)"; fi
 	@$(call stage-manifest,$(STAGE_PROGRAMS),programs)
 	@echo "staged: $(STAGE_PROGRAMS)"
 
@@ -897,6 +911,7 @@ stage-libraries: build-libraries  ## Build the native libraries and stage them w
 	rm -rf "$(STAGE_LIBRARIES)"
 	install -d "$(STAGE_LIBRARIES)"
 	"$(MAKE)" -C clautolisp         install-libraries PREFIX= DESTDIR="$(STAGE_LIBRARIES)" $(LISP_VARS)
+	@if [ "$(REL_OS)" = windows ]; then bash scripts/bundle-windows-dlls.sh "$(STAGE_LIBRARIES)" "$(STAGE_LIBRARIES)/libexec/clautolisp/binaries/$(REL_OS)/$(REL_ARCH)"; fi
 	@$(call stage-manifest,$(STAGE_LIBRARIES),libraries)
 	@echo "staged: $(STAGE_LIBRARIES)"
 
@@ -1059,3 +1074,9 @@ save-sysvars: ## Dumps the sysvars of various implementations and configuration 
 			-l autolisp-spec/autolisp/dump-sysvars.lsp \
 			-x "(dump-sysvars \"sysvars-clautolisp-$$(uname)-$${dialect}.txt\")"  || true ;\
 	done
+
+.PHONY: check-embedded-engine-version
+check-embedded-engine-version:  ## ALFE embeds the engine: both programs must share a version.
+	@alfe_version=$$(sed -n 's/.*\*version\* *"\([0-9.]*\)".*/\1/p' autolisp-front-end/tools/alfe/source/version.lisp); \
+	 test "$$alfe_version" = "$(VERSION)" || { \
+	   printf 'Version mismatch: clautolisp=%s alfe=%s\n' '$(VERSION)' "$$alfe_version" >&2; exit 1; }

@@ -149,3 +149,7 @@ already-sorted, duplicates, case differences, accented/non-ASCII,
 non-string element, improper list, non-list atom, input-list
 preservation, the VL-SORT comparator reproduction, and MAXSORT
 below/at/above.
+
+Correction 2026-10-16: native AutoCAD 2022 and BricsCAD V25 disprove the
+MAXSORT cap assumed in the original resolution. See
+acad-strlsort-maxsort-truncates-catalogue.issue for the follow-up fix.

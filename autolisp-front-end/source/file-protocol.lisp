@@ -3,7 +3,7 @@
 ;;;; alfe.protocol.file — the file-IPC driver shared by the BricsCAD
 ;;;; and AutoCAD backends. Phase 2 of the alfe rollout.
 ;;;;
-;;;; Specified by ../issues/open/alfe-file-protocol.issue and by
+;;;; Specified by ../issues/closed/alfe-file-protocol.issue and by
 ;;;; documentation/alfe--specifications.org sections "Protocole REPL
 ;;;; distant" and "Contrat AutoLISP côté runtime".
 ;;;;
@@ -1349,6 +1349,17 @@ Returns the path of the emitted file."
         (progn~%~
           (setq alfe--f (open alfe--path \"a\"))~%~
           (if alfe--f (progn (write-line (strcat \"[CAD] \" alfe--msg) alfe--f) (close alfe--f))))))))~%~
+~%~
+;;; --- caught-error message, never NIL (alfe-cad-nil-catch-all-message) ---~%~
+;; AutoCAD answers NIL from vl-catch-all-error-message for some caught~%~
+;; errors (BricsCAD \"\"). The bootstrap defines this same function; it is~%~
+;; emitted here as well because the bootstrap-load diagnostic below runs~%~
+;; before -- or without -- the bootstrap.~%~
+(defun alfe-catch-all-message (alfe--e / alfe--m)~%~
+  (setq alfe--m (vl-catch-all-error-message alfe--e))~%~
+  (if (and (= (type alfe--m) 'STR) (/= alfe--m \"\"))~%~
+    alfe--m~%~
+    \"the engine supplied no message\"))~%~
 (alfe-debug-log \"run-common.lsp evaluated; about to bootstrap runtime\")~%")
             ;; Native callbacks can run after LOAD returns (e.g. AutoCAD MNL).
             ;; Keep protocol printer shadows for the entire loop, then restore
@@ -1376,7 +1387,7 @@ Returns the path of the emitted file."
   (vl-catch-all-apply 'load (list ~S)))~%~
 (if (vl-catch-all-error-p *ALFE-BOOTSTRAP-LOAD-RESULT*)~%  ~
   (alfe-debug-log (strcat \"bootstrap LOAD failed: \"~%    ~
-    (vl-catch-all-error-message *ALFE-BOOTSTRAP-LOAD-RESULT*)))~%  ~
+    (alfe-catch-all-message *ALFE-BOOTSTRAP-LOAD-RESULT*)))~%  ~
   (alfe-debug-log \"bootstrap LOAD succeeded\"))~%"
                         bootstrap-path bootstrap-path)))
             ;; --- Source the CAD-side runtime ---
@@ -1398,7 +1409,7 @@ Returns the path of the emitted file."
   (vl-catch-all-apply 'load (list ~S)))~%~
 (if (vl-catch-all-error-p *ALFE-RUNTIME-LOAD-RESULT*)~%  ~
   (alfe-debug-log (strcat \"runtime LOAD failed: \"~%    ~
-    (vl-catch-all-error-message *ALFE-RUNTIME-LOAD-RESULT*)))~%  ~
+    (alfe-catch-all-message *ALFE-RUNTIME-LOAD-RESULT*)))~%  ~
   (alfe-debug-log \"runtime LOAD succeeded\"))~%"
                          runtime-path runtime-path))
                ;; --- Bridge bootstrap I/O channels onto the file-IPC ---
@@ -1455,23 +1466,25 @@ Returns the path of the emitted file."
       (write-line (strcat \"VERBOSE=\" (if *AUTOLISP-VERBOSE* \"1\" \"0\")) alfe--f)~%~
       (close alfe--f))))~%~
 ;; The text alfe-eval.lsp gets for FORM. SOURCE, the text FORM was read~%~
-;; from, is used only when normalize returned FORM itself (EQ: nothing~%~
-;; was rewritten) and SOURCE reads back EQUAL to FORM -- so the CAD never~%~
-;; evaluates anything but what was read. Otherwise the (normalised) form~%~
-;; is printed with autolisp-form-source-text, reals at full precision.~%~
+;; from, is used whenever a text for the NORMALISED form can be made from~%~
+;; it and verified (alfe-normalized-source-text in the bootstrap): SOURCE~%~
+;; itself when normalize returned FORM (EQ: nothing was rewritten), or~%~
+;; SOURCE with its princ/print/prin1/load calls padded IN THE TEXT when~%~
+;; normalize rebuilt FORM (AutoCAD: (princ X) -> (princ X nil)) -- each~%~
+;; used only if it reads back EQUAL to the normalised form, so the CAD~%~
+;; never evaluates anything but that, and every real literal keeps the~%~
+;; digits it was written with (alfe-normalised-form-reals-autocad).~%~
+;; Otherwise (no text, or the check fails) the normalised form is printed~%~
+;; with autolisp-form-source-text, reals at the CAD's best precision.~%~
 ;; With -Efile-write forwarded, a form that calls OPEN gets its OPEN calls~%~
 ;; rewritten into alfe-open* -- in its TEXT when that text is usable~%~
 ;; (alfe-open-request-text, alfe-efile-write-not-applied-to-l-file).~%~
-(defun alfe-request-source-text (alfe--form alfe--normalized alfe--source / alfe--back)~%~
+(defun alfe-request-source-text (alfe--form alfe--normalized alfe--source / alfe--text)~%~
   (cond~%~
    ((alfe-open-request-p alfe--normalized)~%~
     (alfe-open-request-text alfe--form alfe--normalized alfe--source))~%~
-   ((and alfe--source (eq alfe--normalized alfe--form))~%~
-    (progn~%~
-      (setq alfe--back (vl-catch-all-apply 'read (list alfe--source)))~%~
-      (if (and (not (vl-catch-all-error-p alfe--back)) (equal alfe--back alfe--form))~%~
-        alfe--source~%~
-        (autolisp-form-source-text alfe--normalized))))~%~
+   ((setq alfe--text (alfe-normalized-source-text alfe--form alfe--normalized alfe--source))~%~
+    alfe--text)~%~
    (T (autolisp-form-source-text alfe--normalized))))~%~
 ;; Wrap autolisp-eval-request-form so the publish fires after every~%~
 ;; protocol-driven evaluation. For non-LOAD forms, we no longer call~%~
@@ -1491,14 +1504,16 @@ Returns the path of the emitted file."
 ;; a typed-form REPL turn.~%~
 ;;~%~
 ;; WHAT is written to alfe-eval.lsp: the form's own SOURCE TEXT whenever~%~
-;; the caller has it (the -l read loop, the protocol request, -x) and no~%~
-;; normaliser rewrote the form -- the CAD then reads exactly what the~%~
-;; user wrote. Printing the form back instead rendered every real with~%~
-;; PRINC, which keeps 6 significant digits on AutoCAD and 14 on BricsCAD:~%~
-;; (setq a 1.5707963267948966) reached AutoCAD as (setq a 1.5708). When~%~
-;; the form must be printed (no text, or normalize rebuilt it) it goes~%~
-;; through autolisp-form-source-text, which prints reals losslessly. See~%~
-;; alfe-cad-transport-rounds-reals.~%~
+;; the caller has it (the -l read loop, the protocol request, -x) -- with~%~
+;; the normaliser's padding, if any, applied to that text -- so the CAD~%~
+;; reads the digits the user wrote. Printing the form back instead~%~
+;; rendered every real with PRINC, which keeps 6 significant digits on~%~
+;; AutoCAD and 14 on BricsCAD: (setq a 1.5707963267948966) reached AutoCAD~%~
+;; as (setq a 1.5708). When the form must be printed (no text, or the~%~
+;; padded text does not read back as the normalised form) it goes through~%~
+;; autolisp-form-source-text, which prints reals as precisely as the CAD's~%~
+;; rtos allows. See alfe-cad-transport-rounds-reals and~%~
+;; alfe-normalised-form-reals-autocad.~%~
 (defun autolisp-eval-request-form (alfe--form)~%~
   (autolisp-eval-request-source alfe--form nil))~%~
 (defun autolisp-eval-request-source (alfe--form alfe--source / alfe--r alfe--err alfe--path alfe--text alfe--f alfe--normalized)~%~
@@ -1533,10 +1548,13 @@ Returns the path of the emitted file."
           ;; turn, and the error is re-signalled afterwards.~%~
           ;; Re-signalling by MESSAGE keeps~%~
           ;; the loop's quit test working: it recognises a quit with~%~
-          ;; autolisp-quit-signal-p on the message text.~%~
+          ;; autolisp-quit-signal-p on the message text. The message~%~
+          ;; goes through alfe-catch-all-message: AutoCAD answers NIL~%~
+          ;; for some errors, and a NIL alfe--err reported the failed~%~
+          ;; request as DONE OK (alfe-cad-nil-catch-all-message).~%~
           (setq alfe--err (vl-catch-all-apply 'load (list alfe--path)))~%~
           (if (vl-catch-all-error-p alfe--err)~%~
-            (setq alfe--err (vl-catch-all-error-message alfe--err))~%~
+            (setq alfe--err (alfe-catch-all-message alfe--err))~%~
             (progn~%~
               (setq alfe--err nil)~%~
               (setq alfe--r *AUTOLISP-EVAL-RESULT*))))~%~
@@ -1749,7 +1767,7 @@ Returns the path of the emitted file."
 (if (vl-catch-all-error-p *AUTOLISP-PROTOCOL-LOOP-RESULT*)~%  ~
   (progn~%    ~
     (setq *ALFE-LOOP-ERRMSG*~%      ~
-      (vl-catch-all-error-message *AUTOLISP-PROTOCOL-LOOP-RESULT*))~%    ~
+      (alfe-catch-all-message *AUTOLISP-PROTOCOL-LOOP-RESULT*))~%    ~
     (alfe-debug-log (strcat \"server-loop CAUGHT error: \" *ALFE-LOOP-ERRMSG*))~%    ~
     (vl-catch-all-apply 'autolisp-protocol-write-stderr~%      ~
       (list (strcat \"ERROR server-loop aborted: \" *ALFE-LOOP-ERRMSG*)))~%    ~

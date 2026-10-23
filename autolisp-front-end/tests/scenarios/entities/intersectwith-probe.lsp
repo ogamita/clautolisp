@@ -1,7 +1,7 @@
 ;;;; intersectwith-probe.lsp -- measure the ActiveX entity method
 ;;;; IntersectWith on each target (clautolisp vs BricsCAD vs AutoCAD).
 ;;;;
-;;;; Background: issues/open/cador-intersectwith-missing.issue. The vendor
+;;;; Background: issues/closed/cador-intersectwith-missing.issue. The vendor
 ;;;; reference documents
 ;;;;     RetVal = object.IntersectWith(IntersectObject, ExtendOption)
 ;;;; ExtendOption 0 acExtendNone, 1 acExtendThisEntity, 2 acExtendOtherEntity,

@@ -23,6 +23,10 @@
 ;;;;   * Points. DXF stores a point as separate X/Y/Z group codes
 ;;;;     (10, 20, 30). entget groups them into one pair (10 x y z).
 ;;;;     The reader coalesces; the writer expands.
+;;;;   * Angles. DXF stores entity angles in degrees, entget in radians;
+;;;;     per-type tables (*DXF-DEGREE-GROUPS*, *DXF-REPEATED-DEGREE-GROUPS*)
+;;;;     drive the conversion in the entity and table-record loaders and
+;;;;     writers.
 
 ;;; --- Group-code value typing ------------------------------------
 
@@ -138,6 +142,156 @@ into single entget-style point pairs (10 x y z)."
                   (setf rest (cdr rest))))))
     (nreverse out)))
 
+;;; --- Angle units: degrees in the file, radians in entget ---------
+;;;
+;;; A DXF file stores most entity angles in DEGREES; entget (and so the
+;;; drawing's entity data, which every consumer -- vlax-curve-*, ActiveX,
+;;; the commands -- reads as entget) carries them in RADIANS. Which real
+;;; groups are angles depends on the entity type: ELLIPSE 41/42 are
+;;; parameters already in radians, LWPOLYLINE / VERTEX 42 is a bulge, an
+;;; MTEXT 50 after its column data is a column height. So the conversion
+;;; is driven by a per-type table, applied by the entity / block loaders
+;;; (degrees -> radians) and by the entity writer (radians -> degrees),
+;;; and to the symbol-table records (VPORT, VIEW, STYLE) by the TABLES
+;;; loader and writer, since tblsearch shows them as stored. Block
+;;; headers, OBJECTS and HEADER variables are not converted (cador's
+;;; getvar does not read the DXF header variables).
+;;;
+;;; Only the FIRST occurrence of each listed code is converted, and the
+;;; scan stops at a STOP code (an MTEXT 75/76 column section, a 101
+;;; embedded object, a 1001 XDATA application), so a later group that
+;;; reuses the code for something else is left alone. The DWG codec goes
+;;; through this DXF codec (libredwg's DXF is degree-valued too), so it
+;;; is converted by the same code. HATCH repeats its angle groups
+;;; (boundary edges, pattern lines): every occurrence is converted.
+;;; See issues/open/dxf-file-angle-units.issue and
+;;; issues/open/dxf-angle-units-hatch-viewport-tables.issue.
+
+(defparameter *dxf-degree-groups*
+  '(("ARC"       50 51)          ; start angle, end angle
+    ("TEXT"      50 51)          ; rotation, oblique angle
+    ("ATTRIB"    50 51)          ; rotation, oblique angle
+    ("ATTDEF"    50 51)          ; rotation, oblique angle
+    ("SHAPE"     50 51)          ; rotation, oblique angle
+    ("MTEXT"     50)             ; rotation (when written instead of 11)
+    ("INSERT"    50)             ; rotation
+    ("DIMENSION" 50 51 52 53)    ; rotation, horizontal dir, oblique, text rotation
+    ("VERTEX"    50)             ; curve-fit tangent direction
+    ("VIEWPORT"  50 51)          ; snap angle, view twist angle
+    ;; Symbol-table records (TABLES section), shown as stored by
+    ;; tblsearch / tblnext:
+    ("VPORT"     50 51)          ; snap rotation angle, view twist angle
+    ("VIEW"      50)             ; twist angle
+    ("STYLE"     50))            ; oblique angle
+  "Entity / table-record type -> the real group codes a DXF file stores in
+degrees and entget / tblsearch report in radians (DXF reference: group
+codes 50-58 are angles, \"output in degrees to DXF files and radians
+through AutoLISP and ObjectARX applications\"). Deliberately absent:
+ELLIPSE 41/42 (parameters, radians in the file too) and the 42 bulge of
+LWPOLYLINE / VERTEX. HATCH is in *DXF-REPEATED-DEGREE-GROUPS*.")
+
+(defparameter *dxf-repeated-degree-groups*
+  '(("HATCH" 50 51 52 53))
+  "Types whose degree-valued groups REPEAT, so EVERY occurrence (up to a
+101 embedded object or 1001 XDATA) is converted. HATCH (DXF reference):
+52 pattern angle; 53 pattern line angle, once per pattern line (78
+lines); 50 / 51 start / end angle of each circular-arc (72 = 2) and
+elliptic-arc (72 = 3) boundary edge. No other HATCH group uses these
+codes (the polyline-path 72 / 73 flags, the spline-edge groups, the
+gradient 450-470 groups -- whose 460 angle is radians -- are distinct
+codes), and HATCH's own 75 / 76 come before 52 / 53, so the first
+occurrence / 75-76 stop rule of *DXF-DEGREE-GROUPS* does not fit it.")
+
+(defparameter *dxf-repeated-degree-scan-stop-codes* '(101 1001)
+  "Stop codes for *DXF-REPEATED-DEGREE-GROUPS* types (embedded object,
+XDATA).")
+
+(defparameter *dxf-degree-scan-stop-codes* '(75 76 101 1001)
+  "Group codes after which no angle conversion is done in an entity (MTEXT
+column data, embedded object, XDATA).")
+
+(defun dxf-convert-entity-angles (data function)
+  "DATA (an entity's group-code list, ENTGET shaped) with FUNCTION applied
+to the value of each degree-valued group of its type, first occurrence
+only (every occurrence for a *DXF-REPEATED-DEGREE-GROUPS* type), up to
+the first stop code. DATA is not modified. Also used for symbol-table
+records, whose (0 . TYPE) names the record type."
+  (let* ((type (cdr (assoc 0 data)))
+         (repeated (and (stringp type)
+                        (rest (assoc type *dxf-repeated-degree-groups*
+                                     :test #'string-equal))))
+         (codes (or repeated
+                    (and (stringp type)
+                         (rest (assoc type *dxf-degree-groups* :test #'string-equal)))))
+         ;; 75 / 76 stop the scan only in an MTEXT, where they open its
+         ;; column section (column heights reuse 50). A DIMENSION has a
+         ;; 75 (text-placement flag) BEFORE its 53 and 50 -- measured in
+         ;; AutoCAD's and BricsCAD's DXFOUT (dxf-angles probe, MR !472) --
+         ;; and the general stop left both in degrees on load.
+         (stop-codes (cond (repeated *dxf-repeated-degree-scan-stop-codes*)
+                           ((string-equal type "MTEXT") *dxf-degree-scan-stop-codes*)
+                           (t (remove-if (lambda (c) (member c '(75 76)))
+                                         *dxf-degree-scan-stop-codes*)))))
+    (if (null codes)
+        data
+        (let ((pending (copy-list codes)) (stopped nil))
+          (mapcar (lambda (pair)
+                    (cond
+                      ((or stopped (not (consp pair))) pair)
+                      ((member (car pair) stop-codes)
+                       (setf stopped t)
+                       pair)
+                      ((and (member (car pair) pending) (realp (cdr pair)))
+                       (unless repeated
+                         (setf pending (remove (car pair) pending)))
+                       (cons (car pair) (funcall function (cdr pair))))
+                      (t pair)))
+                  data)))))
+
+(defun dxf-degrees->radians (degrees)
+  (* (coerce degrees 'double-float) (/ pi 180d0)))
+
+(defun dxf-radians->degrees (radians)
+  (* (coerce radians 'double-float) (/ 180d0 pi)))
+
+;;; An MTEXT's rotation travels as its X-axis DIRECTION (11 / 21 / 31) in
+;;; the files AutoCAD 2022 and BricsCAD V25 / V26 write -- they write no 50
+;;; -- while their entget of the same MTEXT reports (50 . angle) in radians
+;;; (dxf-angles probe, MR !472: an MTEXT rotated 60 degrees is 11 = 0.5,
+;;; 21 = 0.866 in the file, (50 . 1.0472) in entget). So the loader derives
+;;; 50 from the direction when the file gives none, and the writer leaves
+;;; 50 out when the direction is there, as the vendors do.
+
+(defun %mtext-p (data)
+  (let ((type (cdr (assoc 0 data))))
+    (and (stringp type) (string-equal type "MTEXT"))))
+
+(defun %mtext-direction-angle (data)
+  "The rotation (radians) of the MTEXT DATA's 11 direction, or NIL."
+  (let ((dir (cdr (assoc 11 data))))
+    (and (consp dir) (realp (first dir)) (realp (second dir))
+         (not (and (zerop (first dir)) (zerop (second dir))))
+         (let ((a (atan (coerce (second dir) 'double-float)
+                        (coerce (first dir) 'double-float))))
+           (if (minusp a) (+ a (* 2 pi)) a)))))
+
+(defun dxf-entity-from-file (data)
+  "Entity DATA as read from a DXF file -> entget units (radians); an MTEXT
+without 50 gets the rotation of its 11 direction."
+  (let ((data (dxf-convert-entity-angles data #'dxf-degrees->radians)))
+    (if (and (%mtext-p data) (not (assoc 50 data)))
+        (let ((angle (%mtext-direction-angle data)))
+          (if angle (append data (list (cons 50 angle))) data))
+        data)))
+
+(defun dxf-entity-for-file (data)
+  "Entity DATA in entget units -> DXF file units (degrees); an MTEXT that
+has an 11 direction is written without its 50."
+  (let ((data (dxf-convert-entity-angles data #'dxf-radians->degrees)))
+    (if (and (%mtext-p data) (assoc 11 data))
+        (remove 50 data :key (lambda (p) (and (consp p) (car p))))
+        data)))
+
 ;;; --- Reader: section splitting ----------------------------------
 
 (defun dxf-split-objects (pairs starter-codes)
@@ -239,14 +393,16 @@ variable's value group(s)."
                (add-table-record
                 drawing
                 (make-symbol-table-record
-                 :kind current-kind :name rname :data group))))))))))
+                 :kind current-kind :name rname
+                 ;; Degrees -> radians (VPORT, VIEW, STYLE angles).
+                 :data (dxf-entity-from-file group)))))))))))
 
 (defun dxf-load-entities (drawing body &optional block)
   "Add the entities in a flat BODY (the ENTITIES section, or the entity
 run inside a block) to DRAWING, owned by BLOCK (NIL = model space)."
   (dolist (entity (dxf-split-objects (dxf-coalesce-points body) '(0)))
     (let ((handle-pair (find 5 entity :key #'car)))
-      (add-entity drawing entity
+      (add-entity drawing (dxf-entity-from-file entity)
                   :handle (and handle-pair (cdr handle-pair))
                   :block block))))
 
@@ -268,7 +424,7 @@ the entities are added with their :block owner set."
            (setf current-block nil))
           (current-block
            (let ((handle-pair (find 5 group :key #'car)))
-             (add-entity drawing group
+             (add-entity drawing (dxf-entity-from-file group)
                          :handle (and handle-pair (cdr handle-pair))
                          :block current-block))))))))
 
@@ -474,7 +630,9 @@ string used as-is (upcased), or the R2013 default (\"AC1027\") otherwise."
         (dxf-emit 70 (hash-table-count table))
         (maphash (lambda (name record)
                    (declare (ignore name))
-                   (dxf-write-object (symbol-table-record-data record)))
+                   ;; Radians -> degrees, on a copy.
+                   (dxf-write-object
+                    (dxf-entity-for-file (symbol-table-record-data record))))
                  table)
         (dxf-emit 0 "ENDTAB"))
       (drawing-tables drawing)))))
@@ -522,7 +680,8 @@ this takes the DRAWING -- the seed lives there."
   "ENTITY's group-code list with (330 . owner-handle) inserted after its
 handle when it carries no owner of its own. The owner is the entity's
 block, or model space for a model-space entity."
-  (let ((data (dxf-ordered-entity-data (entity-handle-data entity))))
+  (let ((data (dxf-entity-for-file
+               (dxf-ordered-entity-data (entity-handle-data entity)))))
     (if (assoc 330 data)
         data
         (let ((handle (dxf-owner-handle

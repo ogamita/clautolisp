@@ -129,8 +129,9 @@
   (format t "  -Eterminal ENC         Declared terminal-IO encoding (*AUTOLISP-TERMINAL-ENCODING*).~%")
   (format t "  -E ENC, --encoding ENC Every situation at once (source, terminal, ...).~%")
   (format t "Init files:~%")
-  (format t "  -norc, --no-init       Skip user init files (~~/.clautolisp{,rc}, ~~/.autolisp{,rc},~%")
-  (format t "                         ~~/.config/clautolisp/init, ~~/.config/autolisp/init).~%")
+  (format t "  -norc, --no-init       Skip the user init files, loaded in this order (all~%")
+  (format t "                         that exist): ~~/.autolisp, ~~/.config/autolisp/init.lsp,~%")
+  (format t "                         ~~/.clautolisp, ~~/.config/clautolisp/init.lsp.~%")
   (format t "                         Honoured equivalently via $AUTOLISP_NO_INIT or $CLAUTOLISP_NO_INIT.~%")
   (format t "Informational:~%")
   (format t "  -V, --version          Print the version string and exit.~%")
@@ -262,8 +263,8 @@ the REPL on the same context once the queue is drained. With no
 actions and no -i, the REPL is the implicit fallback.
 
 NO-INIT-P, when true, suppresses the user-init-file lookup
-(`~/.clautolisp{,rc}{...}`, `~/.config/clautolisp/init{...}`,
-plus the `~/.autolisp` and `~/.config/autolisp/init` siblings).
+(`~/.autolisp`, `~/.config/autolisp/init`, `~/.clautolisp`,
+`~/.config/clautolisp/init`, with their .lsp/.fas/.des/.vlx forms).
 Mirrors the `-norc` / `--no-init` flag of the legacy bash
 autolisp wrapper and matches alfe's flag of the same name.
 
@@ -856,7 +857,7 @@ not supplied)."
 ;;; --- the AUTOLISP interactor: REPL comma-commands -----------------------
 ;;;
 ;;; The Lisp REPL is the bottom interactor (interactors design,
-;;; issues/open/interactor-unification.issue): its reader takes a line
+;;; issues/closed/interactor-unification.issue): its reader takes a line
 ;;; starting with a comma as a command — `,date', `,quit' — and anything
 ;;; else as AutoLISP source. The comma keeps command names out of the
 ;;; expression namespace (at a toplevel read it is unambiguous: no
@@ -1234,9 +1235,16 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
       (:file
        (let ((options (derive-reader-options-for-dialect
                        dialect :source-name (namestring payload))))
+         ;; The ABSOLUTE pathname, as LOAD binds it: a file named
+         ;; relatively on the command line must still be able to find
+         ;; its neighbours through (vl-filename-directory
+         ;; *AUTOLISP-LOAD-PATHNAME*). See
+         ;; issues/closed/load-pathname-relative-under-l.issue.
          (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
           context "*AUTOLISP-LOAD-PATHNAME*"
-          (make-autolisp-string (namestring payload))
+          (make-autolisp-string
+           (namestring (or (ignore-errors (truename payload))
+                           (merge-pathnames payload))))
           (lambda ()
             (autolisp-load-file-in-context payload context :options options)))))
       (:expression
@@ -2302,7 +2310,7 @@ paths against the build directory rather than the directory the user
 launched it from. Re-reading the cwd here — and keeping Common Lisp's
 `*default-pathname-defaults*` in agreement — makes a relative path
 resolve against the live cwd / $PWD, matching POSIX and the CAD hosts.
-See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
+See issues/closed/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
   ;; The cwd sync AND the run-frame classification, from the runtime, so
   ;; that an EMBEDDER gets the same startup as this tool. They were both
   ;; written out here, and alfe copied only the first half — which is how

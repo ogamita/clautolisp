@@ -1,7 +1,7 @@
 ;;;; autolisp-front-end/source/backend-clautolisp.lisp
 ;;;;
 ;;;; The clautolisp backend — Phase 1 of the alfe rollout. Specified
-;;;; by ../issues/open/alfe-backend-clautolisp.issue (section
+;;;; by ../issues/closed/alfe-backend-clautolisp.issue (section
 ;;;; "Backend clautolisp" in the alfe specification).
 ;;;;
 ;;;; clautolisp is itself a Common Lisp process, so alfe can either:
@@ -863,7 +863,7 @@ tools/clautolisp/source/main.lisp EVAL-ACTION-IN-CONTEXT). Without
 this, `alfe --clautolisp -l FILE` left the variable UNBOUND while
 `alfe --bricscad` and bare `clautolisp` bound it, so a loaded file
 could not self-locate under the clautolisp backend. See
-issues/open/autolisp-load-pathname-always-bound.issue."
+issues/closed/autolisp-load-pathname-always-bound.issue."
   (let* ((payload  (action-payload action))
          (path     (getf payload :path))
          (encoding (getf payload :encoding))
@@ -878,7 +878,10 @@ issues/open/autolisp-load-pathname-always-bound.issue."
              (t encoding))))
     (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
      context "*AUTOLISP-LOAD-PATHNAME*"
-     (clautolisp.autolisp-runtime:make-autolisp-string (namestring path))
+     ;; Absolute, as LOAD binds it (load-pathname-relative-under-l).
+     (clautolisp.autolisp-runtime:make-autolisp-string
+      (namestring (or (ignore-errors (truename path))
+                      (merge-pathnames path))))
      (lambda ()
        (if external-format
            (autolisp-load-file-in-context path context

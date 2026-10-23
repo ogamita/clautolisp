@@ -15711,7 +15711,7 @@
   :vendor :both
   :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1000, BricsCAD 200"
   :summary "Sets the maximum number of items such as file names, layer names, and block names that are sorted alphabetically in dialog boxes, drop-down lists, and palettes."
-  :coupled ("acad_strlsort")
+  :coupled NIL
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7AD30968-4982-4E1C-9847-69A5EAEB7C63" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/maxsort-system-variable")
 )
 

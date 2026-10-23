@@ -14,7 +14,7 @@ Source inputs:
 - Sourced AutoCAD / BricsCAD documentation research (see § Sourced
   Behaviour below; every claim has an official URL in the issue
   thread / note).
-- =issues/open/system-variables.issue= (recommended next step 3).
+- =issues/closed/system-variables.issue= (recommended next step 3).
 
 This is the trust-gating coupling tracked in system-variables.issue.
 

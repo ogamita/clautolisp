@@ -208,10 +208,11 @@ IO is line-buffered.
 .SS Init files
 .TP
 .BR \-norc ", " \-\-no-init
-Skip user init files
-.RB ( ~/.clautolisp{,rc} ", " ~/.autolisp{,rc} ", "
-.IR ~/.config/clautolisp/init ", "
-.IR ~/.config/autolisp/init ).
+Skip the user init files
+.RB ( ~/.autolisp ", " ~/.config/autolisp/init.lsp ", "
+.BR ~/.clautolisp ", " ~/.config/clautolisp/init.lsp ;
+see
+.BR FILES ).
 Honoured equivalently via
 .BR $AUTOLISP_NO_INIT " / " $CLAUTOLISP_NO_INIT .
 .SS Informational
@@ -317,12 +318,21 @@ programs spell the same file differently; a no-op elsewhere, where the
 mapping is the identity.
 .SH FILES
 .TP
-.B ~/.clautolisp\fR, \fB~/.clautolisprc\fR, \fB~/.autolisp\fR, \fB~/.autolisprc
-User init files, loaded before any
-.BR \-l " / " \-x .
-.TP
-.B ~/.config/clautolisp/init\fR, \fB~/.config/autolisp/init
-XDG variant of the init files.
+.B ~/.autolisp\fR, \fB~/.config/autolisp/init.lsp\fR, \fB~/.clautolisp\fR, \fB~/.config/clautolisp/init.lsp
+User init files, loaded in this order before any
+.BR \-l " / " \-x
+and the REPL; every one that exists is loaded. The first two are
+shared with
+.BR alfe (1).
+Each may also be spelt with the extension
+.BR .lsp " (" ~/.autolisp.lsp ),
+or be compiled
+.RB ( .fas ", " .des ", " .vlx ),
+a compiled form being used only when it is newer than the
+.BR .lsp .
+In
+.I ~/.config/
+the extension is required.
 .SH "EXIT STATUS"
 Apart from 1 and 130, the codes of
 .BR sysexits.h ,

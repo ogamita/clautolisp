@@ -919,6 +919,13 @@ CONTEXT's session. Returns VALUE."
            (eq code :subr-call-host-error)
            (eq code :builtin-error))
        6)
+      ;; XDSIZE's documented failures (Error Codes Reference 48-50).
+      ((eq code :xdata-unrecognized-type)
+       48)
+      ((eq code :xdata-improper-nesting)
+       49)
+      ((eq code :xdata-improper-appid)
+       50)
       ((or (eq code :wrong-number-of-arguments)
            (eq code :unsupported-special-operator)
            (eq code :invalid-form)
@@ -1853,6 +1860,21 @@ spec) as a case-insensitive table: operator name -> :AUTOCAD / :BRICSCAD.")
 Availability: :AUTOCAD, :BRICSCAD, or NIL for a portable operator (or one
 the spec does not describe)."
   (values (gethash name *vendor-only-operator-table*)))
+
+;;; Vendor-only operators clautolisp ADOPTS as its own extension as well: they
+;;; keep their vendor owner (from the spec, operator-availability.lisp) and
+;;; warn wherever neither that vendor nor clautolisp provides them, but are
+;;; silent under --clautolisp too. ERROR: undocumented by both vendors,
+;;; present in BricsCAD (pjb, V26 macOS, 2026-10-15), absent from AutoCAD
+;;; 2022; clautolisp signals with it and alfe's CAD runtime raises with it
+;;; (issues/closed/clautolisp-error-silent-under-autocad.issue).
+(defparameter *clautolisp-adopted-operators* '("ERROR")
+  "Vendor-only operators that clautolisp also provides as its own extension:
+silent under --clautolisp as well as under the owner's dialects.")
+
+(defun clautolisp-adopted-operator-p (name)
+  "True when NAME is in *CLAUTOLISP-ADOPTED-OPERATORS*."
+  (and (member name *clautolisp-adopted-operators* :test #'string-equal) t))
 
 (defun autolisp-usubr-lexical-body (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-lexical-body object))
@@ -2851,6 +2873,40 @@ so ordinary non-debug runs keep defining plain, allocation-free bodies."
       (autolisp-true-symbol)
       nil))
 
+;;; AutoCAD's lower-case symbol names (type-symbols-print-lowercase-on-
+;;; autocad.issue). Measured 2026-10-23 with probes/sources/probe-type-
+;;; symbols.lsp: on AutoCAD 2022 the symbols VARIANT and SAFEARRAY have the
+;;; NAMES "variant" and "safearray" -- vl-symbol-name, princ and prin1 give
+;;; them in lower case, whether the symbol comes from (type v), from 'VARIANT
+;;; quoted in source or from (read "VARIANT") -- while reading stays case
+;;; insensitive (every spelling is the same symbol, EQ to 'VARIANT). Every
+;;; other TYPE result (VLA-OBJECT, ENAME, PICKSET, FILE, SUBR, USUBR,
+;;; EXRXSUBR, INT, REAL, STR, SYM, LIST) is upper case there, and BricsCAD V25
+;;; / V26 give all of them in upper case. So the symbol stays the same
+;;; (interned under its canonical upper-case name, which every internal name
+;;; comparison keeps using); only the name it SHOWS -- what vl-symbol-name
+;;; returns and the printer writes -- is lower case, under every dialect but
+;;; the BricsCAD ones.
+
+(defparameter *autocad-lower-case-symbol-names*
+  '(("VARIANT" . "variant") ("SAFEARRAY" . "safearray"))
+  "Canonical name -> the name AutoCAD shows for it (measured, see above).")
+
+(defun autolisp-symbol-print-name (symbol)
+  "The name SYMBOL shows to the program -- vl-symbol-name, princ, prin1 --
+under the current dialect: its canonical name, except the few symbols
+AutoCAD names in lower case (*AUTOCAD-LOWER-CASE-SYMBOL-NAMES*) under
+every dialect whose product is not BricsCAD."
+  (let* ((name (autolisp-symbol-name symbol))
+         (lower (cdr (assoc name *autocad-lower-case-symbol-names* :test #'string=))))
+    (if (and lower
+             (not (eq :bricscad
+                      (ignore-errors
+                       (clautolisp.autolisp-reader:autolisp-dialect-product
+                        (current-evaluation-dialect))))))
+        lower
+        name)))
+
 (defun autolisp-vl-symbol-name (object)
   (unless (typep object 'autolisp-symbol)
     (signal-autolisp-runtime-error
@@ -2858,7 +2914,7 @@ so ordinary non-debug runs keep defining plain, allocation-free bodies."
      "Expected an AutoLISP symbol, got ~S."
      object))
   (clautolisp.autolisp-runtime.internal::make-autolisp-string
-   :value (autolisp-symbol-name object)))
+   :value (autolisp-symbol-print-name object)))
 
 (defun autolisp-vl-symbol-value (object)
   (unless (typep object 'autolisp-symbol)
@@ -2935,20 +2991,45 @@ matches on :undefined-function is affected."
             nil
             (error condition))))))
 
+;;; *error* is looked up and called AT SIGNAL TIME, before the stack
+;;; unwinds: the standard idiom (defun c:cmd (/ *error* ...) (defun *error*
+;;; (msg) ...) ...) declares the handler LOCAL to the command, and AutoCAD
+;;; calls the binding current where the error happened, with the command's
+;;; other locals still visible to it. A HANDLER-CASE here unwound first, so
+;;; the local binding was already undone and only the global *error* was
+;;; ever seen (local-error-handler-not-called). With HANDLER-BIND, inner
+;;; handlers (vl-catch-all-apply, the debugger) still run first, an error
+;;; raised by *error* itself still propagates outwards, and with no *error*
+;;; the condition is declined -- the callers above see it as before.
+;;;
+;;; VL-EXIT-WITH-VALUE leaves a separate-namespace VLX with a value.
+;;; clautolisp loads no VLX, so outside VL-CATCH-ALL-APPLY nothing stopped
+;;; the AUTOLISP-NAMESPACE-EXIT it signals and it reached the host Lisp's
+;;; debugger (vl-exit-with-error-leaks-host-condition). Here, the document
+;;; namespace's toplevel, it is the value of the form. (VL-EXIT-WITH-ERROR
+;;; raises its AutoLISP error itself when no boundary takes the exit.)
 (defun call-with-autolisp-error-handler (thunk &optional (context (current-evaluation-context)))
-  (handler-case
+  (block handled
+    (handler-bind
+        ((autolisp-runtime-error
+           (lambda (condition)
+             (set-autolisp-errno (autolisp-runtime-error-errno condition) context)
+             (let ((handler (resolve-autolisp-error-handler context)))
+               (when handler
+                 (return-from handled
+                   (call-autolisp-function-in-context
+                    handler
+                    context
+                    (make-autolisp-string
+                     (autolisp-runtime-error-message condition))))))))
+         (autolisp-namespace-exit
+           (lambda (condition)
+             (when (eq :value (autolisp-namespace-exit-kind condition))
+               (set-autolisp-errno 0 context)
+               (return-from handled (autolisp-namespace-exit-value condition))))))
       (let ((result (funcall thunk)))
         (set-autolisp-errno 0 context)
-        result)
-    (autolisp-runtime-error (condition)
-      (set-autolisp-errno (autolisp-runtime-error-errno condition) context)
-      (let ((handler (resolve-autolisp-error-handler context)))
-        (if handler
-            (call-autolisp-function-in-context
-             handler
-             context
-             (make-autolisp-string (autolisp-runtime-error-message condition)))
-            (error condition))))))
+        result))))
 
 (defun autolisp-slash-symbol-p (symbol)
   (and (typep symbol 'autolisp-symbol)
@@ -2957,7 +3038,7 @@ matches on :undefined-function is affected."
 (defun autolisp-ampersand-symbol-p (symbol)
   "T iff SYMBOL is the AutoLISP rest-parameter separator — either
 the bare `&' (clautolisp's original spelling proposed in
-`issues/open/variadic-functions.issue') or `&REST' (BricsCAD V26's
+`issues/closed/variadic-functions.issue') or `&REST' (BricsCAD V26's
 spelling, confirmed by Bricsys support and observed in the user's
 own `(defun foo (&rest args) …)' transcripts). Match is
 case-insensitive on the symbol name only; we do NOT implement a
@@ -3369,15 +3450,20 @@ cannot be what silences. Re-read at each decision, like
             (ignore-errors (lookup-variable symbol context))
           (or (not boundp) value)))))
 
-(defun %vendor-operator-silent-p (owner dialect)
+(defun %vendor-operator-silent-p (owner dialect &optional name)
   "True when a call to an operator OWNER alone provides is silent under
 DIALECT: under --lax, and under any dialect of the owner's PRODUCT (matched on
-the product, so bricscad-mac and bricscad-v25 are BricsCAD too). Strict and
-clautolisp warn: strict is the portable subset, clautolisp is strict plus
-clautolisp's own extensions, not the vendors' (spec ch.25 case 1)."
+the product, so bricscad-mac and bricscad-v25 are BricsCAD too), and under
+--clautolisp when NAME is an operator clautolisp adopts
+(*CLAUTOLISP-ADOPTED-OPERATORS*). Strict and clautolisp otherwise warn: strict
+is the portable subset, clautolisp is strict plus clautolisp's own extensions,
+not the vendors' (spec ch.25 case 1)."
   (or (null dialect)
       (eq :lax (clautolisp.autolisp-reader:autolisp-dialect-name dialect))
-      (eq owner (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+      (eq owner (clautolisp.autolisp-reader:autolisp-dialect-product dialect))
+      (and name
+           (clautolisp-adopted-operator-p name)
+           (eq :clautolisp (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))))
 
 (defun %vendor-operator-warning-seen-p (name)
   "T when the `vendor-operator' notice already fired for NAME in this
@@ -3405,7 +3491,7 @@ owner's. Once per operator per session on *ERROR-OUTPUT*; the call proceeds.
 Under PORTABILITY-WARNING-MODE :error it signals :non-portable-construct
 instead, at every call. Silenced by *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL."
   (let ((dialect (ignore-errors (current-evaluation-dialect))))
-    (unless (%vendor-operator-silent-p owner dialect)
+    (unless (%vendor-operator-silent-p owner dialect (autolisp-subr-name subr))
       (let ((context (ignore-errors (current-evaluation-context))))
         (when (%warn-out-of-dialect-p context)
           (let* ((name (autolisp-subr-name subr))
@@ -4519,9 +4605,13 @@ COMMAND-S special forms and the VL-CMDF builtin."
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
      "WHILE expects at least one argument."))
-  (loop while (autolisp-true-p (autolisp-eval (first arguments) context))
-        do (autolisp-eval-progn (rest arguments) context))
-  nil)
+  ;; The value of the last body expression of the last iteration, nil when
+  ;; the body never runs (spec, WHILE Return Values; AutoCAD's while page).
+  ;; It used to be nil always (while-repeat-return-nil).
+  (let ((result nil))
+    (loop while (autolisp-true-p (autolisp-eval (first arguments) context))
+          do (setf result (autolisp-eval-progn (rest arguments) context)))
+    result))
 
 ;;; The pieces of REPEAT and FOREACH that DECIDE something, factored out
 ;;; so the compiler can emit the loop without restating any of it.
@@ -4576,7 +4666,7 @@ is popped'. The implementation matched neither.
 The compiler needs no change for this: it open-codes FOREACH by CALLING
 this function rather than restating the rule, so both forks moved
 together the moment this line did. See
-issues/open/foreach-binding-vs-assignment.issue."
+issues/closed/foreach-binding-vs-assignment.issue."
   (bind-dynamic-variable name element context))
 
 ;;; FOREACH with NO BODY: the RETURN VALUE is the one case where the
@@ -4638,9 +4728,12 @@ everywhere else, warning under bricscad and strict."
      :wrong-number-of-arguments
      "REPEAT expects at least one argument."))
   (let ((count (check-repeat-count (autolisp-eval (first arguments) context))))
-    (loop repeat count
-          do (autolisp-eval-progn (rest arguments) context))
-    nil))
+    ;; The final body value, nil when the body never runs (spec, REPEAT
+    ;; Return Values). It used to be nil always (while-repeat-return-nil).
+    (let ((result nil))
+      (loop repeat count
+            do (setf result (autolisp-eval-progn (rest arguments) context)))
+      result)))
 
 (defun eval-foreach-form (arguments context)
   (unless (>= (length arguments) 2)
@@ -4735,7 +4828,7 @@ builtins layer installs (the runtime cannot reach the host COM protocol)."
                ;; spec always described, and two loops differing on
                ;; their binding rule is far likelier to be an oversight
                ;; than a vendor quirk nobody documented. See
-               ;; issues/open/vlax-for-binding-rule-unprobed.issue.
+               ;; issues/closed/vlax-for-binding-rule-unprobed.issue.
                (bind-foreach-variable name element context)
                (setf result (if body (autolisp-eval-progn body context) nil))))
         (pop-dynamic-frame context)))))
@@ -5316,6 +5409,17 @@ UTF-8, :ANSI for windows-1252, NIL (plain decoding) for anything else."
                                 (runtime-session-default-source-encoding
                                  session)))
          (dialect (current-evaluation-dialect context))
+         ;; LOAD must tokenize like the active session, just like the CLI's
+         ;; entry file. Preserve explicit caller options (first keyword wins).
+         ;; Otherwise vendor literals such as 1e-6 become strict-mode symbols.
+         (read-options
+          (append read-options
+                  (list :token-mode
+                        (clautolisp.autolisp-reader:autolisp-dialect-token-mode dialect)
+                        :extended-string-escapes-p
+                        (clautolisp.autolisp-reader:autolisp-dialect-extended-string-escapes-p dialect)
+                        :warn-on-integer-overflow-p
+                        (clautolisp.autolisp-reader:autolisp-dialect-warn-on-integer-overflow-p dialect))))
          (effective-encoding
           (cond
             (options-have-external-format nil) ; caller supplied one

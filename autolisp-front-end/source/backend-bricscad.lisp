@@ -1,7 +1,7 @@
 ;;;; autolisp-front-end/source/backend-bricscad.lisp
 ;;;;
 ;;;; The BricsCAD backend — Phase 3 of the alfe rollout. Specified
-;;;; by ../issues/open/alfe-backend-bricscad.issue and the spec's
+;;;; by ../issues/closed/alfe-backend-bricscad.issue and the spec's
 ;;;; "Backend bricscad" section.
 ;;;;
 ;;;; BricsCAD's AutoLISP REPL lives behind a GUI, so alfe drives it
@@ -271,7 +271,7 @@ Order, and the reason for it:
      and NIL is returned instead (see below for why a caller would ask
      for that).
 
-Step 2 is new (issues/open/empty-ressource.issue, pjb 2026-08-30) and it
+Step 2 is new (issues/closed/empty-ressource.issue, pjb 2026-08-30) and it
 replaces the previous default of pointing every run at ONE shared file.
 Sharing produced MODAL DIALOGS -- \"in use by another instance\", \"open
 read-only?\" -- when a previous CAD still held the lock or had modified
@@ -1231,7 +1231,7 @@ FRACTION of the console window's own height, not a fixed offset from its
 bottom edge, so it cannot land on the macOS Dock when the window happens
 to sit low on screen. Requires an interactive session and Accessibility
 permission for the process running osascript. See
-issues/open/alfe-bricscad-automation-macos-osascript.issue.")
+issues/closed/alfe-bricscad-automation-macos-osascript.issue.")
 
 (defun macos-app-bundle-for (executable-path)
   "The .app bundle enclosing EXECUTABLE-PATH — e.g.
@@ -1388,7 +1388,7 @@ This is OPTION B of alfe-bricscad-automation-macos: the macOS refusal
 in CHOOSE-EFFECTIVE-MODE stays the default, but can be explicitly
 relaxed to debug the osascript/AppleScript path against a real
 BricsCAD, interactively, at the machine. See
-issues/open/alfe-bricscad-automation-macos-osascript.issue."
+issues/closed/alfe-bricscad-automation-macos-osascript.issue."
   (and (macos-p)
        (let ((v (uiop:getenv "ALFE_ENABLE_MACOS_AUTOMATION")))
          (and v (plusp (length v)) (not (string= v "0"))))))

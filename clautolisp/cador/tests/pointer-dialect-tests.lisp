@@ -133,3 +133,24 @@
         (let ((p (cdr (assoc 340 (host-entget mock x)))))
           (is (eq gone p))
           (is (null (host-entget mock p))))))))
+
+;;; --- where the owner 330 stands in the entget header ---------------
+
+(test entget-header-owner-position-follows-the-product
+  "AutoCAD 2022 lists the owner BEFORE the handle (-1 0 330 5 ...), BricsCAD
+after it (-1 0 5 330 ...); a dictionary member is -1 0 5 102 330 102 330 on
+both (entget-pointers section 10: AutoCAD job 17398575906, BricsCAD V26 job
+17397066992; cador-entget-owner-and-header-layout)."
+  (%with-dialect (:autocad)
+    (let* ((mock (make-cador))
+           (line (host-entmakex mock (make-line-data))))
+      (is (equal '(-1 0 330 5) (mapcar #'car (subseq (host-entget mock line) 0 4))))))
+  (%with-dialect (:bricscad-v25)
+    (let* ((mock (make-cador))
+           (line (host-entmakex mock (make-line-data)))
+           (nod (host-namedobjdict mock))
+           (x (make-xrecord-ename mock "z")))
+      (is (equal '(-1 0 5 330) (mapcar #'car (subseq (host-entget mock line) 0 4))))
+      (host-dictadd mock nod (mk-str "HDRB") x)
+      (is (equal '(-1 0 5 102 330 102 330 100)
+                 (mapcar #'car (subseq (host-entget mock x) 0 8)))))))

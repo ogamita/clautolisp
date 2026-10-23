@@ -226,7 +226,7 @@ file system."
 
 (test default-stems-have-four-slots
   "Each default stem list has exactly four entries, matching the
-contract in issues/open/init-files.issue. The XDG slots
+contract in issues/closed/init-files.issue. The XDG slots
 (positions 2 and 4) have REQUIRE-EXTENSION-P set; the HOME slots
 do not."
   (is (= 4 (length *default-clautolisp-stems*)))
