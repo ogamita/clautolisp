@@ -3329,6 +3329,59 @@ come from *ACTIVEX-MEASURED-CONSTANTS*, per product, like the AC ones."
                                            :key #'first :test #'string-equal)))))
                product)))
 
+;;; --- VARIANT / SAFEARRAY lower-case names on AutoCAD -----------------------
+;;; (type-symbols-print-lowercase-on-autocad.issue, probe type-symbols
+;;; measured 2026-10-23 on AutoCAD 2022, BricsCAD V25 and V26.)
+
+(defun %type-symbol-names (dialect)
+  (autolisp-string-value
+   (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com)
+          (setq v (vlax-make-variant 1) sa (vlax-make-safearray 5 '(0 . 1)))
+          (strcat (vl-symbol-name (type v)) \" \"
+                  (vl-princ-to-string (type sa)) \" \"
+                  (vl-prin1-to-string 'VARIANT) \" \"
+                  (vl-symbol-name (read \"SAFEARRAY\")) \" \"
+                  (vl-princ-to-string 'safearray) \" \"
+                  (vl-prin1-to-string (list (type v) (type 1) (type \"s\") 'foo)) \" \"
+                  (vl-symbol-name (type (vlax-get-acad-object))) \" \"
+                  (vl-symbol-name (type (ssadd))))" dialect))))
+
+(test type-symbols-variant-safearray-names-lower-case-except-bricscad
+  "Measured: AutoCAD names the symbols VARIANT and SAFEARRAY \"variant\" and
+\"safearray\" (vl-symbol-name, princ, prin1; from TYPE, from a quoted
+literal, from READ); every other TYPE result is upper case; BricsCAD has
+them all upper case. Every dialect but the BricsCAD ones follows AutoCAD."
+  (dolist (dialect '("autocad-2022" "autocad-2026" "clautolisp" "strict" "lax"))
+    (is (equal "variant safearray variant safearray safearray (variant INT STR FOO) VLA-OBJECT PICKSET"
+               (%type-symbol-names dialect))
+        dialect))
+  (dolist (dialect '("bricscad-v25" "bricscad-v26"))
+    (is (equal "VARIANT SAFEARRAY VARIANT SAFEARRAY SAFEARRAY (VARIANT INT STR FOO) VLA-OBJECT PICKSET"
+               (%type-symbol-names dialect))
+        dialect)))
+
+(test type-symbols-lower-case-name-is-still-the-same-symbol
+  "Only the name the symbol SHOWS changes: reading stays case-insensitive,
+(type v) is EQ to 'VARIANT and to (read (strcase (vl-symbol-name (type v)))),
+as measured on AutoCAD (\"eq read upcase\" T for every TYPE result)."
+  (dolist (dialect '("autocad-2022" "bricscad-v26" "strict"))
+    (is (equal '(t t t t t)
+               (mapcar (lambda (x) (and x t))
+                       (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com)
+                          (setq v (vlax-make-variant 1) sa (vlax-make-safearray 5 '(0 . 1)))
+                          (list (eq (type v) 'VARIANT)
+                                (eq (type v) 'variant)
+                                (eq (read \"variant\") 'VARIANT)
+                                (eq (type v) (read (strcase (vl-symbol-name (type v)))))
+                                (eq (type sa) (read (vl-symbol-name (type sa)))))" dialect))))
+        dialect))
+  ;; The canonical (interned) name is unchanged: internal comparisons keep
+  ;; using it.
+  (is (equal "VARIANT"
+             (clautolisp.autolisp-runtime:autolisp-symbol-name
+              (%vla "(setq *AUTOLISP-DIALECT* 'autocad-2022) (vl-load-com)
+                     (type (vlax-make-variant 1))")))))
+
 (test vlax-vb-constants-drive-make-variant-and-safearray
   "The canonical calls with the symbolic type: vlax-make-variant /
 vlax-variant-type, vlax-make-safearray."

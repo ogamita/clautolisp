@@ -3716,7 +3716,9 @@ time it is called."
          (autolisp-string-value object)
          (escape-prin1-string (autolisp-string-value object))))
     ((typep object 'autolisp-symbol)
-     (autolisp-symbol-name object))
+     ;; VARIANT / SAFEARRAY print in lower case except under the BricsCAD
+     ;; dialects (type-symbols-print-lowercase-on-autocad, measured).
+     (clautolisp.autolisp-runtime:autolisp-symbol-print-name object))
     ((typep object 'autolisp-subr)
      (format nil "#<SUBR ~A>" (autolisp-subr-name object)))
     ((typep object 'autolisp-usubr)

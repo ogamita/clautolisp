@@ -2873,6 +2873,40 @@ so ordinary non-debug runs keep defining plain, allocation-free bodies."
       (autolisp-true-symbol)
       nil))
 
+;;; AutoCAD's lower-case symbol names (type-symbols-print-lowercase-on-
+;;; autocad.issue). Measured 2026-10-23 with probes/sources/probe-type-
+;;; symbols.lsp: on AutoCAD 2022 the symbols VARIANT and SAFEARRAY have the
+;;; NAMES "variant" and "safearray" -- vl-symbol-name, princ and prin1 give
+;;; them in lower case, whether the symbol comes from (type v), from 'VARIANT
+;;; quoted in source or from (read "VARIANT") -- while reading stays case
+;;; insensitive (every spelling is the same symbol, EQ to 'VARIANT). Every
+;;; other TYPE result (VLA-OBJECT, ENAME, PICKSET, FILE, SUBR, USUBR,
+;;; EXRXSUBR, INT, REAL, STR, SYM, LIST) is upper case there, and BricsCAD V25
+;;; / V26 give all of them in upper case. So the symbol stays the same
+;;; (interned under its canonical upper-case name, which every internal name
+;;; comparison keeps using); only the name it SHOWS -- what vl-symbol-name
+;;; returns and the printer writes -- is lower case, under every dialect but
+;;; the BricsCAD ones.
+
+(defparameter *autocad-lower-case-symbol-names*
+  '(("VARIANT" . "variant") ("SAFEARRAY" . "safearray"))
+  "Canonical name -> the name AutoCAD shows for it (measured, see above).")
+
+(defun autolisp-symbol-print-name (symbol)
+  "The name SYMBOL shows to the program -- vl-symbol-name, princ, prin1 --
+under the current dialect: its canonical name, except the few symbols
+AutoCAD names in lower case (*AUTOCAD-LOWER-CASE-SYMBOL-NAMES*) under
+every dialect whose product is not BricsCAD."
+  (let* ((name (autolisp-symbol-name symbol))
+         (lower (cdr (assoc name *autocad-lower-case-symbol-names* :test #'string=))))
+    (if (and lower
+             (not (eq :bricscad
+                      (ignore-errors
+                       (clautolisp.autolisp-reader:autolisp-dialect-product
+                        (current-evaluation-dialect))))))
+        lower
+        name)))
+
 (defun autolisp-vl-symbol-name (object)
   (unless (typep object 'autolisp-symbol)
     (signal-autolisp-runtime-error
@@ -2880,7 +2914,7 @@ so ordinary non-debug runs keep defining plain, allocation-free bodies."
      "Expected an AutoLISP symbol, got ~S."
      object))
   (clautolisp.autolisp-runtime.internal::make-autolisp-string
-   :value (autolisp-symbol-name object)))
+   :value (autolisp-symbol-print-name object)))
 
 (defun autolisp-vl-symbol-value (object)
   (unless (typep object 'autolisp-symbol)

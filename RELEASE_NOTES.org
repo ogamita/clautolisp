@@ -1959,6 +1959,13 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *=variant= and =safearray= are lower case, as on AutoCAD* (2.3.42):
+  AutoCAD 2022 names the TYPE symbols VARIANT and SAFEARRAY in lower case
+  -- =vl-symbol-name=, =princ= and =prin1= give "variant" / "safearray",
+  even for a quoted ='VARIANT= -- while reading stays case-insensitive and
+  =(eq (type v) 'VARIANT)= is still T. Measured; clautolisp does the same
+  under every dialect but the BricsCAD ones (BricsCAD is upper case).
+
 - *A failing request is never reported OK on AutoCAD* (2.3.39): AutoCAD
   can catch an error whose message is =nil= (=vl-exit-with-error= outside
   a VLX, measured), and alfe took that =nil= for "no error": the failed

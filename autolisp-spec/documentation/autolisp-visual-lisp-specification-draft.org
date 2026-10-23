@@ -3610,6 +3610,9 @@ This function is one of the strongest direct sources for the practical runtime t
 - [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
 - Status: documented.
 
+*** clautolisp
+clautolisp implementation deviation — not part of the normative specification above. Measured on 2026-10-23 with ~probes/sources/probe-type-symbols.lsp~: on AutoCAD 2022 the symbols ~VARIANT~ and ~SAFEARRAY~ have the names ~"variant"~ and ~"safearray"~ — ~vl-symbol-name~, ~princ~ / ~vl-princ-to-string~ and ~prin1~ / ~vl-prin1-to-string~ give them in lower case, whether the symbol comes from ~(type v)~, from ~'VARIANT~ quoted in source or from ~(read "VARIANT")~ — while reading stays case-insensitive: every spelling is the same symbol, ~(eq (type v) 'VARIANT)~ is ~T~. Every other ~TYPE~ result (~VLA-OBJECT~, ~ENAME~, ~PICKSET~, ~FILE~, ~SUBR~, ~USUBR~, ~EXRXSUBR~, ~INT~, ~REAL~, ~STR~, ~SYM~, ~LIST~) is upper case on AutoCAD, and BricsCAD V25 / V26 give all of them, ~VARIANT~ and ~SAFEARRAY~ included, in upper case. clautolisp shows ~VARIANT~ and ~SAFEARRAY~ as ~variant~ / ~safearray~ (vl-symbol-name and the printer) under every dialect except the BricsCAD ones, which keep upper case; the symbol itself, its identity and the case-insensitive reader are the same under every dialect. Implemented in ~clautolisp/autolisp-runtime/source/api.lisp~ (AUTOLISP-SYMBOL-PRINT-NAME); see ~issues/open/type-symbols-print-lowercase-on-autocad.issue~.
+
 #+LATEX: \newpage
 
 ** Function Entry: VL-SYMBOLP
