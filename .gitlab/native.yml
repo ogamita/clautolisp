@@ -1558,6 +1558,7 @@ cad-instances:probe:bricscad:windows:
   variables:
     GIT_SUBMODULE_STRATEGY: none
   script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-probe-cad-instances-paths.ps1
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-instances.ps1 -Backend bricscad
 
 cad-instances:probe:autocad:windows:
@@ -1574,6 +1575,7 @@ cad-instances:probe:autocad:windows:
   variables:
     GIT_SUBMODULE_STRATEGY: none
   script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-probe-cad-instances-paths.ps1
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-instances.ps1 -Backend autocad
 
 # --- user globals through alfe: a (setq f ...) must reach the global ------

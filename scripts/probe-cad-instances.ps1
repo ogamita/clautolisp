@@ -41,6 +41,31 @@ function Say([string] $s) {
     Add-Content -Path $log -Value $line -Encoding ascii
 }
 
+# Keep every SaveAs and ROT lookup in the same private namespace. A/B
+# distinguishes the two logical instances; PID + GUID distinguishes probes,
+# even when two CI checkouts run under the same Windows account and TEMP.
+function New-CadInstDrawingPaths([string] $backendName, [string] $temporaryDirectory) {
+    $runId = "$PID-$([Guid]::NewGuid().ToString('N'))"
+    $directory = Join-Path $temporaryDirectory "cadinst-$backendName-$runId"
+    New-Item -ItemType Directory -Path $directory -ErrorAction Stop | Out-Null
+    $drawings = @{}
+    foreach ($tag in @('A', 'B')) {
+        $drawings[$tag] = Join-Path $directory "cadinst-$backendName-$runId-$tag.dwg"
+    }
+    [pscustomobject] @{ Directory = $directory; Drawings = $drawings }
+}
+
+function Remove-CadInstDrawingPaths($paths) {
+    foreach ($path in $paths.Drawings.Values) {
+        foreach ($extension in @('.dwg', '.dwl', '.dwl2')) {
+            Remove-Item -LiteralPath ([IO.Path]::ChangeExtension($path, $extension)) `
+                -Force -ErrorAction SilentlyContinue
+        }
+    }
+    # Leave unexpected files behind, rather than recursively deleting them.
+    try { [IO.Directory]::Delete($paths.Directory, $false) } catch { }
+}
+
 if ($Backend -eq 'autocad') {
     $progId = 'AutoCAD.Application'; $image = 'acad.exe'
 } else {
@@ -145,6 +170,9 @@ Say "PRE running=$($pre.Count) pids=$($pre -join ',')"
 
 $created = @()
 $apps = @{}
+$probePaths = New-CadInstDrawingPaths $Backend $env:TEMP
+Say "workdir=$($probePaths.Directory)"
+
 try {
     foreach ($tag in @('A', 'B')) {
         $before = Get-ImagePids
@@ -174,8 +202,7 @@ try {
     # does binding it reach the instance holding it?
     foreach ($tag in @($apps.Keys | Sort-Object)) {
         $app = $apps[$tag]
-        $path = Join-Path $env:TEMP "cadinst-$Backend-$tag.dwg"
-        Remove-Item -Force -ErrorAction SilentlyContinue $path
+        $path = $probePaths.Drawings[$tag]
         try {
             if ($app.Documents.Count -eq 0) { $null = $app.Documents.Add() }
             $doc = $app.ActiveDocument
@@ -186,7 +213,7 @@ try {
     Dump-Rot 'after-saves'
     $entries = [CadInstRot]::Entries()
     foreach ($tag in @($apps.Keys | Sort-Object)) {
-        $path = Join-Path $env:TEMP "cadinst-$Backend-$tag.dwg"
+        $path = $probePaths.Drawings[$tag]
         $hit = @($entries | Where-Object { $_[0] -ieq $path })
         if ($hit.Count -eq 0) { Say "BIND-DOC $tag not-in-rot path=$path"; continue }
         foreach ($h in $hit) {
@@ -224,11 +251,7 @@ finally {
         Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
         Say "KILLED $p (started during the probe, not by CreateObject)"
     }
-    foreach ($tag in @('A', 'B')) {
-        Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:TEMP "cadinst-$Backend-$tag.dwg")
-        Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:TEMP "cadinst-$Backend-$tag.dwl")
-        Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:TEMP "cadinst-$Backend-$tag.dwl2")
-    }
+    Remove-CadInstDrawingPaths $probePaths
     Say "DONE left-running=$((Get-ImagePids).Count)"
 }
 exit 0
