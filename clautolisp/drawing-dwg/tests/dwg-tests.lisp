@@ -109,12 +109,17 @@ NATIVE-LIBRARY-ORDER-PUTS-THE-PROGRAM-BEFORE-THE-DEVELOPMENT-TREE."
     ;; The development tree is always a candidate.
     (is (find-if (lambda (d) (search "drawing-dwg/source/" d)) dirs)
         "the dev tree must be searched: ~S" dirs)
-    ;; When the implementation names the running program, its prefix is
-    ;; searched, with the platform subdirectory appended.
-    (when (clautolisp.drawing.dwg::running-program-prefix-candidates)
-      (is (find-if (lambda (d) (search platform d)) dirs)
-          "a program-derived lib/clautolisp/<os>/<arch>/ must be searched: ~S"
-          dirs))
+    ;; When the implementation names the running program and it is a
+    ;; clautolisp / alfe image, its prefix is searched, with the platform
+    ;; subdirectory appended; a bare Lisp's prefix is not (it is the Lisp's).
+    (let ((exe (clautolisp.drawing.dwg::running-program-pathname)))
+      (when (clautolisp.drawing.dwg::running-program-prefix-candidates exe)
+        (if (clautolisp.drawing.dwg::bare-lisp-runtime-p exe)
+            (is (not (find-if (lambda (d) (search platform d)) dirs))
+                "a bare Lisp's prefix must not be searched: ~S" dirs)
+            (is (find-if (lambda (d) (search platform d)) dirs)
+                "a program-derived lib/clautolisp/<os>/<arch>/ must be searched: ~S"
+                dirs))))
     ;; No duplicates: the same directory must not be probed twice.
     (is (= (length dirs) (length (remove-duplicates dirs :test #'equal))))))
 
@@ -406,8 +411,11 @@ older library"))))
                                   dirs)))
     (is (equal dirs (remove-duplicates dirs :test #'equal :from-end t)))
     (is (integerp dev-at) "the development tree is among the candidates")
-    (is (or (null program-at) (< program-at dev-at))
-        "a program-owned directory, when there is one, comes first")))
+    ;; FIVEAM:IS-TRUE, not IS: IS evaluates the arguments of the form it checks to
+    ;; report them, so (< program-at dev-at) ran even when PROGRAM-AT was NIL --
+    ;; never the case until a bare Lisp stopped counting as the program.
+    (fiveam:is-true (or (null program-at) (< program-at dev-at))
+                    "a program-owned directory, when there is one, comes first")))
 
 ;;; --- the libredwg DLL's name is toolchain-dependent ----------------
 ;;;
@@ -439,3 +447,18 @@ older library"))))
   ;; an unrelated DLL beside it is not the dependency either
   (is (null (clautolisp.drawing.dwg::%libredwg-dependency-in
              (list (pathname "/lib/clal_dwg.dll") (pathname "/lib/zlib1.dll"))))))
+
+(test a-bare-lisp-runtime-is-not-the-program
+  "alfe-clautolisp-backend-semantic-parity: a checkout runs in a bare Lisp,
+whose prefix is the Lisp's -- on the macOS runner /opt/local, clautolisp's own
+default install prefix -- so its lib/clautolisp/ must not be searched. A
+clautolisp / alfe executable image's prefix is searched."
+  (dolist (bare '("/opt/local/bin/sbcl" "/usr/local/bin/SBCL"
+                  "/opt/ccl/dx86cl64" "C:/ccl/wx86cl64.exe" "/usr/bin/ccl"))
+    (is (clautolisp.drawing.dwg::bare-lisp-runtime-p (pathname bare))
+        "~A is a bare Lisp" bare))
+  (dolist (program '("/opt/local/libexec/clautolisp/binaries/darwin/arm64/clautolisp-sbcl"
+                     "/opt/local/bin/alfe-sbcl" "C:/clautolisp/bin/clautolisp-sbcl.exe"))
+    (is (not (clautolisp.drawing.dwg::bare-lisp-runtime-p (pathname program)))
+        "~A is a clautolisp program" program))
+  (is (not (clautolisp.drawing.dwg::bare-lisp-runtime-p nil))))
