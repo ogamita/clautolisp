@@ -66,10 +66,16 @@ $report = Join-Path $outDir "$Backend-Windows.txt"
 $dxfCopy = Join-Path $outDir "$Backend-Windows.dxf"
 if (Test-Path $dxfCopy) { Remove-Item -Force $dxfCopy }
 
-# Where the CAD should write its DXF -- when it inherits the environment (an
-# AutoCAD started through COM may not; the probe then falls back on
-# TEMPPREFIX). Either way the probe says where on its DXFANG EXPORT-PATH line.
-$env:DXFANG_DXF = $dxfCopy -replace '/','\'
+# Where the CAD should write its DXF -- a WORK file, never the artefact: the
+# exported file BECOMES the CAD's document, which the probe saves again at
+# the end (so no quit finds it modified) and the CAD may hold open. The probe
+# reports a copy of the export as it was measured on its DXFANG EXPORT-PATH
+# line, and that copy is what goes into the artefact. An AutoCAD started
+# through COM may not inherit the environment; the probe then falls back on
+# TEMPPREFIX. DXFANG_BACKEND tells the probe it runs in accoreconsole, which
+# has no COM.
+$env:DXFANG_DXF = (Join-Path $env:TEMP "dxfang-$Backend-export.dxf")
+$env:DXFANG_BACKEND = $Backend
 
 # Every write is Add-Content -Encoding utf8: Tee-Object -Append writes UTF-16
 # under Windows PowerShell 5, which left the 2026-10-08 reports mixed

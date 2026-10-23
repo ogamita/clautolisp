@@ -3563,3 +3563,37 @@ is passed through untouched. Skipped when clautolisp-sbcl is not on disk."
           (is (search "Undefined AutoLISP function NO_SUCH_FUNCTION" stderr))
           (is (not (search "[form: (NO_SUCH_FUNCTION 1)]" stderr))
               "an informative message must not be padded: ~S" stderr)))))
+
+;;; --- an unattended quit never SAVES -----------------------------------
+;;;
+;;; The CAD-side runtime ended an unattended session (and a failed
+;;; bootstrap) with (command "_QUIT" "_Y"): QUIT's "Save changes?" answered
+;;; YES, so a drawing the run had modified was saved -- under the name the
+;;; run had last given it, or through the Save As dialog for an unnamed one.
+;;; AutoCAD was left on that prompt with the dxf-angles probe's renamed
+;;; dxf-angles-probe.dxf (2026-10-23). Every QUIT the runtime issues now
+;;; answers NO, and only when DBMOD says there is something to save.
+
+(test protocol-emitted-runtime-quits-without-saving
+  "No QUIT in the emitted CAD-side runtime (run-common.lsp, the bootstrap,
+the protocol runtime) answers Yes; every QUIT the bootstrap issues is
+guarded by DBMOD."
+  (let ((workdir (make-test-workdir "quit-no-save")))
+    (unwind-protect
+        (multiple-value-bind (session path)
+            (emit-run-common-with-real-runtime workdir)
+          (dolist (file (list path
+                              (alfe.protocol.file:protocol-session-bootstrap-lsp-staged
+                               session)
+                              (alfe.protocol.file:protocol-session-runtime-lsp-staged
+                               session)))
+            (let ((text (alfe.protocol.file:read-file-as-string file)))
+              (dolist (bad '("\"_QUIT\" \"_Y\"" "\"_.QUIT\" \"_Y\"" "QUIT _Y"))
+                (is (null (search bad text))
+                    "~A answers QUIT with Yes (~A)" (file-namestring file) bad))))
+          (let ((boot (alfe.protocol.file:read-file-as-string
+                       (alfe.protocol.file:protocol-session-bootstrap-lsp-staged session))))
+            (is (search "(defun autolisp-host-quit ()" boot))
+            (is (search "(getvar \"DBMOD\")" boot))
+            (is (search "(command \"_.QUIT\" \"_N\")" boot))))
+      (delete-workdir workdir))))

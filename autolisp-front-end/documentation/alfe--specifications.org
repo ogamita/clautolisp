@@ -442,7 +442,18 @@ loaded and its I/O bridged, immediately before the server loop is entered.
       (if (not (autolisp-run-repl-request))
         (setq keep-going nil)))
     (if *AUTOLISP-QUIT-ON-FINISH*
-      (command "_QUIT" "_Y")))
+      (autolisp-host-quit)))
+
+  ;; Quit WITHOUT SAVING: QUIT asks "Save changes?" only when DBMOD says
+  ;; there is something to save, and then gets No. (It answered Yes until
+  ;; 2.3.44: a modified drawing was saved under the name the run had last
+  ;; given it, or through the Save As dialog -- a modal dialog nobody
+  ;; answers on an unattended runner.)
+  (defun autolisp-host-quit ()
+    (if (getvar "FILEDIA") (setvar "FILEDIA" 0))
+    (if (= 0 (getvar "DBMOD"))
+      (command "_.QUIT")
+      (command "_.QUIT" "_N")))
 
   ;; --- Per-form request evaluation ---
   (defun autolisp-eval-request-form (form)
@@ -676,7 +687,7 @@ Process monitoring: =kill -0 $pid= on the tracked PID; if the PID no
 longer responds, =find_bricscad_batch_pid= is rerun to find a
 potential re-instance. Reference: =autolisp:1883–1897=.
 
-=_QUIT= quirk on macOS: =(command "_QUIT" "_Y")= on the AutoLISP
+=_QUIT= quirk on macOS: the runtime's final =_QUIT= (=autolisp-host-quit=) on the AutoLISP
 side *does not* kill the BricsCAD process (macOS convention: the
 application stays alive without a document). After LISP has written
 its final status, the wrapper waits for the process to exit during
@@ -1008,8 +1019,8 @@ mode. The emitted =run.scr= is minimal:
 #+end_example
 
 The =._FILEDIA 0= / =._QUIT _N= safeguards are emitted only on
-macOS, because Windows =bricscad.exe= honours
-=(command "_QUIT" "_Y")=.
+macOS, because Windows =bricscad.exe= honours the runtime's own final
+=_QUIT= (=autolisp-host-quit=: no save, =_N= when DBMOD is set).
 
 * Backend autocad
 :PROPERTIES:

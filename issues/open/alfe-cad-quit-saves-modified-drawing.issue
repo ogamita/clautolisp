@@ -1,0 +1,62 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-cad-quit-saves-modified-drawing -- an unattended alfe run ended the CAD with QUIT Y: a modified drawing was saved, or the CAD sat on a save prompt
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-cad-quit-unsaved
+#+DATE: 2026-10-23
+
+* Symptom
+
+pjb, 2026-10-23: after the dxf-angles probe (MR !472), AutoCAD on the
+Windows runner PF5S26B stayed open on "dxf-angles-probe.dxf", stuck.
+
+* Cause
+
+The CAD-side runtime ends an unattended session (*AUTOLISP_QUIT_ON_FINISH*,
+on for every non-interactive AutoCAD / BricsCAD run) with
+(command "_QUIT" "_Y"), and a failed bootstrap with the same: QUIT's "Save
+changes?" answered YES. A drawing the run modified is then SAVED -- under
+the name the run last gave it (the probe's COM SaveAs had renamed the
+document to dxf-angles-probe.dxf) or, for an unnamed drawing, through the
+Save As dialog when FILEDIA is 1 -- a modal dialog nobody answers on an
+unattended runner. alfe's own COM quit (quit-autocad.vbs) closes documents
+WITHOUT saving, but only for an instance this run created, and the runtime's
+QUIT comes first.
+
+* Fix (2026-10-23, clautolisp 2.3.44 / alfe 2.3.44)
+
+- autolisp-bootstrap.lsp: AUTOLISP-HOST-QUIT sets FILEDIA 0 and issues
+  (command "_.QUIT") when DBMOD is 0, (command "_.QUIT" "_N") -- discard --
+  when the drawing is modified; the repl loop's final quit uses it; the
+  fatal bootstrap path does the same inline (it may run before the
+  function is defined).
+- The dxf-angles probe leaves its document UNMODIFIED: it exports to a work
+  file (never the artefact), copies the export aside as measured, restores
+  its sysvars, then saves the document through COM if DBMOD is set, and
+  reports DBMOD before / after (INFO DBMOD-at-end). On accoreconsole
+  (DXFANG_BACKEND) it skips COM, which ended the run there
+  (dxf-angles-probe-accoreconsole-export).
+- Not changed: the accoreconsole SCR's ._QSAVE / ._QUIT _Y (headless, a
+  deliberate save of the drawing it was given, no dialog possible); alfe's
+  attach-to-a-running-AutoCAD behaviour (runs in its active document and
+  quits nothing it did not create) -- see the question below.
+- Test PROTOCOL-EMITTED-RUNTIME-QUITS-WITHOUT-SAVING: no QUIT in the
+  emitted runtime answers Yes, the bootstrap's is DBMOD-guarded; red (3
+  checks) against 2.3.43's runtime, green now.
+
+* To close
+
+Run dxf-angles:probe:autocad:windows and :accoreconsole:windows on the MR;
+check INFO DBMOD-at-end 0 in the reports and that no AutoCAD is left open
+on the runner (pjb's eye on PF5S26B, or the next job's CAD sweep).
+
+* Open question (pjb)
+
+When alfe ATTACHES to an AutoCAD that is already running, it runs in that
+instance's ACTIVE document (adding one only when none is open) and quits /
+closes nothing afterwards. A run that renames or modifies the active
+document (as a SaveAs does) changes whatever drawing was active -- possibly
+a person's. Should an attached run work in a document of its own, and
+close it (without saving) at the end?
