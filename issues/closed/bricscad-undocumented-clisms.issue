@@ -1,9 +1,9 @@
 # -*- mode:org;coding:utf-8 -*-
 #+TITLE: bricscad-undocumented-clisms — inventory of BricsCAD V26 undocumented Common Lisp constructs
-#+STATUS: BLOCKED
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: divergence
-#+DEPENDS: bricsys-support (vendor confirmation of the setf-"2" sentinel)
+#+DEPENDS: -
 #+BRANCH: work-unblocked-p1
 
 title: BricsCAD V26: inventory of undocumented Common Lisp constructs
@@ -349,3 +349,27 @@ REMAINING — external only, hence BLOCKED rather than open-with-work:
     vendor conversation, not repository work; nothing in the tree is
     waiting on it, and the implemented behaviour does not depend on the
     answer (clautolisp declines setf either way).
+
+== Resolution (2026-10-23, pjb) — CLOSED, no vendor answer awaited ==
+
+We do not wait for Bricsys to confirm undocumented elements. Rulings:
+
+  - Bare `&': it was clautolisp's own proposal. BricsCAD does not need it
+    (it has `&rest'), AutoCAD does not want to add a rest parameter in
+    either spelling. So `&' is an ORDINARY SYMBOL -- in a lambda list an
+    ordinary parameter name, with no syntactic treatment and no dialect
+    warning. Done in 2.3.46: AUTOLISP-AMPERSAND-SYMBOL-P recognises only
+    `&REST'; the "&" entry left the portability catalogue; tests
+    BARE-AMPERSAND-IS-AN-ORDINARY-PARAMETER-NAME and
+    BARE-AMPERSAND-DRAWS-NO-DIALECT-WARNING.
+  - `setf' and `let*' stay UNDEFINED in clautolisp: a call is an error
+    (:undefined-function, preceded by the explanatory note), not a dialect
+    warning. Unchanged.
+  - `&rest' is implemented, with the [lambda-list-extension] dialect
+    warning under --dialect strict and the AutoCAD dialects (silent under
+    bricscad, clautolisp, lax). Unchanged; tests pinned.
+  - autolisp-spec/documentation/bricscad-undocumented-extensions.org stays
+    as it is: it documents what BricsCAD does.
+
+Docs adjusted: the dialect-warnings annex (generated from the register),
+the spec draft's clautolisp &rest extension section, RELEASE_NOTES.

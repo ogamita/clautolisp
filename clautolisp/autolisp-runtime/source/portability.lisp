@@ -160,24 +160,21 @@ annex generator and for any `--list-dialect-warnings' style report."
  :example ": [lambda-list-extension] drawing.lsp:12 in COMPUTE-AREA: DEFUN `&REST': rest parameter not portable to strict"
  :dialects
  "Portable AutoLISP has NO rest parameter: a defun/lambda lambda list is
-`required* [/ locals*]' and nothing else. The two spellings differ:
+`required* [/ locals*]' and nothing else.
 
-- `&REST' is a real, undocumented BricsCAD extension (V25 and V26) --
-  confirmed by harvest, EXTPROBE REST-BINDS=(2 3 4). Silent under
-  --dialect bricscad-v25 / bricscad-v26.
-- `&' is clautolisp's own historical spelling and is native NOWHERE:
-  the same harvest had BricsCAD REJECT it (\"too few / too many
-  arguments\"). It therefore warns under every dialect except
-  clautolisp and lax.
+`&REST' is a real, undocumented BricsCAD extension (V25 and V26) --
+confirmed by harvest, EXTPROBE REST-BINDS=(2 3 4) -- and clautolisp
+provides it. Silent under --dialect bricscad-v25 / bricscad-v26,
+clautolisp and lax; --strict and the AutoCAD dialects warn.
 
---dialect clautolisp is silent for both (they are its blessed
-extensions); --dialect lax is silent for everything; --strict and the
-AutoCAD dialects warn for both."
+A bare `&' is NOT a rest separator: it is an ordinary symbol, and in a
+lambda list an ordinary parameter name. It was clautolisp's own early
+proposal; BricsCAD has `&REST' and rejects `&' (\"too few / too many
+arguments\"), and AutoCAD wants neither (pjb, 2026-10-23)."
  :rationale
  "A function written with a rest parameter will not load on AutoCAD at
-all, and one written with `&' will not load on BricsCAD either. The
-warning fires when the defun/lambda is EVALUATED, so a guarded branch
-that is never reached never warns."
+all. The warning fires when the defun/lambda is EVALUATED, so a guarded
+branch that is never reached never warns."
  :references
  '(("clautolisp: the governing issue" . "issues/closed/clautolisp-dialect-portability-warnings.issue")
    ("clautolisp: harvest evidence" . "autolisp-spec/documentation/bricscad-undocumented-extensions.org")
@@ -1069,10 +1066,11 @@ is not the catalogue's business and never warns."
  :summary "LET* does not exist on BricsCAD V26 either; it is not a vendor extension."
  :evidence +bricscad-harvest-evidence+)
 
-;;; The two rest-parameter spellings. These predate the catalogue; since
-;;; pjb's 2026-08-14 ruling their message text comes from the register's
-;;; "lambda-list-extension" entry like every other, and these entries
-;;; carry only the support decision.
+;;; The rest-parameter separator. It predates the catalogue; since pjb's
+;;; 2026-08-14 ruling its message text comes from the register's
+;;; "lambda-list-extension" entry like every other, and this entry carries
+;;; only the support decision. The bare `&' had an entry too; since pjb's
+;;; 2026-10-23 ruling it is no separator but an ordinary symbol.
 
 (register-portability-construct
  :label "&REST"
@@ -1082,19 +1080,6 @@ is not the catalogue's business and never warns."
  :native-in '(:bricscad-v25 :bricscad-v26)
  :silent-in '(:clautolisp :lax)
  :summary "Rest parameter in a defun/lambda lambda-list, spelled &REST."
- :evidence +bricscad-harvest-evidence+)
-
-(register-portability-construct
- :label "&"
- :kind :provided
- :tag "lambda-list-extension"
- ;; EXTPROBE AMP-BINDS=ERROR:too few / too many -- BricsCAD REJECTS
- ;; the bare ampersand, so unlike &REST it is native to no vendor.
- ;; clautolisp still accepts it (its own historical spelling), which
- ;; is exactly why it warns everywhere except clautolisp/lax.
- :native-in '()
- :silent-in '(:clautolisp :lax)
- :summary "Rest parameter spelled with a bare &; accepted by clautolisp only, rejected by BricsCAD."
  :evidence +bricscad-harvest-evidence+)
 
 ;;; ==================================================================

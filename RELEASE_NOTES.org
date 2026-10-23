@@ -1959,6 +1959,13 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *A bare =&= is an ordinary symbol* (2.3.46): only =&rest= (any case)
+  introduces a rest parameter in a =defun= / =lambda= lambda list; =&= alone,
+  clautolisp's early proposal, is now an ordinary parameter name, as on
+  BricsCAD (which rejects it as a separator) and AutoCAD. =&rest= still warns
+  =[lambda-list-extension]= under =--dialect strict= and the AutoCAD
+  dialects; =setf= and =let*= stay undefined (an error, not a warning).
+
 - *alfe launches a new CAD by default; attaching is explicit* (2.3.45):
   =--autocad= / =--bricscad= start a NEW instance even when one is open
   (COM =CreateObject=, macOS =open -n=), so a batch run never works inside
