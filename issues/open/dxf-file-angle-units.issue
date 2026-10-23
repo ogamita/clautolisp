@@ -120,3 +120,38 @@ it as degrees -- the table follows the latter) and DIMENSION 51/52. Not
 covered, left for a follow-up if needed: HATCH 52/53 and its boundary-edge
 arc angles, VIEWPORT 51, the VPORT / VIEW table records, header angle
 variables -- see dxf-angle-units-hatch-viewport-tables.issue.
+
+* Probe (2026-10-23)
+
+Verification is now a CAD probe plus a fixture test (branch
+probe-dxf-angles):
+
+- =autolisp-front-end/tests/scenarios/entities/dxf-angles-probe.lsp=, run
+  by =scripts/run-dxf-angles-probe.sh= / =.ps1=, family =dxf-angles= of
+  =scripts/ci-detect-probe-changes.py=, jobs =dxf-angles:probe:bricscad:macos=,
+  =...:bricscad:windows=, =...:autocad:windows=, =...:accoreconsole:windows=
+  in =.gitlab/native.yml= (automatic when the probe changes, else manual;
+  soft). On layer DXFANG it entmakes an ARC 30..120, a TEXT (rotation 45,
+  oblique 15), an ATTDEF (30 / 10), two MTEXT rotated 60 (one by 50, one by
+  the 11 direction), an INSERT rotated 30, an attributed INSERT (45) with
+  its ATTRIB (45 / 15), a 2D POLYLINE whose VERTEX has a 30-degree
+  curve-fit tangent; and a DIMENSION by command (DIMLINEAR text angle 20,
+  Rotated 30, then DIMEDIT Oblique 15). It prints entget's angle groups
+  (=DXFANG ENTGET=), exports the drawing as DXF (vla-SaveAs ac2018_dxf,
+  else SAVEAS DXF / DXFOUT), reads the file back by handle and prints the
+  same groups as written (=DXFANG FILE=). Report and DXF:
+  =dist/dxf-angles/<backend>-<os>.txt= and =.dxf=.
+- =dxf-vendor-fixtures-angle-units= (=clautolisp/drawing/tests/dxf-tests.lisp=)
+  loads every =*.dxf= under =clautolisp/drawing/tests/fixtures/vendor-dxf/=
+  and checks that each probe object's claimed groups load as the file's
+  degrees * pi/180 AND equal the vendor's entget from the =<name>.txt=
+  report beside it. Empty today (passes trivially); see the README.org
+  there.
+
+Close this ticket when a vendor pair (AutoCAD and BricsCAD) is in the
+fixture directory and the test is green; MTEXT 50 and DIMENSION 51/52 are
+the groups to read first in the reports. The clautolisp baseline run
+(=--backend clautolisp=) shows file = entget * 180/pi for every entity
+case; its DIMENSION case is FAILED (cador has no DIMLINEAR), and its DXF
+header holds ISO-8859-1 bytes in an AC1027 file
+(dxf-writer-header-not-utf8.issue).

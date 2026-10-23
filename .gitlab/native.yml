@@ -1423,6 +1423,95 @@ real-transport:probe:accoreconsole:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-real-transport-probe.ps1 -Backend accoreconsole
 
+# --- angle units of a vendor-written DXF file ------------------------------
+#
+# dxf-file-angle-units.issue, dxf-angle-units-hatch-viewport-tables.issue.
+# clautolisp's DXF codec converts a table of angle groups (ARC 50/51, TEXT /
+# ATTRIB / ATTDEF 50/51, MTEXT 50, INSERT 50, DIMENSION 50-53, VERTEX 50,
+# HATCH 52/53 and its arc / elliptic-arc edge 50/51, VPORT 50/51, VIEW 50,
+# STYLE 50) from DEGREES in the file to RADIANS in entget, from the DXF
+# reference only. These jobs MEASURE it: the probe builds entities with
+# known angles, prints entget's values, exports the drawing as DXF
+# (vla-SaveAs, else SAVEAS / DXFOUT) and prints the same groups as the file
+# holds them. The DXF itself is in the artefact (a fixture for
+# clautolisp/drawing/tests/fixtures/vendor-dxf/). Soft: a probe measures,
+# never gates.
+.dxf-angles-artifacts:
+  interruptible: true
+  artifacts:
+    name: "dxf-angles-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/dxf-angles/]
+    expire_in: 30 days
+
+dxf-angles:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .dxf-angles-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,dxf-angles,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-dxf-angles-probe.sh --backend bricscad
+
+dxf-angles:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .dxf-angles-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,dxf-angles,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-dxf-angles-probe.ps1 -Backend bricscad
+
+dxf-angles:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .dxf-angles-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,dxf-angles,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-dxf-angles-probe.ps1 -Backend autocad
+
+dxf-angles:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .dxf-angles-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,dxf-angles,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-dxf-angles-probe.ps1 -Backend accoreconsole
+
 # --- user globals through alfe: a (setq f ...) must reach the global ------
 #
 # alfe-eval-request-locals-capture-user-setq.issue. AutoLISP binds a DEFUN's
