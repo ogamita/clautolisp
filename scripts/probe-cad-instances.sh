@@ -36,6 +36,19 @@ say "app=$app"
 work=$(mktemp -d "${TMPDIR:-/tmp}/cadinst.XXXXXX")
 printf '(princ "\\nCADINST-SCRIPT-RAN\\n")\n' > "$work/noop.scr"
 
+# Launch every instance as alfe does: WITH a drawing of its own and the
+# clean profile when the runner names one. Started bare (no drawing, no
+# profile), BricsCAD opens on the modal "BricsCAD Launcher" workspace dialog
+# and waits -- which the first runs of this probe did on thalassa
+# (pjb, 2026-10-23); see also the 2026-08-14 note in .gitlab/native.yml.
+empty="autolisp-front-end/sour""ce/empty.dwg"
+profile_args=()
+if [ -n "${BRICSCAD_PROFILE_CLEAN:-}" ]; then
+  profile_args=(-P "$BRICSCAD_PROFILE_CLEAN")
+fi
+say "profile=[${BRICSCAD_PROFILE_CLEAN:-}]"
+drawing() { cp "$empty" "$work/$1.dwg" && printf '%s' "$work/$1.dwg"; }
+
 bricscad_pids() { pgrep -U "$(id -u)" -f "$exe" | sort -n | tr '\n' ' '; }
 
 windows_of() {
@@ -67,7 +80,7 @@ trap cleanup EXIT
 launch_direct() {
   local tag=$1 before after
   before=$(bricscad_pids)
-  "$exe" -B "$work/noop.scr" > "$work/$tag.out" 2>&1 &
+  "$exe" "$(drawing "$tag")" ${profile_args[@]+"${profile_args[@]}"} -B "$work/noop.scr" > "$work/$tag.out" 2>&1 &
   local child=$!
   sleep "$ready_secs"
   after=$(bricscad_pids)
@@ -81,7 +94,7 @@ launch_direct A
 launch_direct B
 
 before=$(bricscad_pids)
-open -n -a "$app"
+open -n -a "$app" "$(drawing C)" --args ${profile_args[@]+"${profile_args[@]}"} -B "$work/noop.scr"
 sleep "$ready_secs"
 say "OPEN-N before=[$before] after=[$(bricscad_pids)]"
 
