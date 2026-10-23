@@ -1,0 +1,36 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: dxf-writer-header-not-utf8 — an AC1021+ ASCII DXF written by clautolisp holds ISO-8859-1 bytes
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-dxf-writer-header-not-utf8
+#+DATE: 2026-10-23
+
+* Symptom
+
+Found by the dxf-angles probe's clautolisp baseline run
+(=scripts/run-dxf-angles-probe.sh --backend clautolisp=, 2026-10-23): the
+DXF cador writes through vla-SaveAs (=$ACADVER AC1027=) contains the byte
+#xB5 (MICRO SIGN in ISO-8859-1) three times, in the header values of
+=$AREAUNITS=, =$LENGTHUNITS= and =$VOLUMEUNITS= ("in ft mi µm mm cm m km").
+A DXF of version AC1021 (2007) or later is UTF-8, where #xB5 alone is not a
+character; clautolisp's own AutoLISP =read-line= (UTF-8 by default) stops
+with "UTF-8 stream decoding error ... #(181)" on that file, and a vendor
+reading it would see an invalid sequence.
+
+* Cause
+
+=+dxf-external-format+= (=clautolisp/drawing/source/dxf.lisp=) is
+=:iso-8859-1= for both reading and writing, by design ("Honouring
+$DWGCODEPAGE precisely is a future refinement"). Reading as ISO-8859-1 is
+harmless (bytes round-trip); WRITING non-ASCII text that way is wrong for
+AC1021+.
+
+* Proposal
+
+Write AC1021+ ASCII DXF as UTF-8 (and read it as UTF-8 with a fallback),
+or keep ISO-8859-1 only for pre-2007 versions with \U+ escapes for
+characters outside $DWGCODEPAGE. Check those three header variables'
+values against a vendor-written DXF (the dxf-angles probe's DXF in
+=dist/dxf-angles/= is one).

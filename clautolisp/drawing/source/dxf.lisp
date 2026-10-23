@@ -223,9 +223,15 @@ records, whose (0 . TYPE) names the record type."
          (codes (or repeated
                     (and (stringp type)
                          (rest (assoc type *dxf-degree-groups* :test #'string-equal)))))
-         (stop-codes (if repeated
-                         *dxf-repeated-degree-scan-stop-codes*
-                         *dxf-degree-scan-stop-codes*)))
+         ;; 75 / 76 stop the scan only in an MTEXT, where they open its
+         ;; column section (column heights reuse 50). A DIMENSION has a
+         ;; 75 (text-placement flag) BEFORE its 53 and 50 -- measured in
+         ;; AutoCAD's and BricsCAD's DXFOUT (dxf-angles probe, MR !472) --
+         ;; and the general stop left both in degrees on load.
+         (stop-codes (cond (repeated *dxf-repeated-degree-scan-stop-codes*)
+                           ((string-equal type "MTEXT") *dxf-degree-scan-stop-codes*)
+                           (t (remove-if (lambda (c) (member c '(75 76)))
+                                         *dxf-degree-scan-stop-codes*)))))
     (if (null codes)
         data
         (let ((pending (copy-list codes)) (stopped nil))
@@ -248,13 +254,43 @@ records, whose (0 . TYPE) names the record type."
 (defun dxf-radians->degrees (radians)
   (* (coerce radians 'double-float) (/ 180d0 pi)))
 
+;;; An MTEXT's rotation travels as its X-axis DIRECTION (11 / 21 / 31) in
+;;; the files AutoCAD 2022 and BricsCAD V25 / V26 write -- they write no 50
+;;; -- while their entget of the same MTEXT reports (50 . angle) in radians
+;;; (dxf-angles probe, MR !472: an MTEXT rotated 60 degrees is 11 = 0.5,
+;;; 21 = 0.866 in the file, (50 . 1.0472) in entget). So the loader derives
+;;; 50 from the direction when the file gives none, and the writer leaves
+;;; 50 out when the direction is there, as the vendors do.
+
+(defun %mtext-p (data)
+  (let ((type (cdr (assoc 0 data))))
+    (and (stringp type) (string-equal type "MTEXT"))))
+
+(defun %mtext-direction-angle (data)
+  "The rotation (radians) of the MTEXT DATA's 11 direction, or NIL."
+  (let ((dir (cdr (assoc 11 data))))
+    (and (consp dir) (realp (first dir)) (realp (second dir))
+         (not (and (zerop (first dir)) (zerop (second dir))))
+         (let ((a (atan (coerce (second dir) 'double-float)
+                        (coerce (first dir) 'double-float))))
+           (if (minusp a) (+ a (* 2 pi)) a)))))
+
 (defun dxf-entity-from-file (data)
-  "Entity DATA as read from a DXF file -> entget units (radians)."
-  (dxf-convert-entity-angles data #'dxf-degrees->radians))
+  "Entity DATA as read from a DXF file -> entget units (radians); an MTEXT
+without 50 gets the rotation of its 11 direction."
+  (let ((data (dxf-convert-entity-angles data #'dxf-degrees->radians)))
+    (if (and (%mtext-p data) (not (assoc 50 data)))
+        (let ((angle (%mtext-direction-angle data)))
+          (if angle (append data (list (cons 50 angle))) data))
+        data)))
 
 (defun dxf-entity-for-file (data)
-  "Entity DATA in entget units -> DXF file units (degrees)."
-  (dxf-convert-entity-angles data #'dxf-radians->degrees))
+  "Entity DATA in entget units -> DXF file units (degrees); an MTEXT that
+has an 11 direction is written without its 50."
+  (let ((data (dxf-convert-entity-angles data #'dxf-radians->degrees)))
+    (if (and (%mtext-p data) (assoc 11 data))
+        (remove 50 data :key (lambda (p) (and (consp p) (car p))))
+        data)))
 
 ;;; --- Reader: section splitting ----------------------------------
 

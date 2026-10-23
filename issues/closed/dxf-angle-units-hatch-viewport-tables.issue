@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: dxf-angle-units-hatch-viewport-tables — HATCH / VIEWPORT / table-record angles still copied unconverted from DXF degrees
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: dxf-file-angle-units
@@ -83,3 +83,47 @@ checks, 0 failures; =clautolisp/cador/tests= 1897 checks, 0 failures; full
 
 Status NEXT, not DONE: no vendor-written DXF / tblsearch probe of a HATCH
 with an elliptic edge, a VIEWPORT, or VPORT / VIEW / STYLE records yet.
+
+* Probe (2026-10-23)
+
+Covered by the same probe and fixture test as dxf-file-angle-units (see
+its "Probe (2026-10-23)" section): =dxf-angles-probe.lsp=,
+=scripts/run-dxf-angles-probe.sh= / =.ps1=, jobs =dxf-angles:probe:*=, and
+=dxf-vendor-fixtures-angle-units= over
+=clautolisp/drawing/tests/fixtures/vendor-dxf/=. Its cases for this
+ticket:
+
+- three HATCHes ANSI31 at pattern angle 30, made with
+  =-HATCH _P ANSI31 1 30 _S <objects>= (entmakex fallback when the command
+  gives no HATCH, recorded as =DXFANG CASE ... entmake=): a CIRCLE boundary
+  (circular-arc edge 0..360), an ELLIPSE (elliptic-arc edge -- the least
+  certain group), an ARC 30..150 closed by a LINE; printed: 52, every 53,
+  72 and the edge 50/51, in entget order and in file order;
+- SNAPANG 20 degrees -> the VPORT *Active record's 50 (tblobjname +
+  entget, and the file's VPORT record);
+- a STYLE record DXFANG with oblique 10 and a VIEW record DXFANG with
+  twist 45, both by entmake.
+
+VIEWPORT 50/51 is not probed (paper space). Close with the other ticket.
+Baseline (clautolisp): the CIRCLE hatch comes from cador's -HATCH, the
+ELLIPSE and ARC+LINE ones fall back to entmakex (cador's -HATCH takes no
+such boundary), all consistent (file = entget * 180/pi); the STYLE /
+VIEW entmakes land in ENTITIES (entmake-symbol-table-records.issue); SNAPANG
+does not reach the VPORT *Active record, whose entget also lacks the 5
+handle (vport-active-snapang-and-handle.issue).
+
+* Measured on the CADs (2026-10-23, dxf-angles probe, MR !472) -- DONE
+
+Degrees in the file, radians in entget, on AutoCAD 2022 and BricsCAD V25 /
+V26: HATCH 52 (pattern angle) and 53 (pattern line), the circular-arc edge
+50/51 (0..360, 30..150) and -- the least certain -- the elliptic-arc edge
+50/51; STYLE 50 (oblique); VIEW 50 (twist); VPORT *Active 50 (SNAPANG 20
+degrees written 20.0 -- AutoCAD's own entget of the record still showed 0
+after the SETVAR, its file the new angle). BricsCAD writes the circle and
+arc+line hatch boundaries without edge 50/51 (no arc edge to compare); its
+elliptic edge and 52/53 agree. The vendor-DXF fixture test checks all of
+them on the two committed fixtures.
+
+Not probed: VIEWPORT 50/51 (a paper-space entity; the conversion stays as
+the DXF reference states), and the header angle variables (not
+AutoLISP-visible in cador).

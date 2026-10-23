@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: dxf-file-angle-units — the DXF codec copies file angles (degrees) into entget data (radians) unconverted
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -120,3 +120,64 @@ it as degrees -- the table follows the latter) and DIMENSION 51/52. Not
 covered, left for a follow-up if needed: HATCH 52/53 and its boundary-edge
 arc angles, VIEWPORT 51, the VPORT / VIEW table records, header angle
 variables -- see dxf-angle-units-hatch-viewport-tables.issue.
+
+* Probe (2026-10-23)
+
+Verification is now a CAD probe plus a fixture test (branch
+probe-dxf-angles):
+
+- =autolisp-front-end/tests/scenarios/entities/dxf-angles-probe.lsp=, run
+  by =scripts/run-dxf-angles-probe.sh= / =.ps1=, family =dxf-angles= of
+  =scripts/ci-detect-probe-changes.py=, jobs =dxf-angles:probe:bricscad:macos=,
+  =...:bricscad:windows=, =...:autocad:windows=, =...:accoreconsole:windows=
+  in =.gitlab/native.yml= (automatic when the probe changes, else manual;
+  soft). On layer DXFANG it entmakes an ARC 30..120, a TEXT (rotation 45,
+  oblique 15), an ATTDEF (30 / 10), two MTEXT rotated 60 (one by 50, one by
+  the 11 direction), an INSERT rotated 30, an attributed INSERT (45) with
+  its ATTRIB (45 / 15), a 2D POLYLINE whose VERTEX has a 30-degree
+  curve-fit tangent; and a DIMENSION by command (DIMLINEAR text angle 20,
+  Rotated 30, then DIMEDIT Oblique 15). It prints entget's angle groups
+  (=DXFANG ENTGET=), exports the drawing as DXF (vla-SaveAs ac2018_dxf,
+  else SAVEAS DXF / DXFOUT), reads the file back by handle and prints the
+  same groups as written (=DXFANG FILE=). Report and DXF:
+  =dist/dxf-angles/<backend>-<os>.txt= and =.dxf=.
+- =dxf-vendor-fixtures-angle-units= (=clautolisp/drawing/tests/dxf-tests.lisp=)
+  loads every =*.dxf= under =clautolisp/drawing/tests/fixtures/vendor-dxf/=
+  and checks that each probe object's claimed groups load as the file's
+  degrees * pi/180 AND equal the vendor's entget from the =<name>.txt=
+  report beside it. Empty today (passes trivially); see the README.org
+  there.
+
+Close this ticket when a vendor pair (AutoCAD and BricsCAD) is in the
+fixture directory and the test is green; MTEXT 50 and DIMENSION 51/52 are
+the groups to read first in the reports. The clautolisp baseline run
+(=--backend clautolisp=) shows file = entget * 180/pi for every entity
+case; its DIMENSION case is FAILED (cador has no DIMLINEAR), and its DXF
+header holds ISO-8859-1 bytes in an AC1027 file
+(dxf-writer-header-not-utf8.issue).
+
+* Measured on the CADs (2026-10-23, dxf-angles probe, MR !472) -- DONE, 2.3.43
+
+DXFOUT (COM SaveAs) of entities with known angles, the file compared with
+the CAD's own entget, on AutoCAD 2022 (job 17409369691), BricsCAD V25
+Windows (17409369690) and V26 macOS (17409369689): degrees in the file,
+radians in entget, for ARC 50/51, TEXT / ATTDEF / ATTRIB 50/51, INSERT 50,
+VERTEX 50 and DIMENSION 50 / 53 (28 groups on AutoCAD, 26 on each
+BricsCAD -- every pair). DIMENSION 51 / 52 at their default 0 are not
+written.
+
+Two codec defects the vendor files showed, fixed in 2.3.43:
+- DIMENSION: the 75 / 76 stop meant for MTEXT's column section stopped the
+  scan before a DIMENSION's 53 and 50 (its 75 comes first), so they loaded
+  in degrees. The stop now applies to MTEXT only.
+- MTEXT: the vendors write the rotation as the 11 / 21 direction only (no
+  50) while their entget lists (50 . angle). The loader now derives 50 from
+  11 when the file gives none, and the writer leaves 50 out when there is
+  an 11.
+
+The vendor DXFs and probe reports are fixtures now
+(clautolisp/drawing/tests/fixtures/vendor-dxf/: AutoCAD 2022 Windows,
+BricsCAD V26 macOS); DXF-VENDOR-FIXTURES-ANGLE-UNITS loads each with the
+codec and checks every probe object against the file's degrees AND the
+CAD's own entget: green (584 checks), red on 2.3.42's codec (DIMENSION and
+MTEXT).

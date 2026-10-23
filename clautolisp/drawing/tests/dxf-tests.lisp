@@ -524,6 +524,23 @@ an angle and is written unchanged."
         (is (%angle-close-p 90d0 end) "ARC 51 in the file must be 90: ~S" end))
       (is (%angle-close-p 1d0 (%dxf-value-after text "42" (format nil "~%LWPOLYLINE~%")))))))
 
+(test dxf-mtext-rotation-is-the-direction-in-the-file
+  "MTEXT, as AutoCAD 2022 and BricsCAD V25 / V26 do it (dxf-angles probe,
+MR !472): the file carries the rotation as the 11 direction only, entget as
+50. Reading an 11-only MTEXT derives 50; writing one with an 11 leaves 50 out."
+  (let* ((text (format nil "0~%SECTION~%2~%ENTITIES~%0~%MTEXT~%5~%2A~%8~%0~%10~%0.0~%20~%0.0~%30~%0.0~%40~%1.0~%1~%x~%11~%0.5~%21~%0.8660254037844386~%31~%0.0~%0~%ENDSEC~%0~%EOF~%"))
+         (d (with-input-from-string (s text) (dxf-read-drawing-from-stream s)))
+         (mtext (cdr (assoc "MTEXT" (%entities-by-type d) :test #'equal))))
+    (is (%angle-close-p (/ pi 3) (cdr (assoc 50 mtext)))
+        "an 11-only MTEXT must load with (50 . pi/3): ~S" (assoc 50 mtext))
+    (let ((out (with-output-to-string (s) (dxf-write-drawing-to-stream d s))))
+      (let* ((from (search (format nil "~%MTEXT~%") out))
+             (to (and from (search (format nil "~%0~%") out :start2 (1+ from))))
+             (entity (and from (subseq out from to))))
+        (is (and entity (not (search (format nil "~%50~%") entity)))
+            "an MTEXT with an 11 direction is written without 50: ~S" entity))
+      (is (%angle-close-p 0.5d0 (%dxf-value-after out "11" (format nil "~%MTEXT~%")))))))
+
 (test dxf-angle-round-trip
   "Write then read: the entget angles come back (to rounding)."
   (let ((d (make-drawing :version :ac1027)))
@@ -704,3 +721,196 @@ STYLE 50 must be radians there, as on the vendors."
       (is (%angle-close-p (/ pi 6)
                           (cdr (assoc 51 (symbol-table-record-data
                                           (find-table-record d :vport "*ACTIVE")))))))))
+
+;;; --- Vendor-written DXF fixtures (dxf-angles probe) ------------------
+;;; scripts/run-dxf-angles-probe.{sh,ps1} make AutoCAD / BricsCAD write a
+;;; DXF holding entities with known angles, all on layer DXFANG, plus the
+;;; VPORT *Active (SNAPANG 20), STYLE DXFANG (oblique 10) and VIEW DXFANG
+;;; (twist 45) records; the report beside it holds entget's values. Once
+;;; such a pair is copied into fixtures/vendor-dxf/ (see the README.org
+;;; there), this test checks that the codec turns what the VENDOR wrote
+;;; into what the VENDOR's entget says. With no fixture it checks nothing.
+
+(defparameter +vendor-dxf-claimed-degree-groups+
+  '(("ARC" 50 51) ("TEXT" 50 51) ("ATTRIB" 50 51) ("ATTDEF" 50 51)
+    ("SHAPE" 50 51) ("MTEXT" 50) ("INSERT" 50) ("DIMENSION" 50 51 52 53)
+    ("VERTEX" 50) ("VIEWPORT" 50 51) ("HATCH" 50 51 52 53)
+    ("VPORT" 50 51) ("VIEW" 50) ("STYLE" 50))
+  "The claim under test, written out independently of the codec's tables:
+type -> the groups a DXF file stores in degrees and entget reports in
+radians. HATCH: every occurrence (pattern angle, pattern lines, arc and
+elliptic-arc edges); the others: the first occurrence.")
+
+(defun %vendor-dxf-fixture-directory ()
+  (asdf:system-relative-pathname "clautolisp" "drawing/tests/fixtures/vendor-dxf/"))
+
+(defun %vendor-dxf-raw-objects (path)
+  "The objects of the ASCII DXF at PATH as a list of (TYPE . PAIRS), PAIRS
+the (CODE . TEXT) groups after the 0 group, in file order. Read as
+ISO-8859-1 so no byte can stop the scan."
+  (let ((objects '()) (current nil))
+    (with-open-file (s path :external-format :iso-8859-1)
+      (loop for code-line = (read-line s nil nil)
+            for value-line = (and code-line (read-line s nil ""))
+            while code-line
+            do (let ((code (parse-integer (string-trim '(#\Space #\Tab #\Return) code-line)
+                                          :junk-allowed t))
+                     (value (string-trim '(#\Space #\Tab #\Return) value-line)))
+                 (cond
+                   ((null code))
+                   ((= code 0)
+                    (when current (push (cons (car current) (nreverse (cdr current))) objects))
+                    (setf current (list value)))
+                   (current (push (cons code value) (cdr current)))))))
+    (when current (push (cons (car current) (nreverse (cdr current))) objects))
+    (nreverse objects)))
+
+(defun %claimed-occurrences (type pairs)
+  "The (CODE . VALUE) pairs of PAIRS the claim covers for TYPE, in order:
+every one for HATCH (up to 101 / 1001), the first of each code for the
+others (up to 75 / 76 / 101 / 1001)."
+  (let* ((entry (assoc type +vendor-dxf-claimed-degree-groups+ :test #'string-equal))
+         (repeated (string-equal type "HATCH"))
+         (pending (copy-list (rest entry)))
+         (stops (cond (repeated '(101 1001))
+                      ((string-equal type "MTEXT") '(75 76 101 1001))
+                      (t '(101 1001))))
+         (acc '()))
+    (dolist (pair pairs (nreverse acc))
+      (when (and (consp pair) (member (car pair) stops)) (return (nreverse acc)))
+      (when (and (consp pair) (member (car pair) pending))
+        (unless repeated (setf pending (remove (car pair) pending)))
+        (push pair acc)))))
+
+(defun %raw-handle (pairs)
+  (cdr (or (assoc 5 pairs) (assoc 105 pairs))))
+
+(defun %vendor-probe-objects (raw-objects)
+  "The probe's objects among RAW-OBJECTS: entities (ENTITIES or BLOCKS
+section) on layer DXFANG of a claimed type, and the VPORT *Active, STYLE
+DXFANG and VIEW DXFANG records of the TABLES section, as (TYPE HANDLE
+NAME PAIRS)."
+  (let ((section nil))
+    (loop for (type . pairs) in raw-objects
+          for name = (cdr (assoc 2 pairs))
+          for table-record-p = (member type '("VPORT" "VIEW" "STYLE") :test #'string-equal)
+          do (when (string-equal type "SECTION") (setf section name))
+          when (and (assoc type +vendor-dxf-claimed-degree-groups+ :test #'string-equal)
+                    (%raw-handle pairs)
+                    (if table-record-p
+                        (and (equalp section "TABLES")
+                             (equalp name (if (string-equal type "VPORT") "*ACTIVE" "DXFANG")))
+                        (and (member section '("ENTITIES" "BLOCKS") :test #'equalp)
+                             (equalp (cdr (assoc 8 pairs)) "DXFANG"))))
+            collect (list type (%raw-handle pairs) name pairs))))
+
+(defun %split-words (string)
+  (let ((words '()) (start nil))
+    (loop for i from 0 to (length string)
+          for c = (if (< i (length string)) (char string i) #\Space)
+          do (if (char= c #\Space)
+                 (when start (push (subseq string start i) words) (setf start nil))
+                 (unless start (setf start i))))
+    (nreverse words)))
+
+(defun %vendor-report-entget (report-path)
+  "From the probe report at REPORT-PATH: an alist HANDLE -> the (CODE .
+REAL) ENTGET values of codes 50-53, in report order."
+  (let ((case->handle '()) (case->values '()))
+    (when (probe-file report-path)
+      (with-open-file (s report-path :external-format :iso-8859-1)
+        (loop for line = (read-line s nil nil)
+              while line
+              do (let ((words (%split-words (string-trim '(#\Return #\Space) line))))
+                   (cond
+                     ((and (>= (length words) 5) (equal (first words) "DXFANG")
+                           (equal (second words) "HANDLE"))
+                      (push (cons (third words) (fifth words)) case->handle))
+                     ((and (= (length words) 5) (equal (first words) "DXFANG")
+                           (equal (second words) "ENTGET"))
+                      (let ((code (parse-integer (fourth words) :junk-allowed t))
+                            (value (let ((*read-default-float-format* 'double-float))
+                                     (ignore-errors (read-from-string (fifth words))))))
+                        (when (and code (<= 50 code 53) (realp value))
+                          (let ((cell (assoc (third words) case->values :test #'equal)))
+                            (if cell
+                                (push (cons code value) (cdr cell))
+                                (push (list (third words) (cons code value)) case->values)))))))))))
+    (loop for (case . handle) in case->handle
+          for values = (cdr (assoc case case->values :test #'equal))
+          collect (cons (string-upcase handle) (reverse values)))))
+
+(defun %loaded-object-data (drawing type handle name)
+  (cond
+    ((string-equal type "VPORT")
+     (let ((r (find-table-record drawing :vport name))) (and r (symbol-table-record-data r))))
+    ((string-equal type "VIEW")
+     (let ((r (find-table-record drawing :view name))) (and r (symbol-table-record-data r))))
+    ((string-equal type "STYLE")
+     (let ((r (find-table-record drawing :style name))) (and r (symbol-table-record-data r))))
+    (t (let ((e (find-entity drawing handle))) (and e (entity-dxf e))))))
+
+(defun %fixture-real (text)
+  (let ((*read-default-float-format* 'double-float))
+    (let ((v (ignore-errors (read-from-string text))))
+      (and (realp v) v))))
+
+(test dxf-vendor-fixtures-angle-units
+  "Every vendor-written DXF under fixtures/vendor-dxf/: each probe object's
+claimed angle groups load as (file degrees) * pi/180, and -- when the
+probe report <name>.txt sits beside <name>.dxf -- as the vendor's entget
+reported them."
+  (let ((files (directory (merge-pathnames "*.dxf" (%vendor-dxf-fixture-directory)))))
+    (is (listp files))
+    (dolist (path files)
+      (let* ((drawing (dxf-read-drawing path))
+             (report (%vendor-report-entget (make-pathname :type "txt" :defaults path)))
+             (objects (%vendor-probe-objects (%vendor-dxf-raw-objects path))))
+        (is (not (null objects)) "~A: no probe object (layer DXFANG) found" (file-namestring path))
+        (dolist (object objects)
+          (destructuring-bind (type handle name pairs) object
+            (let* ((loaded (%loaded-object-data drawing type handle name))
+                   (raw (%claimed-occurrences type pairs))
+                   (got-all (%claimed-occurrences type loaded))
+                   ;; An MTEXT the file gives no 50 gets one DERIVED from its
+                   ;; 11 direction on load (the vendors' entget lists it):
+                   ;; not a file group -- the entget check below covers it.
+                   (got (if (and (string-equal type "MTEXT") (not (assoc 50 raw)))
+                            (remove 50 got-all :key #'car)
+                            got-all)))
+              (is (not (null loaded)) "~A: ~A ~A not loaded" (file-namestring path) type handle)
+              (is (equal (mapcar #'car raw) (mapcar #'car got))
+                  "~A: ~A ~A file groups ~S, loaded groups ~S"
+                  (file-namestring path) type handle (mapcar #'car raw) (mapcar #'car got))
+              (loop for (code . text) in raw
+                    for (nil . value) in got
+                    for degrees = (%fixture-real text)
+                    do (is (and degrees
+                                (%angle-close-p value (* degrees (/ pi 180d0))))
+                           "~A: ~A ~A group ~D: file ~A deg, loaded ~S (want ~S)"
+                           (file-namestring path) type handle code text value
+                           (and degrees (* degrees (/ pi 180d0)))))
+              ;; Against the vendor's own entget, code by code (first
+              ;; occurrence; every occurrence, in order, for HATCH). A code
+              ;; entget lists with value 0 that the file omits is a default
+              ;; the CAD does not write (DIMENSION 51 / 52) -- loaded absent
+              ;; is right. The VPORT *Active record is not compared: AutoCAD's
+              ;; entget of it still showed 0 after SETVAR SNAPANG, while the
+              ;; file it wrote holds the new angle (measured, job 17409369691).
+              (let ((entget (cdr (assoc (string-upcase handle) report :test #'equal))))
+                (when (and entget (not (string-equal type "VPORT")))
+                  (let ((mine (remove-if-not (lambda (pair) (<= 50 (car pair) 53)) got-all))
+                        (entget (%claimed-occurrences type entget)))
+                    (if (string-equal type "HATCH")
+                        (loop for (code . vendor) in entget
+                              for (nil . value) in mine
+                              do (is (and value (%angle-close-p value vendor))
+                                     "~A: ~A ~A group ~D: vendor entget ~S, loaded ~S"
+                                     (file-namestring path) type handle code vendor value))
+                        (loop for (code . vendor) in entget
+                              for value = (cdr (assoc code mine))
+                              do (is (if value
+                                         (%angle-close-p value vendor)
+                                         (zerop vendor))
+                                     "~A: ~A ~A group ~D: vendor entget ~S, loaded ~S"
+                                     (file-namestring path) type handle code vendor value)))))))))))))
