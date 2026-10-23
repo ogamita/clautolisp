@@ -1459,7 +1459,9 @@ typically hands it to UIOP:LAUNCH-PROGRAM."
     (case variant
       (:batch
        (let ((scr (merge-pathnames "run.scr" workdir))
-             (template (bricscad-backend-template-path backend))
+             (template (or (bricscad-backend-template-path backend)
+                           (discover-bricscad-template
+                            :executable-path binary :workdir workdir)))
              (profile (bricscad-backend-profile backend)))
          (append (list binary)
                  ;; Windows-only: /Automation starts BricsCAD WITHOUT its main

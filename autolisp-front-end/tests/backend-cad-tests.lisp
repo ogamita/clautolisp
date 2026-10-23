@@ -1815,6 +1815,35 @@ locale; no preference keeps discovery order."
                   :workdir (uiop:ensure-directory-pathname "/tmp/argv-probe/"))))
     (alfe.backend.bricscad:build-launch-argv backend session :mode :batch)))
 
+(test bricscad-batch-drawings-are-private-to-each-session
+  "Two default batch launches must not open the same writable drawing."
+  (let* ((root (merge-pathnames
+                (format nil "alfe-batch-private-~D/" (random 1000000000))
+                (uiop:temporary-directory)))
+         (a (merge-pathnames "a/" root))
+         (b (merge-pathnames "b/" root))
+         (backend (alfe.backend.bricscad:make-bricscad-backend
+                   :executable-path "/fake/bricscad.exe" :variant :batch))
+         (alfe.backend.cad-common:*host-os-override* :windows))
+    (unwind-protect
+        (let ((drawings
+                (loop for dir in (list a b)
+                      for session = (alfe.protocol.file::%make-protocol-session
+                                     :workdir dir)
+                      for argv = (alfe.backend.bricscad:build-launch-argv
+                                  backend session :mode :batch)
+                      for drawing = (find-if
+                                      (lambda (arg) (search "empty.dwg" arg))
+                                      argv)
+                      collect drawing)))
+          (is (every #'identity drawings))
+          (when (every #'identity drawings)
+            (is (not (equal (first drawings) (second drawings))))
+            (dolist (dir (list a b))
+              (is (probe-file (merge-pathnames "empty.dwg" dir))))))
+      (uiop:delete-directory-tree root :validate t
+                                     :if-does-not-exist :ignore))))
+
 (test bricscad-windows-batch-argv-has-single-automation-before-b
   "On Windows the direct batch argv carries exactly one /Automation, and it
 precedes the /b script pair (alfe-bricscad-batch-hidden-ui)."
