@@ -10,8 +10,11 @@
 #   3. What does the Running Object Table hold per instance: the ProgID's
 #      class moniker once or per instance, a file moniker per OPEN, SAVED
 #      document, anything for an unnamed Drawing1?
-#   4. Does binding a saved document's file moniker reach the instance that
-#      has it open -- the only per-instance handle COM may offer?
+#   4. Does a saved document's ROT entry reach the instance that has it
+#      open -- the only per-instance handle COM may offer? Only an entry
+#      the ROT really holds is bound: binding a .dwg path the ROT does NOT
+#      hold makes COM start (or wait on) another CAD for it -- the first
+#      run of this probe hung there for 20 minutes on BricsCAD V25.
 #
 # Every instance it creates is quit, then killed if still alive, and is
 # also written to %TEMP%\alfe-created-cad.txt (alfe's own registry, same
@@ -181,12 +184,14 @@ try {
         } catch { Say "SAVEAS $tag failed: $($_.Exception.Message)" }
     }
     Dump-Rot 'after-saves'
+    $entries = [CadInstRot]::Entries()
     foreach ($tag in @($apps.Keys | Sort-Object)) {
         $path = Join-Path $env:TEMP "cadinst-$Backend-$tag.dwg"
-        try {
-            $o = [System.Runtime.InteropServices.Marshal]::BindToMoniker($path)
-            Say "BIND-DOC $tag pid=$(Get-AppPid $o) expected=$(Get-AppPid $apps[$tag])"
-        } catch { Say "BIND-DOC $tag failed: $($_.Exception.Message)" }
+        $hit = @($entries | Where-Object { $_[0] -ieq $path })
+        if ($hit.Count -eq 0) { Say "BIND-DOC $tag not-in-rot path=$path"; continue }
+        foreach ($h in $hit) {
+            Say "BIND-DOC $tag in-rot pid=$(Get-AppPid $h[1]) expected=$(Get-AppPid $apps[$tag])"
+        }
     }
     Active-Pid 'final'
 }
@@ -212,6 +217,12 @@ finally {
     foreach ($p in @(Get-ImagePids | Where-Object { $created -contains $_ })) {
         Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
         Say "KILLED $p (did not quit within 30s)"
+    }
+    # Anything else of this image that was not running before the probe is
+    # the probe's too (an instance COM started on its own).
+    foreach ($p in @(Get-ImagePids | Where-Object { $pre -notcontains $_ })) {
+        Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
+        Say "KILLED $p (started during the probe, not by CreateObject)"
     }
     foreach ($tag in @('A', 'B')) {
         Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:TEMP "cadinst-$Backend-$tag.dwg")
