@@ -451,3 +451,40 @@ variants, by the sysexits ruling (sysexits-exit-statuses.issue, clautolisp
    containing alfe 2.2.158+ (2.2.232+ for the hook behaviour) is consumed
    there. Downstream; nothing to do in this repository.
 
+
+* Progress (2026-10-23, clautolisp / alfe 2.3.48) -- item 6
+
+** test:alfe:windows: verified
+
+Master pipeline 2982632591 (071b1774), job 17426631947: Fail 0, Skip 0;
+CLAUTOLISP-BACKEND-VARIANTS-ARE-SEMANTICALLY-IDENTICAL and
+CLAUTOLISP-ACTION-HOOKS-RUN-IN-ONE-RUN-IN-BOTH-VARIANTS ran with their dots.
+
+** test:alfe:macos: a real divergence, fixed
+
+Failing on master since it runs automatically (801ca284 .. 071b1774, job
+17426631945): the "drawing dwg" row -- direct exit 0 printing empty.dwg,
+subprocess exit 69 "the DWG native library clal_dwg.dylib was not found".
+The in-process alfe of the suite runs in a BARE SBCL (/opt/local/bin/sbcl
+on thalassa), and the drawing-dwg search took the running program's prefix
+for ours: /opt/local is clautolisp's default install prefix, so the
+checkout loaded an INSTALLED clal_dwg.dylib (whatever version was there),
+while the checkout's clautolisp-sbcl found none (libredwg is not built in
+that job). Fix (drawing-dwg BARE-LISP-RUNTIME-P): a bare sbcl / ccl / *x86cl*
+runtime's prefix is not searched; a clautolisp / alfe executable's still is.
+Two drawing-dwg tests adjusted (one used IS on an OR whose arguments FiveAM
+evaluates eagerly: (< NIL n) once a bare Lisp had no program directory).
+With libredwg built locally, drawing-dwg: 66 checks, 0 failures. To be
+confirmed by test:alfe:macos on the MR pipeline.
+
+** Installed alfe: verified (Linux, 2026-10-23)
+
+make install-programs install-libraries PREFIX=<tmp>; the installed alfe,
+for --backend direct and --backend subprocess alike:
+- --host cador --dwg empty.dwg -x '(princ (getvar "DWGNAME"))'
+  -> empty.dwg, exit 0 (both);
+- a plug-in with a :post-action hook printing its index, around
+  -x "(setq a 1)" -x "(princ a)" -> <post 1>1<post 2><post 3>, exit 0 (both);
+- --quit alone -> exit 0, no output (both).
+
+Remaining: item 8 (SCHME drops --backend subprocess) is downstream.

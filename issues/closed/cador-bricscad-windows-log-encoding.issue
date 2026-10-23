@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-bricscad-windows-log-encoding — clautolisp's LOGFILEMODE log is UTF-8 under the BricsCAD dialects; BricsCAD V25 on Windows writes windows-1252
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: divergence
 #+DEPENDS: -
@@ -54,3 +54,17 @@ sources were being edited on parallel branches.
   the byte E9, and no BOM is written;
 - the macOS BricsCAD and the other dialects are unchanged;
 - unit test in the cador suite; manual note removed.
+
+* Done (2026-10-23, clautolisp 2.3.47 / alfe 2.3.47) -- DONE
+
+%COMMAND-LOG-ENCODING dispatches on the product and the dialect's
+platform: windows-1252 for AutoCAD and for BricsCAD on Windows (the
+unqualified BricsCAD dialects and -win), UTF-8 for the macOS / Linux
+BricsCAD dialects and every other dialect; -Elog still wins. No BOM is
+written (the CP1252 external format has none).
+
+Test COMMAND-LOG-BRICSCAD-ENCODING-FOLLOWS-THE-PLATFORM (cador suite):
+under bricscad-v25 a prompt "Départ: " lands as 44 E9 70 61 72 74 with no
+BOM; under bricscad-mac as 44 C3 A9 70 61 72 74. User manual: the log
+table says windows-1252 for BricsCAD and the "Known gap" note is gone;
+spec draft LOGFILEMODE *** clautolisp note states the encodings.

@@ -1959,6 +1959,19 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *A checkout no longer loads an installed DWG library* (2.3.48): code run
+  in a bare SBCL / CCL (a checkout, the test suites) took that Lisp's prefix
+  for its own and could load the =clal_dwg= of a clautolisp installed there
+  (=/opt/local=, the default prefix) instead of the checkout's -- so =alfe
+  --clautolisp --dwg= opened a drawing in-process that =--backend subprocess=
+  could not. Only a clautolisp / alfe executable's prefix is searched now.
+
+- *The command-history log in windows-1252 under the Windows BricsCAD
+  dialects* (2.3.47): =LOGFILEMODE='s log is written in windows-1252 without
+  a byte-order mark, as BricsCAD V25 on Windows was measured to write it (it
+  was UTF-8 under every BricsCAD dialect); the macOS / Linux BricsCAD
+  dialects keep UTF-8. =-Elog= still overrides.
+
 - *A bare =&= is an ordinary symbol* (2.3.46): only =&rest= (any case)
   introduces a rest parameter in a =defun= / =lambda= lambda list; =&= alone,
   clautolisp's early proposal, is now an ordinary parameter name, as on
