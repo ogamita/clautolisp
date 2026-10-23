@@ -1,0 +1,42 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-cad-nil-catch-all-message -- on AutoCAD a caught error can have a NIL message; alfe's CAD side then reports a failed request as OK or fails in its own error path
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-23
+
+* Symptom (found reading the code while fixing vl-exit-outside-vlx-caught-diverges)
+
+AutoCAD 2022 returns NIL from (vl-catch-all-error-message e) for some
+caught errors -- measured for vl-exit-with-error / vl-exit-with-value
+outside a VLX (control-flow probe, jobs 17398575920 / 17398575921;
+BricsCAD answers ""). alfe's CAD-side code assumes the message is a
+string:
+
+- the emitted request evaluator (=autolisp-front-end/source/file-
+  protocol.lisp=, AUTOLISP-EVAL-REQUEST-SOURCE):
+  =(setq alfe--err (vl-catch-all-error-message alfe--err))= then
+  =(if err (autolisp-raise err) r)= -- a NIL message makes the FAILED
+  request report DONE OK, the false success alfe-eval-x-output-lost-on-cad
+  was about;
+- autolisp-bootstrap.lsp: =(autolisp-raise (vl-catch-all-error-message ...))=
+  (lines ~788, 1133, 1144), =(strcat "ERROR ..." (vl-catch-all-error-
+  message ...))= (~2214, 2232) and the form-read / eval paths (~964, 994,
+  1003); autolisp-remote-io.lsp 306 / 325 / 340 -- a NIL there makes
+  strcat or the raise itself fail inside the error handling.
+
+So any AutoCAD error whose catch-all message is NIL is either swallowed
+(reported OK) or replaced by a secondary error from alfe's own handler.
+
+* Fix
+
+One CAD-side helper -- (alfe-catch-all-message e) => the message, or a
+fixed text such as "error (no message)" when it is NIL or "" -- used at
+every site above (autolisp-bootstrap-render-error already does this for the
+bootstrap's fatal path). Test: the hosted engine with an override making
+vl-catch-all-error-message return NIL (as AutoCAD does), checking a
+failing -x request is reported FAIL with the fixed text, and a failing
+form of a loaded file too. Then the control-flow probe's vl-exit cases
+through alfe -x on AutoCAD as the vendor check.
