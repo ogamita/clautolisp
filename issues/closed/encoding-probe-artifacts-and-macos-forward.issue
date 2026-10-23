@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: encoding-probe-artifacts-and-macos-forward -- encoding probe artefacts carry other jobs' files; macOS has no FORWARD step
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: infra
 #+DEPENDS: -
@@ -63,3 +63,20 @@ FORWARD ways.
 Seen on the way, filed apart (deferred-probe-scripts-host-mock): the
 clautolisp backend of these probe scripts passes --host mock, which alfe now
 rejects (cador, cadtui, nihil), so a clautolisp run reports nothing.
+
+* Verified on the runners (2026-10-23, MR !471 pipeline 2978627556) -- DONE
+
+- Stale files gone: each job's dist/encoding/ holds only its own files
+  (AutoCAD 17398575863, BricsCAD V25 17408146581, BricsCAD V26 macOS
+  17408220635); the lispsys-bom job (17398575864) uploads dist/e1/ too.
+- Reports UTF-8 with no NUL byte (AutoCAD report: BOM, 0 NULs).
+- The macOS FORWARD step runs end to end on BricsCAD V26 (job 17408220635):
+  alfe-load, -l and -x each print ENC E1F ... FORWARDED-ARG nil
+  FORWARDED-CCS nil -- nothing forwarded on macOS, as designed -- and the
+  files are UTF-8 (w SIZE 4, a SIZE 2); the -x way now prints the
+  forwarded arg / ccs like the others. Windows (job 17398575863, AutoCAD at
+  LISPSYS 0): FORWARDED-ARG "utf8", w SIZE 3 / a SIZE 1 + the LISPSYS-0
+  WARN, as measured before.
+(The first macOS run, 17398575861, and the first BricsCAD Windows run,
+17398575862, failed on infrastructure -- a sleeping Mac, a page-file
+exhaustion on PF5S26B -- and passed on retry.)
