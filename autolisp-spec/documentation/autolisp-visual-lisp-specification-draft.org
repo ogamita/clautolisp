@@ -1804,12 +1804,17 @@ error model:
   symbol, or ~&rest~ appearing after ~/~ (where it would name a local
   rather than introduce a rest parameter).
 
-Dialect handling: the default clautolisp dialect accepts ~&rest~
-silently. =dialect bricscad= accepts it (and is expected to warn that it
-is an undocumented BricsCAD extension); =dialect strict= / =autocad=
-reject it at ~defun~ time with =:strict-lambda-list-extension=. The
-dialect-warning wiring is tracked in
-~issues/open/bricscad-undocumented-clisms.issue~.
+Dialect handling: ~&rest~ is accepted under every dialect. It is silent
+under =clautolisp=, =lax= and the BricsCAD dialects (where it is native,
+though undocumented); under =strict= and the AutoCAD dialects it draws
+the =[lambda-list-extension]= dialect portability warning (see
+/Normative Rules: Dialect Portability Warnings/), since AutoCAD has no
+rest parameter.
+
+Only =&REST= (in any case) is a separator. A bare ~&~ is an ordinary
+symbol, and in a lambda list an ordinary parameter name: it was an early
+clautolisp proposal, which BricsCAD does not need (it has ~&rest~) and
+AutoCAD does not want (pjb, 2026-10-23).
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).

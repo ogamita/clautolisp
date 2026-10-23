@@ -914,12 +914,12 @@ preserves the user's reader-built cons cells — same fix scope as
 1.1.10, but at the source rather than papering over normalize.
 
 The shadows use `(&rest args)' — BricsCAD V26's native spelling
-(confirmed by Bricsys support). The bare `&' is a clautolisp-only
-extension; the emitted run-common.lsp runs inside the CAD's own
-runtime, so the BricsCAD spelling is what reaches its defun
-parser. clautolisp's parser accepts both spellings as synonyms
-(alfe 1.1.17), so the emitted file also loads correctly under
-the cador used by the test suite."
+(confirmed by Bricsys support). The emitted run-common.lsp runs
+inside the CAD's own runtime, so the BricsCAD spelling is what
+reaches its defun parser; clautolisp's parser accepts `&REST' too,
+so the emitted file also loads correctly under the cador used by
+the test suite. (A bare `&' is no separator anywhere: an ordinary
+symbol since pjb's 2026-10-23 ruling.)"
   ;; The bridge block (which carries the variadic shadows) is
   ;; emitted only when BOTH the bootstrap and the runtime LSP are
   ;; staged — emit-run-common-lsp gates the bridge inside the

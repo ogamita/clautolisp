@@ -3036,30 +3036,24 @@ matches on :undefined-function is affected."
        (string= "/" (autolisp-symbol-name symbol))))
 
 (defun autolisp-ampersand-symbol-p (symbol)
-  "T iff SYMBOL is the AutoLISP rest-parameter separator — either
-the bare `&' (clautolisp's original spelling proposed in
-`issues/closed/variadic-functions.issue') or `&REST' (BricsCAD V26's
-spelling, confirmed by Bricsys support and observed in the user's
-own `(defun foo (&rest args) …)' transcripts). Match is
-case-insensitive on the symbol name only; we do NOT implement a
-full Common Lisp lambda-list parser — `&body', `&optional', `&key'
-remain unsupported."
+  "T iff SYMBOL is the AutoLISP rest-parameter separator `&REST' -- the
+spelling BricsCAD V25 / V26 implement (undocumented, confirmed by the
+2026-08-07 harvest) and clautolisp provides. Match is case-insensitive
+on the symbol name only; we do NOT implement a full Common Lisp
+lambda-list parser — `&body', `&optional', `&key' remain unsupported.
+
+The bare `&' is NOT a separator (pjb, 2026-10-23): it was clautolisp's
+own proposal (issues/closed/variadic-functions.issue), BricsCAD does not
+need it since it has `&REST', and AutoCAD wants neither spelling. So `&'
+is an ordinary symbol, and in a lambda list an ordinary parameter name."
   (and (typep symbol 'autolisp-symbol)
-       (let ((name (string-upcase (autolisp-symbol-name symbol))))
-         (or (string= "&" name)
-             (string= "&REST" name)))))
+       (string= "&REST" (string-upcase (autolisp-symbol-name symbol)))))
 
 (defun autolisp-ampersand-spelling (symbol)
-  "Return :ampersand if SYMBOL is `&', :and-rest if it is `&REST'
-(any case). Returns NIL when SYMBOL is not a recognised
-rest-separator. Used by the dialect-warning path to format the
-exact spelling the user wrote."
-  (when (typep symbol 'autolisp-symbol)
-    (let ((name (string-upcase (autolisp-symbol-name symbol))))
-      (cond
-        ((string= "&" name)     :ampersand)
-        ((string= "&REST" name) :and-rest)
-        (t nil)))))
+  "Return :and-rest if SYMBOL is `&REST' (any case), NIL otherwise. Used
+by the dialect-warning path to name the separator in the diagnostic."
+  (when (autolisp-ampersand-symbol-p symbol)
+    :and-rest))
 
 (defun %portability-warning-occurrence-seen-p (occurrence)
   "T iff this OCCURRENCE (a source object identity — the lambda-list
@@ -3157,18 +3151,18 @@ that spelling.
 Per `issues/open/bricscad-undocumented-clisms.issue' and the user's
 2026-06-07 ruling:
 
-  - :clautolisp dialect — silent for both `&' and `&REST' (both
-    are blessed by the spec extension).
-  - :bricscad-v26 dialect — silent for `&REST' (BricsCAD's native
-    undocumented form), warns for `&' (clautolisp's spelling that
-    BricsCAD does NOT accept).
+  - :clautolisp dialect — silent (`&REST' is its blessed extension).
+  - :bricscad-v25 / :bricscad-v26 — silent (BricsCAD's native,
+    undocumented form).
   - :lax dialect — silent for everything. `--lax' is the catch-all
     `accept every vendor's extensions without complaining' mode;
     extending that contract to lambda-list extensions matches the
     same dialect's behavior on encoding diagnostics
     (see `%enc-dialect-is-lax-p').
-  - :strict, :autocad-2026 — warn for both spellings (they are
-    non-portable across vendors).
+  - :strict, :autocad-* — warn: AutoCAD has no rest parameter.
+
+The bare `&' is no separator at all (pjb, 2026-10-23), so it never
+reaches this function: it is an ordinary parameter name.
 
 Once-per-occurrence (autolisp-spec ch.25): a warning fires at most
 once per run for each distinct source OCCURRENCE (the lambda-list
@@ -3198,8 +3192,7 @@ run surfaces (stderr is not swallowed by the quiet/verbosity knobs)."
                           dialect)))
                    :warn))
          (token (case spelling
-                  (:ampersand "&")
-                  (:and-rest  "&REST")
+                  (:and-rest "&REST")
                   (t "<rest-separator>")))
          ;; The support decision comes from the ONE knowledge base
          ;; (autolisp-spec ch.25); this used to be an inline `case'.
@@ -3815,17 +3808,18 @@ runtime error. Warnings go to *ERROR-OUTPUT*."
   "Walk LAMBDA-LIST and split it into the three positional groups
 clautolisp's `defun' / `lambda' recognises:
 
-  required* [`&' rest-param] [`/' locals*]
+  required* [`&REST' rest-param] [`/' locals*]
 
 Return three values: REQUIRED (list of symbols), REST-PARAM (the
-single symbol after `&', or NIL when no `&' is present), LOCALS
-(list of symbols after `/').
+single symbol after `&REST', or NIL when there is none), LOCALS
+(list of symbols after `/'). A bare `&' is an ordinary parameter
+name, not a separator (pjb, 2026-10-23).
 
 Errors signalled:
   :invalid-lambda-list  — LAMBDA-LIST is not a proper list.
-  :invalid-rest-parameter — `&' is present but the following slot
+  :invalid-rest-parameter — `&REST' is present but the following slot
     is missing, is not a single symbol, or there is more than one
-    symbol between `&' and `/'.
+    symbol between `&REST' and `/'.
 
 The `/'-locals slot stays exactly as before for back-compat with
 every existing AutoLISP defun."
@@ -3837,12 +3831,12 @@ every existing AutoLISP defun."
   (let* ((amp-pos   (position-if #'autolisp-ampersand-symbol-p lambda-list))
          (slash-pos (position-if #'autolisp-slash-symbol-p lambda-list)))
     (when (and amp-pos slash-pos (>= amp-pos slash-pos))
-      ;; `&' appearing AFTER `/' is meaningless: it would name a
+      ;; `&REST' appearing AFTER `/' is meaningless: it would name a
       ;; local. Refuse it explicitly so users hit a clean error
       ;; rather than a silent mis-bind.
       (signal-autolisp-runtime-error
        :invalid-rest-parameter
-       "AutoLISP lambda list: `&' must precede `/', got ~S."
+       "AutoLISP lambda list: `&REST' must precede `/', got ~S."
        lambda-list))
     (let* ((required (subseq lambda-list 0 (or amp-pos slash-pos
                                                (length lambda-list))))
@@ -3856,12 +3850,12 @@ every existing AutoLISP defun."
         (unless (= 1 (length rest-slice))
           (signal-autolisp-runtime-error
            :invalid-rest-parameter
-           "AutoLISP lambda list: `&' must be followed by exactly one symbol, got ~S."
+           "AutoLISP lambda list: `&REST' must be followed by exactly one symbol, got ~S."
            rest-slice))
         (unless (typep (first rest-slice) 'autolisp-symbol)
           (signal-autolisp-runtime-error
            :invalid-rest-parameter
-           "AutoLISP lambda list: rest-parameter after `&' must be a symbol, got ~S."
+           "AutoLISP lambda list: rest-parameter after `&REST' must be a symbol, got ~S."
            (first rest-slice))))
       (values required
               (when amp-pos (first rest-slice))

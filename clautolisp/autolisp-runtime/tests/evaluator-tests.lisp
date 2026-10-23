@@ -244,10 +244,13 @@ than (EXPECTED …)."
 
 ;;;; ----- M1 special operators: SET, TRACE, UNTRACE -----
 
-;;; --- Variadic functions via `&' (issues/closed/variadic-functions.issue) ---
+;;; --- Variadic functions via `&REST' (issues/closed/variadic-functions.issue) ---
+;;;
+;;; The separator was first the bare `&REST'; since pjb's 2026-10-23 ruling it is
+;;; `&REST' only, and `&REST' is an ordinary parameter name (tests below).
 
 (test defun-ampersand-rest-binds-list-of-extra-args
-  "(defun foo (a & rest) ...) binds REST to the list of arguments
+  "(defun foo (a &rest rest) ...) binds REST to the list of arguments
 beyond the required formals. The test uses bare references (no
 CONS / LIST builtins — autolisp-runtime tests run without
 builtins-core loaded) and checks the value REST takes on at the
@@ -256,12 +259,12 @@ call site."
   ;; REST captures (2 3 4) when there is one required formal.
   (is (equal '(2 3 4)
              (run-autolisp-string
-              "(defun foo (a & rest) rest) (foo 1 2 3 4)")))
+              "(defun foo (a &rest rest) rest) (foo 1 2 3 4)")))
   (reset-autolisp-symbol-table)
   ;; Zero-required case: REST collects everything.
   (is (equal '(10 20 30 40)
              (run-autolisp-string
-              "(defun zero (& args) args) (zero 10 20 30 40)"))))
+              "(defun zero (&rest args) args) (zero 10 20 30 40)"))))
 
 (test defun-ampersand-rest-exact-arity-rest-is-nil
   "When the caller supplies EXACTLY the number of required arguments,
@@ -269,78 +272,76 @@ REST binds to NIL (the empty list) — mirrors the (princ) /
 (princ x) shape the extension was designed to support."
   (reset-autolisp-symbol-table)
   (is (null (run-autolisp-string
-             "(defun bar (a & rest) rest) (bar 1)"))))
+             "(defun bar (a &rest rest) rest) (bar 1)"))))
 
 (test defun-ampersand-rest-combined-with-slash-locals
-  "(/ locals*) still apply after the `&'-rest slot; locals are
+  "(/ locals*) still apply after the `&REST'-rest slot; locals are
 initialised to NIL just like in a plain defun. The body sets the
 local then returns REST so we can verify both slots survived
 binding."
   (reset-autolisp-symbol-table)
   (is (equal '(3 4 5)
              (run-autolisp-string
-              "(defun bar (a b & rest / x) (setq x rest) x) (bar 1 2 3 4 5)"))))
+              "(defun bar (a b &rest rest / x) (setq x rest) x) (bar 1 2 3 4 5)"))))
 
 (test defun-ampersand-arity-shortfall-signals
   "Fewer arguments than REQUIRED still signals :wrong-number-of-arguments
-when `&' is present. The diagnostic detail (the `at least N' phrasing)
+when `&REST' is present. The diagnostic detail (the `at least N' phrasing)
 isn't inspected here — only the error code is part of the contract."
   (reset-autolisp-symbol-table)
   (let (signalled-code)
     (handler-case
-        (run-autolisp-string "(defun foo (a b & rest) a) (foo 1)")
+        (run-autolisp-string "(defun foo (a b &rest rest) a) (foo 1)")
       (autolisp-runtime-error (condition)
         (setf signalled-code (autolisp-runtime-error-code condition))))
     (is (eq :wrong-number-of-arguments signalled-code))))
 
 (test defun-ampersand-zero-rest-symbols-signals
-  "(defun foo (a & ) …) is malformed: nothing names the rest-parameter.
+  "(defun foo (a &rest ) …) is malformed: nothing names the rest-parameter.
 The diagnostic surfaces the first time FOO is called."
   (reset-autolisp-symbol-table)
   (let (signalled-code)
     (handler-case
-        (run-autolisp-string "(defun foo (a & ) a) (foo 1)")
+        (run-autolisp-string "(defun foo (a &rest ) a) (foo 1)")
       (autolisp-runtime-error (condition)
         (setf signalled-code (autolisp-runtime-error-code condition))))
     (is (eq :invalid-rest-parameter signalled-code))))
 
 (test defun-ampersand-multiple-rest-symbols-signals
-  "(defun foo (a & x y) …) — more than one symbol after `&' is
+  "(defun foo (a &rest x y) …) — more than one symbol after `&REST' is
 malformed (CL's `&body' / `&optional' are NOT mimicked here; the
 extension is deliberately a single-symbol slot)."
   (reset-autolisp-symbol-table)
   (let (signalled-code)
     (handler-case
-        (run-autolisp-string "(defun foo (a & x y) a) (foo 1 2 3)")
+        (run-autolisp-string "(defun foo (a &rest x y) a) (foo 1 2 3)")
       (autolisp-runtime-error (condition)
         (setf signalled-code (autolisp-runtime-error-code condition))))
     (is (eq :invalid-rest-parameter signalled-code))))
 
 (test defun-ampersand-after-slash-signals
-  "(defun foo (a / locals & x) …) — `&' must precede `/' (otherwise
+  "(defun foo (a / locals &rest x) …) — `&REST' must precede `/' (otherwise
 it would be naming a local). The check fires when FOO is called."
   (reset-autolisp-symbol-table)
   (let (signalled-code)
     (handler-case
-        (run-autolisp-string "(defun foo (a / locals & x) a) (foo 1)")
+        (run-autolisp-string "(defun foo (a / locals &rest x) a) (foo 1)")
       (autolisp-runtime-error (condition)
         (setf signalled-code (autolisp-runtime-error-code condition))))
     (is (eq :invalid-rest-parameter signalled-code))))
 
 (test lambda-ampersand-rest-binds-list-of-extra-args
-  "The same `&'-rest extension fires in anonymous LAMBDAs, mirroring
+  "The same `&REST'-rest extension fires in anonymous LAMBDAs, mirroring
 the defun path through the shared usubr machinery."
   (reset-autolisp-symbol-table)
   (is (equal '(2 3 4)
              (let ((*error-output* (make-string-output-stream)))
                (run-autolisp-string
-                "((lambda (a & rest) rest) 1 2 3 4)")))))
+                "((lambda (a &rest rest) rest) 1 2 3 4)")))))
 
-(test defun-and-rest-spelling-is-accepted-as-alias-for-ampersand
-  "Per the 2026-06-07 user clarification (issues/open/
-bricscad-undocumented-clisms.issue): BricsCAD V26 uses `&REST'
-(the Common Lisp spelling), not the bare `&'. clautolisp accepts
-BOTH spellings as synonyms; the recogniser is case-insensitive."
+(test defun-and-rest-spelling-is-case-insensitive
+  "BricsCAD V26 uses `&REST' (the Common Lisp spelling); clautolisp
+recognises it in any case."
   (reset-autolisp-symbol-table)
   (is (equal '(2 3 4)
              (let ((*error-output* (make-string-output-stream)))
@@ -356,6 +357,36 @@ BOTH spellings as synonyms; the recogniser is case-insensitive."
              (let ((*error-output* (make-string-output-stream)))
                (run-autolisp-string
                 "(defun foo (a &Rest tail) tail) (foo 7 10 20 30)")))))
+
+;;; --- A bare `&' is an ordinary symbol (pjb, 2026-10-23) ---
+
+(test bare-ampersand-is-an-ordinary-parameter-name
+  "`&' was clautolisp's own proposal for the rest separator; BricsCAD has
+`&REST' and rejects `&', AutoCAD wants neither. So `&' is no separator:
+in a lambda list it is an ordinary parameter, bound positionally."
+  (reset-autolisp-symbol-table)
+  (is (eql 2 (run-autolisp-string "(defun f (a & r) &) (f 1 2 3)")))
+  (reset-autolisp-symbol-table)
+  (is (eql 3 (run-autolisp-string "((lambda (a & r) r) 1 2 3)")))
+  ;; and therefore a call with more arguments than parameters is an error
+  (reset-autolisp-symbol-table)
+  (let (signalled-code)
+    (handler-case
+        (run-autolisp-string "(defun f (a & r) r) (f 1 2 3 4)")
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :wrong-number-of-arguments signalled-code))))
+
+(test bare-ampersand-draws-no-dialect-warning
+  "An ordinary parameter is portable: no [lambda-list-extension] for `&'
+under any dialect."
+  (dolist (dialect '(:strict :autocad-2026 :bricscad-v26 :clautolisp :lax))
+    (reset-autolisp-symbol-table)
+    (multiple-value-bind (result diag)
+        (%run-under-dialect dialect "(defun f (a & r) r) (f 1 2 3)")
+      (declare (ignore result))
+      (is (null (search "lambda-list-extension" diag))
+          "`&' warned under ~S: ~S" dialect diag))))
 
 ;;; --- Dialect-aware warning for the variadic separator ---
 
@@ -373,64 +404,48 @@ session."
             (get-output-stream-string *error-output*))))
 
 (test variadic-warning-silent-under-clautolisp-dialect
-  "Under --dialect clautolisp, both `&' and `&REST' are accepted
-silently — both are blessed by the spec extension and using either
-is portable across clautolisp installs."
+  "Under --dialect clautolisp, `&REST' is accepted silently: it is the
+spec extension clautolisp provides."
   (reset-autolisp-symbol-table)
   (multiple-value-bind (result diag)
       (%run-under-dialect :clautolisp
-                          "(defun f (a & r) r)
-                           (defun g (a &rest r) r)
+                          "(defun g (a &rest r) r)
                            (g 1 2 3)")
     (declare (ignore result))
     (is (null (search "lambda-list-extension" diag))
         "Expected no warning under :clautolisp; got: ~S" diag)))
 
-(test variadic-warning-bricscad-silent-for-rest-warns-for-ampersand
-  "Under --dialect bricscad-v26: `&REST' is silent (BricsCAD's
-native undocumented spelling), `&' warns (BricsCAD does not
-accept the bare ampersand)."
+(test variadic-warning-bricscad-silent-for-rest
+  "Under --dialect bricscad-v26: `&REST' is silent (BricsCAD's native
+undocumented spelling)."
   (reset-autolisp-symbol-table)
   (multiple-value-bind (result diag)
       (%run-under-dialect :bricscad-v26
                           "(defun g (a &rest r) r) (g 1 2 3)")
     (declare (ignore result))
     (is (null (search "lambda-list-extension" diag))
-        "&REST should be silent under :bricscad-v26; got: ~S" diag))
-  (reset-autolisp-symbol-table)
-  (multiple-value-bind (result diag)
-      (%run-under-dialect :bricscad-v26
-                          "(defun f (a & r) r) (f 1 2 3)")
-    (declare (ignore result))
-    (is (search "[lambda-list-extension]" diag)
-        "& should warn under :bricscad-v26; got: ~S" diag)
-    (is (search "`&'" diag)
-        "warning should mention `&' specifically; got: ~S" diag)))
+        "&REST should be silent under :bricscad-v26; got: ~S" diag)))
 
-(test variadic-warning-strict-warns-for-both-spellings
-  "Under --dialect strict (and any non-clautolisp / non-bricscad
-dialect), BOTH spellings warn — they are non-portable across
-vendors and the strict dialect surfaces every such departure."
+(test variadic-warning-strict-warns-for-rest
+  "Under --dialect strict, `&REST' warns: portable AutoLISP has no rest
+parameter."
   (reset-autolisp-symbol-table)
   (multiple-value-bind (result diag)
       (%run-under-dialect :strict
-                          "(defun f (a & r) r)
-                           (defun g (a &rest r) r)")
+                          "(defun g (a &rest r) r)")
     (declare (ignore result))
-    (is (search "`&'" diag) "Expected `&' warning; got: ~S" diag)
     (is (search "`&REST'" diag) "Expected `&REST' warning; got: ~S" diag)))
 
 (test variadic-warning-silent-under-lax-dialect
   "Under --dialect lax, NOTHING warns — `--lax' is the catch-all
 `accept every vendor's extensions without complaining' mode, by
 spec parallel with how the encoding-diagnostic gate already
-silences itself under :lax (`%enc-dialect-is-lax-p'). Both `&'
-and `&REST' are accepted silently."
+silences itself under :lax (`%enc-dialect-is-lax-p'). `&REST' is
+accepted silently."
   (reset-autolisp-symbol-table)
   (multiple-value-bind (result diag)
       (%run-under-dialect :lax
-                          "(defun f (a & r) r)
-                           (defun g (a &rest r) r)
+                          "(defun g (a &rest r) r)
                            (g 1 2 3)")
     (declare (ignore result))
     (is (null (search "lambda-list-extension" diag))
@@ -1014,15 +1029,18 @@ strict and AutoCAD."
     (is (not (portability-construct-silent-p let-entry :strict)))
     (is (not (portability-construct-silent-p let-entry :autocad-2026)))))
 
-(test portability-catalogue-bare-ampersand-is-native-nowhere
-  "The bare `&' rest-separator is native to NO vendor — the harvest
-showed BricsCAD rejects it — yet clautolisp accepts it, which is
-exactly why it stays silent only under clautolisp and lax."
-  (let ((amp (find-portability-construct "&")))
-    (is (not (null amp)))
-    (is (null (portability-construct-native-in amp)))
-    (is (portability-construct-silent-p amp :clautolisp))
-    (is (not (portability-construct-silent-p amp :bricscad-v26)))))
+(test portability-catalogue-has-no-bare-ampersand
+  "The bare `&' is no rest separator (pjb, 2026-10-23), hence no
+construct of the catalogue; `&REST' is, silent under BricsCAD (native),
+clautolisp and lax, warned under strict and AutoCAD."
+  (is (null (find-portability-construct "&")))
+  (let ((rest (find-portability-construct "&REST")))
+    (is (not (null rest)))
+    (is (portability-construct-silent-p rest :bricscad-v26))
+    (is (portability-construct-silent-p rest :clautolisp))
+    (is (portability-construct-silent-p rest :lax))
+    (is (not (portability-construct-silent-p rest :strict)))
+    (is (not (portability-construct-silent-p rest :autocad-2026)))))
 
 (test portability-catalogue-is-enumerable
   "MAP-PORTABILITY-CONSTRUCTS visits every entry — the enumeration a
@@ -1030,7 +1048,7 @@ linter or a report consumes."
   (let ((labels '()))
     (map-portability-constructs
      (lambda (entry) (push (portability-construct-label entry) labels)))
-    (dolist (expected '("LET" "SETF" "LET*" "&REST" "&"))
+    (dolist (expected '("LET" "SETF" "LET*" "&REST"))
       (is (member expected labels :test #'string=)
           "~A must be enumerated; got ~S" expected labels))))
 
