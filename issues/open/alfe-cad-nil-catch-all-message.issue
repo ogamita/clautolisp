@@ -1,42 +1,73 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-nil-catch-all-message -- on AutoCAD a caught error can have a NIL message; alfe's CAD side then reports a failed request as OK or fails in its own error path
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P2
 #+TYPE: bug
-#+DEPENDS: -
-#+BRANCH: -
 #+DATE: 2026-10-23
 
-* Symptom (found reading the code while fixing vl-exit-outside-vlx-caught-diverges)
-
+* Symptom
 AutoCAD 2022 returns NIL from (vl-catch-all-error-message e) for some
 caught errors -- measured for vl-exit-with-error / vl-exit-with-value
 outside a VLX (control-flow probe, jobs 17398575920 / 17398575921;
 BricsCAD answers ""). alfe's CAD-side code assumes the message is a
 string:
 
-- the emitted request evaluator (=autolisp-front-end/source/file-
-  protocol.lisp=, AUTOLISP-EVAL-REQUEST-SOURCE):
-  =(setq alfe--err (vl-catch-all-error-message alfe--err))= then
-  =(if err (autolisp-raise err) r)= -- a NIL message makes the FAILED
-  request report DONE OK, the false success alfe-eval-x-output-lost-on-cad
-  was about;
-- autolisp-bootstrap.lsp: =(autolisp-raise (vl-catch-all-error-message ...))=
-  (lines ~788, 1133, 1144), =(strcat "ERROR ..." (vl-catch-all-error-
-  message ...))= (~2214, 2232) and the form-read / eval paths (~964, 994,
-  1003); autolisp-remote-io.lsp 306 / 325 / 340 -- a NIL there makes
-  strcat or the raise itself fail inside the error handling.
+- the emitted request evaluator (autolisp-front-end/source/file-protocol.lisp,
+  AUTOLISP-EVAL-REQUEST-SOURCE): (setq alfe--err (vl-catch-all-error-message
+  alfe--err)) then (if err (autolisp-raise err) r) -- a NIL message makes
+  the FAILED request report DONE OK (a false success);
+- autolisp-front-end/source/runtime/autolisp-bootstrap.lsp:
+  (autolisp-raise (vl-catch-all-error-message ...)), (strcat "ERROR ..."
+  (vl-catch-all-error-message ...)) and the form-read / eval paths;
+  autolisp-front-end/source/runtime/autolisp-remote-io.lsp likewise -- a
+  NIL there makes strcat or the raise fail inside the error handling.
 
-So any AutoCAD error whose catch-all message is NIL is either swallowed
-(reported OK) or replaced by a secondary error from alfe's own handler.
-
-* Fix
-
+* Fix (requested)
 One CAD-side helper -- (alfe-catch-all-message e) => the message, or a
-fixed text such as "error (no message)" when it is NIL or "" -- used at
-every site above (autolisp-bootstrap-render-error already does this for the
-bootstrap's fatal path). Test: the hosted engine with an override making
-vl-catch-all-error-message return NIL (as AutoCAD does), checking a
-failing -x request is reported FAIL with the fixed text, and a failing
-form of a loaded file too. Then the control-flow probe's vl-exit cases
-through alfe -x on AutoCAD as the vendor check.
+fixed text when it is NIL or "" -- used at every such site
+(autolisp-bootstrap-render-error already did this for the bootstrap's
+fatal path).
+
+* Fix (2026-10-23)
+- autolisp-bootstrap.lsp defines (alfe-catch-all-message E): the
+  message of the caught error E when it is a non-empty string, else the
+  fixed text "the engine supplied no message". That is the text
+  autolisp-raise already put in the error context for an empty message,
+  and one autolisp-vague-error-message-p recognises, so a failed request
+  still gets its form appended on stderr. Pure ASCII, fixed arity, no
+  ERROR.
+- "" is mapped to the fixed text as well. On BricsCAD this changes
+  nothing on the request paths (autolisp-raise and
+  autolisp-request-failure-text already turned "" into that text); it
+  only makes the log lines ("ERROR eval ...: ", "WARN log-setup: ",
+  "ERROR protocol read: ") and the source-load diagnostic readable
+  instead of ending in an empty message.
+- The bootstrap is the first file loaded on the CAD, but run-common.lsp
+  reports a failed bootstrap LOAD before (or without) it, so the
+  emitted run-common.lsp defines the same function right after
+  alfe-debug-log.
+- Sites routed through the helper:
+  - file-protocol.lisp (emitted run-common.lsp): the bootstrap-LOAD and
+    runtime-LOAD failure logs, autolisp-eval-request-source (the false
+    success), the server-loop catch (*ALFE-LOOP-ERRMSG*, used in strcat);
+  - autolisp-bootstrap.lsp: autolisp-source-load's re-raise, the
+    form-read and form-eval source-raise paths, alfe-load /
+    alfe-load-onfailure re-raise, the log-setup WARN, the REPL loop's
+    read and eval ERROR lines; autolisp-bootstrap-render-error now also
+    rejects a NIL / "" message (it returned NIL to a strcat);
+  - autolisp-remote-io.lsp: the "ERROR protocol read" line and the
+    request-failure text.
+  The two autolisp-quit-signal-p tests keep the raw message: that
+  predicate already accepts NIL, and must not see a substituted text.
+- Tests (autolisp-front-end/tests/file-protocol-tests.lisp, hosted
+  clautolisp with vl-catch-all-error-message redefined to answer NIL as
+  AutoCAD does): PROTOCOL-NIL-CATCH-ALL-MESSAGE-REQUEST-FAILS ("(/ 1 0)"
+  reports FAIL with the fixed text) and
+  PROTOCOL-NIL-CATCH-ALL-MESSAGE-LOAD-FAILS (a failing form in a loaded
+  file FAILs the load and stops it). Both were red before the fix (every
+  request reported DONE OK).
+
+* Vendor check (pending)
+On AutoCAD: alfe -x of a vl-exit form, e.g.
+(vl-exit-with-error "x"), must report FAIL (with "the engine supplied
+no message" and the form on stderr), not DONE OK.

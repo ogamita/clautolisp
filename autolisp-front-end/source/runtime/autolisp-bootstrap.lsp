@@ -26,10 +26,37 @@
     ((and (fboundp 'vl-catch-all-error-message)
           (not (vl-catch-all-error-p
                  (setq alfe--msg (vl-catch-all-apply 'vl-catch-all-error-message
-                                               (list alfe--err))))))
+                                               (list alfe--err)))))
+          ;; AutoCAD answers NIL for some caught errors (BricsCAD ""):
+          ;; neither may reach the strcat in autolisp-bootstrap-mark-fatal.
+          (= (type alfe--msg) 'STR)
+          (/= alfe--msg ""))
      alfe--msg)
     (T
      "<bootstrap failure>")))
+
+;; (alfe-catch-all-message E) -- the message of the caught error object E
+;; (a vl-catch-all-apply result that satisfied vl-catch-all-error-p), or
+;; the fixed text "the engine supplied no message" when the host has none.
+;;
+;; AutoCAD 2022 answers NIL from vl-catch-all-error-message for some
+;; caught errors (vl-exit-with-error / vl-exit-with-value outside a VLX,
+;; jobs 17398575920 / 17398575921); BricsCAD answers "". A NIL there made
+;; the request evaluator report a FAILED request as DONE OK, and made
+;; every (strcat "ERROR ..." message) fail inside its own error path.
+;; Every site that needs the message as a string goes through here; the
+;; empty string is mapped to the same text, which is what autolisp-raise
+;; and autolisp-request-failure-text already showed for it, and that text
+;; is one autolisp-vague-error-message-p recognises, so a failed request
+;; still names its form. Defined here, in the first file loaded on the
+;; CAD; run-common.lsp emits the same defun before it loads this file,
+;; for its own bootstrap-load diagnostics. See
+;; issues/open/alfe-cad-nil-catch-all-message.issue.
+(defun alfe-catch-all-message (alfe--e / alfe--m)
+  (setq alfe--m (vl-catch-all-error-message alfe--e))
+  (if (and (= (type alfe--m) 'STR) (/= alfe--m ""))
+    alfe--m
+    "the engine supplied no message"))
 
 (defun autolisp-bootstrap-mark-fatal (alfe--phase alfe--err / alfe--msg)
   (setq alfe--msg (autolisp-bootstrap-render-error alfe--err))
@@ -785,7 +812,7 @@
       (setq *AUTOLISP-LOAD-PATHNAME* alfe--prev-load-pathname)
       (setq *AUTOLISP_LOAD_PATHNAME* alfe--prev-load-pathname)
       (if (vl-catch-all-error-p alfe--catch-result)
-        (autolisp-raise (vl-catch-all-error-message alfe--catch-result))
+        (autolisp-raise (alfe-catch-all-message alfe--catch-result))
         alfe--catch-result))))
 
 ;; --- G3: native (load) honours the resolved `source' encoding -------------
@@ -961,7 +988,7 @@
                (close alfe--f)
                (autolisp-source-raise alfe--resolved
                                       (autolisp-effective-error-message
-                                        (vl-catch-all-error-message alfe--form-read))
+                                        (alfe-catch-all-message alfe--form-read))
                                       alfe--line-no
                                       1
                                       alfe--form-start-line
@@ -1000,7 +1027,7 @@
                      (close alfe--f)
                      (autolisp-source-raise alfe--resolved
                                             (autolisp-effective-error-message
-                                              (vl-catch-all-error-message alfe--eval-result))
+                                              (alfe-catch-all-message alfe--eval-result))
                                             alfe--form-start-line
                                             1
                                             alfe--form-start-line
@@ -1130,7 +1157,7 @@
   (setq alfe--result (vl-catch-all-apply 'autolisp-source-load (list alfe--path)))
   (setq *alfe-load-rewrite* alfe--prev)
   (if (vl-catch-all-error-p alfe--result)
-    (autolisp-raise (vl-catch-all-error-message alfe--result))
+    (autolisp-raise (alfe-catch-all-message alfe--result))
     alfe--result))
 
 (defun alfe-load-onfailure (alfe--path alfe--onfailure / alfe--prev alfe--result)
@@ -1141,7 +1168,7 @@
                             (list alfe--path alfe--onfailure)))
   (setq *alfe-load-rewrite* alfe--prev)
   (if (vl-catch-all-error-p alfe--result)
-    (autolisp-raise (vl-catch-all-error-message alfe--result))
+    (autolisp-raise (alfe-catch-all-message alfe--result))
     alfe--result))
 
 (defun alfe-load* (alfe--args)
@@ -2035,7 +2062,7 @@
     (setq *AUTOLISP_LOG_STATE* nil)
     (autolisp-log-err
       (strcat "WARN log-setup: "
-              (vl-catch-all-error-message _autolisp_log_setup_result))))
+              (alfe-catch-all-message _autolisp_log_setup_result))))
   (setq *AUTOLISP_LOG_STATE* _autolisp_log_setup_result))
 ;; Write TEXT verbatim to an already-open file descriptor FILE, one
 ;; character at a time. write-char is NOT shadowed by the bootstrap, so
@@ -2211,7 +2238,7 @@
           (vl-file-delete *AUTOLISP_INPFILE*)
           (if (vl-catch-all-error-p alfe--form-read)
             (progn
-              (autolisp-log-err (strcat "ERROR read repl request: " (vl-catch-all-error-message alfe--form-read)))
+              (autolisp-log-err (strcat "ERROR read repl request: " (alfe-catch-all-message alfe--form-read)))
               (autolisp-note-fail)
               (autolisp-log-out (autolisp-summary-line))
               (autolisp-set-status-text (strcat "READY " alfe--req-id))
@@ -2229,7 +2256,7 @@
                 (setq *AUTOLISP_CAPTURE_STDOUT* nil)
                 (if (vl-catch-all-error-p alfe--r)
                   (progn
-                    (autolisp-log-err (strcat "ERROR eval " alfe--form-text ": " (vl-catch-all-error-message alfe--r)))
+                    (autolisp-log-err (strcat "ERROR eval " alfe--form-text ": " (alfe-catch-all-message alfe--r)))
                     (autolisp-note-fail))
                   (progn
                     (autolisp-log-out (strcat "RESULT " (autolisp-stdout-text alfe--r)))

@@ -1857,6 +1857,83 @@ clautolisp-sbcl is not on disk."
               "alfe-load must set ENCSRC from the loaded file: ~S" stdout)
           (is (string= "" stderr))))))
 
+;;; --- a caught error with a NIL message (AutoCAD) -----------------------
+;;;
+;;; alfe-cad-nil-catch-all-message. AutoCAD 2022 answers NIL from
+;;; vl-catch-all-error-message for some caught errors (vl-exit-with-error
+;;; outside a VLX); BricsCAD and clautolisp always give a string. These
+;;; tests make the hosted clautolisp answer NIL the way AutoCAD does: the
+;;; request evaluator used to take the NIL message for "no error" and
+;;; report the failed request DONE OK.
+
+(defparameter +nil-catch-all-message-form+
+  "(defun vl-catch-all-error-message (e) nil)"
+  "AutoLISP that makes the hosted clautolisp answer NIL for the message
+of every caught error, as AutoCAD does for some.")
+
+(test protocol-nil-catch-all-message-request-fails
+  "A failing -x request on a host whose caught-error message is NIL is
+reported FAIL with the fixed text, not DONE OK. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; NIL-message test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary
+             (list +nil-catch-all-message-form+
+                   "(/ 1 0)"
+                   "(princ 7)")
+             :assume-no-rest-p t)
+          (is (= 3 (length statuses)) "statuses: ~S" statuses)
+          (is (search " OK" (first statuses))
+              "the override must load: ~S ~S" statuses stderr)
+          (is (search " FAIL" (second statuses))
+              "a failing request must FAIL, not report OK: ~S" statuses)
+          (is (search "the engine supplied no message" stderr)
+              "the failure must carry the fixed text: ~S" stderr)
+          ;; The session survives the failure.
+          (is (search " OK" (third statuses)) "statuses: ~S" statuses)
+          (is (search "7" (without-returns stdout)) "stdout: ~S" stdout)))))
+
+(test protocol-nil-catch-all-message-load-fails
+  "A form that fails inside a loaded file, on a host whose caught-error
+message is NIL, makes the load FAIL and stops it there. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; NIL-message load test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :assume-no-rest-p t
+             :forms-fn
+             (lambda (workdir)
+               (let ((f (merge-pathnames "nil-message.lsp" workdir)))
+                 (with-open-file (out f :direction :output
+                                        :if-exists :supersede
+                                        :if-does-not-exist :create)
+                   (format out ";; fails on line 3~%(setq nilmsg-before 1)~%(/ 1 0)~%(setq nilmsg-after 1)~%"))
+                 (list +nil-catch-all-message-form+
+                       (format nil "(load ~S)" (namestring f))
+                       (concatenate 'string
+                                    "(princ (if (and (boundp (quote nilmsg-after))"
+                                    " nilmsg-after) \"AFTER-SET\" \"AFTER-UNSET\"))")))))
+          (is (= 3 (length statuses)) "statuses: ~S" statuses)
+          (is (search " OK" (first statuses))
+              "the override must load: ~S ~S" statuses stderr)
+          (is (search " FAIL" (second statuses))
+              "a failing form in a loaded file must FAIL the load: ~S ~S"
+              statuses stderr)
+          (is (search "nil-message.lsp" stderr)
+              "the diagnostic must name the loaded file: ~S" stderr)
+          (is (search "the engine supplied no message" stderr)
+              "the diagnostic must carry the fixed text: ~S" stderr)
+          (is (search "AFTER-UNSET" (without-returns stdout))
+              "the load must stop at the failing form: ~S" stdout)))))
+
 ;;; --- real literals reach the CAD with every digit --------------------
 ;;;
 ;;; alfe-cad-transport-rounds-reals. The emitted AUTOLISP-EVAL-REQUEST-FORM

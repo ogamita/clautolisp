@@ -1349,6 +1349,17 @@ Returns the path of the emitted file."
         (progn~%~
           (setq alfe--f (open alfe--path \"a\"))~%~
           (if alfe--f (progn (write-line (strcat \"[CAD] \" alfe--msg) alfe--f) (close alfe--f))))))))~%~
+~%~
+;;; --- caught-error message, never NIL (alfe-cad-nil-catch-all-message) ---~%~
+;; AutoCAD answers NIL from vl-catch-all-error-message for some caught~%~
+;; errors (BricsCAD \"\"). The bootstrap defines this same function; it is~%~
+;; emitted here as well because the bootstrap-load diagnostic below runs~%~
+;; before -- or without -- the bootstrap.~%~
+(defun alfe-catch-all-message (alfe--e / alfe--m)~%~
+  (setq alfe--m (vl-catch-all-error-message alfe--e))~%~
+  (if (and (= (type alfe--m) 'STR) (/= alfe--m \"\"))~%~
+    alfe--m~%~
+    \"the engine supplied no message\"))~%~
 (alfe-debug-log \"run-common.lsp evaluated; about to bootstrap runtime\")~%")
             ;; --- Plug-in text, before anything is bootstrapped ---
             ;; Hook :run-common-prelude — AutoLISP source a plug-in wants the
@@ -1372,7 +1383,7 @@ Returns the path of the emitted file."
   (vl-catch-all-apply 'load (list ~S)))~%~
 (if (vl-catch-all-error-p *ALFE-BOOTSTRAP-LOAD-RESULT*)~%  ~
   (alfe-debug-log (strcat \"bootstrap LOAD failed: \"~%    ~
-    (vl-catch-all-error-message *ALFE-BOOTSTRAP-LOAD-RESULT*)))~%  ~
+    (alfe-catch-all-message *ALFE-BOOTSTRAP-LOAD-RESULT*)))~%  ~
   (alfe-debug-log \"bootstrap LOAD succeeded\"))~%"
                         bootstrap-path bootstrap-path)))
             ;; --- Source the CAD-side runtime ---
@@ -1394,7 +1405,7 @@ Returns the path of the emitted file."
   (vl-catch-all-apply 'load (list ~S)))~%~
 (if (vl-catch-all-error-p *ALFE-RUNTIME-LOAD-RESULT*)~%  ~
   (alfe-debug-log (strcat \"runtime LOAD failed: \"~%    ~
-    (vl-catch-all-error-message *ALFE-RUNTIME-LOAD-RESULT*)))~%  ~
+    (alfe-catch-all-message *ALFE-RUNTIME-LOAD-RESULT*)))~%  ~
   (alfe-debug-log \"runtime LOAD succeeded\"))~%"
                          runtime-path runtime-path))
                ;; --- Bridge bootstrap I/O channels onto the file-IPC ---
@@ -1533,10 +1544,13 @@ Returns the path of the emitted file."
           ;; turn, and the error is re-signalled afterwards.~%~
           ;; Re-signalling by MESSAGE keeps~%~
           ;; the loop's quit test working: it recognises a quit with~%~
-          ;; autolisp-quit-signal-p on the message text.~%~
+          ;; autolisp-quit-signal-p on the message text. The message~%~
+          ;; goes through alfe-catch-all-message: AutoCAD answers NIL~%~
+          ;; for some errors, and a NIL alfe--err reported the failed~%~
+          ;; request as DONE OK (alfe-cad-nil-catch-all-message).~%~
           (setq alfe--err (vl-catch-all-apply 'load (list alfe--path)))~%~
           (if (vl-catch-all-error-p alfe--err)~%~
-            (setq alfe--err (vl-catch-all-error-message alfe--err))~%~
+            (setq alfe--err (alfe-catch-all-message alfe--err))~%~
             (progn~%~
               (setq alfe--err nil)~%~
               (setq alfe--r *AUTOLISP-EVAL-RESULT*))))~%~
@@ -1749,7 +1763,7 @@ Returns the path of the emitted file."
 (if (vl-catch-all-error-p *AUTOLISP-PROTOCOL-LOOP-RESULT*)~%  ~
   (progn~%    ~
     (setq *ALFE-LOOP-ERRMSG*~%      ~
-      (vl-catch-all-error-message *AUTOLISP-PROTOCOL-LOOP-RESULT*))~%    ~
+      (alfe-catch-all-message *AUTOLISP-PROTOCOL-LOOP-RESULT*))~%    ~
     (alfe-debug-log (strcat \"server-loop CAUGHT error: \" *ALFE-LOOP-ERRMSG*))~%    ~
     (vl-catch-all-apply 'autolisp-protocol-write-stderr~%      ~
       (list (strcat \"ERROR server-loop aborted: \" *ALFE-LOOP-ERRMSG*)))~%    ~

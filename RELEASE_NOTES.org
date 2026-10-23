@@ -1945,6 +1945,13 @@ file or COM), and forwards the workload.
   330 102 330 …=. Measured on both, and followed per dialect: the BricsCAD
   dialects take BricsCAD's order, every other dialect AutoCAD's.
 
+- *A failing request is never reported OK on AutoCAD* (2.3.39): AutoCAD
+  can catch an error whose message is =nil= (=vl-exit-with-error= outside
+  a VLX, measured), and alfe took that =nil= for "no error": the failed
+  =-x= / REPL request reported =DONE OK= and a failing form of a loaded
+  file was skipped silently. Such an error now fails with "the engine
+  supplied no message" and the form that failed.
+
 - *A padded =princ= keeps its real literals on AutoCAD too* (2.3.36): the
   call alfe pads for AutoCAD (=(princ X)= sent as =(princ X nil)=, since
   AutoCAD's =defun= has no =&rest=) was printed back from its value, and
