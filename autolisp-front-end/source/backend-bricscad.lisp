@@ -1449,7 +1449,7 @@ reached, now with a hardened launcher — see
     variant))
 
 (defun build-launch-argv (backend protocol-session
-                          &key (mode :auto))
+                          &key (mode :auto) dwg)
   "Return the argv list to launch the BricsCAD engine for SESSION
 under MODE. The returned list has the binary in CAR; the caller
 typically hands it to UIOP:LAUNCH-PROGRAM."
@@ -1459,7 +1459,7 @@ typically hands it to UIOP:LAUNCH-PROGRAM."
     (case variant
       (:batch
        (let ((scr (merge-pathnames "run.scr" workdir))
-             (template (or (bricscad-backend-template-path backend)
+             (template (or dwg (bricscad-backend-template-path backend)
                            (discover-bricscad-template
                             :executable-path binary :workdir workdir)))
              (profile (bricscad-backend-profile backend)))
@@ -1696,7 +1696,7 @@ own."
   ;; DIALECT is currently irrelevant on the CAD side: the AutoLISP
   ;; dialect lives inside the CAD engine and is not swappable from
   ;; outside. HOST is meaningful only to clautolisp.
-  (declare (ignore host mock-input dialect dwg load-encoding io-encoding
+  (declare (ignore host mock-input dialect load-encoding io-encoding
                    source-encoding file-read-encoding file-write-encoding
                    console-in-encoding console-out-encoding
                    cadstdio-in-encoding cadstdio-out-encoding
@@ -1833,7 +1833,7 @@ own."
                   (log-debug "backend BRICSCAD: wrote launcher.applescript -> ~A" apl))))))
           (let* ((argv (alfe.plugin:run-hook
                         :launch-argv
-                        (build-launch-argv backend protocol :mode mode)
+                        (build-launch-argv backend protocol :mode mode :dwg dwg)
                         :variant variant :workdir workdir))
                  (launch-options (alfe.plugin:run-hook
                                   :launch-options

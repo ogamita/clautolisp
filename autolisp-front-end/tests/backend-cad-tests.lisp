@@ -1815,6 +1815,26 @@ locale; no preference keeps discovery order."
                   :workdir (uiop:ensure-directory-pathname "/tmp/argv-probe/"))))
     (alfe.backend.bricscad:build-launch-argv backend session :mode :batch)))
 
+(test bricscad-batch-start-engine-forwards-requested-drawing
+  "The CLI's requested DWG reaches the native batch launch argv."
+  (with-cad-test-directories
+    (let* ((workdir (%fresh-test-directory))
+           (drawing (alfe.drawing:fresh-empty-dwg workdir :name "fixture.dwg"))
+           (backend (alfe.backend.bricscad:make-bricscad-backend
+                     :executable-path "/fake/bricscad.exe" :variant :batch))
+           (alfe.backend.cad-common:*host-os-override* :windows)
+           (captured nil))
+      (alfe.backend:start-engine
+       backend workdir :mode :batch :dwg (namestring drawing)
+       :wait-for-ready nil
+       :launcher (lambda (argv &rest ignored)
+                   (declare (ignore ignored))
+                   (setf captured argv)
+                   nil))
+      (is (member (alfe.backend.cad-common:cad-argument-path drawing)
+                  captured :test #'equal))
+      (is (not (probe-file (merge-pathnames "empty.dwg" workdir)))))))
+
 (test bricscad-batch-drawings-are-private-to-each-session
   "Two default batch launches must not open the same writable drawing."
   (let* ((root (merge-pathnames

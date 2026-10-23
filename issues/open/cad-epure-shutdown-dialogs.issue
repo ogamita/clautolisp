@@ -55,3 +55,12 @@ template overrides. A regression stages two Windows batch sessions and
 checks that both drawings exist at distinct paths. This fixes the batch
 default; the origin of reported cadinst-bricscad-A/B names is still under
 investigation and is not attributed to this code without evidence.
+
+* Requested drawing forwarding
+The BricsCAD start-engine method also declared DWG ignored, silently
+dropping the CLI fixture in batch mode. Forward it into the batch argv
+builder, ahead of the cached template and default resource. An end-to-end
+launcher-injection regression checks the requested fixture reaches argv
+and no replacement empty.dwg is written. 61 targeted checks pass on
+SBCL and CCL. Explicit fixture ownership remains the caller's decision;
+test harnesses stage private copies rather than opening shared sources.
