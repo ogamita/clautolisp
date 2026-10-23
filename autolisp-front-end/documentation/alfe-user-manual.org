@@ -291,9 +291,9 @@ document cannot be closed, the bridge stops instead of calling Quit and
 opening a save dialog. Attached instances remain under their owner's
 control.
 
-BricsCAD batch scripts send QUIT and its discard answer together through
-AutoLISP =command=. A bare QUIT command followed by an SCR answer can
-still display a save dialog when EPURE is loaded. After the protocol has
+BricsCAD batch scripts close their active document with
+=SaveChanges=False= before QUIT. Sending QUIT and an SCR or AutoLISP
+discard answer can still display a save dialog under EPURE. After the protocol has
 stopped, alfe allows ten seconds for BricsCAD to exit naturally before
 its bounded termination fallback; a warning identifies that fallback.
 

@@ -321,7 +321,7 @@ creates it. Backs the pre-launch quarantine of a corrupt per-user default.cui."
   "EMIT-RUN-SCR writes a SCR that:
    - loads run-common.lsp,
    - disables FILEDIA,
-   - issues _QUIT _N when QUIT-ON-FINISH-P is on."
+   - closes without saving before _QUIT when QUIT-ON-FINISH-P is on."
   (let* ((workdir (uiop:ensure-directory-pathname
                    (merge-pathnames
                     (format nil "alfe-test-bcad-scr-~D/" (random 999999))
@@ -341,7 +341,8 @@ creates it. Backs the pre-launch quarantine of a corrupt per-user default.cui."
             (is (search "(load" content))
             (is (search "run-common.lsp" content))
             (is (search "_FILEDIA 0" content))
-            (is (search "(command \"._QUIT\" \"_N\")" content))))
+            (is (search "(vla-close (vla-get-ActiveDocument (vlax-get-acad-object)) :vlax-false)" content))
+            (is (< (search "(vla-close" content) (search "._QUIT" content)))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 

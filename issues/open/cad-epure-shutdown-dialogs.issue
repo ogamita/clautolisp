@@ -15,8 +15,9 @@ a forced BricsCAD termination, or an AutoCAD callback error during shutdown.
   logging finish, then restore them. Restoring at C:MAIN return is too early.
 - Close AutoCAD documents without saving, wait for quiescence and retry
   transient COM rejections. Never Quit after a failed document close.
-- Send BricsCAD QUIT and its discard answer from AutoLISP command rather
-  than as separate SCR tokens; allow bounded natural exit before fallback.
+- Close the active BricsCAD batch document explicitly with SaveChanges=False
+  before QUIT; even AutoLISP command with a discard answer leaves a dialog
+  on SCHME. Allow bounded natural exit before fallback.
 
 * Evidence (2026-10-23)
 34 targeted checks pass on both SBCL and CCL, including ownership, bridge generation,
@@ -32,3 +33,9 @@ Process.HasExited can be true while WaitForSingleObject(handle, 0) returns
 WAIT_TIMEOUT and Restart Manager still lists the process as a DLL owner.
 Native qualification must use the process handle signal, not only the
 reported exit code. The operational collector now has that stronger test.
+
+SCHME on pb: 5 assertions pass and BricsCAD exits naturally with code 0
+using explicit ActiveDocument.Close(False), isolated plugin V12.
+The preceding V11 matrix passed SCHMS on both engines, but SCHME BricsCAD
+needed forced termination and SCHME AutoCAD exited with 0xc0020001.
+Those V11 SCHME rows remain failed qualification.

@@ -382,7 +382,7 @@ unnamed \"<<Profil sans nom>>\") rather than trust the default."
   "Write WORKDIR/run.scr — the SCR script BricsCAD runs in batch
 (-B) mode. The script loads run-common.lsp (which itself loads the
 autolisp-remote-io runtime) and, when QUIT-ON-FINISH-P is true,
-disables FILEDIA and issues _QUIT _N so the engine doesn't hang
+closes the active document without saving and issues _QUIT so the engine doesn't hang
 on a save-changes dialog.
 
 Returns the path of the emitted file."
@@ -418,9 +418,9 @@ Returns the path of the emitted file."
                    ;; intentional — BricsCAD's SCR parser treats the
                    ;; newline as the command terminator.
                    (format out "._FILEDIA 0~%")
-                   ;; COMMAND supplies the answer in Lisp context; a bare SCR
-                   ;; QUIT can still open the GUI save dialog under EPURE.
-                   (format out "(command \"._QUIT\" \"_N\")~%"))))
+                   ;; QUIT can open a GUI save dialog even with a Lisp answer.
+                   ;; Close the owned batch document explicitly first.
+                   (format out "(vl-load-com)~%(vla-close (vla-get-ActiveDocument (vlax-get-acad-object)) :vlax-false)~%._QUIT~%"))))
          (text (alfe.plugin:run-hook :launcher-script raw
                                      :kind :scr :variant :batch :path path)))
     (with-open-file (out path :direction :output
