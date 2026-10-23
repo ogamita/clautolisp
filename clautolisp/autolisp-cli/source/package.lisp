@@ -27,6 +27,7 @@
    #:cli-options-mode            ; A — :auto / :automation / :batch
    #:cli-options-backend-variant ; A — :attach / :launch / …
    #:cli-options-cad             ; A — --cad DENOTATION (alfe backend selection)
+   #:cli-options-attach-pid      ; A — --attach-pid PID (attach to that running CAD)
    #:cli-options-actions         ; AC — ordered action list ((:file . PATH)/(:expression . TEXT))
    #:cli-options-interactive-p   ; AC
    #:cli-options-quit-p          ; A

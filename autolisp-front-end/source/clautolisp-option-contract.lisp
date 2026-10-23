@@ -65,6 +65,7 @@
     ("--bricscad"           :front-end "selects another backend")
     ("--cad"                :front-end "selects a CAD backend")
     ("--backend"            :front-end "selects the variant itself")
+    ("--attach-pid"         :front-end "selects the running CAD alfe attaches to")
     ;; alfe run machinery
     ("--workdir"            :front-end "alfe's workdir; *AUTOLISP-WORKDIR* via the shared bindings")
     ("--keep-workdir"       :front-end "alfe's workdir cleanup")

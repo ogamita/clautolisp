@@ -96,6 +96,65 @@
   (is (eq :attach (alfe.cli::cli-options-backend-variant
                    (parse-arguments '("--backend" "attach"))))))
 
+;;; alfe-cad-launch-new-by-default: a CAD run LAUNCHES a new instance unless
+;;; asked to attach; an attach implies --mode automation.
+
+(defun %policy (&rest argv)
+  (alfe.cli::apply-cad-instance-policy (parse-arguments argv)))
+
+(test cli-cad-instance-policy-defaults-to-launch
+  "Without --backend, a CAD run neither attaches nor changes --mode, and the
+bridges' COM mode is \"launch\" -- whatever --mode says."
+  (let ((opts (%policy "--autocad")))
+    (is (null (alfe.cli::cli-options-backend-variant opts)))
+    (is (eq :auto (cli-options-mode opts))))
+  (let ((old (uiop:getenv "AUTOCAD_COM_MODE")))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "AUTOCAD_COM_MODE") "")
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  (%policy "--autocad") "AUTOCAD_COM_MODE")))
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  nil "AUTOCAD_COM_MODE")))
+           ;; The environment may still pick a mode when the command line
+           ;; does not, and the command line wins over it.
+           (setf (uiop:getenv "AUTOCAD_COM_MODE") "auto")
+           (is (string= "auto" (alfe.backend.cad-common:cad-com-mode
+                                (%policy "--autocad") "AUTOCAD_COM_MODE")))
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  (%policy "--autocad" "--backend" "launch")
+                                  "AUTOCAD_COM_MODE")))
+           (setf (uiop:getenv "AUTOCAD_COM_MODE") "bogus")
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  (%policy "--autocad") "AUTOCAD_COM_MODE"))))
+      (setf (uiop:getenv "AUTOCAD_COM_MODE") (or old "")))))
+
+(test cli-cad-instance-policy-attach-implies-automation
+  "--backend attach and --attach-pid select the attach COM mode and turn
+--mode auto into automation, in either option order."
+  (let ((opts (%policy "--bricscad" "--backend" "attach")))
+    (is (eq :automation (cli-options-mode opts)))
+    (is (string= "attach" (alfe.backend.cad-common:cad-com-mode
+                           opts "BRICSCAD_COM_MODE"))))
+  (dolist (argv '(("--autocad" "--attach-pid" "4242")
+                  ("--attach-pid=4242" "--autocad")))
+    (let ((opts (apply #'%policy argv)))
+      (is (= 4242 (alfe.cli:cli-options-attach-pid opts)))
+      (is (eq :attach (alfe.cli::cli-options-backend-variant opts)))
+      (is (eq :automation (cli-options-mode opts))))))
+
+(test cli-cad-instance-policy-usage-errors
+  "Contradictions are usage errors, not silent launches."
+  ;; batch always starts its own CAD process
+  (signals cli-usage-error (%policy "--autocad" "--mode" "batch" "--backend" "attach"))
+  (signals cli-usage-error (%policy "--bricscad" "--mode" "batch" "--attach-pid" "12"))
+  ;; --attach-pid against --backend launch, or without a CAD backend
+  (signals cli-usage-error (%policy "--autocad" "--backend" "launch" "--attach-pid" "12"))
+  (signals cli-usage-error (%policy "--attach-pid" "12"))
+  ;; not a process id
+  (signals cli-usage-error (parse-arguments '("--autocad" "--attach-pid" "acad")))
+  (signals cli-usage-error (parse-arguments '("--autocad" "--attach-pid" "0"))))
+
 (test cli-builds-action-plan-in-order
   "Actions appear in the plan in the order they're seen on the CLI."
   (let* ((opts (parse-arguments '("-x" "(+ 1 2)" "-l" "/tmp/foo.lsp" "-x" "(bar)")))

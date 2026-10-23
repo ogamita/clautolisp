@@ -32,6 +32,8 @@
            #:windows-glob-existing-files
            #:vbs-escape
            #:applescript-escape
+           #:cad-com-mode
+           #:check-com-attach-pid
            ;; runtime LSP discovery
            #:discover-runtime-lsp
            #:discover-bootstrap-lsp
@@ -188,6 +190,93 @@ leave backslashes alone (Windows paths embed them verbatim)."
           do (case ch
                (#\" (write-string "\"\"" out))
                (t   (write-char ch out))))))
+
+;;; --- launch a new CAD, or attach to a running one ---------------------
+
+(defun cad-com-mode (cli-options env-var)
+  "The COM mode of a Windows automation bridge: \"launch\" (CreateObject: a
+NEW instance), \"attach\" (GetObject: the running one, or fail) or \"auto\"
+(attach when one runs, else launch).
+
+LAUNCHING IS THE DEFAULT (alfe-cad-launch-new-by-default, pjb 2026-10-23).
+It used to be \"auto\", and a batch run then worked inside whatever CAD was
+open -- somebody's session, or a leftover of an earlier CI job stuck on a
+dialog. --backend launch / attach decide; without either, ENV-VAR
+($AUTOCAD_COM_MODE / $BRICSCAD_COM_MODE) may still name one of the three
+modes, and anything else means \"launch\"."
+  (case (and cli-options
+             (clautolisp.autolisp-cli:cli-options-backend-variant cli-options))
+    (:attach "attach")
+    (:launch "launch")
+    (t (let ((env (string-downcase (or (uiop:getenv env-var) ""))))
+         (if (member env '("launch" "attach" "auto") :test #'string=)
+             env
+             "launch")))))
+
+(defparameter +com-active-pid-ps1+
+  "# Which process is the COM-registered instance of a ProgID? Emitted by alfe.
+param([string] $ProgId)
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AlfeComPid {
+    [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+}
+'@
+try {
+    $app = [System.Runtime.InteropServices.Marshal]::GetActiveObject($ProgId)
+    $p = [uint32] 0
+    [void] [AlfeComPid]::GetWindowThreadProcessId([IntPtr] [long] $app.HWND, [ref] $p)
+    \"PID=$p\"
+} catch { \"NONE\" }
+"
+  "PowerShell printing PID=<n> for the instance GetActiveObject(ProgID)
+returns, or NONE. In PowerShell, not in the VBScript bridge: the
+application's HWND is a LONG_PTR, a type VBScript cannot hold on x64.")
+
+(defun com-registered-instance-pid (progid workdir &key (runner #'uiop:run-program))
+  "The PID of the instance COM hands out for PROGID (GetActiveObject, which is
+what the bridge's GetObject(, ProgID) gets), or NIL when none is registered or
+PowerShell cannot say."
+  (let ((ps1 (merge-pathnames "com-active-pid.ps1" workdir)))
+    (with-open-file (out ps1 :direction :output :if-exists :supersede
+                             :if-does-not-exist :create :external-format :utf-8)
+      (write-string +com-active-pid-ps1+ out))
+    (let ((text (ignore-errors
+                 (funcall runner
+                          (list "powershell" "-NoProfile" "-NonInteractive"
+                                "-ExecutionPolicy" "Bypass"
+                                "-File" (uiop:native-namestring ps1)
+                                "-ProgId" progid)
+                          :output :string :error-output nil
+                          :ignore-error-status t))))
+      (let ((at (and text (search "PID=" text))))
+        (and at (parse-integer text :start (+ at 4) :junk-allowed t))))))
+
+(defun check-com-attach-pid (backend-name progid pid workdir
+                             &key (runner #'uiop:run-program))
+  "--attach-pid PID through COM: signal BACKEND-BOOTSTRAP-ERROR unless PID is
+the instance COM hands out for PROGID.
+
+COM CANNOT REACH THE OTHER INSTANCES (probe cad-instances, BricsCAD V25,
+2026-10-23): with two running, GetActiveObject keeps returning the FIRST,
+the Running Object Table holds the class moniker once per instance but every
+entry binds to that first one, and a saved drawing is not registered at all.
+So an attach to a given PID is possible exactly when that PID is the
+registered instance -- anything else is said, not silently replaced by the
+wrong CAD."
+  (let ((registered (com-registered-instance-pid progid workdir :runner runner)))
+    (unless (eql registered pid)
+      (error 'backend-bootstrap-error
+             :backend backend-name
+             :code :attach-pid-not-reachable
+             :message
+             (if registered
+                 (format nil "--attach-pid ~D: COM reaches only the instance registered first for ~A, which is process ~D; process ~D cannot be attached to through COM (end the other instance, or use --attach-pid ~D)"
+                         pid progid registered pid registered)
+                 (format nil "--attach-pid ~D: no running instance is registered with COM for ~A"
+                         pid progid))))
+    registered))
 
 (defun applescript-escape (string)
   "Escape STRING for inclusion in an AppleScript double-quoted

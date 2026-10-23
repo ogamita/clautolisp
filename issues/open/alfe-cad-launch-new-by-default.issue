@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-launch-new-by-default -- launch a new CAD by default; attach only on request, optionally to a given instance
-#+STATUS: IN-PROGRESS
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: feature
 #+DEPENDS: -
@@ -58,3 +58,46 @@ measures:
 - whether binding a document's file moniker reaches its instance;
 - whether System Events can make one of two same-named BricsCAD processes
   frontmost by unix id.
+
+* Measured (MR !475, 2026-10-23)
+
+| question                          | AutoCAD 2022 (job 17419746926)    | BricsCAD V25 Windows (17419746925) | BricsCAD V26 macOS (17419256134) |
+|-----------------------------------+-----------------------------------+------------------------------------+----------------------------------|
+| second create/launch: new process | yes (49752, 40648)                | yes (41632, 27996)                 | yes, direct and =open -n=        |
+| GetActiveObject, two running      | the FIRST, always                 | the FIRST, always                  | (=open -a= activates the oldest) |
+| ROT per instance                  | class monikers twice, both -> 1st | the same                           | --                               |
+| saved drawing in the ROT          | no                                | no                                 | --                               |
+| target one instance by PID        | only if it is the first           | only if it is the first            | yes: System Events, unix id      |
+
+Binding a .dwg path the ROT does not hold makes COM start or wait on a CAD
+for it: the first BricsCAD run hung 20 minutes there (cancelled; the probe
+now binds only real ROT entries and kills every CAD process it started).
+
+The second macOS run (17419746924) found a leftover BricsCAD (48160,
+SCHME profile, MNL error) running before it, and pjb at the machine held
+the focus during FRONT-BY-PID; the first run, unattended, is the reference.
+
+* Done (2.3.45)
+
+- =--backend launch= (default for CADs) / =--backend attach=, now honoured
+  by the CAD backends; =--attach-pid PID= (implies attach). An attach
+  implies =--mode automation=; with =--mode batch= it is a usage error
+  (APPLY-CAD-INSTANCE-POLICY).
+- Windows COM bridges: mode "launch" (CreateObject only) by default
+  (CAD-COM-MODE; =$AUTOCAD_COM_MODE= / =$BRICSCAD_COM_MODE= still choose
+  when no --backend is given). =--attach-pid=: CHECK-COM-ATTACH-PID asks
+  PowerShell for the PID behind GetActiveObject and refuses any other PID,
+  naming the reachable one.
+- AutoCAD bridge: records only the acad.exe its CreateObject started (PIDs
+  before vs after), as CREATEDPID= in the flags file; at shutdown, with
+  another acad.exe running, ends its own by PID (TASKKILL, /F after the
+  timeout) instead of the quit bridge's GetObject.
+- macOS AppleScript path: launch = =open -n -a= and the PID that appeared;
+  attach = =open -a='s instance, or the =--attach-pid= one; every step then
+  addresses that one process by unix id. An explicit attach counts as the
+  macOS automation opt-in.
+- Not alfe's: killing leftover CADs before a CI job (job scripts; SCHMS /
+  SCHME handed to another agent).
+- Not verified live on a CAD: --backend attach / --attach-pid end to end
+  (no CI job attaches, by design). The launch default is exercised by every
+  CAD job of the pipeline.

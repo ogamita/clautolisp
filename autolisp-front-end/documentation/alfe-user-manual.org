@@ -583,7 +583,8 @@ neither a launch nor a workdir handshake.
 
 | Option                        | Effect                                          |
 |-------------------------------+-------------------------------------------------|
-| =--backend attach\vert{}launch=      | Attach to an already-running CAD, or launch a fresh one. |
+| =--backend launch\vert{}attach=      | Launch a fresh CAD (the default), or attach to the running one -- which implies =--mode automation=. |
+| =--attach-pid PID=            | Attach to the running CAD whose process id is PID (implies =--backend attach=). |
 | =--workdir DIR=               | Override the exchange directory (default: =$AUTOLISP_WORKDIR=). |
 | =--bootstrap-phase PHASE=     | Truncate the bootstrap at =marker=, =core=, =log= or =full=. |
 | =--cad-log FILE=              | After the run, copy the CAD's own command-history log to FILE, in UTF-8 (see [[#cad-log][The CAD's log: =--cad-log=]]). |
@@ -2048,8 +2049,10 @@ plug-in is active.
   /The CAD runtime files/ above.
 - =$AUTOCAD_EXE=, =$AUTOCAD_ACCORECONSOLE=, =$BRICSCAD_EXE= :: explicit
   engine binaries, bypassing detection.
-- =$AUTOCAD_COM_MODE=, =$BRICSCAD_COM_MODE= :: =auto= (default) or
-  =off=. =off= is the batch path, without COM.
+- =$AUTOCAD_COM_MODE=, =$BRICSCAD_COM_MODE= :: =launch= (default: a new
+  instance), =attach= (the running one), =auto= (attach when one runs,
+  else launch) or =off= (the batch path, without COM). =--backend= and
+  =--attach-pid= take priority.
 - =$AUTOCAD_PROGID= :: the COM ProgID =--mode automation= asks for, used
   verbatim and without a registry check — the way to name a release alfe
   does not know, or to pin one on a host with several. Unset, alfe

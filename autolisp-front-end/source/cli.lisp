@@ -101,6 +101,7 @@
                 #:cli-options-mode
                 #:cli-options-backend-variant
                 #:cli-options-cad
+                #:cli-options-attach-pid
                 #:cli-options-actions
                 #:cli-options-interactive-p
                 #:cli-options-quit-p
@@ -158,6 +159,7 @@
            #:cli-options-mode
            #:cli-options-backend-variant
            #:cli-options-cad
+           #:cli-options-attach-pid
            #:cli-options-actions
            #:cli-options-interactive-p
            #:cli-options-quit-p
@@ -292,7 +294,12 @@ Backend selection (mutually exclusive):
 
 Mode and variant:
   --mode {auto,automation,batch}    How to launch the engine (default: auto).
-  --backend {attach,launch}         Attach to a running CAD or launch a fresh one.
+  --backend {launch,attach}         --autocad/--bricscad: launch a NEW CAD instance
+                                    (default), or attach to the running one
+                                    (implies --mode automation: COM on Windows,
+                                    AppleScript on macOS).
+  --attach-pid PID                  Attach to the running CAD whose process id is
+                                    PID (implies --backend attach).
   --backend {direct,subprocess}     --clautolisp: run the engine inside alfe (default)
                                     or as the clautolisp executable. Same meaning for
                                     every option either way. A run needing the
@@ -591,6 +598,20 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (declare (ignore name))
                (setf (cli-options-cad opts) value)))
+   ;; --attach-pid PID: attach to THAT running CAD instead of launching a new
+   ;; one (alfe-cad-launch-new-by-default). Implies --backend attach; the
+   ;; check against --backend launch and --mode batch is APPLY-CAD-INSTANCE-
+   ;; POLICY's, once every option is parsed, so the order does not matter.
+   (make-option-spec
+    :longs '("--attach-pid") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (let ((pid (ignore-errors (parse-integer value))))
+                 (unless (and pid (plusp pid))
+                   (error 'cli-usage-error
+                          :option name
+                          :message (format nil "~A expects a process id (a positive integer), not ~S"
+                                           name value)))
+                 (setf (cli-options-attach-pid opts) pid))))
    (make-option-spec
     :longs '("--main") :takes-arg-p t
     :handler (lambda (opts value name)
@@ -1283,6 +1304,39 @@ denotation that matches nothing is a usage error listing the way to see them."
                             (setf (uiop:getenv "BRICSCAD_EXE") path))
             (:clautolisp    (%set-backend-checked options :clautolisp "--cad"))))))))
 
+(defun apply-cad-instance-policy (options)
+  "Settle whether a CAD run LAUNCHES a new instance or ATTACHES to a running
+one (alfe-cad-launch-new-by-default, pjb 2026-10-23).
+
+Launching is the default: a batch run -- CI above all -- must not land in a
+CAD somebody else is using, and must not run beside another instance. Attaching
+is asked for explicitly, with --backend attach (the running instance) or
+--attach-pid PID (that one). An attach goes through the CAD's automation
+interface, so it implies --mode automation; --mode batch always starts its own
+CAD process, so the two together are a usage error rather than a silent launch.
+--attach-pid with --backend launch, or with a backend that is not a CAD, is
+one too."
+  (let ((pid (cli-options-attach-pid options))
+        (cad-p (member (cli-options-backend options) '(:autocad :bricscad))))
+    (when pid
+      (when (eq (cli-options-backend-variant options) :launch)
+        (error 'cli-usage-error
+               :option "--attach-pid"
+               :message "--attach-pid attaches to a running CAD; it cannot be combined with --backend launch"))
+      (unless cad-p
+        (error 'cli-usage-error
+               :option "--attach-pid"
+               :message "--attach-pid names a running CAD: it needs --autocad, --bricscad or --cad"))
+      (setf (cli-options-backend-variant options) :attach))
+    (when (and cad-p (eq (cli-options-backend-variant options) :attach))
+      (case (cli-options-mode options)
+        (:auto (setf (cli-options-mode options) :automation))
+        (:batch
+         (error 'cli-usage-error
+                :option (if pid "--attach-pid" "--backend attach")
+                :message "attaching to a running CAD goes through its automation interface (COM on Windows, AppleScript on macOS): it cannot be combined with --mode batch, which always starts a new CAD process"))))
+    options))
+
 (defun %print-alfe-backtrace (condition stream)
   "Dump CONDITION and the live CL backtrace to STREAM. Used by the
 --on-error debug|ignore policies; portable across SBCL and CCL, and a
@@ -1417,6 +1471,8 @@ the table is in the alfe specification, Exit status):
            ;; Resolve --cad DENOTATION -> backend + $*_EXE override (needs
            ;; --mode, which is now parsed). No-op unless --cad was given.
            (apply-cad-selection options)
+           ;; Launch a new CAD (the default) or attach to a running one.
+           (apply-cad-instance-policy options)
            ;; Once the log level is set, dump the resolved option
            ;; surface at :debug so a `--debug` run shows what the
            ;; parser decided. Mirrors the bash autolisp script's
