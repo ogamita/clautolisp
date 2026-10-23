@@ -75799,14 +75799,19 @@ Transfers control across namespace/error boundaries.
 - Status: documented by family page.
 
 *** clautolisp
-clautolisp loads no VLX, so the only separate-namespace boundary is
-~vl-catch-all-apply~, which returns a catch-all error object carrying
-~msg~. With no such boundary -- in the document namespace -- the call is
-an AutoLISP error with message ~msg~, raised where ~vl-exit-with-error~
-was called: ~*error*~ is called with ~msg~ (a ~*error*~ local to the
-calling function included), and without one the error is reported and
-~--on-error~ applies. (Before 2.3.28 it escaped every handler to the host
-Lisp's debugger: issue =vl-exit-with-error-leaks-host-condition=.)
+clautolisp loads no VLX, so every call is outside a separate-namespace
+VLX. There, measured on AutoCAD 2022 (GUI and accoreconsole) and BricsCAD
+V25 / V26 (control-flow probe, 2026-10-22/23), ~vl-exit-with-error~ is an
+AutoLISP error WITHOUT a message, whatever ~msg~ is:
+~vl-catch-all-apply~ returns a catch-all error object whose message is
+~nil~ on AutoCAD and ~""~ on BricsCAD. clautolisp does the same, per
+dialect (the BricsCAD dialects ~""~, every other dialect AutoCAD's ~nil~),
+raising the error where ~vl-exit-with-error~ is called: ~*error*~ (a
+local one included) is called with an empty message, and without one the
+error is reported and ~--on-error~ applies. (Before 2.3.28 it escaped every
+handler to the host Lisp's debugger: issue
+=vl-exit-with-error-leaks-host-condition=; from 2.3.28 to 2.3.37 the error
+carried ~msg~: issue =vl-exit-outside-vlx-caught-diverges=.)
 
 #+LATEX: \newpage
 
@@ -75850,12 +75855,15 @@ Transfers control across namespace boundaries.
 - Status: documented.
 
 *** clautolisp
-clautolisp loads no VLX, so the only separate-namespace boundary is
-~vl-catch-all-apply~, which returns ~value~. With no such boundary -- in
-the document namespace -- the toplevel form being evaluated (an ~-x~
-expression, a form of a loaded file, a REPL input) is abandoned and its
-value is ~value~. (Before 2.3.28 it escaped every handler to the host
-Lisp's debugger: issue =vl-exit-with-error-leaks-host-condition=.)
+clautolisp loads no VLX, so every call is outside a separate-namespace
+VLX. There, measured on AutoCAD 2022 and BricsCAD V25 / V26 (control-flow
+probe, 2026-10-22/23), ~vl-exit-with-value~ does NOT transfer ~value~: it
+is an AutoLISP error without a message, exactly like
+~vl-exit-with-error~ -- ~vl-catch-all-apply~ returns a catch-all error
+object (message ~nil~ on AutoCAD, ~""~ on BricsCAD). clautolisp does the
+same, per dialect. (Before 2.3.28 it escaped to the host Lisp's debugger;
+from 2.3.28 to 2.3.37 it returned ~value~: issue
+=vl-exit-outside-vlx-caught-diverges=.)
 
 #+LATEX: \newpage
 

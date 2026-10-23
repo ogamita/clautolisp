@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: vl-exit-outside-vlx-caught-diverges -- outside a VLX, BricsCAD makes vl-exit-with-error AND vl-exit-with-value an error with an empty message
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: divergence
 #+DEPENDS: control-flow probe on AutoCAD (Windows runners)
@@ -40,3 +40,27 @@ and is not this ticket.
    Divergence rules, with a portability warning under --strict.
 3. Record the measurement in the autolisp-spec entries' *** clautolisp
    sections (VL-EXIT-WITH-ERROR, VL-EXIT-WITH-VALUE).
+
+* AutoCAD measured (2026-10-23) -- DONE, 2.3.38
+
+control-flow probe on MR !471, every case inside vl-catch-all-apply:
+
+| case                               | AutoCAD 2022 GUI | accoreconsole | BricsCAD V25 Win | BricsCAD V26 mac |
+|------------------------------------+------------------+---------------+------------------+------------------|
+| (vl-exit-with-error "boom")        | ERROR nil        | ERROR nil     | ERROR ""         | ERROR ""         |
+| (vl-exit-with-value 42)            | ERROR nil        | ERROR nil     | ERROR ""         | ERROR ""         |
+| ... inside a defun (both)          | ERROR nil        | ERROR nil     | ERROR ""         | ERROR ""         |
+
+(jobs 17398575920, 17398575921, 17398575919, 17396028047.)
+
+So outside a separate-namespace VLX both functions are an error WITHOUT a
+message on every product; the products differ only in the empty value
+(nil vs ""). clautolisp loads no VLX, so 2.3.38 makes every call that:
+VL-EXIT-WITH-ERROR / -VALUE raise the AutoLISP error :VL-EXIT-OUTSIDE-VLX
+(message "") at the call site; vl-catch-all-apply's catch-all carries
+message nil except under the BricsCAD dialects ("") -- the catch-all's
+message slot now admits nil, and VL-CATCH-ALL-ERROR-MESSAGE returns nil for
+it. *error* (local or global) is called with "" -- what a CAD passes its
+*error* in this case is not measured (alfe cannot reach the CAD's top-level
+*error*). Tests: builtin-tests (4 rewritten), autolisp-test
+tests/error/vl-exit.lsp; spec *** clautolisp sections updated.

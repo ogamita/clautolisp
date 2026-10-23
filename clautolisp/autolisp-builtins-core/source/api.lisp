@@ -971,7 +971,15 @@ explicitly.~%"))
       (set-autolisp-errno
        (autolisp-runtime-error-errno condition))
       (make-autolisp-catch-all-error
-       (princ-to-string condition)
+       ;; vl-exit-* outside a VLX: no message -- nil on AutoCAD, "" on
+       ;; BricsCAD (%VL-EXIT-OUTSIDE-VLX).
+       (if (and (eq (autolisp-runtime-error-code condition) :vl-exit-outside-vlx)
+                (not (eq :bricscad
+                         (ignore-errors
+                          (clautolisp.autolisp-reader:autolisp-dialect-product
+                           (clautolisp.autolisp-runtime:current-evaluation-dialect))))))
+           nil
+           (princ-to-string condition))
        condition))
     (error (condition)
       (set-autolisp-errno 1)
@@ -991,7 +999,8 @@ explicitly.~%"))
      "VL-CATCH-ALL-ERROR-MESSAGE"
      "VL-CATCH-ALL-ERROR-MESSAGE expects a catch-all error object, got ~S."
      object))
-  (make-autolisp-string (autolisp-catch-all-error-message object)))
+  (let ((message (autolisp-catch-all-error-message object)))
+    (and message (make-autolisp-string message))))
 
 ;;; --- clautolisp exit-status channel -------------------------------
 ;;;
@@ -1114,20 +1123,29 @@ when no debug session is active (the hook declines)."
 (defun builtin-quit (&optional (status nil status-supplied-p))
   (%terminate-with-status :quit "QUIT" "(quit status)" status-supplied-p status))
 
+;;; VL-EXIT-WITH-ERROR / VL-EXIT-WITH-VALUE are documented only for the
+;;; *error* handler of a separate-namespace VLX. clautolisp loads no VLX,
+;;; so every call is OUTSIDE one -- and there, measured on the four CADs
+;;; (control-flow probe, MR !471: AutoCAD 2022 GUI + accoreconsole jobs
+;;; 17398575920/21, BricsCAD V25 17398575919, V26 17396028047), BOTH
+;;; functions are an error WITHOUT a message, whatever MESSAGE or VALUE was
+;;; passed: vl-catch-all-apply makes it a catch-all error whose message is
+;;; nil on AutoCAD and "" on BricsCAD (vl-exit-outside-vlx-caught-diverges).
+;;; It is raised as an ordinary AutoLISP error, so *error*, --on-error and
+;;; the debugger see it (before 2.3.28 it escaped to the host Lisp's
+;;; debugger: vl-exit-with-error-leaks-host-condition).
+
+(defun %vl-exit-outside-vlx ()
+  (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+   :vl-exit-outside-vlx "~A" ""))
+
 (defun builtin-vl-exit-with-error (message)
-  (let ((text (autolisp-string-value (require-string message "VL-EXIT-WITH-ERROR"))))
-    ;; A separate-namespace boundary (VL-CATCH-ALL-APPLY here; clautolisp
-    ;; loads no VLX) takes the exit and unwinds. When none does, this is
-    ;; the document namespace: the exit IS an AutoLISP error with MESSAGE,
-    ;; raised here, before any unwinding, so *error* (even a local one),
-    ;; --on-error and the debugger see it like any other error. It used to
-    ;; escape every handler to the host Lisp's debugger
-    ;; (vl-exit-with-error-leaks-host-condition).
-    (signal 'autolisp-namespace-exit :kind :error :value text)
-    (clautolisp.autolisp-runtime:signal-autolisp-runtime-error :user-error "~A" text)))
+  (require-string message "VL-EXIT-WITH-ERROR")
+  (%vl-exit-outside-vlx))
 
 (defun builtin-vl-exit-with-value (value)
-  (error 'autolisp-namespace-exit :kind :value :value value))
+  (declare (ignore value))
+  (%vl-exit-outside-vlx))
 
 (defun builtin-mapcar (function-designator first-list &rest more-lists)
   (let* ((function (resolve-autolisp-function-designator function-designator))

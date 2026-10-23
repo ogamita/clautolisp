@@ -1931,6 +1931,14 @@ file or COM), and forwards the workload.
   evaluated, and its prose failed as code (/no function definition:
   SYMBOLE/). Block comments are now skipped wherever they stand. See the
   manual's /How a form reaches a CAD/.
+- *=vl-exit-with-error= / =vl-exit-with-value= outside a VLX behave like the
+  CADs* (2.3.38): measured on AutoCAD 2022 and BricsCAD V25 / V26, both are
+  an error without a message -- even =vl-exit-with-value= --
+  =vl-catch-all-apply= returns a catch-all error whose message is =nil= on
+  AutoCAD and =""= on BricsCAD. clautolisp, which loads no VLX, now does
+  the same per dialect; from 2.3.28 it had kept the message and returned
+  the value.
+
 - *=entget= puts the owner where each CAD does* (2.3.37, cador host):
   AutoCAD 2022 lists a LINE as =-1 0 330 5 …= (owner before handle),
   BricsCAD as =-1 0 5 330 …=; both list a dictionary member =-1 0 5 102

@@ -1025,24 +1025,21 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
         (is (string= "quit / exit abort"
                      (autolisp-string-value message))
             "trapped (quit) carries the same vendor canonical message")))
-    (let ((value (call-autolisp-function
-                  apply-fn
-                  (intern-autolisp-symbol "VL-EXIT-WITH-VALUE")
-                  (list 42))))
-      (is (= 42 value))
-      (is (= 0 (autolisp-errno)))
-      (is (null (call-autolisp-function error-p-fn value))))
-    (let ((failure (call-autolisp-function
-                    apply-fn
-                    (intern-autolisp-symbol "VL-EXIT-WITH-ERROR")
-                    (list (make-autolisp-string "boom")))))
-      (is (= 1 (autolisp-errno)))
-      (is (string= "T"
-                   (autolisp-symbol-name
-                    (call-autolisp-function error-p-fn failure))))
-      (let ((message (call-autolisp-function message-fn failure)))
-        (is (typep message 'autolisp-string))
-        (is (search "boom" (autolisp-string-value message)))))))
+    ;; Outside a VLX (always, in clautolisp) both vl-exit-* are an error
+    ;; without a message: the catch-all's message is nil under the default
+    ;; dialect, as on AutoCAD (vl-exit-outside-vlx-caught-diverges).
+    (dolist (call (list (list "VL-EXIT-WITH-VALUE" 42)
+                        (list "VL-EXIT-WITH-ERROR" (make-autolisp-string "boom"))))
+      (let ((failure (call-autolisp-function
+                      apply-fn
+                      (intern-autolisp-symbol (first call))
+                      (rest call))))
+        (is (string= "T"
+                     (autolisp-symbol-name
+                      (call-autolisp-function error-p-fn failure)))
+            "~A outside a VLX must be caught as an error" (first call))
+        (is (null (call-autolisp-function message-fn failure))
+            "~A outside a VLX has no message" (first call))))))
 
 (test builtin-mapcar
   (reset-autolisp-symbol-table)
@@ -1179,20 +1176,17 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
           (is nil))
       (autolisp-termination (condition)
         (is (eq :quit (autolisp-termination-kind condition)))))
-    (handler-case
-        (progn
-          (call-autolisp-function exit-error-fn (make-autolisp-string "bridge-error"))
-          (is nil))
-      (autolisp-namespace-exit (condition)
-        (is (eq :error (autolisp-namespace-exit-kind condition)))
-        (is (string= "bridge-error" (autolisp-namespace-exit-value condition)))))
-    (handler-case
-        (progn
-          (call-autolisp-function exit-value-fn 42)
-          (is nil))
-      (autolisp-namespace-exit (condition)
-        (is (eq :value (autolisp-namespace-exit-kind condition)))
-        (is (= 42 (autolisp-namespace-exit-value condition)))))))
+    ;; Outside a VLX -- always, in clautolisp -- both raise the AutoLISP
+    ;; error :VL-EXIT-OUTSIDE-VLX (measured on AutoCAD and BricsCAD).
+    (dolist (call (list (list exit-error-fn (make-autolisp-string "bridge-error"))
+                        (list exit-value-fn 42)))
+      (handler-case
+          (progn
+            (apply #'call-autolisp-function call)
+            (is nil))
+        (autolisp-runtime-error (condition)
+          (is (eq :vl-exit-outside-vlx
+                  (clautolisp.autolisp-runtime:autolisp-runtime-error-code condition))))))))
 
 (test builtin-load-error-hook-can-transfer-control
   (reset-autolisp-symbol-table)
@@ -8737,40 +8731,45 @@ the toplevel does; return its value."
 ;;; vl-exit-with-value is the value of the toplevel form.
 
 (test vl-exit-with-error-at-toplevel-calls-error-handler
+  "Outside a VLX, vl-exit-with-error is an AutoLISP error WITHOUT a message
+(measured, vl-exit-outside-vlx-caught-diverges): *error* -- a local one
+too, called before the locals unwind -- receives the empty message."
   (reset-autolisp-symbol-table)
   (install-core-builtins)
   (%error-handler-run
    "(setq seen nil)
-    (defun *error* (msg) (setq seen (strcat \"GLOBAL \" msg)))")
+    (defun *error* (msg) (setq seen (strcat \"GLOBAL[\" msg \"]\")))")
   (%error-handler-run "(vl-exit-with-error \"boom\")")
-  (is (equal "GLOBAL boom" (%error-handler-value "SEEN")))
-  ;; ... a local one too, called before the locals are unwound.
+  (is (equal "GLOBAL[]" (%error-handler-value "SEEN")))
   (%error-handler-run
    "(defun f (n / *error*)
-      (defun *error* (msg) (setq seen (strcat \"LOCAL \" msg \" n=\" (itoa n))))
+      (defun *error* (msg) (setq seen (strcat \"LOCAL[\" msg \"] n=\" (itoa n))))
       (vl-exit-with-error \"inner\"))")
   (%error-handler-run "(f 3)")
-  (is (equal "LOCAL inner n=3" (%error-handler-value "SEEN"))))
+  (is (equal "LOCAL[] n=3" (%error-handler-value "SEEN"))))
 
-(test vl-exit-with-error-without-handler-is-an-autolisp-error
+(test vl-exit-without-handler-is-an-autolisp-error
+  "With no *error*, both vl-exit-* surface as the AutoLISP error
+:VL-EXIT-OUTSIDE-VLX -- never as a host condition (vl-exit-with-error-
+leaks-host-condition)."
   (reset-autolisp-symbol-table)
   (install-core-builtins)
-  (let ((caught (handler-case (progn (%error-handler-run "(vl-exit-with-error \"boom\")") nil)
-                  ;; ERROR, as the driver's own handlers do: the
-                  ;; namespace exit is a SERIOUS-CONDITION, not an ERROR,
-                  ;; so a boundary that handles it must ask for it.
-                  (error (c) c))))
-    (is (typep caught 'clautolisp.autolisp-runtime:autolisp-runtime-error)
-        "must surface as an AutoLISP error, not ~S" (type-of caught))
-    (when (typep caught 'clautolisp.autolisp-runtime:autolisp-runtime-error)
-      (is (equal "boom" (clautolisp.autolisp-runtime:autolisp-runtime-error-message caught))))))
+  (dolist (text '("(vl-exit-with-error \"boom\")" "(list 1 (vl-exit-with-value 42) 2)"))
+    (let ((caught (handler-case (progn (%error-handler-run text) nil)
+                    (error (c) c))))
+      (is (typep caught 'clautolisp.autolisp-runtime:autolisp-runtime-error)
+          "~A must surface as an AutoLISP error, not ~S" text (type-of caught))
+      (when (typep caught 'clautolisp.autolisp-runtime:autolisp-runtime-error)
+        (is (eq :vl-exit-outside-vlx
+                (clautolisp.autolisp-runtime:autolisp-runtime-error-code caught)))))))
 
-(test vl-exit-with-value-at-toplevel-is-the-forms-value
+(test vl-exit-caught-outside-a-vlx-is-an-error-without-message
+  "vl-catch-all-apply of either vl-exit-* outside a VLX returns a catch-all
+error; its message is nil under the default dialect, as on AutoCAD 2022
+(BricsCAD answers \"\")."
   (reset-autolisp-symbol-table)
   (install-core-builtins)
-  (is (eql 42 (%error-handler-run "(list 1 (vl-exit-with-value 42) 2)")))
-  ;; Inside vl-catch-all-apply both keep their documented results.
-  (is (eql 5 (%error-handler-run "(vl-catch-all-apply (quote vl-exit-with-value) (list 5))")))
-  (is (equal "c" (autolisp-string-value
-                  (%error-handler-run
-                   "(vl-catch-all-error-message (vl-catch-all-apply (quote vl-exit-with-error) (list \"c\")))")))))
+  (dolist (form '("(vl-catch-all-apply (quote vl-exit-with-value) (list 5))"
+                  "(vl-catch-all-apply (quote vl-exit-with-error) (list \"c\"))"))
+    (is (%error-handler-run (format nil "(vl-catch-all-error-p ~A)" form)))
+    (is (null (%error-handler-run (format nil "(vl-catch-all-error-message ~A)" form))))))

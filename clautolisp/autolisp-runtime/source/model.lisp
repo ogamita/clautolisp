@@ -472,7 +472,7 @@ closure."
   (compiled-instrumented-body nil))
 
 (defstruct autolisp-catch-all-error
-  (message "" :type string)
+  (message "" :type (or null string)) ; nil: vl-exit-* outside a VLX on AutoCAD
   condition)
 
 (defstruct autolisp-variant
