@@ -1,0 +1,30 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: dxf-angles-probe-accoreconsole-export -- on accoreconsole the dxf-angles probe stops at the DXF export (COM SaveAs), before its SAVEAS fallback
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-23
+
+* Symptom
+
+dxf-angles:probe:accoreconsole:windows (jobs 17409369692, 17411108963):
+all 18 cases are created and reported, then the run ends right before
+the export -- DXFANG-INCOMPLETE, no EXPORT line, no DXF. AutoCAD GUI
+(17411108962) and both BricsCADs export through COM vla-SaveAs and are
+complete.
+
+accoreconsole has no COM: (vl-load-com) / (vlax-get-acad-object) /
+vla-SaveAs there apparently abort the run although the call is inside
+vl-catch-all-apply (cf. the cad-probe pitfalls: some failures escape the
+catch on AutoCAD).
+
+* Fix
+
+Skip the COM export when (getvar "PROGRAM") is "accoreconsole" (or when
+vlax-get-acad-object is not callable) and go straight to the
+(command "_.SAVEAS" "_DXF" "16" path) form; then check that SAVEAS
+prompt sequence on accoreconsole. Not needed for the angle verification
+(AutoCAD GUI is the same DXF writer and was measured), only to have the
+accoreconsole lane complete.
