@@ -286,7 +286,8 @@ the run, so alfe never closes an instance of another release.
 
 For an AutoCAD instance created by the run, the quit bridge closes each
 open document with =SaveChanges=False= before quitting. It waits for the
-application to become idle and retries transient COM rejections. If a
+application to become idle before closing documents and again before Quit;
+it releases closed document references and retries transient COM rejections. If a
 document cannot be closed, the bridge stops instead of calling Quit and
 opening a save dialog. Attached instances remain under their owner's
 control.

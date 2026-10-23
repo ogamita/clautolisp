@@ -39,3 +39,9 @@ using explicit ActiveDocument.Close(False), isolated plugin V12.
 The preceding V11 matrix passed SCHMS on both engines, but SCHME BricsCAD
 needed forced termination and SCHME AutoCAD exited with 0xc0020001.
 Those V11 SCHME rows remain failed qualification.
+
+Full pb matrix (V13 plugin): SCHME 5/5 and SCHMS 3/3 on both engines,
+Make=0 throughout, BricsCAD native exit=0 and AutoCAD native exit=47806
+with signaled process handles. Release document references and wait for
+idle again after Close(False), before Quit. 37 targeted checks pass on
+both SBCL and CCL. Runner matrices are still pending.

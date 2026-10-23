@@ -950,7 +950,9 @@ For i = count - 1 To 0 Step -1
     WScript.Sleep 200
   Next
   If Not closed Then WScript.Quit 5
+  Set doc = Nothing
 Next
+If Not WaitIdle() Then WScript.Quit 5
 
 For attempt = 1 To 25
   Err.Clear
