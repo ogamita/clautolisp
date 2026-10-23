@@ -341,7 +341,7 @@ creates it. Backs the pre-launch quarantine of a corrupt per-user default.cui."
             (is (search "(load" content))
             (is (search "run-common.lsp" content))
             (is (search "_FILEDIA 0" content))
-            (is (search "_QUIT _N" content))))
+            (is (search "(command \"._QUIT\" \"_N\")" content))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
@@ -2553,6 +2553,14 @@ fallback step, not the explicit-override steps ahead of it."
     (alfe.backend.cad-common:kill-engine-process info :timeout 5)
     (is (not (uiop:process-alive-p info))
         "the process outlived kill-engine-process")))
+
+(test kill-engine-process-allows-natural-exit
+  "A CAD that has acknowledged shutdown may still be finishing QUIT."
+  (let ((info (uiop:launch-program (list "sh" "-c" "sleep 0.3; exit 0")
+                                   :output nil :error-output nil)))
+    (alfe.backend.cad-common:kill-engine-process info :grace 2 :timeout 1)
+    (is (not (uiop:process-alive-p info)))
+    (is (= 0 (uiop:wait-process info)))))
 
 (test kill-engine-process-is-bounded-not-blocking
   "The point of the function: it must RETURN, even for a child that

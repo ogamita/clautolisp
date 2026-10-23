@@ -669,9 +669,9 @@ an ordinary path."
     (string path)
     (pathname (uiop:native-namestring path))))
 
-(defun kill-engine-process (info &key (timeout 6))
+(defun kill-engine-process (info &key (timeout 6) (grace 0))
   "Best-effort terminate the launched engine within TIMEOUT seconds, NEVER
-blocking indefinitely.
+blocking indefinitely. GRACE optionally allows natural exit before termination.
 
 `uiop:wait-process' can hang on Windows when the engine (a GUI CAD) is
 slow to die, or when a child of it shares the handles — that would freeze
@@ -685,8 +685,19 @@ same way — and having only one backend own the careful version is exactly
 how the other one kept the unbounded `wait-process' that this docstring
 warns about. Shared here so both use it."
   (when info
+    ;; A STOPPED protocol precedes the final QUIT in the CAD script.
+    ;; Give that command a bounded opportunity to close naturally.
+    (let ((start (get-internal-real-time)))
+      (loop while (and (ignore-errors (uiop:process-alive-p info))
+                       (< (/ (float (- (get-internal-real-time) start))
+                             internal-time-units-per-second)
+                          grace))
+            do (sleep 0.2)))
     (ignore-errors
-     (when (uiop:process-alive-p info) (uiop:terminate-process info)))
+     (when (uiop:process-alive-p info)
+       (when (plusp grace)
+         (log-warn "CAD still alive after ~A s of natural shutdown; terminating it" grace))
+       (uiop:terminate-process info)))
     (let ((start (get-internal-real-time)))
       (loop while (and (ignore-errors (uiop:process-alive-p info))
                        (< (/ (float (- (get-internal-real-time) start))

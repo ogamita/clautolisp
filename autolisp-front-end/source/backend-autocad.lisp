@@ -908,22 +908,57 @@ If Err.Number <> 0 Then WScript.Quit 0
 If app Is Nothing Then WScript.Quit 0
 Err.Clear
 
-' Close every document WITHOUT saving, downwards because closing
-' shortens the collection. Not app.Quit on its own: the document this
-' bridge added is UNNAMED (Dessin1/Drawing1), so a quit with unsaved
-' changes raises the Save-changes dialog — and a modal dialog on an
-' unattended runner is the very hang this is meant to end.
-For i = app.Documents.Count - 1 To 0 Step -1
-  Set doc = app.Documents.Item(i)
-  If Err.Number = 0 Then
-    doc.Close False
-  End If
-  Err.Clear
+ ' A STOPPED protocol can precede the native LOAD returning. Closing a
+' document while AutoCAD is still evaluating Lisp can reject the COM call.
+' Never call Quit after a failed Close: that opens the Save-changes dialog.
+Function WaitIdle()
+  On Error Resume Next
+  Dim attempt, stable, idle
+  stable = 0
+  For attempt = 1 To 50
+    Err.Clear
+    idle = app.GetAcadState.IsQuiescent
+    If Err.Number = 0 And idle Then
+      stable = stable + 1
+      If stable >= 5 Then
+        WaitIdle = True
+        Exit Function
+      End If
+    Else
+      stable = 0
+    End If
+    WScript.Sleep 200
+  Next
+  WaitIdle = False
+End Function
+If Not WaitIdle() Then WScript.Quit 5
+
+Dim count, attempt, closed
+Err.Clear
+count = app.Documents.Count
+If Err.Number <> 0 Then WScript.Quit 5
+For i = count - 1 To 0 Step -1
+  closed = False
+  For attempt = 1 To 25
+    Err.Clear
+    Set doc = app.Documents.Item(i)
+    If Err.Number = 0 Then doc.Close False
+    If Err.Number = 0 Then
+      closed = True
+      Exit For
+    End If
+    WScript.Sleep 200
+  Next
+  If Not closed Then WScript.Quit 5
 Next
 
-app.Quit
-Err.Clear
-WScript.Quit 0
+For attempt = 1 To 25
+  Err.Clear
+  app.Quit
+  If Err.Number = 0 Then WScript.Quit 0
+  WScript.Sleep 200
+Next
+WScript.Quit 5
 "
   "VBScript that attaches to the running AutoCAD and quits it.")
 

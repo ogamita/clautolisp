@@ -282,6 +282,25 @@ rather than refusing: no answer is not the same as a negative answer.
 The same ProgID is used to attach, to create, and to quit at the end of
 the run, so alfe never closes an instance of another release.
 
+*** Closing drawings after an automated run
+
+For an AutoCAD instance created by the run, the quit bridge closes each
+open document with =SaveChanges=False= before quitting. It waits for the
+application to become idle and retries transient COM rejections. If a
+document cannot be closed, the bridge stops instead of calling Quit and
+opening a save dialog. Attached instances remain under their owner's
+control.
+
+BricsCAD batch scripts send QUIT and its discard answer together through
+AutoLISP =command=. A bare QUIT command followed by an SCR answer can
+still display a save dialog when EPURE is loaded. After the protocol has
+stopped, alfe allows ten seconds for BricsCAD to exit naturally before
+its bounded termination fallback; a warning identifies that fallback.
+
+The protocol restores the native output functions after its server loop
+and final logging have finished, so subsequent CAD startup and menu
+callbacks can use the native zero-argument =princ= again.
+
 *** alfe's workdir in AutoCAD's TRUSTEDPATHS
 
 An AutoCAD with =SECURELOAD= set to 2 loads executable files *only* from

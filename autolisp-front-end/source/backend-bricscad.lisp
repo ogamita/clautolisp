@@ -418,7 +418,9 @@ Returns the path of the emitted file."
                    ;; intentional — BricsCAD's SCR parser treats the
                    ;; newline as the command terminator.
                    (format out "._FILEDIA 0~%")
-                   (format out "._QUIT _N~%"))))
+                   ;; COMMAND supplies the answer in Lisp context; a bare SCR
+                   ;; QUIT can still open the GUI save dialog under EPURE.
+                   (format out "(command \"._QUIT\" \"_N\")~%"))))
          (text (alfe.plugin:run-hook :launcher-script raw
                                      :kind :scr :variant :batch :path path)))
     (with-open-file (out path :direction :output
@@ -1987,9 +1989,9 @@ own."
 ;;; the hazard it guards against (an unbounded wait-process on a GUI CAD
 ;;; that will not die) is not BricsCAD-specific, and AutoCAD had kept the
 ;;; unbounded `wait-process' this very code exists to avoid.
-(defun %kill-engine-process (info &key (timeout 6))
+(defun %kill-engine-process (info &key (timeout 6) (grace 0))
   "Deprecated local name; see ALFE.BACKEND.CAD-COMMON:KILL-ENGINE-PROCESS."
-  (kill-engine-process info :timeout timeout))
+  (kill-engine-process info :timeout timeout :grace grace))
 
 (defmethod shutdown ((session bricscad-session) &key reason)
   (declare (ignore reason))
@@ -2000,7 +2002,7 @@ own."
       (ignore-errors
        (alfe.protocol.file:wait-for-status
         protocol alfe.protocol.file:+status-stopped+ :timeout 5))
-      (%kill-engine-process info))
+      (%kill-engine-process info :grace 10))
     (session-state-set session :stopped))
   session)
 

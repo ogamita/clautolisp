@@ -830,3 +830,9 @@ opendcl-conformance. All =TODO=.
 | Issue | Type | Status | Notes |
 |-------+------+--------+-------|
 | alfe-windows-hosted-log-cleanup | bug | TODO | Intermittent locked Drawing1 log during protocol-real-literals cleanup; next Windows SBCL run passes, lock owner unverified. |
+
+* Native EPURE qualification (2026-10-23)
+- NEXT =cad-epure-shutdown-dialogs= (P1) -- save dialogs, printer restoration,
+  COM close retries and native exit verification; account matrix pending.
+- TODO =autocad-created-process-recording-scope= (P1) -- creation registry and
+  quit bridge need exact identity when another Automation instance exists.

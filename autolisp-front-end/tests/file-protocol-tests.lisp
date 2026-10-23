@@ -3222,3 +3222,19 @@ is passed through untouched. Skipped when clautolisp-sbcl is not on disk."
           (is (search "Undefined AutoLISP function NO_SUCH_FUNCTION" stderr))
           (is (not (search "[form: (NO_SUCH_FUNCTION 1)]" stderr))
               "an informative message must not be padded: ~S" stderr)))))
+
+(test protocol-native-printers-restored-after-loop
+  "Native MNL callbacks need the original printer arities after the protocol ends."
+  (let ((workdir (make-test-workdir "restore-native-output")))
+    (unwind-protect
+        (multiple-value-bind (session path)
+            (emit-run-common-with-real-runtime workdir)
+          (declare (ignore session))
+          (let* ((text (alfe.protocol.file:read-file-as-string path))
+                 (capture (search "(setq *ALFE-NATIVE-OUTPUT*" text))
+                 (bootstrap (search "loading bootstrap:" text))
+                 (finished (search "server-loop returned normally" text))
+                 (restore (search "(setq princ (car *ALFE-NATIVE-OUTPUT*)" text)))
+            (is (and capture bootstrap (< capture bootstrap)))
+            (is (and finished restore (< finished restore)))))
+      (delete-workdir workdir))))

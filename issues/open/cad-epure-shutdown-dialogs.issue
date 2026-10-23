@@ -1,0 +1,34 @@
+#+TITLE: Native EPURE shutdown leaves save dialogs and output callbacks active
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native Windows CAD qualification
+#+BRANCH: codex/fermeture-cao-20261023
+
+* Reproduction
+Run installed SCHME or SCHMS under ALFE on AutoCAD 2022 or BricsCAD V25
+with EPURE. Successful assertions can be followed by a Dessin1 save dialog,
+a forced BricsCAD termination, or an AutoCAD callback error during shutdown.
+
+* Findings and corrections under qualification
+- Keep native printers until the entire protocol server loop and its final
+  logging finish, then restore them. Restoring at C:MAIN return is too early.
+- Close AutoCAD documents without saving, wait for quiescence and retry
+  transient COM rejections. Never Quit after a failed document close.
+- Send BricsCAD QUIT and its discard answer from AutoLISP command rather
+  than as separate SCR tokens; allow bounded natural exit before fallback.
+
+* Evidence (2026-10-23)
+34 targeted checks pass on both SBCL and CCL, including ownership, bridge generation,
+protocol restoration ordering and bounded process shutdown. Windows cscript
+mocks show retry success and refusal to Quit after permanent close failure.
+SCHMS on pb: 3 assertions pass and BricsCAD exits naturally with code 0
+using the isolated qualification plugin. Further native account/project
+qualification is still pending; no full-matrix success is claimed.
+
+* Additional lifecycle finding
+On this Windows host, GetExitCodeProcess can return 47806 and .NET
+Process.HasExited can be true while WaitForSingleObject(handle, 0) returns
+WAIT_TIMEOUT and Restart Manager still lists the process as a DLL owner.
+Native qualification must use the process handle signal, not only the
+reported exit code. The operational collector now has that stronger test.

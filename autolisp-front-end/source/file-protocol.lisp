@@ -1350,6 +1350,10 @@ Returns the path of the emitted file."
           (setq alfe--f (open alfe--path \"a\"))~%~
           (if alfe--f (progn (write-line (strcat \"[CAD] \" alfe--msg) alfe--f) (close alfe--f))))))))~%~
 (alfe-debug-log \"run-common.lsp evaluated; about to bootstrap runtime\")~%")
+            ;; Native callbacks can run after LOAD returns (e.g. AutoCAD MNL).
+            ;; Keep protocol printer shadows for the entire loop, then restore
+            ;; their original arities before returning to the CAD host.
+            (format out "~%(setq *ALFE-NATIVE-OUTPUT* (list princ print prin1))~%")
             ;; --- Plug-in text, before anything is bootstrapped ---
             ;; Hook :run-common-prelude — AutoLISP source a plug-in wants the
             ;; engine to run first (alfe.plugin; nothing when none is active).
@@ -1751,7 +1755,11 @@ Returns the path of the emitted file."
       (list (strcat \"ERROR server-loop aborted: \" *ALFE-LOOP-ERRMSG*)))~%    ~
     (vl-catch-all-apply 'autolisp-protocol-set-status~%      ~
       (list (strcat \"FAILED \" *ALFE-LOOP-ERRMSG*))))~%  ~
-  (alfe-debug-log \"server-loop returned normally\"))~%"))
+  (alfe-debug-log \"server-loop returned normally\"))~%~
+(setq princ (car *ALFE-NATIVE-OUTPUT*)~%  ~
+      print (cadr *ALFE-NATIVE-OUTPUT*)~%  ~
+      prin1 (caddr *ALFE-NATIVE-OUTPUT*))~%~
+(princ)~%"))
               (t
                (format out
                        "~%(alfe-debug-log \"WARNING: runtime LSP was not staged; no server loop will run\")~%"))))))
