@@ -51,8 +51,20 @@ if (-not $env:ALFE_RUNTIME_LSP)   { $env:ALFE_RUNTIME_LSP   = (Join-Path $root "
 if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-bootstrap.lsp") -replace '\\','/' }
 
 $outDir = Join-Path $root "dist/encoding"
+# Start from an empty dist/encoding/ and dist/e1/: the Windows runner reuses
+# its build directory, so this job's artefact also carried older files of
+# OTHER jobs (encoding-probe-artifacts-and-macos-forward). dist/e1/ (the
+# fixtures and the forward files) is in this job's artefact too.
+foreach ($stale in @("dist/encoding", "dist/e1")) {
+  $stalePath = Join-Path $root $stale
+  if (Test-Path $stalePath) { Remove-Item -Recurse -Force $stalePath -ErrorAction SilentlyContinue }
+}
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $report = Join-Path $outDir "lispsys-bom-autocad-Windows.txt"
+# Every write is Add-Content -Encoding utf8: Tee-Object -Append writes UTF-16
+# under Windows PowerShell 5, which left the 2026-10-08 reports mixed
+# (UTF-8 BOM + UTF-16LE body) and hid the DONE line from Select-String
+# (probe-ps1-done-check-misreads-utf16-report).
 Set-Content -Encoding utf8 $report ""
 
 # --- the three fixtures: (setq *e1-value* "AéZ") -----------------------------
@@ -99,8 +111,8 @@ if ($acad) {
     }
   }
 }
-"profiles: $($keys.Count)" | Tee-Object -FilePath $report -Append
-if ($keys.Count -eq 0) { "NO AUTOCAD PROFILE FOUND" | Tee-Object -FilePath $report -Append; exit 3 }
+"profiles: $($keys.Count)" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+if ($keys.Count -eq 0) { "NO AUTOCAD PROFILE FOUND" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }; exit 3 }
 
 # Saved state: per key and name, the value and kind, or $null when absent.
 $saved = @{}
@@ -110,7 +122,7 @@ foreach ($k in $keys) {
     $v = $rk.GetValue($name, $null, 'DoNotExpandEnvironmentNames')
     $kind = if ($null -ne $v) { $rk.GetValueKind($name) } else { $null }
     $saved["$k|$name"] = @($v, $kind)
-    "saved $name in $k = $v ($kind)" | Tee-Object -FilePath $report -Append
+    "saved $name in $k = $v ($kind)" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
   }
 }
 
@@ -130,13 +142,13 @@ try {
   Set-All 'SECURELOAD' '0'
   foreach ($level in @('0','1','2')) {
     Set-All 'LISPSYS' $level
-    ("########## LISPSYS {0} ##########" -f $level) | Tee-Object -FilePath $report -Append
+    ("########## LISPSYS {0} ##########" -f $level) | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
     try {
       (& $alfe --no-init --autocad --mode batch -l $probe 2>&1) |
         Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|BOOTSTRAP-FAILED|FAILED' } |
         ForEach-Object { "[LISPSYS $level] $_" } |
-        Tee-Object -FilePath $report -Append
-    } catch { "[LISPSYS $level] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+        ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+    } catch { "[LISPSYS $level] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
     foreach ($way in $forwardWays) {
       $tag = "LISPSYS $level $($way.Label)"
       $env:E1F_MODE = $way.Mode
@@ -145,8 +157,8 @@ try {
         (& $alfe @fargs 2>&1) |
           Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|WARN|ERROR|BOOTSTRAP-FAILED|FAILED' } |
           ForEach-Object { "[$tag] $_" } |
-          Tee-Object -FilePath $report -Append
-      } catch { "[$tag] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+          ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+      } catch { "[$tag] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
       Remove-Item -Path Env:E1F_MODE -ErrorAction SilentlyContinue
     }
   }
@@ -158,7 +170,7 @@ try {
       if ($null -eq $v) { $rk.DeleteValue($name, $false) } else { $rk.SetValue($name, $v, $kind) }
     }
   }
-  "restored LISPSYS / SECURELOAD in $($keys.Count) profile(s)" | Tee-Object -FilePath $report -Append
+  "restored LISPSYS / SECURELOAD in $($keys.Count) profile(s)" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 }
 
 Write-Host "lispsys x BOM experiment -> $report"

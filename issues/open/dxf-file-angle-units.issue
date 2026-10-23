@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: dxf-file-angle-units — the DXF codec copies file angles (degrees) into entget data (radians) unconverted
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -53,3 +53,70 @@ entget.
 Found while fixing cador-curve-length-and-sampling (the vlax-curve-* model
 used to convert ARC angles from degrees, which happened to match a
 DXF-loaded drawing but not entmake / command / ActiveX).
+
+* Fix (2026-10-22)
+
+=clautolisp/drawing/source/dxf.lisp= gains a per-entity-type table of
+degree-valued groups, =*dxf-degree-groups*=, taken from the DXF reference:
+
+| type      | groups      | meaning                                          |
+|-----------+-------------+--------------------------------------------------|
+| ARC       | 50 51       | start / end angle                                |
+| TEXT      | 50 51       | rotation / oblique angle                         |
+| ATTRIB    | 50 51       | rotation / oblique angle                         |
+| ATTDEF    | 50 51       | rotation / oblique angle                         |
+| SHAPE     | 50 51       | rotation / oblique angle                         |
+| MTEXT     | 50          | rotation (when written instead of the 11 vector) |
+| INSERT    | 50          | rotation                                         |
+| DIMENSION | 50 51 52 53 | rotation, horizontal dir, oblique, text rotation |
+| VERTEX    | 50          | curve-fit tangent direction                      |
+
+Deliberately absent: ELLIPSE 41/42 (parameters, radians in the file too)
+and the LWPOLYLINE / VERTEX 42 bulge. Only the first occurrence of each code
+is converted, and the scan stops at 75/76 (MTEXT column data, whose column
+heights reuse 50), 101 (embedded object) and 1001 (XDATA).
+
+=dxf-entity-from-file= (degrees -> radians) is applied in
+=dxf-load-entities= and =dxf-load-blocks= (block-owned entities); the
+writer's =dxf-entity-data-with-owner= (used for ENTITIES and BLOCKS) applies
+=dxf-entity-for-file= (radians -> degrees) to a copy, so the in-memory data
+is not mutated. ASCII and binary DXF share these paths. Table records, block
+headers, OBJECTS and header variables are not converted.
+
+The DWG codec (=drawing-dwg/source/codec.lisp=) is untouched: it converts
+DWG <-> DXF through libredwg and parses / emits that DXF with this codec,
+and libredwg's DXF is degree-valued like any vendor's, so DWG reads and
+writes become correct through the same code. No other place compensated:
+=autolisp-host/source/curve-geometry.lisp= already treats ARC 50/51 as
+radians (the cador-curve-length-and-sampling fix), and the degree
+conversions in cador (command-api, command-draw, command-hatch,
+command-builtins, prompt-api) convert *command input* to radians, which is
+correct.
+
+Tests (=clautolisp/drawing/tests/dxf-tests.lisp=):
+- =dxf-read-converts-file-degrees-to-radians= -- a literal DXF with an ARC
+  0..90, a TEXT (rotation 45, oblique 15), an INSERT (rotation 30), an
+  ELLIPSE (42 = pi, must stay pi) and a block-owned TEXT (rotation 180);
+- =dxf-write-emits-degrees= -- an ARC 0..pi/2 is written as 0 and 90; an
+  LWPOLYLINE bulge 42 is written unchanged;
+- =dxf-angle-round-trip= -- write then read gives the entget angles back,
+  and the source drawing is not mutated;
+- =dxf-mtext-column-heights-are-not-angles=.
+
+Red on the unfixed codec (=make test-sbcl
+TEST_SYSTEM=clautolisp/drawing/tests=): 349 checks, 7 failures -- "ARC end
+angle 90 deg must read as pi/2, got 90.0d0", "TEXT rotation 45 deg must read
+as pi/4, got 45.0d0", "INSERT rotation 30 deg must read as pi/6, got
+30.0d0", the TEXT oblique and the block-owned TEXT, "ARC 51 in the file must
+be 90: 1.5707963267948966d0", and the MTEXT test (helper undefined). The
+round-trip test passed there too, as the ticket predicted (clautolisp ->
+clautolisp was self-consistent). Green with the fix: 350 checks, 0 failures.
+
+Status NEXT, not DONE: the table comes from the DXF reference only; no
+vendor-written DXF measured on AutoCAD / BricsCAD was available. Still to
+confirm against one (entget of the same entities), in particular MTEXT 50
+(the DXF reference text says "radians", while vendor files and ezdxf treat
+it as degrees -- the table follows the latter) and DIMENSION 51/52. Not
+covered, left for a follow-up if needed: HATCH 52/53 and its boundary-edge
+arc angles, VIEWPORT 51, the VPORT / VIEW table records, header angle
+variables -- see dxf-angle-units-hatch-viewport-tables.issue.

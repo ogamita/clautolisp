@@ -1,7 +1,7 @@
 ;;;; clautolisp/autolisp-init-files/source/api.lisp
 ;;;;
 ;;;; Init-file discovery API. The full contract is in
-;;;; ../../../issues/open/init-files.issue; the highlights:
+;;;; ../../../issues/closed/init-files.issue; the highlights:
 ;;;;
 ;;;;   - Each program (clautolisp + alfe) carries a *list* of stems.
 ;;;;     EVERY existing init file in that list is loaded, in order —

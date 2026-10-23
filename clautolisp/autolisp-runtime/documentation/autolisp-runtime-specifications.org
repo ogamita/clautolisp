@@ -127,7 +127,7 @@ via =install-list-subr-for-test= when a snippet needs one.
 * Open questions
 
 - Source-aware documentation
-  (=issues/open/source-aware-defun-documentation.issue=): how to
+  (=issues/closed/source-aware-defun-documentation.issue=): how to
   carry =:preceding-doc= from the reader's cons-object onto the
   CL cons the runtime sees, then surface it via
   =(clautolisp-documentation 'FOO)=. The design choice between

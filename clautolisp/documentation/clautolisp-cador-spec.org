@@ -13,7 +13,7 @@
   :END:
 
 This is deliverable *D2* of the =cador-multidocument-host= epic
-(=issues/open/cador-multidocument-host.issue=, "the epic"). It specifies
+(=issues/closed/cador-multidocument-host.issue=, "the epic"). It specifies
 =cador=, the *headless, in-process CAD core* — the analogue of AutoCAD Core
 Console (=accoreconsole=). The *backend-agnostic* interface =cador= implements
 is deliverable D1, =clautolisp-host-interface-spec.org= (referenced here as
@@ -751,8 +751,8 @@ project name), and =nihil= is already Latin, so a Latin display-noun
 and the placeholder =<wire-host>= stands. Grade: design.
 
 * Part VI — References
-- =issues/open/cador-multidocument-host.issue= (epic §5, §9, C1–C8).
-- =issues/open/cador-3-host-interface-protocol-spec.issue= (this sub-task).
+- =issues/closed/cador-multidocument-host.issue= (epic §5, §9, C1–C8).
+- =issues/closed/cador-3-host-interface-protocol-spec.issue= (this sub-task).
 - =clautolisp/documentation/clautolisp-host-interface-spec.org= (D1).
 - =clautolisp/documentation/clautolisp-multidocument-analysis.org= (R1–R21,
   E1–E10, A/B/C/V vendor claims).

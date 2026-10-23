@@ -749,6 +749,14 @@ encoding:experiment:autocad:windows:
 # accoreconsole per level, restores both values at the end.
 encoding:experiment:lispsys-bom:autocad:windows:
   extends: [.gate-windows-cad-soft, .encoding-artifacts]
+  # dist/e1/ holds the fixtures and the forward files (e1f-*.txt) whose SIZE
+  # lines the report quotes: the bytes are evidence too
+  # (encoding-probe-artifacts-and-macos-forward). Only this job writes there.
+  artifacts:
+    name: "encoding-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/encoding/, dist/e1/]
+    expire_in: 30 days
   rules:
     - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,lispsys-bom,/'
       when: on_success
@@ -2100,3 +2108,87 @@ block-comment:probe:accoreconsole:windows:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-block-comment-probe.ps1 -Backend accoreconsole
+
+# --- control flow on the CADs: WHILE / REPEAT values, vl-exit-* outside a VLX
+#
+# while-repeat-return-nil.issue and vl-exit-with-error-leaks-host-condition
+# .issue. clautolisp's WHILE and REPEAT return nil, the spec says the last
+# body value; vl-exit-with-error outside a separate-namespace VLX escapes
+# every clautolisp handler. These jobs MEASURE both on the real CADs, each
+# case inside vl-catch-all-apply (control-flow-probe.lsp). Soft: a probe
+# measures, never gates.
+.control-flow-artifacts:
+  interruptible: true
+  artifacts:
+    name: "control-flow-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/control-flow/]
+    expire_in: 30 days
+
+control-flow:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .control-flow-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,control-flow,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-control-flow-probe.sh --backend bricscad
+
+control-flow:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .control-flow-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,control-flow,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-control-flow-probe.ps1 -Backend bricscad
+
+control-flow:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .control-flow-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,control-flow,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-control-flow-probe.ps1 -Backend autocad
+
+control-flow:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .control-flow-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,control-flow,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-control-flow-probe.ps1 -Backend accoreconsole

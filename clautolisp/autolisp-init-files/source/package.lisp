@@ -10,7 +10,7 @@
 ;;;; this module — keeping the discovery logic in one place keeps
 ;;;; their behaviour in lockstep and concentrates the test surface.
 ;;;;
-;;;; Specified by ../../../issues/open/init-files.issue. The
+;;;; Specified by ../../../issues/closed/init-files.issue. The
 ;;;; per-stem extension preference (.lsp vs. compiled .fas/.des/.vlx
 ;;;; based on mtime) mirrors the legacy bash `autolisp` wrapper's
 ;;;; long-standing contract so users carrying an existing

@@ -1,0 +1,82 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: encoding-probe-artifacts-and-macos-forward -- encoding probe artefacts carry other jobs' files; macOS has no FORWARD step
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-probe-script-defects
+#+DATE: 2026-10-08
+
+* Symptom (found verifying MR !467, jobs 17033123929-32)
+
+1. The Windows runner reuses one build directory and the encoding probe
+   scripts never clean dist/encoding/, so each job's artefact also holds
+   older files of OTHER jobs: 17033123930's lispsys-bom-autocad-Windows.txt
+   and autocad-Windows.txt date from 15:07-15:08 (other runs), 17033123932's
+   e1f/* and autocad-Windows.txt were written by 17033123931, and
+   clautolisp-Linux.txt dates from 2026-08-21. A file cited from an
+   artefact must be checked by timestamp -- easy to cite the wrong run.
+2. run-lispsys-bom-probe.ps1 writes its forward files under dist/e1/,
+   which is not in the artefact: only the reported SIZE lines are evidence
+   for that job, not the bytes.
+3. scripts/run-encoding-experiment.sh (macOS) has no FORWARD step (only the
+   .ps1 has one), so "BricsCAD macOS forwards nothing" is never measured end
+   to end.
+4. The -x way prints only "-x LISPSYS n", not FORWARDED-ARG / -CCS.
+
+* Fix
+
+Clean dist/encoding/ (and dist/e1/) at the start of every encoding probe
+script, include dist/e1/ in the artefact paths, add the FORWARD step to the
+.sh experiment, print FORWARDED-ARG / -CCS on the -x way too.
+
+* Fix (2026-10-22)
+
+1. Stale files: run-encoding-experiment.ps1 / .sh remove dist/encoding/ before
+   anything else, run-lispsys-bom-probe.ps1 removes dist/encoding/ AND
+   dist/e1/. Each encoding job runs exactly one of these scripts, so the
+   artefact now holds this job's files only.
+2. dist/e1/: encoding:experiment:lispsys-bom:autocad:windows (the one job that
+   runs run-lispsys-bom-probe.ps1) has its own artifacts paths
+   [dist/encoding/, dist/e1/]; the shared .encoding-artifacts template keeps
+   dist/encoding/ only, so the other encoding jobs never ship a stale e1/.
+3. macOS FORWARD: run-encoding-experiment.sh has the .ps1's FORWARD step for a
+   CAD backend: lispsys-forward-probe.lsp under -Efile-write utf-8, three alfe
+   runs ("FORWARD alfe-load" -l on an entry file holding (alfe-load "<probe>"),
+   "FORWARD -l" -l <probe>, "FORWARD -x" -l <probe> with E1F_MODE=x plus the
+   same -x form as the .ps1), E1_DIR = dist/encoding/e1f, the lines kept by the
+   same filter (ENC / ENC-PROBE DONE / WARN / ERROR / BOOTSTRAP-FAILED /
+   FAILED) and prefixed "[FORWARD ...] " like the .ps1. Checked locally with
+   bash -n and by running the step against the clautolisp backend (--host
+   nihil): the three runs start, E1_DIR / E1F_MODE / the -x form reach the
+   probe (the -x way runs e1f-x only, the -l way runs e1f-run at load); the
+   clautolisp backend has no alfe-load and no LISPSYS, which is why the step
+   is skipped for it, as in the .ps1.
+4. -x way: lispsys-forward-probe.lsp's e1f-x now prints the same header as
+   e1f-run, "-x LISPSYS n FORWARDED-ARG ... FORWARDED-CCS ..." (one helper,
+   e1f--header, for both).
+
+Closes when the next encoding run shows artefacts holding only that job's
+files (dist/e1/ included for lispsys-bom) and the macOS job reports the three
+FORWARD ways.
+
+Seen on the way, filed apart (deferred-probe-scripts-host-mock): the
+clautolisp backend of these probe scripts passes --host mock, which alfe now
+rejects (cador, cadtui, nihil), so a clautolisp run reports nothing.
+
+* Verified on the runners (2026-10-23, MR !471 pipeline 2978627556) -- DONE
+
+- Stale files gone: each job's dist/encoding/ holds only its own files
+  (AutoCAD 17398575863, BricsCAD V25 17408146581, BricsCAD V26 macOS
+  17408220635); the lispsys-bom job (17398575864) uploads dist/e1/ too.
+- Reports UTF-8 with no NUL byte (AutoCAD report: BOM, 0 NULs).
+- The macOS FORWARD step runs end to end on BricsCAD V26 (job 17408220635):
+  alfe-load, -l and -x each print ENC E1F ... FORWARDED-ARG nil
+  FORWARDED-CCS nil -- nothing forwarded on macOS, as designed -- and the
+  files are UTF-8 (w SIZE 4, a SIZE 2); the -x way now prints the
+  forwarded arg / ccs like the others. Windows (job 17398575863, AutoCAD at
+  LISPSYS 0): FORWARDED-ARG "utf8", w SIZE 3 / a SIZE 1 + the LISPSYS-0
+  WARN, as measured before.
+(The first macOS run, 17398575861, and the first BricsCAD Windows run,
+17398575862, failed on infrastructure -- a sleeping Mac, a page-file
+exhaustion on PF5S26B -- and passed on retry.)

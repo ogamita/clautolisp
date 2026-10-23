@@ -303,7 +303,7 @@ context this side always has."
         ;; for. See alfe-cad-error-reported-twice-on-stderr.
         (autolisp-protocol-write-stderr
           (strcat "ERROR protocol read: "
-                  (vl-catch-all-error-message alfe--form)))
+                  (alfe-catch-all-message alfe--form)))
         (autolisp-protocol-set-status "FAILED READ")
         (setq *AUTOLISP_PROTOCOL_STOP* T))
       (if (or *AUTOLISP_PROTOCOL_STOP*
@@ -337,7 +337,7 @@ context this side always has."
                   (autolisp-request-failure-text
                     alfe--req-id
                     (autolisp-effective-error-message
-                      (vl-catch-all-error-message alfe--result))
+                      (alfe-catch-all-message alfe--result))
                     alfe--form))
                 (autolisp-clear-last-error-context)
                 (setq alfe--rc 1)

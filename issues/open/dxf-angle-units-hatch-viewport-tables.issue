@@ -1,0 +1,85 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: dxf-angle-units-hatch-viewport-tables — HATCH / VIEWPORT / table-record angles still copied unconverted from DXF degrees
+#+STATUS: NEXT
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: dxf-file-angle-units
+#+BRANCH: fix-dxf-angles-hatch-viewport
+#+DATE: 2026-10-22
+
+* Symptom
+
+After dxf-file-angle-units, the DXF codec still copies unconverted the
+degree angles of HATCH 52 (pattern angle) / 53 (pattern line angles) and
+the HATCH boundary path's ARC and ELLIPSE edge 50/51 start/end angles
+(nested in the boundary data, so the "first occurrence per code" rule of
+=*DXF-DEGREE-GROUPS*= in =clautolisp/drawing/source/dxf.lisp= does not fit
+them), VIEWPORT 51 (twist), table records VPORT 50/51, VIEW 50, and header
+angle variables. Check each against the DXF reference before converting.
+
+* Fix (2026-10-22)
+
+Reference basis: the DXF reference's group-code table, "50-58: Angles
+(output in degrees to DXF files and radians through AutoLISP and ObjectARX
+applications)", and the per-object group lists. cador's HATCH command
+(=cador/source/command-hatch.lisp=) already stores 52, 53 and the arc-edge
+50/51 in radians, as measured on BricsCAD (round 2, job 16916238723) and
+AutoCAD (arc edge 51 = 2pi), so the codec now agrees with it.
+
+=clautolisp/drawing/source/dxf.lisp=:
+- new =*dxf-repeated-degree-groups*= = (("HATCH" 50 51 52 53)): for such a
+  type EVERY occurrence is converted, up to a 101 / 1001 stop
+  (=*dxf-repeated-degree-scan-stop-codes*=). Within a HATCH these codes are
+  used only for angles -- 52 pattern angle, 53 once per pattern line (after
+  78), 50/51 of each circular-arc (72 = 2) and elliptic-arc (72 = 3)
+  boundary edge; the polyline-path 72/73 flags, the spline-edge groups and
+  the gradient 450-470 groups (460 is radians in the file) use other codes.
+  This replaces a structured walk of the boundary data, which would give
+  the same result with more ways to go wrong (polyline vs edge paths,
+  islands, spline edges). HATCH's own 75/76 come before 52/53, which is why
+  it cannot use the 75/76 stop rule of =*dxf-degree-groups*=.
+- =*dxf-degree-groups*= gains VIEWPORT 50/51 (snap angle, view twist) and
+  the table records VPORT 50/51 (snap rotation, view twist), VIEW 50
+  (twist) and STYLE 50 (oblique angle; not in the ticket, same class).
+- =dxf-load-tables= converts each record (degrees -> radians) and
+  =dxf-write-tables= writes a converted copy (radians -> degrees): table
+  records are AutoLISP-visible as stored, through =tblsearch= / =tblnext=
+  (=cador/source/table-api.lisp=). No cador code creates VPORT / VIEW /
+  STYLE records with angles (VPORTS Save writes 10/11 only), so nothing
+  else stored degrees.
+
+Elliptic-arc edges: the reference lists their 50/51 as "start angle" /
+"end angle", in the 50-58 angle range, and ezdxf reads them as degrees;
+whether the value is a true angle or an ellipse parameter does not matter
+for the unit conversion. Not probed on a vendor (cador never builds them).
+
+Left out:
+- header variables ($ANGBASE, $SNAPANG, ...): =dxf-load-header= stores
+  them as drawing variables, but cador's =getvar= never reads those (its
+  sysvars come from the catalogue), so they are not AutoLISP-visible; the
+  header is written back as read, consistently. Their file units are also
+  not settled by the reference text.
+- other 50-58 groups nobody asked for (LIGHT 50/51 hotspot / falloff,
+  MLINESTYLE 51/52 in OBJECTS): follow-up if needed.
+
+Tests (=clautolisp/drawing/tests/dxf-tests.lisp=):
+- =dxf-read-converts-hatch-and-viewport-angles= -- a HATCH with pattern
+  angle 30, two pattern lines 75 / 165, a circular-arc edge 0..90 and an
+  elliptic-arc edge 90..180 reads as radians; radius 40, scale 41, dashes
+  49 untouched; VIEWPORT 50/51 = 10/20 read as pi/18, pi/9;
+- =dxf-read-converts-table-record-angles= -- VPORT 50/51, VIEW 50, STYLE 50;
+- =dxf-write-emits-hatch-and-viewport-degrees= -- a cador-shaped HATCH
+  (radians) writes 52 = 30, 53 = 75, arc edge 51 = 90; VIEWPORT 51 = 20;
+- =dxf-hatch-viewport-table-angle-round-trip= -- read, add a cador HATCH,
+  write, read: all angles come back; the source is not mutated.
+
+Red before the codec change (=make test-sbcl
+TEST_SYSTEM=clautolisp/drawing/tests=): 383 checks, 22 failures ("HATCH 52 =
+30 deg must read as pi/6, got 30.0d0", "arc edge end 90 deg must read as
+pi/2, got 90.0d0", "VPORT 50 = 15 deg must read as pi/12, got 15.0d0",
+"VIEWPORT 51 in the file must be 20: 0.349...", ...). Green after: 383
+checks, 0 failures; =clautolisp/cador/tests= 1897 checks, 0 failures; full
+=make test-sbcl= Fail 0 in every suite.
+
+Status NEXT, not DONE: no vendor-written DXF / tblsearch probe of a HATCH
+with an elliptic edge, a VIEWPORT, or VPORT / VIEW / STYLE records yet.

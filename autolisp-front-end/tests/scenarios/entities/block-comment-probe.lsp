@@ -1,6 +1,6 @@
 ;;;; block-comment-probe.lsp -- VERIFY that alfe's CAD-side loader treats an
 ;;;; AutoLISP ;| ... |; block comment as a comment on the real CADs
-;;;; (issues/open/alfe-cad-source-loader-evaluates-block-comments.issue).
+;;;; (issues/closed/alfe-cad-source-loader-evaluates-block-comments.issue).
 ;;;;
 ;;;; alfe does not load an -l file with the CAD's own LOAD: its CAD-side
 ;;;; loader splits the file into top-level forms itself, and up to alfe 2.3.12

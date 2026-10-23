@@ -23,7 +23,7 @@ drawing model. A second tier, "recognised no-op", is consumed by the dispatch
 so a driven command sequence keeps flowing but has no drawing-model effect
 (viewport/coordinate context or external process). Every other specified
 command is recorded on the command log without side effects until its category
-is implemented (`issues/open/autolisp-spec-alref-commands.issue`).
+is implemented (`issues/closed/autolisp-spec-alref-commands.issue`).
 
 ## Status
 

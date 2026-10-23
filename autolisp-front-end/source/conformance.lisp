@@ -1,7 +1,7 @@
 ;;;; autolisp-front-end/source/conformance.lisp
 ;;;;
 ;;;; alfe.conformance — the scenario corpus runner. Phase 4 of the
-;;;; alfe rollout. Specified by ../issues/open/alfe-conformance.issue.
+;;;; alfe rollout. Specified by ../issues/closed/alfe-conformance.issue.
 ;;;;
 ;;;; The runner is the backbone behind `make -C autolisp-front-end
 ;;;; test`'s scenario lane. Every other alfe ticket lands at least

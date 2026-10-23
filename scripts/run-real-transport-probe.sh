@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run-real-transport-probe.sh -- MEASURE whether real literals reach a CAD
 # engine with every digit when alfe loads a file (-l) or sends a request (-x)
-# (issues/open/alfe-cad-transport-rounds-reals.issue). macOS/Linux twin of
+# (issues/closed/alfe-cad-transport-rounds-reals.issue). macOS/Linux twin of
 # run-real-transport-probe.ps1.
 #
 #   scripts/run-real-transport-probe.sh --backend {clautolisp|bricscad|autocad|accoreconsole}

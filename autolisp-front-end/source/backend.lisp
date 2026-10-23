@@ -3,7 +3,7 @@
 ;;;; Abstract backend protocol for alfe. The generics below are the
 ;;;; *uniform* surface alfe.cli calls into; concrete backends specialise
 ;;;; them while alfe.cli stays backend-agnostic. The spec for this
-;;;; surface is ../issues/open/alfe-backend-interface.issue.
+;;;; surface is ../issues/closed/alfe-backend-interface.issue.
 ;;;;
 ;;;; The package also defines:
 ;;;;

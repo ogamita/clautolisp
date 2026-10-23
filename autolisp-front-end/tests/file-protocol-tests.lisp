@@ -5,7 +5,7 @@
 ;;;; FiveAM tests for alfe.protocol.file (Phase 2).
 ;;;;
 ;;;; The acceptance criteria from
-;;;; ../../issues/open/alfe-file-protocol.issue:
+;;;; ../../issues/closed/alfe-file-protocol.issue:
 ;;;;
 ;;;;   - session bring-up produces the protocol/ layout the spec
 ;;;;     documents (filenames, initial contents).
@@ -1857,6 +1857,83 @@ clautolisp-sbcl is not on disk."
               "alfe-load must set ENCSRC from the loaded file: ~S" stdout)
           (is (string= "" stderr))))))
 
+;;; --- a caught error with a NIL message (AutoCAD) -----------------------
+;;;
+;;; alfe-cad-nil-catch-all-message. AutoCAD 2022 answers NIL from
+;;; vl-catch-all-error-message for some caught errors (vl-exit-with-error
+;;; outside a VLX); BricsCAD and clautolisp always give a string. These
+;;; tests make the hosted clautolisp answer NIL the way AutoCAD does: the
+;;; request evaluator used to take the NIL message for "no error" and
+;;; report the failed request DONE OK.
+
+(defparameter +nil-catch-all-message-form+
+  "(defun vl-catch-all-error-message (e) nil)"
+  "AutoLISP that makes the hosted clautolisp answer NIL for the message
+of every caught error, as AutoCAD does for some.")
+
+(test protocol-nil-catch-all-message-request-fails
+  "A failing -x request on a host whose caught-error message is NIL is
+reported FAIL with the fixed text, not DONE OK. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; NIL-message test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary
+             (list +nil-catch-all-message-form+
+                   "(/ 1 0)"
+                   "(princ 7)")
+             :assume-no-rest-p t)
+          (is (= 3 (length statuses)) "statuses: ~S" statuses)
+          (is (search " OK" (first statuses))
+              "the override must load: ~S ~S" statuses stderr)
+          (is (search " FAIL" (second statuses))
+              "a failing request must FAIL, not report OK: ~S" statuses)
+          (is (search "the engine supplied no message" stderr)
+              "the failure must carry the fixed text: ~S" stderr)
+          ;; The session survives the failure.
+          (is (search " OK" (third statuses)) "statuses: ~S" statuses)
+          (is (search "7" (without-returns stdout)) "stdout: ~S" stdout)))))
+
+(test protocol-nil-catch-all-message-load-fails
+  "A form that fails inside a loaded file, on a host whose caught-error
+message is NIL, makes the load FAIL and stops it there. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; NIL-message load test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :assume-no-rest-p t
+             :forms-fn
+             (lambda (workdir)
+               (let ((f (merge-pathnames "nil-message.lsp" workdir)))
+                 (with-open-file (out f :direction :output
+                                        :if-exists :supersede
+                                        :if-does-not-exist :create)
+                   (format out ";; fails on line 3~%(setq nilmsg-before 1)~%(/ 1 0)~%(setq nilmsg-after 1)~%"))
+                 (list +nil-catch-all-message-form+
+                       (format nil "(load ~S)" (namestring f))
+                       (concatenate 'string
+                                    "(princ (if (and (boundp (quote nilmsg-after))"
+                                    " nilmsg-after) \"AFTER-SET\" \"AFTER-UNSET\"))")))))
+          (is (= 3 (length statuses)) "statuses: ~S" statuses)
+          (is (search " OK" (first statuses))
+              "the override must load: ~S ~S" statuses stderr)
+          (is (search " FAIL" (second statuses))
+              "a failing form in a loaded file must FAIL the load: ~S ~S"
+              statuses stderr)
+          (is (search "nil-message.lsp" stderr)
+              "the diagnostic must name the loaded file: ~S" stderr)
+          (is (search "the engine supplied no message" stderr)
+              "the diagnostic must carry the fixed text: ~S" stderr)
+          (is (search "AFTER-UNSET" (without-returns stdout))
+              "the load must stop at the failing form: ~S" stdout)))))
+
 ;;; --- real literals reach the CAD with every digit --------------------
 ;;;
 ;;; alfe-cad-transport-rounds-reals. The emitted AUTOLISP-EVAL-REQUEST-FORM
@@ -1989,8 +2066,9 @@ literals, send real literals as protocol requests, and return
         "(setq rtx-d 1.5707963267948966)"
         ;; No re-print so far: every form above travelled as its text.
         "(princ (strcat \"PRINTED \" (itoa *rtx-printed*) \"\\n\") nil)"
-        ;; A form with a 1-arg princ: the AutoCAD normaliser rewrites it, so
-        ;; there it MUST be re-printed -- losslessly.
+        ;; A form with a 1-arg princ: the AutoCAD normaliser rewrites it,
+        ;; and the padding is made in its TEXT, so it is not re-printed
+        ;; either (alfe-normalised-form-reals-autocad).
         "(progn (setq rtx-c 5.497787143782138 rtx-m -0.0) (princ \"\"))"
         "(princ (strcat \"REPRINTED \" (if (> *rtx-printed* 0) \"yes\" \"no\") \"\\n\") nil)"
         (concatenate
@@ -2013,8 +2091,8 @@ literals, send real literals as protocol requests, and return
 arrive exactly, on the variadic (BricsCAD) path AND the fixed-arity
 (AutoCAD) path. No form is re-printed while its text is at hand -- the
 re-printer is called zero times for the loaded file and the request --
-and the form the AutoCAD normaliser rewrites is re-printed losslessly
-(its literals, -0.0 included, still exact). (rtos x 2 16) of the loaded
+not even the form the AutoCAD normaliser rewrites, which is padded in
+its text (its literals, -0.0 included, still exact). (rtos x 2 16) of the loaded
 1.2345678901234 gives back all its digits. Skipped when clautolisp-sbcl
 is not on disk."
   (let ((binary (clautolisp-engine-binary)))
@@ -2032,9 +2110,9 @@ is not on disk."
             (is (equal '("0") (%prefixed-lines "PRINTED " stdout))
                 "~:[variadic~;fixed-arity~]: the loaded file and the request must travel as text: ~S"
                 no-rest stdout)
-            ;; Only the AutoCAD path rewrites (princ ""), so only there is
-            ;; a form printed back -- and its literals still arrive exact.
-            (is (equal (list (if no-rest "yes" "no"))
+            ;; Only the AutoCAD path rewrites (princ ""), and it does so in
+            ;; the text: no form is printed back on either path.
+            (is (equal (list "no")
                        (%prefixed-lines "REPRINTED " stdout))
                 "~:[variadic~;fixed-arity~]: ~S" no-rest stdout)
             (is (equal '("A EXACT B EXACT D EXACT C EXACT N NEG M NEG")
@@ -2612,6 +2690,133 @@ OPEN calls are all rewritten. Skipped when clautolisp-sbcl is not on disk."
                                                       stdout))))
                      (is (equal "SAME" got)
                          "case ~D: ~S expected ~S, got ~A" i in expected got)))))))
+
+;;; --- the AutoCAD normaliser pads the TEXT, not a re-printed form ------
+;;;
+;;; alfe-normalised-form-reals-autocad. On AutoCAD (no &rest) a 1-argument
+;;; princ/print/prin1/load is padded to 2 arguments. That rebuilt form used
+;;; to be PRINTED back, and AutoCAD's rtos stops at 16 significant digits
+;;; and a 2-digit exponent: pi/2 lost its last digit. The padding is now
+;;; made in the source text (alfe-normalize-princ-text), checked by reading
+;;; it back (alfe-normalized-source-text), and the printer is only the
+;;; fallback.
+
+(test protocol-normalize-princ-text-pads-in-the-source
+  "alfe-normalize-princ-text, the CAD-side textual twin of the AutoCAD
+princ/load normaliser: a 1-argument princ/print/prin1/load gets \" nil\"
+before its closing parenthesis, an empty (princ) becomes
+(autolisp-princ-newline), an empty print/prin1 gets \\\"\\\" nil, and
+everything else of the text is kept -- real literals, case, spacing,
+comments. Quoted lists (' and QUOTE / FUNCTION), lists in head position,
+strings and comments are never rewritten; 2-argument calls are left alone;
+nested calls are all padded. alfe-normalized-source-text returns the
+padded text only when it reads back EQUAL to the normalised form, and NIL
+(-> the printer) otherwise. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary))
+        (cases
+          '(("(princ 1.5707963267948966)"
+             "(princ 1.5707963267948966 nil)")
+            ("(progn (setq a 123456789012345678.0)  (PRINC) )"
+             "(progn (setq a 123456789012345678.0)  (autolisp-princ-newline) )")
+            ("(print)" "(print \"\" nil)")
+            ("(prin1 'x)" "(prin1 'x nil)")
+            ("(princ x f)" "(princ x f)")
+            ("(load \"a.lsp\")" "(load \"a.lsp\" nil)")
+            ("(load \"a.lsp\" 1)" "(load \"a.lsp\" 1)")
+            ("(princ (princ 1.0e300))" "(princ (princ 1.0e300 nil) nil)")
+            ("(princ \"a;b(princ c)\")" "(princ \"a;b(princ c)\" nil)")
+            ("((princ a) b)" "((princ a) b)")
+            ("(list '(princ a) (quote (princ b)) (function (lambda () (princ c))) (princ e))"
+             "(list '(princ a) (quote (princ b)) (function (lambda () (princ c))) (princ e nil))")
+            (#.(format nil "(progn ;| (princ x) |; (princ y) ; (princ z~% (princed 1))")
+             #.(format nil "(progn ;| (princ x) |; (princ y nil) ; (princ z~% (princed 1))")))))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; princ text normaliser test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary
+             (append
+              (loop for (in expected) in cases
+                    for i from 1
+                    collect (format nil "(progn (setq txt (alfe-normalize-princ-text ~A)) (princ (strcat \"TXT~D \" (if (= txt ~A) \"SAME\" (vl-prin1-to-string txt)) \"\\n\") nil))"
+                                    (%autolisp-string-literal in) i
+                                    (%autolisp-string-literal expected)))
+              (list
+               ;; The verified text, and the fallback (NIL) when the source
+               ;; does not match the form, or is missing.
+               (concatenate
+                'string
+                "(progn (setq f (read \"(princ 1.5707963267948966)\"))"
+                " (setq n (autolisp-normalize-princ-call-impl f))"
+                " (princ (strcat \"CHECK \""
+                " (vl-prin1-to-string (alfe-normalized-source-text f n \"(princ 1.5707963267948966)\"))"
+                " \" \" (vl-prin1-to-string (alfe-normalized-source-text f n \"(princ 2.5)\"))"
+                " \" \" (vl-prin1-to-string (alfe-normalized-source-text f n nil))"
+                " \"\\n\") nil))")))
+             :assume-no-rest-p nil)
+          (is (every (lambda (s) (search " OK" s)) statuses)
+              "every request must succeed: ~S~%~A" statuses stderr)
+          (loop for (in expected) in cases
+                for i from 1
+                do (let ((got (first (%prefixed-lines (format nil "TXT~D " i)
+                                                      stdout))))
+                     (is (equal "SAME" got)
+                         "case ~D: ~S expected ~S, got ~A" i in expected got)))
+          (is (equal '("\"(princ 1.5707963267948966 nil)\" nil nil")
+                     (%prefixed-lines "CHECK " stdout))
+              "alfe-normalized-source-text: ~S" stdout)))))
+
+(defparameter +autocad-rtos-real-printer-form+
+  (concatenate 'string
+               "(defun autolisp-real-source-text (x)"
+               " (setq *rtn-printed* (1+ *rtn-printed*))"
+               " (rtos x 1 15))")
+  "AutoLISP that makes the hosted clautolisp print a REAL for source the
+way alfe's printer manages on AutoCAD: 16 significant digits (AutoCAD's
+rtos cannot give 17), and count the calls in *RTN-PRINTED*.")
+
+(test protocol-normalised-form-reals-reach-the-engine-exactly
+  "Acceptance on the AutoCAD (fixed-arity) shadow path: a form the AutoCAD
+normaliser pads -- (princ <17-digit real>), and a progn holding a 1-arg
+princ next to a setq of pi/2 and of a 17-digit integer-valued real --
+reaches the engine with its literals' digits intact, and the real printer
+is not called at all. The hosted clautolisp's real printer is replaced by
+one that, like AutoCAD's rtos, keeps 16 significant digits: before the
+fix the padded form was printed back with it, and every one of these
+literals arrived rounded. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; normalised real transport test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary
+             (list
+              "(setq *rtn-printed* 0)"
+              +autocad-rtos-real-printer-form+
+              ;; The stub really rounds (otherwise this test proves nothing).
+              "(princ (strcat \"STUB \" (autolisp-real-source-text (read \"1.5707963267948966\")) \"\\n\") nil)"
+              "(setq *rtn-printed* 0)"
+              ;; Normalised: the inner 1-arg princ is padded on AutoCAD.
+              "(setq rtn-p (princ 1.5707963267948966))"
+              "(progn (setq rtn-j 123456789012345678.0 rtn-e 1.2345678901234567) (princ \"\"))"
+              (concatenate
+               'string
+               "(princ (strcat"
+               " \"\\nRTN P \" (if (= rtn-p (read \"1.5707963267948966\")) \"EXACT\" \"ROUNDED\")"
+               " \" J \" (if (= rtn-j (read \"123456789012345678.0\")) \"EXACT\" \"ROUNDED\")"
+               " \" E \" (if (= rtn-e (read \"1.2345678901234567\")) \"EXACT\" \"ROUNDED\")"
+               " \" PRINTED \" (itoa *rtn-printed*)"
+               " \"\\n\") nil)"))
+             :assume-no-rest-p t)
+          (is (every (lambda (s) (search " OK" s)) statuses)
+              "every request must succeed: ~S ~S" statuses stderr)
+          (is (equal '("1.570796326794897E+00") (%prefixed-lines "STUB " stdout))
+              "stub: ~S" stdout)
+          (is (equal '("P EXACT J EXACT E EXACT PRINTED 0")
+                     (%prefixed-lines "RTN " stdout))
+              "normalised forms must travel as their (padded) text: ~S" stdout)))))
 
 (test protocol-autocad-source-open-takes-no-third-argument
   "G3 on AutoCAD: the deported loader opens a source with a plain (open P \"r\"),

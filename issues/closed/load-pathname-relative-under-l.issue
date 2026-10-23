@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: load-pathname-relative-under-l -- -l binds *AUTOLISP-LOAD-PATHNAME* to the path as typed, not the absolute path
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: -
@@ -45,3 +45,18 @@ not checked whether it resolves the path first.
    =load=).
 3. Remove the caveat from the user manual, section /Image-introspection
    variables/, which points at this issue.
+
+* Fix (2026-10-22, clautolisp 2.3.27 / alfe 2.3.27) -- DONE
+
+The -l / positional action now binds *AUTOLISP-LOAD-PATHNAME* to
+(truename FILE) -- falling back to (merge-pathnames FILE) -- exactly as
+builtin LOAD does: tools/clautolisp/source/main.lisp
+EVAL-ACTION-IN-CONTEXT, and alfe's :direct backend
+(backend-clautolisp.lisp, the (:LOAD ...) action) likewise.
+
+Test: transmit-tests.lisp LOAD-PATHNAME-UNDER-L-IS-ABSOLUTE runs the -l
+action on "main.lsp" from its own directory and checks the recorded value
+is absolute and names the file. Seen red against 2.3.26 (got "main.lsp"),
+green now. The user manual's caveat (Image-introspection variables) is
+removed. Pure clautolisp: no vendor behaviour involved (the CADs' native
+LOAD is not this code path).

@@ -179,7 +179,7 @@ all, and one written with `&' will not load on BricsCAD either. The
 warning fires when the defun/lambda is EVALUATED, so a guarded branch
 that is never reached never warns."
  :references
- '(("clautolisp: the governing issue" . "issues/open/clautolisp-dialect-portability-warnings.issue")
+ '(("clautolisp: the governing issue" . "issues/closed/clautolisp-dialect-portability-warnings.issue")
    ("clautolisp: harvest evidence" . "autolisp-spec/documentation/bricscad-undocumented-extensions.org")
    ("clautolisp: normative rules" . "autolisp-spec chapter 25, \"Normative Rules: Dialect Portability Warnings\"")))
 
@@ -305,7 +305,7 @@ Warning keeps both -- the run proceeds, and the developer learns which
 spelling is wrong and what the real name is. Without it the sysvar would
 merely sweep the problem under the carpet."
  :references
- '(("clautolisp: the request and its incident" . "issues/open/case-insensitive-pathname-resolution.issue")
+ '(("clautolisp: the request and its incident" . "issues/closed/case-insensitive-pathname-resolution.issue")
    ("clautolisp: the `..' warning this is modelled on" . "issues/closed/cad-path-dotdot-resolution.issue")))
 
 ;;; ------------------------------------------------------------------
@@ -664,7 +664,7 @@ that looks unusual. The warning names the hazard; the dialect switch lets
 BricsCAD-targeted code get BricsCAD's answer."
  :references
  '(("clautolisp: emitted by" . "clautolisp/autolisp-runtime/source/api.lisp, EMIT-FOREACH-EMPTY-BODY-DIVERGENCE-WARNING")
-   ("clautolisp: the ticket" . "issues/open/foreach-empty-body-return-diverges.issue")))
+   ("clautolisp: the ticket" . "issues/closed/foreach-empty-body-return-diverges.issue")))
 
 (register-dialect-warning
  :tag "read-leading-comment"
@@ -709,7 +709,7 @@ object on AutoCAD, NIL on BricsCAD, for the identical string. The
 warning surfaces that before it becomes a `nil where NAME was' bug
 several calls later."
  :references
- '(("clautolisp: the governing issue" . "issues/open/read-string-does-not-skip-comments.issue")
+ '(("clautolisp: the governing issue" . "issues/closed/read-string-does-not-skip-comments.issue")
    ("clautolisp: emitted by" . "clautolisp/autolisp-builtins-core/source/api.lisp, EMIT-READ-LEADING-COMMENT-WARNING")
    ("Autodesk: read (AutoLISP), 2026 CHS" . "https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm")
    ("Bricsys: read (DevRef V26)" . "https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/read.htm")))
@@ -746,7 +746,7 @@ is ignored and the file is decoded with the default. The diagnostic is
 the only sign."
  :references
  '(("clautolisp: authoritative descriptions" . "issues/closed/encoding-dispatch.issue, section \"Diagnostics\"")
-   ("clautolisp: the situation model" . "issues/open/encoding-situations-cli-options.issue")))
+   ("clautolisp: the situation model" . "issues/closed/encoding-situations-cli-options.issue")))
 
 (register-dialect-warning
  :tag "enc-extension-used"
@@ -836,7 +836,7 @@ changes from persisting."
  "A program that sets LISPSYS expecting an immediate effect gets none,
 with no error. Two levels of silence stacked on each other."
  :references
- '(("clautolisp: measured behaviour" . "issues/open/encoding-situations-cli-options.issue, experiment E1")
+ '(("clautolisp: measured behaviour" . "issues/closed/encoding-situations-cli-options.issue, experiment E1")
    ("clautolisp: authoritative descriptions" . "issues/closed/encoding-dispatch.issue, section \"Diagnostics\"")))
 
 (register-dialect-warning

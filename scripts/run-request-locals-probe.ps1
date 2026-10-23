@@ -3,7 +3,7 @@
   MEASURES whether a user program's globals survive alfe's request machinery
   on the CAD: a (setq f 1 text "t" ...) made by the -l file, by an -x request
   and by a function, read back by a LATER request
-  (issues/open/alfe-eval-request-locals-capture-user-setq.issue).
+  (issues/closed/alfe-eval-request-locals-capture-user-setq.issue).
 
     scripts/run-request-locals-probe.ps1 -Backend {clautolisp|bricscad|autocad|accoreconsole}
 

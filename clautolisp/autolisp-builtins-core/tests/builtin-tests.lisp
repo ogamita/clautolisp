@@ -1025,24 +1025,21 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
         (is (string= "quit / exit abort"
                      (autolisp-string-value message))
             "trapped (quit) carries the same vendor canonical message")))
-    (let ((value (call-autolisp-function
-                  apply-fn
-                  (intern-autolisp-symbol "VL-EXIT-WITH-VALUE")
-                  (list 42))))
-      (is (= 42 value))
-      (is (= 0 (autolisp-errno)))
-      (is (null (call-autolisp-function error-p-fn value))))
-    (let ((failure (call-autolisp-function
-                    apply-fn
-                    (intern-autolisp-symbol "VL-EXIT-WITH-ERROR")
-                    (list (make-autolisp-string "boom")))))
-      (is (= 1 (autolisp-errno)))
-      (is (string= "T"
-                   (autolisp-symbol-name
-                    (call-autolisp-function error-p-fn failure))))
-      (let ((message (call-autolisp-function message-fn failure)))
-        (is (typep message 'autolisp-string))
-        (is (search "boom" (autolisp-string-value message)))))))
+    ;; Outside a VLX (always, in clautolisp) both vl-exit-* are an error
+    ;; without a message: the catch-all's message is nil under the default
+    ;; dialect, as on AutoCAD (vl-exit-outside-vlx-caught-diverges).
+    (dolist (call (list (list "VL-EXIT-WITH-VALUE" 42)
+                        (list "VL-EXIT-WITH-ERROR" (make-autolisp-string "boom"))))
+      (let ((failure (call-autolisp-function
+                      apply-fn
+                      (intern-autolisp-symbol (first call))
+                      (rest call))))
+        (is (string= "T"
+                     (autolisp-symbol-name
+                      (call-autolisp-function error-p-fn failure)))
+            "~A outside a VLX must be caught as an error" (first call))
+        (is (null (call-autolisp-function message-fn failure))
+            "~A outside a VLX has no message" (first call))))))
 
 (test builtin-mapcar
   (reset-autolisp-symbol-table)
@@ -1179,20 +1176,17 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
           (is nil))
       (autolisp-termination (condition)
         (is (eq :quit (autolisp-termination-kind condition)))))
-    (handler-case
-        (progn
-          (call-autolisp-function exit-error-fn (make-autolisp-string "bridge-error"))
-          (is nil))
-      (autolisp-namespace-exit (condition)
-        (is (eq :error (autolisp-namespace-exit-kind condition)))
-        (is (string= "bridge-error" (autolisp-namespace-exit-value condition)))))
-    (handler-case
-        (progn
-          (call-autolisp-function exit-value-fn 42)
-          (is nil))
-      (autolisp-namespace-exit (condition)
-        (is (eq :value (autolisp-namespace-exit-kind condition)))
-        (is (= 42 (autolisp-namespace-exit-value condition)))))))
+    ;; Outside a VLX -- always, in clautolisp -- both raise the AutoLISP
+    ;; error :VL-EXIT-OUTSIDE-VLX (measured on AutoCAD and BricsCAD).
+    (dolist (call (list (list exit-error-fn (make-autolisp-string "bridge-error"))
+                        (list exit-value-fn 42)))
+      (handler-case
+          (progn
+            (apply #'call-autolisp-function call)
+            (is nil))
+        (autolisp-runtime-error (condition)
+          (is (eq :vl-exit-outside-vlx
+                  (clautolisp.autolisp-runtime:autolisp-runtime-error-code condition))))))))
 
 (test builtin-load-error-hook-can-transfer-control
   (reset-autolisp-symbol-table)
@@ -3186,8 +3180,9 @@ call that received NIL) and on a TEXT."
 (test activex-constants-every-measured-constant-bound-per-product
   "Table-driven over the MEASURED table (probe-activex-constants on AutoCAD
 2022, BricsCAD V25 / V26): after (vl-load-com) every name the dialect's
-product binds has that product's value -- 832 on AutoCAD, 932 on BricsCAD."
-  (dolist (case '(("autocad-2022" :autocad 832) ("bricscad-v26" :bricscad 932)))
+product binds has that product's value -- 847 on AutoCAD, 948 on BricsCAD
+(832 / 932 AC constants, plus 15 / 16 vlax-vb* VarType constants)."
+  (dolist (case '(("autocad-2022" :autocad 847) ("bricscad-v26" :bricscad 948)))
     (destructuring-bind (dialect product count) case
       (let ((constants (clautolisp.autolisp-builtins-core:activex-enumeration-constants
                         product)))
@@ -3273,6 +3268,132 @@ argument of AddAttribute (additive flags)."
   ;; installed once.
   (is (null (%vla "(vl-load-com) (setq acAlignmentMiddleLeft nil) (vl-load-com)
                    acAlignmentMiddleLeft"))))
+
+;;; --- vlax-vb* VarType constants (vlax-vb-constants-unbound.issue) ---------
+
+(defparameter *vlax-vb-constants*
+  '(("vlax-vbEmpty" 0 0) ("vlax-vbNull" 1 1) ("vlax-vbInteger" 2 2)
+    ("vlax-vbLong" 3 3) ("vlax-vbSingle" 4 4) ("vlax-vbDouble" 5 5)
+    ("vlax-vbCurrency" 6 6) ("vlax-vbDate" 7 7) ("vlax-vbString" 8 8)
+    ("vlax-vbObject" 9 9) ("vlax-vbError" 10 10) ("vlax-vbBoolean" 11 11)
+    ("vlax-vbVariant" 12 12) ("vlax-vbDataObject" 13 13)
+    ("vlax-vbDecimal" nil 14) ("vlax-vbByte" nil nil)
+    ("vlax-vbArray" 8192 8192))
+  "(NAME AUTOCAD-VALUE BRICSCAD-VALUE) as measured on 2026-10-23 (probe
+activex-constants: AutoCAD 2022, BricsCAD V25 and V26), written out
+independently of the runtime table. NIL: the product does not bind it.")
+
+(defun %vlax-vb-expected (product)
+  (mapcar (lambda (entry)
+            (destructuring-bind (name autocad bricscad) entry
+              (declare (ignore name))
+              (ecase product
+                (:autocad autocad)
+                (:bricscad bricscad)
+                (:strict (and autocad bricscad (= autocad bricscad) autocad))
+                (:clautolisp (or autocad bricscad)))))
+          *vlax-vb-constants*))
+
+(test vlax-vb-constants-bound-after-vl-load-com
+  "vlax-vb-constants-unbound: after (vl-load-com) every vlax-vb* name has
+its MEASURED value for the dialect's product: AutoCAD binds 15 of the 17
+(not vlax-vbDecimal, not vlax-vbByte), BricsCAD 16 (not vlax-vbByte);
+strict the common subset, clautolisp the union."
+  (loop for (dialect product) in '(("clautolisp" :clautolisp)
+                                   ("autocad-2022" :autocad)
+                                   ("bricscad-v26" :bricscad)
+                                   ("strict" :strict))
+        do (is (equal (%vlax-vb-expected product)
+                      (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com) (list ~{~A~^ ~})"
+                                    dialect (mapcar #'first *vlax-vb-constants*))))
+               dialect)))
+
+(test vlax-vb-constants-yield-to-the-measured-table
+  "The vlax-vb* constants are no longer a separate documented table: they
+come from *ACTIVEX-MEASURED-CONSTANTS*, per product, like the AC ones."
+  (is (not (fboundp (find-symbol "ACTIVEX-DOCUMENTED-CONSTANTS"
+                                 "CLAUTOLISP.AUTOLISP-BUILTINS-CORE"))))
+  (loop for product in '(:autocad :bricscad :strict :clautolisp)
+        do (is (equal (remove nil (mapcar (lambda (entry value)
+                                            (and value (list (string-upcase (first entry)) value)))
+                                          *vlax-vb-constants*
+                                          (%vlax-vb-expected product)))
+                      (sort (remove-if-not
+                             (lambda (entry) (eql 0 (search "VLAX-VB" (first entry))))
+                             (clautolisp.autolisp-builtins-core:activex-enumeration-constants
+                              product))
+                            (lambda (a b)
+                              (< (position (first a) *vlax-vb-constants*
+                                           :key #'first :test #'string-equal)
+                                 (position (first b) *vlax-vb-constants*
+                                           :key #'first :test #'string-equal)))))
+               product)))
+
+;;; --- VARIANT / SAFEARRAY lower-case names on AutoCAD -----------------------
+;;; (type-symbols-print-lowercase-on-autocad.issue, probe type-symbols
+;;; measured 2026-10-23 on AutoCAD 2022, BricsCAD V25 and V26.)
+
+(defun %type-symbol-names (dialect)
+  (autolisp-string-value
+   (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com)
+          (setq v (vlax-make-variant 1) sa (vlax-make-safearray 5 '(0 . 1)))
+          (strcat (vl-symbol-name (type v)) \" \"
+                  (vl-princ-to-string (type sa)) \" \"
+                  (vl-prin1-to-string 'VARIANT) \" \"
+                  (vl-symbol-name (read \"SAFEARRAY\")) \" \"
+                  (vl-princ-to-string 'safearray) \" \"
+                  (vl-prin1-to-string (list (type v) (type 1) (type \"s\") 'foo)) \" \"
+                  (vl-symbol-name (type (vlax-get-acad-object))) \" \"
+                  (vl-symbol-name (type (ssadd))))" dialect))))
+
+(test type-symbols-variant-safearray-names-lower-case-except-bricscad
+  "Measured: AutoCAD names the symbols VARIANT and SAFEARRAY \"variant\" and
+\"safearray\" (vl-symbol-name, princ, prin1; from TYPE, from a quoted
+literal, from READ); every other TYPE result is upper case; BricsCAD has
+them all upper case. Every dialect but the BricsCAD ones follows AutoCAD."
+  (dolist (dialect '("autocad-2022" "autocad-2026" "clautolisp" "strict" "lax"))
+    (is (equal "variant safearray variant safearray safearray (variant INT STR FOO) VLA-OBJECT PICKSET"
+               (%type-symbol-names dialect))
+        dialect))
+  (dolist (dialect '("bricscad-v25" "bricscad-v26"))
+    (is (equal "VARIANT SAFEARRAY VARIANT SAFEARRAY SAFEARRAY (VARIANT INT STR FOO) VLA-OBJECT PICKSET"
+               (%type-symbol-names dialect))
+        dialect)))
+
+(test type-symbols-lower-case-name-is-still-the-same-symbol
+  "Only the name the symbol SHOWS changes: reading stays case-insensitive,
+(type v) is EQ to 'VARIANT and to (read (strcase (vl-symbol-name (type v)))),
+as measured on AutoCAD (\"eq read upcase\" T for every TYPE result)."
+  (dolist (dialect '("autocad-2022" "bricscad-v26" "strict"))
+    (is (equal '(t t t t t)
+               (mapcar (lambda (x) (and x t))
+                       (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com)
+                          (setq v (vlax-make-variant 1) sa (vlax-make-safearray 5 '(0 . 1)))
+                          (list (eq (type v) 'VARIANT)
+                                (eq (type v) 'variant)
+                                (eq (read \"variant\") 'VARIANT)
+                                (eq (type v) (read (strcase (vl-symbol-name (type v)))))
+                                (eq (type sa) (read (vl-symbol-name (type sa)))))" dialect))))
+        dialect))
+  ;; The canonical (interned) name is unchanged: internal comparisons keep
+  ;; using it.
+  (is (equal "VARIANT"
+             (clautolisp.autolisp-runtime:autolisp-symbol-name
+              (%vla "(setq *AUTOLISP-DIALECT* 'autocad-2022) (vl-load-com)
+                     (type (vlax-make-variant 1))")))))
+
+(test vlax-vb-constants-drive-make-variant-and-safearray
+  "The canonical calls with the symbolic type: vlax-make-variant /
+vlax-variant-type, vlax-make-safearray."
+  (is (eql 2 (%vla "(vl-load-com) (vlax-variant-type (vlax-make-variant 1 vlax-vbInteger))")))
+  (is (eql 5 (%vla "(vl-load-com) (vlax-variant-type (vlax-make-variant 1.0 vlax-vbDouble))")))
+  (is (eql 8 (%vla "(vl-load-com) (vlax-variant-type (vlax-make-variant \"s\" vlax-vbString))")))
+  (is (eql 8197 (%vla "(vl-load-com)
+                       (vlax-variant-type
+                         (vlax-make-variant (vlax-make-safearray vlax-vbDouble '(0 . 2))))")))
+  (is (equal '(0 . 2) (%vla "(vl-load-com)
+                       (setq sa (vlax-make-safearray vlax-vbDouble '(0 . 2)))
+                       (cons (vlax-safearray-get-l-bound sa 1) (vlax-safearray-get-u-bound sa 1))"))))
 
 (test vla-addattribute-passes-the-six-vendor-arguments-through
   "cador-addattribute-argument-order. The AutoLISP façade must hand
@@ -8617,3 +8738,115 @@ OPEN-ARGUMENTS...) under DIALECT after PRELUDE, as a printed list."
     (is (typep (second r) 'autolisp-string))
     (is (not (null (third r))))
     (is (string= "STR" (autolisp-symbol-name (fourth r))))))
+
+;;; --- a LOCAL *error* is the one called ---------------------------
+;;;
+;;; local-error-handler-not-called. (defun c:cmd (/ *error* ...) (defun
+;;; *error* ...) ...) is THE AutoCAD idiom: the handler is local to the
+;;; command, and the binding current where the error happens is called,
+;;; with the command's other locals still visible. The error handler used
+;;; to unwind first, so only the global *error* was ever seen.
+
+(defun %error-handler-run (source)
+  "Evaluate SOURCE (AutoLISP text) under CALL-WITH-AUTOLISP-ERROR-HANDLER, as
+the toplevel does; return its value."
+  (let ((forms (clautolisp.autolisp-runtime:read-runtime-from-string source))
+        (context (clautolisp.autolisp-runtime:default-evaluation-context)))
+    (clautolisp.autolisp-runtime:call-with-autolisp-error-handler
+     (lambda () (clautolisp.autolisp-runtime::autolisp-eval-progn forms context))
+     context)))
+
+(defun %error-handler-value (name)
+  (let ((v (autolisp-symbol-value (intern-autolisp-symbol name))))
+    (if (typep v 'autolisp-string) (autolisp-string-value v) v)))
+
+(test local-error-handler-is-called-with-locals-visible
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun *error* (msg) (setq seen (strcat \"GLOBAL \" msg)))
+    (defun divise (a b / *error*)
+      (defun *error* (msg) (setq seen (strcat \"LOCAL \" msg \" a=\" (itoa a))))
+      (/ a b))")
+  (%error-handler-run "(divise 7 0)")
+  (is (equal "LOCAL Division by zero in /. a=7" (%error-handler-value "SEEN"))
+      "the local *error* must be called, seeing the local A: ~S"
+      (%error-handler-value "SEEN"))
+  ;; The local binding is undone on the way out: the global one is back.
+  (%error-handler-run "(/ 1 0)")
+  (is (equal "GLOBAL Division by zero in /." (%error-handler-value "SEEN"))))
+
+(test local-error-handler-set-by-setq-is-called
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun f (/ *error*)
+      (setq *error* (lambda (m) (setq seen (strcat \"SETQ \" m))))
+      (/ 1 0))")
+  (%error-handler-run "(f)")
+  (is (equal "SETQ Division by zero in /." (%error-handler-value "SEEN"))))
+
+(test error-handler-does-not-shadow-vl-catch-all-apply
+  ;; An error caught by vl-catch-all-apply never reaches *error*.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun *error* (msg) (setq seen msg))
+    (setq r (vl-catch-all-error-p (vl-catch-all-apply (quote /) (list 1 0))))")
+  (is (null (%error-handler-value "SEEN")))
+  (is (eq (find-autolisp-symbol "T") (%error-handler-value "R"))))
+
+;;; --- vl-exit-with-error / -value outside a VLX ----------------------
+;;;
+;;; vl-exit-with-error-leaks-host-condition. With no separate-namespace
+;;; boundary (clautolisp loads no VLX) the AUTOLISP-NAMESPACE-EXIT escaped
+;;; every AutoLISP handler and reached the host Lisp's debugger. In the
+;;; document namespace it is now an AutoLISP error with the message, and
+;;; vl-exit-with-value is the value of the toplevel form.
+
+(test vl-exit-with-error-at-toplevel-calls-error-handler
+  "Outside a VLX, vl-exit-with-error is an AutoLISP error WITHOUT a message
+(measured, vl-exit-outside-vlx-caught-diverges): *error* -- a local one
+too, called before the locals unwind -- receives the empty message."
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun *error* (msg) (setq seen (strcat \"GLOBAL[\" msg \"]\")))")
+  (%error-handler-run "(vl-exit-with-error \"boom\")")
+  (is (equal "GLOBAL[]" (%error-handler-value "SEEN")))
+  (%error-handler-run
+   "(defun f (n / *error*)
+      (defun *error* (msg) (setq seen (strcat \"LOCAL[\" msg \"] n=\" (itoa n))))
+      (vl-exit-with-error \"inner\"))")
+  (%error-handler-run "(f 3)")
+  (is (equal "LOCAL[] n=3" (%error-handler-value "SEEN"))))
+
+(test vl-exit-without-handler-is-an-autolisp-error
+  "With no *error*, both vl-exit-* surface as the AutoLISP error
+:VL-EXIT-OUTSIDE-VLX -- never as a host condition (vl-exit-with-error-
+leaks-host-condition)."
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (dolist (text '("(vl-exit-with-error \"boom\")" "(list 1 (vl-exit-with-value 42) 2)"))
+    (let ((caught (handler-case (progn (%error-handler-run text) nil)
+                    (error (c) c))))
+      (is (typep caught 'clautolisp.autolisp-runtime:autolisp-runtime-error)
+          "~A must surface as an AutoLISP error, not ~S" text (type-of caught))
+      (when (typep caught 'clautolisp.autolisp-runtime:autolisp-runtime-error)
+        (is (eq :vl-exit-outside-vlx
+                (clautolisp.autolisp-runtime:autolisp-runtime-error-code caught)))))))
+
+(test vl-exit-caught-outside-a-vlx-is-an-error-without-message
+  "vl-catch-all-apply of either vl-exit-* outside a VLX returns a catch-all
+error; its message is nil under the default dialect, as on AutoCAD 2022
+(BricsCAD answers \"\")."
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (dolist (form '("(vl-catch-all-apply (quote vl-exit-with-value) (list 5))"
+                  "(vl-catch-all-apply (quote vl-exit-with-error) (list \"c\"))"))
+    (is (%error-handler-run (format nil "(vl-catch-all-error-p ~A)" form)))
+    (is (null (%error-handler-run (format nil "(vl-catch-all-error-message ~A)" form))))))

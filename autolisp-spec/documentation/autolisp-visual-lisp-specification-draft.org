@@ -927,7 +927,7 @@ Malformed syntax is erroneous.
 *** Compatibility
 This differs from Common Lisp `and`, which returns the value of the last subexpression when every test is true. AutoLISP `and` returns only `T` or `nil`. Confirmed against BricsCAD V26 by direct citation: the BricsCAD V26 `and` reference page documents the return as "T if all provided arguments evaluate as non-NIL; otherwise NIL". Because the truthy value does not flow through, `(and test expr)` is *not* a value-returning `when`: `(setq r (and ok (compute)))` stores `T`, not the computed value. Portable AutoLISP code that needs the computed value must use an explicit conditional, e.g. `(if ok (setq r (compute)))`.
 
-AutoLISP `and` and `or` are together the boolean special forms: both return only `T` or `nil` and neither returns a subexpression value, so neither can serve as Common Lisp `when` / `or-else` / `unless`. See "Special Form Entry: OR" for the companion rule, and issues/open/autolisp-spec-questions.issue ("AND, OR").
+AutoLISP `and` and `or` are together the boolean special forms: both return only `T` or `nil` and neither returns a subexpression value, so neither can serve as Common Lisp `when` / `or-else` / `unless`. See "Special Form Entry: OR" for the companion rule, and issues/closed/autolisp-spec-questions.issue ("AND, OR").
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -1191,7 +1191,7 @@ not portable. An empty list returns `nil` under every dialect — the
 hosts agree there, so nothing diverges and nothing warns. Implemented in
 ~clautolisp/autolisp-runtime/source/api.lisp~ (FOREACH-EMPTY-BODY-RESULT),
 called by both the interpreter and the compiler so the two cannot drift;
-see ~issues/open/foreach-empty-body-return-diverges.issue~.
+see ~issues/closed/foreach-empty-body-return-diverges.issue~.
 
 *** Side Effects
 Side effects are those of:
@@ -1248,7 +1248,7 @@ Expressions not reached because of short-circuiting are not evaluated and have n
 *** Compatibility
 This differs from Common Lisp `or`, which returns the first non-`nil` value. AutoLISP `or` returns only `T` or `nil`. Confirmed against BricsCAD V26 by direct citation: the BricsCAD V26 `or` reference page documents the return as "T if any provided argument evaluates as non-NIL; if all provided arguments evaluate as NIL, or if no argument is provided, NIL is returned" with examples `(or 123 nil) -> T`. Idioms ported from Common Lisp such as `(setq x (or x default))` *clobber* `x` with `T` rather than preserving the existing value; portable AutoLISP code must use `(if (not x) (setq x default))` instead.
 
-AutoLISP `and` and `or` are together the boolean special forms: both return only `T` or `nil` and neither returns a subexpression value, so neither can serve as Common Lisp `when` / `or-else` / `unless`. See "Special Form Entry: AND" for the companion rule, and issues/open/autolisp-spec-questions.issue ("AND, OR").
+AutoLISP `and` and `or` are together the boolean special forms: both return only `T` or `nil` and neither returns a subexpression value, so neither can serve as Common Lisp `when` / `or-else` / `unless`. See "Special Form Entry: AND" for the companion rule, and issues/closed/autolisp-spec-questions.issue ("AND, OR").
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -3609,6 +3609,9 @@ This function is one of the strongest direct sources for the practical runtime t
 *** Source Notes
 - [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
 - Status: documented.
+
+*** clautolisp
+clautolisp implementation deviation — not part of the normative specification above. Measured on 2026-10-23 with ~probes/sources/probe-type-symbols.lsp~: on AutoCAD 2022 the symbols ~VARIANT~ and ~SAFEARRAY~ have the names ~"variant"~ and ~"safearray"~ — ~vl-symbol-name~, ~princ~ / ~vl-princ-to-string~ and ~prin1~ / ~vl-prin1-to-string~ give them in lower case, whether the symbol comes from ~(type v)~, from ~'VARIANT~ quoted in source or from ~(read "VARIANT")~ — while reading stays case-insensitive: every spelling is the same symbol, ~(eq (type v) 'VARIANT)~ is ~T~. Every other ~TYPE~ result (~VLA-OBJECT~, ~ENAME~, ~PICKSET~, ~FILE~, ~SUBR~, ~USUBR~, ~EXRXSUBR~, ~INT~, ~REAL~, ~STR~, ~SYM~, ~LIST~) is upper case on AutoCAD, and BricsCAD V25 / V26 give all of them, ~VARIANT~ and ~SAFEARRAY~ included, in upper case. clautolisp shows ~VARIANT~ and ~SAFEARRAY~ as ~variant~ / ~safearray~ (vl-symbol-name and the printer) under every dialect except the BricsCAD ones, which keep upper case; the symbol itself, its identity and the case-insensitive reader are the same under every dialect. Implemented in ~clautolisp/autolisp-runtime/source/api.lisp~ (AUTOLISP-SYMBOL-PRINT-NAME); see ~issues/open/type-symbols-print-lowercase-on-autocad.issue~.
 
 #+LATEX: \newpage
 
@@ -7390,7 +7393,7 @@ character read from disk) follows from them.
   representation per character. clautolisp already guarantees this; BricsCAD's
   native ~chr~ is correct (~(chr 233)~ = é) but a *file* char decoded with the
   wrong codec is not, so the two diverge — a front-end/host contract, not a
-  ~chr~ bug. See ~issues/open/cad-chr-vs-loaded-encoding.issue~.
+  ~chr~ bug. See ~issues/closed/cad-chr-vs-loaded-encoding.issue~.
 - *alfe consequence* — because ~load~ takes no encoding and ~SYSCODEPAGE~ is
   not settable, a ~-Esource ENC~ whose ~ENC~ is neither the host
   ~SYSCODEPAGE~ nor a BOM'd UTF-8/UTF-16 must be **converted before the CAD
@@ -8760,7 +8763,7 @@ ch. 25) wherever the effective behavior is a hazard on a real engine:
 - [read (AutoLISP), AutoCAD 2026](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm) — silent on comment-handling.
 - [read (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/read.htm) — silent on comment-handling.
 - [About Comments in AutoLISP Program Files](https://help.autodesk.com/cloudhelp/2015/ENU/AutoCAD-AutoLISP/files/GUID-4D4664AD-301F-4E6E-AD65-4B7CE6A258B8.htm) — the only vendor text on `;` / `;| |;` comments at all; framed around program *files*, not `read` on a string.
-- `issues/open/read-string-does-not-skip-comments.issue` — the product-tested vendor matrix and the clautolisp fix (dialect matrix, the `[read-leading-comment]` warning).
+- `issues/closed/read-string-does-not-skip-comments.issue` — the product-tested vendor matrix and the clautolisp fix (dialect matrix, the `[read-leading-comment]` warning).
 - Status: documented (basic contract); comment-handling divergence product-tested, not vendor-documented.
 
 #+LATEX: \newpage
@@ -13036,7 +13039,7 @@ file cannot be opened.
 - BricsCAD: NOT present.
 
 *** Source Notes
-- clautolisp-only extension (=issues/open/dribble.issue=). The bare
+- clautolisp-only extension (=issues/closed/dribble.issue=). The bare
   ~(dribble)~ alias seen in examples is user-defined (e.g. in
   =~/.autolisp=); clautolisp registers only ~clal-dribble~.
 
@@ -13915,7 +13918,7 @@ Signals ~:invalid-module-kind~ for any ~kind~ other than
 
 *** Source Notes
 - clautolisp-only extension; see
-  issues/open/clautolisp-module-app-extensions.issue.
+  issues/closed/clautolisp-module-app-extensions.issue.
 
 #+LATEX: \newpage
 ** Function Entry: CLAL-LOAD-ALDO-CONFIGURATION
@@ -60961,7 +60964,7 @@ so a program building a path from user input has a wider surface.
 *** Source Notes
 - No vendor reference. Requested from SCHMS+ after a failure that
   appeared only under Linux; specified and implemented per
-  ~issues/open/case-insensitive-pathname-resolution.issue~ in 1.8.52.
+  ~issues/closed/case-insensitive-pathname-resolution.issue~ in 1.8.52.
 - Widened to every dialect but ~--strict~ in 1.8.56, per
   ~issues/closed/case-insensitive-paths-ignored-in-cad-dialects.issue~:
   SCHMS+ runs its suites under ~--dialect bricscad-v26~, to exercise the
@@ -71570,6 +71573,9 @@ Allocates automation-array storage.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+*** clautolisp
+clautolisp implementation note — not part of the normative specification above. ~(vl-load-com)~ binds the ~vlax-vb*~ type constants with the ActiveX enumeration constants (once per document, never over a non-nil value; from the start of the document under the BricsCAD dialects) to the values MEASURED by ~probes/sources/probe-activex-constants.lsp~ on AutoCAD 2022, BricsCAD V25 and BricsCAD V26 (2026-10-23), which are the VB VarType values: ~vlax-vbEmpty~ 0, ~vlax-vbNull~ 1, ~vlax-vbInteger~ 2, ~vlax-vbLong~ 3, ~vlax-vbSingle~ 4, ~vlax-vbDouble~ 5, ~vlax-vbCurrency~ 6, ~vlax-vbDate~ 7, ~vlax-vbString~ 8, ~vlax-vbObject~ 9, ~vlax-vbError~ 10, ~vlax-vbBoolean~ 11, ~vlax-vbVariant~ 12, ~vlax-vbDataObject~ 13, ~vlax-vbArray~ 8192 on both products; ~vlax-vbDecimal~ 14 on BricsCAD only (unbound on AutoCAD); ~vlax-vbByte~ (documented 17) is bound by neither product and stays unbound in clautolisp (the integer code 17 is still accepted). Per dialect: the AutoCAD dialects bind AutoCAD's set, the BricsCAD dialects BricsCAD's, strict the common subset, clautolisp / lax the union. Implemented in ~clautolisp/autolisp-builtins-core/source/activex-constants-table.lisp~ (~*ACTIVEX-MEASURED-CONSTANTS*~); see ~issues/open/vlax-vb-constants-unbound.issue~.
+
 #+LATEX: \newpage
 
 ** Function Entry: VLAX-MAKE-VARIANT
@@ -75795,6 +75801,21 @@ Transfers control across namespace/error boundaries.
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
 - Status: documented by family page.
 
+*** clautolisp
+clautolisp loads no VLX, so every call is outside a separate-namespace
+VLX. There, measured on AutoCAD 2022 (GUI and accoreconsole) and BricsCAD
+V25 / V26 (control-flow probe, 2026-10-22/23), ~vl-exit-with-error~ is an
+AutoLISP error WITHOUT a message, whatever ~msg~ is:
+~vl-catch-all-apply~ returns a catch-all error object whose message is
+~nil~ on AutoCAD and ~""~ on BricsCAD. clautolisp does the same, per
+dialect (the BricsCAD dialects ~""~, every other dialect AutoCAD's ~nil~),
+raising the error where ~vl-exit-with-error~ is called: ~*error*~ (a
+local one included) is called with an empty message, and without one the
+error is reported and ~--on-error~ applies. (Before 2.3.28 it escaped every
+handler to the host Lisp's debugger: issue
+=vl-exit-with-error-leaks-host-condition=; from 2.3.28 to 2.3.37 the error
+carried ~msg~: issue =vl-exit-outside-vlx-caught-diverges=.)
+
 #+LATEX: \newpage
 
 ** Function Entry: VL-EXIT-WITH-VALUE
@@ -75835,6 +75856,17 @@ Transfers control across namespace boundaries.
 - [vl-exit-with-value (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/DEU/AutoCAD-MAC-AutoLISP-Reference/files/GUID-80622A39-A5E8-4E68-824E-E66BD8D3E9DE.htm)
 - [About Handling Errors in a VLX Application Running in Its Own Namespace (Visual LISP IDE)](https://help.autodesk.com/cloudhelp/2026/ESP/AutoCAD-AutoLISP/files/GUID-B682DF97-DFD5-48B4-9FFF-8A0DF7CAC05F.htm)
 - Status: documented.
+
+*** clautolisp
+clautolisp loads no VLX, so every call is outside a separate-namespace
+VLX. There, measured on AutoCAD 2022 and BricsCAD V25 / V26 (control-flow
+probe, 2026-10-22/23), ~vl-exit-with-value~ does NOT transfer ~value~: it
+is an AutoLISP error without a message, exactly like
+~vl-exit-with-error~ -- ~vl-catch-all-apply~ returns a catch-all error
+object (message ~nil~ on AutoCAD, ~""~ on BricsCAD). clautolisp does the
+same, per dialect. (Before 2.3.28 it escaped to the host Lisp's debugger;
+from 2.3.28 to 2.3.37 it returned ~value~: issue
+=vl-exit-outside-vlx-caught-diverges=.)
 
 #+LATEX: \newpage
 
@@ -96420,7 +96452,7 @@ side effects.
 - [BricsCAD V25 Command Reference](https://help.bricsys.com/document/_commandreference--CMD_command_reference_intro/V25/EN_US)
 - ~autolisp-spec/documentation/commands-inventory.sexp~
   (machine-readable inventory; one plist per command)
-- ~issues/open/autolisp-spec-alref-commands.issue~ (this initiative)
+- ~issues/closed/autolisp-spec-alref-commands.issue~ (this initiative)
 
 #+LATEX: \newpage
 

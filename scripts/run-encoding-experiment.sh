@@ -34,7 +34,10 @@ export ALFE_BOOTSTRAP_LSP="${ALFE_BOOTSTRAP_LSP:-$root/autolisp-front-end/source
 [ -x "$alfe" ] || { echo "alfe not found/executable: $alfe (build it: make -C autolisp-front-end build-alfe-sbcl)" >&2; exit 2; }
 [ -f "$probe" ] || { echo "probe not found: $probe" >&2; exit 2; }
 
-out_dir="$root/dist/encoding"; mkdir -p "$out_dir"
+# Start from an empty dist/encoding/: a runner that reuses its build directory
+# would otherwise ship older files of OTHER jobs in this job's artefact
+# (encoding-probe-artifacts-and-macos-forward).
+out_dir="$root/dist/encoding"; rm -rf "$out_dir"; mkdir -p "$out_dir"
 report="$out_dir/${backend}-$(uname).txt"
 : > "$report"
 
@@ -103,6 +106,40 @@ if [ "$backend" != "clautolisp" ]; then
     done
     rm -rf "$wd"
   fi
+fi
+
+# --- FORWARD: -Efile-write utf-8 reaching the CAD's OPEN on every action -----
+# The run-encoding-experiment.ps1 FORWARD step, ported (the .ps1 has the
+# rationale; encoding-probe-artifacts-and-macos-forward): lispsys-forward-probe
+# run three ways under -Efile-write utf-8 -- alfe-loaded from an entry file,
+# given to -l, and with its OPEN calls in an -x form (E1F_MODE=x) -- each one
+# alfe run. It measures end to end what BricsCAD/macOS does with the forwarded
+# request: "w SIZE 3" / "a SIZE 1" is nothing forwarded (or forwarded and
+# ignored), 4 / 2 UTF-8, 7 / 5 UTF-8 with a BOM; FORWARDED-ARG / -CCS say what
+# alfe asked for.
+if [ "$backend" != "clautolisp" ]; then
+  forward="$root/autolisp-front-end/tests/scenarios/entities/lispsys-forward-probe.lsp"
+  e1f_dir="$out_dir/e1f"; mkdir -p "$e1f_dir"
+  forward_entry="$e1f_dir/e1f-entry.lsp"
+  printf '(alfe-load "%s")\n' "$forward" > "$forward_entry"
+  # The same -x form as the .ps1 (no double quote there for PowerShell 5.1's
+  # sake; bash would not mind, but the two twins run the same text).
+  forward_x="(e1f-x (open (e1f-xp 'w) (e1f-xm 'w)) (open (e1f-xp 'a) (e1f-xm 'a)))"
+  declare -a fbase=()
+  for a in "${bargs[@]}"; do
+    [ "$a" = "-l" ] || [ "$a" = "$probe" ] || fbase+=("$a")
+  done
+  fbase+=("-Efile-write" "utf-8")
+  run_forward() {
+    local label="$1" mode="$2"; shift 2
+    echo "########## $label ##########" | tee -a "$report"
+    E1_DIR="$e1f_dir" E1F_MODE="$mode" "$alfe" "${fbase[@]}" "$@" 2>&1 \
+      | grep -aE "^ENC |ENC-PROBE DONE|WARN|ERROR|BOOTSTRAP-FAILED|FAILED" \
+      | sed "s|^|[$label] |" | tee -a "$report"
+  }
+  run_forward "FORWARD alfe-load" ""  -l "$forward_entry"
+  run_forward "FORWARD -l"        ""  -l "$forward"
+  run_forward "FORWARD -x"        "x" -l "$forward" -x "$forward_x"
 fi
 
 echo "encoding experiment ($backend) -> $report"

@@ -104,7 +104,7 @@ tables so tblsearch / tblnext have a sensible baseline."
 ;;; format still wins over both. The VERSION axis is currently RECORDED (in the
 ;;; drawing and the DXF $ACADVER header) but the DXF/DWG writers still emit a
 ;;; fixed version — see the STUB in drawing/dxf.lisp / drawing-dwg/codec.lisp
-;;; and issues/open/drawing-codec-version-output.issue.
+;;; and issues/closed/drawing-codec-version-output.issue.
 
 (defparameter +default-drawing-format-sysvar+ "CLAUTOLISPDEFAULTDRAWINGFORMAT"
   "Name of the clautolisp default-drawing-format system / environment

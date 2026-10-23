@@ -1,6 +1,6 @@
 ;;;; request-locals-probe.lsp -- MEASURE whether a user program's global
 ;;;; variables survive alfe's request machinery on a CAD
-;;;; (issues/open/alfe-eval-request-locals-capture-user-setq.issue).
+;;;; (issues/closed/alfe-eval-request-locals-capture-user-setq.issue).
 ;;;;
 ;;;; AutoLISP binds a DEFUN's parameters and /-locals dynamically. Under alfe
 ;;;; every user form -- the -l file, each -x, --main, the REPL -- is evaluated

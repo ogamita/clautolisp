@@ -77,7 +77,7 @@ suppress output a user explicitly asked for."
 
 ;;; --- encoding SITUATIONS + the -E<situation> option family -----------
 ;;;
-;;; See issues/open/encoding-situations-cli-options.issue. The old generic
+;;; See issues/closed/encoding-situations-cli-options.issue. The old generic
 ;;; -e (load) / -E (io) are DROPPED in favour of one option per situation,
 ;;; generated from this registry. `source' and `terminal' mirror the two
 ;;; legacy slots (load-encoding / io-encoding) so downstream consumers are

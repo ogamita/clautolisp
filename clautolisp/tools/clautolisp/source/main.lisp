@@ -857,7 +857,7 @@ not supplied)."
 ;;; --- the AUTOLISP interactor: REPL comma-commands -----------------------
 ;;;
 ;;; The Lisp REPL is the bottom interactor (interactors design,
-;;; issues/open/interactor-unification.issue): its reader takes a line
+;;; issues/closed/interactor-unification.issue): its reader takes a line
 ;;; starting with a comma as a command — `,date', `,quit' — and anything
 ;;; else as AutoLISP source. The comma keeps command names out of the
 ;;; expression namespace (at a toplevel read it is unambiguous: no
@@ -1235,9 +1235,16 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
       (:file
        (let ((options (derive-reader-options-for-dialect
                        dialect :source-name (namestring payload))))
+         ;; The ABSOLUTE pathname, as LOAD binds it: a file named
+         ;; relatively on the command line must still be able to find
+         ;; its neighbours through (vl-filename-directory
+         ;; *AUTOLISP-LOAD-PATHNAME*). See
+         ;; issues/closed/load-pathname-relative-under-l.issue.
          (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
           context "*AUTOLISP-LOAD-PATHNAME*"
-          (make-autolisp-string (namestring payload))
+          (make-autolisp-string
+           (namestring (or (ignore-errors (truename payload))
+                           (merge-pathnames payload))))
           (lambda ()
             (autolisp-load-file-in-context payload context :options options)))))
       (:expression
@@ -2303,7 +2310,7 @@ paths against the build directory rather than the directory the user
 launched it from. Re-reading the cwd here — and keeping Common Lisp's
 `*default-pathname-defaults*` in agreement — makes a relative path
 resolve against the live cwd / $PWD, matching POSIX and the CAD hosts.
-See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
+See issues/closed/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
   ;; The cwd sync AND the run-frame classification, from the runtime, so
   ;; that an EMBEDDER gets the same startup as this tool. They were both
   ;; written out here, and alfe copied only the first half — which is how

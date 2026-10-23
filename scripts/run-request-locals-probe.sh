@@ -2,7 +2,7 @@
 # run-request-locals-probe.sh -- MEASURE whether a user program's globals
 # survive alfe's request machinery on a CAD engine: a (setq f 1 text "t" ...)
 # made by the -l file, by an -x request and by a function, read back by a
-# LATER request (issues/open/alfe-eval-request-locals-capture-user-setq.issue).
+# LATER request (issues/closed/alfe-eval-request-locals-capture-user-setq.issue).
 # macOS/Linux twin of run-request-locals-probe.ps1.
 #
 #   scripts/run-request-locals-probe.sh --backend {clautolisp|bricscad|autocad|accoreconsole}

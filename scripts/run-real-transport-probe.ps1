@@ -2,7 +2,7 @@
   run-real-transport-probe.ps1 -- Windows twin of run-real-transport-probe.sh.
   MEASURES whether real literals reach the CAD with every digit when alfe
   loads a file (-l) or sends a request (-x)
-  (issues/open/alfe-cad-transport-rounds-reals.issue).
+  (issues/closed/alfe-cad-transport-rounds-reals.issue).
 
     scripts/run-real-transport-probe.ps1 -Backend {clautolisp|bricscad|autocad|accoreconsole}
 

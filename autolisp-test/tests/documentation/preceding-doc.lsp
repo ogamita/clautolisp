@@ -6,7 +6,7 @@
 ;;;; resolves to, queryable via CLAUTOLISP-DOCUMENTATION /
 ;;;; CLAUTOLISP-DOCUMENTATION-KIND. Exercises the Phase-2 update-rules
 ;;;; table and the dynamic-scope shadowing example from
-;;;; issues/open/source-aware-defun-documentation.issue.
+;;;; issues/closed/source-aware-defun-documentation.issue.
 ;;;;
 ;;;; clautolisp-only extension; these builtins are absent on AutoCAD /
 ;;;; BricsCAD. Each test uses fresh names so the shared image's other

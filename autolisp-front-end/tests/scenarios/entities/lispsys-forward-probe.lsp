@@ -4,7 +4,7 @@
 ;;;; checked end to end.
 ;;;;
 ;;;; scripts/run-lispsys-bom-probe.ps1 (AutoCAD, once per LISPSYS level) and
-;;;; scripts/run-encoding-experiment.ps1 (the FORWARD step) run it THREE ways
+;;;; scripts/run-encoding-experiment.{ps1,sh} (the FORWARD step) run it THREE ways
 ;;;; under -Efile-write utf-8, one alfe run each:
 ;;;;   alfe-load  -l ENTRY, ENTRY being the one line (alfe-load "<this file>");
 ;;;;   -l         -l <this file>, read by the deported loader;
@@ -35,15 +35,21 @@
 ;; (function (lambda ...)) or a quoted form: alfe's rewriter stops at QUOTE /
 ;; FUNCTION, so an OPEN there would never reach alfe-open*. alfe-open* falls
 ;; back to the plain mode by itself if the CAD refuses the argument.
-(defun e1f-run ( / dir p q f)
-  (setq dir (getenv "E1_DIR"))
-  (e1f--line (strcat "LISPSYS " (vl-prin1-to-string (getvar "LISPSYS"))
+;; The LISPSYS level and what alfe asked to forward, PREFIX first ("" for
+;; the -l / alfe-load ways, "-x " for the -x way).
+(defun e1f--header (prefix)
+  (e1f--line (strcat prefix
+                     "LISPSYS " (vl-prin1-to-string (getvar "LISPSYS"))
                      " FORWARDED-ARG "
                      (vl-prin1-to-string (if (boundp '*ALFE-OPEN-WRITE-ARG*)
                                            (eval '*ALFE-OPEN-WRITE-ARG*)))
                      " FORWARDED-CCS "
                      (vl-prin1-to-string (if (boundp '*ALFE-OPEN-WRITE-CCS*)
-                                           (eval '*ALFE-OPEN-WRITE-CCS*)))))
+                                           (eval '*ALFE-OPEN-WRITE-CCS*))))))
+
+(defun e1f-run ( / dir p q f)
+  (setq dir (getenv "E1_DIR"))
+  (e1f--header "")
   (setq p (strcat dir "/e1f-w.txt"))
   (setq f (open p "w"))
   (if f (progn (write-char 65 f) (write-char 233 f) (write-char 66 f) (close f)))
@@ -71,7 +77,7 @@
 (defun e1f-xm (which) (if (eq which 'w) "w" "a"))
 
 (defun e1f-x (fw fa)
-  (e1f--line (strcat "-x LISPSYS " (vl-prin1-to-string (getvar "LISPSYS"))))
+  (e1f--header "-x ")
   (if fw (progn (write-char 65 fw) (write-char 233 fw) (write-char 66 fw) (close fw)))
   (e1f--line (strcat "w " (e1f-size (e1f-xpath 'w))))
   (if fa (progn (write-char 233 fa) (close fa)))

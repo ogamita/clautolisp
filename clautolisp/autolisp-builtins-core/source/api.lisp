@@ -971,7 +971,15 @@ explicitly.~%"))
       (set-autolisp-errno
        (autolisp-runtime-error-errno condition))
       (make-autolisp-catch-all-error
-       (princ-to-string condition)
+       ;; vl-exit-* outside a VLX: no message -- nil on AutoCAD, "" on
+       ;; BricsCAD (%VL-EXIT-OUTSIDE-VLX).
+       (if (and (eq (autolisp-runtime-error-code condition) :vl-exit-outside-vlx)
+                (not (eq :bricscad
+                         (ignore-errors
+                          (clautolisp.autolisp-reader:autolisp-dialect-product
+                           (clautolisp.autolisp-runtime:current-evaluation-dialect))))))
+           nil
+           (princ-to-string condition))
        condition))
     (error (condition)
       (set-autolisp-errno 1)
@@ -991,7 +999,8 @@ explicitly.~%"))
      "VL-CATCH-ALL-ERROR-MESSAGE"
      "VL-CATCH-ALL-ERROR-MESSAGE expects a catch-all error object, got ~S."
      object))
-  (make-autolisp-string (autolisp-catch-all-error-message object)))
+  (let ((message (autolisp-catch-all-error-message object)))
+    (and message (make-autolisp-string message))))
 
 ;;; --- clautolisp exit-status channel -------------------------------
 ;;;
@@ -999,7 +1008,7 @@ explicitly.~%"))
 ;;; process-exit-status channel that mirrors the alfe CAD bootstrap
 ;;; `autolisp-set-status`, so a single C:MAIN reports pass/fail
 ;;; identically under BricsCAD, AutoCAD and clautolisp without engine
-;;; branches. See issues/open/autolisp-set-status-and-quit-status.issue.
+;;; branches. See issues/closed/autolisp-set-status-and-quit-status.issue.
 ;;;
 ;;; These are clautolisp extensions: silent under --clautolisp / --lax,
 ;;; and — only when the STATUS argument is actually supplied — flagged
@@ -1114,12 +1123,29 @@ when no debug session is active (the hook declines)."
 (defun builtin-quit (&optional (status nil status-supplied-p))
   (%terminate-with-status :quit "QUIT" "(quit status)" status-supplied-p status))
 
+;;; VL-EXIT-WITH-ERROR / VL-EXIT-WITH-VALUE are documented only for the
+;;; *error* handler of a separate-namespace VLX. clautolisp loads no VLX,
+;;; so every call is OUTSIDE one -- and there, measured on the four CADs
+;;; (control-flow probe, MR !471: AutoCAD 2022 GUI + accoreconsole jobs
+;;; 17398575920/21, BricsCAD V25 17398575919, V26 17396028047), BOTH
+;;; functions are an error WITHOUT a message, whatever MESSAGE or VALUE was
+;;; passed: vl-catch-all-apply makes it a catch-all error whose message is
+;;; nil on AutoCAD and "" on BricsCAD (vl-exit-outside-vlx-caught-diverges).
+;;; It is raised as an ordinary AutoLISP error, so *error*, --on-error and
+;;; the debugger see it (before 2.3.28 it escaped to the host Lisp's
+;;; debugger: vl-exit-with-error-leaks-host-condition).
+
+(defun %vl-exit-outside-vlx ()
+  (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+   :vl-exit-outside-vlx "~A" ""))
+
 (defun builtin-vl-exit-with-error (message)
-  (let ((text (autolisp-string-value (require-string message "VL-EXIT-WITH-ERROR"))))
-    (error 'autolisp-namespace-exit :kind :error :value text)))
+  (require-string message "VL-EXIT-WITH-ERROR")
+  (%vl-exit-outside-vlx))
 
 (defun builtin-vl-exit-with-value (value)
-  (error 'autolisp-namespace-exit :kind :value :value value))
+  (declare (ignore value))
+  (%vl-exit-outside-vlx))
 
 (defun builtin-mapcar (function-designator first-list &rest more-lists)
   (let* ((function (resolve-autolisp-function-designator function-designator))
@@ -3407,7 +3433,7 @@ BEHAVIOR is :skip (skip the comment, return the following object --
 clautolisp's own uniform, lenient choice) or :nil (return NIL
 immediately, matching a real vendor engine exactly).
 
-The matrix (issues/open/read-string-does-not-skip-comments.issue,
+The matrix (issues/closed/read-string-does-not-skip-comments.issue,
 confirmed live against both vendors):
 
   bricscad          -- :nil,  warn -- for BOTH kinds (real BricsCAD
@@ -3439,7 +3465,7 @@ confirmed live against both vendors):
 portability warning (autolisp-spec ch.25) -- READ was given a string
 whose first non-blank content is a `;' (COMMENT-KIND :line) or
 `;| ... |;' (COMMENT-KIND :block) comment. See
-issues/open/read-string-does-not-skip-comments.issue for the full
+issues/closed/read-string-does-not-skip-comments.issue for the full
 vendor matrix this reports.
 
 Not deduplicated: unlike a DEFUN/LAMBDA lambda-list, a READ call has no
@@ -3690,7 +3716,9 @@ time it is called."
          (autolisp-string-value object)
          (escape-prin1-string (autolisp-string-value object))))
     ((typep object 'autolisp-symbol)
-     (autolisp-symbol-name object))
+     ;; VARIANT / SAFEARRAY print in lower case except under the BricsCAD
+     ;; dialects (type-symbols-print-lowercase-on-autocad, measured).
+     (clautolisp.autolisp-runtime:autolisp-symbol-print-name object))
     ((typep object 'autolisp-subr)
      (format nil "#<SUBR ~A>" (autolisp-subr-name object)))
     ((typep object 'autolisp-usubr)
@@ -4966,7 +4994,7 @@ Companion to %HOST-SYSVAR-STRING."
   ;; (snvalid STRING [FLAG]) -> T when STRING is a valid symbol-table
   ;; name, nil otherwise. The rules track the EXTNAMES sysvar (see the
   ;; SNVALID / EXTNAMES entries in the spec, and
-  ;; issues/open/system-variables.issue "Coupling"):
+  ;; issues/closed/system-variables.issue "Coupling"):
   ;;   EXTNAMES = 1 (default): extended naming — every character is
   ;;     accepted except the reserved set  < > / \ " : ? * | , = ` ;
   ;;     (spaces ARE allowed); FLAG with the 1 bit set additionally
@@ -5566,6 +5594,208 @@ point."
     (if (autolisp-true-p (builtin-snvalid app))
         (host-regapp (current-evaluation-host) app-string)
         nil)))
+
+;;; --- XDSIZE / XDROOM: extended-data size accounting ---------------
+;;;
+;;; (xdsize LST) returns the number of bytes the xdata list LST would
+;;; occupy once attached to an object; (xdroom ENAME) returns the room
+;;; left for xdata on ENAME, i.e. +XDATA-BYTE-BUDGET+ minus the xdata
+;;; already attached (autolisp-spec, Function Entries XDROOM / XDSIZE).
+;;;
+;;; The byte model is MEASURED (probes/sources/probe-xdata.lsp, suites
+;;; "xdsize" / "xdroom"; AutoCAD 2022 Windows, BricsCAD V25 Windows,
+;;; BricsCAD V26 macOS, 2026-10-23 -- table in issues/open/
+;;; xdroom-xdsize-not-implemented.issue, "* Measured (2026-10-23)").
+;;; The two products differ, so the dialect's product picks the model
+;;; (BricsCAD dialects follow BricsCAD, every other dialect AutoCAD):
+;;;
+;;; AutoCAD -- one type byte per group + its payload, plus 3 bytes per
+;;;   application that carries at least one group (a bare application
+;;;   costs 0, whatever its name):
+;;;     1000 string 3 + 2 x UTF-16 units, 1002 brace 2, 1003 layer 3,
+;;;     1004 binary 2 + bytes, 1005 handle 9, 1010-1013 point 25,
+;;;     1040-1042 real 9, 1070 3, 1071 5.
+;;;   XDSIZE of an unregistered application or of an unknown group code
+;;;   returns NIL (no error). Unbalanced 1002 braces are NOT checked.
+;;;   XDROOM = 16383 - XDSIZE of the attached xdata.
+;;;
+;;; BricsCAD -- strings are counted as wchar_t (W = 2 bytes on Windows,
+;;;   4 on macOS / Linux) and ONLY THE FIRST application is sized:
+;;;     header W x (len(name) + 1); 1000 / 1002 / 1003 / 1004 / 1005
+;;;     W x len(string as given -- 1004 counts its hex digits); points
+;;;     25, reals 9, 1070 3, 1071 5; an unknown code costs 0. Neither
+;;;     registration nor brace balance is checked.
+;;;   XDROOM uses a different count: 16383 - sum over EVERY application
+;;;   of (10 + the AutoCAD group costs) -- fitted on the single measured
+;;;   payload (1000 "abc" + 1070 + 1040 = 31 used on V25 and V26 alike,
+;;;   while XDSIZE of it is 48 / 84).
+
+(defconstant +xdata-byte-budget+ 16383
+  "Bytes of xdata one object may carry, all applications together.")
+
+(defun %xdata-fail (errno operator-name control-string &rest arguments)
+  "Set ERRNO to ERRNO (48, 49 or 50) and signal an AutoLISP error from
+OPERATOR-NAME, with the condition code AUTOLISP-RUNTIME-ERROR-ERRNO maps
+back to that same ERRNO."
+  (set-autolisp-errno errno)
+  (apply #'signal-builtin-argument-error
+         (ecase errno
+           (48 :xdata-unrecognized-type)
+           (49 :xdata-improper-nesting)
+           (50 :xdata-improper-appid))
+         operator-name control-string arguments))
+
+(defun %xdata-size-model ()
+  "The xdata byte model of the current dialect: :AUTOCAD or :BRICSCAD,
+and as second value the bytes of one string code unit (2 for AutoCAD
+and BricsCAD Windows, 4 for BricsCAD macOS / Linux, whose wchar_t is
+32-bit)."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (product (and dialect
+                       (ignore-errors
+                        (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+         (platform (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-platform dialect)))))
+    (if (eq product :bricscad)
+        (values :bricscad (if (member platform '(:macos :linux)) 4 2))
+        (values :autocad 2))))
+
+(defun %xdata-string-units (value unit-bytes)
+  "The code units of the autolisp-string VALUE: UTF-16 units when
+UNIT-BYTES is 2, code points when it is 4. NIL when VALUE is no string."
+  (and (typep value 'autolisp-string)
+       (let ((s (autolisp-string-value value)))
+         (if (= unit-bytes 2)
+             (loop for c across s sum (if (> (char-code c) #xFFFF) 2 1))
+             (length s)))))
+
+(defun xdata-group-byte-size (code value model &optional (unit-bytes 2))
+  "Measured byte cost of the xdata pair (CODE . VALUE) under MODEL
+(:AUTOCAD or :BRICSCAD; UNIT-BYTES is the BricsCAD wchar_t size), or
+NIL when CODE is not an xdata group code or VALUE has the wrong type."
+  (flet ((str-units () (%xdata-string-units value unit-bytes)))
+    (case (and (integerp code) code)
+      ((1000 1003 1005)                 ; string, layer name, handle
+       (let ((n (str-units)))
+         (and n (if (eq model :bricscad)
+                    (* unit-bytes n)
+                    (case code (1000 (+ 3 (* 2 n))) (1003 3) (1005 9))))))
+      (1002                             ; control string "{" / "}"
+       (and (typep value 'autolisp-string)
+            (member (autolisp-string-value value) '("{" "}") :test #'equal)
+            (if (eq model :bricscad) unit-bytes 2)))
+      (1004                             ; binary chunk, hex digits
+       (let ((n (str-units)))
+         (and n (if (eq model :bricscad)
+                    (* unit-bytes n)
+                    (+ 2 (ceiling n 2))))))
+      ((1010 1011 1012 1013)            ; points: 3 reals
+       (and (proper-list-p value)
+            (<= 2 (length value) 3)
+            (every #'realp value)
+            25))
+      ((1040 1041 1042)                 ; real, distance, scale factor
+       (and (realp value) 9))
+      (1070
+       (and (integerp value) (<= -32768 value 32767) 3))
+      (1071
+       (and (integerp value) (<= (- (expt 2 31)) value (1- (expt 2 31))) 5))
+      (t nil))))
+
+(defun %xdata-application-groups (xdata operator-name)
+  "The (APPNAME pair ...) groups of XDATA, optionally headed by the -3
+sentinel. Signals on an improper list."
+  (let ((groups (if (and (consp xdata) (eql (car xdata) -3))
+                    (cdr xdata)
+                    xdata)))
+    (unless (proper-list-p groups)
+      (%xdata-fail 49 operator-name "~A: improper xdata list ~S."
+                   operator-name xdata))
+    groups))
+
+(defun %xdata-application-group-p (group)
+  (and (consp group) (proper-list-p group)
+       (typep (car group) 'autolisp-string)))
+
+(defun xdata-list-byte-size (xdata operator-name)
+  "XDSIZE of XDATA under the current dialect's model. Returns (values
+SIZE ERRNO): SIZE is NIL, with ERRNO 48 or 50, where AutoCAD answers NIL
+(unknown group code or bad value; unregistered application or malformed
+application group)."
+  (let ((groups (%xdata-application-groups xdata operator-name)))
+    (multiple-value-bind (model unit-bytes) (%xdata-size-model)
+      (if (eq model :bricscad)
+          ;; BricsCAD: the first application only, nothing validated.
+          (let ((group (first groups)))
+            (cond ((null group) (values 0 0))
+                  ((not (%xdata-application-group-p group))
+                   (%xdata-fail 50 operator-name
+                                "~A: expected (APPNAME (code . value) ...), got ~S."
+                                operator-name group))
+                  (t
+                   (values
+                    (+ (* unit-bytes (1+ (%xdata-string-units (car group) unit-bytes)))
+                       (loop for pair in (cdr group)
+                             sum (or (and (consp pair)
+                                          (xdata-group-byte-size (car pair) (cdr pair)
+                                                                 :bricscad unit-bytes))
+                                     0)))
+                    0))))
+          ;; AutoCAD: every application; NIL on invalid content.
+          (let ((total 0))
+            (dolist (group groups (values total 0))
+              (unless (%xdata-application-group-p group)
+                (return (values nil 50)))
+              (when (null (host-tblsearch (current-evaluation-host) "APPID"
+                                          (autolisp-string-value (car group))))
+                (return (values nil 50)))
+              (when (cdr group)
+                (incf total 3)
+                (dolist (pair (cdr group))
+                  (let ((size (and (consp pair)
+                                   (xdata-group-byte-size (car pair) (cdr pair) :autocad))))
+                    (unless size
+                      (return-from xdata-list-byte-size (values nil 48)))
+                    (incf total size))))))))))
+
+(defun xdata-attached-byte-size (xdata)
+  "The bytes the xdata XDATA (as read back from an object) takes off the
+XDROOM budget under the current dialect's model."
+  (let ((bricscad-p (eq (%xdata-size-model) :bricscad)))
+    (loop for group in (%xdata-application-groups xdata "XDROOM")
+          when (%xdata-application-group-p group)
+            sum (let ((groups (loop for pair in (cdr group)
+                                    sum (or (and (consp pair)
+                                                 (xdata-group-byte-size
+                                                  (car pair) (cdr pair) :autocad))
+                                            0))))
+                  (cond (bricscad-p (+ 10 groups))
+                        ((cdr group) (+ 3 groups))
+                        (t 0))))))
+
+(defun builtin-xdsize (xdata)
+  ;; AutoCAD answers NIL (and sets ERRNO) on invalid content; BricsCAD
+  ;; sizes whatever it is given. A non-list argument is an error.
+  (unless (listp xdata)
+    (%xdata-fail 48 "XDSIZE" "XDSIZE expects an xdata list, got ~S." xdata))
+  (multiple-value-bind (size errno) (xdata-list-byte-size xdata "XDSIZE")
+    (errno-and-return errno size)))
+
+(defun builtin-xdroom (ename)
+  ;; The room left for xdata on ENAME: the budget minus the xdata every
+  ;; application has attached. nil (ERRNO 2) when ENAME names no live
+  ;; object, as ENTGET.
+  (let ((data (host-entget (current-evaluation-host)
+                           (require-ename ename "XDROOM")
+                           (list (make-autolisp-string "*")))))
+    (if data
+        (let ((cell (find-if (lambda (pair) (and (consp pair) (eql (car pair) -3)))
+                             data)))
+          (errno-and-return
+           0 (- +xdata-byte-budget+
+                (if cell (xdata-attached-byte-size (cdr cell)) 0))))
+        (errno-and-return 2 nil))))
 
 ;;; --- Phase 11: sysvar access --------------------------------------
 
@@ -7263,7 +7493,7 @@ string, matched case-insensitively:
                         is OS-dependent — the .arx / .brx slot.
 
 Signals :invalid-module-kind on any other KIND. See
-issues/open/clautolisp-module-app-extensions.issue."
+issues/closed/clautolisp-module-app-extensions.issue."
   (let ((k (string-downcase
             (autolisp-string-value
              (require-string kind "CLAL-MODULE-EXTENSION")))))
@@ -10610,6 +10840,11 @@ misspelling would hide a typo in a build script forever."
 ;;; differ between the products (the AcViewportScale family is off by one,
 ;;; acNative 64 vs 60).
 ;;;
+;;; The table also carries the vlax-vb* VarType constants (vlax-vb-constants-
+;;; unbound.issue), measured by the same probe on 2026-10-23: the documented
+;;; VarType values on both products, except vlax-vbDecimal (14) which only
+;;; BricsCAD binds, and vlax-vbByte (documented 17) which neither binds.
+;;;
 ;;; WHICH: the dialect's product's -- AutoCAD's names and values under the
 ;;; AutoCAD dialects, BricsCAD's under the BricsCAD ones; under strict only
 ;;; the names both products bind to the SAME value (the portable subset);
@@ -10642,16 +10877,21 @@ installed the ActiveX constants: the second call installs nothing.")
           ((eq name :strict) :strict)
           (t :clautolisp))))
 
-(defun activex-enumeration-constants (&optional (product (%activex-constants-product)))
-  "A fresh list of (NAME VALUE) -- the ActiveX constants PRODUCT binds (see
-the section header)."
-  (loop for (name autocad bricscad) in *activex-measured-constants*
+(defun %activex-constants-for-product (table product)
+  "A fresh list of (NAME VALUE): the entries of TABLE, a list of (NAME
+AUTOCAD-VALUE BRICSCAD-VALUE), that PRODUCT binds."
+  (loop for (name autocad bricscad) in table
         for value = (ecase product
                       (:autocad autocad)
                       (:bricscad bricscad)
                       (:strict (and autocad bricscad (= autocad bricscad) autocad))
                       (:clautolisp (or autocad bricscad)))
         when value collect (list name value)))
+
+(defun activex-enumeration-constants (&optional (product (%activex-constants-product)))
+  "A fresh list of (NAME VALUE) -- the MEASURED ActiveX constants PRODUCT
+binds (see the section header)."
+  (%activex-constants-for-product *activex-measured-constants* product))
 
 (defun install-activex-enumeration-constants
     (&optional (context (clautolisp.autolisp-runtime:current-evaluation-context)))
@@ -11247,10 +11487,11 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     ;; Entity / selection-set / table / dictionary database.
     ;; DICTADD/DICTNEXT/DICTOBJNAME/DICTREMOVE/DICTRENAME/DICTSEARCH/
     ;; NAMEDOBJDICT/REGAPP are now real (drawing-data-structures parity);
-    ;; the ones left here stay nil stubs (interactive picking, or the
-    ;; xdata-room queries which the in-memory model does not bound).
+    ;; XDROOM/XDSIZE are real too (provisional byte table, see
+    ;; BUILTIN-XDSIZE); the ones left here stay nil stubs (interactive
+    ;; picking).
     "NENTSEL" "NENTSELP"
-    "SSNAMEX" "XDROOM" "XDSIZE"
+    "SSNAMEX"
     ;; DCL dialogs / tiles (3)
     "GET_ATTR" "INIT_DIALOG" "REDRAW_DIALOG"
     ;; Graphics primitives (GR*) (7)
@@ -11387,6 +11628,8 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "DICTRENAME"   #'builtin-dictrename)
    (make-core-builtin-subr "DICTOBJNAME"  #'builtin-dictobjname)
    (make-core-builtin-subr "REGAPP"       #'builtin-regapp)
+   (make-core-builtin-subr "XDSIZE"       #'builtin-xdsize)
+   (make-core-builtin-subr "XDROOM"       #'builtin-xdroom)
    (make-core-builtin-subr "GETVAR"     #'builtin-getvar)
    (make-core-builtin-subr "SETVAR"     #'builtin-setvar)
    ;; clautolisp exit-status channel: autolisp-set-status keeps the CAD

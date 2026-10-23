@@ -69,4 +69,64 @@
     (function (lambda (e)
       (list '(1000 . "tag-string") '(1002 . "{") '(1003 . "0")
             '(1040 . 1.5) '(1070 . 42) '(1071 . 100000) '(1002 . "}")))))
+  (cad-probe-run-xdsize-probes)
   (princ))
+
+;;; XDSIZE / XDROOM byte accounting (xdroom-xdsize-not-implemented).
+;;; clautolisp's per-group byte table is PROVISIONAL; these cases MEASURE
+;;; the vendor's. Each "xdsize <case>" isolates one group code by sizing
+;;; the application with and without it (the difference is that group's
+;;; cost); "xdsize header" is the bare application, "xdsize header +1 char"
+;;; shows whether the header grows with the name. "xdroom fresh" is the
+;;; budget; "xdroom after" the room left once a known payload is attached.
+
+(defun cad-probe--xs (label xd)
+  (cad-probe-capture "xdsize" label
+    (function (lambda ( / r)
+      (setq r (vl-catch-all-apply 'xdsize (list xd)))
+      (cond ((vl-catch-all-error-p r) (strcat "ERROR errno=" (itoa (getvar "ERRNO"))))
+            ((null r) "NIL")
+            (t (itoa r)))))))
+
+(defun cad-probe-run-xdsize-probes ( / app app2 e)
+  (setq app cad-probe--xd-app
+        app2 (strcat cad-probe--xd-app "X"))
+  (regapp app2)
+  (cad-probe--xs "header" (list (list app)))
+  (cad-probe--xs "header +1 char" (list (list app2)))
+  (cad-probe--xs "-3 sentinel form" (list -3 (list app)))
+  (cad-probe--xs "1000 empty string" (list (list app '(1000 . ""))))
+  (cad-probe--xs "1000 3 chars" (list (list app '(1000 . "abc"))))
+  (cad-probe--xs "1000 10 chars" (list (list app '(1000 . "abcdefghij"))))
+  (cad-probe--xs "1000 non-ASCII 1 char" (list (list app (cons 1000 (chr 233)))))
+  (cad-probe--xs "1002 brace pair" (list (list app '(1002 . "{") '(1002 . "}"))))
+  (cad-probe--xs "1003 layer 0" (list (list app '(1003 . "0"))))
+  (cad-probe--xs "1004 binary 4 bytes" (list (list app '(1004 . "DEADBEEF"))))
+  (cad-probe--xs "1005 handle 1 char" (list (list app '(1005 . "1"))))
+  (cad-probe--xs "1005 handle 2 chars" (list (list app '(1005 . "2A"))))
+  (cad-probe--xs "1010 point" (list (list app '(1010 1.0 2.0 3.0))))
+  (cad-probe--xs "1011 world position" (list (list app '(1011 1.0 2.0 3.0))))
+  (cad-probe--xs "1040 real" (list (list app '(1040 . 1.5))))
+  (cad-probe--xs "1041 distance" (list (list app '(1041 . 1.5))))
+  (cad-probe--xs "1042 scale" (list (list app '(1042 . 1.5))))
+  (cad-probe--xs "1070 int16" (list (list app '(1070 . 42))))
+  (cad-probe--xs "1071 int32" (list (list app '(1071 . 100000))))
+  (cad-probe--xs "two applications" (list (list app '(1000 . "abc")) (list app2 '(1040 . 1.5))))
+  (cad-probe--xs "documented example"
+    (list -3 (list app '(1000 . "SUITOFARMOR") '(1002 . "{") '(1040 . 0.0)
+                   '(1040 . 1.0) '(1002 . "}"))))
+  ;; errors: unregistered application, unknown code, unbalanced brace
+  (cad-probe--xs "error unregistered app" (list (list "CLAUTOLISP_NOT_REGISTERED" '(1000 . "x"))))
+  (cad-probe--xs "error unknown code 1099" (list (list app '(1099 . 1))))
+  (cad-probe--xs "error unbalanced brace" (list (list app '(1002 . "{"))))
+  ;; xdroom: budget, then room left after a known payload
+  (setq e (cad-probe--xd-circle))
+  (cad-probe-capture "xdroom" "fresh circle"
+    (function (lambda () (itoa (xdroom e)))))
+  (entmod (append (entget e)
+                  (list (list -3 (list app '(1000 . "abc") '(1070 . 1) '(1040 . 1.5))))))
+  (cad-probe-capture "xdroom" "after 1000 abc + 1070 + 1040"
+    (function (lambda () (itoa (xdroom e)))))
+  (cad-probe-capture "xdroom" "xdsize of that xdata"
+    (function (lambda () (itoa (xdsize (assoc -3 (entget e (list app))))))))
+  (entdel e))

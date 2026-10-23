@@ -1,7 +1,7 @@
 ;;;; autolisp-front-end/source/error.lisp
 ;;;;
 ;;;; Condition hierarchy for the alfe front-end. The class graph is
-;;;; specified by ../issues/open/alfe-backend-interface.issue (the
+;;;; specified by ../issues/closed/alfe-backend-interface.issue (the
 ;;;; "Conditions hierarchy" section) and consumed by alfe.cli to map
 ;;;; failures onto the documented exit codes (cf. alfe-cli.issue
 ;;;; "Exit codes").

@@ -960,8 +960,11 @@ AutoLISP a trois boucles.
 
 #+begin_example
 _$ (repeat 3 (princ "hop "))
-hop hop hop nil
+hop hop hop "hop "
 #+end_example
+
+(Le dernier ="hop "= est la valeur du =repeat= : la valeur de la
+dernière évaluation de son corps, ici la valeur de =princ=.)
 
 =while= évalue son corps tant que son test est vrai :
 
@@ -970,7 +973,7 @@ _$ (setq a 4)
 4
 _$ (while (< a 8)
     (setq a (1+ a)))
-nil
+8
 _$ a
 8
 #+end_example
@@ -991,12 +994,12 @@ _$ (foreach n '(1 2 3) (* n 10))
 
 (Le dernier =C= est la valeur du =foreach=, affichée par la REPL.)
 
-Ne comptez pas sur la valeur de =repeat= et =while= ; utilisez-les pour
-leur effet, et gardez les résultats dans des variables. (AutoCAD rend
-la valeur de la dernière évaluation du corps ; clautolisp 2.3 rend
-=nil=, comme le montrent les sessions ci-dessus : issue
-=while-repeat-return-nil=.) L'idiome pour vider une liste un élément à
-la fois n'a pas de corps du tout :
+=repeat= et =while= rendent la valeur de la dernière évaluation de leur
+corps, ou =nil= quand le corps n'est jamais évalué ; la plupart des
+programmes les utilisent pour leur effet et gardent les résultats dans
+des variables. (clautolisp avant 2.3.29 rendait toujours =nil=.)
+L'idiome pour vider une liste un élément à la fois n'a pas de corps du
+tout, et rend =nil= :
 
 #+begin_example
 _$ (setq l '(1 2 3))
@@ -1231,9 +1234,21 @@ Les gros programmes installent leur propre =*error*= au début d'une
 commande et restaurent le précédent à la fin. Dans AutoCAD, la façon
 habituelle est de déclarer =*error*= comme variable locale de la
 fonction de commande, =(defun c:macommande (/ *error*) …)=, et de la
-définir à l'intérieur. (clautolisp 2.3 n'appelle pas encore un =*error*=
-déclaré local de cette façon, seulement le global : issue
-=local-error-handler-not-called=.)
+définir à l'intérieur. Le =*error*= local est appelé pendant que les
+autres variables locales de la commande ont encore leur valeur, et le
+global revient dès qu'on quitte la commande :
+
+#+begin_example
+_$ (defun divise (a b / *error*)
+    (defun *error* (msg)
+      (princ (strcat "\nDans divise, a=" (itoa a) " : " msg))
+      (princ))
+    (/ a b))
+DIVISE
+_$ (divise 7 0)
+
+Dans divise, a=7 : Division by zero in /.
+#+end_example
 
 Pour arrêter un programme exprès, appelez =(exit)= (ou =(quit)=). Dans
 AutoCAD et BricsCAD, cela abandonne le programme en cours comme une

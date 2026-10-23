@@ -2,7 +2,7 @@
 ;;;;
 ;;;; alfe CLI — argument parsing, action sequencing, exit codes.
 ;;;;
-;;;; Specified by ../issues/open/alfe-cli.issue and
+;;;; Specified by ../issues/closed/alfe-cli.issue and
 ;;;; documentation/alfe--specifications.org (sections "Sélection du
 ;;;; moteur et matrice backend × système", "Variables d'environnement",
 ;;;; "Phases de bootstrap", "Invariants testés").

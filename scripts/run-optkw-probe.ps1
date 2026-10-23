@@ -44,7 +44,7 @@ if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "
 # (jobs 16981155886, 16998925798, 17026576122), after a different command
 # each time; the leading hypothesis is that alfe does not read accoreconsole's
 # console pipe while the engine runs, so a long run blocks once that pipe is
-# full (issues/open/alfe-accoreconsole-console-pipe-not-drained.issue). One
+# full (issues/closed/alfe-accoreconsole-console-pipe-not-drained.issue). One
 # command per session keeps each run's console output small, and a hang then
 # costs one command, not the rest. The probe reads its command list from
 # OPTKW_COMMANDS (comma-separated) when it is set.
@@ -70,14 +70,17 @@ Set-Content -Encoding utf8 $report "########## BACKEND: $Backend on Windows ####
 # append its output to the report, and record OPTKW-INCOMPLETE when it did not
 # reach OPTKW-DONE. Checked on the CAPTURED LINES: a Select-String over the
 # report (UTF-8 banner + UTF-16LE body) missed a present OPTKW-DONE and flagged
-# a complete BricsCAD run incomplete (job 17026576124).
+# a complete BricsCAD run incomplete (job 17026576124). The body was UTF-16
+# because Tee-Object -Append writes it under Windows PowerShell 5; every write
+# is now Add-Content -Encoding utf8, so the report is one encoding
+# (probe-ps1-done-check-misreads-utf16-report).
 function Invoke-OptkwRun([string]$commands, [string]$what) {
   $env:OPTKW_COMMANDS = $commands
   $lines = @(& $alfe $bargs 2>&1 | ForEach-Object { "$_" })
-  $lines | Tee-Object -FilePath $report -Append | Out-Null
+  if ($lines.Count -gt 0) { Add-Content -Encoding utf8 -Path $report -Value $lines }
   if (-not ($lines | Where-Object { $_ -match '^OPTKW-DONE' })) {
     "OPTKW-INCOMPLETE  $what did not reach its end" |
-      Tee-Object -FilePath $report -Append | Out-Null
+      ForEach-Object { Add-Content -Encoding utf8 -Path $report -Value $_ }
   }
   Remove-Item Env:OPTKW_COMMANDS -ErrorAction SilentlyContinue
 }

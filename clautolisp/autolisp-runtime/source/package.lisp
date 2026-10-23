@@ -376,6 +376,7 @@
    #:autolisp-type
    #:autolisp-vl-symbolp
    #:autolisp-vl-symbol-name
+   #:autolisp-symbol-print-name
    #:autolisp-vl-symbol-value
    #:autolisp-function-list-definition
    #:set-autolisp-function-list-definition

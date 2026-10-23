@@ -1,0 +1,29 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: type-of-defun-subr-or-usubr -- (type f) of a DEFUN'd function was SUBR on AutoCAD and BricsCAD in the type-symbols probe, USUBR in clautolisp
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-23
+
+* Symptom
+
+Found reconciling type-symbols-print-lowercase-on-autocad (probe suite
+type-symbols, probes/sources/probe-type-symbols.lsp; AutoCAD 2022 run
+20261023T074943Z, BricsCAD V25 20261023T075150Z, V26 20261023T031215Z):
+the TYPE of a function defined with DEFUN in the probe file was SUBR on
+every vendor, where clautolisp answers USUBR.
+
+USUBR is documented for a user-defined function loaded from source;
+SUBR for a built-in or a COMPILED (.fas / .vlx, or vlisp-compiled)
+function. The probe runner may load the probe sources compiled, or the
+vendor may compile DEFUNs on LOAD -- not known.
+
+* To do
+
+Probe: (defun f () 1) typed at the command line, in a plain .lsp loaded
+with LOAD, and via alfe -l / -x; record (type f) and (type (function
+f)), plus (type car). Then decide whether clautolisp's USUBR needs a
+per-situation answer (compiled-function / load path) -- see
+clautolisp's own compiled bodies, which are not SUBRs today.

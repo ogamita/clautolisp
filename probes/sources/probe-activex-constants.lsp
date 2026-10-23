@@ -15,7 +15,9 @@
 ;;;;     set to nil: rebound?  (acRed is restored afterwards);
 ;;;;   - the inventory: (boundp value) of every name in BricsCAD's list of AC
 ;;;;     constants (DevRef "AC... (constants) functions", V14, 934 names), so
-;;;;     the families clautolisp does not bind yet can be read off a run.
+;;;;     the families clautolisp does not bind yet can be read off a run;
+;;;;     plus the 17 vlax-vb* VarType names (vlax-vb-constants-unbound.issue,
+;;;;     2026-10-22), measured 2026-10-23 and carried by the table since.
 ;;;; Every step under VL-CATCH-ALL-APPLY. Pure ASCII.
 
 (defun cad-probe--acx-show (cad-probe--acx-thunk / r)
@@ -291,6 +293,17 @@
     acvp92 acvp93 acvp94 acvp95 acvp96 acvp97 acvp98 acvp99 acvpcustomscale
     acvpscaletofit acwhite acwindow acworld acxline acyellow aczero
     aczoomscaledabsolute aczoomscaledrelative aczoomscaledrelativepspace
+    ;; The vlax-vb* VarType constants (vlax-vb-constants-unbound.issue,
+    ;; 2026-10-22): not in BricsCAD's AC list, but the type arguments of
+    ;; vlax-make-safearray / vlax-make-variant / vlax-variant-change-type.
+    ;; Documented values: Empty 0, Null 1, Integer 2, Long 3, Single 4,
+    ;; Double 5, Currency 6, Date 7, String 8, Object 9, Error 10,
+    ;; Boolean 11, Variant 12, DataObject 13, Decimal 14, Byte 17,
+    ;; Array 8192.
+    vlax-vbempty vlax-vbnull vlax-vbinteger vlax-vblong vlax-vbsingle
+    vlax-vbdouble vlax-vbcurrency vlax-vbdate vlax-vbstring vlax-vbobject
+    vlax-vberror vlax-vbboolean vlax-vbvariant vlax-vbdataobject
+    vlax-vbdecimal vlax-vbbyte vlax-vbarray
    ))
 
 (defun cad-probe-run-activex-constants-probes ( / cad-probe--acx-family

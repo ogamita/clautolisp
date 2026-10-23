@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: native-pipeline-yaml-not-linted -- an invalid rule in .gitlab/native.yml passes every repo check and silently kills the child pipeline
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P2
 #+TYPE: ci-infra
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: fix-native-pipeline-yaml-lint
 #+DATE: 2026-10-08
 
 * Symptom
@@ -37,3 +37,43 @@ unbalanced quotes / regex slashes). Run it in =check-native-pipeline-changes=
 or as its own make target in the lint lane.
 
 Fixed by hand in MR !462 (commit 89a9921e).
+
+* Fix (2026-10-22)
+
+=scripts/check-native-pipeline-yaml.py= -- an OFFLINE check (PyYAML, no
+token, no network) of =.gitlab/native.yml= for the shapes GitLab refuses:
+
+- every =rules:= (jobs and =workflow:=): not a list, an entry that is not a
+  mapping, an unknown rule key, an unknown =when:=, an =if:= that is not a
+  string;
+- every =if:= run through a small lexer + parser of GitLab's expression
+  grammar (=$NAME=, '..' / ".." strings, =/regex/flags=, =null=, ~==~ ~!=~
+  ~=~~ ~!~~ ~&&~ ~||~ =( )=): a =$= not followed by a name (=$$NAME=, the
+  !462 case), unterminated quotes, an unterminated regex, a bad flag, a
+  regex Python cannot compile, a match against a non-regex, unbalanced
+  parentheses, a dangling =&&= / =||=, two operands with no operator;
+- =extends:= to an unknown job or in a cycle; a visible job with no
+  =script:= / =trigger:= / =run:= once its =extends:= chain is merged
+  (hidden =.templates= exempt); a =needs:= naming a job not in the file
+  (unless =optional:=, =pipeline:= or =project:=).
+
+With =GITLAB_TOKEN= set it additionally posts the file to the project's
+=ci/lint= API (a network failure there only warns; the offline verdict
+stands).
+
+Wired as =make check-native-pipeline-yaml= (Makefile, next to
+=check-probe-families=), run by the =documentation= job of =.gitlab-ci.yml=
+right after =make check-probe-families= -- the same always-running lint
+lane. =python3-yaml= is added to =clautolisp/docker/Dockerfile=, with a
+before_script fallback for a stale =:latest=.
+
+Tests: =scripts/tests/test-check-native-pipeline-yaml.py= (32 unittest
+cases, run by the make target): each rejected expression shape, a correct
+fixture passes, a =$$= rule and an unbalanced quote are caught, the real
+=native.yml= passes and a copy with its first =if: '$MACOS_RUNNER= doubled
+to =$$= fails. Red/green by hand: the real file -> "OK", exit 0; a copy with
+line 700's =$MACOS_RUNNER= doubled -> "encoding:experiment:bricscad:macos:
+rules[0]: if: ...: `$' not followed by a variable name at column 1", exit 1;
+a copy with that rule's closing =/= dropped -> "unterminated /regex/", exit
+1. The parent =.gitlab-ci.yml= also passes it (a sanity check that the
+grammar is not stricter than GitLab's).

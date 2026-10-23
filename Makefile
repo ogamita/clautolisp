@@ -368,6 +368,15 @@ check-native-pipeline-changes:  ## Fail if a tracked path is classified by neith
 	python3 scripts/check-native-pipeline-changes.py
 	python3 scripts/tests/test-check-native-pipeline-changes.py
 
+# .gitlab/native.yml is the CHILD pipeline: `glab ci lint' never sees it, and
+# when GitLab refuses it the native:pipeline bridge fails with
+# downstream_pipeline_creation_failed -- every macOS/Windows job skipped, the
+# YAML never named. MR !462's  if: '$$MACOS_RUNNER ...'  did exactly that
+# (native-pipeline-yaml-not-linted). Offline; GITLAB_TOKEN adds the ci/lint API.
+check-native-pipeline-yaml:  ## Fail if GitLab would refuse .gitlab/native.yml (rules: if: syntax, extends:, script:, needs:).
+	python3 scripts/check-native-pipeline-yaml.py
+	python3 scripts/tests/test-check-native-pipeline-yaml.py
+
 check-probe-families:  ## Fail if a probe file is in no family, or a family is gated by no probe job (ci-detect-probe-changes.py).
 	python3 scripts/ci-detect-probe-changes.py check
 	python3 scripts/tests/test-ci-detect-probe-changes.py

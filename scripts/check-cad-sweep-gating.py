@@ -110,7 +110,7 @@ for problem in problems:
     print('FAIL  %s' % problem)
 if problems:
     print('\ncad-sweep-gating: %d problem(s); see '
-          'issues/open/cad-sweep-blocks-bricscad-jobs-over-autocad.issue'
+          'issues/closed/cad-sweep-blocks-bricscad-jobs-over-autocad.issue'
           % len(problems))
     sys.exit(1)
 print('cad-sweep-gating: %d Windows CAD job(s), each on the gate its vendor '
