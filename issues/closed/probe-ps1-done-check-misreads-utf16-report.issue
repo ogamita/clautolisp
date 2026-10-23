@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: probe-ps1-done-check-misreads-utf16-report — Windows probe scripts flag complete runs INCOMPLETE
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: infra
 #+DEPENDS: -
@@ -64,3 +64,18 @@ was left alone.
 No PowerShell on the Linux box: the edits were reviewed by reading them.
 Closes when the next Windows CAD run of these probes shows complete reports
 (the DONE line present and no spurious *-INCOMPLETE line) in UTF-8 artefacts.
+
+* Verified on the Windows runner (2026-10-23, MR !471 pipeline 2978627556) -- DONE
+
+With every report write as Set-Content / Add-Content -Encoding utf8, the
+three scripts this ticket named report complete on every target, where
+2026-10-08 flagged complete runs INCOMPLETE:
+
+| probe        | AutoCAD GUI            | accoreconsole          | BricsCAD V25 Windows   |
+|--------------+------------------------+------------------------+------------------------|
+| getcname     | GETCNAME-DONE (17398575871) | GETCNAME-DONE (17398575872) | GETCNAME-DONE (17398575870) |
+| pgp          | PGP-DONE (17398575879)  | --                     | PGP-DONE (17398575878)  |
+| path-sysvars | PATHSYSVAR-DONE (17398575867) | PATHSYSVAR-DONE (17398575868) | PATHSYSVAR-DONE (17398575866) |
+
+The encoding experiment's report (job 17398575863) is UTF-8 with a BOM and
+no NUL byte -- no UTF-16 section left.
