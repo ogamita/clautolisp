@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: native-pipeline-yaml-not-linted -- an invalid rule in .gitlab/native.yml passes every repo check and silently kills the child pipeline
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: ci-infra
 #+DEPENDS: -
@@ -77,3 +77,10 @@ rules[0]: if: ...: `$' not followed by a variable name at column 1", exit 1;
 a copy with that rule's closing =/= dropped -> "unterminated /regex/", exit
 1. The parent =.gitlab-ci.yml= also passes it (a sanity check that the
 grammar is not stricter than GitLab's).
+
+* Verified in CI (2026-10-23) -- DONE
+
+MR !471's pipeline 2980170436 ran make check-native-pipeline-yaml in its
+documentation job (the check, and its 32 unit tests) and passed; the
+pipeline merged !471. A native.yml with a doubled $ now fails the lint
+lane instead of silently skipping every native job.

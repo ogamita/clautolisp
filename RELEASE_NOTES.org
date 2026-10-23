@@ -1959,6 +1959,15 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *DIMENSION and MTEXT angles from vendor DXF files* (2.3.43): checked
+  against DXF files written by AutoCAD 2022 and BricsCAD V25 / V26. A
+  DIMENSION's 50 / 53 loaded in degrees (the scan stopped at its earlier
+  75); an MTEXT, which the CADs write with its 11 direction only, loaded
+  with no 50 although their =entget= lists one. Both are fixed: 50 is
+  derived from 11 on load, and left out on save when 11 is there, as the
+  CADs do. Every other angle the codec converts was confirmed on the
+  vendor files.
+
 - *=variant= and =safearray= are lower case, as on AutoCAD* (2.3.42):
   AutoCAD 2022 names the TYPE symbols VARIANT and SAFEARRAY in lower case
   -- =vl-symbol-name=, =princ= and =prin1= give "variant" / "safearray",

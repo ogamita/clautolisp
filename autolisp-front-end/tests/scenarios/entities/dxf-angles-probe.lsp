@@ -146,10 +146,10 @@
 
 ;; The entity a command step produced: (entlast) when it changed and is of
 ;; TYPE.
-(defun dxfang-new-entity (before type / e)
+(defun dxfang-new-entity (before etype / e)   ; ETYPE: see dxfang-scan-file
   (setq e (entlast))
   (if (and e (not (equal e before))
-           (= (strcase (cdr (assoc 0 (entget e)))) type))
+           (= (strcase (cdr (assoc 0 (entget e)))) etype))
     e))
 
 ;; --- context ------------------------------------------------------------------
@@ -493,7 +493,10 @@
 ;; --- read the file back -------------------------------------------------------
 (defun dxfang-trim (s) (vl-string-trim " \t\r\n" s))
 
-(defun dxfang-scan-file (path encoding / f line1 line2 code val type cur await stopped
+;; OTYPE, never TYPE: AutoLISP has ONE value cell per symbol, so a local
+;; named TYPE shadows the TYPE function for everything called meanwhile
+;; -- AutoCAD then failed with "bad function: "VPORT"" (job 17409369691).
+(defun dxfang-scan-file (path encoding / f line1 line2 code val otype cur await stopped
                                            found)
   (setq f (if encoding (open path "r" encoding) (open path "r")))
   (if (null f)
@@ -506,14 +509,14 @@
               val (dxfang-trim line2))
         (cond
           ((= code 0)
-           (setq type val cur nil await T stopped nil))
+           (setq otype val cur nil await T stopped nil))
           ((and await (or (= code 5) (= code 105)))
            (setq await nil)
            (setq cur (assoc (strcase val) *dxfang-registry*))
            (if cur
              (progn
                (setq found (cons (cadr cur) found))
-               (dxfang-say (strcat "FILE-HANDLE " (cadr cur) " " type " " val)))))
+               (dxfang-say (strcat "FILE-HANDLE " (cadr cur) " " otype " " val)))))
           ((and cur (not stopped) (= code 1001))
            (setq stopped T))
           ((and cur (not stopped) (member code (caddr cur)))

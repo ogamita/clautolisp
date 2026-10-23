@@ -524,6 +524,23 @@ an angle and is written unchanged."
         (is (%angle-close-p 90d0 end) "ARC 51 in the file must be 90: ~S" end))
       (is (%angle-close-p 1d0 (%dxf-value-after text "42" (format nil "~%LWPOLYLINE~%")))))))
 
+(test dxf-mtext-rotation-is-the-direction-in-the-file
+  "MTEXT, as AutoCAD 2022 and BricsCAD V25 / V26 do it (dxf-angles probe,
+MR !472): the file carries the rotation as the 11 direction only, entget as
+50. Reading an 11-only MTEXT derives 50; writing one with an 11 leaves 50 out."
+  (let* ((text (format nil "0~%SECTION~%2~%ENTITIES~%0~%MTEXT~%5~%2A~%8~%0~%10~%0.0~%20~%0.0~%30~%0.0~%40~%1.0~%1~%x~%11~%0.5~%21~%0.8660254037844386~%31~%0.0~%0~%ENDSEC~%0~%EOF~%"))
+         (d (with-input-from-string (s text) (dxf-read-drawing-from-stream s)))
+         (mtext (cdr (assoc "MTEXT" (%entities-by-type d) :test #'equal))))
+    (is (%angle-close-p (/ pi 3) (cdr (assoc 50 mtext)))
+        "an 11-only MTEXT must load with (50 . pi/3): ~S" (assoc 50 mtext))
+    (let ((out (with-output-to-string (s) (dxf-write-drawing-to-stream d s))))
+      (let* ((from (search (format nil "~%MTEXT~%") out))
+             (to (and from (search (format nil "~%0~%") out :start2 (1+ from))))
+             (entity (and from (subseq out from to))))
+        (is (and entity (not (search (format nil "~%50~%") entity)))
+            "an MTEXT with an 11 direction is written without 50: ~S" entity))
+      (is (%angle-close-p 0.5d0 (%dxf-value-after out "11" (format nil "~%MTEXT~%")))))))
+
 (test dxf-angle-round-trip
   "Write then read: the entget angles come back (to rounding)."
   (let ((d (make-drawing :version :ac1027)))
@@ -755,7 +772,9 @@ others (up to 75 / 76 / 101 / 1001)."
   (let* ((entry (assoc type +vendor-dxf-claimed-degree-groups+ :test #'string-equal))
          (repeated (string-equal type "HATCH"))
          (pending (copy-list (rest entry)))
-         (stops (if repeated '(101 1001) '(75 76 101 1001)))
+         (stops (cond (repeated '(101 1001))
+                      ((string-equal type "MTEXT") '(75 76 101 1001))
+                      (t '(101 1001))))
          (acc '()))
     (dolist (pair pairs (nreverse acc))
       (when (and (consp pair) (member (car pair) stops)) (return (nreverse acc)))
@@ -852,7 +871,13 @@ reported them."
           (destructuring-bind (type handle name pairs) object
             (let* ((loaded (%loaded-object-data drawing type handle name))
                    (raw (%claimed-occurrences type pairs))
-                   (got (%claimed-occurrences type loaded)))
+                   (got-all (%claimed-occurrences type loaded))
+                   ;; An MTEXT the file gives no 50 gets one DERIVED from its
+                   ;; 11 direction on load (the vendors' entget lists it):
+                   ;; not a file group -- the entget check below covers it.
+                   (got (if (and (string-equal type "MTEXT") (not (assoc 50 raw)))
+                            (remove 50 got-all :key #'car)
+                            got-all)))
               (is (not (null loaded)) "~A: ~A ~A not loaded" (file-namestring path) type handle)
               (is (equal (mapcar #'car raw) (mapcar #'car got))
                   "~A: ~A ~A file groups ~S, loaded groups ~S"
@@ -865,16 +890,27 @@ reported them."
                            "~A: ~A ~A group ~D: file ~A deg, loaded ~S (want ~S)"
                            (file-namestring path) type handle code text value
                            (and degrees (* degrees (/ pi 180d0)))))
+              ;; Against the vendor's own entget, code by code (first
+              ;; occurrence; every occurrence, in order, for HATCH). A code
+              ;; entget lists with value 0 that the file omits is a default
+              ;; the CAD does not write (DIMENSION 51 / 52) -- loaded absent
+              ;; is right. The VPORT *Active record is not compared: AutoCAD's
+              ;; entget of it still showed 0 after SETVAR SNAPANG, while the
+              ;; file it wrote holds the new angle (measured, job 17409369691).
               (let ((entget (cdr (assoc (string-upcase handle) report :test #'equal))))
-                (when entget
-                  (let ((mine (remove-if-not (lambda (pair) (<= 50 (car pair) 53)) got))
+                (when (and entget (not (string-equal type "VPORT")))
+                  (let ((mine (remove-if-not (lambda (pair) (<= 50 (car pair) 53)) got-all))
                         (entget (%claimed-occurrences type entget)))
-                    (is (equal (mapcar #'car entget) (mapcar #'car mine))
-                        "~A: ~A ~A entget groups ~S, loaded groups ~S"
-                        (file-namestring path) type handle
-                        (mapcar #'car entget) (mapcar #'car mine))
-                    (loop for (code . vendor) in entget
-                          for (nil . value) in mine
-                          do (is (%angle-close-p value vendor)
-                                 "~A: ~A ~A group ~D: vendor entget ~S, loaded ~S"
-                                 (file-namestring path) type handle code vendor value))))))))))))
+                    (if (string-equal type "HATCH")
+                        (loop for (code . vendor) in entget
+                              for (nil . value) in mine
+                              do (is (and value (%angle-close-p value vendor))
+                                     "~A: ~A ~A group ~D: vendor entget ~S, loaded ~S"
+                                     (file-namestring path) type handle code vendor value))
+                        (loop for (code . vendor) in entget
+                              for value = (cdr (assoc code mine))
+                              do (is (if value
+                                         (%angle-close-p value vendor)
+                                         (zerop vendor))
+                                     "~A: ~A ~A group ~D: vendor entget ~S, loaded ~S"
+                                     (file-namestring path) type handle code vendor value)))))))))))))

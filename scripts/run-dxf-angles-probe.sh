@@ -47,7 +47,7 @@ case "$backend" in
 esac
 bargs+=("-l" "$probe")
 
-out_dir="$root/dist/dxf-angles"; mkdir -p "$out_dir"
+out_dir="$root/dist/dxf-angles"; rm -rf "$out_dir"; mkdir -p "$out_dir"   # start empty: a reused build dir keeps other runs files
 report="$out_dir/${backend}-$(uname).txt"
 dxf_copy="$out_dir/${backend}-$(uname).dxf"
 : > "$report"

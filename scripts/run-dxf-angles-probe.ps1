@@ -58,6 +58,9 @@ switch ($Backend) {
 $bargs += @("-l", $probe)
 
 $outDir = Join-Path $root "dist/dxf-angles"
+# The Windows runner reuses its build directory: start empty, or the
+# artefact carries other backends' reports and DXFs (seen in job 17409369691).
+if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $report = Join-Path $outDir "$Backend-Windows.txt"
 $dxfCopy = Join-Path $outDir "$Backend-Windows.dxf"
