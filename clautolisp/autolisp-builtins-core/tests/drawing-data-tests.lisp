@@ -325,63 +325,121 @@ PAIRS-READ-BACK) as a two-digit integer: 10 * (entmod non-nil) + pairs."
 
 ;;; --- XDSIZE / XDROOM (xdata size accounting) -------------------
 ;;;
-;;; Byte costs per xdata group (PROVISIONAL, see XDATA-GROUP-BYTE-SIZE
-;;; and issues/open/xdroom-xdsize-not-implemented.issue -- the vendor
-;;; counts are to be measured by probes/sources/probe-xdata.lsp):
-;;;   application header 3+len, 1000/1003/1005 3+len, 1002 2,
-;;;   1004 2+nbytes, 1010-1013 25, 1040-1042 9, 1070 3, 1071 5.
-;;;   Budget: 16383 bytes per object.
+;;; The vendor numbers MEASURED by probes/sources/probe-xdata.lsp
+;;; (suites "xdsize" / "xdroom"; 2026-10-23) on AutoCAD 2022 Windows,
+;;; BricsCAD V25 Windows and BricsCAD V26 macOS, replayed case by case
+;;; under the matching dialect (see XDATA-GROUP-BYTE-SIZE and
+;;; issues/open/xdroom-xdsize-not-implemented.issue, "* Measured").
+;;; The applications are the probe's: "CLAUTOLISP_XDP" (14 chars) and
+;;; "CLAUTOLISP_XDPX" (15). -1 stands for a NIL result.
 
-(test dd-xdsize-sizes-xdata-lists
-  ;; header "APP" 6 + (1000 . "abc") 6
-  (is (eql 12 (%dd-run "(regapp \"APP\") (xdsize '((\"APP\" (1000 . \"abc\"))))")))
-  ;; the (-3 ...) sentinel form is accepted and sizes the same
-  (is (eql 12 (%dd-run "(regapp \"APP\") (xdsize '(-3 (\"APP\" (1000 . \"abc\"))))")))
-  ;; the documented example: 8 + 14 + 2 + 9 + 9 + 2
-  (is (eql 44 (%dd-run "(regapp \"MYAPP\")
+(defparameter *xd-probe-cases*
+  ;; (CASE XDSIZE-ARGUMENT AUTOCAD BRICSCAD-WINDOWS BRICSCAD-MACOS)
+  '(("header"                  "(list (list app))"                          0  30  60)
+    ("header +1 char"          "(list (list app2))"                         0  32  64)
+    ("-3 sentinel form"        "(list -3 (list app))"                       0  30  60)
+    ("1000 empty string"       "(list (list app '(1000 . \"\")))"           6  30  60)
+    ("1000 3 chars"            "(list (list app '(1000 . \"abc\")))"       12  36  72)
+    ("1000 10 chars"           "(list (list app '(1000 . \"abcdefghij\")))" 26  50 100)
+    ("1000 non-ASCII 1 char"   "(list (list app (cons 1000 (chr 233))))"    8  32  64)
+    ("1002 brace pair"         "(list (list app '(1002 . \"{\") '(1002 . \"}\")))" 7 34 68)
+    ("1003 layer 0"            "(list (list app '(1003 . \"0\")))"          6  32  64)
+    ("1004 binary 4 bytes"     "(list (list app '(1004 . \"DEADBEEF\")))"   9  46  92)
+    ("1005 handle 1 char"      "(list (list app '(1005 . \"1\")))"         12  32  64)
+    ("1005 handle 2 chars"     "(list (list app '(1005 . \"2A\")))"        12  34  68)
+    ("1010 point"              "(list (list app '(1010 1.0 2.0 3.0)))"     28  55  85)
+    ("1011 world position"     "(list (list app '(1011 1.0 2.0 3.0)))"     28  55  85)
+    ("1040 real"               "(list (list app '(1040 . 1.5)))"           12  39  69)
+    ("1041 distance"           "(list (list app '(1041 . 1.5)))"           12  39  69)
+    ("1042 scale"              "(list (list app '(1042 . 1.5)))"           12  39  69)
+    ("1070 int16"              "(list (list app '(1070 . 42)))"             6  33  63)
+    ("1071 int32"              "(list (list app '(1071 . 100000)))"         8  35  65)
+    ("two applications"
+     "(list (list app '(1000 . \"abc\")) (list app2 '(1040 . 1.5)))"       24  36  72)
+    ("documented example"
+     "(list -3 (list app '(1000 . \"SUITOFARMOR\") '(1002 . \"{\") '(1040 . 0.0)
+                    '(1040 . 1.0) '(1002 . \"}\")))"                        50  74 130)
+    ("error unregistered app"
+     "(list (list \"CLAUTOLISP_NOT_REGISTERED\" '(1000 . \"x\")))"         -1  54 108)
+    ("error unknown code 1099" "(list (list app '(1099 . 1)))"             -1  30  60)
+    ("error unbalanced brace"  "(list (list app '(1002 . \"{\")))"          5  32  64)))
+
+(defparameter *xd-probe-dialects*
+  ;; dialect keyword -> column of *xd-probe-cases*
+  '((:autocad . 2) (:bricscad . 3) (:bricscad-mac . 4)))
+
+(defun %xd-run (source dialect-keyword)
+  (values (%d1-run (concatenate 'string
+                                "(setq app \"CLAUTOLISP_XDP\" app2 \"CLAUTOLISP_XDPX\")
+                                 (regapp app) (regapp app2) "
+                                source)
+                   dialect-keyword)))
+
+(defun %xd-size (argument dialect-keyword)
+  (%xd-run (format nil "(setq r (xdsize ~A)) (if r r -1)" argument) dialect-keyword))
+
+(test dd-xdsize-measured-vendor-sizes
+  (loop for (dialect . column) in *xd-probe-dialects*
+        do (loop for case in *xd-probe-cases*
+                 for expected = (nth column case)
+                 for got = (%xd-size (second case) dialect)
+                 do (is (eql expected got)
+                        "xdsize ~S under ~S: expected ~S, got ~S"
+                        (first case) dialect expected got))))
+
+(test dd-xdsize-autocad-nil-sets-errno
+  ;; AutoCAD answers NIL, not an error; ERRNO tells why (unmeasured
+  ;; codes, from the Error Codes Reference: 50 bad application, 48 bad
+  ;; group). Success clears ERRNO.
+  (is (eql 50 (%xd-run "(if (null (xdsize '((\"NOAPP\" (1000 . \"x\"))))) (getvar \"ERRNO\") -1)"
+                       :autocad)))
+  (is (eql 48 (%xd-run "(if (null (xdsize (list (list app '(1099 . 1))))) (getvar \"ERRNO\") -1)"
+                       :autocad)))
+  (is (eql 48 (%xd-run "(if (null (xdsize (list (list app '(1070 . \"x\"))))) (getvar \"ERRNO\") -1)"
+                       :autocad)))
+  (is (eql 0 (%xd-run "(xdsize (list (list app '(1070 . 1)))) (getvar \"ERRNO\")" :autocad))))
+
+(test dd-xdsize-default-dialect-follows-autocad
+  ;; Every non-BricsCAD dialect follows AutoCAD (the default too).
+  (is (eql 50 (%dd-run "(regapp \"MYAPP\")
   (xdsize '(-3 (\"MYAPP\" (1000 . \"SUITOFARMOR\") (1002 . \"{\")
                            (1040 . 0.0) (1040 . 1.0) (1002 . \"}\"))))")))
-  ;; points, int16, int32: 6 + 25 + 3 + 5
-  (is (eql 39 (%dd-run "(regapp \"APP\")
-  (xdsize (list (list \"APP\" (list 1010 1.0 2.0 3.0) (cons 1070 1) (cons 1071 2))))")))
-  ;; two applications add up: (5 + 6) + (5 + 9)
-  (is (eql 25 (%dd-run "(regapp \"A1\") (regapp \"A2\")
-  (xdsize '((\"A1\" (1000 . \"one\")) (\"A2\" (1040 . 2.5))))")))
-  ;; an application with no pairs costs its header alone
-  (is (eql 6 (%dd-run "(regapp \"APP\") (xdsize '((\"APP\")))"))))
+  (is (eql 1 (%dd-run "(if (xdsize '((\"NOAPP\" (1000 . \"x\")))) 0 1)")))
+  (is (eql 24 (%xd-size "(list (list app '(1000 . \"abc\")) (list app2 '(1040 . 1.5)))"
+                        :clautolisp))))
 
 (test dd-xdsize-argument-errors
-  ;; unregistered application: an error, ERRNO 50
-  (is (eql 50 (%dd-run "(if (vl-catch-all-error-p
-                               (vl-catch-all-apply 'xdsize '(((\"NOAPP\" (1000 . \"x\"))))))
-                             (getvar \"ERRNO\") -1)")))
-  ;; unknown xdata group code: ERRNO 48
-  (is (eql 48 (%dd-run "(regapp \"APP\")
-  (if (vl-catch-all-error-p (vl-catch-all-apply 'xdsize '(((\"APP\" (1099 . 1))))))
-      (getvar \"ERRNO\") -1)")))
-  ;; unbalanced braces: ERRNO 49
-  (is (eql 49 (%dd-run "(regapp \"APP\")
-  (if (vl-catch-all-error-p (vl-catch-all-apply 'xdsize '(((\"APP\" (1002 . \"{\"))))))
-      (getvar \"ERRNO\") -1)")))
   ;; not a list / no argument
   (is (eql 1 (%dd-run "(if (vl-catch-all-error-p (vl-catch-all-apply 'xdsize '(42))) 1 0)")))
-  (is (eql 1 (%dd-run "(if (vl-catch-all-error-p (vl-catch-all-apply 'xdsize nil)) 1 0)"))))
+  (is (eql 1 (%dd-run "(if (vl-catch-all-error-p (vl-catch-all-apply 'xdsize nil)) 1 0)")))
+  ;; the empty list sizes to 0 on both products (unmeasured)
+  (is (eql 0 (%xd-run "(xdsize '())" :autocad)))
+  (is (eql 0 (%xd-run "(xdsize '())" :bricscad))))
+
+(defparameter *xd-probe-xdroom*
+  "(setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0))))
+   (setq fresh (xdroom e))
+   (entmod (append (entget e)
+                   (list (list -3 (list app '(1000 . \"abc\") '(1070 . 1) '(1040 . 1.5))))))
+   (list fresh (xdroom e) (xdsize (assoc -3 (entget e (list app)))))")
+
+(test dd-xdroom-measured-vendor-room
+  ;; (fresh circle, after 1000 "abc" + 1070 + 1040, xdsize of that xdata)
+  (is (equal '(16383 16359 24) (%xd-run *xd-probe-xdroom* :autocad)))
+  (is (equal '(16383 16352 48) (%xd-run *xd-probe-xdroom* :bricscad)))
+  (is (equal '(16383 16352 84) (%xd-run *xd-probe-xdroom* :bricscad-mac))))
 
 (test dd-xdroom-reports-remaining-xdata-room
-  ;; a fresh entity has the whole 16383-byte budget
-  (is (eql 16383 (%dd-run "
-  (setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0))))
-  (xdroom e)")))
-  ;; attached xdata is deducted, every application counted
-  (is (eql (- 16383 11 14)
-           (%dd-run "
-  (regapp \"A1\") (regapp \"A2\")
-  (setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0))))
-  (entmod (append (entget e)
-                  (list (list -3 (list \"A1\" (cons 1000 \"one\"))
-                                  (list \"A2\" (cons 1040 2.5))))))
-  (xdroom e)")))
-  ;; xdroom + xdsize of the entity's own xdata = the budget
+  ;; attached xdata is deducted, every application counted:
+  ;; AutoCAD (3 + 9) + (3 + 9); BricsCAD (10 + 9) + (10 + 9)
+  (let ((source "(entmod (append (entget (setq e (entmakex (list (cons 0 \"CIRCLE\")
+                                   (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0)))))
+                  (list (list -3 (list app (cons 1000 \"abc\"))
+                                  (list app2 (cons 1040 2.5))))))
+  (xdroom e)"))
+    (is (eql (- 16383 24) (%xd-run source :autocad)))
+    (is (eql (- 16383 38) (%xd-run source :bricscad))))
+  ;; AutoCAD: xdroom + xdsize of the entity's own xdata = the budget
   (is (eql 16383 (%dd-run "
   (regapp \"APP\")
   (setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0))))
@@ -400,13 +458,14 @@ PAIRS-READ-BACK) as a two-digit integer: 10 * (entmod non-nil) + pairs."
 
 (test dd-xdsize-on-the-nihil-host
   ;; Without a drawing (the nihil host) an empty xdata list still sizes
-  ;; to 0, but any application name cannot be checked against an APPID
-  ;; table: the call signals (host-not-supported), catchably.
+  ;; to 0, but under AutoCAD rules an application name cannot be checked
+  ;; against an APPID table: the call signals (host-not-supported),
+  ;; catchably.
   (reset-autolisp-symbol-table)
   (is (eql 0 (run-autolisp-string "(xdsize '())" :setup-fn #'install-core-into)))
   (reset-autolisp-symbol-table)
   (is (eql 1 (run-autolisp-string
-              "(if (vl-catch-all-error-p (vl-catch-all-apply 'xdsize '(((\"APP\"))))) 1 0)"
+              "(if (vl-catch-all-error-p (vl-catch-all-apply 'xdsize '(((\"APP\" (1070 . 1)))))) 1 0)"
               :setup-fn #'install-core-into))))
 
 ;;; --- Named-object dictionary + XRECORD lifecycle ----------------

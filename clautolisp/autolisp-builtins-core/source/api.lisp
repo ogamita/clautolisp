@@ -5597,22 +5597,36 @@ point."
 ;;;
 ;;; (xdsize LST) returns the number of bytes the xdata list LST would
 ;;; occupy once attached to an object; (xdroom ENAME) returns the room
-;;; left for xdata on ENAME, i.e. +XDATA-BYTE-BUDGET+ minus the size of
-;;; every application's xdata already attached (autolisp-spec, Function
-;;; Entries XDROOM / XDSIZE). The vendor caps xdata at 16383 bytes per
-;;; object, shared by all applications (the spec's xdroom example:
-;;; 16162 free = 221 of 16383 used).
+;;; left for xdata on ENAME, i.e. +XDATA-BYTE-BUDGET+ minus the xdata
+;;; already attached (autolisp-spec, Function Entries XDROOM / XDSIZE).
 ;;;
-;;; The per-group byte costs below are PROVISIONAL. Autodesk does not
-;;; publish them; they follow the in-memory xdata layout as commonly
-;;; described (one type byte per group, then the payload: a string as a
-;;; 2-byte length + its characters, a real as 8 bytes, a point as 3
-;;; reals, int16 / int32 as 2 / 4 bytes, a brace as 1 byte, a binary
-;;; chunk as a 1-byte length + its bytes) and must be MEASURED on
-;;; AutoCAD / BricsCAD -- probes/sources/probe-xdata.lsp, cases "xdsize
-;;; ..." and "xdroom ...". See issues/open/xdroom-xdsize-not-implemented.
-;;; issue. String lengths count characters (equal to bytes for ASCII;
-;;; the vendor's count for non-ASCII text is part of the measurement).
+;;; The byte model is MEASURED (probes/sources/probe-xdata.lsp, suites
+;;; "xdsize" / "xdroom"; AutoCAD 2022 Windows, BricsCAD V25 Windows,
+;;; BricsCAD V26 macOS, 2026-10-23 -- table in issues/open/
+;;; xdroom-xdsize-not-implemented.issue, "* Measured (2026-10-23)").
+;;; The two products differ, so the dialect's product picks the model
+;;; (BricsCAD dialects follow BricsCAD, every other dialect AutoCAD):
+;;;
+;;; AutoCAD -- one type byte per group + its payload, plus 3 bytes per
+;;;   application that carries at least one group (a bare application
+;;;   costs 0, whatever its name):
+;;;     1000 string 3 + 2 x UTF-16 units, 1002 brace 2, 1003 layer 3,
+;;;     1004 binary 2 + bytes, 1005 handle 9, 1010-1013 point 25,
+;;;     1040-1042 real 9, 1070 3, 1071 5.
+;;;   XDSIZE of an unregistered application or of an unknown group code
+;;;   returns NIL (no error). Unbalanced 1002 braces are NOT checked.
+;;;   XDROOM = 16383 - XDSIZE of the attached xdata.
+;;;
+;;; BricsCAD -- strings are counted as wchar_t (W = 2 bytes on Windows,
+;;;   4 on macOS / Linux) and ONLY THE FIRST application is sized:
+;;;     header W x (len(name) + 1); 1000 / 1002 / 1003 / 1004 / 1005
+;;;     W x len(string as given -- 1004 counts its hex digits); points
+;;;     25, reals 9, 1070 3, 1071 5; an unknown code costs 0. Neither
+;;;     registration nor brace balance is checked.
+;;;   XDROOM uses a different count: 16383 - sum over EVERY application
+;;;   of (10 + the AutoCAD group costs) -- fitted on the single measured
+;;;   payload (1000 "abc" + 1070 + 1040 = 31 used on V25 and V26 alike,
+;;;   while XDSIZE of it is 48 / 84).
 
 (defconstant +xdata-byte-budget+ 16383
   "Bytes of xdata one object may carry, all applications together.")
@@ -5629,102 +5643,147 @@ back to that same ERRNO."
            (50 :xdata-improper-appid))
          operator-name control-string arguments))
 
-(defun %xdata-string-length (value)
+(defun %xdata-size-model ()
+  "The xdata byte model of the current dialect: :AUTOCAD or :BRICSCAD,
+and as second value the bytes of one string code unit (2 for AutoCAD
+and BricsCAD Windows, 4 for BricsCAD macOS / Linux, whose wchar_t is
+32-bit)."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (product (and dialect
+                       (ignore-errors
+                        (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+         (platform (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-platform dialect)))))
+    (if (eq product :bricscad)
+        (values :bricscad (if (member platform '(:macos :linux)) 4 2))
+        (values :autocad 2))))
+
+(defun %xdata-string-units (value unit-bytes)
+  "The code units of the autolisp-string VALUE: UTF-16 units when
+UNIT-BYTES is 2, code points when it is 4. NIL when VALUE is no string."
   (and (typep value 'autolisp-string)
-       (length (autolisp-string-value value))))
+       (let ((s (autolisp-string-value value)))
+         (if (= unit-bytes 2)
+             (loop for c across s sum (if (> (char-code c) #xFFFF) 2 1))
+             (length s)))))
 
-(defun xdata-group-byte-size (code value operator-name)
-  "Provisional byte cost of the xdata pair (CODE . VALUE). Signals
-(ERRNO 48) on an unknown code or a value of the wrong type, and (ERRNO
-50) on a 1001 application name inside an application's pairs."
-  (flet ((bad ()
-           (%xdata-fail 48 operator-name
-                        "~A: invalid extended data group (~S . ~S)."
-                        operator-name code value)))
-    (unless (integerp code) (bad))
-    (case code
+(defun xdata-group-byte-size (code value model &optional (unit-bytes 2))
+  "Measured byte cost of the xdata pair (CODE . VALUE) under MODEL
+(:AUTOCAD or :BRICSCAD; UNIT-BYTES is the BricsCAD wchar_t size), or
+NIL when CODE is not an xdata group code or VALUE has the wrong type."
+  (flet ((str-units () (%xdata-string-units value unit-bytes)))
+    (case (and (integerp code) code)
       ((1000 1003 1005)                 ; string, layer name, handle
-       (let ((n (%xdata-string-length value)))
-         (if n (+ 3 n) (bad))))
-      (1001
-       (%xdata-fail 50 operator-name
-                    "~A: application name (1001) inside an application's xdata."
-                    operator-name))
+       (let ((n (str-units)))
+         (and n (if (eq model :bricscad)
+                    (* unit-bytes n)
+                    (case code (1000 (+ 3 (* 2 n))) (1003 3) (1005 9))))))
       (1002                             ; control string "{" / "}"
-       (let ((s (and (typep value 'autolisp-string)
-                     (autolisp-string-value value))))
-         (if (member s '("{" "}") :test #'equal) 2 (bad))))
+       (and (typep value 'autolisp-string)
+            (member (autolisp-string-value value) '("{" "}") :test #'equal)
+            (if (eq model :bricscad) unit-bytes 2)))
       (1004                             ; binary chunk, hex digits
-       (let ((n (%xdata-string-length value)))
-         (if n (+ 2 (ceiling n 2)) (bad))))
+       (let ((n (str-units)))
+         (and n (if (eq model :bricscad)
+                    (* unit-bytes n)
+                    (+ 2 (ceiling n 2))))))
       ((1010 1011 1012 1013)            ; points: 3 reals
-       (if (and (proper-list-p value)
-                (<= 2 (length value) 3)
-                (every #'realp value))
-           25
-           (bad)))
+       (and (proper-list-p value)
+            (<= 2 (length value) 3)
+            (every #'realp value)
+            25))
       ((1040 1041 1042)                 ; real, distance, scale factor
-       (if (realp value) 9 (bad)))
+       (and (realp value) 9))
       (1070
-       (if (and (integerp value) (<= -32768 value 32767)) 3 (bad)))
+       (and (integerp value) (<= -32768 value 32767) 3))
       (1071
-       (if (and (integerp value) (<= (- (expt 2 31)) value (1- (expt 2 31))))
-           5
-           (bad)))
-      (t (bad)))))
+       (and (integerp value) (<= (- (expt 2 31)) value (1- (expt 2 31))) 5))
+      (t nil))))
 
-(defun xdata-list-byte-size (xdata operator-name &key (check-registered t))
-  "Provisional byte size of XDATA, a list of (APPNAME pair ...) groups,
-optionally headed by the -3 sentinel. With CHECK-REGISTERED, each
-APPNAME must be registered (REGAPP) on the current host."
+(defun %xdata-application-groups (xdata operator-name)
+  "The (APPNAME pair ...) groups of XDATA, optionally headed by the -3
+sentinel. Signals on an improper list."
   (let ((groups (if (and (consp xdata) (eql (car xdata) -3))
                     (cdr xdata)
-                    xdata))
-        (total 0))
+                    xdata)))
     (unless (proper-list-p groups)
       (%xdata-fail 49 operator-name "~A: improper xdata list ~S."
                    operator-name xdata))
-    (dolist (group groups total)
-      (unless (and (consp group) (proper-list-p group)
-                   (typep (car group) 'autolisp-string))
-        (%xdata-fail 50 operator-name
-                     "~A: expected (APPNAME (code . value) ...), got ~S."
-                     operator-name group))
-      (let ((app (autolisp-string-value (car group)))
-            (depth 0))
-        (when (and check-registered
-                   (null (host-tblsearch (current-evaluation-host) "APPID" app)))
-          (%xdata-fail 50 operator-name
-                       "~A: application ~S is not registered (see REGAPP)."
-                       operator-name app))
-        (incf total (+ 3 (length app)))
-        (dolist (pair (cdr group))
-          (unless (consp pair)
-            (%xdata-fail 48 operator-name "~A: invalid extended data group ~S."
-                         operator-name pair))
-          (incf total (xdata-group-byte-size (car pair) (cdr pair) operator-name))
-          (when (eql (car pair) 1002)
-            (if (string= (autolisp-string-value (cdr pair)) "{")
-                (incf depth)
-                (decf depth))
-            (when (minusp depth)
-              (%xdata-fail 49 operator-name "~A: unbalanced 1002 braces in ~S."
-                           operator-name app))))
-        (unless (zerop depth)
-          (%xdata-fail 49 operator-name "~A: unbalanced 1002 braces in ~S."
-                       operator-name app))))))
+    groups))
+
+(defun %xdata-application-group-p (group)
+  (and (consp group) (proper-list-p group)
+       (typep (car group) 'autolisp-string)))
+
+(defun xdata-list-byte-size (xdata operator-name)
+  "XDSIZE of XDATA under the current dialect's model. Returns (values
+SIZE ERRNO): SIZE is NIL, with ERRNO 48 or 50, where AutoCAD answers NIL
+(unknown group code or bad value; unregistered application or malformed
+application group)."
+  (let ((groups (%xdata-application-groups xdata operator-name)))
+    (multiple-value-bind (model unit-bytes) (%xdata-size-model)
+      (if (eq model :bricscad)
+          ;; BricsCAD: the first application only, nothing validated.
+          (let ((group (first groups)))
+            (cond ((null group) (values 0 0))
+                  ((not (%xdata-application-group-p group))
+                   (%xdata-fail 50 operator-name
+                                "~A: expected (APPNAME (code . value) ...), got ~S."
+                                operator-name group))
+                  (t
+                   (values
+                    (+ (* unit-bytes (1+ (%xdata-string-units (car group) unit-bytes)))
+                       (loop for pair in (cdr group)
+                             sum (or (and (consp pair)
+                                          (xdata-group-byte-size (car pair) (cdr pair)
+                                                                 :bricscad unit-bytes))
+                                     0)))
+                    0))))
+          ;; AutoCAD: every application; NIL on invalid content.
+          (let ((total 0))
+            (dolist (group groups (values total 0))
+              (unless (%xdata-application-group-p group)
+                (return (values nil 50)))
+              (when (null (host-tblsearch (current-evaluation-host) "APPID"
+                                          (autolisp-string-value (car group))))
+                (return (values nil 50)))
+              (when (cdr group)
+                (incf total 3)
+                (dolist (pair (cdr group))
+                  (let ((size (and (consp pair)
+                                   (xdata-group-byte-size (car pair) (cdr pair) :autocad))))
+                    (unless size
+                      (return-from xdata-list-byte-size (values nil 48)))
+                    (incf total size))))))))))
+
+(defun xdata-attached-byte-size (xdata)
+  "The bytes the xdata XDATA (as read back from an object) takes off the
+XDROOM budget under the current dialect's model."
+  (let ((bricscad-p (eq (%xdata-size-model) :bricscad)))
+    (loop for group in (%xdata-application-groups xdata "XDROOM")
+          when (%xdata-application-group-p group)
+            sum (let ((groups (loop for pair in (cdr group)
+                                    sum (or (and (consp pair)
+                                                 (xdata-group-byte-size
+                                                  (car pair) (cdr pair) :autocad))
+                                            0))))
+                  (cond (bricscad-p (+ 10 groups))
+                        ((cdr group) (+ 3 groups))
+                        (t 0))))))
 
 (defun builtin-xdsize (xdata)
-  ;; Documented to set ERRNO on failure (unregistered application,
-  ;; bad group, unbalanced braces) -- and to signal an error.
+  ;; AutoCAD answers NIL (and sets ERRNO) on invalid content; BricsCAD
+  ;; sizes whatever it is given. A non-list argument is an error.
   (unless (listp xdata)
     (%xdata-fail 48 "XDSIZE" "XDSIZE expects an xdata list, got ~S." xdata))
-  (errno-and-return 0 (xdata-list-byte-size xdata "XDSIZE")))
+  (multiple-value-bind (size errno) (xdata-list-byte-size xdata "XDSIZE")
+    (errno-and-return errno size)))
 
 (defun builtin-xdroom (ename)
-  ;; The room left for xdata on ENAME: the budget minus the size of the
-  ;; xdata every application has attached. nil (ERRNO 2) when ENAME
-  ;; names no live object, as ENTGET.
+  ;; The room left for xdata on ENAME: the budget minus the xdata every
+  ;; application has attached. nil (ERRNO 2) when ENAME names no live
+  ;; object, as ENTGET.
   (let ((data (host-entget (current-evaluation-host)
                            (require-ename ename "XDROOM")
                            (list (make-autolisp-string "*")))))
@@ -5733,9 +5792,7 @@ APPNAME must be registered (REGAPP) on the current host."
                              data)))
           (errno-and-return
            0 (- +xdata-byte-budget+
-                (if cell
-                    (xdata-list-byte-size (cdr cell) "XDROOM" :check-registered nil)
-                    0))))
+                (if cell (xdata-attached-byte-size (cdr cell)) 0))))
         (errno-and-return 2 nil))))
 
 ;;; --- Phase 11: sysvar access --------------------------------------

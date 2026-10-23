@@ -1945,6 +1945,14 @@ file or COM), and forwards the workload.
   330 102 330 …=. Measured on both, and followed per dialect: the BricsCAD
   dialects take BricsCAD's order, every other dialect AutoCAD's.
 
+- *=xdsize= / =xdroom= give the CADs' numbers* (2.3.40): measured on
+  AutoCAD 2022 and BricsCAD V25 / V26 and followed per dialect. AutoCAD: 3
+  bytes per application with data, strings 3 + 2 per UTF-16 unit, points 25,
+  reals 9, ...; an unregistered application or an unknown code gives =nil=.
+  BricsCAD: only the first application is sized, strings cost 2 bytes per
+  character on Windows and 4 on macOS, nothing is validated. The 2.3.34
+  sizes were provisional.
+
 - *A failing request is never reported OK on AutoCAD* (2.3.39): AutoCAD
   can catch an error whose message is =nil= (=vl-exit-with-error= outside
   a VLX, measured), and alfe took that =nil= for "no error": the failed
