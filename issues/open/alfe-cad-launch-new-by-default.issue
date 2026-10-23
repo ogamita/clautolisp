@@ -1,0 +1,60 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-cad-launch-new-by-default -- launch a new CAD by default; attach only on request, optionally to a given instance
+#+STATUS: IN-PROGRESS
+#+PRIORITY: P1
+#+TYPE: feature
+#+DEPENDS: -
+#+BRANCH: cad-launch-new-by-default
+#+DATE: 2026-10-23
+
+* Request
+
+pjb, 2026-10-23, following alfe-cad-quit-saves-modified-drawing:
+
+#+begin_quote
+Interactively, the user may want to connect to a launched instance. But in
+batch (eg CI), we want to launch a new instance. And given the mutex
+constraints, in batch we don't want another instance running at the same
+time. So for alfe, the default should be to launch a new instance, and we
+should add an explicit option to connect to an existing instance (and there
+must be a way to differentiate running instances, and to specify which one
+we want to connect to, cf the COM stuff, and on unix I guess the PID would
+be used). [...] For alfe, by default, launch a new instance (even with COM or
+AppleScript), unless the user give an option indicating to connect to an
+existing instance or a specific existing instance. [...] for unix we don't
+have a CAD running on linux to test [...] so ignore this option.
+#+end_quote
+
+Cleaning up leftover CADs is the CI JOB SCRIPTS' business, not alfe's.
+
+* State before
+
+- The Windows COM bridges (AutoCAD always in automation mode, BricsCAD
+  with --mode automation) ran in COM mode "auto": GetObject(, ProgID)
+  first, CreateObject only when nothing was running. AUTOCAD_COM_MODE /
+  BRICSCAD_COM_MODE could select "attach" or "create"; nothing on the
+  command line did.
+- --backend {attach,launch} was in the usage text and parsed into
+  CLI-OPTIONS-BACKEND-VARIANT, but only the clautolisp backend read that
+  slot: the CAD backends ignored it.
+- macOS BricsCAD batch mode (the default) already starts the executable
+  itself -- a new process every run. The opt-in AppleScript path uses
+  `open -a', which activates a running copy, and finds the app by process
+  NAME, so with two copies it cannot tell them apart.
+- Two consequences once a second instance can exist:
+  - quit-created-autocad's VBScript re-attaches with GetObject(, ProgID),
+    which may name an instance this run did not create;
+  - RecordCreatedProcesses records EVERY acad.exe started with
+    /Automation, not just the one this run started.
+
+* Measure first
+
+Probe scripts/probe-cad-instances.{ps1,sh}, family cad-instances. It
+measures:
+- whether a second CreateObject / launch gives a second process;
+- which instance GetActiveObject returns;
+- what the ROT holds per instance (class moniker, file monikers of saved
+  documents);
+- whether binding a document's file moniker reaches its instance;
+- whether System Events can make one of two same-named BricsCAD processes
+  frontmost by unix id.

@@ -104,6 +104,7 @@ FAMILIES = {
                        "scripts/run-request-locals-probe.*"],
     "dxf-angles": [f"{ENTITIES}/dxf-angles-probe.lsp",
                    "scripts/run-dxf-angles-probe.*"],
+    "cad-instances": ["scripts/probe-cad-instances.*"],
     "sysvars": ["autolisp-spec/autolisp/dump-sysvars.lsp"],
     "entget-pointers": ["probes/sources/probe-entget-pointers.lsp"],
 }

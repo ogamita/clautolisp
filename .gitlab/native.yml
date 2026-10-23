@@ -1512,6 +1512,70 @@ dxf-angles:probe:accoreconsole:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-dxf-angles-probe.ps1 -Backend accoreconsole
 
+# --- a second CAD instance: what COM / LaunchServices offer ----------------
+# alfe-cad-launch-new-by-default: alfe is to LAUNCH a new CAD by default and
+# attach to a running one only on request, to a given instance by PID. These
+# jobs MEASURE what that can rest on: whether a second CreateObject / launch
+# gives a second process, which instance GetActiveObject returns, what the
+# Running Object Table holds per instance, and whether System Events can
+# target one of two same-named BricsCAD processes by unix id. Soft: a probe
+# measures, never gates.
+.cad-instances-artifacts:
+  interruptible: true
+  artifacts:
+    name: "cad-instances-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/cad-instances/]
+    expire_in: 30 days
+
+cad-instances:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .cad-instances-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,cad-instances,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - bash scripts/probe-cad-instances.sh
+
+cad-instances:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .cad-instances-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,cad-instances,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-instances.ps1 -Backend bricscad
+
+cad-instances:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .cad-instances-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,cad-instances,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-instances.ps1 -Backend autocad
+
 # --- user globals through alfe: a (setq f ...) must reach the global ------
 #
 # alfe-eval-request-locals-capture-user-setq.issue. AutoLISP binds a DEFUN's
