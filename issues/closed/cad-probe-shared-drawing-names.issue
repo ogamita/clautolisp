@@ -27,7 +27,7 @@ scripts/tests/test-probe-cad-instances-paths.ps1 extracts and executes the
 real helpers without launching CAD. Two allocations in the same process
 produce four distinct filenames; cleanup of one preserves the other one's
 drawings and locks, a legacy A drawing, and an unexpected file. Both
-AutoCAD and BricsCAD variants pass under PowerShell 7 on macOS. Both
-Windows native probe jobs run this check before launching CAD.
-A Windows PowerShell 5.1 execution is pending restoration of LAN access
-to pfenny; the full native probe was not run by this correction.
+AutoCAD and BricsCAD variants pass under PowerShell 7 on macOS and
+Windows PowerShell on pfenny. Both Windows native probe jobs run this
+check before launching CAD. The full native probe was not rerun by this
+correction, avoiding interference with existing CAD activity.
