@@ -1953,6 +1953,12 @@ file or COM), and forwards the workload.
   character on Windows and 4 on macOS, nothing is validated. The 2.3.34
   sizes were provisional.
 
+- *=vlax-vb*= constants as each CAD binds them* (2.3.41): measured on
+  AutoCAD 2022 and BricsCAD V25 / V26. Every value a CAD binds is the
+  documented VarType value; AutoCAD binds no =vlax-vbDecimal=, neither binds
+  =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
+  all 17 from the documentation).
+
 - *A failing request is never reported OK on AutoCAD* (2.3.39): AutoCAD
   can catch an error whose message is =nil= (=vl-exit-with-error= outside
   a VLX, measured), and alfe took that =nil= for "no error": the failed

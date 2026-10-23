@@ -3180,8 +3180,9 @@ call that received NIL) and on a TEXT."
 (test activex-constants-every-measured-constant-bound-per-product
   "Table-driven over the MEASURED table (probe-activex-constants on AutoCAD
 2022, BricsCAD V25 / V26): after (vl-load-com) every name the dialect's
-product binds has that product's value -- 832 on AutoCAD, 932 on BricsCAD."
-  (dolist (case '(("autocad-2022" :autocad 832) ("bricscad-v26" :bricscad 932)))
+product binds has that product's value -- 847 on AutoCAD, 948 on BricsCAD
+(832 / 932 AC constants, plus 15 / 16 vlax-vb* VarType constants)."
+  (dolist (case '(("autocad-2022" :autocad 847) ("bricscad-v26" :bricscad 948)))
     (destructuring-bind (dialect product count) case
       (let ((constants (clautolisp.autolisp-builtins-core:activex-enumeration-constants
                         product)))
@@ -3271,39 +3272,62 @@ argument of AddAttribute (additive flags)."
 ;;; --- vlax-vb* VarType constants (vlax-vb-constants-unbound.issue) ---------
 
 (defparameter *vlax-vb-constants*
-  '(("vlax-vbEmpty" 0) ("vlax-vbNull" 1) ("vlax-vbInteger" 2) ("vlax-vbLong" 3)
-    ("vlax-vbSingle" 4) ("vlax-vbDouble" 5) ("vlax-vbCurrency" 6)
-    ("vlax-vbDate" 7) ("vlax-vbString" 8) ("vlax-vbObject" 9)
-    ("vlax-vbError" 10) ("vlax-vbBoolean" 11) ("vlax-vbVariant" 12)
-    ("vlax-vbDataObject" 13) ("vlax-vbDecimal" 14) ("vlax-vbByte" 17)
-    ("vlax-vbArray" 8192))
-  "The VB VarType values, written out independently of the runtime table.")
+  '(("vlax-vbEmpty" 0 0) ("vlax-vbNull" 1 1) ("vlax-vbInteger" 2 2)
+    ("vlax-vbLong" 3 3) ("vlax-vbSingle" 4 4) ("vlax-vbDouble" 5 5)
+    ("vlax-vbCurrency" 6 6) ("vlax-vbDate" 7 7) ("vlax-vbString" 8 8)
+    ("vlax-vbObject" 9 9) ("vlax-vbError" 10 10) ("vlax-vbBoolean" 11 11)
+    ("vlax-vbVariant" 12 12) ("vlax-vbDataObject" 13 13)
+    ("vlax-vbDecimal" nil 14) ("vlax-vbByte" nil nil)
+    ("vlax-vbArray" 8192 8192))
+  "(NAME AUTOCAD-VALUE BRICSCAD-VALUE) as measured on 2026-10-23 (probe
+activex-constants: AutoCAD 2022, BricsCAD V25 and V26), written out
+independently of the runtime table. NIL: the product does not bind it.")
+
+(defun %vlax-vb-expected (product)
+  (mapcar (lambda (entry)
+            (destructuring-bind (name autocad bricscad) entry
+              (declare (ignore name))
+              (ecase product
+                (:autocad autocad)
+                (:bricscad bricscad)
+                (:strict (and autocad bricscad (= autocad bricscad) autocad))
+                (:clautolisp (or autocad bricscad)))))
+          *vlax-vb-constants*))
 
 (test vlax-vb-constants-bound-after-vl-load-com
   "vlax-vb-constants-unbound: after (vl-load-com) every vlax-vb* name has
-its VB VarType value, under every dialect."
-  (dolist (dialect '("clautolisp" "autocad-2022" "bricscad-v26" "strict"))
-    (is (equal (mapcar #'second *vlax-vb-constants*)
-               (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com) (list ~{~A~^ ~})"
-                             dialect (mapcar #'first *vlax-vb-constants*))))
-        dialect)))
+its MEASURED value for the dialect's product: AutoCAD binds 15 of the 17
+(not vlax-vbDecimal, not vlax-vbByte), BricsCAD 16 (not vlax-vbByte);
+strict the common subset, clautolisp the union."
+  (loop for (dialect product) in '(("clautolisp" :clautolisp)
+                                   ("autocad-2022" :autocad)
+                                   ("bricscad-v26" :bricscad)
+                                   ("strict" :strict))
+        do (is (equal (%vlax-vb-expected product)
+                      (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com) (list ~{~A~^ ~})"
+                                    dialect (mapcar #'first *vlax-vb-constants*))))
+               dialect)))
 
 (test vlax-vb-constants-yield-to-the-measured-table
-  "The vlax-vb* values are documented, not yet measured: once a regenerated
-*ACTIVEX-MEASURED-CONSTANTS* records a name, its measurement wins -- even a
-product's NIL (not bound there)."
-  (is (= 17 (length (clautolisp.autolisp-builtins-core:activex-documented-constants
-                     :autocad))))
-  (let ((clautolisp.autolisp-builtins-core::*activex-measured-constants*
-          '(("VLAX-VBINTEGER" nil 2))))
-    (is (null (assoc "VLAX-VBINTEGER"
-                     (clautolisp.autolisp-builtins-core:activex-documented-constants :autocad)
-                     :test #'string=)))
-    (is (null (assoc "VLAX-VBINTEGER"
-                     (clautolisp.autolisp-builtins-core:activex-enumeration-constants :autocad)
-                     :test #'string=)))
-    (is (= 16 (length (clautolisp.autolisp-builtins-core:activex-documented-constants
-                       :bricscad))))))
+  "The vlax-vb* constants are no longer a separate documented table: they
+come from *ACTIVEX-MEASURED-CONSTANTS*, per product, like the AC ones."
+  (is (not (fboundp (find-symbol "ACTIVEX-DOCUMENTED-CONSTANTS"
+                                 "CLAUTOLISP.AUTOLISP-BUILTINS-CORE"))))
+  (loop for product in '(:autocad :bricscad :strict :clautolisp)
+        do (is (equal (remove nil (mapcar (lambda (entry value)
+                                            (and value (list (string-upcase (first entry)) value)))
+                                          *vlax-vb-constants*
+                                          (%vlax-vb-expected product)))
+                      (sort (remove-if-not
+                             (lambda (entry) (eql 0 (search "VLAX-VB" (first entry))))
+                             (clautolisp.autolisp-builtins-core:activex-enumeration-constants
+                              product))
+                            (lambda (a b)
+                              (< (position (first a) *vlax-vb-constants*
+                                           :key #'first :test #'string-equal)
+                                 (position (first b) *vlax-vb-constants*
+                                           :key #'first :test #'string-equal)))))
+               product)))
 
 (test vlax-vb-constants-drive-make-variant-and-safearray
   "The canonical calls with the symbolic type: vlax-make-variant /

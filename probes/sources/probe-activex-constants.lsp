@@ -17,8 +17,7 @@
 ;;;;     constants (DevRef "AC... (constants) functions", V14, 934 names), so
 ;;;;     the families clautolisp does not bind yet can be read off a run;
 ;;;;     plus the 17 vlax-vb* VarType names (vlax-vb-constants-unbound.issue,
-;;;;     2026-10-22), bound in clautolisp from their documented values until
-;;;;     a run measures them.
+;;;;     2026-10-22), measured 2026-10-23 and carried by the table since.
 ;;;; Every step under VL-CATCH-ALL-APPLY. Pure ASCII.
 
 (defun cad-probe--acx-show (cad-probe--acx-thunk / r)
