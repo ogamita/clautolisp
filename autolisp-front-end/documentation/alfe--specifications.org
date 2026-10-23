@@ -835,14 +835,24 @@ cscript //nologo <WORKDIR>/bridge-bricscad.vbs \
     2>"<WORKDIR>/bricscad-com-stderr.txt"
 #+end_example
 
-COM mode is selected by =BRICSCAD_COM_MODE=:
+COM mode is selected by =--backend launch= / =--backend attach= (and
+=--attach-pid PID=, which implies =attach=); without them, by
+=BRICSCAD_COM_MODE=:
 
 | Value     | Meaning                                                              |
 |-----------+----------------------------------------------------------------------|
-| =auto=    | Try to attach an instance; launch a new one otherwise. (default.)    |
-| =attach=  | Fail if no instance is open.                                         |
-| =launch=  | Always launch a new instance.                                        |
+| =launch=  | Always launch a new instance. (default.)                             |
+| =attach=  | Attach to the running instance; fail if no instance is open.         |
+| =auto=    | Try to attach an instance; launch a new one otherwise.               |
 | =off=     | Disable COM; switch to =batch= mode.                                 |
+
+LAUNCH IS THE DEFAULT (alfe-cad-launch-new-by-default, pjb 2026-10-23):
+a batch run, CI above all, must not work inside a CAD somebody else has
+open, nor beside another instance; attaching is asked for explicitly. An
+attach implies =--mode automation=, and =--mode batch= with =--backend
+attach= is a usage error: batch always starts its own CAD process.
+Cleaning up a leftover CAD before a CI job is the job script's business,
+not alfe's.
 
 The =--mode= option overrides =BRICSCAD_COM_MODE= (and its
 =AUTOCAD_COM_MODE= equivalent) globally.
@@ -1071,8 +1081,9 @@ cscript //nologo <WORKDIR>/bridge-autocad.vbs \
     2>"<WORKDIR>/autocad-com-stderr.txt"
 #+end_example
 
-COM mode is selected by =AUTOCAD_COM_MODE=: values =auto= (default),
-=attach=, =launch=, =off=. The =--mode= option takes priority.
+COM mode is selected by =--backend launch|attach= / =--attach-pid=, else
+by =AUTOCAD_COM_MODE=: values =launch= (default), =attach=, =auto=,
+=off= -- as for BricsCAD above. The =--mode= option takes priority.
 
 **** The ProgID the bridge asks for
 

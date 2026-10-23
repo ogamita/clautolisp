@@ -59,7 +59,12 @@ Drive AutoCAD via the file-IPC protocol.
 How to launch the engine (default: auto).
 .TP
 .BR \-\-backend " " \fI{attach,launch,direct,subprocess}\fR
-CAD backends: attach to a running CAD or launch a fresh one.
+CAD backends:
+.B launch
+(the default) starts a new CAD instance even when one is running;
+.B attach
+uses the running one, and implies
+.BR "\-\-mode automation" .
 Under
 .BR \-\-clautolisp :
 .B direct
@@ -84,6 +89,14 @@ or
 so both spellings behave identically; with
 .B \-\-backend direct
 it is a usage error.
+.TP
+.BR \-\-attach\-pid " " \fIPID\fR
+Attach to the running CAD whose process id is
+.IR PID
+(implies
+.BR "\-\-backend attach" ).
+On Windows, COM reaches only the instance registered first; any other PID is
+refused.
 .SS Actions (processed in order)
 .TP
 .BR \-l ", " \-\-load " " \fIFILE\fR
