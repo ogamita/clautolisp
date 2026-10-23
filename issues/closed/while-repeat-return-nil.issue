@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: while-repeat-return-nil -- WHILE and REPEAT always return nil instead of the last body value
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: -
@@ -75,3 +75,12 @@ transcripts replayed with 2.3.29 and the caveat removed.
 
 To close: the AutoCAD 2022 GUI / accoreconsole control-flow probe jobs
 (Windows runners, 2026-10-23).
+
+* AutoCAD measured (2026-10-23) -- DONE
+
+control-flow probe, all four targets identical to the spec and to 2.3.29
+on all 9 cases (repeat-last 6, repeat-counter 3, repeat-zero nil,
+repeat-empty-body nil, repeat-nil-last nil, while-last 300, while-never
+nil, while-test-only nil, while-string "s"): AutoCAD 2022 GUI (job
+17398575920), accoreconsole (17398575921), BricsCAD V25 Windows
+(17398575919), BricsCAD V26 macOS (17396028047).

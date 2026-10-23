@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-normalised-form-reals-autocad -- a form alfe's normaliser rewrites still loses real digits on AutoCAD
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: -
@@ -93,3 +93,11 @@ The user manual's "How a form reaches a CAD" section says so.
   now re-prints nothing either (=REPRINTED no= on both paths; it was =yes=).
 
 =make -C autolisp-front-end test-sbcl= and =test-ccl=: Fail: 0.
+
+* AutoCAD measured (2026-10-23) -- DONE
+
+real-transport probe on 2.3.36 (MR !471): the normalised path is now
+11/11 exact on AutoCAD 2022 GUI (job 17407360926) and accoreconsole (job
+17398575894) -- 8/11 before, pi/2's last digit, DBL_MAX's exponent and the
+17-digit integer-valued real were lost. Literal, read and -x paths stay
+11/11 / 1/1. BricsCAD V25 Windows (17398575892) unchanged, exact.
