@@ -419,11 +419,23 @@ an object a dictionary owns."
                              "{ACAD_REACTORS"))
                   (cons 330 (cdr owner))
                   (cons 102 (clautolisp.autolisp-runtime:make-autolisp-string "}")))))
-    (append (and zero (list zero))
-            (and five (list five))
-            reactors
-            (and owner (list owner))
-            rest)))
+    ;; Where the owner goes is the one point the vendors disagree on
+    ;; (entget-pointers section 10, AutoCAD 2022 job 17398575906): AutoCAD
+    ;; lists it BEFORE the handle -- -1 0 330 5 100 ... -- unless a 102
+    ;; group precedes it (a dictionary member: -1 0 5 102 330 102 330 100,
+    ;; as on BricsCAD); BricsCAD always -1 0 5 [102 ...] 330. BricsCAD
+    ;; dialects follow BricsCAD, every other dialect AutoCAD, the normative
+    ;; reference (as for the pointer codes above).
+    (if (or reactors (eq (%current-product) :bricscad))
+        (append (and zero (list zero))
+                (and five (list five))
+                reactors
+                (and owner (list owner))
+                rest)
+        (append (and zero (list zero))
+                (and owner (list owner))
+                (and five (list five))
+                rest))))
 
 (defun extract-modified-handle (data operator-name &optional host)
   "Return the hex handle of the entity DATA refers to, from its

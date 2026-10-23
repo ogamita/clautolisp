@@ -5,4 +5,4 @@
 ;;;; Format: MAJOR.MINOR.DEVELOP. The DEVELOP counter is bumped on
 ;;;; every change that touches clautolisp source code.
 
-(defparameter *version* "2.3.36")
+(defparameter *version* "2.3.37")

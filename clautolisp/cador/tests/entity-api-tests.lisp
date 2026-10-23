@@ -18,16 +18,16 @@
     (let ((head (first data)))
       (is (and (consp head) (eql -1 (car head))))
       (is (typep (cdr head) 'autolisp-ename)))
-    ;; Then the vendors' header (cador-entget-owner-and-header-layout,
-    ;; BricsCAD V26 measured): (0 . TYPE), (5 . HANDLE), and the owner
-    ;; (330 . <model space BLOCK_RECORD>). The host wraps string values as
-    ;; autolisp-strings at the boundary (REVIEW-1); the drawing stores a
-    ;; pure CL string.
-    (is (equal '(-1 0 5 330) (mapcar #'car (subseq data 0 4))))
-    (let ((five (third data)))
+    ;; Then the vendors' header (cador-entget-owner-and-header-layout; the
+    ;; default dialect follows AutoCAD 2022, measured): (0 . TYPE), the
+    ;; owner (330 . <model space BLOCK_RECORD>), then (5 . HANDLE). The host
+    ;; wraps string values as autolisp-strings at the boundary (REVIEW-1);
+    ;; the drawing stores a pure CL string.
+    (is (equal '(-1 0 330 5) (mapcar #'car (subseq data 0 4))))
+    (let ((five (fourth data)))
       (is (typep (cdr five) 'autolisp-string))
       (is (string= "10" (autolisp-string-value (cdr five)))))
-    (is (eq (host-tblobjname mock "BLOCK" "*Model_Space") (cdr (fourth data))))
+    (is (eq (host-tblobjname mock "BLOCK" "*Model_Space") (cdr (third data))))
     ;; entlast surfaces the same ename as the entry just made.
     (let ((last-ename (host-entlast mock)))
       (is (typep last-ename 'autolisp-ename))
@@ -82,7 +82,7 @@
         ;; The host still injected its (-1 . ename) and (5 . handle), in
         ;; the vendors' header order, and the round trip stored no
         ;; synthesized owner: the view's 330 is still the synthesized one.
-        (is (equal '(-1 0 5 330) (mapcar #'car (subseq after 0 4))))
+        (is (equal '(-1 0 330 5) (mapcar #'car (subseq after 0 4))))
         (is (null (find 330 (clautolisp.drawing:entity-handle-data
                              (clautolisp.cador::cador-find-entity-by-handle
                               mock (autolisp-ename-value ename)))
@@ -476,7 +476,7 @@ synthesized owner and reactor groups back in; neither may be stored."
          (line (host-entmakex mock (make-line-data))))
     (host-entmod mock (host-entget mock line))
     (is (null (member 330 (%stored-codes mock line))))
-    (is (equal '(-1 0 5 330) (mapcar #'car (subseq (host-entget mock line) 0 4))))
+    (is (equal '(-1 0 330 5) (mapcar #'car (subseq (host-entget mock line) 0 4))))
     (let ((copy (host-entmakex mock (rest (remove 5 (host-entget mock line)
                                                :key (lambda (p) (and (consp p) (car p))))))))
       (is (typep copy 'autolisp-ename))
@@ -488,7 +488,9 @@ synthesized owner and reactor groups back in; neither may be stored."
   (let* ((mock (make-cador))
          (nod (host-namedobjdict mock))
          (x (make-xrecord-ename mock "z")))
-    ;; Free: no owner (BricsCAD measured -1 0 5 100 ...).
+    ;; Free: cador stores no owner (BricsCAD measured -1 0 5 100 ...; AutoCAD
+    ;; lists an owner, -1 0 330 5 100 -- cador-entget-subclass-layout-and-
+    ;; record-pointers).
     (is (equal '(-1 0 5 100) (mapcar #'car (subseq (host-entget mock x) 0 4))))
     (host-dictadd mock nod (mk-str "HDRK") x)
     (let ((view (host-entget mock x)))

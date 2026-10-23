@@ -1,5 +1,5 @@
 #+TITLE: cador: entget of a main-space entity has no 330 owner; header group order differs from AutoCAD
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: cador-entget-pointer-codes-are-handle-strings
@@ -119,3 +119,29 @@ To close: the AutoCAD 2022 section-10 answers (probe:entget-pointers:
 autocad:windows, Windows runners 2026-10-23). AutoCAD's 2026-10-08 data
 put a free XRECORD's 330 BEFORE its 5 (-1 0 330 5 100 ...): if entities
 follow that order too, the 330 position becomes a per-dialect choice.
+
+* AutoCAD measured (2026-10-23) -- DONE, 2.3.37
+
+entget-pointers section 10 on AutoCAD 2022 (job 17398575906) and BricsCAD
+V25 Windows (job 17398575907):
+
+| object                  | AutoCAD 2022                          | BricsCAD V25 / V26                  |
+|-------------------------+---------------------------------------+-------------------------------------|
+| LINE / CIRCLE / TEXT / INSERT | -1 0 330 5 100 67 410 8 100 ... | -1 0 5 330 100 67 410 8 100 ...    |
+| free XRECORD            | -1 0 330 5 100 280 ...                | -1 0 5 100 280 ...                  |
+| XRECORD after dictadd   | -1 0 5 102 330 102 330 100 ...        | -1 0 5 102 330 102 330 100 ...      |
+| a LINE's 330            | -> BLOCK_RECORD                       | -> BLOCK_RECORD                     |
+
+So the vendors differ on ONE point: AutoCAD lists the owner BEFORE the
+handle unless a 102 group precedes it. clautolisp 2.3.37 discriminates by
+product, like the pointer codes: BricsCAD dialects -1 0 5 [102] 330,
+every other dialect (autocad, clautolisp, strict, lax) AutoCAD's -1 0 330
+5 ... / -1 0 5 102 ... 330 (%VENDOR-HEADER-ORDER). Test
+ENTGET-HEADER-OWNER-POSITION-FOLLOWS-THE-PRODUCT (pointer-dialect-tests);
+the default-dialect assertions of entity-api-tests follow AutoCAD.
+
+Still different, and moved to cador-entget-subclass-layout-and-record-
+pointers: AutoCAD gives a free XRECORD and the named-object dictionary an
+owner 330 (the NOD's is the null <Entity name: 0>), where cador stores
+none; and AutoCAD's (entget ins) of an INSERT entmakex'ed with (66 . 1)
+before its ATTRIB/SEQEND is nil (BricsCAD returns the list).
