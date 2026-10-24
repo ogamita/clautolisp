@@ -1,59 +1,33 @@
 #!/usr/bin/env bash
-# Mirror a clautolisp release's collect:release artefacts to the poseidon web
-# download area (https://poseidon.informatimago.com/ogamita/clautolisp/releases/
-# <ver>/) and regenerate the index pages. Run ON poseidon (needs sudo to the
-# www tree); make-gitlab-release.py then points the GitLab Release links here.
+# Mirror a LOCALLY collected clautolisp release set to the poseidon web
+# download area (https://poseidon.informatimago.com/ogamita/clautolisp/
+# releases/<ver>/) and regenerate the index pages. Run ON poseidon, as a
+# sender of the release-ogamita account (claude, runners: their
+# ~/.ssh/release-ogamita key; documentation/setup-deploy.sh). No sudo.
 #
-#   GITLAB_TOKEN=<api token> bash scripts/deploy-release-to-poseidon.sh release-1.9.3
 #   bash scripts/deploy-release-to-poseidon.sh release-2.3.0 --from DIR
 #
-# --from DIR mirrors an already collected set (DIR = a dist/combined holding
-# manifest-release-assets.txt) instead of downloading collect:release's
-# artefact -- for a release whose collect ran but could not STORE its
-# artefact (GitLab 413 above its size limit; release-2.3.0, ~1.07 GB). Build
-# DIR by running `make collect-artefacts` on the tag's release-job artefacts
-# plus the GitHub Windows run, as collect:release does.
+# Since collect-release-artefact-exceeds-gitlab-size-limit (option 3, pjb
+# 2026-10-24) collect:release mirrors every release ITSELF, and its GitLab
+# artefact keeps only the manifest and the release page -- so there is no
+# artefact set left to download, and this script only takes --from: DIR is
+# a dist/combined holding manifest-release-assets.txt, collected by hand
+# (`make collect-artefacts` on the tag's release-job artefacts plus the GitHub
+# Windows run, as collect:release does) -- for re-mirroring a release, or one
+# whose CI mirror failed. It runs the same mirror as the job
+# (scripts/mirror-release-to-poseidon.sh).
 #
-# Env: GITLAB_TOKEN (api scope; falls back to ~claude/.authinfo port claude),
-#      WEBROOT (default /var/www/poseidon/public_html/ogamita/clautolisp/releases).
+# Env: RELEASE_DEPLOY_KEY_FILE (default ~/.ssh/release-ogamita),
+#      DEPLOY_HOST (default localhost).
 set -euo pipefail
-TAG="${1:?usage: $0 release-X.Y.Z [--from DIR]}"; VER="${TAG#release-}"
-FROM=""
-if [ "${2:-}" = "--from" ]; then FROM="${3:?--from needs a directory}"; fi
-API=https://gitlab.com/api/v4; PID=80415300
-WEBROOT="${WEBROOT:-/var/www/poseidon/public_html/ogamita/clautolisp/releases}"
-GEN="$(cd "$(dirname "$0")" && pwd)/gen-release-index.py"
-if [ -n "$FROM" ]; then
-  src="$(cd "$FROM" && pwd)"
-  [ -f "$src/manifest-release-assets.txt" ] || { echo "no manifest-release-assets.txt in $src"; exit 1; }
-  echo "archives (local set $src):"; ls -1 "$src" | sed 's/^/  /'
-  sudo install -d -o www-data -g www-data "$WEBROOT/$VER"
-  sudo rsync -a --delete --chown=www-data:www-data "$src"/ "$WEBROOT/$VER"/
-  sudo python3 "$GEN" "$WEBROOT"
-  sudo chown -R www-data:www-data "$WEBROOT"
-  echo "mirrored -> https://poseidon.informatimago.com/ogamita/clautolisp/releases/$VER/"
-  exit 0
-fi
-T="${GITLAB_TOKEN:-$(awk '{p=pw="";for(i=1;i<=NF;i++){if($i=="port")p=$(i+1);if($i=="password")pw=$(i+1)} if(p=="claude")print pw}' ~claude/.authinfo 2>/dev/null || true)}"
-[ -n "$T" ] || { echo "no GITLAB_TOKEN"; exit 1; }
-gl(){ curl -fsSL --header "PRIVATE-TOKEN: $T" "$@"; }  # -L: the artefacts endpoint 302s to the CDN
-
-plid=$(gl "$API/projects/$PID/pipelines?ref=$TAG&per_page=1" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d[0]["id"] if d else "")')
-[ -n "$plid" ] || { echo "no pipeline for $TAG"; exit 1; }
-jid=$(gl "$API/projects/$PID/pipelines/$plid/jobs?per_page=100" | python3 -c 'import sys,json
-r=[j for j in json.load(sys.stdin) if j["name"]=="collect:release" and j["status"]=="success"]
-print(r[0]["id"] if r else "")')
-[ -n "$jid" ] || { echo "collect:release for $TAG not success yet"; exit 1; }
-echo "pipeline $plid, collect:release job $jid"
-
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-gl -o "$tmp/art.zip" "$API/projects/$PID/jobs/$jid/artifacts"
-( cd "$tmp" && unzip -q art.zip )
-src="$tmp/dist/combined"; [ -d "$src" ] || { echo "no dist/combined in artefacts"; exit 1; }
-echo "archives:"; ls -1 "$src" | sed 's/^/  /'
-
-sudo install -d -o www-data -g www-data "$WEBROOT/$VER"
-sudo rsync -a --delete --chown=www-data:www-data "$src"/ "$WEBROOT/$VER"/
-sudo python3 "$GEN" "$WEBROOT"
-sudo chown -R www-data:www-data "$WEBROOT"
-echo "mirrored -> https://poseidon.informatimago.com/ogamita/clautolisp/releases/$VER/"
+TAG="${1:?usage: $0 release-X.Y.Z --from DIR}"; VER="${TAG#release-}"
+[ "${2:-}" = "--from" ] || {
+  echo "usage: $0 release-X.Y.Z --from DIR" >&2
+  echo "collect:release mirrors each release itself now; its artefact holds only" >&2
+  echo "the manifest, so there is nothing to download (and mirroring it with" >&2
+  echo "--delete would empty the release directory)." >&2
+  exit 2; }
+FROM="${3:?--from needs a directory}"
+export RELEASE_DEPLOY_KEY_FILE="${RELEASE_DEPLOY_KEY_FILE:-$HOME/.ssh/release-ogamita}"
+export DEPLOY_HOST="${DEPLOY_HOST:-localhost}"
+exec bash "$(cd "$(dirname "$0")" && pwd)/mirror-release-to-poseidon.sh" "$VER" "$FROM"
