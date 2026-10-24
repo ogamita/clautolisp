@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-entget-subclass-layout-and-record-pointers -- after the header, cador's entget layout and its table records still differ from the vendors
-#+STATUS: TODO
+#+STATUS: WIP
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: cador-entget-owner-and-header-layout
@@ -46,3 +46,41 @@ AutoCAD 2022: to measure with the same section (Windows runners); its
 Measure AutoCAD, then take the items one at a time (each changes what
 entget shows, so each needs the entmake / entmod round trip kept
 storing nothing synthesized -- see %DROP-VIEW-ONLY-GROUPS).
+
+* AutoCAD 2022 measured (2026-10-24, probe:entget-pointers:autocad:windows, job 17436788251)
+
+Section 10 on AutoCAD, after its own header (-1 0 330 5):
+  LINE    100 67 410 8 100 10 11 210
+  CIRCLE  100 67 410 8 100 10 40 210
+  TEXT    100 67 410 8 100 10 40 1 50 41 51 7 71 72 11 210 100 73
+  INSERT  100 67 410 8 100 2 10 41 42 43 50 70 71 44 45 210
+  layer 0 record   -1 0 5 102 360 102 330 100 100 2 70 62 6 290 370 390 347 348
+  block record     -1 0 330 5 100 67 8 100 70 10 -2 2 1   (a BLOCK)
+  tblobjname "BLOCK" "*Model_Space"  ... 0 = "BLOCK"; the LINE's 330 is the
+                   BLOCK_RECORD ("eq NIL", as on BricsCAD)
+  namedobjdict     -1 0 330 5 100 280 281 then 3/350 pairs (17 entries)
+The body is the SAME on both products; only the header differs (already
+modelled).
+
+* Items 1 and 2 done (clautolisp 2.3.51)
+
+%VENDOR-BODY-ORDER (cador entity-api) lays the VIEW out as measured:
+(100 . "AcDbEntity"), the common groups (*ENTGET-COMMON-CODES*: 67 410 8 6 62
+...), then each subclass marker and its groups (*ENTGET-TYPE-LAYOUT*:
+measured for LINE, CIRCLE, TEXT, INSERT; the DXF reference's split for ARC,
+POINT, ATTRIB, ATTDEF), with the defaults shown when absent for the measured
+types (*ENTGET-TYPE-DEFAULTS*: 210 (0 0 1); TEXT 50 0, 41 1, 51 0, 7
+"Standard", 71 0, 72 0, 11 (0 0 0), 73 0; INSERT 41 42 43 1, 50 0, 70 71 0,
+44 45 0); 67 is 0 / 1 for a model / paper space entity, 410 "Model" for a
+model space one. Only the view changes. Round trips checked: (entmakex (cdr
+(entget e))) and (entmod (entget e)) twice give the same layout, with no
+marker twice. Test ENTGET-BODY-LAYOUT-FOLLOWS-THE-VENDORS (cador).
+
+* Remaining
+
+3. Table records: 5 / 330 (owner TABLE) / 100 markers, the layer's 360 / 390
+   (ACDBPLACEHOLDER) / 347 (MATERIAL) / 348 pointers, handles instead of
+   TBL-n gensyms (handent).
+4. tblobjname "BLOCK" answers the BLOCK entity (its 330 the BLOCK_RECORD).
+5. The named-object dictionary of a fresh drawing: the vendors' default
+   entries (17 on AutoCAD 2022, 16 on BricsCAD V26).

@@ -426,6 +426,7 @@ an object a dictionary owns."
     ;; as on BricsCAD); BricsCAD always -1 0 5 [102 ...] 330. BricsCAD
     ;; dialects follow BricsCAD, every other dialect AutoCAD, the normative
     ;; reference (as for the pointer codes above).
+    (setf rest (%vendor-body-order entity rest))
     (if (or reactors (eq (%current-product) :bricscad))
         (append (and zero (list zero))
                 (and five (list five))
@@ -436,6 +437,122 @@ an object a dictionary owns."
                 (and owner (list owner))
                 (and five (list five))
                 rest))))
+
+;;; --- The entget body: AcDbEntity, the common groups, then each subclass --
+;;;
+;;; cador-entget-subclass-layout-and-record-pointers, items 1 and 2.
+;;; Measured (entget-pointers section 10; BricsCAD V26 macOS job 17397066992,
+;;; AutoCAD 2022 job 17436788251 -- the two agree after the header):
+;;;   LINE    ... 100 67 410 8 100 10 11 210
+;;;   CIRCLE  ... 100 67 410 8 100 10 40 210
+;;;   TEXT    ... 100 67 410 8 100 10 40 1 50 41 51 7 71 72 11 210 100 73
+;;;   INSERT  ... 100 67 410 8 100 2 10 41 42 43 50 70 71 44 45 210
+;;; cador stored the type's groups first and both markers at the end, and
+;;; listed no 67 / 410 / 210. The VIEW is reordered here; nothing is stored,
+;;; and the defaults it shows are the DXF reference's, for the measured
+;;; types only. ARC, POINT, ATTRIB and ATTDEF follow the DXF reference's
+;;; subclass split, unmeasured; any other graphical entity gets AcDbEntity
+;;; and the common groups first, then its own markers and groups as stored.
+
+(defparameter *entget-common-codes*
+  '(67 410 8 6 62 370 48 60 420 430 440 390 284 347 92 310)
+  "The AcDbEntity groups, in the order the vendors list them.")
+
+(defparameter *entget-type-layout*
+  ;; TYPE -> ((MARKER CODE...) ...), each code in the order listed; DEFAULTS
+  ;; per type, synthesized when absent (measured types only).
+  '(("LINE"    ("AcDbLine" 39 10 11 210))
+    ("POINT"   ("AcDbPoint" 39 10 210 50))
+    ("CIRCLE"  ("AcDbCircle" 39 10 40 210))
+    ("ARC"     ("AcDbCircle" 39 10 40 210) ("AcDbArc" 50 51))
+    ("TEXT"    ("AcDbText" 39 10 40 1 50 41 51 7 71 72 11 210) ("AcDbText" 73 74))
+    ("ATTDEF"  ("AcDbText" 39 10 40 1 50 41 51 7 71 72 11 210)
+               ("AcDbAttributeDefinition" 3 2 70 73 74 280))
+    ("ATTRIB"  ("AcDbText" 39 10 40 1 50 41 51 7 71 72 11 210)
+               ("AcDbAttribute" 2 70 73 74 280))
+    ("INSERT"  ("AcDbBlockReference" 66 2 10 41 42 43 50 70 71 44 45 210))))
+
+(defparameter *entget-type-defaults*
+  ;; (TYPE (CODE . VALUE) ...), pure values; a point is a list of reals.
+  '(("LINE"   (210 0.0d0 0.0d0 1.0d0))
+    ("CIRCLE" (210 0.0d0 0.0d0 1.0d0))
+    ("TEXT"   (50 . 0.0d0) (41 . 1.0d0) (51 . 0.0d0) (7 . "Standard") (71 . 0) (72 . 0)
+              (11 0.0d0 0.0d0 0.0d0) (210 0.0d0 0.0d0 1.0d0) (73 . 0))
+    ("INSERT" (41 . 1.0d0) (42 . 1.0d0) (43 . 1.0d0) (50 . 0.0d0) (70 . 0) (71 . 0)
+              (44 . 0.0d0) (45 . 0.0d0) (210 0.0d0 0.0d0 1.0d0))))
+
+(defun %al-default-pair (code value)
+  (cons code (if (stringp value)
+                 (clautolisp.autolisp-runtime:make-autolisp-string value)
+                 (if (consp value) (copy-list value) value))))
+
+(defun %view-code (pair)
+  (and (consp pair) (%group-code-integer (car pair))))
+
+(defun %vendor-body-order (entity rest)
+  "REST (the entget view after the header) laid out as the vendors do for a
+graphical ENTITY: (100 . \"AcDbEntity\"), the common groups, then each
+subclass marker followed by its groups; the measured defaults shown when
+absent. Non-graphical objects and unknown types are left as they are."
+  (let* ((type (%data-type-string (entity-handle-data entity)))
+         (family (and type (clautolisp.drawing:find-entity-family type))))
+    (if (not (and family (clautolisp.drawing:entity-family-graphical-p family)))
+        rest
+        (let* ((up (string-upcase type))
+               (layout (cdr (assoc up *entget-type-layout* :test #'string=)))
+               (defaults (cdr (assoc up *entget-type-defaults* :test #'string=)))
+               (markers (remove-if-not (lambda (pair) (eql 100 (%view-code pair))) rest))
+               (others (remove-if (lambda (pair) (eql 100 (%view-code pair))) rest))
+               (owner (entity-handle-block entity))
+               (space (cond ((or (null owner) (string-equal owner "*Model_Space")) :model)
+                            ((string-equal owner "*Paper_Space") :paper)
+                            (t nil)))
+               (used '()))
+          (labels ((take (code)
+                     ;; the stored pair for CODE (not yet used), or NIL
+                     (let ((pair (find-if (lambda (p) (and (eql code (%view-code p))
+                                                           (not (member p used :test #'eq))))
+                                          others)))
+                       (when pair (push pair used))
+                       pair))
+                   (take-or-default (code defaults)
+                     (or (take code)
+                         (let ((d (assoc code defaults)))
+                           (and d (%al-default-pair code (cdr d))))))
+                   (marker (name)
+                     (cons 100 (clautolisp.autolisp-runtime:make-autolisp-string name))))
+            (let* ((common
+                     (loop for code in *entget-common-codes*
+                           for pair = (or (take code)
+                                          (case code
+                                            (67 (and space (cons 67 (if (eq space :paper) 1 0))))
+                                            (410 (and (eq space :model)
+                                                      (%al-default-pair 410 "Model")))))
+                           when pair collect pair))
+                   (segments
+                     (loop for (name . codes) in layout
+                           collect (cons (marker name)
+                                         (loop for code in codes
+                                               for pair = (take-or-default code defaults)
+                                               when pair collect pair))))
+                   (leftover (remove-if (lambda (p) (member p used :test #'eq)) others)))
+              (append (list (marker "AcDbEntity"))
+                      common
+                      (if segments
+                          ;; groups the layout does not name stay in the first
+                          ;; subclass, after its own
+                          (append (first segments) leftover
+                                  (apply #'append (rest segments)))
+                          (append (remove-if (lambda (p)
+                                               (string-equal "AcDbEntity" (%view-marker-name p)))
+                                             markers)
+                                  leftover)))))))))
+
+(defun %view-marker-name (pair)
+  (let ((v (cdr pair)))
+    (if (typep v 'clautolisp.autolisp-runtime:autolisp-string)
+        (clautolisp.autolisp-runtime:autolisp-string-value v)
+        "")))
 
 (defun extract-modified-handle (data operator-name &optional host)
   "Return the hex handle of the entity DATA refers to, from its
