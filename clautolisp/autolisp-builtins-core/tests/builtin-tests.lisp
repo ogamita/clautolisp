@@ -8432,9 +8432,17 @@ OPEN diagnostic lines and the file's first octets (up to 6)."
                     (is (eq warn-p (and (plusp (length diagnostics)) t))
                         "~A LISPSYS ~A (open f ~A): expected ~:[silence~;a warning~], got ~S"
                         dialect lispsys form warn-p diagnostics)
-                    ;; Behaviour unchanged: the same octets under every dialect.
-                    (is (equal bytes written)
-                        "~A (open f ~A) wrote ~S, expected ~S" dialect form written bytes)))))))
+                    ;; The same octets under every dialect -- but for the BOM
+                    ;; a Windows BricsCAD writes on "w,ccs=UTF-8"
+                    ;; (open-ccs-bom-bricscad-windows-divergence).
+                    ;; (%OPEN-ENCODING-RUN reads the first 6 octets.)
+                    (let ((bytes (if (and (string= form "\"w,ccs=UTF-8\"")
+                                          (member dialect '("bricscad-v25" "bricscad-v26")
+                                                  :test #'string=))
+                                     (subseq (list* #xEF #xBB #xBF bytes) 0 6)
+                                     bytes)))
+                      (is (equal bytes written)
+                          "~A (open f ~A) wrote ~S, expected ~S" dialect form written bytes))))))))
 
 (test open-encoding-warning-says-what-the-vendor-does
   (flet ((diag (dialect lispsys form &optional (prelude ""))
@@ -8654,6 +8662,64 @@ OPEN-ARGUMENTS...) under DIALECT after PRELUDE, as a printed list."
     (is (equal *e1-utf8-octets*
                (%e1-write dialect "(setq *AUTOLISP-FILE-ENCODING* \"UTF-8\")" "\"w\""))
         "~A default write no longer follows *AUTOLISP-FILE-ENCODING*" dialect)))
+
+(defun %ccs-write-then-append (dialect write-mode write-codes append-mode append-codes
+                               &key (existing nil))
+  "The octets of a file written through (open PATH WRITE-MODE) with the
+WRITE-CODES, then appended to through (open PATH APPEND-MODE) with the
+APPEND-CODES, under DIALECT. WRITE-MODE NIL skips the write; EXISTING, a list
+of octets, is the file's content before both."
+  (let ((path (namestring (merge-pathnames (format nil "clautolisp-ccs-~D.txt" (random 1000000))
+                                           (uiop:temporary-directory)))))
+    (flet ((pass (mode codes)
+             ;; The dialect in the same evaluation: each %AL is a fresh run.
+             (when mode
+               (%al (format nil "(progn (setq *AUTOLISP-DIALECT* '~A) (setq f (open ~S ~S)) ~{(write-char ~D f) ~}(close f) 0)"
+                            dialect path mode codes)))))
+      (unwind-protect
+           (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* (make-broadcast-stream)))
+             (ignore-errors (delete-file path))
+             (when existing
+               (with-open-file (out path :direction :output :if-exists :supersede
+                                         :element-type '(unsigned-byte 8))
+                 (write-sequence (coerce existing '(vector (unsigned-byte 8))) out)))
+             (reset-autolisp-symbol-table)
+             (%al (format nil "(setq *AUTOLISP-DIALECT* '~A)" dialect))
+             (pass write-mode write-codes)
+             (pass append-mode append-codes)
+             (%e1-file-octets path))
+        (ignore-errors (delete-file path))))))
+
+(test open-ccs-writes-a-bom-under-the-windows-bricscad-dialects
+  "open-ccs-bom-bricscad-windows-divergence: BricsCAD V25 on Windows writes a
+BOM for \"w,ccs=UTF-8\" / \"w,ccs=UTF-16LE\" and none on an append with the
+same suffix (jobs 16968316289, 17027935338)."
+  (dolist (dialect '("bricscad-v25" "bricscad"))
+    (is (equal '(#xEF #xBB #xBF 65 #xC3 #xA9 #xC3 #xA9)
+               (%ccs-write-then-append dialect "w,ccs=UTF-8" '(65 233) "a,ccs=UTF-8" '(233)))
+        "~A: w,ccs=UTF-8 then a,ccs=UTF-8" dialect)
+    (is (equal '(#xFF #xFE 65 0 66 0)
+               (%ccs-write-then-append dialect "w,ccs=UTF-16LE" '(65) "a,ccs=UTF-16LE" '(66)))
+        "~A: w,ccs=UTF-16LE then a,ccs=UTF-16LE" dialect)
+    ;; an append that creates the file writes it as "w" would (unmeasured)
+    (is (equal '(#xEF #xBB #xBF 65)
+               (%ccs-write-then-append dialect nil '() "a,ccs=UTF-8" '(65)))
+        "~A: a,ccs=UTF-8 creating the file" dialect)
+    ;; an append to an existing, non-empty file writes none
+    (is (equal '(66 65)
+               (%ccs-write-then-append dialect nil '() "a,ccs=UTF-8" '(65) :existing '(66)))
+        "~A: a,ccs=UTF-8 on an existing file" dialect)))
+
+(test open-ccs-writes-no-bom-elsewhere
+  "The other dialects -- BricsCAD on macOS, AutoCAD, clautolisp, strict, lax
+-- are byte-for-byte unchanged: no BOM."
+  (dolist (dialect '("bricscad-mac" "autocad-2022" "clautolisp" "strict" "lax"))
+    (is (equal '(65 #xC3 #xA9 #xC3 #xA9)
+               (%ccs-write-then-append dialect "w,ccs=UTF-8" '(65 233) "a,ccs=UTF-8" '(233)))
+        "~A: w,ccs=UTF-8 changed" dialect)
+    (is (equal '(65 0 66 0)
+               (%ccs-write-then-append dialect "w,ccs=UTF-16LE" '(65) "a,ccs=UTF-16LE" '(66)))
+        "~A: w,ccs=UTF-16LE changed" dialect)))
 
 (test autocad-open-reads-as-autocad-2022-does
   (dolist (lispsys '(1 2))

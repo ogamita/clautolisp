@@ -7722,7 +7722,9 @@ above:
 - ~",ccs=ENC"~: warns under the AutoCAD dialects and the non-Windows
   BricsCAD dialects (ignored there); silent under the Windows BricsCAD
   dialects for ~UTF-8~ / ~UTF-16LE~ (honoured, measured), warns for any
-  other name there (unmeasured).
+  other name there (unmeasured). Honoured as BricsCAD V25 does: mode ~"w"~
+  writes the byte-order mark first; ~"a"~ on an existing file writes none;
+  ~"a"~ creating the file writes it, as ~"w"~ (unmeasured).
 - ~strict~ warns for every form (not portable); ~clautolisp~ and ~lax~ are
   silent.
 

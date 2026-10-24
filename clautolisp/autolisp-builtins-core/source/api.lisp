@@ -2892,8 +2892,41 @@ it never creates under a folded name."
                 (clautolisp.autolisp-reader:autolisp-dialect-product
                  (current-evaluation-dialect)))))
 
+(defun %bricscad-windows-dialect-p ()
+  "True when the current dialect is a BricsCAD one on Windows (any version)."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (and dialect
+         (eq :bricscad (ignore-errors
+                        (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))
+         (eq :windows (ignore-errors
+                       (clautolisp.autolisp-reader:autolisp-dialect-platform dialect))))))
+
+(defun %open-ccs-writes-bom-p (path mode-string ccs-string encoding-string)
+  "Whether this OPEN writes a byte-order mark first: under a Windows BricsCAD
+dialect, a \",ccs=UTF-8\" or \",ccs=UTF-16LE\" suffix (and no positional
+encoding, which wins over it) on mode \"w\", or on mode \"a\" when the file
+is new or empty. BricsCAD V25 on Windows writes the BOM on \"w\" and none on
+an append to an existing file (probe-open-encoding, jobs 16968316289 and
+17027935338); an \"a\" that creates the file is unmeasured, and writes it as
+\"w\" does, since the file it creates is the same."
+  (and ccs-string
+       (null encoding-string)
+       (plusp (length mode-string))
+       (member (clautolisp.autolisp-runtime:squeeze-encoding-name ccs-string)
+               '("UTF8" "UTF16LE") :test #'string=)
+       (%bricscad-windows-dialect-p)
+       (case (char-downcase (char mode-string 0))
+         (#\w t)
+         (#\a (let ((existing (probe-file path)))
+                (or (null existing)
+                    (ignore-errors
+                     (with-open-file (in existing :element-type '(unsigned-byte 8))
+                       (zerop (file-length in)))))))
+         (t nil))))
+
 (defun %open-file-stream (path direction if-exists if-does-not-exist
-                          external-format read-policy encoding-string mode-string)
+                          external-format read-policy encoding-string mode-string
+                          &optional ccs-string)
   "The host stream OPEN hands back, or NIL. Plain
 OPEN-WITH-EXTERNAL-FORMAT, except under the AutoCAD dialects where three
 measured behaviours of AutoCAD 2022 (LISPSYS 1 / 2; E1 job 16980926802,
@@ -2906,9 +2939,11 @@ autocad-open-encoding-lispsys-divergence) are reproduced:
     character, and the data ends at the first byte that is not UTF-8;
   - (open f \"w\" \"utf8-bom\"): a BOM (EF BB BF) first.
 
-The other dialects keep the plain open: BricsCAD was measured not to write
-the BOM (probe-open-encoding), and the clautolisp / lax / strict behaviour
-is unchanged."
+Under the Windows BricsCAD dialects, a \",ccs=UTF-8\" / \",ccs=UTF-16LE\"
+mode suffix writes the BOM first on \"w\" (and on an \"a\" that creates the
+file), as BricsCAD V25 does: %OPEN-CCS-WRITES-BOM-P. BricsCAD's positional
+encoding argument was measured to write none (probe-open-encoding), and the
+clautolisp / lax / strict behaviour is unchanged."
   (flet ((plain (format)
            (clautolisp.autolisp-reader:open-with-external-format
             path
@@ -2941,6 +2976,13 @@ is unchanged."
             (string= mode-string "w")
             (string-equal encoding-string "utf8-bom")
             (%autocad-dialect-p))
+       (let ((stream (plain external-format)))
+         (when stream
+           (write-char (code-char #xFEFF) stream))
+         stream))
+      ((and (eq direction :output)
+            (%open-ccs-writes-bom-p path mode-string ccs-string encoding-string))
+       ;; Decided before opening: "a" asks whether the file is new or empty.
        (let ((stream (plain external-format)))
          (when stream
            (write-char (code-char #xFEFF) stream))
@@ -3039,7 +3081,8 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
         (handler-case
             (let ((stream (%open-file-stream path direction if-exists if-does-not-exist
                                              external-format read-policy
-                                             encoding-string mode-string)))
+                                             encoding-string mode-string
+                                             ccs-encoding-string)))
               (if stream
                   (errno-and-return 0 (make-autolisp-file stream path-string raw-mode-string))
                   (errno-and-return 22 nil)))
