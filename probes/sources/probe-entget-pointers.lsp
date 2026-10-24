@@ -275,4 +275,51 @@
       (setq k (strcat "PRORD" tag))
       (strcat (cad-probe--ep-codes (entget x)) " | "
               (progn (dictadd nod k x) (cad-probe--ep-codes (entget x)))))))
+
+  ;; 11. What the table records and the named-object dictionary POINT AT
+  ;; (cador-entget-subclass-layout-and-record-pointers, items 3-5): section
+  ;; 10 gave the codes; cador needs the objects behind them -- the TABLE a
+  ;; record's 330 names, the layer's 390 / 347 targets, the default NOD
+  ;; entries by NAME, the BLOCK entity vs its BLOCK_RECORD, and whether
+  ;; handent reaches a table record by its handle.
+  (cad-probe-capture "entget-pointers" "records: NOD entries name=target"
+    (function (lambda ( / out d)
+      (setq out "")
+      (foreach p (entget nod)
+        (if (= (car p) 3) (setq d (cdr p)))
+        (if (and d (= (car p) 350))
+          (setq out (strcat out d "=" (cad-probe--ep-follow (cdr p)) "; ")
+                d nil)))
+      out)))
+  (cad-probe-capture "entget-pointers" "records: layer 0's 330 (TABLE): codes | 2 | 70"
+    (function (lambda ( / tbl)
+      (setq tbl (entget (cdr (assoc 330 (entget (tblobjname "LAYER" "0"))))))
+      (strcat (cad-probe--ep-codes tbl)
+              " | 2=" (vl-prin1-to-string (cdr (assoc 2 tbl)))
+              " | 70=" (vl-prin1-to-string (cdr (assoc 70 tbl)))))))
+  (cad-probe-capture "entget-pointers" "records: layer 0's 390 target: codes"
+    (function (lambda ( / v)
+      (setq v (cdr (assoc 390 (entget (tblobjname "LAYER" "0")))))
+      (strcat (cad-probe--ep-follow v) " | "
+              (if (= (type v) 'ENAME) (cad-probe--ep-codes (entget v)) "")))))
+  (cad-probe-capture "entget-pointers" "records: layer 0's 347 target: codes | 1"
+    (function (lambda ( / v d)
+      (setq v (cdr (assoc 347 (entget (tblobjname "LAYER" "0")))))
+      (setq d (if (= (type v) 'ENAME) (entget v) nil))
+      (strcat (cad-probe--ep-follow v) " | " (cad-probe--ep-codes d)
+              " | 1=" (vl-prin1-to-string (cdr (assoc 1 d)))))))
+  (cad-probe-capture "entget-pointers" "records: handent of layer 0's handle eq tblobjname?"
+    (function (lambda ( / r h)
+      (setq r (tblobjname "LAYER" "0"))
+      (setq h (cdr (assoc 5 (entget r))))
+      (strcat "handle " (vl-prin1-to-string h) " | eq "
+              (if (eq (handent h) r) "T" "NIL")))))
+  (cad-probe-capture "entget-pointers" "records: BLOCK entity's 330: codes | entnext type"
+    (function (lambda ( / b r n)
+      (setq b (tblobjname "BLOCK" blk))
+      (setq r (cdr (assoc 330 (entget b))))
+      (setq n (entnext b))
+      (strcat (cad-probe--ep-follow r) " | "
+              (if (= (type r) 'ENAME) (cad-probe--ep-codes (entget r)) "")
+              " | entnext " (cad-probe--ep-follow n)))))
   (princ))
