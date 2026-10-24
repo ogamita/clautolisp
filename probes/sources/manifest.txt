@@ -46,6 +46,8 @@ probe-logfile.lsp             cad-probe-run-logfile-probes
 probe-acad-strlsort-maxsort.lsp cad-probe-run-acad-strlsort-maxsort-probes
 probe-multiline-string.lsp    cad-probe-run-multiline-string-probes
 probe-entity-defaults.lsp     cad-probe-run-entity-defaults-probes
+probe-vle.lsp                 cad-probe-run-vle-probes
+probe-numeric-edges.lsp       cad-probe-run-numeric-edges-probes
 # LAST: a NEW / OPEN may end the run.
 probe-documents.lsp           cad-probe-run-document-probes
 
