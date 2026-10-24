@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-clautolisp-backend-semantic-parity — keep direct and subprocess clautolisp semantics identical
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -488,3 +488,16 @@ for --backend direct and --backend subprocess alike:
 - --quit alone -> exit 0, no output (both).
 
 Remaining: item 8 (SCHME drops --backend subprocess) is downstream.
+* Closed (2026-10-24) -- DONE
+
+Item 6 verified everywhere:
+- test:alfe:macos, master pipeline 2984151752 (54d3b117, clautolisp 2.3.49),
+  job 17435959335: Did 2384 checks, Pass 2384, Skip 0, Fail 0;
+  CLAUTOLISP-BACKEND-VARIANTS-ARE-SEMANTICALLY-IDENTICAL and
+  CLAUTOLISP-ACTION-HOOKS-RUN-IN-ONE-RUN-IN-BOTH-VARIANTS ran with their dots
+  (the "drawing dwg" row no longer diverges since 2.3.48);
+- test:alfe:windows green with both (job 17426631947);
+- the installed alfe, direct and subprocess alike (see 2.3.48 above).
+
+Item 8 (SCHME drops --backend subprocess from its cador suites) is
+downstream, nothing to do in this repository.

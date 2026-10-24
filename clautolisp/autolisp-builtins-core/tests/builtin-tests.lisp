@@ -3845,6 +3845,58 @@ Value as its TextString; both are read through the façade as well."
   ;; ... while getDistAtParam does not wrap on AutoCAD: R * (0.1 - 7pi/4)
   (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getdistatparam e 0.1)") (* 10 (- 0.1d0 (* 7/4 pi))) 1d-9)))
 
+(test vlax-curve-bricscad-thresholds-second-round
+  "cador-curve-length-and-sampling, second probe round (BricsCAD V26 macOS,
+2026-10-24): a little past an end is the end, far past the length / nil;
+point tolerances per entity."
+  ;; getParamAtDist on the ARC (length 5pi): 1e-9 extrapolates, 1e-6 is the
+  ;; end, 1e-2 the length
+  (is (%~ (%bcurve +curve-arc90+ "(vlax-curve-getparamatdist e (+ (* 5 pi) 1.0e-6))")
+          (/ pi 2) 1d-12))
+  (is (%~ (%bcurve +curve-arc90+ "(vlax-curve-getparamatdist e -1.0e-6)") 0d0 1d-12))
+  (is (%~ (%bcurve +curve-arc90+ "(vlax-curve-getparamatdist e (+ (* 5 pi) 1.0e-2))")
+          (* 5 pi)))
+  ;; getDistAtParam past the end: ARC 1e-4 rad is the length, 1e-2 nil
+  (is (%~ (%bcurve +curve-arc90+ "(vlax-curve-getdistatparam e (+ (/ pi 2) 1.0e-4))")
+          (* 5 pi)))
+  (is (null (%bcurve +curve-arc90+ "(vlax-curve-getdistatparam e (+ (/ pi 2) 1.0e-2))")))
+  ;; ... polyline 1e-5 is the length, 1e-4 nil
+  (is (%~ (%bcurve +curve-bulge-pline+ "(vlax-curve-getdistatparam e (+ 2 1.0e-5))")
+          (+ 10 (* 5 pi))))
+  (is (null (%bcurve +curve-bulge-pline+ "(vlax-curve-getdistatparam e (+ 2 1.0e-4))")))
+  ;; getParamAtDist on the polyline: 1e-4 past is the end, 1e-2 the length
+  (is (%~ (%bcurve +curve-bulge-pline+ "(vlax-curve-getparamatdist e (+ 10 (* 5 pi) 1.0e-4))")
+          2d0 1d-12))
+  ;; a point a hair past a LINE's end answers the projected param
+  (is (%~ (%bcurve +curve-line+ "(vlax-curve-getparamatpoint e '(10.00000001 0.00000001 0.0))")
+          10.00000001d0 1d-12))
+  ;; an ARC is stricter in its plane than across it
+  (is (%bcurve +curve-arc90+ "(vlax-curve-getparamatpoint e '(0.0 10.0 1.0e-9))"))
+  (is (null (%bcurve +curve-arc90+ "(vlax-curve-getparamatpoint e '(1.0e-9 10.000000001 0.0))")))
+  ;; a 2D POLYLINE's Coordinates: x y z per vertex (from its VERTEX entities)
+  (is (equal '(0.0d0 0.0d0 0.0d0 10.0d0 0.0d0 0.0d0 10.0d0 10.0d0 0.0d0)
+             (%bcurve +curve-heavy-pline+ "(vlax-get (vlax-ename->vla-object e) 'Coordinates)"))))
+
+(test vlax-curve-autocad-thresholds-second-round
+  "The same round on AutoCAD 2022 (job 17435959369), the template of every
+dialect but the BricsCAD ones."
+  ;; LWPOLYLINE getParamAtDist: 1e-7 past the end is the end, 1e-6 nil, and
+  ;; nothing below the start
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatdist e (+ 10 (* 5 pi) 1.0e-7))")
+          2d0 1d-12))
+  (is (null (%curve +curve-bulge-pline+ "(vlax-curve-getparamatdist e (+ 10 (* 5 pi) 1.0e-6))")))
+  (is (null (%curve +curve-bulge-pline+ "(vlax-curve-getparamatdist e -1.0e-8)")))
+  ;; a point beside the straight end segment answers the projected param
+  ;; (end + 1e-6 / 10)
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(10.000001 10.000001 0.0))")
+          2.0000001d0 1d-12))
+  ;; LINE: 1e-10 above is on (inclusive), (1e-10, 1e-10) beside is off
+  (is (%curve +curve-line+ "(vlax-curve-getparamatpoint e '(10.0 0.0 1.0e-10))"))
+  (is (null (%curve +curve-line+ "(vlax-curve-getparamatpoint e '(10.0000000001 0.0000000001 0.0))")))
+  ;; ARC: 1e-9 above is on, 1e-8 off
+  (is (%curve +curve-arc90+ "(vlax-curve-getparamatpoint e '(0.0 10.0 1.0e-9))"))
+  (is (null (%curve +curve-arc90+ "(vlax-curve-getparamatpoint e '(0.0 10.0 1.0e-8))"))))
+
 (test vlax-curve-measured-polyline-ends
   ;; LWPOLYLINE: nil outside; a hair past the end is the end; far past:
   ;; nil on AutoCAD, the LENGTH on BricsCAD

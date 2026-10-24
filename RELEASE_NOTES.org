@@ -1959,6 +1959,13 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *=vlax-curve-*= at the ends and off the curve as BricsCAD measures them*
+  (2.3.50): under the BricsCAD dialects a distance or param a little past an
+  end answers the end (1e-8 .. 1e-4 measured), far past the length or nil,
+  and a point counts as on an ARC, a LINE or an LWPOLYLINE with BricsCAD's
+  own tolerances in the plane and across it (second curve-geometry probe
+  round, BricsCAD V26). =Coordinates= of a 2D POLYLINE (x y z per vertex).
+
 - *=(open f "w,ccs=UTF-8")= writes a BOM under the Windows BricsCAD
   dialects* (2.3.49): as BricsCAD V25 was measured to, =,ccs=UTF-8= and
   =,ccs=UTF-16LE= on mode ="w"= write the byte-order mark first; an append
