@@ -838,9 +838,12 @@ entity; the host stores no ENDBLK and omits the group
                  (pure-data->al-view
                   ;; owned by the database: AutoCAD shows the null owner,
                   ;; BricsCAD omits it (PURE-PAIR->AL-PAIR)
-                  host (list (cons 0 "TABLE") (cons 2 name) (cons 5 handle)
-                             (cons 330 "0") (cons 100 "AcDbSymbolTable")
-                             (cons 70 (hash-table-count table)))))))))
+                  ;; AutoCAD's LAYER TABLE has an extension dictionary:
+                  ;; -1 0 2 5 102 360 102 330 100 70 (job 17440097863)
+                  host (list* (cons 0 "TABLE") (cons 2 name) (cons 5 handle)
+                              (append (%extension-dictionary-group host handle)
+                                      (list (cons 330 "0") (cons 100 "AcDbSymbolTable")
+                                            (cons 70 (hash-table-count table)))))))))))
 
 (defun %record-body (data)
   "A table record's own groups: DATA without its type, handle, owner,
@@ -899,9 +902,13 @@ subclass markers, 102 groups and -2 walk entry."
                      ;; the entities' rule (%VENDOR-HEADER-ORDER): AutoCAD
                      ;; puts the owner before the handle (its BLOCK_RECORD:
                      ;; -1 0 330 5 100 100 ..., job 17439813490), BricsCAD after
-                     (if (eq (%current-product) :bricscad)
-                         (list* zero five owner)
-                         (list* zero (append owner (list five)))))
+                     ;; ... unless a 102 group comes first: an extension
+                     ;; dictionary (AutoCAD's layer 0: -1 0 5 102 360 102 330)
+                     (let ((xdict (%extension-dictionary-group
+                                   host (symbol-table-record-id record))))
+                       (if (or xdict (eq (%current-product) :bricscad))
+                           (list* zero five (append xdict owner))
+                           (list* zero (append owner (list five))))))
                    (list (cons 100 "AcDbSymbolTableRecord"))
                    (and entry (list (cons 100 (fourth entry))))
                    laid-out)))))

@@ -198,14 +198,14 @@ NOD holds the product's default entries, which entnext does not walk."
         ;; item 3: the record
         (is (equal (if bricscad
                        '(-1 0 5 330 100 100 2 70 62 6 290 370 390 347)
-                       '(-1 0 330 5 100 100 2 70 62 6 290 370 390 347))
+                       '(-1 0 5 102 360 102 330 100 100 2 70 62 6 290 370 390 347))
                    (mapcar #'car view))
             "~A layer record: ~S" dialect (mapcar #'car view))
         (is (eq layer (host-handent mock (cdr (assoc 5 view)))) "~A handent" dialect)
         (let ((table (host-entget mock (cdr (assoc 330 view)))))
           (is (equal "TABLE" (autolisp-string-value (cdr (assoc 0 table)))))
           (is (equal "LAYER" (autolisp-string-value (cdr (assoc 2 table)))))
-          (is (equal (if bricscad '(-1 0 2 5 100 70) '(-1 0 2 5 330 100 70))
+          (is (equal (if bricscad '(-1 0 2 5 100 70) '(-1 0 2 5 102 360 102 330 100 70))
                      (mapcar #'car table))
               "~A TABLE: ~S" dialect (mapcar #'car table)))
         (is (equal "ACDBPLACEHOLDER" (%rt-type mock (cdr (assoc 390 view)))))
@@ -242,3 +242,48 @@ NOD holds the product's default entries, which entnext does not walk."
         ;; the walk sees the LINE only, no dictionary
         (is (eq line (host-entnext mock nil)))
         (is (null (host-entnext mock line)))))))
+
+
+(defun %dc-member (mock dict key)
+  (host-dictsearch mock (if (consp dict) (cdr (assoc -1 dict)) dict)
+                   (make-autolisp-string key)))
+
+(test default-objects-hold-the-measured-contents
+  "deferred-nod-default-contents: a fresh drawing's dictionaries hold what
+the entget-pointers probe (section 12; AutoCAD 2022 job 17440097863, BricsCAD
+V26 job 17440097865) dumped, with their pointers resolved; AutoCAD's layer 0
+and LAYER TABLE carry their extension dictionaries, BricsCAD's none."
+  (dolist (dialect '(:autocad-2022 :bricscad))
+    (%with-dialect (dialect)
+      (let* ((mock (make-cador))
+             (bricscad (eq dialect :bricscad))
+             (nod (host-namedobjdict mock))
+             (layouts (%dc-member mock nod "ACAD_LAYOUT"))
+             (model (%dc-member mock layouts "Model"))
+             (scales (%dc-member mock nod "ACAD_SCALELIST"))
+             (mleader (%dc-member mock (%dc-member mock nod "ACAD_MLEADERSTYLE") "Standard")))
+        ;; layouts, English-named, each pointing at its block record
+        (is (equal "LAYOUT" (autolisp-string-value (cdr (assoc 0 model)))))
+        (is (not (null (%dc-member mock layouts "Layout1"))) "~A Layout1" dialect)
+        (is (find (%model-space-record mock) model
+                  :key (lambda (p) (and (eql 330 (car p)) (cdr p))))
+            "~A Model's block record" dialect)
+        ;; the scale list: A0 is 1:1
+        (let ((a0 (%dc-member mock scales "A0")))
+          (is (equal "1:1" (autolisp-string-value (cdr (assoc 300 a0))))))
+        ;; the mleader style's text style is the STYLE record Standard
+        (is (eq (host-tblobjname mock "STYLE" "Standard") (cdr (assoc 342 mleader))))
+        ;; the variables
+        (let ((v (%dc-member mock (%dc-member mock nod "AcDbVariableDictionary") "CANNOSCALE")))
+          (is (equal "1:1" (autolisp-string-value (cdr (assoc 1 v))))))
+        ;; extension dictionaries: AutoCAD's only
+        (let ((layer (host-entget mock (host-tblobjname mock "LAYER" "0"))))
+          (if bricscad
+              (is (null (assoc 360 layer)))
+              (let* ((table (host-entget mock (cdr (assoc 330 layer))))
+                     (xdict (cdr (assoc 360 table))))
+                (is (not (null (assoc 360 layer))))
+                (is (not (null (%dc-member mock xdict "ACAD_LAYERSTATES"))))
+                (is (eql 1 (cdr (assoc 280 (host-entget mock xdict))))))))
+        ;; none of it is walked or selected
+        (is (null (host-entnext mock nil)))))))

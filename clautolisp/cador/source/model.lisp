@@ -255,7 +255,10 @@ that is not part of a drawing."))
   (log-stream nil)
   ;; (DRAWING . name -> handle): the BLOCK entity handles of the blocks whose
   ;; header carries none (*Model_Space ...), for that drawing (entity-api).
-  (block-entity-handles nil))
+  (block-entity-handles nil)
+  ;; (DRAWING . owner handle -> its extension dictionary's handle): the
+  ;; measured ones a fresh drawing has (dictionary-api).
+  (extension-dictionaries nil))
 
 (defun cador-document-session (host &optional (key (cador-active-document-key host)))
   "The DOC-SESSION of document KEY (default: the current one), made on first use."
@@ -280,6 +283,7 @@ that is not part of a drawing."))
 (%define-document-session-accessor cador-open-complex-handle doc-session-open-complex-handle)
 (%define-document-session-accessor cador-open-block-definition doc-session-open-block-definition)
 (%define-document-session-accessor %cador-block-entity-handle-cell doc-session-block-entity-handles)
+(%define-document-session-accessor %cador-extension-dictionary-cell doc-session-extension-dictionaries)
 (%define-document-session-accessor cador-ename-cache doc-session-ename-cache)
 (%define-document-session-accessor cador-ename-cache-drawing doc-session-ename-cache-drawing)
 (%define-document-session-accessor %cador-lock-count doc-session-lock-count)

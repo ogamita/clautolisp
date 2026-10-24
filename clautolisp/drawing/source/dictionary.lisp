@@ -79,10 +79,14 @@ keeping the dictionary object's structural codes in order."
   "Rebuild a DICTIONARY object's group-code list from its structural
 DATA (entry pairs stripped) and the ordered ENTRIES alist
  ((KEY . HANDLE) ...), appending each as (3 . key) (350 . handle)."
-  (append (%dict-strip-entries data)
-          (loop for (key . handle) in entries
-                collect (cons 3 key)
-                collect (cons 350 handle))))
+  ;; A hard-owner dictionary ((280 . 1): an extension dictionary) lists its
+  ;; members with 360, as AutoCAD's do (entget-pointers section 12); the
+  ;; others with 350.
+  (let ((code (if (eql 1 (cdr (assoc 280 data))) 360 350)))
+    (append (%dict-strip-entries data)
+            (loop for (key . handle) in entries
+                  collect (cons 3 key)
+                  collect (cons code handle)))))
 
 (defun ensure-root-dictionary (drawing)
   "Return the root named-object-dictionary ENTITY-HANDLE of DRAWING,

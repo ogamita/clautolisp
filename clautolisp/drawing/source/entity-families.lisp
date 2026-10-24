@@ -220,7 +220,14 @@ or NIL when the type is not in the registry."
   (register-entity-family "MENTALRAYRENDERSETTINGS"
     :required '()
     :subclasses '("AcDbRenderSettings" "AcDbMentalRayRenderSettings")
-    :graphical-p nil))
+    :graphical-p nil)
+  ;; ... and what its dictionaries hold (section 12, cador's
+  ;; default-objects.lisp). No subclass list: nothing is synthesized or
+  ;; required when one is entmade.
+  (dolist (type '("ACDBDETAILVIEWSTYLE" "ACDBSECTIONVIEWSTYLE" "DICTIONARYVAR"
+                  "LAYOUT" "MLEADERSTYLE" "MLINESTYLE" "SCALE" "TABLESTYLE"
+                  "VISUALSTYLE"))
+    (register-entity-family type :required '() :subclasses '() :graphical-p nil)))
 
 (%install-entity-families)
 

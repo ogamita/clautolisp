@@ -1959,6 +1959,15 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *A new drawing's dictionaries hold what the CADs put in them* (2.3.53):
+  layouts (Model, Layout1, Layout2), the ByBlock / ByLayer / Global
+  materials, the Standard mline / mleader / table styles, the detail and
+  section view styles, the scale list, the visual styles and the variable
+  dictionary, with every group as AutoCAD 2022 and BricsCAD V25 / V26 list
+  them and their pointers resolved (a layout's block record, a style's text
+  style); under the AutoCAD dialects layer 0, model space's block record and
+  the LAYER table carry AutoCAD's extension dictionaries (ACAD_LAYERSTATES).
+
 - *Table records, BLOCKs and the named-object dictionary as the CADs show
   them* (2.3.52): a table record has a handle (=handent= of it is =eq= to
   =tblobjname='s ename) and its =entget= lists the TABLE owner, the subclass
