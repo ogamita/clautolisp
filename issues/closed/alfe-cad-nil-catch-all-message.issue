@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-cad-nil-catch-all-message -- on AutoCAD a caught error can have a NIL message; alfe's CAD side then reports a failed request as OK or fails in its own error path
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 #+DATE: 2026-10-23
@@ -71,3 +71,16 @@ fatal path).
 On AutoCAD: alfe -x of a vl-exit form, e.g.
 (vl-exit-with-error "x"), must report FAIL (with "the engine supplied
 no message" and the form on stderr), not DONE OK.
+
+* Vendor check (2026-10-24) -- DONE
+
+verify:autocad-nil-catch-all:windows (MR !481, job 17437581678), alfe -x
+'(vl-exit-with-error (vl-symbol-name (quote NILCATCH)))' on AutoCAD 2022:
+
+- --mode automation (the GUI): "ERROR protocol request 1: the engine
+  supplied no message [form: (VL-EXIT-WITH-ERROR ...)]", alfe exit 1;
+- --mode batch (AcCoreConsole): the same line, exit 1.
+
+The failed request is reported as FAIL with the fixed text and the form, not
+DONE OK, on both AutoCAD engines. The job stays (manual) as the regression
+check.
