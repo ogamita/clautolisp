@@ -331,12 +331,28 @@
 ;;; sections 2 and 10), each member of the sub-dictionaries two levels
 ;;; down, and the extension dictionaries ({ACAD_XDICTIONARY 360}) of the
 ;;; NOD, of layer 0, of *Model_Space's BLOCK_RECORD and of each symbol TABLE
-;;; object. Values are dumped as CODE=VALUE, a pointer as <its (0 . TYPE)>
-;;; -- never a handle, which differs between runs.
+;;; object. Values are dumped as CODE=VALUE, a pointer as <TYPE name> -- its
+;;; (0 . TYPE) and its record name or dictionary key, never a handle, which
+;;; differs between runs.
 
-(defun cad-probe--ep-val (v / d)
+(defun cad-probe--ep-target-name (v d / o k)
+  ;; A name for the object V (its entget D): a record's / TABLE's group 2,
+  ;; else the key it is filed under in its owner dictionary, else nil.
+  (cond ((= (type (cdr (assoc 2 d))) 'STR) (cdr (assoc 2 d)))
+        ((and (setq o (cdr (assoc 330 d))) (= (type o) 'ENAME)
+              (cad-probe--ep-dictionary-p o))
+         (foreach m (cad-probe--ep-members o)
+           (if (eq (cdr m) v) (setq k (car m))))
+         k)))
+
+(defun cad-probe--ep-val (v / d n)
+  ;; A pointer as <TYPE name> (handles differ between runs), else the value.
   (cond ((= (type v) 'ENAME)
-         (if (setq d (entget v)) (strcat "<" (cdr (assoc 0 d)) ">") "<erased>"))
+         (if (setq d (entget v))
+           (strcat "<" (cdr (assoc 0 d))
+                   (if (setq n (cad-probe--ep-target-name v d)) (strcat " " n) "")
+                   ">")
+           "<erased>"))
         (t (vl-prin1-to-string v))))
 
 (defun cad-probe--ep-dump (data / out)
