@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: deferred-nod-default-contents -- what cador still leaves out of a new drawing's default objects
-#+STATUS: OPEN
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: feature
 #+DEPENDS: cador-entget-subclass-layout-and-record-pointers
@@ -40,3 +40,36 @@ cador's Layout1 / Layout2; everything else is as measured.
    the legacy struct dictionary tree in OBJECTS; a DXF-loaded drawing's NOD
    is not what (namedobjdict) reaches. The handle-addressed objects should go
    to OBJECTS, and a loaded NOD become the handle-addressed one.
+
+* Done (clautolisp 2.3.54)
+
+Section 12, round 2 (AutoCAD 2022 job 17441114651, BricsCAD V25 17441114652,
+V26 17441114653) dumped the member extension dictionaries and the records'
+values.
+
+1. Member extension dictionaries: AutoCAD's Model layout and Standard table
+   style (empty), its three materials (FBXASSET XRECORDs; Global also
+   BUMPTILE / DIFFUSETILE / OPACITYTILE / REFLECTIONTILE); BricsCAD's detail /
+   section view styles (empty). Generated as each object's 5th element and
+   made owned by it; the {ACAD_REACTORS} group sits after the
+   {ACAD_XDICTIONARY} one on AutoCAD, before it on BricsCAD, as measured.
+2. Layer 0's 348 points at an ERASED object on AutoCAD (none on BricsCAD):
+   nothing to show, left out. BLOCK: BricsCAD's 71 is 0; a space's BLOCK
+   lists its layout (410 Model / Layout1); AutoCAD's 1 is the block's name
+   for a block, "" for a space. BLOCK_RECORD: 2 360 (its BLOCK) 340 (a
+   space's LAYOUT; erased for another block on AutoCAD, absent on BricsCAD)
+   {BLKREFS 331 ...} (its INSERTs) 70 280 281 -- and a block record holding a
+   BLOCK header no longer shows the BLOCK's 10 / 70 as its own.
+3. Another template: not measurable from the runners (both French, metric);
+   kept as a limit of the data, see Context. Not a task.
+4. Saving: the DXF writer puts the handle-addressed objects in OBJECTS, the
+   root first, not in ENTITIES; the loader makes a file's OBJECTS
+   handle-addressed objects (flagged OBJECT-P, never graphical) and its first
+   dictionary the root, so (namedobjdict) reaches a loaded NOD and a
+   template drawing keeps its own. DXF and DWG round trips of a template
+   drawing keep the NOD (16 entries + one added XRECORD and its value).
+   DRAWING-ENTITY-COUNT counts graphical entities only. Test
+   DXF-ROUND-TRIP-KEEPS-HANDLE-ADDRESSED-OBJECTS.
+
+Not modelled: a space's empty-block ENDBLK (its -2 on the vendors; see
+deferred-spec-research.issue).

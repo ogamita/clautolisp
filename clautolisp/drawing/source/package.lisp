@@ -50,6 +50,7 @@ from the cador package before the Phase-17a extraction.")
    #:entity-handle-layer
    #:entity-handle-data
    #:entity-handle-deleted-p
+   #:entity-handle-object-p
    ;; Data carrier: symbol-table record.
    #:symbol-table-record
    #:make-symbol-table-record

@@ -474,7 +474,20 @@ the section round-trips losslessly."
     (dolist (obj objs)
       (let ((h (dxf-object-handle obj)))
         (when (and h (not (dxf-dictionary-object-p obj)))
-          (add-object drawing h obj))))))
+          (add-object drawing h obj))))
+    ;; ... and every object, dictionaries included, as a handle-addressed
+    ;; object -- what (namedobjdict) / entget / dictsearch reach and the
+    ;; writer writes back (deferred-nod-default-contents, item 4). The root
+    ;; is the section's first dictionary.
+    (dolist (obj objs)
+      (let ((h (dxf-object-handle obj)))
+        (when (and h (not (find-entity drawing h :include-deleted t)))
+          (add-entity drawing (dxf-entity-from-file obj) :handle h :object-p t))))
+    (when root
+      (let ((h (dxf-object-handle root)))
+        (when (and h (find-entity drawing h))
+          (setf (drawing-root-dictionary-handle drawing)
+                (entity-handle-id (find-entity drawing h))))))))
 
 (defun dxf-build-drawing (typed-pairs)
   "Build a DRAWING from a flat list of (CODE . TYPED-VALUE) pairs,
@@ -720,7 +733,9 @@ NIL block owner). Block-owned entities are emitted inside BLOCKS."
    "ENTITIES"
    (lambda ()
      (map-entities (lambda (entity)
-                     (unless (entity-handle-block entity)
+                     ;; the objects go to OBJECTS
+                     (unless (or (entity-handle-block entity)
+                                 (not (graphical-entity-p entity)))
                        (dxf-write-object
                         (dxf-entity-data-with-owner drawing entity))))
                    drawing))))
@@ -734,7 +749,8 @@ owned entities, then ENDBLK."
      (map-blocks
       (lambda (name header)
         (dxf-write-object (dxf-ordered-entity-data header))
-        (dolist (entity (block-entities drawing name))
+        (dolist (entity (remove-if-not #'graphical-entity-p
+                                       (block-entities drawing name)))
           ;; Same owner rule inside a block: the entity belongs to that
           ;; block's record, and without group 330 libredwg drops it.
           (dxf-write-object (dxf-entity-data-with-owner drawing entity)))
@@ -777,9 +793,35 @@ its assigned handle; any other value is emitted as its handle string."
                       (dxf-write-dictionary-tree value handles)))
                   dict))
 
+(defun dxf-write-handle-addressed-objects (drawing)
+  "Emit the OBJECTS section from the handle-addressed objects: the root
+dictionary first (a reader takes the first DICTIONARY for the NOD), then
+every other non-graphical object in creation order, each as stored (its
+owner and entries are handles already); then the stored OBJECTS-section
+objects no handle-addressed one replaced."
+  (let ((root (find-entity drawing (drawing-root-dictionary-handle drawing))))
+    (dxf-write-section
+     "OBJECTS"
+     (lambda ()
+       (when root
+         (dxf-write-object (dxf-ordered-entity-data (entity-handle-data root))))
+       (map-entities (lambda (entity)
+                       (unless (or (eq entity root) (graphical-entity-p entity))
+                         (dxf-write-object
+                          (dxf-ordered-entity-data (entity-handle-data entity)))))
+                     drawing)
+       (maphash (lambda (handle obj)
+                  (unless (find-entity drawing handle :include-deleted t)
+                    (dxf-write-object (dxf-ordered-entity-data obj))))
+                (drawing-objects drawing))))))
+
 (defun dxf-write-objects (drawing)
-  "Emit the OBJECTS section: the named-object dictionary tree (handle
--linked) followed by the standalone non-graphical objects (xrecords)."
+  "Emit the OBJECTS section: the handle-addressed objects when the drawing
+has its root dictionary as one (DXF-WRITE-HANDLE-ADDRESSED-OBJECTS), else
+the legacy named-object dictionary tree (handle-linked) followed by the
+standalone non-graphical objects (xrecords)."
+  (when (drawing-root-dictionary-handle drawing)
+    (return-from dxf-write-objects (dxf-write-handle-addressed-objects drawing)))
   (let ((nod (drawing-named-object-dictionary drawing))
         (objects (drawing-objects drawing)))
     (when (or (plusp (hash-table-count (dictionary-entries nod)))

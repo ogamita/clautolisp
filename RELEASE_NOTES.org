@@ -1959,6 +1959,15 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *Dictionaries and xrecords are saved and reloaded as such* (2.3.54): a
+  DXF or DWG save writes them to the OBJECTS section (they went to ENTITIES,
+  where libredwg dropped them), and a loaded drawing's named-object
+  dictionary is what =namedobjdict= reaches. The default objects carry their
+  own extension dictionaries (AutoCAD's materials' FBXASSET ...), and a
+  BLOCK_RECORD's =entget= lists its BLOCK (360), a space's layout (340) and
+  the INSERTs referencing it ({BLKREFS 331 ...}); a space's BLOCK its layout
+  (410). Measured on AutoCAD 2022 and BricsCAD V25 / V26.
+
 - *A new drawing's dictionaries hold what the CADs put in them* (2.3.53):
   layouts (Model, Layout1, Layout2), the ByBlock / ByLayer / Global
   materials, the Standard mline / mleader / table styles, the detail and

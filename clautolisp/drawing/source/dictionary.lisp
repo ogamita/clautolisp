@@ -34,9 +34,9 @@ not silently drop a client's entity from a selection scan)."
   (let* ((data (entity-handle-data entity))
          (type (%group-0-type data))
          (family (and type (find-entity-family type))))
-    (if family
-        (entity-family-graphical-p family)
-        t)))
+    (cond ((entity-handle-object-p entity) nil)   ; read from OBJECTS
+          (family (entity-family-graphical-p family))
+          (t t))))
 
 ;;; --- Dictionary object helpers ----------------------------------
 

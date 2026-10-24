@@ -224,7 +224,7 @@ NOD holds the product's default entries, which entnext does not walk."
           (host-entmakex mock (list (cons 0 "ENDBLK")))
           (is (eq block (host-tblobjname mock "BLOCK" "RT1")))
           (is (equal (if bricscad
-                         '(-1 0 5 330 100 67 8 100 2 70 10 3 1 -2)
+                         '(-1 0 5 330 100 67 8 100 2 70 71 10 3 1 -2)
                          '(-1 0 330 5 100 67 8 100 70 10 -2 2 1))
                      (mapcar #'car (host-entget mock block)))
               "~A BLOCK: ~S" dialect (mapcar #'car (host-entget mock block)))
@@ -287,3 +287,42 @@ and LAYER TABLE carry their extension dictionaries, BricsCAD's none."
                 (is (eql 1 (cdr (assoc 280 (host-entget mock xdict))))))))
         ;; none of it is walked or selected
         (is (null (host-entnext mock nil)))))))
+
+
+(test default-objects-member-xdicts-and-block-records
+  "deferred-nod-default-contents, items 1 and 2 (entget-pointers section 12,
+round 2: AutoCAD 2022 job 17441114651, BricsCAD V26 job 17441114653): the
+objects inside the NOD carry their own extension dictionaries (AutoCAD's
+materials hold FBXASSET), and a BLOCK_RECORD lists its BLOCK (360), a
+space's LAYOUT (340) and the INSERTs referencing it ({BLKREFS 331})."
+  (dolist (dialect '(:autocad-2022 :bricscad))
+    (%with-dialect (dialect)
+      (let* ((mock (make-cador))
+             (bricscad (eq dialect :bricscad))
+             (nod (host-namedobjdict mock))
+             (global (%dc-member mock (%dc-member mock nod "ACAD_MATERIAL") "Global"))
+             (xdict (cdr (assoc 360 global))))
+        (if bricscad
+            (is (null xdict))
+            (is (not (null (%dc-member mock xdict "FBXASSET")))))
+        ;; model space's record: its BLOCK and its Model layout
+        (let* ((ms (host-tblobjname mock "BLOCK" "*Model_Space"))
+               (record (host-entget mock (cdr (assoc 330 (host-entget mock ms)))))
+               (pointers (remove 360 record :key #'car :test-not #'eql)))
+          (is (member ms pointers :key #'cdr) "~A record's 360 is its BLOCK" dialect)
+          (is (equal "Model" (autolisp-string-value
+                              (cdr (assoc 410 (host-entget mock ms))))))
+          (is (equal "LAYOUT" (autolisp-string-value
+                               (cdr (assoc 0 (host-entget mock (cdr (assoc 340 record)))))))))
+        ;; a block with an INSERT
+        (host-entmakex mock (list (cons 0 "BLOCK") (cons 2 "BR1") (cons 70 0)
+                                  (list 10 0.0d0 0.0d0 0.0d0)))
+        (host-entmakex mock (make-line-data))
+        (host-entmakex mock (list (cons 0 "ENDBLK")))
+        (let* ((insert (host-entmakex mock (list (cons 0 "INSERT") (cons 8 "0") (cons 2 "BR1")
+                                                 (list 10 0.0d0 0.0d0 0.0d0))))
+               (record (host-entget mock (cdr (assoc 330 (host-entget
+                                                          mock (host-tblobjname mock "BLOCK" "BR1")))))))
+          (is (equal '(2 360 102 331 102 70 280 281) (mapcar #'car (nthcdr 6 record)))
+              "~A BR1 record: ~S" dialect (mapcar #'car record))
+          (is (eq insert (cdr (assoc 331 record)))))))))

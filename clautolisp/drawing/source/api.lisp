@@ -54,7 +54,8 @@ string. Signals DRAWING-ERROR on a malformed string."
                       :block     (entity-handle-block e)
                       :layer     (entity-handle-layer e)
                       :data      (copy-tree (entity-handle-data e))
-                      :deleted-p (entity-handle-deleted-p e)))
+                      :deleted-p (entity-handle-deleted-p e)
+                      :object-p  (entity-handle-object-p e)))
 
 (defun %copy-record (r)
   (make-symbol-table-record :id   (symbol-table-record-id r)
@@ -144,9 +145,10 @@ explicit (RETURN value) exits the loop early."
      (map-entities (lambda (,var) ,@body) ,drawing :include-deleted ,include-deleted)))
 
 (defun drawing-entity-count (drawing &key include-deleted)
-  "The number of (non-deleted, unless INCLUDE-DELETED) entities."
+  "The number of (non-deleted, unless INCLUDE-DELETED) graphical entities --
+not the dictionaries, xrecords and other objects the table also holds."
   (let ((n 0))
-    (map-entities (lambda (e) (declare (ignore e)) (incf n))
+    (map-entities (lambda (e) (when (graphical-entity-p e) (incf n)))
                   drawing :include-deleted include-deleted)
     n))
 
@@ -272,19 +274,21 @@ to check document locking, D1 §10).")
   (setf (drawing-dbmod drawing) (logior (drawing-dbmod drawing) bit))
   drawing)
 
-(defun add-entity (drawing dxf &key handle block)
+(defun add-entity (drawing dxf &key handle block object-p)
   "Add an entity from the DXF group-code list DXF to DRAWING. HANDLE,
 if supplied (a loader preserving file handles), fixes the handle;
 otherwise a fresh one is allocated. BLOCK, if supplied, is the name of
 the block definition that owns the entity (NIL = model space). DXF must
 carry a (0 . \"TYPE\") marker. Any caller-supplied -1 / 5 pairs are
 stripped; (5 . hex) is injected. The drawing's seed is kept strictly
-greater than every used handle. Returns the new ENTITY-HANDLE."
+greater than every used handle. OBJECT-P marks an object read from an
+OBJECTS section. Returns the new ENTITY-HANDLE."
   (let* ((kind (%entity-kind-from-data dxf))
          (int  (if handle (handle->integer handle) (allocate-handle drawing)))
          (key  (format nil "~X" int))
          (data (cons (cons 5 key) (%strip-codes dxf '(-1 5))))
-         (entity (make-entity-handle :id key :kind kind :data data :block block)))
+         (entity (make-entity-handle :id key :kind kind :data data :block block
+                                     :object-p object-p)))
     (when (>= int (drawing-handle-seed drawing))
       (setf (drawing-handle-seed drawing) (1+ int)))
     (setf (gethash key (drawing-entities drawing)) entity)

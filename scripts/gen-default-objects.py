@@ -167,7 +167,9 @@ def node(res, label, key, depth):
         return (key, typ, body(pairs, True), members)
     if label in res:
         pairs = parse_dump(res[label])
-        return (key, pairs[0][1][1], body(pairs, False), [])
+        xdict = node(res, label + ' xdict', 'xdict', depth + 1) \
+            if label + ' xdict: dictionary' in res else None
+        return (key, pairs[0][1][1], body(pairs, False), [], xdict)
     return None
 
 
@@ -203,7 +205,8 @@ def xdicts(res):
 
 
 def emit(form, indent):
-    key, typ, body_pairs, members = form
+    key, typ, body_pairs, members = form[:4]
+    xdict = form[4] if len(form) > 4 else None
     pad = ' ' * indent
     lines = [pad + '(%s %s' % (lisp_string(key), lisp_string(typ))]
     lines.append(pad + ' (' + ('\n' + pad + '  ').join(lisp_pair(c, v) for c, v in body_pairs) + ')')
@@ -211,9 +214,12 @@ def emit(form, indent):
         lines.append(pad + ' (')
         for m in members:
             lines.append(emit(m, indent + 2))
-        lines.append(pad + ' ))')
+        lines.append(pad + ' )' + ('' if xdict else ')'))
     else:
-        lines.append(pad + ' ())')
+        lines.append(pad + ' ()' + ('' if xdict else ')'))
+    if xdict:
+        # its own extension dictionary, as a 5th element
+        lines.append(emit(xdict, indent + 1) + ')')
     return '\n'.join(lines)
 
 
@@ -225,17 +231,18 @@ LAYOUT_NAMES = {'Pr\u00e9sentation': 'Layout'}
 
 def english_layouts(forms):
     for form in forms:
-        key, typ, body_pairs, members = form
+        key, typ, body_pairs, members = form[:4]
         if key == 'ACAD_LAYOUT':
             renamed = []
-            for mkey, mtyp, mbody, mmembers in members:
+            for member in members:
+                mkey, mtyp, mbody, mmembers = member[:4]
                 new = mkey
                 for local, english in LAYOUT_NAMES.items():
                     if mkey.startswith(local):
                         new = english + mkey[len(local):]
                 mbody = [(c, ('str', new)) if (c == 1 and v == ('str', mkey)) else (c, v)
                          for c, v in mbody]
-                renamed.append((new, mtyp, mbody, mmembers))
+                renamed.append((new, mtyp, mbody, mmembers) + tuple(member[4:]))
             form = (key, typ, body_pairs, renamed)
         yield form
 
@@ -256,8 +263,9 @@ def main(argv):
     print('(in-package #:clautolisp.cador)')
     print()
     print('(defparameter *measured-default-objects*')
-    print('  ;; PRODUCT -> ((KEY TYPE BODY MEMBERS) ...): BODY the groups after the')
-    print('  ;; header, a pointer (CODE :REF TYPE NAME); MEMBERS the same, for a dictionary.')
+    print('  ;; PRODUCT -> ((KEY TYPE BODY MEMBERS [XDICT]) ...): BODY the groups after')
+    print('  ;; the header, a pointer (CODE :REF TYPE NAME); MEMBERS the same, for a')
+    print('  ;; dictionary; XDICT the object\'s own extension dictionary, if it has one.')
     print("  '(")
     for product, _, forms, _ in products:
         print('    (:%s' % product)

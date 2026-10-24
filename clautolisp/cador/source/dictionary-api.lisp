@@ -59,7 +59,7 @@ the made object of that type and key; an unresolved one is left out."
          (product (if (eq (%current-product) :bricscad) :bricscad :autocad))
          (forms (cdr (assoc product *measured-default-objects*))))
     (labels ((make (dict-handle form)
-               (destructuring-bind (key type body members) form
+               (destructuring-bind (key type body members &optional xdict) form
                  (let* ((object (clautolisp.drawing:add-entity
                                  drawing (list (cons 0 type))))
                         (handle (clautolisp.drawing:entity-handle-id object)))
@@ -71,6 +71,27 @@ the made object of that type and key; an unresolved one is left out."
                          (append (clautolisp.drawing:entity-handle-data object)
                                  (copy-tree body)))
                    (push (list type key handle) made)
+                   (dolist (member members)
+                     (make handle member))
+                   (when xdict
+                     (attach-xdict object xdict)))))
+             (attach-xdict (owner form)
+               ;; OWNER's own extension dictionary FORM, owned by it, and the
+               ;; {ACAD_XDICTIONARY (360 . xdict)} group in OWNER's data
+               (destructuring-bind (key type body members &optional xdict) form
+                 (declare (ignore key xdict))
+                 (let* ((object (clautolisp.drawing:add-entity drawing (list (cons 0 type))))
+                        (handle (clautolisp.drawing:entity-handle-id object))
+                        (data (clautolisp.drawing:entity-handle-data owner)))
+                   (setf (clautolisp.drawing:entity-handle-data object)
+                         (append (clautolisp.drawing:entity-handle-data object)
+                                 (list (cons 330 (clautolisp.drawing:entity-handle-id owner)))
+                                 (copy-tree body)))
+                   (setf (clautolisp.drawing:entity-handle-data owner)
+                         (append (list (first data))
+                                 (list (cons 102 "{ACAD_XDICTIONARY") (cons 360 handle)
+                                       (cons 102 "}"))
+                                 (rest data)))
                    (dolist (member members)
                      (make handle member)))))
              (resolve (type name)

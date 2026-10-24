@@ -919,3 +919,25 @@ reported them."
                                          (zerop vendor))
                                      "~A: ~A ~A group ~D: vendor entget ~S, loaded ~S"
                                      (file-namestring path) type handle code vendor value)))))))))))))
+
+(test dxf-round-trip-keeps-handle-addressed-objects
+  "deferred-nod-default-contents, item 4: the handle-addressed dictionaries
+and xrecords are written to OBJECTS (the root first), not ENTITIES, and read
+back as handle-addressed objects: the root is the drawing's NOD again, its
+entry reaches the xrecord, and none of them counts as an entity."
+  (let* ((d (build-sample-drawing))
+         (root (ensure-root-dictionary d))
+         (x (add-entity d '((0 . "XRECORD") (100 . "AcDbXrecord") (280 . 1) (1 . "kept"))))
+         (text (progn
+                 (dictionary-add-entry d (entity-handle-id root) "MYKEY" (entity-handle-id x))
+                 (with-output-to-string (s) (dxf-write-drawing-to-stream d s))))
+         (entities (subseq text (search "ENTITIES" text) (search "ENDSEC" text :start2 (search "ENTITIES" text))))
+         (back (with-input-from-string (s text) (dxf-read-drawing-from-stream s))))
+    (is (null (search "DICTIONARY" entities)) "no object in ENTITIES")
+    (is (null (search "XRECORD" entities)))
+    (is (equal (entity-handle-id root) (drawing-root-dictionary-handle back)))
+    (let ((member (dictionary-member-handle back (drawing-root-dictionary-handle back) "MYKEY")))
+      (is (equal (entity-handle-id x) member))
+      (is (equal "kept" (cdr (assoc 1 (entity-handle-data (find-entity back member)))))))
+    (is (= (drawing-entity-count d) (drawing-entity-count back)))
+    (is (not (graphical-entity-p (find-entity back (drawing-root-dictionary-handle back)))))))

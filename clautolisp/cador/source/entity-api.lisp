@@ -415,12 +415,21 @@ an object a dictionary owns."
     (unless owner
       (let ((ename (%synthesized-owner-ename host entity)))
         (when ename (setf owner (cons 330 ename)))))
-    (when (and owner (null reactors) (%dictionary-owner-p host (cdr owner)))
-      (setf reactors
-            (list (cons 102 (clautolisp.autolisp-runtime:make-autolisp-string
-                             "{ACAD_REACTORS"))
-                  (cons 330 (cdr owner))
-                  (cons 102 (clautolisp.autolisp-runtime:make-autolisp-string "}")))))
+    (when (and owner
+               (notany (lambda (p) (and (%reactor-group-start-p p)
+                                        (string= "{ACAD_REACTORS" (%view-marker-name p))))
+                       reactors)
+               (%dictionary-owner-p host (cdr owner)))
+      ;; beside a stored {ACAD_XDICTIONARY} group: after it on AutoCAD (its
+      ;; Model layout: 5 102 360 102 102 330 102 330), before it on BricsCAD
+      ;; (its view styles: 5 102 330 102 102 360 102 330) -- section 12
+      (let ((group (list (cons 102 (clautolisp.autolisp-runtime:make-autolisp-string
+                                    "{ACAD_REACTORS"))
+                         (cons 330 (cdr owner))
+                         (cons 102 (clautolisp.autolisp-runtime:make-autolisp-string "}")))))
+        (setf reactors (if (eq (%current-product) :bricscad)
+                           (append group reactors)
+                           (append reactors group)))))
     ;; Where the owner goes is the one point the vendors disagree on
     ;; (entget-pointers section 10, AutoCAD 2022 job 17398575906): AutoCAD
     ;; lists it BEFORE the handle -- -1 0 330 5 100 ... -- unless a 102
@@ -875,7 +884,13 @@ subclass markers, 102 groups and -2 walk entry."
          (entry (assoc kind *symbol-tables*))
          (data (symbol-table-record-data record))
          (layout (or (cdr (assoc kind *record-layouts*)) '((2) (70 . 0))))
-         (body (%record-body data))
+         ;; a block record made by entmake / a command holds the BLOCK header
+         ;; (0 . "BLOCK"): its 70 / 10 / 1 are the BLOCK entity's, not the
+         ;; BLOCK_RECORD's, which then shows its defaults only
+         (body (if (and (eq kind :block-record)
+                        (equalp "BLOCK" (%data-type-string data)))
+                   (remove-if-not (lambda (p) (eql 2 (%view-code p))) (%record-body data))
+                   (%record-body data)))
          (used '())
          (laid-out
            (append
@@ -888,7 +903,12 @@ subclass markers, 102 groups and -2 walk entry."
                                    p)
                                  (and default (%record-default host code default)))
                   when pair collect pair)
-            (remove-if (lambda (p) (member p used :test #'eq)) body))))
+            (remove-if (lambda (p) (member p used :test #'eq)) body)))
+         (laid-out
+           (if (and (eq kind :block-record) laid-out (eql 2 (car (first laid-out))))
+               (list* (first laid-out)
+                      (append (%block-record-extras host record) (rest laid-out)))
+               laid-out)))
     (cons (cons -1 ename)
           (pure-data->al-view
            host
@@ -964,13 +984,19 @@ CREATE is false, then NIL."
                      (symbol-table-record-data record)))
          (first (first (%block-entity-handles host name)))
          (walk (and first (list (cons -2 (handle->ename host first)))))
-         (common (list (cons 100 "AcDbEntity")
-                       (cons 67 (if (string-equal name "*Paper_Space") 1 0))
-                       (cons 8 (or (%data-group-value header 8) "0"))
-                       (cons 100 "AcDbBlockBegin")))
+         (layout (%space-layout-name name))
+         (common (append (list (cons 100 "AcDbEntity")
+                               (cons 67 (if (string-equal name "*Paper_Space") 1 0)))
+                         ;; a space's BLOCK names its layout (section 12)
+                         (and layout (list (cons 410 layout)))
+                         (list (cons 8 (or (%data-group-value header 8) "0"))
+                               (cons 100 "AcDbBlockBegin"))))
          (flags (cons 70 (or (%data-group-value header 70) 0)))
          (base (cons 10 (or (%data-group-value header 10) (list 0.0d0 0.0d0 0.0d0))))
-         (path (cons 1 (or (%data-group-value header 1) "")))
+         ;; the xref path: "" on BricsCAD and for AutoCAD's spaces, the
+         ;; block's name for AutoCAD's other blocks (section 12, job 17441114651)
+         (path (cons 1 (or (%data-group-value header 1)
+                           (if (or layout (eq (%current-product) :bricscad)) "" name))))
          (zero (cons 0 "BLOCK"))
          (five (cons 5 (%block-entity-handle host record)))
          (owner (cons 330 (symbol-table-record-id record))))
@@ -978,12 +1004,41 @@ CREATE is false, then NIL."
           (if (eq (%current-product) :bricscad)
               (append (pure-data->al-view
                        host (append (list zero five owner) common
-                                    (list (cons 2 name) flags base (cons 3 name) path)))
+                                    ;; BricsCAD's 71 is 0 (section 12)
+                                    (list (cons 2 name) flags (cons 71 0) base
+                                          (cons 3 name) path)))
                       walk)
               (append (pure-data->al-view host (append (list zero owner five) common
                                                        (list flags base)))
                       walk
                       (pure-data->al-view host (list (cons 2 name) path)))))))
+
+(defun %space-layout-name (block-name)
+  "The layout a space's BLOCK names: Model for *Model_Space, Layout1 for
+*Paper_Space (a fresh drawing's first paper layout); NIL for another block."
+  (cond ((string-equal block-name "*Model_Space") "Model")
+        ((string-equal block-name "*Paper_Space") "Layout1")))
+
+(defun %block-record-extras (host record)
+  "The groups a BLOCK_RECORD lists after its 2 (section 12, both products):
+its BLOCK entity (360), a space's LAYOUT (340), and the {BLKREFS ...} INSERTs
+that reference the block."
+  (let* ((name (symbol-table-record-name record))
+         (layout (%space-layout-name name))
+         (layout-handle (and layout (%named-object-handle host "ACAD_LAYOUT" layout)))
+         (inserts (loop for handle in (reverse (cador-creation-order host))
+                        for entity = (cador-find-entity-by-handle host handle)
+                        when (and entity
+                                  (eq (entity-handle-kind entity) :insert)
+                                  (let ((b (%entity-group-value entity 2)))
+                                    (and (stringp b) (string-equal b name))))
+                          collect handle)))
+    (append (list (cons 360 (%block-entity-handle host record)))
+            (and layout-handle (list (cons 340 layout-handle)))
+            (and inserts
+                 (append (list (cons 102 "{BLKREFS"))
+                         (mapcar (lambda (h) (cons 331 h)) inserts)
+                         (list (cons 102 "}")))))))
 
 (defun %non-entity-view (host handle ename)
   "The entget view of the object HANDLE names when it is no entity: a table
