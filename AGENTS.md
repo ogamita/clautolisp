@@ -532,8 +532,11 @@ ref**; anything still fixable gets fixed.
 4. push the tag and both pointers to `origin`;
 5. post-release bump on master, so no untagged commit claims a released
    version;
-6. mirror the collected artefacts to the poseidon download area (on poseidon):
-   `GITLAB_TOKEN=<api> bash scripts/deploy-release-to-poseidon.sh release-M.m.d`;
+6. wait for `collect:release` to succeed: it assembles the set AND mirrors it
+   to the poseidon download area itself (`scripts/mirror-release-to-poseidon.sh`,
+   the rrsync-restricted release key; its GitLab artefact keeps only the
+   manifest). To re-mirror by hand, on poseidon: `bash
+   scripts/deploy-release-to-poseidon.sh release-M.m.d --from DIR`;
 7. publish: `python3 scripts/make-gitlab-release.py release-M.m.d`.
 
 **Release runbook — the concrete commands and gotchas (as run end-to-end for
@@ -564,21 +567,18 @@ the whole thing; the traps below are what cost time the first time.
 - *Program stamps (step 1).* `scripts/manifest-versions.sh` names the three:
   `clautolisp`, `alfe`, `read-autolisp`. `alfe` tracks `clautolisp` — bump it to
   the release `M.m`; `read-autolisp` bumps only if `autolisp-reader` changed.
-- *Steps 6–7: CHECK `hostname` FIRST.* The release session may itself BE
-  `poseidon` — then the web tree is local, `sudo -n` works, and you run
-  `bash scripts/deploy-release-to-poseidon.sh release-M.m.d` **directly**. Do NOT
-  `ssh poseidon` from poseidon: that loopback fails `Permission denied
-  (publickey)` and is a red herring, not a real lack of access. The deploy
-  script's token comes from `$GITLAB_TOKEN` or, absent it, `~claude/.authinfo`
-  port `claude` — so on poseidon you set nothing.
+- *Step 6 is CI's.* `collect:release` mirrors the set itself, on the release
+  tag, as `release-ogamita` (the poseidon account owning the ogamita web
+  tree, rrsync-restricted to it; `documentation/setup-deploy.sh`) with the
+  runners' `DEPLOY_SSH_PRIVATE_KEY` protected variable. Only to RE-mirror by hand, on
+  poseidon as `claude` or `runners` (each has a `~/.ssh/release-ogamita` key;
+  no sudo), collect locally and run
+  `bash scripts/deploy-release-to-poseidon.sh release-M.m.d --from DIR`.
 - *`make-gitlab-release.py` uses glab's stored auth* (no token env of its own)
   and creates/updates the Release itself. Run `--dry-run` first (it verifies
-  every link), then for real. `--links poseidon` (default, durable) needs the
-  step-6 mirror up; from a box with NO poseidon shell, publish `--links gitlab`
-  (token-free; artefacts are `expire_in: 30 days`, so do it within that window)
-  and upgrade the links in place
-  later from poseidon: `make-gitlab-release.py release-M.m.d --update --links
-  poseidon`.
+  every link), then for real. `--links poseidon` (default) needs the step-6
+  mirror up; `--links gitlab` only works for a release collected before
+  clautolisp 2.3.52, whose artefact still held the archives.
 - *The collect:release manifest is the authority on what ships, not the
   per-platform lane colour.* `make-gitlab-release.py --dry-run` lists it (15
   assets for 2.1.0). For 2.1.0 `collect:release` reached `success` and bundled
@@ -600,7 +600,9 @@ the whole thing; the traps below are what cost time the first time.
   and `python3 scripts/make-gitlab-release.py release-M.m.d --links poseidon
   --manifest dist/combined/manifest-release-assets.txt` (dry run first). The
   links are poseidon's, so nothing depends on the missing GitLab artefact
-  (collect-release-artefact-exceeds-gitlab-size-limit.issue).
+  (collect-release-artefact-exceeds-gitlab-size-limit.issue). Since 2.3.52
+  this cannot happen: collect:release mirrors the set to poseidon and stores
+  only the manifest as its artefact.
 
 **Mirroring to poseidon (step 6).** Release archives are hosted on a
 **durable poseidon web area**, not on GitLab job artefacts. The `ogamita`
@@ -609,14 +611,19 @@ refused (`namespace-storage-blocks-ci.issue`) and, worse, any purge to get
 back under the limit kills every GitLab-artefact link a release points at.
 So the published release must not depend on GitLab storage surviving.
 
-`scripts/deploy-release-to-poseidon.sh release-M.m.d`, run **on poseidon**
-(it needs `sudo` to the web tree and a `GITLAB_TOKEN` with `api`), downloads
-that tag's `collect:release` set, rsyncs it to
-`https://poseidon.informatimago.com/ogamita/clautolisp/releases/<ver>/`, and
-regenerates the index pages (`scripts/gen-release-index.py`). See
-`~/admin.org` on poseidon for the web layout. Do this **before** step 7 —
-`make-gitlab-release.py` fetches every link first and aborts if the mirror
-is not up yet.
+`collect:release` does it on the release tag: after `make collect-artefacts`
+it runs `scripts/mirror-release-to-poseidon.sh <ver> dist/combined`, which
+rsyncs the set over SSH as `release-ogamita` (an rrsync forced command
+chrooted to the ogamita web tree; files 444, directories 755) to
+`https://poseidon.informatimago.com/ogamita/clautolisp/releases/<ver>/` and
+regenerates the index pages (`scripts/gen-release-index.py --version` /
+`--root-index`; the version list comes from the server). A failed mirror
+fails the job. Its GitLab artefact keeps only `manifest-release-assets.txt`
+and the release page: the ~1 GB set is above gitlab.com's artefact limit
+(collect-release-artefact-exceeds-gitlab-size-limit). See `~/admin.org` on
+poseidon for the web layout, and `documentation/poseidon-deploy.md` for the
+key. `make-gitlab-release.py` fetches every link first and aborts if the
+mirror is not up.
 
 **Publishing the release (step 7).** Use the script, not `glab release
 create` by hand. It reads `manifest-release-assets.txt` — which

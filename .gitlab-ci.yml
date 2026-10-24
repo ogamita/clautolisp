@@ -1654,6 +1654,13 @@ collect:release:
     # actions:read on the repo.
     GH_REPO: "ogamita/clautolisp"
     GH_WORKFLOW: "release.yml"
+    # The release mirror (scripts/mirror-release-to-poseidon.sh) sends as
+    # release-ogamita, the poseidon account owning the ogamita web tree, with
+    # the runners' deploy key (DEPLOY_SSH_PRIVATE_KEY, protected + masked, so
+    # present on release-* tags only) and DEPLOY_KNOWN_HOSTS -- the same two
+    # variables as deploy:documentation (documentation/poseidon-deploy.md).
+    DEPLOY_HOST: poseidon.informatimago.com
+    DEPLOY_USER: release-ogamita
   # EVERY release:* job belongs here: one omitted costs a full build whose
   # artefacts are then discarded in silence (which is what happened to
   # release:linux:arm32). `needs:' cannot be a glob, so
@@ -1702,7 +1709,7 @@ collect:release:
     # zip/unzip are needed for the Windows .zip artefacts and the -all.zip
     # (pjb, 2026-08-16). collect-artefacts ERRORS rather than skipping when
     # they are missing, so a release cannot quietly ship without them.
-    - pkgs=""; for t in bzip2 tar make zip unzip curl; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    - pkgs=""; for t in bzip2 tar make zip unzip curl rsync ssh python3; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; pkgs=$(echo "$pkgs" | sed 's/\bssh\b/openssh-client/'); [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
     # gh reads $GH_TOKEN from the environment; install it self-contained if the
     # CI image lacks it (TODO: bake gh into the image).
     - |
@@ -1738,22 +1745,33 @@ collect:release:
     # gh nests each artifact under dist/<name>/ — flatten the win zips into dist/.
     - find dist -mindepth 2 -name 'clautolisp-*-windows-*.zip' -exec cp {} dist/ \; 2>/dev/null || true
     - make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
+    # Mirror the set to the poseidon download area HERE, not through a GitLab
+    # artefact: the set (~1 GB for release-2.3.0) is above gitlab.com's
+    # artefact limit -- the upload answered 413 and nothing could be published
+    # by the documented procedure (collect-release-artefact-exceeds-gitlab-
+    # size-limit, option 3). Release tags only: off a tag the job just
+    # assembles. A failed mirror fails the job: a release is not published
+    # until its archives are downloadable.
+    - |
+      if [ -n "${CI_COMMIT_TAG:-}" ]; then
+        bash scripts/mirror-release-to-poseidon.sh "${CI_COMMIT_TAG#release-}" dist/combined
+      else
+        echo "not a release tag: assembled, not mirrored"
+      fi
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-release"
-    paths: [dist/combined/]
-    # FINITE, because the published release links now point at the POSEIDON
-    # mirror (durable, external), not at these artefacts:
-    # make-gitlab-release.py defaults to --links poseidon, and
-    # deploy-release-to-poseidon.sh rsyncs this set to the poseidon web area
-    # before the release is published. So these artefacts are only the
-    # re-mirror SOURCE (and the token-free --links gitlab fallback), not the
-    # live links — a finite expiry no longer rots a release, and it bounds
-    # the permanent namespace cost that otherwise grew ~1 GB per release for
-    # ever (namespace-storage-blocks-ci). 30 days is a generous window to
-    # (re-)mirror to poseidon after the tag. The durability invariant — that
-    # the published links default to poseidon — is enforced by
-    # check-release-lane-integrity.py check (3); if that default is ever
-    # removed, put `expire_in: never' back here.
+    # Only what is small and read later: the manifest (make-gitlab-release.py
+    # reads it to list the release's assets) and the release page. The
+    # archives themselves are on poseidon.
+    paths:
+      - dist/combined/manifest-release-assets.txt
+      - dist/combined/index.html
+    # FINITE: the published release links point at the POSEIDON mirror
+    # (durable, external), which this job wrote; make-gitlab-release.py
+    # defaults to --links poseidon. The durability invariant -- that the
+    # published links default to poseidon -- is enforced by
+    # check-release-lane-integrity.py check (3). 30 days covers publishing
+    # the release after the tag.
     expire_in: 30 days
 
 # --- deploy: publish the spec HTML manual to the poseidon web site -----
@@ -1799,7 +1817,7 @@ deploy:documentation:
   variables:
     GIT_STRATEGY: none                # nothing from the repo is needed — only the artefact
     DEPLOY_HOST: poseidon.informatimago.com
-    DEPLOY_USER: clautolisp-deploy
+    DEPLOY_USER: release-ogamita
     DEPLOY_URL: http://poseidon.informatimago.com/ogamita/autolisp-spec/
   needs:
     - { job: "release:documentation", artifacts: true }
@@ -1827,10 +1845,10 @@ deploy:documentation:
     - if [ -f "$DEPLOY_KNOWN_HOSTS" ]; then base64 -d "$DEPLOY_KNOWN_HOSTS"; else printf '%s' "$DEPLOY_KNOWN_HOSTS" | base64 -d; fi > ~/.ssh/known_hosts
     - chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
     - 'SSH="ssh -i $HOME/.ssh/id_deploy -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o IdentitiesOnly=yes"'
-    # 3. Mirror the manual into the rrsync-restricted dir (empty remote path
-    #    = the restricted root). --delete prunes pages dropped from a newer
-    #    spec build; the dir is pre-provisioned by setup-deploy.sh.
-    - rsync -rlptz --delete -e "$SSH" "$html/" "$DEPLOY_USER@$DEPLOY_HOST:"
+    # 3. Mirror the manual into autolisp-spec/ of the rrsync-restricted ogamita
+    #    tree (paths are relative to it). --delete prunes pages dropped from a
+    #    newer spec build; the tree is provisioned by setup-deploy.sh.
+    - rsync -rlptz --delete --chmod=D755,F644 -e "$SSH" "$html/" "$DEPLOY_USER@$DEPLOY_HOST:autolisp-spec/"
     - 'echo "published to $DEPLOY_URL"'
   environment:
     name: poseidon/autolisp-spec

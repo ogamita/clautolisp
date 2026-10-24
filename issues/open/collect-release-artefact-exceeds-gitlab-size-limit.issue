@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: collect-release-artefact-exceeds-gitlab-size-limit -- collect:release cannot upload a ~1.07 GB set (413)
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P2
 #+TYPE: ci-infra
 #+DEPENDS: -
@@ -53,3 +53,46 @@ holding whichever is chosen.
 
 - A release tag pipeline's collect:release succeeds for a set of the 2.3.0
   size, and the documented procedure (deploy, then publish) works unchanged.
+
+* Option 3 chosen and implemented (pjb, 2026-10-24)
+
+pjb: "Creer un compte release-ogamita sur poseidon. Mettre dans son
+authorized_keys les cles des utilisateurs qui lui envoient des artefacts
+(runner, claude). Donner propriete de /var/www/poseidon/public_html/ogamita a
+release-ogamita, groupe www-data; sous-repertoires en 755, fichiers en 644 ou
+444 (releases should be read-only). Il n'y a pas d'utilisateurs hors de
+poseidon ... Les artefacts crees sur github (windows) doivent etre fetches par
+un runner gitlab tournant sur poseidon." Two runners on poseidon: the Docker
+one runs as root, the shell one as `runners`.
+
+Done on poseidon (sudo, documentation/setup-deploy.sh, rewritten for it):
+- account release-ogamita (/var/lib/release-ogamita); authorized_keys: three
+  rrsync forced commands chrooted to /var/www/poseidon/public_html/ogamita --
+  the CI key (private half: DEPLOY_SSH_PRIVATE_KEY), claude's and runners'
+  ~/.ssh/release-ogamita keys;
+- the ogamita tree release-ogamita:www-data, directories 755, files 644,
+  release files 444;
+- self-tests: each of the three keys writes and lists under
+  clautolisp/releases/ and is refused outside the tree; an end-to-end
+  re-mirror of release 2.3.0 (claude's key, deploy-release-to-poseidon.sh
+  --from) left its archives unchanged, regenerated both index pages, HTTP 200;
+- clautolisp-deploy retired (authorized_keys emptied): its CI key was printed
+  in a session transcript by a mis-run of the old setup script, so it is
+  revoked; the new CI key replaces it.
+
+In the repository:
+- collect:release (tags linux/amd64/docker: only poseidon's runners -- so the
+  GitHub Windows set is fetched on poseidon) mirrors the set itself on a
+  release tag (scripts/mirror-release-to-poseidon.sh), and its artefact keeps
+  only the manifest and the release page: no more 413;
+- gen-release-index.py --version / --root-index (the sender builds the
+  pages; the account runs nothing);
+- deploy-release-to-poseidon.sh: --from only (no sudo, the sender's key); its
+  default mode would now have emptied a release directory, so it refuses;
+- deploy:documentation sends to release-ogamita:autolisp-spec/;
+- make-gitlab-release.py --links gitlab documented as pre-2.3.52 only;
+- AGENTS.md runbook, poseidon-deploy.md.
+
+Remaining: the first release tag after the merge exercises collect:release's
+mirror for real (and deploy:documentation with the new key) -- close then.
+Prerequisite: DEPLOY_SSH_PRIVATE_KEY replaced with the new CI key (pjb).

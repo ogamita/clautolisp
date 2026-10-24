@@ -155,8 +155,11 @@ def main():
                          "before anything is published.")
     ap.add_argument("--links", choices=["poseidon", "gitlab"], default="poseidon",
                     help="where asset links point: the poseidon mirror (default, "
-                         "durable) or the GitLab job artefacts (quota-bound). "
-                         "For poseidon, run deploy-release-to-poseidon.sh first.")
+                         "durable; collect:release writes it) or the GitLab job "
+                         "artefacts -- only for a release collected before "
+                         "clautolisp 2.3.52, whose collect:release still stored "
+                         "the archives; a later one keeps only the manifest "
+                         "there, and its links fail verification.")
     args = ap.parse_args()
 
     tag = args.tag

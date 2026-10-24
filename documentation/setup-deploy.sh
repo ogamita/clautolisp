@@ -1,93 +1,69 @@
 #!/bin/sh
-# setup-deploy.sh — provision the poseidon-side plumbing for the GitLab CI
-# `deploy:documentation` job (see .gitlab-ci.yml and poseidon-deploy.md).
+# setup-deploy.sh — provision the poseidon account that receives the
+# ogamita web artefacts: the spec manual (deploy:documentation) and the
+# release sets (collect:release, scripts/mirror-release-to-poseidon.sh).
+# See poseidon-deploy.md.
 #
-# Run this ONCE on poseidon, as root (sudo). It is idempotent: re-running
-# refreshes the dirs/authorized_keys and (only if missing) the key pair.
+# Run this on poseidon, as root (sudo). It is idempotent.
 #
-# It creates:
-#   * an unprivileged system account `clautolisp-deploy`
-#   * the web dir  /var/www/poseidon/public_html/ogamita/autolisp-spec
-#     (owned clautolisp-deploy:www-data, setgid, so Apache reads what the
-#      deploy account writes)
-#   * an SSH key pair whose public half is installed as an rrsync
-#     FORCED-COMMAND authorized_keys entry — the key can ONLY rsync into
-#     that one directory (no shell, no other path, no forwarding)
+# pjb, 2026-10-24: one account, release-ogamita, owns
+# /var/www/poseidon/public_html/ogamita (group www-data); its authorized_keys
+# holds the keys of those who send artefacts there -- only senders ON
+# poseidon: the GitLab runners (their CI deploy key) and the claude account.
+# Directories are 755, files 644, release archives 444 (read-only).
 #
-# It then self-tests the exact rsync the CI job runs, and prints the two
-# values to paste into GitLab > Settings > CI/CD > Variables (protected +
-# masked). They are printed BASE64-ENCODED: a raw multi-line key/known_hosts
-# cannot be masked (GitLab rejects whitespace), but its single-line base64
-# can. The deploy:documentation job base64-decodes them.
-#     DEPLOY_SSH_PRIVATE_KEY   (base64; protected + masked)
-#     DEPLOY_KNOWN_HOSTS       (base64; protected + masked)
+# Each key is an rrsync FORCED COMMAND chrooted to the ogamita tree: it can
+# rsync there and nothing else -- no shell, no other path, no forwarding.
+# A sender addresses paths RELATIVE to that tree (autolisp-spec/,
+# clautolisp/releases/<version>/).
+#
+# KEYS lists the senders' PUBLIC keys (files). The private half of the CI
+# runners' key is the DEPLOY_SSH_PRIVATE_KEY CI/CD variable (base64, File
+# type, protected + masked); this script never reads nor prints a private
+# key. A missing public key is an error, not a silent skip.
 set -eu
 
-DEPLOY_USER=clautolisp-deploy
-DEPLOY_HOME=/var/lib/clautolisp-deploy
-WEBROOT=/var/www/poseidon/public_html
-TARGET="$WEBROOT/ogamita/autolisp-spec"
-PUBHOST=poseidon.informatimago.com
+ACCOUNT=release-ogamita
+ACCOUNT_HOME=/var/lib/release-ogamita
+WEB=/var/www/poseidon/public_html/ogamita
+RELEASES="$WEB/clautolisp/releases"
 RRSYNC=/usr/bin/rrsync
-KEYDIR="$DEPLOY_HOME/.ssh"
-KEYFILE="$KEYDIR/id_clautolisp_ci"          # private key kept here, root-readable
-AUTHKEYS="$KEYDIR/authorized_keys"
+KEYS="${KEYS:?KEYS: the senders' public key files (the CI runners' key, claude's)}"
 
 [ "$(id -u)" = 0 ] || { echo "run as root (sudo $0)" >&2; exit 1; }
 command -v "$RRSYNC" >/dev/null || { echo "rrsync not found at $RRSYNC (apt install rsync)" >&2; exit 1; }
+for key in $KEYS; do
+    [ -f "$key" ] || { echo "no public key $key" >&2; exit 1; }
+    case "$(head -c 30 "$key")" in
+        ssh-*) ;;
+        *) echo "$key is not a public key" >&2; exit 1 ;;
+    esac
+done
 
-echo "== 1. deploy account =="
-if ! id "$DEPLOY_USER" >/dev/null 2>&1; then
-    useradd --system --create-home --home-dir "$DEPLOY_HOME" --shell /bin/bash "$DEPLOY_USER"
-    echo "created $DEPLOY_USER"
+echo "== 1. the account =="
+if ! id "$ACCOUNT" >/dev/null 2>&1; then
+    useradd --system --create-home --home-dir "$ACCOUNT_HOME" --shell /bin/sh "$ACCOUNT"
+    echo "created $ACCOUNT"
 else
-    echo "$DEPLOY_USER already exists"
+    echo "$ACCOUNT already exists"
 fi
 
-echo "== 2. web dirs =="
-install -d -o www-data          -g www-data -m 0755 "$WEBROOT/ogamita"
-install -d -o "$DEPLOY_USER"    -g www-data -m 2755 "$TARGET"
-ls -ld "$WEBROOT/ogamita" "$TARGET"
+echo "== 2. authorized_keys: one rrsync-restricted entry per sender =="
+install -d -o "$ACCOUNT" -g "$ACCOUNT" -m 0700 "$ACCOUNT_HOME/.ssh"
+for key in $KEYS; do
+    printf 'command="%s %s",restrict %s\n' "$RRSYNC" "$WEB" "$(cat "$key")"
+done > "$ACCOUNT_HOME/.ssh/authorized_keys"
+chown "$ACCOUNT:$ACCOUNT" "$ACCOUNT_HOME/.ssh/authorized_keys"
+chmod 0600 "$ACCOUNT_HOME/.ssh/authorized_keys"
+awk '{print "  " $NF}' "$ACCOUNT_HOME/.ssh/authorized_keys"
 
-echo "== 3. SSH key + rrsync-restricted authorized_keys =="
-install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0700 "$KEYDIR"
-if [ ! -f "$KEYFILE" ]; then
-    ssh-keygen -t ed25519 -N '' -C 'clautolisp-ci-deploy@gitlab' -f "$KEYFILE"
-    chown "$DEPLOY_USER:$DEPLOY_USER" "$KEYFILE" "$KEYFILE.pub"
-    echo "generated $KEYFILE"
-else
-    echo "$KEYFILE already exists — keeping it"
-fi
-# Forced command: this key may only rsync into $TARGET. `restrict` disables
-# pty + all forwarding. rrsync chroots the session to $TARGET, so the CI
-# job rsyncs to "<user>@host:" (empty path == the restricted root).
-printf 'command="%s %s",restrict %s\n' "$RRSYNC" "$TARGET" "$(cat "$KEYFILE.pub")" > "$AUTHKEYS"
-chown "$DEPLOY_USER:$DEPLOY_USER" "$AUTHKEYS"
-chmod 0600 "$AUTHKEYS"
-
-echo "== 4. self-test (the exact rsync the CI job runs) =="
-probe="$(mktemp -d)"; trap 'rm -rf "$probe"' EXIT
-echo "deploy-selftest $(date -u +%FT%TZ)" > "$probe/.deploy-selftest"
-SSH="ssh -i $KEYFILE -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$probe/known_hosts -o BatchMode=yes"
-# Push a probe file in, confirm it lands in $TARGET, then remove it.
-rsync -rlptz -e "$SSH" "$probe/.deploy-selftest" "$DEPLOY_USER@localhost:"
-if [ -f "$TARGET/.deploy-selftest" ]; then
-    echo "OK — probe reached $TARGET"
-    rm -f "$TARGET/.deploy-selftest"
-else
-    echo "FAILED — probe did not reach $TARGET" >&2; exit 1
-fi
+echo "== 3. the ogamita tree: $ACCOUNT:www-data, 755 / 644, releases 444 =="
+chown -R "$ACCOUNT:www-data" "$WEB"
+find "$WEB" -type d -exec chmod 00755 {} +
+find "$WEB" -type f -exec chmod 0644 {} +
+if [ -d "$RELEASES" ]; then find "$RELEASES" -type f -exec chmod 0444 {} +; fi
+ls -ld "$WEB" "$WEB"/*
 
 echo
-echo "============================================================"
-echo "Set these GitLab CI/CD variables (Settings > CI/CD > Variables,"
-echo "scope: protected + masked). Values are base64 (single line, no"
-echo "whitespace) so GitLab accepts masking; the CI job base64-decodes them."
-echo
-echo "------ DEPLOY_SSH_PRIVATE_KEY (protected + masked) ---------"
-base64 -w0 "$KEYFILE"; echo
-echo "------ DEPLOY_KNOWN_HOSTS (protected + masked) -------------"
-ssh-keyscan -t ed25519,rsa,ecdsa "$PUBHOST" 2>/dev/null | base64 -w0; echo
-echo "------------------------------------------------------------"
-echo "Done. The deploy:documentation job will publish to"
-echo "  http://$PUBHOST/ogamita/autolisp-spec/"
+echo "Done. Senders rsync to $ACCOUNT@poseidon.informatimago.com:<path under"
+echo "$WEB>, e.g. autolisp-spec/ or clautolisp/releases/<version>/."
