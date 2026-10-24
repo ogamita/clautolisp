@@ -282,6 +282,69 @@ one MR that auto-runs its suite on the next online window, then manual re-runs.
   source markers is the real cost. Budget week 7–8 for it and keep each batch's
   spec edits in its own MR so nothing is left as a loose artefact.
 
+* First capture — 2026-10-24 (Windows runner online)
+
+The runner came up the day this was filed, so the B1/B2/B12 jobs ran on real
+hardware. Committed results: =probe-results/autocad/ms-windows/20261024T201442Z/=
+(AutoCAD 2022 accoreconsole, exit 0) and
+=probe-results/bricscad/macos/20261024T201604Z/= (BricsCAD V26). The
+=probe:suite:bricscad:windows= job FAILED (allow_failure; the macOS twin ran the
+same manifest green — a Windows-only crash to chase separately, the known
+BricsCAD-load hazard class). =command-prompts:*= all went green but see B12
+below.
+
+** B1 numeric-edges — a real 3-way integer-overflow divergence, and clautolisp wrong twice
+- *Integer overflow.* AutoCAD 2022 keeps a 32-bit int and WRAPS (two's
+  complement): =(+ 2147483640 100)= -> =-2147483556=, =(1+ 2147483647)= ->
+  =-2147483648=, =(* 100000 100000)= -> =1410065408=; but UNDERFLOW promotes to
+  REAL: =(- -2147483648 1)= -> =-2.14748e+09=. BricsCAD V26 WIDENS (>=64-bit):
+  same inputs give =2147483740=, =2147483648=, =10000000000=, =-2147483649=
+  (all INT). clautolisp currently SIGNALS "outside the 32-bit integer range" —
+  so it matches NEITHER vendor. => clautolisp bug: overflow must be
+  dialect-resolved (autocad=wrap + underflow-to-real; bricscad=widen).
+- *atof hex-float.* =(atof "0x1p4")= is =16.0= on BOTH AutoCAD and BricsCAD;
+  clautolisp returns =0.0=. => clautolisp bug (it rejects C99 hex-float both
+  vendors accept). Decimal-comma rejected on both (=3,5= -> =3.0=).
+- atoi edges and negative integer division / rem: AutoCAD == BricsCAD ==
+  clautolisp on every case (017->17, 0xbabe->0, 17x->17, " 17"->17, ""->0;
+  -7/2->-3 toward zero; (rem -7 2)->-1). Those entries can close to *tested*.
+
+** B2 vle — all nine markers resolved; AutoCAD confirms BricsCAD-only; clautolisp wrong on four
+AutoCAD: every VLE-* is "no function definition" => BricsCAD-only confirmed on
+hardware (Availability line settled for all nine). BricsCAD V26 answers:
+- vle-subst-nth out-of-range -> list UNCHANGED (clautolisp agrees).
+- vle-list-split -> 2-list =(head tail)=, splitter DROPPED; at head ->
+  =(nil (a b c))=; not present -> =((a b c) nil)= (clautolisp agrees).
+- vle-member -> *T/nil (pure boolean)*; clautolisp returns the TAIL => bug.
+- vle-vector-normalise of the zero vector -> =(0.0 0.0 0.0)= (zero vector);
+  clautolisp returns nil => bug.
+- vle-vector-getucs +Z->((1 0 0)(0 1 0)), -Z->((-1 0 0)(0 1 0)).
+- vle-string-replace -> replace-ALL (clautolisp agrees); empty new-str deletes.
+- vle-string-split -> empty tokens KEPT (clautolisp agrees).
+- vle-aci2rgb 10/150/249 -> =(255 0 0)=/=(0 127 255)=/=(76 38 47)=; clautolisp
+  returns nil for 10-249 => has the real table to fill now.
+- vle-rgb2aci accepts an INTEGER (=255=->1) and THREE ints (=255 0 0=->1) and
+  REJECTS the list form; clautolisp accepts ONLY the list => arg-shape backwards.
+
+clautolisp bugs surfaced (each wants its own fix issue, dialect-resolved where
+the vendors differ): integer-overflow policy, atof hex-float, vle-member return,
+vle-vector-normalise zero case, vle-aci2rgb 10-249 table, vle-rgb2aci arg shape.
+The committed results.sexp are the citations.
+
+** B12 — harness transport can't capture command prompts through alfe (design correction)
+The jobs ran green but the capture is EMPTY of real prompts: on BricsCAD every
+=CMDPROBE= line shows =active=4= and LASTPROMPT = alfe's own injected bootstrap
+line (=": (if (getvar \"SECURELOAD\") ...)"=), and on AutoCAD no per-command
+line appears at all. alfe drives the engine by feeding the probe as a lisp
+program over its protocol; it does not expose an interactive command loop where
+LASTPROMPT reflects the running command's prompt. So the incremental
+=(command name)= + LASTPROMPT technique does NOT survive the alfe transport.
+=> B12 needs a DIRECT runner (a =.scr= fed to =accoreconsole /s run.scr= /
+=bricscad -B run.scr=, like autolisp-spec/scripts/run-probes-direct*.sh), not an
+alfe-driven load. The lisp probe itself is sound (it ran, emitted, cancelled
+cleanly); only the driver must change. Rebuild the driver before spending more
+runner time on prompt capture.
+
 * Status
 
 NEXT. Landed in the MR that files this issue: the two value-probe suites
