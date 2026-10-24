@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-curve-length-and-sampling — ARC length 0.274 and NIL sampling: vlax-curve-* read ARC angles as degrees and measured bulges along their chords
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: cad-runtime
 #+DEPENDS: curve-geometry:probe:* second round (thresholds; the first round ran 2026-10-08)
@@ -283,3 +283,80 @@ B answers 0 (not nil) for a point off a LINE or a polyline lying in Z = 0
    on a bulge segment?
 5. =poly2d-coordinates=: the 2D POLYLINE =Coordinates= (not modelled; cador
    errors today).
+
+* Second probe round, BricsCAD V26 macOS (2026-10-24, master 54d3b117, job 17435959367)
+
+Compared with .curve-compare.py against clautolisp --dialect bricscad: 64
+differences, 17 of them the (entget e) layout
+(cador-entget-subclass-layout-and-record-pointers, separate). The rest, all
+in the BricsCAD-only rules, now implemented (clautolisp 2.3.50):
+
+- getParamAtDist past an end (ARC, LWPOLYLINE, 2D POLYLINE): 1e-9
+  extrapolates on the ARC (end + 1e-10), 1e-8 .. 1e-4 answers the end's
+  param, 1e-2 the LENGTH. *curve-bricscad-arc-extrapolation* 5e-9,
+  *curve-bricscad-dist-tolerance* 1e-3.
+- getDistAtParam past the end param: ARC 1e-4 rad -> the length, 1e-2 nil;
+  polyline 1e-5 -> the length, 1e-4 nil. A param slack, not a distance (the
+  ARC accepts 1e-3 along it, the polyline refuses 1e-3):
+  *curve-bricscad-arc-param-slack* 1e-3, *curve-bricscad-polyline-param-
+  slack* 5e-5.
+- getParamAtPoint tolerances (tol-* cases): ARC in its plane [1e-10, 1e-9)
+  -> 5e-10, across it [1e-9, 1e-8) -> 5e-9; LINE [1.41e-8, 1e-6) -> 1e-7,
+  and the projected param (10 + 1e-8, not 10); LWPOLYLINE in its plane
+  [1.41e-8, 1.41e-6) -> 1e-7, across a straight segment [1e-6, 1e-5) ->
+  5e-6, across a bulge segment [1e-7, 1e-6) -> 5e-7.
+- Coordinates of a 2D POLYLINE: x y z per vertex, (0 0 0 10 0 0) (read-only
+  in cador).
+- Left as measured, not imitated: lwpoly-closed-square getParamAtPoint of
+  the end + (0 0 1e-7) answers 1e-8 (an internal rounding of BricsCAD's;
+  clautolisp 0).
+
+After the change: 1 difference left besides the entget layout (that one).
+Tests: VLAX-CURVE-BRICSCAD-THRESHOLDS-SECOND-ROUND (builtins-core).
+
+Windows reports: see the next section (ran once PF5S26B was restarted). --
+jobs 17435959368 / 17435959369 / 17435959370 queued, PF5S26B not picking
+jobs up (2026-10-24 11:30). The AutoCAD-side rules are unchanged until then.
+* Second probe round, Windows (2026-10-24, same pipeline) -- DONE
+
+Jobs 17435959368 (BricsCAD V25), 17435959369 (AutoCAD 2022 GUI),
+17435959370 (AcCoreConsole 2022), compared with clautolisp --dialect
+bricscad-v25 / autocad-2022:
+
+- BricsCAD V25 answers as V26 everywhere but on the ARC / CIRCLE point
+  tolerance, far looser: 1e-8 beside or above is on, 1e-7 above the end
+  point off -- *curve-bricscad-v25-arc-tolerance* 5e-8 (in [1.41e-8, 1e-7)).
+  Version AND platform differ between the two BricsCAD runs; the rule is
+  gated on the version (documented in the variable).
+- BricsCAD LINE (both versions): 1e-7 above the end is off ("0" at Z 0):
+  *curve-bricscad-line-tolerance* 5e-8, in [1.41e-8, 1e-7).
+- AutoCAD 2022, now modelled (every non-BricsCAD dialect follows it):
+  - ARC: the same in-plane / across tolerances as BricsCAD V26;
+  - LINE: 1e-10 above is on, inclusive ((5 + 1e-10) - 5 rounds above 1e-10
+    and is off at Z 5), (1e-10, 1e-10) beside is off -- the end param is
+    not projected (10, not 10 + hair);
+  - LWPOLYLINE (Z ignored): in its plane (1e-6, 1e-6) on and (1e-5, 1e-5)
+    off at the end of a straight segment (5e-6), (1e-8, 1e-8) on and
+    (1e-6, 1e-6) off at a bulge's (1e-7); past the end of a straight end
+    segment the param is projected (2 + 1e-6 / 10 = 2.0000001), on BricsCAD
+    too (2.000000001 for 1e-8);
+  - LWPOLYLINE getParamAtDist: up to 1e-7 past the length is the end, 1e-6
+    nil, any distance below 0 nil (*curve-autocad-lwpolyline-dist-slack*
+    5e-7);
+  - ARC / 2D POLYLINE overshoot already matched (extrapolate / nil).
+- reader cases: no difference (the rounded literals were alfe's transport,
+  fixed in alfe-cad-transport-rounds-reals).
+
+What remains different, all on purpose or elsewhere:
+- (entget e): the subclass layout, cador-entget-subclass-layout-and-record-
+  pointers;
+- vlax-curve-getPerimeter: AutoCAD has none; clautolisp keeps it with the
+  [vendor-operator] warning under the AutoCAD / strict dialects (item 12);
+- AcCoreConsole: no COM, so every vla-* / vlax-get and vlax-curve-* on a
+  VLA-OBJECT errors there (item 11); clautolisp has COM;
+- BricsCAD lwpoly-closed-square: the end + (0 0 1e-7) answers 1e-8 (a
+  BricsCAD rounding), clautolisp 0.
+
+Tests: VLAX-CURVE-BRICSCAD-THRESHOLDS-SECOND-ROUND and
+VLAX-CURVE-AUTOCAD-THRESHOLDS-SECOND-ROUND (builtins-core); clautolisp
+2.3.50.
