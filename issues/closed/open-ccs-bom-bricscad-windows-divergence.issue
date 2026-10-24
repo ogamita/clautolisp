@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: open-ccs-bom-bricscad-windows-divergence — clautolisp's (open f "w,ccs=UTF-8") writes no BOM under the BricsCAD Windows dialect; BricsCAD V25 writes one
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: divergence
 #+DEPENDS: -
@@ -49,3 +49,20 @@ clautolisp source changes were allowed there.)
 - under bricscad-v25 (Windows), "w,ccs=UTF-8" of "A" e-acute -> EF BB BF 41 C3 A9;
   "w,ccs=UTF-16LE" of "A" -> FF FE 41 00; the appends add no BOM;
 - other dialects byte-for-byte unchanged; builtin unit tests.
+
+* Done (2026-10-24, clautolisp 2.3.49 / alfe 2.3.49) -- DONE
+
+%OPEN-CCS-WRITES-BOM-P (builtins-core): under a Windows BricsCAD dialect
+(product BricsCAD, platform Windows), a ",ccs=UTF-8" / ",ccs=UTF-16LE"
+suffix with no positional encoding writes U+FEFF first on mode "w", and on
+mode "a" when the file is new or empty (decided: the file it creates is the
+one "w" would create -- unmeasured, documented as such); an "a" on an
+existing, non-empty file writes none.
+
+Tests: OPEN-CCS-WRITES-A-BOM-UNDER-THE-WINDOWS-BRICSCAD-DIALECTS
+(bricscad-v25, bricscad: EF BB BF 41 C3 A9 C3 A9; FF FE 41 00 42 00; an
+append creating the file; an append to an existing file),
+OPEN-CCS-WRITES-NO-BOM-ELSEWHERE (bricscad-mac, autocad-2022, clautolisp,
+strict, lax byte-for-byte unchanged); OPEN-ENCODING-THIRD-ARGUMENT-WARNS-
+PER-DIALECT now expects the BOM under bricscad-v25 / -v26. Spec draft (the
+",ccs=" bullet of the OPEN diagnostics) and user manual updated.

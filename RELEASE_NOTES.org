@@ -1959,6 +1959,12 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *=(open f "w,ccs=UTF-8")= writes a BOM under the Windows BricsCAD
+  dialects* (2.3.49): as BricsCAD V25 was measured to, =,ccs=UTF-8= and
+  =,ccs=UTF-16LE= on mode ="w"= write the byte-order mark first; an append
+  with the same suffix adds none to an existing file. Other dialects
+  unchanged.
+
 - *A checkout no longer loads an installed DWG library* (2.3.48): code run
   in a bare SBCL / CCL (a checkout, the test suites) took that Lisp's prefix
   for its own and could load the =clal_dwg= of a clautolisp installed there
