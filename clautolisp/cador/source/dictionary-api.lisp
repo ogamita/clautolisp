@@ -29,10 +29,111 @@ an ename at all."
 
 ;;; --- Method definitions -----------------------------------------
 
+;;; --- The named-object dictionary of a fresh drawing -------------
+;;;
+;;; cador-entget-subclass-layout-and-record-pointers, item 5. Measured
+;;; (entget-pointers section 11; BricsCAD V26 macOS job 17439813492, AutoCAD
+;;; 2022 job 17439813490): a new drawing's NOD holds the entries below, per
+;;; product, plus two PRORD<n> / PRPTR<n> XRECORDs on both (session
+;;; numbered, not modelled). BricsCAD dialects get BricsCAD's set, every
+;;; other dialect AutoCAD's. A layer record's 390 is the Normal plot style
+;;; name (ACAD_PLOTSTYLENAME's placeholder), its 347 the Global material.
+;;; Only the containers and the objects a record points at are made; what
+;;; the vendors put in the other dictionaries (layouts, styles, scales) is
+;;; issues/open/deferred-nod-default-contents.issue.
+
+(defparameter *default-named-objects*
+  ;; (KEY TYPE PRODUCTS (ENTRY-KEY ENTRY-TYPE) ...), in the order dictnext
+  ;; lists them; PRODUCTS is :both, :autocad or :bricscad.
+  '(("ACAD_CIP_PREVIOUS_PRODUCT_INFO" "XRECORD" :autocad)
+    ("ACAD_COLOR" "DICTIONARY" :autocad)
+    ("ACAD_DETAILVIEWSTYLE" "DICTIONARY" :both)
+    ("ACAD_GROUP" "DICTIONARY" :both)
+    ("ACAD_IMAGE_DICT" "DICTIONARY" :bricscad)
+    ("ACAD_IMAGE_VARS" "RASTERVARIABLES" :bricscad)
+    ("ACAD_LAYOUT" "DICTIONARY" :both)
+    ("ACAD_MATERIAL" "DICTIONARY" :both
+     ("ByBlock" "MATERIAL") ("ByLayer" "MATERIAL") ("Global" "MATERIAL"))
+    ("ACAD_MLEADERSTYLE" "DICTIONARY" :both)
+    ("ACAD_MLINESTYLE" "DICTIONARY" :both)
+    ("ACAD_PLOTSETTINGS" "DICTIONARY" :both)
+    ("ACAD_PLOTSTYLENAME" "ACDBDICTIONARYWDFLT" :both ("Normal" "ACDBPLACEHOLDER"))
+    ("ACAD_RENDER_ACTIVE_SETTINGS" "MENTALRAYRENDERSETTINGS" :bricscad)
+    ("ACAD_SCALELIST" "DICTIONARY" :both)
+    ("ACAD_SECTIONVIEWSTYLE" "DICTIONARY" :both)
+    ("ACAD_TABLESTYLE" "DICTIONARY" :both)
+    ("ACAD_VISUALSTYLE" "DICTIONARY" :both)
+    ("AcDbVariableDictionary" "DICTIONARY" :both)))
+
+(defun %default-object-data (type key)
+  "The stored group-code list of a default object of TYPE filed under KEY."
+  (cons (cons 0 type)
+        (cond
+          ((string= type "DICTIONARY")
+           (list (cons 100 "AcDbDictionary") (cons 280 0) (cons 281 1)))
+          ((string= type "ACDBDICTIONARYWDFLT")
+           (list (cons 100 "AcDbDictionary") (cons 281 1)))
+          ((string= type "XRECORD")
+           (list (cons 100 "AcDbXrecord") (cons 280 1)))
+          ((string= type "MATERIAL")
+           (list (cons 100 "AcDbMaterial") (cons 1 key)))
+          ((string= type "RASTERVARIABLES")
+           (list (cons 100 "AcDbRasterVariables")
+                 (cons 90 0) (cons 70 1) (cons 71 1) (cons 72 0)))
+          ((string= type "MENTALRAYRENDERSETTINGS")
+           (list (cons 100 "AcDbRenderSettings")
+                 (cons 100 "AcDbMentalRayRenderSettings")))
+          (t '()))))
+
+(defun %populate-default-named-objects (drawing root-handle)
+  "File the vendors' default entries in the fresh root dictionary ROOT-HANDLE."
+  (flet ((make-member (dict-handle key type)
+           (let ((object (clautolisp.drawing:add-entity
+                          drawing (%default-object-data type key))))
+             (clautolisp.drawing:dictionary-add-entry
+              drawing dict-handle key (clautolisp.drawing:entity-handle-id object))
+             (clautolisp.drawing:entity-handle-id object))))
+    (loop with product = (if (eq (%current-product) :bricscad) :bricscad :autocad)
+          for (key type products . entries) in *default-named-objects*
+          for handle = (and (member products (list :both product))
+                            (make-member root-handle key type))
+          when handle
+            do (loop for (entry-key entry-type) in entries
+                   for member = (make-member handle entry-key entry-type)
+                   when (string= type "ACDBDICTIONARYWDFLT")
+                     ;; the dictionary's default: its (340 . Normal)
+                     do (let ((dict (clautolisp.drawing:find-entity drawing handle)))
+                          (setf (clautolisp.drawing:entity-handle-data dict)
+                                (append (clautolisp.drawing:entity-handle-data dict)
+                                        (list (cons 100 "AcDbDictionaryWithDefault")
+                                              (cons 340 member)))))))))
+
+(defun %ensure-root-dictionary (host)
+  "The active drawing's root named-object dictionary, made on first need
+with the vendors' default entries. Making the objects every drawing has
+is no change of the drawing: DBMOD is left as it was."
+  (let ((drawing (cador-active-drawing host)))
+    (if (clautolisp.drawing:drawing-root-dictionary-handle drawing)
+        (clautolisp.drawing:ensure-root-dictionary drawing)
+        (let ((dbmod (clautolisp.drawing:drawing-dbmod drawing))
+              (clautolisp.drawing:*drawing-modification-hook* nil))
+          (let ((root (clautolisp.drawing:ensure-root-dictionary drawing)))
+            (%populate-default-named-objects
+             drawing (clautolisp.drawing:entity-handle-id root))
+            (setf (clautolisp.drawing:drawing-dbmod drawing) dbmod)
+            root)))))
+
+(defun %named-object-handle (host &rest keys)
+  "The handle of the object reached from the root dictionary through KEYS
+\(e.g. \"ACAD_MATERIAL\" \"Global\"), or NIL."
+  (let ((drawing (cador-active-drawing host))
+        (handle (clautolisp.drawing:entity-handle-id (%ensure-root-dictionary host))))
+    (dolist (key keys handle)
+      (setf handle (and handle
+                        (clautolisp.drawing:dictionary-member-handle drawing handle key))))))
+
 (defmethod host-namedobjdict ((host cador))
-  (let* ((drawing (cador-active-drawing host))
-         (root (clautolisp.drawing:ensure-root-dictionary drawing)))
-    (handle->ename host (clautolisp.drawing:entity-handle-id root))))
+  (handle->ename host (clautolisp.drawing:entity-handle-id (%ensure-root-dictionary host))))
 
 (defmethod host-dictsearch ((host cador) dict-ename name &key next-after)
   (let* ((drawing (cador-active-drawing host))

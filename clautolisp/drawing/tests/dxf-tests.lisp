@@ -91,15 +91,20 @@
     (is (string= "0" (drawing-variable restored "CLAYER")))))
 
 (test dxf-round-trip-keeps-handles-stable
+  ;; The layer record added first takes handle 10 (table records share the
+  ;; entities' handle space, cador-entget-subclass-layout-and-record-pointers
+  ;; item 3); the entities follow.
   (let* ((original (build-sample-drawing))
-         (e1 (entity-handle-string (find-entity original "10")))
+         (e1 (entity-handle-string (find-entity original "11")))
          (text (with-output-to-string (s)
                  (dxf-write-drawing-to-stream original s)))
          (restored (with-input-from-string (s text)
                      (dxf-read-drawing-from-stream s))))
-    (is (string= "10" e1))
-    (is (not (null (find-entity restored "10"))))     ; first entity
-    (is (not (null (find-entity restored "11"))))))    ; second entity
+    (is (string= "11" e1))
+    (is (equal "10" (symbol-table-record-id (find-table-record original :layer "WALLS"))))
+    (is (equal "10" (symbol-table-record-id (find-table-record restored :layer "WALLS"))))
+    (is (not (null (find-entity restored "11"))))     ; first entity
+    (is (not (null (find-entity restored "12"))))))    ; second entity
 
 ;;; --- BLOCKS round-trip -------------------------------------------
 

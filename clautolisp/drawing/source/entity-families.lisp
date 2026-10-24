@@ -197,6 +197,29 @@ or NIL when the type is not in the registry."
   (register-entity-family "DICTIONARY"
     :required '()
     :subclasses '("AcDbDictionary")
+    :graphical-p nil)
+  ;; The objects a fresh drawing's named-object dictionary holds
+  ;; (entget-pointers section 11, BricsCAD V26 job 17439813492): registered
+  ;; so the selection scan and the entnext walk leave them out.
+  (register-entity-family "ACDBDICTIONARYWDFLT"
+    :required '()
+    :subclasses '("AcDbDictionary" "AcDbDictionaryWithDefault")
+    :graphical-p nil)
+  (register-entity-family "ACDBPLACEHOLDER"
+    :required '()
+    :subclasses '()
+    :graphical-p nil)
+  (register-entity-family "MATERIAL"
+    :required '()
+    :subclasses '("AcDbMaterial")
+    :graphical-p nil)
+  (register-entity-family "RASTERVARIABLES"
+    :required '()
+    :subclasses '("AcDbRasterVariables")
+    :graphical-p nil)
+  (register-entity-family "MENTALRAYRENDERSETTINGS"
+    :required '()
+    :subclasses '("AcDbRenderSettings" "AcDbMentalRayRenderSettings")
     :graphical-p nil))
 
 (%install-entity-families)

@@ -43,7 +43,9 @@ not silently drop a client's entity from a selection scan)."
 (defun dictionary-entity-p (entity)
   "True iff ENTITY is a DICTIONARY object."
   (let ((type (%group-0-type (entity-handle-data entity))))
-    (and type (string-equal type "DICTIONARY"))))
+    (and type (or (string-equal type "DICTIONARY")
+                  ;; a dictionary with a default (ACAD_PLOTSTYLENAME)
+                  (string-equal type "ACDBDICTIONARYWDFLT")))))
 
 (defun %dict-entries-ordered (data)
   "Parse the interleaved (3 . key) / (350 . handle) entry pairs of a

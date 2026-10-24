@@ -82,7 +82,11 @@
       (let ((seen '()))
         (loop for e = (host-dictnext mock nod :rewind t) then (host-dictnext mock nod)
               while e
-              do (push (autolisp-string-value (cdr (assoc 1 e))) seen))
+              ;; the test's XRECORDs, among the fresh drawing's default
+              ;; entries (cador-entget-subclass-layout-and-record-pointers,
+              ;; item 5), which carry no group 1
+              when (assoc 1 e)
+                do (push (autolisp-string-value (cdr (assoc 1 e))) seen))
         ;; membership, order-independent
         (is (null (set-difference seen '("a" "b" "c") :test #'string=)))
         (is (= 3 (length seen)))))))

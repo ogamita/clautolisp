@@ -252,7 +252,10 @@ that is not part of a drawing."))
   ;; command-log.lisp: the document's LOGFILENAME (kept until LOGFILEPATH
   ;; changes) and its open log stream, or NIL.
   (log-name nil)
-  (log-stream nil))
+  (log-stream nil)
+  ;; (DRAWING . name -> handle): the BLOCK entity handles of the blocks whose
+  ;; header carries none (*Model_Space ...), for that drawing (entity-api).
+  (block-entity-handles nil))
 
 (defun cador-document-session (host &optional (key (cador-active-document-key host)))
   "The DOC-SESSION of document KEY (default: the current one), made on first use."
@@ -276,6 +279,7 @@ that is not part of a drawing."))
 (%define-document-session-accessor cador-ldata-store doc-session-ldata-store)
 (%define-document-session-accessor cador-open-complex-handle doc-session-open-complex-handle)
 (%define-document-session-accessor cador-open-block-definition doc-session-open-block-definition)
+(%define-document-session-accessor %cador-block-entity-handle-cell doc-session-block-entity-handles)
 (%define-document-session-accessor cador-ename-cache doc-session-ename-cache)
 (%define-document-session-accessor cador-ename-cache-drawing doc-session-ename-cache-drawing)
 (%define-document-session-accessor %cador-lock-count doc-session-lock-count)

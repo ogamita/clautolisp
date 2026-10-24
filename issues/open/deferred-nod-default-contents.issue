@@ -1,0 +1,38 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-nod-default-contents -- what cador leaves out of the vendors' default objects and of saving them
+#+STATUS: OPEN
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: cador-entget-subclass-layout-and-record-pointers
+#+BRANCH: -
+#+DATE: 2026-10-24
+
+* Context
+
+clautolisp 2.3.52 (cador-entget-subclass-layout-and-record-pointers, items
+3-5) gave table records handles, TABLE owners and the BLOCK / BLOCK_RECORD
+split, and filled a fresh drawing's named-object dictionary with each
+product's default entries (entget-pointers section 11: AutoCAD 2022 job
+17439813490, BricsCAD V26 job 17439813492, V25 job 17439813491). It made
+only what those measurements reach: the containers, ACAD_PLOTSTYLENAME's
+Normal placeholder and ACAD_MATERIAL's ByBlock / ByLayer / Global.
+
+* Deferred
+
+1. Dictionary contents the vendors have and cador does not: ACAD_LAYOUT's
+   Model / Layout1 LAYOUT objects, ACAD_MLINESTYLE / ACAD_TABLESTYLE /
+   ACAD_MLEADERSTYLE Standard, ACAD_SCALELIST's scales, ACAD_VISUALSTYLE's
+   styles, AcDbVariableDictionary's variables, the PRORD<n> / PRPTR<n>
+   XRECORDs (both products). Each needs measuring first (its entget).
+2. The MATERIAL objects' full group lists (about 100 groups on both CADs)
+   and ACDBPLACEHOLDER / RASTERVARIABLES / MENTALRAYRENDERSETTINGS bodies:
+   cador shows the type, marker and name only.
+3. AutoCAD's extension dictionaries ({ACAD_XDICTIONARY 360}) on the layer
+   record and the TABLE objects, the layer's 348, BricsCAD's BLOCK 71, the
+   BLOCK_RECORD's 360 / 340 / {BLKREFS 331 ...} groups.
+4. Saving them: the DXF writer puts every object of the entities table in
+   ENTITIES (a pre-existing limit for entmade dictionaries and xrecords too)
+   and writes only the legacy struct dictionary tree in OBJECTS; a
+   DXF-loaded drawing's NOD is not what (namedobjdict) reaches. The
+   handle-addressed objects should go to OBJECTS, and a loaded NOD become
+   the handle-addressed one.

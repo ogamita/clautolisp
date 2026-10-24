@@ -421,15 +421,56 @@ that boolean. Signals DRAWING-ERROR if no such entity exists."
 
 ;;; --- Symbol-table mutation --------------------------------------
 
+(defun %record-handle (drawing record previous)
+  "The hex handle RECORD is to carry: its id when that already is one, else
+the (5 . handle) it was read with, else the handle of the PREVIOUS record of
+that name it replaces (the vendors keep a record's handle across a
+modification), else a fresh one."
+  (let ((id (symbol-table-record-id record))
+        (file (cdr (assoc 5 (symbol-table-record-data record)))))
+    (cond ((stringp id) id)
+          ((and (stringp file) (ignore-errors (handle->integer file)))
+           (string-upcase file))
+          ((and previous (stringp (symbol-table-record-id previous)))
+           (symbol-table-record-id previous))
+          (t (format nil "~X" (allocate-handle drawing))))))
+
+(defun ensure-record-handle (drawing record &optional previous)
+  "Make RECORD's id its hex handle (see %RECORD-HANDLE; PREVIOUS is the
+record of that name it replaces, if any) and keep DRAWING's seed above it.
+Table records share the drawing's handle space with the entities, as on the
+vendors, so HANDENT and TBLOBJNAME meet on one ename. Returns the handle."
+  (let* ((handle (%record-handle drawing record previous))
+         (int (handle->integer handle)))
+    (setf (symbol-table-record-id record) handle)
+    (when (>= int (drawing-handle-seed drawing))
+      (setf (drawing-handle-seed drawing) (1+ int)))
+    handle))
+
 (defun add-table-record (drawing record)
-  "Add (or replace) RECORD in DRAWING's table for its kind; returns it."
+  "Add (or replace) RECORD in DRAWING's table for its kind; returns it.
+The record gets its handle (ENSURE-RECORD-HANDLE)."
   (note-drawing-modified drawing)
   (let* ((kind (symbol-table-record-kind record))
          (tbl (or (gethash kind (drawing-tables drawing))
                   (setf (gethash kind (drawing-tables drawing))
                         (make-hash-table :test #'equalp)))))
+    (ensure-record-handle drawing record
+                          (gethash (symbol-table-record-name record) tbl))
     (setf (gethash (symbol-table-record-name record) tbl) record)
     record))
+
+(defun find-table-record-by-handle (drawing handle)
+  "The SYMBOL-TABLE-RECORD (any kind) whose handle is HANDLE, or NIL."
+  (maphash (lambda (kind tbl)
+             (declare (ignore kind))
+             (maphash (lambda (name record)
+                        (declare (ignore name))
+                        (when (equalp (symbol-table-record-id record) handle)
+                          (return-from find-table-record-by-handle record)))
+                      tbl))
+           (drawing-tables drawing))
+  nil)
 
 (defun remove-table-record (drawing kind name)
   "Remove the KIND record named NAME; T iff it was present."

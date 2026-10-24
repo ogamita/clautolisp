@@ -135,6 +135,7 @@ from the cador package before the Phase-17a extraction.")
    #:drawing-table
    #:map-table-records
    #:find-table-record
+   #:find-table-record-by-handle
    #:table-record-dxf
    ;; Block definitions.
    #:drawing-blocks
@@ -179,6 +180,7 @@ from the cador package before the Phase-17a extraction.")
    #:set-drawing-variable
    #:ensure-drawing-variable
    #:add-table-record
+   #:ensure-record-handle
    #:remove-table-record
    ;; Entity-family registry + ENTMAKE/ENTMAKEX validation.
    #:entity-family

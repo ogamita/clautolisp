@@ -630,12 +630,25 @@ string used as-is (upcased), or the R2013 default (\"AC1027\") otherwise."
         (dxf-emit 70 (hash-table-count table))
         (maphash (lambda (name record)
                    (declare (ignore name))
-                   ;; Radians -> degrees, on a copy.
+                   ;; Radians -> degrees, on a copy; with the record's
+                   ;; handle, so a reload gives it the same one.
                    (dxf-write-object
-                    (dxf-entity-for-file (symbol-table-record-data record))))
+                    (dxf-entity-for-file (dxf-record-data-with-handle record))))
                  table)
         (dxf-emit 0 "ENDTAB"))
       (drawing-tables drawing)))))
+
+(defun dxf-record-data-with-handle (record)
+  "RECORD's group-code list with its (5 . handle) after the (0 . type) pair
+when the data carries none (ADD-TABLE-RECORD gave the record one)."
+  (let ((data (symbol-table-record-data record))
+        (id (symbol-table-record-id record)))
+    (if (or (assoc 5 data) (not (stringp id)))
+        data
+        (let ((zero (assoc 0 data)))
+          (if zero
+              (list* zero (cons 5 id) (remove zero data :test #'eq))
+              (cons (cons 5 id) data))))))
 
 (defun dxf-ordered-entity-data (data)
   "Return DATA with its (0 . TYPE) pair first: a DXF entity must begin
@@ -662,7 +675,12 @@ this takes the DRAWING -- the seed lives there."
       (let* ((data (symbol-table-record-data record))
              (existing (cdr (assoc 5 data))))
         (or existing
-            (let ((handle (format nil "~X" (allocate-handle drawing)))
+            ;; The record's own handle (ADD-TABLE-RECORD gives every record
+            ;; one), so TBLOBJNAME, HANDENT and the file agree.
+            (let ((handle (let ((id (symbol-table-record-id record)))
+                            (if (stringp id)
+                                id
+                                (format nil "~X" (allocate-handle drawing)))))
                   (zero (assoc 0 data)))
               ;; AFTER the (0 . type) pair: a DXF object must begin with
               ;; its type marker, and a table record is written in the
