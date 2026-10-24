@@ -519,6 +519,9 @@ PAIRS-READ-BACK) as a two-digit integer: 10 * (entmod non-nil) + pairs."
   (if (null (dictsearch nod \"K\")) 1 0)"))))
 
 (test dd-dictnext-enumerates-entries
+  ;; Counts the test's XRECORDs (group 1): a fresh drawing's NOD also holds
+  ;; the vendors' default entries (cador-entget-subclass-layout-and-record-
+  ;; pointers, item 5).
   (is (eql 3
            (%dd-run "
   (setq nod (namedobjdict))
@@ -527,7 +530,7 @@ PAIRS-READ-BACK) as a two-digit integer: 10 * (entmod non-nil) + pairs."
   (dictadd nod \"C\" (entmakex (list (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\") (cons 1 \"c\"))))
   (setq n 0)
   (setq d (dictnext nod T))
-  (while d (setq n (1+ n)) (setq d (dictnext nod)))
+  (while d (if (assoc 1 d) (setq n (1+ n))) (setq d (dictnext nod)))
   n"))))
 
 ;;; --- Symbol tables ----------------------------------------------

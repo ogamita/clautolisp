@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-entget-subclass-layout-and-record-pointers -- after the header, cador's entget layout and its table records still differ from the vendors
-#+STATUS: WIP
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: cador-entget-owner-and-header-layout
@@ -84,3 +84,48 @@ marker twice. Test ENTGET-BODY-LAYOUT-FOLLOWS-THE-VENDORS (cador).
 4. tblobjname "BLOCK" answers the BLOCK entity (its 330 the BLOCK_RECORD).
 5. The named-object dictionary of a fresh drawing: the vendors' default
    entries (17 on AutoCAD 2022, 16 on BricsCAD V26).
+
+* Items 3 to 5 done (clautolisp 2.3.52)
+
+Measured first: entget-pointers section 11 (MR !484; AutoCAD 2022 job
+17439813490, BricsCAD V25 Windows 17439813491, V26 macOS 17439813492 -- the
+two BricsCADs agree):
+  NOD           AutoCAD 15 entries (ACAD_CIP_PREVIOUS_PRODUCT_INFO XRECORD,
+                ACAD_COLOR, ...); BricsCAD 16 (ACAD_IMAGE_DICT, ACAD_IMAGE_VARS
+                RASTERVARIABLES, ACAD_RENDER_ACTIVE_SETTINGS, no ACAD_COLOR);
+                both ACAD_PLOTSTYLENAME ACDBDICTIONARYWDFLT (the PRORD<n> /
+                PRPTR<n> XRECORDs listed too are the probe's own)
+  layer's 330   the LAYER TABLE: BricsCAD -1 0 2 5 100 70, AutoCAD -1 0 2 5
+                {ACAD_XDICTIONARY 360} 330 100 70; 70 = 1
+  layer's 390   ACDBPLACEHOLDER (-1 0 5 102 330 102 330)
+  layer's 347   MATERIAL "Global"
+  handent       of layer 0's handle ("10" on both) is EQ to tblobjname's
+  BLOCK's 330   the BLOCK_RECORD: AutoCAD -1 0 330 5 100 100 2 360 340 {BLKREFS}
+                70 280 281, BricsCAD -1 0 5 330 100 100 2 360 {BLKREFS} 70 280
+                281; entnext of the BLOCK is the block's LINE
+
+Done:
+3. ADD-TABLE-RECORD / ENSURE-RECORD-HANDLE (drawing): a record's id is its
+   hex handle (the file's 5, else the replaced record's, else allocated), in
+   the entities' handle space; the DXF writer emits it. HANDENT reaches
+   records. The record's entget (%TABLE-RECORD-ENTGET-VIEW): 0 5 330 (its
+   TABLE, or the 330 it was read with) in each product's order, the two
+   markers, then *RECORD-LAYOUTS* (layer 2 70 62 6 290 370 390 347 with the
+   defaults; block record 2 70 280 281). The TABLE objects are views with
+   AutoCAD's fixed handles (1 BLOCK_RECORD, 2 LAYER, 3 STYLE, 5 LTYPE, ...).
+4. (tblobjname "BLOCK" n) is the BLOCK entity (%BLOCK-ENTITY-VIEW, each
+   product's layout), with its own handle (the header's 5, or one assigned);
+   its 330 is the BLOCK_RECORD every entity's 330 names; ENTMAKEX of a BLOCK
+   returns it; entnext from it walks the block.
+5. %ENSURE-ROOT-DICTIONARY (cador): a fresh NOD gets the product's default
+   entries (BricsCAD dialects BricsCAD's, others AutoCAD's); Normal and
+   ByBlock / ByLayer / Global made, DBMOD untouched. entnext walks graphical
+   entities only (it returned the NOD before). The new object types are
+   registered non-graphical families.
+
+Tests: ENTGET-TABLE-RECORDS-BLOCKS-AND-NOD-FOLLOW-THE-VENDORS (cador, both
+products); the handle-pinned tests now follow the records taking the first
+handles. A template drawing with the defaults still saves as DWG with its
+entities (checked locally). What is not modelled (other dictionaries'
+contents, MATERIAL bodies, extension dictionaries, OBJECTS-section writing)
+is issues/open/deferred-nod-default-contents.issue.

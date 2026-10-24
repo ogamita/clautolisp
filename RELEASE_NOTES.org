@@ -1959,6 +1959,34 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *Dictionaries and xrecords are saved and reloaded as such* (2.3.54): a
+  DXF or DWG save writes them to the OBJECTS section (they went to ENTITIES,
+  where libredwg dropped them), and a loaded drawing's named-object
+  dictionary is what =namedobjdict= reaches. The default objects carry their
+  own extension dictionaries (AutoCAD's materials' FBXASSET ...), and a
+  BLOCK_RECORD's =entget= lists its BLOCK (360), a space's layout (340) and
+  the INSERTs referencing it ({BLKREFS 331 ...}); a space's BLOCK its layout
+  (410). Measured on AutoCAD 2022 and BricsCAD V25 / V26.
+
+- *A new drawing's dictionaries hold what the CADs put in them* (2.3.53):
+  layouts (Model, Layout1, Layout2), the ByBlock / ByLayer / Global
+  materials, the Standard mline / mleader / table styles, the detail and
+  section view styles, the scale list, the visual styles and the variable
+  dictionary, with every group as AutoCAD 2022 and BricsCAD V25 / V26 list
+  them and their pointers resolved (a layout's block record, a style's text
+  style); under the AutoCAD dialects layer 0, model space's block record and
+  the LAYER table carry AutoCAD's extension dictionaries (ACAD_LAYERSTATES).
+
+- *Table records, BLOCKs and the named-object dictionary as the CADs show
+  them* (2.3.52): a table record has a handle (=handent= of it is =eq= to
+  =tblobjname='s ename) and its =entget= lists the TABLE owner, the subclass
+  markers and, for a layer, 70 62 6 290 370 and the plot style / material
+  pointers; =(tblobjname "BLOCK" n)= is the BLOCK entity, whose 330 is the
+  BLOCK_RECORD an entity's 330 names; a fresh drawing's =namedobjdict= holds
+  the product's default entries (ACAD_GROUP, ACAD_LAYOUT, ACAD_MATERIAL ...),
+  which =entnext= does not walk. Measured on AutoCAD 2022 and BricsCAD V25 /
+  V26.
+
 - *=entget= lists an entity as the CADs do* (2.3.51): after the header,
   =(100 . "AcDbEntity")=, the common groups (67, 410, 8 ...), then each
   subclass marker followed by its own groups, with the defaults the CADs

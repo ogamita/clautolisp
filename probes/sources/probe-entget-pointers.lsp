@@ -275,4 +275,187 @@
       (setq k (strcat "PRORD" tag))
       (strcat (cad-probe--ep-codes (entget x)) " | "
               (progn (dictadd nod k x) (cad-probe--ep-codes (entget x)))))))
+
+  ;; 11. What the table records and the named-object dictionary POINT AT
+  ;; (cador-entget-subclass-layout-and-record-pointers, items 3-5): section
+  ;; 10 gave the codes; cador needs the objects behind them -- the TABLE a
+  ;; record's 330 names, the layer's 390 / 347 targets, the default NOD
+  ;; entries by NAME, the BLOCK entity vs its BLOCK_RECORD, and whether
+  ;; handent reaches a table record by its handle.
+  (cad-probe-capture "entget-pointers" "records: NOD entries name=target"
+    (function (lambda ( / out d)
+      (setq out "")
+      (foreach p (entget nod)
+        (if (= (car p) 3) (setq d (cdr p)))
+        (if (and d (= (car p) 350))
+          (setq out (strcat out d "=" (cad-probe--ep-follow (cdr p)) "; ")
+                d nil)))
+      out)))
+  (cad-probe-capture "entget-pointers" "records: layer 0's 330 (TABLE): codes | 2 | 70"
+    (function (lambda ( / tbl)
+      (setq tbl (entget (cdr (assoc 330 (entget (tblobjname "LAYER" "0"))))))
+      (strcat (cad-probe--ep-codes tbl)
+              " | 2=" (vl-prin1-to-string (cdr (assoc 2 tbl)))
+              " | 70=" (vl-prin1-to-string (cdr (assoc 70 tbl)))))))
+  (cad-probe-capture "entget-pointers" "records: layer 0's 390 target: codes"
+    (function (lambda ( / v)
+      (setq v (cdr (assoc 390 (entget (tblobjname "LAYER" "0")))))
+      (strcat (cad-probe--ep-follow v) " | "
+              (if (= (type v) 'ENAME) (cad-probe--ep-codes (entget v)) "")))))
+  (cad-probe-capture "entget-pointers" "records: layer 0's 347 target: codes | 1"
+    (function (lambda ( / v d)
+      (setq v (cdr (assoc 347 (entget (tblobjname "LAYER" "0")))))
+      (setq d (if (= (type v) 'ENAME) (entget v) nil))
+      (strcat (cad-probe--ep-follow v) " | " (cad-probe--ep-codes d)
+              " | 1=" (vl-prin1-to-string (cdr (assoc 1 d)))))))
+  (cad-probe-capture "entget-pointers" "records: handent of layer 0's handle eq tblobjname?"
+    (function (lambda ( / r h)
+      (setq r (tblobjname "LAYER" "0"))
+      (setq h (cdr (assoc 5 (entget r))))
+      (strcat "handle " (vl-prin1-to-string h) " | eq "
+              (if (eq (handent h) r) "T" "NIL")))))
+  (cad-probe-capture "entget-pointers" "records: BLOCK entity's 330: codes | entnext type"
+    (function (lambda ( / b r n)
+      (setq b (tblobjname "BLOCK" blk))
+      (setq r (cdr (assoc 330 (entget b))))
+      (setq n (entnext b))
+      (strcat (cad-probe--ep-follow r) " | "
+              (if (= (type r) 'ENAME) (cad-probe--ep-codes (entget r)) "")
+              " | entnext " (cad-probe--ep-follow n)))))
+  ;; 12. (below)
+  (cad-probe-run-default-object-probes)
+  (princ))
+
+;;; 12. WHAT the default objects contain (deferred-nod-default-contents):
+;;; every NOD entry the CAD made (the PRORD / PRPTR ones are this probe's,
+;;; sections 2 and 10), each member of the sub-dictionaries two levels
+;;; down, and the extension dictionaries ({ACAD_XDICTIONARY 360}) of the
+;;; NOD, of layer 0, of *Model_Space's BLOCK_RECORD and of each symbol TABLE
+;;; object. Values are dumped as CODE=VALUE, a pointer as <TYPE name> -- its
+;;; (0 . TYPE) and its record name or dictionary key, never a handle, which
+;;; differs between runs.
+
+(defun cad-probe--ep-target-name (v d / o k)
+  ;; A name for the object V (its entget D): a record's / TABLE's group 2,
+  ;; else the key it is filed under in its owner dictionary, else nil.
+  (cond ((= (type (cdr (assoc 2 d))) 'STR) (cdr (assoc 2 d)))
+        ((and (setq o (cdr (assoc 330 d))) (= (type o) 'ENAME)
+              (cad-probe--ep-dictionary-p o))
+         (foreach m (cad-probe--ep-members o)
+           (if (eq (cdr m) v) (setq k (car m))))
+         k)))
+
+(defun cad-probe--ep-val (v / d n)
+  ;; A pointer as <TYPE name> (handles differ between runs), else the value.
+  (cond ((= (type v) 'ENAME)
+         (if (setq d (entget v))
+           (strcat "<" (cdr (assoc 0 d))
+                   (if (setq n (cad-probe--ep-target-name v d)) (strcat " " n) "")
+                   ">")
+           "<erased>"))
+        (t (vl-prin1-to-string v))))
+
+(defun cad-probe--ep-dump (data / out)
+  ;; "0=\"DICTIONARY\" 5=\"1A\" 330=<DICTIONARY> 100=\"AcDbDictionary\" ..."
+  (setq out "")
+  (foreach p data
+    (if (and (= (type p) 'LIST) (/= (car p) -1))
+      (setq out (strcat out (if (= out "") "" " ")
+                        (if (= (type (car p)) 'INT) (itoa (car p)) "?")
+                        "=" (cad-probe--ep-val (cdr p))))))
+  out)
+
+(defun cad-probe--ep-dictionary-p (e / d)
+  (and (= (type e) 'ENAME)
+       (setq d (entget e))
+       (member (cdr (assoc 0 d)) '("DICTIONARY" "ACDBDICTIONARYWDFLT"))))
+
+(defun cad-probe--ep-members (dict / out k)
+  ;; ((NAME . ENAME) ...) of DICT, in order.
+  (foreach p (entget dict)
+    (cond ((= (car p) 3) (setq k (cdr p)))
+          ((and k (member (car p) '(350 360)))
+           (setq out (cons (cons k (cdr p)) out) k nil))))
+  (reverse out))
+
+(defun cad-probe--ep-xdict (data / in x)
+  ;; The extension dictionary of the object whose entget is DATA, or nil.
+  (foreach p data
+    (cond ((and (= (car p) 102) (= (cdr p) "{ACAD_XDICTIONARY")) (setq in t))
+          ((and in (= (car p) 360) (null x)) (setq x (cdr p)))
+          ((and (= (car p) 102) (= (cdr p) "}")) (setq in nil))))
+  x)
+
+(defun cad-probe--ep-dump-dictionary (label dict depth / members)
+  ;; Capture LABEL's own dump and its member list, then each member's dump
+  ;; (LABEL/NAME); a member dictionary is opened DEPTH more levels.
+  (cad-probe-capture "entget-pointers" (strcat label ": dictionary")
+    (function (lambda () (cad-probe--ep-dump (entget dict)))))
+  (setq members (cad-probe--ep-members dict))
+  (cad-probe-capture "entget-pointers" (strcat label ": members")
+    (function (lambda ( / out)
+      (setq out "")
+      (foreach m members
+        (setq out (strcat out (car m) "=" (cad-probe--ep-val (cdr m)) "; ")))
+      (if (= out "") "none" out))))
+  (foreach m members
+    (if (and (cad-probe--ep-dictionary-p (cdr m)) (> depth 0))
+      (cad-probe--ep-dump-dictionary (strcat label "/" (car m)) (cdr m) (1- depth))
+      (progn
+        (cad-probe-capture "entget-pointers" (strcat label "/" (car m))
+          (function (lambda () (cad-probe--ep-dump (entget (cdr m))))))
+        ;; the member's own extension dictionary, when it has one
+        ;; (AutoCAD's Model layout, materials, table style)
+        (if (and (> depth 0) (cad-probe--ep-xdict (entget (cdr m))))
+          (cad-probe--ep-dump-dictionary
+            (strcat label "/" (car m) " xdict")
+            (cad-probe--ep-xdict (entget (cdr m))) (1- depth)))))))
+
+(defun cad-probe--ep-dump-xdict (label data / x)
+  (setq x (cad-probe--ep-xdict data))
+  (if x
+    (cad-probe--ep-dump-dictionary (strcat "xdict: " label) x 2)
+    (cad-probe-capture "entget-pointers" (strcat "xdict: " label)
+      (function (lambda () "none")))))
+
+(defun cad-probe-run-default-object-probes ( / nod rec tbl)
+  (setq nod (namedobjdict))
+  ;; The NOD's entries the CAD made, two levels deep.
+  (foreach m (cad-probe--ep-members nod)
+    (if (not (wcmatch (car m) "PRORD*,PRPTR*"))
+      (if (cad-probe--ep-dictionary-p (cdr m))
+        (cad-probe--ep-dump-dictionary (strcat "defaults: " (car m)) (cdr m) 2)
+        (cad-probe-capture "entget-pointers" (strcat "defaults: " (car m))
+          (function (lambda () (cad-probe--ep-dump (entget (cdr m)))))))))
+  ;; Extension dictionaries.
+  (cad-probe--ep-dump-xdict "NOD" (entget nod))
+  (cad-probe--ep-dump-xdict "layer 0" (entget (tblobjname "LAYER" "0")))
+  ;; *Model_Space's BLOCK_RECORD (the BLOCK entity's 330) and its TABLE.
+  (setq rec (cdr (assoc 330 (entget (tblobjname "BLOCK" "*Model_Space")))))
+  (if (= (type rec) 'ENAME)
+    (progn
+      (cad-probe--ep-dump-xdict "*Model_Space BLOCK_RECORD" (entget rec))
+      (setq tbl (cdr (assoc 330 (entget rec))))
+      (if (= (type tbl) 'ENAME)
+        (cad-probe--ep-dump-xdict "BLOCK_RECORD TABLE" (entget tbl)))))
+  ;; The records' and BLOCKs' full values (section 11 gave their codes):
+  ;; the layer's 348, the BLOCK's 71, the BLOCK_RECORD's 360 / 340 / BLKREFS
+  ;; -- the probe's own block (section 4) has an INSERT.
+  (cad-probe-capture "entget-pointers" "values: layer 0"
+    (function (lambda () (cad-probe--ep-dump (entget (tblobjname "LAYER" "0"))))))
+  (foreach name (list "*Model_Space" "*Paper_Space" blk)
+    (if (and name (tblobjname "BLOCK" name))
+      (progn
+        (cad-probe-capture "entget-pointers" (strcat "values: BLOCK " name)
+          (function (lambda () (cad-probe--ep-dump (entget (tblobjname "BLOCK" name))))))
+        (cad-probe-capture "entget-pointers" (strcat "values: BLOCK_RECORD " name)
+          (function (lambda ()
+            (cad-probe--ep-dump
+              (entget (cdr (assoc 330 (entget (tblobjname "BLOCK" name))))))))))))
+  (foreach spec '(("LAYER" "0") ("LTYPE" "Continuous") ("STYLE" "Standard")
+                  ("DIMSTYLE" "Standard") ("APPID" "ACAD") ("VPORT" "*Active"))
+    (setq rec (tblobjname (car spec) (cadr spec)))
+    (setq tbl (if rec (cdr (assoc 330 (entget rec)))))
+    (if (= (type tbl) 'ENAME)
+      (cad-probe--ep-dump-xdict (strcat (car spec) " TABLE") (entget tbl))))
   (princ))

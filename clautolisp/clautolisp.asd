@@ -225,6 +225,7 @@
    (:file "cador/source/api")
    (:file "cador/source/entity-api")
    (:file "cador/source/selection-api")
+   (:file "cador/source/default-objects")
    (:file "cador/source/dictionary-api")
    (:file "cador/source/table-api")
    (:file "cador/source/sysvar-api")

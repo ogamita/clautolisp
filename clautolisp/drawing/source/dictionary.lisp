@@ -34,16 +34,18 @@ not silently drop a client's entity from a selection scan)."
   (let* ((data (entity-handle-data entity))
          (type (%group-0-type data))
          (family (and type (find-entity-family type))))
-    (if family
-        (entity-family-graphical-p family)
-        t)))
+    (cond ((entity-handle-object-p entity) nil)   ; read from OBJECTS
+          (family (entity-family-graphical-p family))
+          (t t))))
 
 ;;; --- Dictionary object helpers ----------------------------------
 
 (defun dictionary-entity-p (entity)
   "True iff ENTITY is a DICTIONARY object."
   (let ((type (%group-0-type (entity-handle-data entity))))
-    (and type (string-equal type "DICTIONARY"))))
+    (and type (or (string-equal type "DICTIONARY")
+                  ;; a dictionary with a default (ACAD_PLOTSTYLENAME)
+                  (string-equal type "ACDBDICTIONARYWDFLT")))))
 
 (defun %dict-entries-ordered (data)
   "Parse the interleaved (3 . key) / (350 . handle) entry pairs of a
@@ -77,10 +79,14 @@ keeping the dictionary object's structural codes in order."
   "Rebuild a DICTIONARY object's group-code list from its structural
 DATA (entry pairs stripped) and the ordered ENTRIES alist
  ((KEY . HANDLE) ...), appending each as (3 . key) (350 . handle)."
-  (append (%dict-strip-entries data)
-          (loop for (key . handle) in entries
-                collect (cons 3 key)
-                collect (cons 350 handle))))
+  ;; A hard-owner dictionary ((280 . 1): an extension dictionary) lists its
+  ;; members with 360, as AutoCAD's do (entget-pointers section 12); the
+  ;; others with 350.
+  (let ((code (if (eql 1 (cdr (assoc 280 data))) 360 350)))
+    (append (%dict-strip-entries data)
+            (loop for (key . handle) in entries
+                  collect (cons 3 key)
+                  collect (cons code handle)))))
 
 (defun ensure-root-dictionary (drawing)
   "Return the root named-object-dictionary ENTITY-HANDLE of DRAWING,

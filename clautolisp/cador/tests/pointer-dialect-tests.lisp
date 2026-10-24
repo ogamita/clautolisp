@@ -175,3 +175,154 @@ twice."
             "~A LINE body after entmod" dialect)
         (let ((model (cdr (assoc 410 (host-entget mock line)))))
           (is (equal "Model" (autolisp-string-value model))))))))
+
+
+(defun %rt-type (mock ename)
+  (let ((v (cdr (assoc 0 (host-entget mock ename)))))
+    (and v (autolisp-string-value v))))
+
+(test entget-table-records-blocks-and-nod-follow-the-vendors
+  "cador-entget-subclass-layout-and-record-pointers, items 3 to 5, as
+measured by entget-pointers section 11 (AutoCAD 2022 job 17439813490,
+BricsCAD V26 job 17439813492): a table record has a handle HANDENT reaches,
+its TABLE owner, the layer's plot style and material pointers; tblobjname
+BLOCK is the BLOCK entity, owned by the BLOCK_RECORD a LINE names; a fresh
+NOD holds the product's default entries, which entnext does not walk."
+  (dolist (dialect '(:autocad-2022 :bricscad))
+    (%with-dialect (dialect)
+      (let* ((mock (make-cador))
+             (bricscad (eq dialect :bricscad))
+             (line (%pd-line mock))
+             (layer (host-tblobjname mock "LAYER" "0"))
+             (view (host-entget mock layer)))
+        ;; item 3: the record
+        (is (equal (if bricscad
+                       '(-1 0 5 330 100 100 2 70 62 6 290 370 390 347)
+                       '(-1 0 5 102 360 102 330 100 100 2 70 62 6 290 370 390 347))
+                   (mapcar #'car view))
+            "~A layer record: ~S" dialect (mapcar #'car view))
+        (is (eq layer (host-handent mock (cdr (assoc 5 view)))) "~A handent" dialect)
+        (let ((table (host-entget mock (cdr (assoc 330 view)))))
+          (is (equal "TABLE" (autolisp-string-value (cdr (assoc 0 table)))))
+          (is (equal "LAYER" (autolisp-string-value (cdr (assoc 2 table)))))
+          (is (equal (if bricscad '(-1 0 2 5 100 70) '(-1 0 2 5 102 360 102 330 100 70))
+                     (mapcar #'car table))
+              "~A TABLE: ~S" dialect (mapcar #'car table)))
+        (is (equal "ACDBPLACEHOLDER" (%rt-type mock (cdr (assoc 390 view)))))
+        (let ((material (host-entget mock (cdr (assoc 347 view)))))
+          (is (equal "MATERIAL" (autolisp-string-value (cdr (assoc 0 material)))))
+          (is (equal "Global" (autolisp-string-value (cdr (assoc 1 material))))))
+        ;; item 4: the BLOCK entity and its BLOCK_RECORD
+        (let* ((ms (host-tblobjname mock "BLOCK" "*Model_Space"))
+               (record (cdr (assoc 330 (host-entget mock ms)))))
+          (is (equal "BLOCK" (%rt-type mock ms)))
+          (is (equal "BLOCK_RECORD" (%rt-type mock record)))
+          (is (eq record (cdr (assoc 330 (host-entget mock line)))) "~A LINE's owner" dialect))
+        (let ((block (host-entmakex mock (list (cons 0 "BLOCK") (cons 2 "RT1") (cons 70 0)
+                                               (list 10 0.0d0 0.0d0 0.0d0)))))
+          (host-entmakex mock (make-line-data))
+          (host-entmakex mock (list (cons 0 "ENDBLK")))
+          (is (eq block (host-tblobjname mock "BLOCK" "RT1")))
+          (is (equal (if bricscad
+                         '(-1 0 5 330 100 67 8 100 2 70 71 10 3 1 -2)
+                         '(-1 0 330 5 100 67 8 100 70 10 -2 2 1))
+                     (mapcar #'car (host-entget mock block)))
+              "~A BLOCK: ~S" dialect (mapcar #'car (host-entget mock block)))
+          (is (equal "LINE" (%rt-type mock (host-entnext mock block))))
+          (is (eq block (host-handent mock (autolisp-string-value
+                                            (cdr (assoc 5 (host-entget mock block))))))))
+        ;; item 5: the named-object dictionary
+        (let ((keys (loop for (code . value) in (host-entget mock (host-namedobjdict mock))
+                          when (eql code 3) collect (autolisp-string-value value))))
+          (is (= (if bricscad 16 15) (length keys)) "~A NOD: ~S" dialect keys)
+          (dolist (key '("ACAD_GROUP" "ACAD_LAYOUT" "ACAD_MATERIAL" "ACAD_PLOTSTYLENAME"))
+            (is (member key keys :test #'string=)))
+          (is (eq (not bricscad) (and (member "ACAD_COLOR" keys :test #'string=) t)))
+          (is (eq bricscad (and (member "ACAD_IMAGE_DICT" keys :test #'string=) t))))
+        ;; the walk sees the LINE only, no dictionary
+        (is (eq line (host-entnext mock nil)))
+        (is (null (host-entnext mock line)))))))
+
+
+(defun %dc-member (mock dict key)
+  (host-dictsearch mock (if (consp dict) (cdr (assoc -1 dict)) dict)
+                   (make-autolisp-string key)))
+
+(test default-objects-hold-the-measured-contents
+  "deferred-nod-default-contents: a fresh drawing's dictionaries hold what
+the entget-pointers probe (section 12; AutoCAD 2022 job 17440097863, BricsCAD
+V26 job 17440097865) dumped, with their pointers resolved; AutoCAD's layer 0
+and LAYER TABLE carry their extension dictionaries, BricsCAD's none."
+  (dolist (dialect '(:autocad-2022 :bricscad))
+    (%with-dialect (dialect)
+      (let* ((mock (make-cador))
+             (bricscad (eq dialect :bricscad))
+             (nod (host-namedobjdict mock))
+             (layouts (%dc-member mock nod "ACAD_LAYOUT"))
+             (model (%dc-member mock layouts "Model"))
+             (scales (%dc-member mock nod "ACAD_SCALELIST"))
+             (mleader (%dc-member mock (%dc-member mock nod "ACAD_MLEADERSTYLE") "Standard")))
+        ;; layouts, English-named, each pointing at its block record
+        (is (equal "LAYOUT" (autolisp-string-value (cdr (assoc 0 model)))))
+        (is (not (null (%dc-member mock layouts "Layout1"))) "~A Layout1" dialect)
+        (is (find (%model-space-record mock) model
+                  :key (lambda (p) (and (eql 330 (car p)) (cdr p))))
+            "~A Model's block record" dialect)
+        ;; the scale list: A0 is 1:1
+        (let ((a0 (%dc-member mock scales "A0")))
+          (is (equal "1:1" (autolisp-string-value (cdr (assoc 300 a0))))))
+        ;; the mleader style's text style is the STYLE record Standard
+        (is (eq (host-tblobjname mock "STYLE" "Standard") (cdr (assoc 342 mleader))))
+        ;; the variables
+        (let ((v (%dc-member mock (%dc-member mock nod "AcDbVariableDictionary") "CANNOSCALE")))
+          (is (equal "1:1" (autolisp-string-value (cdr (assoc 1 v))))))
+        ;; extension dictionaries: AutoCAD's only
+        (let ((layer (host-entget mock (host-tblobjname mock "LAYER" "0"))))
+          (if bricscad
+              (is (null (assoc 360 layer)))
+              (let* ((table (host-entget mock (cdr (assoc 330 layer))))
+                     (xdict (cdr (assoc 360 table))))
+                (is (not (null (assoc 360 layer))))
+                (is (not (null (%dc-member mock xdict "ACAD_LAYERSTATES"))))
+                (is (eql 1 (cdr (assoc 280 (host-entget mock xdict))))))))
+        ;; none of it is walked or selected
+        (is (null (host-entnext mock nil)))))))
+
+
+(test default-objects-member-xdicts-and-block-records
+  "deferred-nod-default-contents, items 1 and 2 (entget-pointers section 12,
+round 2: AutoCAD 2022 job 17441114651, BricsCAD V26 job 17441114653): the
+objects inside the NOD carry their own extension dictionaries (AutoCAD's
+materials hold FBXASSET), and a BLOCK_RECORD lists its BLOCK (360), a
+space's LAYOUT (340) and the INSERTs referencing it ({BLKREFS 331})."
+  (dolist (dialect '(:autocad-2022 :bricscad))
+    (%with-dialect (dialect)
+      (let* ((mock (make-cador))
+             (bricscad (eq dialect :bricscad))
+             (nod (host-namedobjdict mock))
+             (global (%dc-member mock (%dc-member mock nod "ACAD_MATERIAL") "Global"))
+             (xdict (cdr (assoc 360 global))))
+        (if bricscad
+            (is (null xdict))
+            (is (not (null (%dc-member mock xdict "FBXASSET")))))
+        ;; model space's record: its BLOCK and its Model layout
+        (let* ((ms (host-tblobjname mock "BLOCK" "*Model_Space"))
+               (record (host-entget mock (cdr (assoc 330 (host-entget mock ms)))))
+               (pointers (remove 360 record :key #'car :test-not #'eql)))
+          (is (member ms pointers :key #'cdr) "~A record's 360 is its BLOCK" dialect)
+          (is (equal "Model" (autolisp-string-value
+                              (cdr (assoc 410 (host-entget mock ms))))))
+          (is (equal "LAYOUT" (autolisp-string-value
+                               (cdr (assoc 0 (host-entget mock (cdr (assoc 340 record)))))))))
+        ;; a block with an INSERT
+        (host-entmakex mock (list (cons 0 "BLOCK") (cons 2 "BR1") (cons 70 0)
+                                  (list 10 0.0d0 0.0d0 0.0d0)))
+        (host-entmakex mock (make-line-data))
+        (host-entmakex mock (list (cons 0 "ENDBLK")))
+        (let* ((insert (host-entmakex mock (list (cons 0 "INSERT") (cons 8 "0") (cons 2 "BR1")
+                                                 (list 10 0.0d0 0.0d0 0.0d0))))
+               (record (host-entget mock (cdr (assoc 330 (host-entget
+                                                          mock (host-tblobjname mock "BLOCK" "BR1")))))))
+          (is (equal '(2 360 102 331 102 70 280 281) (mapcar #'car (nthcdr 6 record)))
+              "~A BR1 record: ~S" dialect (mapcar #'car record))
+          (is (eq insert (cdr (assoc 331 record)))))))))

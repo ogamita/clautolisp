@@ -249,9 +249,10 @@ proceeds silently."
                  "bad DXF group: ~A"
                  (%al-pair-text (car bad) (cdr bad))))))))))
 
-(defun al-data->pure (data operator-name)
+(defun al-data->pure (data operator-name &optional host)
   "Convert an AutoLISP DXF group-code list to a pure-CL list. The
-integer group code of each pair is kept; the value is converted."
+integer group code of each pair is kept; the value is converted. HOST
+lets the view-only groups be recognised (%DROP-VIEW-ONLY-GROUPS)."
   (unless (listp data)
     (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
      :invalid-entity-data
@@ -261,9 +262,9 @@ integer group code of each pair is kept; the value is converted."
             (if (consp pair)
                 (cons (car pair) (al->pure-value (cdr pair)))
                 pair))
-          (%drop-view-only-groups data)))
+          (%drop-view-only-groups data host)))
 
-(defun %drop-view-only-groups (data)
+(defun %drop-view-only-groups (data &optional host)
   "DATA (an entmake / entmod list) without the groups ENTGET synthesizes
 for the vendors' header (%VENDOR-HEADER-ORDER), so an (entmod (entget
 e)) or (entmake (cdr (entget e))) round trip stores none of them: the
@@ -279,8 +280,9 @@ the drawing keeps implicit)."
          (setf in-group t))
         ((and (consp pair) (group-code-equal-p (car pair) 330)
               (typep (cdr pair) 'clautolisp.autolisp-runtime:autolisp-ename)
-              (symbolp (clautolisp.autolisp-runtime:autolisp-ename-value (cdr pair)))
-              (clautolisp.autolisp-runtime:autolisp-ename-value (cdr pair))))
+              (let ((value (clautolisp.autolisp-runtime:autolisp-ename-value (cdr pair))))
+                (or (and (symbolp value) value)
+                    (and host (%find-table-record-by-id host value))))))
         (t (push pair out))))))
 
 ;;; --- XData (extended data) helpers ------------------------------
@@ -413,12 +415,21 @@ an object a dictionary owns."
     (unless owner
       (let ((ename (%synthesized-owner-ename host entity)))
         (when ename (setf owner (cons 330 ename)))))
-    (when (and owner (null reactors) (%dictionary-owner-p host (cdr owner)))
-      (setf reactors
-            (list (cons 102 (clautolisp.autolisp-runtime:make-autolisp-string
-                             "{ACAD_REACTORS"))
-                  (cons 330 (cdr owner))
-                  (cons 102 (clautolisp.autolisp-runtime:make-autolisp-string "}")))))
+    (when (and owner
+               (notany (lambda (p) (and (%reactor-group-start-p p)
+                                        (string= "{ACAD_REACTORS" (%view-marker-name p))))
+                       reactors)
+               (%dictionary-owner-p host (cdr owner)))
+      ;; beside a stored {ACAD_XDICTIONARY} group: after it on AutoCAD (its
+      ;; Model layout: 5 102 360 102 102 330 102 330), before it on BricsCAD
+      ;; (its view styles: 5 102 330 102 102 360 102 330) -- section 12
+      (let ((group (list (cons 102 (clautolisp.autolisp-runtime:make-autolisp-string
+                                    "{ACAD_REACTORS"))
+                         (cons 330 (cdr owner))
+                         (cons 102 (clautolisp.autolisp-runtime:make-autolisp-string "}")))))
+        (setf reactors (if (eq (%current-product) :bricscad)
+                           (append group reactors)
+                           (append reactors group)))))
     ;; Where the owner goes is the one point the vendors disagree on
     ;; (entget-pointers section 10, AutoCAD 2022 job 17398575906): AutoCAD
     ;; lists it BEFORE the handle -- -1 0 330 5 100 ... -- unless a 102
@@ -606,14 +617,9 @@ such entity exists or it has been deleted."
     (cond
       (entity (entity->al-view host entity applist))
       (t
-       ;; A symbol-table record's ename (from tblobjname) is
-       ;; entget-able on the vendors: the record's group-code view,
-       ;; (-1 . ename) head, and for a BLOCK record the (-2 . first
-       ;; entity) walk entry.
-       (let ((record (%find-table-record-by-id host handle)))
-         (and record
-              (cons (cons -1 ename)
-                    (table-record-al-view+extras host record))))))))
+       ;; A table record, a BLOCK entity (tblobjname "BLOCK") or a TABLE
+       ;; object is entget-able on the vendors (%NON-ENTITY-VIEW).
+       (%non-entity-view host handle ename)))))
 
 (defun %normalise-entmade-arc-angles (pure operator-name)
   "AutoCAD stores an entmade ARC's 50/51 normalised into [0, 2pi) (measured
@@ -788,6 +794,263 @@ entity; the host stores no ENDBLK and omits the group
               view))
         view)))
 
+;;; --- Table records, their TABLE objects, and the BLOCK entities -------
+;;;
+;;; cador-entget-subclass-layout-and-record-pointers, items 3 and 4.
+;;; Measured (entget-pointers sections 10 and 11; BricsCAD V26 macOS jobs
+;;; 17397066992 / 17439813492, AutoCAD 2022 jobs 17436788251 / 17439813490):
+;;;   layer record    -1 0 5 330 100 100 2 70 62 6 290 370 390 347 (AutoCAD
+;;;                   adds its {ACAD_XDICTIONARY} group and a 348); HANDENT of
+;;;                   its handle is EQ to TBLOBJNAME's ename
+;;;   its 330         the LAYER TABLE object: -1 0 2 5 100 70
+;;;   its 390 / 347   the ACDBPLACEHOLDER Normal / the MATERIAL Global
+;;;   (tblobjname "BLOCK" n)  the BLOCK entity; its 330 is the BLOCK_RECORD
+;;;                   (-1 0 5 330 100 100 2 [360 102 ... 102] 70 280 281) a
+;;;                   LINE's 330 names, and ENTNEXT from it walks the block
+;;;   BLOCK entity    AutoCAD  -1 0 330 5 100 67 8 100 70 10 -2 2 1
+;;;                   BricsCAD -1 0 5 330 100 67 8 100 2 70 71 10 3 1 -2
+;;; Shown, not stored: the views are built from the record and the block
+;;; header. Not modelled: AutoCAD's extension dictionary and 348, BricsCAD's
+;;; BLOCK 71 (value unmeasured) and the BLOCK_RECORD's 360 / BLKREFS group.
+
+(defparameter *symbol-tables*
+  ;; (KIND TABLE-HANDLE DXF-NAME RECORD-SUBCLASS). The TABLE objects carry
+  ;; the handles AutoCAD gives them in every drawing, all below the first
+  ;; one a drawing allocates (10).
+  '((:block-record "1" "BLOCK_RECORD" "AcDbBlockTableRecord")
+    (:layer        "2" "LAYER"        "AcDbLayerTableRecord")
+    (:style        "3" "STYLE"        "AcDbTextStyleTableRecord")
+    (:ltype        "5" "LTYPE"        "AcDbLinetypeTableRecord")
+    (:view         "6" "VIEW"         "AcDbViewTableRecord")
+    (:ucs          "7" "UCS"          "AcDbUCSTableRecord")
+    (:vport        "8" "VPORT"        "AcDbViewportTableRecord")
+    (:appid        "9" "APPID"        "AcDbRegAppTableRecord")
+    (:dimstyle     "A" "DIMSTYLE"     "AcDbDimStyleTableRecord")))
+
+(defparameter *record-layouts*
+  ;; KIND -> ((CODE . DEFAULT) ...) in the vendors' order; a NIL default
+  ;; shows nothing when absent; :PLOT-STYLE / :MATERIAL are the default
+  ;; objects of the named-object dictionary. Other kinds: 2 70, then the
+  ;; rest as stored.
+  '((:layer (2) (70 . 0) (62 . 7) (6 . "Continuous") (290 . 1) (370 . -3)
+            (390 . :plot-style) (347 . :material))
+    (:block-record (2) (70 . 0) (280 . 1) (281 . 0))))
+
+(defun %table-object-view (host entry ename)
+  "The entget view of the TABLE object of the symbol table ENTRY (a
+*SYMBOL-TABLES* row), or NIL when the drawing has no such table."
+  (destructuring-bind (kind handle name subclass) entry
+    (declare (ignore subclass))
+    (let ((table (gethash kind (cador-tables host))))
+      (and table
+           (cons (cons -1 ename)
+                 (pure-data->al-view
+                  ;; owned by the database: AutoCAD shows the null owner,
+                  ;; BricsCAD omits it (PURE-PAIR->AL-PAIR)
+                  ;; AutoCAD's LAYER TABLE has an extension dictionary:
+                  ;; -1 0 2 5 102 360 102 330 100 70 (job 17440097863)
+                  host (list* (cons 0 "TABLE") (cons 2 name) (cons 5 handle)
+                              (append (%extension-dictionary-group host handle)
+                                      (list (cons 330 "0") (cons 100 "AcDbSymbolTable")
+                                            (cons 70 (hash-table-count table)))))))))))
+
+(defun %record-body (data)
+  "A table record's own groups: DATA without its type, handle, owner,
+subclass markers, 102 groups and -2 walk entry."
+  (let ((in-group nil) (out '()))
+    (dolist (pair data (nreverse out))
+      (let ((code (and (consp pair) (%group-code-integer (car pair)))))
+        (cond
+          (in-group
+           (when (and (eql code 102) (equal (cdr pair) "}")) (setf in-group nil)))
+          ((eql code 102)
+           (let ((v (cdr pair)))
+             (when (and (stringp v) (plusp (length v)) (char= #\{ (char v 0)))
+               (setf in-group t))))
+          ((member code '(-2 -1 0 5 330 100)))
+          (t (push pair out)))))))
+
+(defun %record-default (host code default)
+  (case default
+    (:plot-style (let ((h (%named-object-handle host "ACAD_PLOTSTYLENAME" "Normal")))
+                   (and h (cons code h))))
+    (:material (let ((h (%named-object-handle host "ACAD_MATERIAL" "Global")))
+                 (and h (cons code h))))
+    (t (cons code default))))
+
+(defun %table-record-entget-view (host record ename)
+  "The entget view of a table RECORD (a BLOCK record shows its BLOCK_RECORD)."
+  (let* ((kind (symbol-table-record-kind record))
+         (entry (assoc kind *symbol-tables*))
+         (data (symbol-table-record-data record))
+         (layout (or (cdr (assoc kind *record-layouts*)) '((2) (70 . 0))))
+         ;; a block record made by entmake / a command holds the BLOCK header
+         ;; (0 . "BLOCK"): its 70 / 10 / 1 are the BLOCK entity's, not the
+         ;; BLOCK_RECORD's, which then shows its defaults only
+         (body (if (and (eq kind :block-record)
+                        (equalp "BLOCK" (%data-type-string data)))
+                   (remove-if-not (lambda (p) (eql 2 (%view-code p))) (%record-body data))
+                   (%record-body data)))
+         (used '())
+         (laid-out
+           (append
+            (loop for (code . default) in layout
+                  for pair = (or (let ((p (find-if (lambda (p)
+                                                     (and (eql code (%view-code p))
+                                                          (not (member p used :test #'eq))))
+                                                   body)))
+                                   (when p (push p used))
+                                   p)
+                                 (and default (%record-default host code default)))
+                  when pair collect pair)
+            (remove-if (lambda (p) (member p used :test #'eq)) body)))
+         (laid-out
+           (if (and (eq kind :block-record) laid-out (eql 2 (car (first laid-out))))
+               (list* (first laid-out)
+                      (append (%block-record-extras host record) (rest laid-out)))
+               laid-out)))
+    (cons (cons -1 ename)
+          (pure-data->al-view
+           host
+           (append (let ((zero (cons 0 (if entry (third entry) (%data-type-string data))))
+                         (five (cons 5 (symbol-table-record-id record)))
+                         ;; the owner it was read with (a DXF's TABLE
+                         ;; handle), else its TABLE object
+                         (owner (let ((stored (%data-group-value data 330)))
+                                  (cond (stored (list (cons 330 stored)))
+                                        (entry (list (cons 330 (second entry))))))))
+                     ;; the entities' rule (%VENDOR-HEADER-ORDER): AutoCAD
+                     ;; puts the owner before the handle (its BLOCK_RECORD:
+                     ;; -1 0 330 5 100 100 ..., job 17439813490), BricsCAD after
+                     ;; ... unless a 102 group comes first: an extension
+                     ;; dictionary (AutoCAD's layer 0: -1 0 5 102 360 102 330)
+                     (let ((xdict (%extension-dictionary-group
+                                   host (symbol-table-record-id record))))
+                       (if (or xdict (eq (%current-product) :bricscad))
+                           (list* zero five (append xdict owner))
+                           (list* zero (append owner (list five))))))
+                   (list (cons 100 "AcDbSymbolTableRecord"))
+                   (and entry (list (cons 100 (fourth entry))))
+                   laid-out)))))
+
+(defun %cador-block-entity-handles (host)
+  "Block name -> BLOCK entity handle, for the active drawing's blocks whose
+header carries none (*Model_Space, *Paper_Space, blocks made by commands)."
+  (let ((cell (%cador-block-entity-handle-cell host))
+        (drawing (cador-active-drawing host)))
+    (if (and cell (eq (car cell) drawing))
+        (cdr cell)
+        (cdr (setf (%cador-block-entity-handle-cell host)
+                   (cons drawing (make-hash-table :test #'equalp)))))))
+
+(defun %block-entity-handle (host record &optional (create t))
+  "The handle of the BLOCK entity of the block RECORD: its header's (5 . h)
+\(a DXF-loaded or entmade block), else one assigned on first need -- unless
+CREATE is false, then NIL."
+  (let* ((name (symbol-table-record-name record))
+         (header (clautolisp.drawing:find-block (cador-active-drawing host) name))
+         (stored (%data-group-value header 5)))
+    (or stored
+        (let ((table (%cador-block-entity-handles host)))
+          (or (gethash name table)
+              (and create
+                   (setf (gethash name table) (cador-allocate-handle host))))))))
+
+(defun %find-block-record-by-entity-handle (host handle)
+  "The :block-record SYMBOL-TABLE-RECORD whose BLOCK entity is HANDLE, or NIL."
+  (and (stringp handle)
+       (block found
+         (maphash (lambda (name record)
+                    (declare (ignore name))
+                    (when (equalp handle (%block-entity-handle host record nil))
+                      (return-from found record)))
+                  (cador-table host :block-record))
+         nil)))
+
+(defun %data-with-handle (data handle)
+  "DATA with (5 . HANDLE) right after its (0 . type) pair, any other 5 gone."
+  (let* ((stripped (remove-if (lambda (p) (and (consp p) (group-code-equal-p (car p) 5)))
+                              data))
+         (zero (find-if (lambda (p) (and (consp p) (group-code-equal-p (car p) 0)))
+                        stripped)))
+    (if zero
+        (list* zero (cons 5 handle) (remove zero stripped :test #'eq))
+        (cons (cons 5 handle) stripped))))
+
+(defun %block-entity-view (host record ename)
+  "The entget view of the BLOCK entity of the block RECORD."
+  (let* ((name (symbol-table-record-name record))
+         (header (or (clautolisp.drawing:find-block (cador-active-drawing host) name)
+                     (symbol-table-record-data record)))
+         (first (first (%block-entity-handles host name)))
+         (walk (and first (list (cons -2 (handle->ename host first)))))
+         (layout (%space-layout-name name))
+         (common (append (list (cons 100 "AcDbEntity")
+                               (cons 67 (if (string-equal name "*Paper_Space") 1 0)))
+                         ;; a space's BLOCK names its layout (section 12)
+                         (and layout (list (cons 410 layout)))
+                         (list (cons 8 (or (%data-group-value header 8) "0"))
+                               (cons 100 "AcDbBlockBegin"))))
+         (flags (cons 70 (or (%data-group-value header 70) 0)))
+         (base (cons 10 (or (%data-group-value header 10) (list 0.0d0 0.0d0 0.0d0))))
+         ;; the xref path: "" on BricsCAD and for AutoCAD's spaces, the
+         ;; block's name for AutoCAD's other blocks (section 12, job 17441114651)
+         (path (cons 1 (or (%data-group-value header 1)
+                           (if (or layout (eq (%current-product) :bricscad)) "" name))))
+         (zero (cons 0 "BLOCK"))
+         (five (cons 5 (%block-entity-handle host record)))
+         (owner (cons 330 (symbol-table-record-id record))))
+    (cons (cons -1 ename)
+          (if (eq (%current-product) :bricscad)
+              (append (pure-data->al-view
+                       host (append (list zero five owner) common
+                                    ;; BricsCAD's 71 is 0 (section 12)
+                                    (list (cons 2 name) flags (cons 71 0) base
+                                          (cons 3 name) path)))
+                      walk)
+              (append (pure-data->al-view host (append (list zero owner five) common
+                                                       (list flags base)))
+                      walk
+                      (pure-data->al-view host (list (cons 2 name) path)))))))
+
+(defun %space-layout-name (block-name)
+  "The layout a space's BLOCK names: Model for *Model_Space, Layout1 for
+*Paper_Space (a fresh drawing's first paper layout); NIL for another block."
+  (cond ((string-equal block-name "*Model_Space") "Model")
+        ((string-equal block-name "*Paper_Space") "Layout1")))
+
+(defun %block-record-extras (host record)
+  "The groups a BLOCK_RECORD lists after its 2 (section 12, both products):
+its BLOCK entity (360), a space's LAYOUT (340), and the {BLKREFS ...} INSERTs
+that reference the block."
+  (let* ((name (symbol-table-record-name record))
+         (layout (%space-layout-name name))
+         (layout-handle (and layout (%named-object-handle host "ACAD_LAYOUT" layout)))
+         (inserts (loop for handle in (reverse (cador-creation-order host))
+                        for entity = (cador-find-entity-by-handle host handle)
+                        when (and entity
+                                  (eq (entity-handle-kind entity) :insert)
+                                  (let ((b (%entity-group-value entity 2)))
+                                    (and (stringp b) (string-equal b name))))
+                          collect handle)))
+    (append (list (cons 360 (%block-entity-handle host record)))
+            (and layout-handle (list (cons 340 layout-handle)))
+            (and inserts
+                 (append (list (cons 102 "{BLKREFS"))
+                         (mapcar (lambda (h) (cons 331 h)) inserts)
+                         (list (cons 102 "}")))))))
+
+(defun %non-entity-view (host handle ename)
+  "The entget view of the object HANDLE names when it is no entity: a table
+record, a BLOCK entity or a TABLE object; NIL otherwise."
+  (let ((record (%find-table-record-by-id host handle)))
+    (cond
+      (record (%table-record-entget-view host record ename))
+      ((setf record (%find-block-record-by-entity-handle host handle))
+       (%block-entity-view host record ename))
+      (t (let ((entry (find handle *symbol-tables* :key #'second :test #'equalp)))
+           (and entry (%table-object-view host entry ename)))))))
+
 ;;; --- Vendor-divergence policy (autolisp-spec ch.25) -------------
 ;;;
 ;;; D1 (R13+ ENTMAKE subclass markers) and D3 (ENTMOD on a non-graphical
@@ -903,7 +1166,7 @@ and bricscad additionally warn."
   (when (member operator-name '(entmake entmakex))
     (%vet-pointer-groups data operator-name))
   (let* ((pure (%normalise-entmade-arc-angles
-                (al-data->pure data operator-name) operator-name))
+                (al-data->pure data operator-name host) operator-name))
          (drawing (cador-active-drawing host))
          (missing-markers (clautolisp.drawing:entity-dxf-missing-markers pure)))
     ;; An INSERT referencing an undefined block is rejected by both vendors
@@ -1052,14 +1315,27 @@ probed (deferred-spec-research.issue)."
        ;; ename at once (measured on AutoCAD and BricsCAD), and it has to be
        ;; the same ename TBLOBJNAME gives once the definition is closed.
        (setf (cador-open-block-definition host)
-             (list name pure (make-symbol-table-record :kind :block-record
-                                                       :name name :data pure)))
+             (list name pure
+                   (make-symbol-table-record
+                    :kind :block-record :name name :data pure
+                    ;; Its handle now, for that ename: a redefinition
+                    ;; keeps the record's handle, as on the vendors.
+                    :id (let ((old (cador-find-table-record
+                                    host :block-record name)))
+                          (if old
+                              (symbol-table-record-id old)
+                              (cador-allocate-handle host))))
+                   ;; and its BLOCK entity's, which ENTMAKEX returns
+                   (let ((old (cador-find-table-record host :block-record name)))
+                     (if old
+                         (%block-entity-handle host old)
+                         (cador-allocate-handle host)))))
        (pure-data->al-view host pure)))))
 
 (defun %open-block-ename (host)
   "The ename of the block definition being built, or NIL."
   (let ((open (cador-open-block-definition host)))
-    (and open (table-record->ename host (third open)))))
+    (and open (handle->ename host (fourth open)))))
 
 (defun %entmake-close-block (host)
   "ENTMAKE of (0 . \"ENDBLK\"): complete the open block definition.
@@ -1072,7 +1348,7 @@ no definition is open."
                (header (second open)))
            (cador-add-table-record host (third open))
            (clautolisp.drawing:add-block (cador-active-drawing host)
-                                         name header)
+                                         name (%data-with-handle header (fourth open)))
            (setf (cador-open-block-definition host) nil)
            (clautolisp.autolisp-runtime:make-autolisp-string name)))))
 
@@ -1082,7 +1358,7 @@ no definition is open."
   ;; layer decides what the user ultimately sees (see BUILTIN-ENTMAKE).
   ;; BLOCK / ENDBLK are the block-definition pseudo-entities, not
   ;; database entities — see above.
-  (let* ((pure (al-data->pure data 'entmake))
+  (let* ((pure (al-data->pure data 'entmake host))
          (type (%data-type-string pure)))
     (cond
       ((and type (string-equal type "BLOCK"))
@@ -1109,7 +1385,7 @@ no definition is open."
   ;;             divergence, followed per the dialect's product.
   ;; This used to refuse both (nil), so no block was ever defined and the
   ;; members landed in model space.
-  (let* ((pure (al-data->pure data 'entmakex))
+  (let* ((pure (al-data->pure data 'entmakex host))
          (type (%data-type-string pure)))
     (cond
       ((and type (string-equal type "BLOCK"))
@@ -1240,7 +1516,7 @@ NORMALISED without that 280 when SUPPLIED (the pure create data) had one."
 (defmethod host-entmod ((host cador) data)
   (%vet-pointer-groups data 'entmod)
   (let* ((handle (extract-modified-handle data 'entmod host))
-         (pure (%vet-entmod-xdata host (al-data->pure data 'entmod)))
+         (pure (%vet-entmod-xdata host (al-data->pure data 'entmod host)))
          (drawing (cador-active-drawing host)))
     (when (eq pure :reject)
       (return-from host-entmod nil))
@@ -1313,19 +1589,11 @@ block-definition contents."
       (string-upcase (entity-handle-block entity))))
 
 (defun %find-table-record-by-id (host id)
-  "The SYMBOL-TABLE-RECORD (any kind) whose id matches ID (an ename
-value from tblobjname), or NIL."
-  (let ((found nil))
-    (maphash (lambda (kind table)
-               (declare (ignore kind))
-               (maphash (lambda (name record)
-                          (declare (ignore name))
-                          (when (string= (string (symbol-table-record-id record))
-                                         (string id))
-                            (setf found record)))
-                        table))
-             (cador-tables host))
-    found))
+  "The SYMBOL-TABLE-RECORD (any kind) whose handle is ID (an ename value
+from tblobjname or handent), or NIL."
+  (and (stringp id)
+       (clautolisp.drawing:find-table-record-by-handle
+        (cador-active-drawing host) id)))
 
 (defun %find-block-record-by-id (host id)
   "The :block-record SYMBOL-TABLE-RECORD whose id matches ID (an ename
@@ -1351,6 +1619,9 @@ value from tblobjname), or NIL."
              (loop for handle in handles
                    for entity = (clautolisp.drawing:find-entity drawing handle)
                    when (and entity
+                             ;; no dictionary, xrecord or other object: the
+                             ;; vendors walk the drawable entities only
+                             (clautolisp.drawing:graphical-entity-p entity)
                              (equal container (%entity-container-key entity)))
                      return (handle->ename host handle)
                    finally (return nil))))
@@ -1366,7 +1637,9 @@ value from tblobjname), or NIL."
             (if entity
                 (first-live-in (rest (member needle order :test #'string=))
                                (%entity-container-key entity))
-                (let ((record (%find-block-record-by-id host needle)))
+                (let ((record (or (%find-block-record-by-id host needle)
+                                  ;; the BLOCK entity tblobjname gives
+                                  (%find-block-record-by-entity-handle host needle))))
                   (and record
                        (first-live-in
                         order
@@ -1378,5 +1651,13 @@ value from tblobjname), or NIL."
            (string handle-string)
            (clautolisp.autolisp-runtime:autolisp-string
             (clautolisp.autolisp-runtime:autolisp-string-value handle-string)))))
-    (and (safe-find-entity (cador-active-drawing host) value)
-         (handle->ename host value))))
+    ;; A table record has a handle too (layer 0's is "10" on BricsCAD), and
+    ;; HANDENT of it is EQ to TBLOBJNAME's ename (entget-pointers probe,
+    ;; section 11).
+    (cond ((safe-find-entity (cador-active-drawing host) value)
+           (handle->ename host value))
+          ((let ((up (string-upcase value)))
+             (or (%find-table-record-by-id host up)
+                 (%find-block-record-by-entity-handle host up)
+                 (find up *symbol-tables* :key #'second :test #'equal)))
+           (handle->ename host (string-upcase value))))))
