@@ -195,23 +195,48 @@ reactor; prove headless feasibility with one probe, else GUI session. BricsCAD
 ActiveX parity items (vlax-tmatrix, vlr-* constructor set, vlr-pers family) are
 NOT perishable — macOS/after-sunset.
 
-** B12 — COMMAND prompt/option capture (the 85 cador-implemented commands)  AC-crit: YES  [HIGHEST LEVERAGE]
+** B12 — COMMAND prompt/option capture  AC-crit: YES  [HIGHEST LEVERAGE]  [HARNESS LANDED]
 Not a probes/ suite — a dedicated prompt-capture harness
-(scripts/run-command-prompts-probe.*) that drives each command one token at a
-time under AutoCAD and logs the verbatim prompt strings + [bracketed] keyword
-order. clautolisp's =(command ...)= feeds these token sequences, yet the
-Options/Argument-Sequence rows in ch.28 are doc-harvested, never product-
-captured. The implemented set (LINE, ARC, CIRCLE, TRIM, EXTEND, FILLET, OFFSET,
-HATCH/-HATCH, INSERT/-INSERT, PEDIT, ARRAY→ARRAYRECT/PATH/POLAR, -LAYER,
--LINETYPE, MEASURE/DIVIDE, …) is the correctness-critical subset. AutoCAD's
-prompts are the irreplaceable half (BricsCAD's stay capturable on macOS). Known
-divergences to pin: TRIM/EXTEND Quick-vs-Standard mode (TRIMEXTENDMODE), bare
-INSERT opening the Blocks palette vs classic -INSERT, OFFSET "Both Sides"
-(BricsCAD-only), FILLET Expression/Chain/Loop. Also the command-PRESENCE
-sweeps: the 706 "AutoCAD: not present" and the version-drift names
-(3DPAN, EATTEXT, CLASSIC*, JOGSECTION/DETECT, ASSISTANTOPEN, MENULOAD) — batch-
-type each, record "Unknown command" vs a prompt; any hit reclassifies the
-portability row. This batch is the single best use of a live AutoCAD slot.
+(=autolisp-front-end/tests/scenarios/entities/command-prompts-probe.lsp= +
+=scripts/run-command-prompts-probe.{sh,ps1}=, family =command-prompts=, jobs
+=command-prompts:probe:{bricscad:macos,bricscad:windows,autocad:windows}=) that
+drives each command one token at a time and reads the prompt from the
+=LASTPROMPT= sysvar between tokens, bounded by =CMDACTIVE= and a cancel-reset so
+no half-fed command hangs the batch. clautolisp's =(command ...)= feeds these
+token sequences, yet the Options/Argument-Sequence rows in ch.28 are
+doc-harvested, never product-captured. AutoCAD's prompts are the irreplaceable
+half (BricsCAD's stay capturable on macOS).
+
+The correctness-critical subset is the ~18 commands cador actually drives
+(19 handlers incl. dash variants — =cador-command-names= / the
+=define-cador-command= table in command-api.lisp): LINE, CIRCLE, TEXT, DONUT,
+SOLID, ERASE, MOVE, COPY, ROTATE, BLOCK/-BLOCK, ARC, PLINE, MTEXT, WIPEOUT,
+MIRROR, INSERT/-INSERT, LAYER/-LAYER, LINETYPE/-LINETYPE. (The agent harvest's
+"85" was the spec-dictionary count, not the implemented set.)
+
+LANDED this MR: the harness + a SEED command table (LINE/CIRCLE/ARC/PLINE/TEXT
+completing scripts; -LAYER/-LINETYPE/-INSERT/RECTANG/OFFSET/FILLET/TRIM/EXTEND
+initial-prompt capture). The headless clautolisp baseline runs green and
+CONFIRMS what makes this batch vendor-only: cador has NO interactive prompt loop
+(it consumes a whole token list in one call), so =LASTPROMPT= stays "" /
+=CMDACTIVE= 0 there — the real prompt strings exist only on AutoCAD/BricsCAD.
+(=LASTPROMPT= itself reads fine on cador, so the mechanism is sound.) NOTE while
+building: the pathname/* drivers' =--host mock= is stale — the mock host was
+renamed =cador= in 1.7.27 — so a local =--backend clautolisp= there fails;
+these new drivers use =--host cador=. The pathname CI jobs never run the
+clautolisp backend, so that staleness is latent, not breaking CI; worth a
+one-line fix in a follow-up.
+
+TODO on a live engine: grow the seed table toward the full implemented set with
+a confirmed safe token script per command; pin the known divergences — TRIM/
+EXTEND Quick-vs-Standard mode (TRIMEXTENDMODE, already surfaced in the ENV
+line), bare INSERT palette vs classic -INSERT, OFFSET "Both Sides"
+(BricsCAD-only), FILLET Expression/Chain/Loop. Also the command-PRESENCE sweeps
+(a separate, cheaper probe): the 706 "AutoCAD: not present" names and the
+version-drift ones (3DPAN, EATTEXT, CLASSIC*, JOGSECTION/DETECT, ASSISTANTOPEN,
+MENULOAD) — batch-type each, record "Unknown command" vs a prompt; any hit
+reclassifies the portability row. This batch is the single best use of a live
+AutoCAD slot.
 
 ** B13 — divide-by-zero & abort hazards (QUARANTINED)  AC-crit: YES
 probe-div-zero.lsp, manifest flag =quarantine=, run via PROBE_SUITES like
@@ -227,10 +252,10 @@ one MR that auto-runs its suite on the next online window, then manual re-runs.
 - *Week 1 (done in this MR):* B1 numeric-edges, B2 vle. Pattern + harness proven.
 - *Week 1–2:* B3 reader-printer, B4 setvar-edges — pure value probes, highest
   AC-crit density, zero new harness.
-- *Week 2–3:* B12 command prompt-capture harness + the implemented-set run.
-  Start early: it is the highest-leverage AutoCAD-only work and needs a new
-  driver (iterate against the runner while it is reliably up). Fold in the
-  presence sweeps.
+- *Week 2–3:* B12 — the command prompt-capture harness is now BUILT (seed
+  table). Grow it to the full implemented set and run it against AutoCAD while
+  the runner is reliably up — the highest-leverage AutoCAD-only work. Fold in
+  the presence sweeps.
 - *Week 3–4:* B9 entity/ERRNO, B5 sysvar read-only + default sweep.
 - *Week 4–5:* B6 load/encoding (byte-inspection harness), B7 arx/vba.
 - *Week 5–6:* B10 Express Tools (run the gating probe first; if GUI-only, book
@@ -259,9 +284,12 @@ one MR that auto-runs its suite on the next online window, then manual re-runs.
 
 * Status
 
-NEXT. Harness proven and the first two suites (B1 numeric-edges, B2 vle) landed
-in the MR that files this issue; they auto-run on =probe:suite:*:windows/macos=
-on the next online window and are manually re-playable thereafter. B3–B13 are
-specified above with exact probe expressions (from the 2026-10-24 spec harvest)
-and a schedule. The 18 =SPEC-UNCERTAIN= markers and the open
-=deferred-spec-research= questions are the fold-back targets.
+NEXT. Landed in the MR that files this issue: the two value-probe suites
+(B1 numeric-edges, B2 vle, auto-run on =probe:suite:*:windows/macos=) AND the
+B12 command prompt-capture harness (=command-prompts:probe:*= jobs, headless
+baseline green). All are manual/auto per the =suite= / =command-prompts=
+families and re-playable on any online window. B3–B11 and B13 are specified
+above with exact probe expressions (from the 2026-10-24 spec harvest) and a
+schedule. The 18 =SPEC-UNCERTAIN= markers and the open =deferred-spec-research=
+questions are the fold-back targets; each batch's results fold into the spec's
+"Tested Behaviour" subsections in its own MR.

@@ -92,6 +92,8 @@ FAMILIES = {
                        "scripts/run-curve-geometry-probe.*"],
     "intersectwith": [f"{ENTITIES}/intersectwith-probe.lsp",
                       "scripts/run-intersectwith-probe.*"],
+    "command-prompts": [f"{ENTITIES}/command-prompts-probe.lsp",
+                        "scripts/run-command-prompts-probe.*"],
     "console-flood": [f"{ENTITIES}/console-flood-probe.lsp",
                       "scripts/run-console-flood-probe.*"],
     "real-transport": [f"{ENTITIES}/real-transport-probe.lsp",

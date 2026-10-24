@@ -1298,6 +1298,75 @@ pathname:probe:autocad:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend autocad
 
+# --- COMMAND prompt / option capture (windows-runner-sunset B12) -------------
+#
+# The verbatim LASTPROMPT / option-keyword strings each drawing command issues,
+# captured from a running engine instead of harvested from docs. AutoCAD's
+# prompts are the perishable half (Windows runner only); BricsCAD's stay on
+# macOS. The headless cador baseline only CONFIRMS RECOGNITION (no prompt loop
+# -> empty LASTPROMPT). See command-prompts-probe.lsp and
+# windows-runner-sunset-probe-campaign.issue.
+.command-prompts-artifacts:
+  interruptible: true
+  artifacts:
+    name: "command-prompts-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/command-prompts/]
+    expire_in: 30 days
+
+command-prompts:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .command-prompts-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,command-prompts,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-command-prompts-probe.sh --backend bricscad
+
+command-prompts:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .command-prompts-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,command-prompts,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-command-prompts-probe.ps1 -Backend bricscad
+
+command-prompts:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .command-prompts-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  # THE perishable column: AutoCAD prompts are reachable only here, and only
+  # until the Windows runner is lost (~2026-12-19).
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,command-prompts,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-command-prompts-probe.ps1 -Backend autocad
+
 # --- ActiveX IntersectWith: what the vendors return --------------------------
 #
 # cador-intersectwith-missing.issue. clautolisp implements IntersectWith from
