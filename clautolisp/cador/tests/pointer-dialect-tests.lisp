@@ -154,3 +154,24 @@ both (entget-pointers section 10: AutoCAD job 17398575906, BricsCAD V26 job
       (host-dictadd mock nod (mk-str "HDRB") x)
       (is (equal '(-1 0 5 102 330 102 330 100)
                  (mapcar #'car (subseq (host-entget mock x) 0 8)))))))
+
+;;; --- the entget body after the header --------------------------------
+
+(test entget-body-layout-follows-the-vendors
+  "cador-entget-subclass-layout-and-record-pointers, items 1 and 2: after
+the header, (100 . AcDbEntity), the common groups (67 410 8), the type's
+marker, its groups and 210 -- the same on AutoCAD 2022 (job 17436788251) and
+BricsCAD V26 (job 17397066992). A round trip through entmod stores nothing
+twice."
+  (dolist (dialect '(:autocad-2022 :bricscad))
+    (%with-dialect (dialect)
+      (let* ((mock (make-cador))
+             (line (host-entmakex mock (make-line-data)))
+             (codes (mapcar #'car (nthcdr 4 (host-entget mock line)))))
+        (is (equal '(100 67 410 8 100 10 11 210) codes)
+            "~A LINE body: ~S" dialect codes)
+        (host-entmod mock (host-entget mock line))
+        (is (equal codes (mapcar #'car (nthcdr 4 (host-entget mock line))))
+            "~A LINE body after entmod" dialect)
+        (let ((model (cdr (assoc 410 (host-entget mock line)))))
+          (is (equal "Model" (autolisp-string-value model))))))))
