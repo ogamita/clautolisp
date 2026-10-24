@@ -34,10 +34,11 @@ an ename at all."
 ;;; cador-entget-subclass-layout-and-record-pointers, item 5. Measured
 ;;; (entget-pointers section 11; BricsCAD V26 macOS job 17439813492, AutoCAD
 ;;; 2022 job 17439813490): a new drawing's NOD holds the entries below, per
-;;; product, plus two PRORD<n> / PRPTR<n> XRECORDs on both (session
-;;; numbered, not modelled). BricsCAD dialects get BricsCAD's set, every
-;;; other dialect AutoCAD's. A layer record's 390 is the Normal plot style
-;;; name (ACAD_PLOTSTYLENAME's placeholder), its 347 the Global material.
+;;; product (the PRORD<n> / PRPTR<n> XRECORDs it also lists are the probe's
+;;; own, filed by its sections 2 and 10). BricsCAD dialects get BricsCAD's
+;;; set, every other dialect AutoCAD's. A layer record's 390 is the Normal
+;;; plot style name (ACAD_PLOTSTYLENAME's placeholder), its 347 the Global
+;;; material.
 ;;; Only the containers and the objects a record points at are made; what
 ;;; the vendors put in the other dictionaries (layouts, styles, scales) is
 ;;; issues/open/deferred-nod-default-contents.issue.

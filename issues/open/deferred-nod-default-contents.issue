@@ -22,8 +22,8 @@ Normal placeholder and ACAD_MATERIAL's ByBlock / ByLayer / Global.
 1. Dictionary contents the vendors have and cador does not: ACAD_LAYOUT's
    Model / Layout1 LAYOUT objects, ACAD_MLINESTYLE / ACAD_TABLESTYLE /
    ACAD_MLEADERSTYLE Standard, ACAD_SCALELIST's scales, ACAD_VISUALSTYLE's
-   styles, AcDbVariableDictionary's variables, the PRORD<n> / PRPTR<n>
-   XRECORDs (both products). Each needs measuring first (its entget).
+   styles, AcDbVariableDictionary's variables. Each needs measuring first:
+   entget-pointers section 12 dumps them (MR !484).
 2. The MATERIAL objects' full group lists (about 100 groups on both CADs)
    and ACDBPLACEHOLDER / RASTERVARIABLES / MENTALRAYRENDERSETTINGS bodies:
    cador shows the type, marker and name only.

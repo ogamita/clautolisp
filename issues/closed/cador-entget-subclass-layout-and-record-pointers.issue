@@ -93,8 +93,8 @@ two BricsCADs agree):
   NOD           AutoCAD 15 entries (ACAD_CIP_PREVIOUS_PRODUCT_INFO XRECORD,
                 ACAD_COLOR, ...); BricsCAD 16 (ACAD_IMAGE_DICT, ACAD_IMAGE_VARS
                 RASTERVARIABLES, ACAD_RENDER_ACTIVE_SETTINGS, no ACAD_COLOR);
-                both ACAD_PLOTSTYLENAME ACDBDICTIONARYWDFLT, plus PRORD<n> /
-                PRPTR<n> XRECORDs
+                both ACAD_PLOTSTYLENAME ACDBDICTIONARYWDFLT (the PRORD<n> /
+                PRPTR<n> XRECORDs listed too are the probe's own)
   layer's 330   the LAYER TABLE: BricsCAD -1 0 2 5 100 70, AutoCAD -1 0 2 5
                 {ACAD_XDICTIONARY 360} 330 100 70; 70 = 1
   layer's 390   ACDBPLACEHOLDER (-1 0 5 102 330 102 330)
