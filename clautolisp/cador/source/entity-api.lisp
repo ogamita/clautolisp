@@ -833,7 +833,7 @@ entity; the host stores no ENDBLK and omits the group
   ;; objects of the named-object dictionary. Other kinds: 2 70, then the
   ;; rest as stored.
   '((:layer (2) (70 . 0) (62 . 7) (6 . "Continuous") (290 . 1) (370 . -3)
-            (390 . :plot-style) (347 . :material))
+            (390 . :plot-style) (347 . :material) (348 . :erased))
     (:block-record (2) (70 . 0) (280 . 1) (281 . 0))))
 
 (defun %table-object-view (host entry ename)
@@ -876,7 +876,36 @@ subclass markers, 102 groups and -2 walk entry."
                    (and h (cons code h))))
     (:material (let ((h (%named-object-handle host "ACAD_MATERIAL" "Global")))
                  (and h (cons code h))))
+    (:erased (and (%layer-348-dialect-p)
+                  (cons code (%erased-placeholder-handle host))))
     (t (cons code default))))
+
+(defun %layer-348-dialect-p ()
+  "True under the dialects that list AutoCAD's layer 348 -- AutoCAD's and
+lax (pjb, 2026-10-24); the others follow BricsCAD, which lists none."
+  (let ((dialect (ignore-errors
+                  (clautolisp.autolisp-runtime:current-evaluation-dialect-name))))
+    (or (eq (%current-product) :autocad)
+        (and dialect
+             (eq :lax (clautolisp.autolisp-reader:autolisp-dialect-template-name
+                       dialect))))))
+
+(defun %erased-placeholder-handle (host)
+  "The handle of an erased object of the active drawing, made on first need:
+what AutoCAD's layer 0 348 points at in a new drawing (entget-pointers
+section 12: <erased>), so its entget is NIL there too. Making it is no
+change of the drawing."
+  (let ((table (%cador-extension-dictionaries host)))
+    (or (gethash :erased-placeholder table)
+        (setf (gethash :erased-placeholder table)
+              (let* ((drawing (cador-active-drawing host))
+                     (dbmod (clautolisp.drawing:drawing-dbmod drawing))
+                     (entity (let ((clautolisp.drawing:*drawing-modification-hook* nil))
+                               (clautolisp.drawing:add-entity
+                                drawing (list (cons 0 "XRECORD") (cons 100 "AcDbXrecord"))))))
+                (setf (clautolisp.drawing:entity-handle-deleted-p entity) t
+                      (clautolisp.drawing:drawing-dbmod drawing) dbmod)
+                (clautolisp.drawing:entity-handle-id entity))))))
 
 (defun %table-record-entget-view (host record ename)
   "The entget view of a table RECORD (a BLOCK record shows its BLOCK_RECORD)."

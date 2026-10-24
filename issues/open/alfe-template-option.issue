@@ -1,0 +1,54 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-template-option -- start the CAD session from a drawing made from a given template
+#+STATUS: OPEN
+#+PRIORITY: P2
+#+TYPE: feature
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-24
+
+* Context
+
+alfe always hands the CAD a drawing: a per-run copy of the committed
+autolisp-front-end/source/empty.dwg (without a document BricsCAD segfaults
+and AutoCAD has nowhere to send the keystrokes; a fresh copy per run avoids
+the "already in use, open read-only?" modal). The probe harness does the same
+(probes/scripts/run-probes.sh, __DRAWING_FILE__).
+
+empty.dwg was written by a French AutoCAD 2005 (its LAYOUT objects still
+name ...\AutoCAD 2005\R16.1\enu\plotters\...): a session therefore starts on
+THAT file's database -- its named-object dictionary, its styles, its layouts
+("Presentation1"), metric units -- plus whatever the CAD adds when it opens
+it. It is not what the CAD's own new drawing contains. That is what the
+entget-pointers probe, section 12, measured for cador's default objects
+(deferred-nod-default-contents): the contents of empty.dwg, not of acad.dwt.
+
+pjb (2026-10-24): imperial and other templates are installed on the
+runners; a drawing passed in avoids the units dialog a new session asks.
+
+* Proposal
+
+alfe --template NAME|PATH: instead of empty.dwg, copy the template (a .dwt)
+into alfe's run directory as the session's drawing.
+
+- NAME is looked up where the product keeps its templates: AutoCAD's
+  Options > Files > Template Settings (TemplateDwgPath; on the Windows
+  runner %LOCALAPPDATA%\Autodesk\AutoCAD <ver>\R<rel>\<lang>\Template),
+  BricsCAD's templates folder (%APPDATA%\Bricsys\BricsCAD\V<nn>x64\<locale>\
+  Templates; ~/Library/Application Support/Bricsys/... on macOS); a PATH is
+  used as given.
+- The copy keeps the per-run rule (no lock dialogs); it is opened as a
+  drawing (a .dwt and a .dwg share the format), so the CAD does not prompt for
+  units.
+- An unknown NAME fails with the templates found listed (exit EX_NOINPUT).
+- --template default: the product's own default template (AutoCAD's QNEW
+  template / acad.dwt or acadiso.dwt by MEASUREINIT; BricsCAD's BASEFILE).
+- Documented in the alfe manual; the probe harness passes it through
+  (PROBE_TEMPLATE) so a probe can measure a new drawing of a given template.
+
+* Acceptance
+
+- alfe --template acad.dwt runs a script on a drawing whose MEASUREMENT is 0
+  and whose ACAD_LAYOUT holds the template's layouts; acadiso.dwt gives 1.
+- Both products, Windows and macOS runners; the default (no option) is
+  unchanged.

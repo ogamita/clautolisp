@@ -2009,6 +2009,172 @@ probe:entget-pointers:bricscad:macos:
     paths: [probe-results/]
     expire_in: 90 days
 
+probe:template-defaults:autocad-imperial:windows:
+  extends: .gate-windows-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN imperial template (acad.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'acad.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-autocad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-autocad-imperial-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:autocad-metric:windows:
+  extends: .gate-windows-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN metric template (acadiso.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'acadiso.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-autocad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-autocad-metric-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-imperial:windows:
+  extends: .gate-windows-bricscad-soft
+  # entget-pointers on a drawing of the CAD's OWN imperial template (Default-in.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-in.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-imperial-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-metric:windows:
+  extends: .gate-windows-bricscad-soft
+  # entget-pointers on a drawing of the CAD's OWN metric template (Default-mm.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-mm.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-metric-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-imperial:macos:
+  extends: .gate-macos-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN imperial template (Default-in.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-in.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-imperial-macos-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-metric:macos:
+  extends: .gate-macos-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN metric template (Default-mm.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-mm.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-metric-macos-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
 vendor:probes:bricscad:macos:
   extends: [.gate-macos-cad-hard, .vendor-probe-artifacts]
   # a PROBE: automatic only when its family changed (and the runner is

@@ -1959,6 +1959,12 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *Layer 0's 348, and =type= of a =vl-catch-all-apply= error* (2.3.55):
+  under the AutoCAD and lax dialects layer 0 lists AutoCAD's 348, a pointer
+  to an erased object (=entget= nil), the other dialects none, as BricsCAD;
+  =(type (vl-catch-all-apply ...))= of an error answers
+  =VL-CATCH-ALL-APPLY-ERROR= where clautolisp signalled.
+
 - *Dictionaries and xrecords are saved and reloaded as such* (2.3.54): a
   DXF or DWG save writes them to the OBJECTS section (they went to ENTITIES,
   where libredwg dropped them), and a loaded drawing's named-object

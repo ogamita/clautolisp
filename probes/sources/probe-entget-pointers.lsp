@@ -322,8 +322,9 @@
       (strcat (cad-probe--ep-follow r) " | "
               (if (= (type r) 'ENAME) (cad-probe--ep-codes (entget r)) "")
               " | entnext " (cad-probe--ep-follow n)))))
-  ;; 12. (below)
+  ;; 12. and 13. (below)
   (cad-probe-run-default-object-probes)
+  (cad-probe-run-endblk-and-template-probes)
   (princ))
 
 ;;; 12. WHAT the default objects contain (deferred-nod-default-contents):
@@ -458,4 +459,51 @@
     (setq tbl (if rec (cdr (assoc 330 (entget rec)))))
     (if (= (type tbl) 'ENAME)
       (cad-probe--ep-dump-xdict (strcat (car spec) " TABLE") (entget tbl))))
+  (princ))
+
+;;; 13. ENDBLK (an empty block's -2 names it; does the walk of a block end on
+;;; it?) and where the CAD keeps its templates (alfe-template-option: a
+;;; probe run on a drawing of the CAD's own template, not empty.dwg).
+
+(defun cad-probe-run-endblk-and-template-probes ()
+  (cad-probe-capture "entget-pointers" "endblk: *Paper_Space -2"
+    (function (lambda ( / e)
+      (setq e (cdr (assoc -2 (entget (tblobjname "BLOCK" "*Paper_Space")))))
+      (if e (cad-probe--ep-dump (entget e)) "no -2"))))
+  (if blk
+    (progn
+      (cad-probe-capture "entget-pointers" "endblk: walk of the probe's block"
+        (function (lambda ( / e out n)
+          (setq e (cdr (assoc -2 (entget (tblobjname "BLOCK" blk)))) out "" n 0)
+          (while (and e (< n 50))
+            (setq out (strcat out (cdr (assoc 0 (entget e))) " ") e (entnext e) n (1+ n)))
+          out)))
+      (cad-probe-capture "entget-pointers" "endblk: the walk's last entry"
+        (function (lambda ( / e last n)
+          (setq e (cdr (assoc -2 (entget (tblobjname "BLOCK" blk)))) n 0)
+          (while (and e (< n 50)) (setq last e e (entnext e) n (1+ n)))
+          (if last (cad-probe--ep-dump (entget last)) "none"))))))
+  (cad-probe-capture "entget-pointers" "type of a vl-catch-all-apply error"
+    (function (lambda ()
+      (vl-prin1-to-string (type (vl-catch-all-apply (quote /) (list 1 0)))))))
+  (cad-probe-capture "entget-pointers" "templates: where"
+    (function (lambda ( / out dir)
+      (setq out "")
+      (foreach v '("BASEFILE" "MEASUREINIT" "MEASUREMENT")
+        (setq out (strcat out v "="
+                          (vl-prin1-to-string (vl-catch-all-apply (quote getvar) (list v)))
+                          " ")))
+      (setq out (strcat out "QnewTemplate=" (vl-prin1-to-string (getenv "QnewTemplate")) " "))
+      (vl-load-com)
+      (setq dir (vl-catch-all-apply
+                  (function (lambda ()
+                    (vla-get-TemplateDwgPath
+                      (vla-get-Files (vla-get-Preferences (vlax-get-acad-object))))))))
+      (setq out (strcat out "TemplateDwgPath="
+                        (if (vl-catch-all-error-p dir)
+                          (vl-catch-all-error-message dir)
+                          (vl-prin1-to-string dir))))
+      (if (and (not (vl-catch-all-error-p dir)) (= (type dir) 'STR))
+        (setq out (strcat out " files=" (vl-prin1-to-string (vl-directory-files dir "*.dwt" 1)))))
+      out)))
   (princ))

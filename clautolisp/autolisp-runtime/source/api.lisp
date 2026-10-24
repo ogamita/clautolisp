@@ -5269,6 +5269,10 @@ forms have unevaluated operands it must not instrument (spec §5.3)."
      (intern-autolisp-symbol "VARIANT"))
     ((typep object 'autolisp-vla-object)
      (intern-autolisp-symbol "VLA-OBJECT"))
+    ;; what vl-catch-all-apply returns on an error (entget-pointers probe,
+    ;; section 13); TYPE signalled on it
+    ((typep object 'autolisp-catch-all-error)
+     (intern-autolisp-symbol "VL-CATCH-ALL-APPLY-ERROR"))
     ((typep object 'autolisp-lisp-object)
      ;; an opaque handle onto a CL object reports its own type designator,
      ;; e.g. (type (clal-make-window …)) -> WINDOW

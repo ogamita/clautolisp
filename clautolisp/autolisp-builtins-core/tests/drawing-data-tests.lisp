@@ -639,3 +639,10 @@ WALL/WALL/DOOR) and one CIRCLE bearing MYAPP xdata."
   (is (eql 1 (%dd-run "(if (vl-catch-all-error-p
                             (vl-catch-all-apply 'ssget (list \"_CP\")))
                           1 0)"))))         ; crossing-polygon mode
+
+(test dd-type-of-a-catch-all-error
+  ;; (type (vl-catch-all-apply ...)) of an error is VL-CATCH-ALL-APPLY-ERROR
+  ;; (entget-pointers probe, section 13); clautolisp used to signal.
+  (is (string= "VL-CATCH-ALL-APPLY-ERROR"
+               (clautolisp.autolisp-runtime:autolisp-symbol-name
+                (%dd-run "(type (vl-catch-all-apply (quote /) (list 1 0)))")))))

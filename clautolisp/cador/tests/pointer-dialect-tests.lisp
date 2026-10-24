@@ -198,7 +198,7 @@ NOD holds the product's default entries, which entnext does not walk."
         ;; item 3: the record
         (is (equal (if bricscad
                        '(-1 0 5 330 100 100 2 70 62 6 290 370 390 347)
-                       '(-1 0 5 102 360 102 330 100 100 2 70 62 6 290 370 390 347))
+                       '(-1 0 5 102 360 102 330 100 100 2 70 62 6 290 370 390 347 348))
                    (mapcar #'car view))
             "~A layer record: ~S" dialect (mapcar #'car view))
         (is (eq layer (host-handent mock (cdr (assoc 5 view)))) "~A handent" dialect)
@@ -326,3 +326,20 @@ space's LAYOUT (340) and the INSERTs referencing it ({BLKREFS 331})."
           (is (equal '(2 360 102 331 102 70 280 281) (mapcar #'car (nthcdr 6 record)))
               "~A BR1 record: ~S" dialect (mapcar #'car record))
           (is (eq insert (cdr (assoc 331 record)))))))))
+
+(test layer-348-follows-autocad-under-autocad-and-lax
+  "Layer 0's 348: AutoCAD lists it, pointing at an erased object (entget nil;
+entget-pointers section 12, job 17441114651); BricsCAD lists none. The
+AutoCAD and lax dialects follow AutoCAD, the others BricsCAD (pjb,
+2026-10-24). Making the erased target leaves DBMOD alone."
+  (dolist (case '((:autocad-2022 t) (:lax t) (:clautolisp nil) (:bricscad nil)))
+    (destructuring-bind (dialect listed) case
+      (%with-dialect (dialect)
+        (let* ((mock (make-cador))
+               (view (host-entget mock (host-tblobjname mock "LAYER" "0")))
+               (pointer (cdr (assoc 348 view))))
+          (is (eq listed (and pointer t)) "~A 348" dialect)
+          (when pointer
+            (is (null (host-entget mock pointer)) "~A 348 is erased" dialect))
+          (is (eql 0 (clautolisp.drawing:drawing-dbmod
+                      (clautolisp.cador::cador-active-drawing mock)))))))))

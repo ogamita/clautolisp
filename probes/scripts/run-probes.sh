@@ -496,14 +496,68 @@ write_metadata "prepared" 0
 # workdir (issues/closed/empty-ressource.issue); the probe harness is a
 # second caller of the same idea, not a second implementation of it --
 # the bytes come from the one committed file.
+#
+# PROBE_TEMPLATE: run on a copy of one of the CAD's OWN templates instead
+# (a NAME looked up where the products keep them, or a PATH). empty.dwg was
+# written by a French AutoCAD 2005: what a probe reads of a drawing's
+# defaults on it is that file's, not a new drawing's (alfe-template-option).
+# A .dwt and a .dwg share the format; the copy is named .dwg so the CAD
+# opens it as a drawing, with no units dialog.
+template_roots() {
+  local v
+  for v in LOCALAPPDATA APPDATA PROGRAMFILES ProgramW6432 PROGRAMDATA; do
+    [[ -n "${!v:-}" ]] || continue
+    if command -v cygpath >/dev/null 2>&1; then
+      cygpath -u "${!v}"
+    else
+      printf '%s\n' "${!v}"
+    fi
+  done
+  printf '%s\n' "$HOME/Library/Application Support/Bricsys" "/Applications"
+}
+find_template() {
+  local name="$1" root hit
+  if [[ "$name" == */* && -f "$name" ]]; then printf '%s\n' "$name"; return 0; fi
+  while IFS= read -r root; do
+    [[ -d "$root" ]] || continue
+    hit="$(find "$root" -maxdepth 9 -type f -iname "$name" \
+             \( -ipath '*autodesk*' -o -ipath '*bricsys*' -o -ipath '*bricscad*' \) \
+             2>/dev/null | head -n 1)"
+    if [[ -n "$hit" ]]; then printf '%s\n' "$hit"; return 0; fi
+  done < <(template_roots)
+  return 1
+}
 drawing_file=""
-if [[ "$runner_template" == *__DRAWING_FILE__* ]]; then
-  drawing_source="$repo_root/autolisp-front-end/source/empty.dwg"
-  if [[ -f "$drawing_source" ]]; then
-    drawing_file="$run_dir/empty.dwg"
-    cp -f "$drawing_source" "$drawing_file"
+template_file=""
+if [[ -n "${PROBE_TEMPLATE:-}" ]]; then
+  if template_source="$(find_template "$PROBE_TEMPLATE")"; then
+    template_file="$run_dir/template.dwg"
+    cp -f "$template_source" "$template_file"
+    echo "run-probes: template $PROBE_TEMPLATE -> $template_source" >&2
+    # The alfe route (BricsCAD) has no __DRAWING_FILE__: alfe opens
+    # $AUTOLISP_DWG instead of its embedded empty.dwg (backend-bricscad).
+    AUTOLISP_DWG="$(cad_arg_path "$template_file")"
+    export AUTOLISP_DWG
   else
-    echo "run-probes: no empty drawing at $drawing_source; launching without one" >&2
+    echo "run-probes: no template named $PROBE_TEMPLATE; the templates found:" >&2
+    while IFS= read -r root; do
+      [[ -d "$root" ]] && find "$root" -maxdepth 9 -type f -iname '*.dwt' \
+        \( -ipath '*autodesk*' -o -ipath '*bricsys*' -o -ipath '*bricscad*' \) 2>/dev/null
+    done < <(template_roots) | sort -u | sed 's/^/    /' >&2
+    exit 2
+  fi
+fi
+if [[ "$runner_template" == *__DRAWING_FILE__* ]]; then
+  if [[ -n "$template_file" ]]; then
+    drawing_file="$template_file"
+  else
+    drawing_source="$repo_root/autolisp-front-end/source/empty.dwg"
+    if [[ -f "$drawing_source" ]]; then
+      drawing_file="$run_dir/empty.dwg"
+      cp -f "$drawing_source" "$drawing_file"
+    else
+      echo "run-probes: no empty drawing at $drawing_source; launching without one" >&2
+    fi
   fi
 fi
 
