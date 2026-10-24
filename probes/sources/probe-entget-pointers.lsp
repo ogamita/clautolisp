@@ -401,8 +401,15 @@
   (foreach m members
     (if (and (cad-probe--ep-dictionary-p (cdr m)) (> depth 0))
       (cad-probe--ep-dump-dictionary (strcat label "/" (car m)) (cdr m) (1- depth))
-      (cad-probe-capture "entget-pointers" (strcat label "/" (car m))
-        (function (lambda () (cad-probe--ep-dump (entget (cdr m)))))))))
+      (progn
+        (cad-probe-capture "entget-pointers" (strcat label "/" (car m))
+          (function (lambda () (cad-probe--ep-dump (entget (cdr m))))))
+        ;; the member's own extension dictionary, when it has one
+        ;; (AutoCAD's Model layout, materials, table style)
+        (if (and (> depth 0) (cad-probe--ep-xdict (entget (cdr m))))
+          (cad-probe--ep-dump-dictionary
+            (strcat label "/" (car m) " xdict")
+            (cad-probe--ep-xdict (entget (cdr m))) (1- depth)))))))
 
 (defun cad-probe--ep-dump-xdict (label data / x)
   (setq x (cad-probe--ep-xdict data))
@@ -431,6 +438,20 @@
       (setq tbl (cdr (assoc 330 (entget rec))))
       (if (= (type tbl) 'ENAME)
         (cad-probe--ep-dump-xdict "BLOCK_RECORD TABLE" (entget tbl)))))
+  ;; The records' and BLOCKs' full values (section 11 gave their codes):
+  ;; the layer's 348, the BLOCK's 71, the BLOCK_RECORD's 360 / 340 / BLKREFS
+  ;; -- the probe's own block (section 4) has an INSERT.
+  (cad-probe-capture "entget-pointers" "values: layer 0"
+    (function (lambda () (cad-probe--ep-dump (entget (tblobjname "LAYER" "0"))))))
+  (foreach name (list "*Model_Space" "*Paper_Space" blk)
+    (if (and name (tblobjname "BLOCK" name))
+      (progn
+        (cad-probe-capture "entget-pointers" (strcat "values: BLOCK " name)
+          (function (lambda () (cad-probe--ep-dump (entget (tblobjname "BLOCK" name))))))
+        (cad-probe-capture "entget-pointers" (strcat "values: BLOCK_RECORD " name)
+          (function (lambda ()
+            (cad-probe--ep-dump
+              (entget (cdr (assoc 330 (entget (tblobjname "BLOCK" name))))))))))))
   (foreach spec '(("LAYER" "0") ("LTYPE" "Continuous") ("STYLE" "Standard")
                   ("DIMSTYLE" "Standard") ("APPID" "ACAD") ("VPORT" "*Active"))
     (setq rec (tblobjname (car spec) (cadr spec)))
