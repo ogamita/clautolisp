@@ -515,14 +515,23 @@ template_roots() {
   done
   printf '%s\n' "$HOME/Library/Application Support/Bricsys" "/Applications"
 }
+# Only the probed product's folders: thalassa has AutoCAD 2026 too, and its
+# acad.dwt is no BricsCAD template. The user's own templates (AppData,
+# Application Support) come before the installation's.
+template_path_pattern() {
+  case "$product" in
+    autocad)  printf '%s\n' '*autodesk*' ;;
+    bricscad) printf '%s\n' '*brics*' ;;
+    *)        printf '%s\n' '*' ;;
+  esac
+}
 find_template() {
   local name="$1" root hit
   if [[ "$name" == */* && -f "$name" ]]; then printf '%s\n' "$name"; return 0; fi
   while IFS= read -r root; do
     [[ -d "$root" ]] || continue
     hit="$(find "$root" -maxdepth 9 -type f -iname "$name" \
-             \( -ipath '*autodesk*' -o -ipath '*bricsys*' -o -ipath '*bricscad*' \) \
-             2>/dev/null | head -n 1)"
+             -ipath "$(template_path_pattern)" 2>/dev/null | head -n 1)"
     if [[ -n "$hit" ]]; then printf '%s\n' "$hit"; return 0; fi
   done < <(template_roots)
   return 1
@@ -542,7 +551,7 @@ if [[ -n "${PROBE_TEMPLATE:-}" ]]; then
     echo "run-probes: no template named $PROBE_TEMPLATE; the templates found:" >&2
     while IFS= read -r root; do
       [[ -d "$root" ]] && find "$root" -maxdepth 9 -type f -iname '*.dwt' \
-        \( -ipath '*autodesk*' -o -ipath '*bricsys*' -o -ipath '*bricscad*' \) 2>/dev/null
+        -ipath "$(template_path_pattern)" 2>/dev/null
     done < <(template_roots) | sort -u | sed 's/^/    /' >&2
     exit 2
   fi

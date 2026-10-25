@@ -2065,7 +2065,7 @@ probe:template-defaults:autocad-metric:windows:
 
 probe:template-defaults:bricscad-imperial:windows:
   extends: .gate-windows-bricscad-soft
-  # entget-pointers on a drawing of the CAD's OWN imperial template (Default-in.dwt),
+  # entget-pointers on a drawing of the CAD's OWN imperial template (Default-imperial.dwt),
   # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
   # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
   # template fails the job with the templates found listed.
@@ -2080,7 +2080,7 @@ probe:template-defaults:bricscad-imperial:windows:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
     PROBE_SUITES: 'entget-pointers'
-    PROBE_TEMPLATE: 'Default-in.dwt'
+    PROBE_TEMPLATE: 'Default-imperial.dwt'
   script:
     - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end build-alfe-sbcl
@@ -2093,7 +2093,8 @@ probe:template-defaults:bricscad-imperial:windows:
 
 probe:template-defaults:bricscad-metric:windows:
   extends: .gate-windows-bricscad-soft
-  # entget-pointers on a drawing of the CAD's OWN metric template (Default-mm.dwt),
+  # entget-pointers on a drawing of the CAD's OWN metric template (Default-m.dwt,
+  # BricsCAD's BASEFILE on the runners),
   # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
   # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
   # template fails the job with the templates found listed.
@@ -2108,7 +2109,7 @@ probe:template-defaults:bricscad-metric:windows:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
     PROBE_SUITES: 'entget-pointers'
-    PROBE_TEMPLATE: 'Default-mm.dwt'
+    PROBE_TEMPLATE: 'Default-m.dwt'
   script:
     - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end build-alfe-sbcl
@@ -2121,7 +2122,7 @@ probe:template-defaults:bricscad-metric:windows:
 
 probe:template-defaults:bricscad-imperial:macos:
   extends: .gate-macos-cad-soft
-  # entget-pointers on a drawing of the CAD's OWN imperial template (Default-in.dwt),
+  # entget-pointers on a drawing of the CAD's OWN imperial template (Default-imperial.dwt),
   # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
   # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
   # template fails the job with the templates found listed.
@@ -2136,7 +2137,7 @@ probe:template-defaults:bricscad-imperial:macos:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
     PROBE_SUITES: 'entget-pointers'
-    PROBE_TEMPLATE: 'Default-in.dwt'
+    PROBE_TEMPLATE: 'Default-imperial.dwt'
   script:
     - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end build-alfe-sbcl
@@ -2149,7 +2150,8 @@ probe:template-defaults:bricscad-imperial:macos:
 
 probe:template-defaults:bricscad-metric:macos:
   extends: .gate-macos-cad-soft
-  # entget-pointers on a drawing of the CAD's OWN metric template (Default-mm.dwt),
+  # entget-pointers on a drawing of the CAD's OWN metric template (Default-m.dwt,
+  # BricsCAD's BASEFILE on the runners),
   # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
   # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
   # template fails the job with the templates found listed.
@@ -2164,7 +2166,7 @@ probe:template-defaults:bricscad-metric:macos:
     GIT_SUBMODULE_STRATEGY: none
     PROBE_NO_COMMIT: '1'
     PROBE_SUITES: 'entget-pointers'
-    PROBE_TEMPLATE: 'Default-mm.dwt'
+    PROBE_TEMPLATE: 'Default-m.dwt'
   script:
     - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end build-alfe-sbcl

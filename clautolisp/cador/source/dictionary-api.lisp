@@ -56,8 +56,8 @@ Two passes: make every object (filed in its dictionary), then resolve each
 (CODE :REF TYPE NAME) pointer -- to the table record of that name, else to
 the made object of that type and key; an unresolved one is left out."
   (let* ((made '())
-         (product (if (eq (%current-product) :bricscad) :bricscad :autocad))
-         (forms (cdr (assoc product *measured-default-objects*))))
+         (key (%default-objects-key host))
+         (forms (%measured-set key *measured-default-objects*)))
     (labels ((make (dict-handle form)
                (destructuring-bind (key type body members &optional xdict) form
                  (let* ((object (clautolisp.drawing:add-entity
@@ -109,7 +109,7 @@ the made object of that type and key; an unresolved one is left out."
       ;; The extension dictionaries (AutoCAD's: layer 0, *Model_Space's
       ;; BLOCK_RECORD, the LAYER TABLE with ACAD_LAYERSTATES), owned by the
       ;; object itself: -1 0 330 5 100 280 281, no reactor group.
-      (dolist (entry (cdr (assoc product *measured-extension-dictionaries*)))
+      (dolist (entry (%measured-set key *measured-extension-dictionaries*))
         (destructuring-bind (owner (key type body members)) entry
           (declare (ignore key))
           (let ((owner-handle (%extension-dictionary-owner-handle host owner)))
@@ -146,6 +146,22 @@ the made object of that type and key; an unresolved one is left out."
                                      (remove-if (lambda (p) (member (car p) '(3 350)))
                                                 tail))))))
             (setf (clautolisp.drawing:entity-handle-data entity) data)))))))
+
+(defun %default-objects-key (host)
+  "(PRODUCT UNITS): the set of default objects a new drawing gets -- BricsCAD's
+under the BricsCAD dialects, AutoCAD's under the others; imperial when the
+drawing's MEASUREMENT is 0 (acad.dwt, Default-imperial.dwt), metric otherwise
+(acadiso.dwt, Default-m.dwt) -- the templates the probe:template-defaults
+jobs measured."
+  (let ((cell (cador-sysvar host "MEASUREMENT")))
+    (list (if (eq (%current-product) :bricscad) :bricscad :autocad)
+          (if (and cell (eql 0 (sysvar-cell-value cell))) :imperial :metric))))
+
+(defun %measured-set (key table)
+  "The entries of TABLE ((PRODUCT UNITS) . entries) for KEY, else the same
+product's other units (a set not measured yet)."
+  (cdr (or (assoc key table :test #'equal)
+           (find (first key) table :key #'caar))))
 
 (defun %extension-dictionary-owner-handle (host owner)
   "The handle of OWNER, (KIND NAME) a table record or (:TABLE KIND) a symbol
