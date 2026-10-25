@@ -353,6 +353,39 @@ driver/family/job. The BricsCAD suite is still alfe-driven (detect-cad.sh), so
 BricsCAD prompts may still show the alfe artefact until a direct-BricsCAD path
 exists; AutoCAD, the perishable half, runs direct.
 
+* Second capture — 2026-10-25: command prompts do NOT capture headless
+
+The suite reworked B12 to run DIRECT in accoreconsole, and it ran green
+(probe:suite:autocad:windows, probe-results/autocad/ms-windows/20261025T174713Z/).
+But the command-prompts suite emitted ONLY its ENV record -- CMDECHO 1,
+TRIMEXTENDMODE 0, LASTPROMPT-readable "Y" -- and ZERO per-command records (no
+"LINE/0", no step at all). The run completed normally (the documents suite ran
+after it), so it did not hang; the per-command driving simply produced nothing.
+The cador baseline, by contrast, DID emit a per-step record for every command
+((0 . "")), so the probe LOGIC is sound.
+
+Conclusion: *interactive command-line prompts are not capturable in headless
+accoreconsole.* In script/headless mode a loaded-lisp =(command "_LINE")= does
+not leave the command suspended with its prompt in LASTPROMPT the way an
+interactive session does, so the incremental =(command token)= + LASTPROMPT
+technique yields nothing. This is the "headless ceiling" this ticket's method
+section predicted for B10-B12. Both vehicles have now been ruled out: alfe
+(LASTPROMPT = alfe's channel) and direct accoreconsole (no per-command record).
+
+Paths forward for B12 (pick before spending more runner time):
+  1. A GUI AutoCAD (acad.exe) session, not accoreconsole -- the only place an
+     interactive prompt actually exists. Scarcer than the runner; book it.
+  2. A pure =.scr= that INTERLEAVES command tokens with
+     =(princ (getvar "LASTPROMPT"))= lines. In script mode each script LINE is
+     fed to the current prompt, so the command genuinely pauses between lines
+     and LASTPROMPT should hold the prompt -- unlike a single loaded-lisp
+     program that runs start-to-finish. Worth a one-command spike before
+     committing to it.
+The lisp probe and its SEED table stay as-is; only the capture vehicle is open.
+ENV did confirm one useful thing: TRIMEXTENDMODE defaults to 0 on this AutoCAD
+(Quick mode) vs 1 on BricsCAD -- the TRIM/EXTEND divergence, from the ENV line
+alone.
+
 * Status
 
 NEXT. Landed in the MR that files this issue: three probe suites --
