@@ -452,5 +452,8 @@ and an unmeasured units the product's other units."
       (is (eq (row '(:bricscad :imperial 25)) (set-of '(:bricscad :imperial 23))))
       (is (eq (row '(:autocad :metric 2022)) (set-of '(:autocad :metric 2018))))
       (is (eq (row '(:autocad :imperial 2022)) (set-of '(:autocad :imperial 2026))))
-      ;; a units not measured for that version: the same units' nearest version
-      (is (eq (row '(:bricscad :metric 26)) (set-of '(:bricscad :metric 25)))))))
+      ;; V25's metric template, measured 2026-10-25 (job 17451032321): its
+      ;; own set, not V26's (its Model layout has an ISO A4 page setup)
+      (is (eq (row '(:bricscad :metric 25)) (set-of '(:bricscad :metric 25))))
+      (is (not (eq (row '(:bricscad :metric 26)) (set-of '(:bricscad :metric 25)))))
+      (is (eq (row '(:bricscad :metric 25)) (set-of '(:bricscad :metric 23)))))))

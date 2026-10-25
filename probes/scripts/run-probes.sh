@@ -525,15 +525,33 @@ template_path_pattern() {
     *)        printf '%s\n' '*' ;;
   esac
 }
-find_template() {
-  local name="$1" root hit
-  if [[ "$name" == */* && -f "$name" ]]; then printf '%s\n' "$name"; return 0; fi
+# The product's own folders: a root that is one already (Application
+# Support/Bricsys), else the root's top-level folders the pattern names
+# (AppData/Local/Bricsys, Program Files/Autodesk, BricsCAD V26.app). The
+# search used to walk each whole root to depth 9 and filter on the path
+# afterwards: 12m45s through %LOCALAPPDATA% on PF5S26B (job 17450398554).
+product_dirs() {
+  local root pattern
+  pattern="$(template_path_pattern)"
   while IFS= read -r root; do
     [[ -d "$root" ]] || continue
-    hit="$(find "$root" -maxdepth 9 -type f -iname "$name" \
-             -ipath "$(template_path_pattern)" 2>/dev/null | head -n 1)"
-    if [[ -n "$hit" ]]; then printf '%s\n' "$hit"; return 0; fi
+    shopt -s nocasematch
+    if [[ "$root" == $pattern ]]; then
+      shopt -u nocasematch
+      printf '%s\n' "$root"
+    else
+      shopt -u nocasematch
+      find "$root" -mindepth 1 -maxdepth 1 -type d -iname "$pattern" 2>/dev/null
+    fi
   done < <(template_roots)
+}
+find_template() {
+  local name="$1" dir hit
+  if [[ "$name" == */* && -f "$name" ]]; then printf '%s\n' "$name"; return 0; fi
+  while IFS= read -r dir; do
+    hit="$(find "$dir" -maxdepth 8 -type f -iname "$name" 2>/dev/null | head -n 1)"
+    if [[ -n "$hit" ]]; then printf '%s\n' "$hit"; return 0; fi
+  done < <(product_dirs)
   return 1
 }
 drawing_file=""
@@ -549,10 +567,9 @@ if [[ -n "${PROBE_TEMPLATE:-}" ]]; then
     export AUTOLISP_DWG
   else
     echo "run-probes: no template named $PROBE_TEMPLATE; the templates found:" >&2
-    while IFS= read -r root; do
-      [[ -d "$root" ]] && find "$root" -maxdepth 9 -type f -iname '*.dwt' \
-        -ipath "$(template_path_pattern)" 2>/dev/null
-    done < <(template_roots) | sort -u | sed 's/^/    /' >&2
+    while IFS= read -r dir; do
+      find "$dir" -maxdepth 8 -type f -iname '*.dwt' 2>/dev/null
+    done < <(product_dirs) | sort -u | sed 's/^/    /' >&2
     exit 2
   fi
 fi
