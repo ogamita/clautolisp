@@ -1,0 +1,23 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-dialect-matrix-population -- what dialect-platform-version-axis left open-ended
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: dialect-platform-version-axis
+#+BRANCH: -
+#+DATE: 2026-10-25
+
+dialect-platform-version-axis (closed, clautolisp 2.3.62) built the product /
+platform / version facets, the feature matrix and the version-gated
+operators, and implemented every documented or measured difference it
+listed. Left, by nature open-ended:
+
+1. Populate *AUTOLISP-FEATURE-MATRIX* as new differences are documented or
+   measured -- each behind the version facet, with a probe (pjb 2026-10-03:
+   "implement them in different dialect versions, even if we can't test them
+   (yet)").
+2. Optionally extend the "/..." subfolder-recursion rule (and the deferred
+   platform-dependent ".." BACK-vs-UP) from FINDFILE to OPEN / LOAD, and
+   verify on the native runners.
+3. Real printing: AutoCAD before 2022 and BricsCAD before V25 are unmeasured;
+   they print as the measured versions until a probe says otherwise.

@@ -8968,3 +8968,54 @@ error; its message is nil under the default dialect, as on AutoCAD 2022
                   "(vl-catch-all-apply (quote vl-exit-with-error) (list \"c\"))"))
     (is (%error-handler-run (format nil "(vl-catch-all-error-p ~A)" form)))
     (is (null (%error-handler-run (format nil "(vl-catch-all-error-message ~A)" form))))))
+
+;;;; ----- Real printing per product (dialect-platform-version-axis) ----------
+;;;;
+;;;; Measured (probe-versions, 2026-10-25: AutoCAD 2022 job 17450478986,
+;;;; BricsCAD V26 17450478987, V25 17450350668). pjb: "keep the 3 variants
+;;;; ... in strict, use clautolisp format, just as in lax".
+
+(defun %real-count (needle text)
+  "How many times NEEDLE occurs in TEXT."
+  (loop with start = 0
+        for pos = (search needle text :start2 start)
+        while pos count t do (setf start (1+ pos))))
+
+(defun %real-print (source dialect)
+  "(values RESULT STDERR) of SOURCE under DIALECT."
+  (let ((err (make-string-output-stream)))
+    (let ((result (let ((*error-output* err))
+                    (%capture-enc-diagnostics source :dialect dialect))))
+      (values result (get-output-stream-string err)))))
+
+(test real-printing-follows-the-dialect-product
+  (flet ((spell (source dialect) (autolisp-string-value (%real-print source dialect))))
+    (dolist (case '(("(vl-prin1-to-string (/ 1.0 3.0))"
+                     "0.333333" "0.333333333333333" "0.3333333333333333")
+                    ("(vl-princ-to-string 1.0e6)" "1.0e+06" "1000000.0" "1000000.0")
+                    ("(vl-prin1-to-string 12345678.0)" "1.23457e+07" "12345678.0" "1.2345678e7")
+                    ("(vl-prin1-to-string (/ 1.0 1.0e5))" "1.0e-05" "1e-05" "1.0e-5")
+                    ("(vl-prin1-to-string 1.0e15)" "1.0e+15" "1e+15" "1.0e15")
+                    ("(vl-prin1-to-string 123.456)" "123.456" "123.456" "123.456")
+                    ("(vl-prin1-to-string 100.0)" "100.0" "100.0" "100.0")))
+      (destructuring-bind (source autocad bricscad own) case
+        (is (string= autocad (spell source :autocad-2022)) "~A under autocad-2022" source)
+        (is (string= bricscad (spell source :bricscad-v26)) "~A under bricscad-v26" source)
+        (dolist (dialect '(:clautolisp :strict :lax))
+          (is (string= own (spell source dialect)) "~A under ~A" source dialect))))))
+
+(test real-format-notice-once-where-the-products-differ
+  (flet ((notices (source dialect)
+           (multiple-value-bind (result err) (%real-print source dialect)
+             (declare (ignore result))
+             (%real-count "[real-format]" err))))
+    ;; 1/3: 0.333333 on AutoCAD, 0.333333333333333 on BricsCAD -> once per
+    ;; session, however many are printed; under every dialect but lax
+    (dolist (dialect '(:autocad-2022 :bricscad-v26 :clautolisp :strict))
+      (is (= 1 (notices "(vl-prin1-to-string (/ 1.0 3.0)) (vl-prin1-to-string 1.0e6)" dialect))
+          "~A" dialect))
+    (is (zerop (notices "(vl-prin1-to-string (/ 1.0 3.0))" :lax)))
+    ;; a real both spell alike: silent
+    (is (zerop (notices "(vl-prin1-to-string 0.5) (vl-prin1-to-string 123.456)" :autocad-2022)))
+    ;; RTOS is not concerned
+    (is (zerop (notices "(rtos (/ 1.0 3.0) 2 8)" :autocad-2022)))))

@@ -8858,6 +8858,40 @@ With `(setq x 123)`:
 - [prin1 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/prin1.htm)
 - Status: documented and product-tested (Phase 5 closure).
 
+*** Measured: how a real prints
+Measured 2026-10-25 (probe-versions; AutoCAD 2022 job 17450478986, BricsCAD
+V26 macOS 17450478987, V25 Windows 17450350668), the same for =prin1=,
+=princ=, =vl-prin1-to-string= and =vl-princ-to-string=:
+
+| value          | AutoCAD 2022   | BricsCAD V25 / V26   |
+|----------------+----------------+----------------------|
+| 1/3            | 0.333333       | 0.333333333333333    |
+| 123.456        | 123.456        | 123.456              |
+| 100.0          | 100.0          | 100.0                |
+| 1.0e6          | 1.0e+06        | 1000000.0            |
+| 12345678.0     | 1.23457e+07    | 12345678.0           |
+| 1.0e15         | 1.0e+15        | 1e+15                |
+| 1.0e-5         | 1.0e-05        | 1e-05                |
+| 1.0e-20        | 1.0e-20        | 1e-20                |
+| -2.5e30        | -2.5e+30       | -2.5e+30             |
+
+AutoCAD writes C's =%.6g= (six significant digits) with a point always in
+the mantissa; BricsCAD =%.15g= with =.0= added when there is neither a point
+nor an exponent. The exponent is signed, with at least two digits, on both.
+BricsCAD V18.1's release note "tiny doubles print 0.0" is not what V25 / V26
+do.
+
+*** clautolisp: how a real prints
+The AutoCAD dialects print a real as AutoCAD does, the BricsCAD dialects as
+BricsCAD does; =clautolisp=, =strict= and =lax= keep clautolisp's own
+spelling, which shows the shortest digits that read back to the same value
+(=0.3333333333333333=, =1000000.0=, =1.2345678e7=, =1.0e-5=). Neither
+vendor's choice follows from a format specifier, so the first time a real
+the two products spell differently is printed, every dialect but =lax=
+prints a =[real-format]= notice -- once per session. =rtos= (with an explicit
+precision) is the portable way to print a real; =rtos= and =command= tokens
+keep the full value under every dialect.
+
 #+LATEX: \newpage
 
 ** Function Entry: PRINC
@@ -8909,6 +8943,12 @@ With `(setq x 123)`:
 - [princ (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/princ.htm)
 - Status: documented and product-tested (Phase 5 closure).
 
+*** clautolisp: how a real prints
+As =prin1= (see its "Measured" and "clautolisp" notes): the AutoCAD dialects
+print a real as AutoCAD (=0.333333=), the BricsCAD dialects as BricsCAD
+(=0.333333333333333=), =clautolisp= / =strict= / =lax= in clautolisp's own
+spelling; a =[real-format]= notice the first time the products differ.
+
 #+LATEX: \newpage
 
 ** Function Entry: PRINT
@@ -8958,6 +8998,12 @@ With `(setq x 123)`:
 - [print (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4EE74BA9-6ED4-4734-9C47-90A81E0B0971.htm)
 - [print (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/print.htm)
 - Status: documented (Phase 5 closure).
+
+*** clautolisp: how a real prints
+As =prin1= (see its "Measured" and "clautolisp" notes): the AutoCAD dialects
+print a real as AutoCAD (=0.333333=), the BricsCAD dialects as BricsCAD
+(=0.333333333333333=), =clautolisp= / =strict= / =lax= in clautolisp's own
+spelling; a =[real-format]= notice the first time the products differ.
 
 #+LATEX: \newpage
 
@@ -69882,6 +69928,12 @@ None.
 - [vl-prin1-to-string (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-4AA25012-28D5-4723-8AD3-B8BF9AE62425.htm)
 - Status: documented.
 
+*** clautolisp: how a real prints
+As =prin1= (see its "Measured" and "clautolisp" notes): the AutoCAD dialects
+print a real as AutoCAD (=0.333333=), the BricsCAD dialects as BricsCAD
+(=0.333333333333333=), =clautolisp= / =strict= / =lax= in clautolisp's own
+spelling; a =[real-format]= notice the first time the products differ.
+
 #+LATEX: \newpage
 
 ** Function Entry: VL-PRINC-TO-STRING
@@ -69920,6 +69972,12 @@ None.
 *** Source Notes
 - [vl-princ-to-string (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-33B0CA43-84F2-46DE-88BE-8FFF22C83FAD.htm)
 - Status: documented.
+
+*** clautolisp: how a real prints
+As =prin1= (see its "Measured" and "clautolisp" notes): the AutoCAD dialects
+print a real as AutoCAD (=0.333333=), the BricsCAD dialects as BricsCAD
+(=0.333333333333333=), =clautolisp= / =strict= / =lax= in clautolisp's own
+spelling; a =[real-format]= notice the first time the products differ.
 
 #+LATEX: \newpage
 

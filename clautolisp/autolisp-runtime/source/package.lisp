@@ -134,6 +134,8 @@
    #:autolisp-file
    #:make-autolisp-file
    #:autolisp-format-real
+   #:autolisp-format-real-as
+   #:autolisp-print-real
    #:autolisp-file-stream
    #:autolisp-file-path
    #:autolisp-file-mode

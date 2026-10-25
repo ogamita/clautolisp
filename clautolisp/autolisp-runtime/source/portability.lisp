@@ -497,6 +497,39 @@ from ENTMAKE with no other sign. Adding the markers works on both."
    ("clautolisp: divergence register" . "issues/open/vendor-probe-autocad-bricscad-divergences.issue")))
 
 (register-dialect-warning
+ :tag "real-format"
+ :title "a real AutoCAD and BricsCAD print differently"
+ :kind :vendor-divergence
+ :message "this real prints as ~A on AutoCAD and as ~A on BricsCAD (~A in clautolisp's own spelling)"
+ :arguments "the AutoCAD spelling, the BricsCAD spelling, clautolisp's"
+ :example ": [real-format] in SHOW: this real prints as 0.333333 on AutoCAD and as 0.333333333333333 on BricsCAD (0.3333333333333333 in clautolisp's own spelling)"
+ :dialects
+ "PRIN1, PRINC, PRINT and the VL-PRIN*-TO-STRING functions spell a real
+the way the dialect's product does -- measured on AutoCAD 2022 and BricsCAD
+V25 / V26 (probe-versions, 2026-10-25): AutoCAD prints six significant
+digits (C %.6g, a point always in the mantissa: 0.333333, 1.0e+06,
+1.0e-05), BricsCAD fifteen (C %.15g: 0.333333333333333, 1000000.0, 1e-05);
+clautolisp, strict and lax keep clautolisp's own spelling (pjb, 2026-10-25:
+\"keep the 3 variants\"). Neither vendor's choice follows from a format
+specifier, so a program whose output depends on it is not portable.
+
+The notice fires, under every dialect but lax, the first time a printed
+real is one the two products spell differently -- more than six significant
+digits, or outside the range where both print it plainly. Once per session.
+(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil) silences it; portability-warning-
+mode :error makes it an error instead. RTOS and COMMAND tokens are not
+concerned: they keep the full value."
+ :rationale
+ "A report or a file written with PRINC shows 0.333333 on AutoCAD and
+0.333333333333333 on BricsCAD -- and a program that READs it back gets a
+different number on each. RTOS (with an explicit precision) is the portable
+way to print a real."
+ :references
+ '(("clautolisp: the printer" . "clautolisp/autolisp-runtime/source/api.lisp, AUTOLISP-PRINT-REAL")
+   ("clautolisp: the measurement" . "probes/sources/probe-versions.lsp")
+   ("clautolisp: the ticket" . "issues/open/dialect-platform-version-axis.issue")))
+
+(register-dialect-warning
  :tag "vl-catch-all-apply-arity"
  :title "VL-CATCH-ALL-APPLY called without an argument list"
  :kind :portability

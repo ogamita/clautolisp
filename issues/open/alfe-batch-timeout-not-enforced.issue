@@ -1,0 +1,39 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-batch-timeout-not-enforced -- alfe --mode batch --timeout 180 waited 20+ minutes on a BricsCAD that never answered
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-25
+
+* Symptom
+
+probe:template-defaults:bricscad-metric:windows (job 17450398554, retry of
+17449031341, commit 6f1550bc; PF5S26B, BricsCAD V25):
+
+: run-probes: template Default-m.dwt -> /c/Users/PPBN02261/AppData/Local/Bricsys/BricsCAD/V25x64/fr_FR/Templates/Default-m.dwt
+: runner : ".../alfe-sbcl.exe" --no-init --bricscad --mode batch --timeout 180 -l "...run-probes.lsp"
+: output : probe-results/bricscad/ms-windows/20261025T175056Z/results.sexp
+
+then nothing: still running 20 minutes later, when it was cancelled by
+hand (it held the Windows runner, and every CAD job queued behind it).
+alfe's --timeout 180 should have given up after 3 minutes, killed the CAD
+and failed the run.
+
+The same job on the imperial template (Default-imperial.dwt, job
+17449031340) and on V26 macOS (Default-m.dwt, 17449031343) completed in a
+couple of minutes. What BricsCAD V25 shows on Default-m.dwt is unknown (a
+modal dialog is the usual suspect: alfe-cad-nil-catch-all-message,
+empty-ressource).
+
+* To do
+
+1. Find why the timeout did not fire: which phase alfe was in (launch /
+   READY wait / script run), and whether that phase's wait honours
+   --timeout.
+2. Make every wait honour it, and on expiry kill the CAD it launched
+   (cf. alfe-windows-old-exe-left-suspended) and fail with a message naming
+   the phase.
+3. Then retry the V25 metric template job: its set goes into cador's
+   default objects as (:bricscad :metric 25) (MR !489 falls back to V26's).

@@ -4460,6 +4460,113 @@ both hosts agree on the SBCL-canonical form (float-printer-omits-double-float
           (when (zerop (length digits)) (setf digits "0"))
           (concatenate 'string mantissa "e" (if neg "-" "") digits)))))
 
+;;; --- Real printing per product (dialect-platform-version-axis) -------------
+;;;
+;;; Measured (probe-versions, 2026-10-25; probe:suite AutoCAD 2022 job
+;;; 17450478986, BricsCAD V26 macOS 17450478987, V25 Windows 17450350668):
+;;;   AutoCAD   C %.6g, with ".0" added to a mantissa that has no point:
+;;;             0.333333  1.0e+06  1.23457e+07  1.0e-05  100.0
+;;;   BricsCAD  C %.15g, with ".0" added only when there is neither a point
+;;;             nor an exponent: 0.333333333333333  1000000.0  1e+15  1e-05
+;;; and clautolisp's own spelling (AUTOLISP-FORMAT-REAL) for clautolisp,
+;;; strict and lax (pjb, 2026-10-25: "keep the 3 variants ... in strict, use
+;;; clautolisp format, just as in lax"). BricsCAD V18.1's "tiny doubles print
+;;; 0.0" is not what either prints today.
+
+(defun %c-g-format (value precision)
+  "VALUE as C's printf %.<PRECISION>g writes it: PRECISION significant digits
+of the double's exact value, fixed notation when the decimal exponent X is in
+[-4, PRECISION), else scientific; trailing zeros (and a trailing point)
+removed; the exponent signed, with at least two digits."
+  (let ((d (coerce value 'double-float)))
+    (if (zerop d)
+        (if (minusp (float-sign d)) "-0" "0")
+        (let* ((r (abs (rational d)))
+               (x (floor (log (coerce r 'double-float) 10d0))))
+          ;; exact: 10^x <= r < 10^(x+1)
+          (loop while (< r (expt 10 x)) do (decf x))
+          (loop while (>= r (expt 10 (1+ x))) do (incf x))
+          (let ((n (round (* r (expt 10 (- (1- precision) x))))))
+            ;; rounding up to 10^precision moves the exponent
+            (when (>= n (expt 10 precision))
+              (setf n (round n 10))
+              (incf x))
+            (let* ((digits (format nil "~D" n))      ; PRECISION digits
+                   (sign (if (minusp d) "-" "")))
+              (flet ((trim (text)
+                       (if (find #\. text)
+                           (string-right-trim "." (string-right-trim "0" text))
+                           text)))
+                (if (and (<= -4 x) (< x precision))
+                    (concatenate 'string sign
+                                 (trim (if (minusp x)
+                                           (concatenate 'string "0."
+                                                        (make-string (- -1 x) :initial-element #\0)
+                                                        digits)
+                                           (concatenate 'string (subseq digits 0 (1+ x)) "."
+                                                        (subseq digits (1+ x))))))
+                    (format nil "~A~Ae~A~2,'0D" sign
+                            (trim (concatenate 'string (subseq digits 0 1) "." (subseq digits 1)))
+                            (if (minusp x) "-" "+")
+                            (abs x))))))))))
+
+(defun autolisp-format-real-as (value product)
+  "The spelling PRODUCT's printer gives the real VALUE: :AUTOCAD, :BRICSCAD,
+or NIL for clautolisp's own (AUTOLISP-FORMAT-REAL)."
+  (case product
+    (:autocad
+     (let* ((s (%c-g-format value 6))
+            (e (position #\e s))
+            (mantissa (subseq s 0 (or e (length s)))))
+       (if (find #\. mantissa)
+           s
+           (concatenate 'string mantissa ".0" (if e (subseq s e) "")))))
+    (:bricscad
+     (let ((s (%c-g-format value 15)))
+       (if (or (find #\. s) (find #\e s)) s (concatenate 'string s ".0"))))
+    (t (autolisp-format-real value))))
+
+(defun %real-format-product ()
+  "The product whose real spelling the active dialect prints with, or NIL."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (and dialect (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+
+(defun autolisp-print-real (value)
+  "The real VALUE as the active dialect's printer spells it (PRIN1 / PRINC /
+VL-PRIN1-TO-STRING ...), after the `[real-format]' notice when AutoCAD and
+BricsCAD would spell it differently. COMMAND tokens and RTOS do not come
+here: they keep AUTOLISP-FORMAT-REAL's full precision."
+  (emit-real-format-warning value)
+  (autolisp-format-real-as value (%real-format-product)))
+
+(defun emit-real-format-warning (value)
+  "The `[real-format]' notice: printing VALUE, which AutoCAD and BricsCAD
+spell differently (0.333333 / 0.333333333333333, 1.0e+06 / 1000000.0 ...).
+Once per session; silent under lax; :error mode signals
+:non-portable-construct; *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL silences it."
+  (let ((autocad (autolisp-format-real-as value :autocad))
+        (bricscad (autolisp-format-real-as value :bricscad)))
+    (unless (string= autocad bricscad)
+      (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+             (name (and dialect (ignore-errors
+                                 (clautolisp.autolisp-reader:autolisp-dialect-template-name
+                                  (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))))
+             (context (ignore-errors (current-evaluation-context))))
+        (when (and dialect (not (eq name :lax)) (%warn-out-of-dialect-p context))
+          (let ((mode (or (ignore-errors
+                           (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                            dialect))
+                          :warn))
+                (message (%portability-diagnostic
+                          "real-format"
+                          (%portability-warning-location nil)
+                          autocad bricscad
+                          (autolisp-format-real-as value nil))))
+            (when (eq mode :error)
+              (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+            (unless (%vendor-operator-warning-seen-p "real-format")
+              (format *error-output* "~&~A~%" message))))))))
+
 (defun format-command-number (value)
   "Format the number VALUE as a CAD command-line token: integers in
 decimal, reals in their AutoLISP princ spelling (no CL float marker)."
