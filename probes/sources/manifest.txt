@@ -50,3 +50,7 @@ probe-documents.lsp           cad-probe-run-document-probes
 # QUARANTINED -- run alone and split, never as part of a normal run:
 #     PROBE_SUITES=load-refusal PROBE_SPLIT_SUITES=load-refusal
 probe-load-refusal.lsp        cad-probe-run-load-refusal-probes    quarantine
+
+# QUARANTINED -- it SETS the CAD's LISPSYS (persisted): only through
+# scripts/run-lispsys1-probe.sh, which sets it back to 0.
+probe-lispsys.lsp             cad-probe-run-lispsys-probes         quarantine
