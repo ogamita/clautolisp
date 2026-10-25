@@ -195,7 +195,9 @@
   :description "Tests for the clautolisp DWG codec (libredwg)."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/drawing-dwg" "fiveam")
+  ;; cador: the default objects the CADs listed for their own templates, which
+  ;; a vendor .dwt read here is checked against (dwg-reads-vendor-templates)
+  :depends-on ("clautolisp/drawing-dwg" "clautolisp/cador" "fiveam")
   :serial t
   :components
   ((:file "drawing-dwg/tests/package")

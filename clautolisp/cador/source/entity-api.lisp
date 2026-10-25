@@ -329,7 +329,10 @@ APPLIST (a list of registered application names) is supplied — the
 matching xdata appended as a trailing (-3 ...) cell. Without APPLIST
 the xdata is suppressed, matching the vendor ENTGET contract. HOST
 supplies the ename intern cache for the (-1 . ename) head."
-  (let* ((data (entity-handle-data entity))
+  (let* ((data (if (clautolisp.drawing:dictionary-entity-p entity)
+                   ;; listed in key order, as the CADs list a dictionary
+                   (clautolisp.drawing:dictionary-data-sorted (entity-handle-data entity))
+                   (entity-handle-data entity)))
          (ordinary (remove-if #'xdata-cell-p data))
          (xdata-cell (find-if #'xdata-cell-p data))
          (names (%applist-names applist))

@@ -306,6 +306,20 @@ test:clautolisp:macos:
     - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
     - sh scripts/ci-build-cache.sh save fasl
 
+# The DWG codec on REAL vendor templates (.dwt): BricsCAD V26's and AutoCAD
+# 2026's, installed on thalassa -- they cannot be committed. Builds libredwg,
+# then reads each template and cross-checks BricsCAD's named-object
+# dictionary against what the entget-pointers probe measured on the same
+# files (scripts/test-vendor-templates.sh).
+test:dwt:macos:
+  extends: .gate-macos-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive   # libredwg, for build-libraries
+  script:
+    - make build-libraries
+    - sh scripts/test-vendor-templates.sh
+
 test:clautolisp:windows:
   extends: .gate-windows-hard
   stage: test
