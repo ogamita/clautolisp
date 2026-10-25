@@ -386,6 +386,40 @@ ENV did confirm one useful thing: TRIMEXTENDMODE defaults to 0 on this AutoCAD
 (Quick mode) vs 1 on BricsCAD -- the TRIM/EXTEND divergence, from the ENV line
 alone.
 
+* GUI AutoCAD attempt (B12 path 1) -- 2026-10-25/26: viable, but defeated by the queue
+
+Path 1 (a GUI acad.exe, since headless accoreconsole cannot capture prompts)
+was built and run on the live runner. Established on hardware:
+  - GUI acad LAUNCHES on the runner: desktop live (the gate's session check
+    reports DESKTOP-LIVE), a license seat is available, acad.exe starts.
+  - After a chain of launcher fixes it opens a drawing and is ready to run the
+    script. The fixes, each from an observed failure:
+    1. MSYS/MINGW mangled the =/b= switch into a path -> acad tried to open it
+       as a drawing ("fichier dessin introuvable"). Fix: MSYS2_ARG_CONV_EXCL.
+    2. acad started on the Start tab ("Debut") with no drawing -> the /b script
+       had no document and never ran. Fix: open the runner's empty.dwg (/t
+       template fallback).
+    3. the /b script path was RELATIVE; acad.exe does not run from the repo dir
+       -> script unfindable, acad idle. Fix: absolute out-dir paths.
+    Also: cancel each command with (command) [Esc], not "" [Enter] (an Enter
+    left commands waiting and wedged the GUI); and trap SIGTERM so a cancelled
+    run kills acad instead of orphaning it (an early cancel left a stuck window
+    the user had to kill by hand).
+
+What was NOT reached: the absolute-path run never executed. Queued behind ~20
+other CAD/Windows jobs on the serial runner, it sat pending ~2h and then FAILED
+=stuck_pending_no_matching_runners= -- the intermittent runner went offline
+(office hours / overnight) before the queue drained to it. So whether the
+script now runs to completion and LASTPROMPT captures the prompts in GUI acad
+is STILL UNVERIFIED; the driver is believed correct but unexercised on hardware.
+
+Lesson for the sunset window: do NOT let a GUI-acad capture wait behind a full
+pipeline on an intermittent serial runner -- the queue outlasts the runner's
+uptime. When the runner is next online, FAST-TRACK the job: cancel the competing
+CAD jobs (or run the driver outside a full pipeline) so acad.exe starts within
+minutes, while the runner is still up. The job (command-prompts:gui:autocad:
+windows) and driver (scripts/run-command-prompts-gui-autocad.sh) are ready.
+
 * Status
 
 NEXT. Landed in the MR that files this issue: three probe suites --
