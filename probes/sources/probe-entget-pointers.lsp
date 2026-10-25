@@ -325,6 +325,7 @@
   ;; 12. and 13. (below)
   (cad-probe-run-default-object-probes)
   (cad-probe-run-endblk-and-template-probes)
+  (cad-probe-run-entlast-probes)
   (princ))
 
 ;;; 12. WHAT the default objects contain (deferred-nod-default-contents):
@@ -506,4 +507,31 @@
       (if (and (not (vl-catch-all-error-p dir)) (= (type dir) 'STR))
         (setq out (strcat out " files=" (vl-prin1-to-string (vl-directory-files dir "*.dwt" 1)))))
       out)))
+  (princ))
+
+
+;;; 14. ENTLAST after a non-graphical object (entnext-nongraphical-enumeration):
+;;; does it name the XRECORD / DICTIONARY just made, or the last graphical
+;;; entity? (ENTNEXT walks graphical entities only -- section 11.)
+
+(defun cad-probe--ep-last-type ( / e)
+  (setq e (entlast))
+  (if e (cdr (assoc 0 (entget e))) "NIL"))
+
+(defun cad-probe-run-entlast-probes ( / line x d)
+  (setq line (entmakex '((0 . "LINE") (8 . "0") (10 0.0 0.0 0.0) (11 2.0 2.0 0.0))))
+  (cad-probe-capture "entget-pointers" "entlast: after a LINE"
+    (function (lambda () (cad-probe--ep-last-type))))
+  (cad-probe-capture "entget-pointers" "entlast: after a free XRECORD | eq the LINE"
+    (function (lambda ()
+      (setq x (entmakex '((0 . "XRECORD") (100 . "AcDbXrecord") (1 . "last"))))
+      (strcat (cad-probe--ep-last-type) " | " (if (eq (entlast) line) "T" "NIL")))))
+  (cad-probe-capture "entget-pointers" "entlast: after a DICTIONARY | eq the LINE"
+    (function (lambda ()
+      (setq d (entmakex '((0 . "DICTIONARY") (100 . "AcDbDictionary"))))
+      (strcat (cad-probe--ep-last-type) " | " (if (eq (entlast) line) "T" "NIL")))))
+  (cad-probe-capture "entget-pointers" "entlast: after dictadd of the XRECORD"
+    (function (lambda ()
+      (dictadd (namedobjdict) (strcat "PRLAST" (cad-probe--ep-tag)) x)
+      (cad-probe--ep-last-type))))
   (princ))
