@@ -86,7 +86,13 @@ if [ ! -f "$acad" ]; then
   echo "FAILED: acad.exe not found at '$acad' (set AUTOCAD_ACAD)"; exit 2
 fi
 
-"$acad" /b "$scr_win" >"$out_dir/acad.stdout" 2>"$out_dir/acad.stderr" &
+# MSYS/MINGW rewrites an argument that looks like a POSIX path -- notably the
+# `/b' switch -- into a Windows path before handing it to a native .exe, so
+# acad.exe would receive a bogus path and try to OPEN IT AS A DRAWING
+# ("fichier dessin introuvable"). Disable that conversion for this launch; our
+# paths are already Windows-form (C:/...), so nothing legitimate needs it.
+MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 \
+  "$acad" /b "$scr_win" >"$out_dir/acad.stdout" 2>"$out_dir/acad.stderr" &
 pid=$!
 trap 'kill "$pid" 2>/dev/null || true' EXIT
 
