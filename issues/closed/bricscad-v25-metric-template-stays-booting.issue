@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: bricscad-v25-metric-template-stays-booting -- BricsCAD V25 (Windows) never reaches READY on a copy of Default-m.dwt
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS: -
@@ -35,3 +35,19 @@ mode cannot see it.
    open the copy by hand in BricsCAD V25 on PF5S26B.
 3. Once it runs: its set goes into cador's default objects as
    (:bricscad :metric 25) (MR !489 falls back to V26's).
+
+
+Resolved (2026-10-25, clautolisp 2.3.63, MR !490)
+-------------------------------------------------
+
+To do 1 settled it: the retry on this MR (job 17451032321, PF5S26B, BricsCAD
+V25 fr_FR, same Default-m.dwt) found the template in 3.7 s and ran the probe
+to the end in 18 s -- READY with no dialog. The BOOTING of job 17450398554
+did not reproduce: a one-off (a cold start after the 12m45s disk walk is the
+likeliest), not something Default-m.dwt does to V25.
+
+To do 3: the run's set (bricscad/ms-windows/20261025T190205Z) is now
+(:bricscad :metric 25) in cador's default objects. It is V25's own: its Model
+layout carries an ISO A4 page setup (margins 7.5 / 20, 210 x 297 mm), which
+V26's metric template does not. Test DEFAULT-OBJECTS-FOLLOW-THE-DIALECT-
+VERSION updated (V25 metric its own set; V23 metric falls back to V25's).
