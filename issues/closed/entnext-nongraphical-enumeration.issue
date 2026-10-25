@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: entnext-nongraphical-enumeration — ENTNEXT/ENTLAST reach dictionary/xrecord objects
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -36,3 +36,16 @@ mirroring the ssget scan. Deferred only because it needs a CAD run to
 confirm the vendor contract for the exact SCHMS traversal idioms.
 
 Documented in the spec NAMEDOBJDICT *** clautolisp note.
+
+* Resolved (2026-10-25, clautolisp 2.3.59, MR !488)
+
+Measured on the vendors, both agree:
+- ENTNEXT (entget-pointers section 11, 2.3.52): the walk reaches graphical
+  entities only -- a fresh drawing's named-object dictionary is not in it.
+- ENTLAST (section 14, AutoCAD 2022 job 17450023027, BricsCAD V25
+  17450023028): after an XRECORD and a DICTIONARY are entmade, and after the
+  XRECORD is dictadded, (entlast) still names the last LINE.
+
+cador now does the same: host-entnext (2.3.52) and host-entlast (2.3.59)
+skip what GRAPHICAL-ENTITY-P rejects, as the ssget scan already did. Test
+ENTLAST-AND-ENTNEXT-SKIP-NON-GRAPHICAL-OBJECTS (both products).
