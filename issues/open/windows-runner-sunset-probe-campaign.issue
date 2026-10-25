@@ -196,16 +196,23 @@ ActiveX parity items (vlax-tmatrix, vlr-* constructor set, vlr-pers family) are
 NOT perishable — macOS/after-sunset.
 
 ** B12 — COMMAND prompt/option capture  AC-crit: YES  [HIGHEST LEVERAGE]  [HARNESS LANDED]
-Not a probes/ suite — a dedicated prompt-capture harness
-(=autolisp-front-end/tests/scenarios/entities/command-prompts-probe.lsp= +
-=scripts/run-command-prompts-probe.{sh,ps1}=, family =command-prompts=, jobs
-=command-prompts:probe:{bricscad:macos,bricscad:windows,autocad:windows}=) that
-drives each command one token at a time and reads the prompt from the
-=LASTPROMPT= sysvar between tokens, bounded by =CMDACTIVE= and a cancel-reset so
-no half-fed command hangs the batch. clautolisp's =(command ...)= feeds these
-token sequences, yet the Options/Argument-Sequence rows in ch.28 are
-doc-harvested, never product-captured. AutoCAD's prompts are the irreplaceable
-half (BricsCAD's stay capturable on macOS).
+A probes/ SUITE (=probes/sources/probe-command-prompts.lsp= + a manifest line),
+NOT an alfe scenario probe. It drives each command one token at a time and reads
+the prompt from the =LASTPROMPT= sysvar between tokens, bounded by =CMDACTIVE=
+and a cancel-reset so no half-fed command hangs the batch. clautolisp's
+=(command ...)= feeds these token sequences, yet the Options/Argument-Sequence
+rows in ch.28 are doc-harvested, never product-captured. AutoCAD's prompts are
+the irreplaceable half (BricsCAD's stay capturable on macOS).
+
+WHY A SUITE: =probe:suite:autocad:windows= runs the manifest DIRECTLY in
+accoreconsole (=runner_template "accoreconsole.exe /s run.scr"=, no alfe), so
+LASTPROMPT reflects the real command. The first attempt drove the command
+THROUGH alfe and LASTPROMPT came back as alfe's own injected bootstrap line
+(=": (if (getvar \"SECURELOAD\") ...)"=), not the command's prompt -- see § First
+capture. As a suite it also reuses the existing probe:suite job and the =suite=
+family; no new driver, family, or job. (The BricsCAD suite is still alfe-driven
+via detect-cad.sh, so its prompt column may show the same alfe artefact until a
+direct-BricsCAD path exists; AutoCAD -- the perishable half -- runs direct.)
 
 The correctness-critical subset is the ~18 commands cador actually drives
 (19 handlers incl. dash variants — =cador-command-names= / the
@@ -214,18 +221,16 @@ SOLID, ERASE, MOVE, COPY, ROTATE, BLOCK/-BLOCK, ARC, PLINE, MTEXT, WIPEOUT,
 MIRROR, INSERT/-INSERT, LAYER/-LAYER, LINETYPE/-LINETYPE. (The agent harvest's
 "85" was the spec-dictionary count, not the implemented set.)
 
-LANDED this MR: the harness + a SEED command table (LINE/CIRCLE/ARC/PLINE/TEXT
+LANDED this MR: the suite + a SEED command table (LINE/CIRCLE/ARC/PLINE/TEXT
 completing scripts; -LAYER/-LINETYPE/-INSERT/RECTANG/OFFSET/FILLET/TRIM/EXTEND
-initial-prompt capture). The headless clautolisp baseline runs green and
-CONFIRMS what makes this batch vendor-only: cador has NO interactive prompt loop
-(it consumes a whole token list in one call), so =LASTPROMPT= stays "" /
-=CMDACTIVE= 0 there — the real prompt strings exist only on AutoCAD/BricsCAD.
-(=LASTPROMPT= itself reads fine on cador, so the mechanism is sound.) NOTE while
-building: the pathname/* drivers' =--host mock= is stale — the mock host was
-renamed =cador= in 1.7.27 — so a local =--backend clautolisp= there fails;
-these new drivers use =--host cador=. The pathname CI jobs never run the
-clautolisp backend, so that staleness is latent, not breaking CI; worth a
-one-line fix in a follow-up.
+initial-prompt capture), run by =probe:suite:autocad:windows= directly in
+accoreconsole. (First built as an alfe scenario probe, which could not capture
+prompts -- see § First capture -- then reworked into this suite.) The headless
+clautolisp baseline confirms what makes the batch vendor-only: cador has NO
+interactive prompt loop (it consumes a whole token list in one call), so
+=LASTPROMPT= stays "" / =CMDACTIVE= 0 there -- the real prompt strings exist only
+on AutoCAD/BricsCAD. (=LASTPROMPT= itself reads fine on cador, so the mechanism
+is sound.)
 
 TODO on a live engine: grow the seed table toward the full implemented set with
 a confirmed safe token script per command; pin the known divergences — TRIM/
@@ -339,20 +344,22 @@ line appears at all. alfe drives the engine by feeding the probe as a lisp
 program over its protocol; it does not expose an interactive command loop where
 LASTPROMPT reflects the running command's prompt. So the incremental
 =(command name)= + LASTPROMPT technique does NOT survive the alfe transport.
-=> B12 needs a DIRECT runner (a =.scr= fed to =accoreconsole /s run.scr= /
-=bricscad -B run.scr=, like autolisp-spec/scripts/run-probes-direct*.sh), not an
-alfe-driven load. The lisp probe itself is sound (it ran, emitted, cancelled
-cleanly); only the driver must change. Rebuild the driver before spending more
-runner time on prompt capture.
+FIXED by reworking B12 from an alfe scenario probe into a probes/ SUITE
+(=probes/sources/probe-command-prompts.lsp=): =probe:suite:autocad:windows= runs
+the manifest DIRECTLY in accoreconsole (=accoreconsole /s run.scr=, no alfe), so
+LASTPROMPT reflects the real command. The lisp probe was sound (it ran, emitted,
+cancelled cleanly); only the vehicle changed -- and the suite needs no new
+driver/family/job. The BricsCAD suite is still alfe-driven (detect-cad.sh), so
+BricsCAD prompts may still show the alfe artefact until a direct-BricsCAD path
+exists; AutoCAD, the perishable half, runs direct.
 
 * Status
 
-NEXT. Landed in the MR that files this issue: the two value-probe suites
-(B1 numeric-edges, B2 vle, auto-run on =probe:suite:*:windows/macos=) AND the
-B12 command prompt-capture harness (=command-prompts:probe:*= jobs, headless
-baseline green). All are manual/auto per the =suite= / =command-prompts=
-families and re-playable on any online window. B3–B11 and B13 are specified
-above with exact probe expressions (from the 2026-10-24 spec harvest) and a
-schedule. The 18 =SPEC-UNCERTAIN= markers and the open =deferred-spec-research=
+NEXT. Landed in the MR that files this issue: three probe suites --
+B1 numeric-edges, B2 vle, and B12 command-prompts -- all in the =probes/=
+manifest, so all auto-run on =probe:suite:{autocad,bricscad}:windows/macos= (the
+=suite= family) and are re-playable on any online window; B1/B2 already captured
+on hardware (§ First capture). B3-B11 and B13 are specified above with exact
+probe expressions (from the 2026-10-24 spec harvest) and a schedule. The 18 =SPEC-UNCERTAIN= markers and the open =deferred-spec-research=
 questions are the fold-back targets; each batch's results fold into the spec's
 "Tested Behaviour" subsections in its own MR.
