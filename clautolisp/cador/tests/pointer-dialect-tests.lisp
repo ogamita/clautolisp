@@ -437,3 +437,20 @@ sections 11 and 14)."
         (is (eq line (host-entlast mock)) "~A after dictadd" dialect)
         (is (null (host-entnext mock line)))
         (is (not (null d)))))))
+
+(test default-objects-follow-the-dialect-version
+  "The measured default objects are keyed (PRODUCT UNITS VERSION), as the
+dialects distinguish versions (pjb, 2026-10-25): a measured version gets its
+own set, another the nearest measured one (a versionless dialect the newest),
+and an unmeasured units the product's other units."
+  (let ((table clautolisp.cador::*measured-default-objects*))
+    (flet ((set-of (key) (clautolisp.cador::%measured-set key table))
+           (row (key) (cdr (assoc key table :test #'equal))))
+      (is (eq (row '(:bricscad :imperial 25)) (set-of '(:bricscad :imperial 25))))
+      (is (eq (row '(:bricscad :imperial 26)) (set-of '(:bricscad :imperial 26))))
+      (is (eq (row '(:bricscad :imperial 26)) (set-of '(:bricscad :imperial nil))))
+      (is (eq (row '(:bricscad :imperial 25)) (set-of '(:bricscad :imperial 23))))
+      (is (eq (row '(:autocad :metric 2022)) (set-of '(:autocad :metric 2018))))
+      (is (eq (row '(:autocad :imperial 2022)) (set-of '(:autocad :imperial 2026))))
+      ;; a units not measured for that version: the same units' nearest version
+      (is (eq (row '(:bricscad :metric 26)) (set-of '(:bricscad :metric 25)))))))
