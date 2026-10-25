@@ -237,6 +237,35 @@ clock."
          (let ((end (position-if (lambda (c) (member c '(#\. #\@))) locale)))
            (subseq locale 0 end)))))
 
+(defparameter *windows-language-abbreviations*
+  ;; Windows' LOCALE_SABBREVLANGNAME, the form AutoCAD's LOCALE took before
+  ;; 2019: "ll_TT" -> code, then "ll" -> the language's main locale's code.
+  '(("en_US" . "ENU") ("en_GB" . "ENG") ("en_AU" . "ENA") ("en_CA" . "ENC")
+    ("en_NZ" . "ENZ") ("en_IE" . "ENI") ("en_ZA" . "ENS")
+    ("fr_FR" . "FRA") ("fr_BE" . "FRB") ("fr_CA" . "FRC") ("fr_CH" . "FRS")
+    ("fr_LU" . "FRL") ("de_DE" . "DEU") ("de_AT" . "DEA") ("de_CH" . "DES")
+    ("de_LU" . "DEL") ("de_LI" . "DEC") ("it_IT" . "ITA") ("it_CH" . "ITS")
+    ("es_ES" . "ESN") ("es_MX" . "ESM") ("es_AR" . "ESS") ("pt_BR" . "PTB")
+    ("pt_PT" . "PTG") ("nl_NL" . "NLD") ("nl_BE" . "NLB") ("ja_JP" . "JPN")
+    ("ko_KR" . "KOR") ("zh_CN" . "CHS") ("zh_TW" . "CHT") ("zh_HK" . "ZHH")
+    ("zh_SG" . "ZHI") ("ru_RU" . "RUS") ("pl_PL" . "PLK") ("cs_CZ" . "CSY")
+    ("hu_HU" . "HUN") ("sv_SE" . "SVE") ("da_DK" . "DAN") ("nb_NO" . "NOR")
+    ("fi_FI" . "FIN") ("tr_TR" . "TRK") ("el_GR" . "ELL") ("he_IL" . "HEB")
+    ("ar_SA" . "ARA") ("uk_UA" . "UKR") ("sk_SK" . "SKY") ("sl_SI" . "SLV")
+    ("ro_RO" . "ROM") ("bg_BG" . "BGR") ("hr_HR" . "HRV")
+    ("en" . "ENU") ("fr" . "FRA") ("de" . "DEU") ("it" . "ITA") ("es" . "ESN")
+    ("pt" . "PTB") ("nl" . "NLD") ("ja" . "JPN") ("ko" . "KOR") ("zh" . "CHS")
+    ("ru" . "RUS") ("pl" . "PLK") ("cs" . "CSY") ("hu" . "HUN") ("sv" . "SVE")
+    ("da" . "DAN") ("nb" . "NOR") ("no" . "NOR") ("fi" . "FIN") ("tr" . "TRK")
+    ("el" . "ELL") ("he" . "HEB") ("ar" . "ARA") ("uk" . "UKR") ("sk" . "SKY")
+    ("sl" . "SLV") ("ro" . "ROM") ("bg" . "BGR") ("hr" . "HRV")))
+
+(defun %windows-language-abbreviation (code)
+  "The LOCALE_SABBREVLANGNAME of the locale CODE (\"fr_FR\"), or NIL."
+  (let ((language (subseq code 0 (or (position #\_ code) (length code)))))
+    (cdr (or (assoc code *windows-language-abbreviations* :test #'string-equal)
+             (assoc language *windows-language-abbreviations* :test #'string-equal)))))
+
 (defun %current-dialect-feature (feature)
   "FEATURE's value in the active dialect's feature/version matrix cell
 \(dialect-platform-version-axis), and whether a row matched."
@@ -287,12 +316,14 @@ where the session cannot say."
         ((string-equal string "CVPORT") (funcall 'cador-current-viewport-id host))
         ((string-equal string "LOCALE")
          ;; The dialect's documented / measured form (feature :locale-form):
-         ;; BricsCAD "fr_FR"; AutoCAD 2019+ the upper-case language, "FR".
+         ;; BricsCAD "fr_FR"; AutoCAD 2019+ the upper-case language, "FR";
+         ;; AutoCAD before 2019 the Windows abbreviation, "FRA".
          (let ((form (%current-dialect-feature :locale-form))
                (code (%locale-language-territory)))
            (or (and code
                     (case form
                       (:language-territory code)
+                      (:abbreviation (%windows-language-abbreviation code))
                       (:language (string-upcase (subseq code 0 (or (position #\_ code)
                                                                    (length code)))))))
                (stored))))

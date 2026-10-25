@@ -1959,6 +1959,11 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *=LOCALE= before AutoCAD 2019* (2.3.60): under an AutoCAD dialect older
+  than 2019, =(getvar "LOCALE")= gives the three-letter Windows abbreviation
+  AutoCAD documented then ("FRA", "ENU", "DEU" ...), where 2019 and later
+  give the upper-case language ("FR").
+
 - *=entlast= ignores dictionaries and xrecords* (2.3.59): after an XRECORD
   or a DICTIONARY is made, =(entlast)= still names the last graphical entity,
   as on AutoCAD and BricsCAD (=entnext= already walked graphical entities

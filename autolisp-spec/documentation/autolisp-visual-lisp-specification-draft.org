@@ -38578,6 +38578,18 @@ Displays a code that indicates the current language.
 *** Compatibility
 AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
 
+*** Measured
+A French locale: AutoCAD 2022 "FR" (job 16921381038); BricsCAD V25 / V26
+"fr_FR" (jobs 16913315157 / 16921381045).
+
+*** clautolisp
+LOCALE takes its dialect's form, from the locale (LC_ALL, LC_MESSAGES,
+LANG): the BricsCAD dialects "fr_FR"; the AutoCAD dialects from 2019 the
+upper-case language, "FR" ("now returns a code that contains a two or
+more-letter abbreviation", AutoCAD 2019); before 2019 the three-letter
+abbreviation Windows' GetLocaleInfo gives with LOCALE_SABBREVLANGNAME,
+"FRA" ("ENU", "DEU", "FRC" ...) -- documented, not measured.
+
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FC7C9C59-4335-4511-8804-36E1724534CC
 - BricsCAD: https://help.bricsys.com/en-us/document/system-variable-reference/l/locale-system-variable
