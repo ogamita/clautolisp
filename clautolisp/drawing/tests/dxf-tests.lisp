@@ -941,3 +941,81 @@ entry reaches the xrecord, and none of them counts as an entity."
       (is (equal "kept" (cdr (assoc 1 (entity-handle-data (find-entity back member)))))))
     (is (= (drawing-entity-count d) (drawing-entity-count back)))
     (is (not (graphical-entity-p (find-entity back (drawing-root-dictionary-handle back)))))))
+
+;;; --- Text encoding per $ACADVER -----------------------------------
+;;;
+;;; dxf-writer-header-not-utf8: an AC1021+ ASCII DXF is UTF-8; an earlier
+;;; one a codepage text with \U+XXXX for the characters outside it.
+
+(defparameter +dxf-non-ascii-text+
+  (coerce (list #\5 #\Space (code-char #xB5) #\m #\, #\Space #\3 #\Space
+                (code-char #x20AC) #\, #\Space (code-char #x3A9))
+          'string)
+  "\"5 µm, 3 €, Ω\": a Latin-1 character, then two outside Latin-1.")
+
+(defun %dxf-octets (path)
+  (with-open-file (s path :element-type '(unsigned-byte 8))
+    (let ((v (make-array (file-length s) :element-type '(unsigned-byte 8))))
+      (read-sequence v s)
+      v)))
+
+(defun %dxf-has-octets (octets &rest bytes)
+  (search (coerce bytes '(vector (unsigned-byte 8))) octets))
+
+(defun %dxf-text-of (drawing)
+  (let (found)
+    (map-entities (lambda (e)
+                    (let ((v (cdr (assoc 1 (entity-dxf e)))))
+                      (when v (setf found v))))
+                  drawing)
+    found))
+
+(defun %dxf-text-drawing (version)
+  (let ((d (make-drawing :version version)))
+    (add-entity d (list '(0 . "TEXT") '(8 . "0") '(10 0.0d0 0.0d0 0.0d0)
+                        '(40 . 1.0d0) (cons 1 +dxf-non-ascii-text+)))
+    d))
+
+(test dxf-ac1021-and-later-are-written-and-read-as-utf-8
+  (uiop:with-temporary-file (:pathname p :type "dxf")
+    (write-drawing (%dxf-text-drawing :ac1027) p :format :dxf-ascii)
+    (let ((octets (%dxf-octets p)))
+      (is (%dxf-has-octets octets #xC2 #xB5) "µ as UTF-8")
+      (is (%dxf-has-octets octets #xE2 #x82 #xAC) "€ as UTF-8")
+      (is (not (search "\\U+" (map 'string #'code-char octets)))))
+    (is (string= +dxf-non-ascii-text+ (%dxf-text-of (read-drawing p))))))
+
+(test dxf-before-ac1021-escapes-what-latin-1-cannot-hold
+  (uiop:with-temporary-file (:pathname p :type "dxf")
+    (let ((d (%dxf-text-drawing :ac1015)))
+      (ensure-drawing-variable d "DWGCODEPAGE" :kind :string :value "UTF-8")
+      (write-drawing d p :format :dxf-ascii))
+    (let* ((octets (%dxf-octets p))
+           (text (map 'string #'code-char octets)))
+      (is (%dxf-has-octets octets #x20 #xB5 #x6D) "µ as the one byte #xB5")
+      (is (search "\\U+20AC" text))
+      (is (search "\\U+03A9" text))
+      ;; the file is not UTF-8, and says so
+      (is (search "ANSI_1252" text))
+      (is (not (search "UTF-8" text))))
+    (is (string= +dxf-non-ascii-text+ (%dxf-text-of (read-drawing p))))))
+
+(test dxf-utf-8-version-falls-back-to-latin-1-on-invalid-bytes
+  ;; An AC1027 file holding the lone byte #xB5, as clautolisp wrote them
+  ;; before: read as ISO-8859-1 instead of failing.
+  (uiop:with-temporary-file (:pathname p :type "dxf")
+    (write-drawing (%dxf-text-drawing :ac1015) p :format :dxf-ascii)
+    (let* ((octets (%dxf-octets p))
+           (patched (%dxf-replace-acadver octets "AC1015" "AC1027")))
+      (with-open-file (s p :direction :output :if-exists :supersede
+                           :element-type '(unsigned-byte 8))
+        (write-sequence patched s)))
+    (let ((text (%dxf-text-of (read-drawing p))))
+      (is (char= (code-char #xB5) (char text 2)))
+      ;; no \U+ decoding in a 2007+ file
+      (is (search "\\U+20AC" text)))))
+
+(defun %dxf-replace-acadver (octets from to)
+  (let ((at (search (map '(vector (unsigned-byte 8)) #'char-code from) octets)))
+    (assert at)
+    (replace (copy-seq octets) (map '(vector (unsigned-byte 8)) #'char-code to) :start1 at)))

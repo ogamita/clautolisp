@@ -1959,6 +1959,12 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *DXF text encoding follows the version* (2.3.64): an ASCII DXF of
+  AutoCAD 2007 (AC1021) or later is written and read as UTF-8, as the format
+  says; an earlier one as ISO-8859-1 with =\U+XXXX= for the characters
+  outside it (and =$DWGCODEPAGE= ANSI_1252). A 2007+ DXF that is not valid
+  UTF-8 -- one clautolisp wrote before -- still reads.
+
 - *BricsCAD V25's metric defaults* (2.3.63): a new drawing under
   =bricscad-v25= with metric units gets the default objects measured on V25's
   own Default-m.dwt (its Model layout has an ISO A4 page setup), no longer

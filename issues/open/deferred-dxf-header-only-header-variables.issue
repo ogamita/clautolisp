@@ -1,0 +1,23 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-dxf-header-only-header-variables -- clautolisp writes every sysvar into a DXF header, the CADs only the DXF header variables
+#+STATUS: DEFERRED
+#+PRIORITY: P4
+#+TYPE: bug
+#+DEPENDS: dxf-writer-header-not-utf8
+#+BRANCH: -
+#+DATE: 2026-10-25
+
+Found closing dxf-writer-header-not-utf8 (2026-10-25). DXF-WRITE-HEADER
+(clautolisp/drawing/source/dxf.lisp) emits every sysvar cell of the drawing
+as a $NAME header variable. The CADs write only the documented DXF header
+variables: the dxf-angles DXF of AutoCAD 2022 and BricsCAD V25 / V26 have no
+$AREAUNITS, $LENGTHUNITS, $VOLUMEUNITS (BricsCAD sysvars), which clautolisp
+writes -- $LENGTHUNITS with its quotes ("\"in ft mi ...\""). They also
+write $DWGCODEPAGE with group code 3; clautolisp with 1 (the code
+DXF-HEADER-VALUE-CODE picks for a string).
+
+Readers skip unknown header variables, so nothing breaks today. To do: keep
+the header to the DXF reference's variables, each with its documented group
+code (a table, checked against the vendor files in dist/dxf-angles/ or
+clautolisp/drawing/tests/fixtures/vendor-dxf/), and decide where the other
+sysvars live (a clautolisp-only section, or not at all).
