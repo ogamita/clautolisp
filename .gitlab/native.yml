@@ -1298,6 +1298,32 @@ pathname:probe:autocad:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend autocad
 
+# --- COMMAND prompts from GUI AutoCAD (windows-runner-sunset B12, path 1) -----
+#
+# Headless accoreconsole cannot capture interactive command prompts: a
+# loaded-lisp (command "_LINE") does not suspend there, so LASTPROMPT stays
+# empty (proven 2026-10-25). A GUI acad.exe, launched with /b run.scr, runs the
+# SAME probe suite in the real interactive app where (command ...) suspends and
+# LASTPROMPT holds the prompt. MANUAL + allow_failure on purpose: GUI acad on a
+# CI runner may have no interactive desktop or no GUI license seat, in which
+# case it times out with no results -- that outcome is itself the finding.
+command-prompts:gui:autocad:windows:
+  extends: .gate-windows-cad-soft
+  rules:
+    - when: manual
+      allow_failure: true
+  stage: test
+  interruptible: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - bash scripts/run-command-prompts-gui-autocad.sh dist/command-prompts-gui
+  artifacts:
+    when: always
+    name: "command-prompts-gui-$CI_COMMIT_SHORT_SHA"
+    paths: [dist/command-prompts-gui/]
+    expire_in: 30 days
+
 # --- ActiveX IntersectWith: what the vendors return --------------------------
 #
 # cador-intersectwith-missing.issue. clautolisp implements IntersectWith from
