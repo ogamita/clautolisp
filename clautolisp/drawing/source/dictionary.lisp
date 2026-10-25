@@ -64,6 +64,43 @@ A (3 . key) with no following (350 . handle) is ignored."
              (push (cons pending-key (cdr pair)) result)
              (setf pending-key nil))))))))
 
+;;; The CADs list a dictionary's entries in KEY ORDER, whatever order the
+;;; file stores them in: BricsCAD V26's Default-imperial.dwt stores its NOD
+;;; as ACAD_GROUP ACAD_PLOTSTYLENAME ACAD_MLINESTYLE ... and BricsCAD's entget
+;;; lists it ACAD_DETAILVIEWSTYLE ACAD_GROUP ACAD_IMAGE_DICT ... (test
+;;; dwg-reads-vendor-templates; entget-pointers section 12 on both CADs:
+;;; layouts, styles, scales, visual styles all sorted). The keys are compared
+;;; without case, as dictionary keys are matched (no measured list tells the
+;;; two orders apart).
+
+(defun %dict-sort-entries (entries)
+  "ENTRIES ((KEY . HANDLE) ...) in key order (case-insensitive, stable)."
+  (stable-sort (copy-list entries) #'string-lessp :key #'car))
+
+(defun dictionary-data-sorted (data)
+  "A DICTIONARY object's group-code list DATA with its (3 . key) (350|360 .
+handle) entry pairs in key order, each pair in a slot an entry occupied --
+every other group stays where it is."
+  (let ((sorted (%dict-sort-entries
+                 (loop for (a b) on data
+                       when (and (consp a) (%group-code= (car a) 3)
+                                 (consp b) (or (%group-code= (car b) 350)
+                                               (%group-code= (car b) 360)))
+                         collect (list* (cdr a) a b)))))
+    (let ((out '()) (rest data))
+      (loop while rest
+            do (let ((a (first rest)) (b (second rest)))
+                 (if (and (consp a) (%group-code= (car a) 3)
+                          (consp b) (or (%group-code= (car b) 350)
+                                        (%group-code= (car b) 360)))
+                     (let ((next (pop sorted)))
+                       (push (cadr next) out)
+                       (push (cddr next) out)
+                       (setf rest (cddr rest)))
+                     (progn (push a out)
+                            (setf rest (cdr rest))))))
+      (nreverse out))))
+
 (defun %dict-strip-entries (data)
   "DATA with all (3 . key) / (350 . h) / (360 . h) entry pairs removed,
 keeping the dictionary object's structural codes in order."
@@ -84,7 +121,7 @@ DATA (entry pairs stripped) and the ordered ENTRIES alist
   ;; others with 350.
   (let ((code (if (eql 1 (cdr (assoc 280 data))) 360 350)))
     (append (%dict-strip-entries data)
-            (loop for (key . handle) in entries
+            (loop for (key . handle) in (%dict-sort-entries entries)
                   collect (cons 3 key)
                   collect (cons code handle)))))
 
@@ -117,7 +154,7 @@ no entity, a non-dictionary entity, or a deleted one."
   "The ordered ((KEY . MEMBER-HANDLE) ...) entries of the dictionary
 DICT-HANDLE, or NIL when it is not a dictionary."
   (let ((dict (find-dictionary drawing dict-handle)))
-    (and dict (%dict-entries-ordered (entity-handle-data dict)))))
+    (and dict (%dict-sort-entries (%dict-entries-ordered (entity-handle-data dict))))))
 
 (defun dictionary-member-handle (drawing dict-handle key)
   "The member handle stored under KEY (case-insensitive) in dictionary

@@ -161,6 +161,7 @@ from the cador package before the Phase-17a extraction.")
    #:ensure-root-dictionary
    #:find-dictionary
    #:dictionary-object-entries
+   #:dictionary-data-sorted
    #:dictionary-member-handle
    #:dictionary-add-entry
    #:dictionary-remove-entry

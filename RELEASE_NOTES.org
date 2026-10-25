@@ -1959,6 +1959,11 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *A dictionary lists its entries in key order* (2.3.58): =dictnext= and
+  a dictionary's =entget= list the entries sorted by key, as AutoCAD and
+  BricsCAD do, whatever order the drawing stores them in (found by reading
+  BricsCAD's own templates, whose NOD is stored unsorted).
+
 - *A new drawing's objects are its template's, and blocks end on ENDBLK*
   (2.3.56): the default objects come from the CADs' own templates (AutoCAD's
   acad.dwt / acadiso.dwt, BricsCAD's Default-imperial.dwt / Default-m.dwt),
