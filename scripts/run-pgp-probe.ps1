@@ -41,7 +41,7 @@ switch ($Backend) {
   "bricscad"      { $bargs += @("--bricscad","--mode","batch","--timeout","180") }
   "autocad"       { $bargs += @("--autocad","--mode","automation","--timeout","300") }
   "accoreconsole" { $bargs += @("--autocad","--mode","batch","--timeout","300") }
-  "clautolisp"    { $bargs += @("--clautolisp","--host","mock") }
+  "clautolisp"    { $bargs += @("--clautolisp") }
 }
 $bargs += @("-l", $probe)
 

@@ -36,7 +36,7 @@ declare -a bargs=("--no-init")
 case "$backend" in
   bricscad)   bargs+=("--bricscad" "--mode" "batch" "--timeout" "180") ;;
   autocad)    bargs+=("--autocad" "--mode" "batch"); [ -n "$dwg" ] && bargs+=("--dwg" "$dwg") ;;
-  clautolisp) bargs+=("--clautolisp" "--host" "mock") ;;
+  clautolisp) bargs+=("--clautolisp") ;;
   *) echo "unknown backend: $backend" >&2; exit 2 ;;
 esac
 bargs+=("-l" "$probe")
