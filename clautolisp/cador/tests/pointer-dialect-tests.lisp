@@ -198,7 +198,7 @@ NOD holds the product's default entries, which entnext does not walk."
         ;; item 3: the record
         (is (equal (if bricscad
                        '(-1 0 5 330 100 100 2 70 62 6 290 370 390 347)
-                       '(-1 0 5 102 360 102 330 100 100 2 70 62 6 290 370 390 347))
+                       '(-1 0 5 102 360 102 330 100 100 2 70 62 6 290 370 390 347 348))
                    (mapcar #'car view))
             "~A layer record: ~S" dialect (mapcar #'car view))
         (is (eq layer (host-handent mock (cdr (assoc 5 view)))) "~A handent" dialect)
@@ -234,7 +234,13 @@ NOD holds the product's default entries, which entnext does not walk."
         ;; item 5: the named-object dictionary
         (let ((keys (loop for (code . value) in (host-entget mock (host-namedobjdict mock))
                           when (eql code 3) collect (autolisp-string-value value))))
-          (is (= (if bricscad 16 15) (length keys)) "~A NOD: ~S" dialect keys)
+          ;; the entries of the product's template (probe:template-defaults:
+          ;; AutoCAD 15, BricsCAD 15 or 16 by template)
+          (is (equal (mapcar #'first (clautolisp.cador::%measured-set
+                                      (clautolisp.cador::%default-objects-key mock)
+                                      clautolisp.cador::*measured-default-objects*))
+                     keys)
+              "~A NOD: ~S" dialect keys)
           (dolist (key '("ACAD_GROUP" "ACAD_LAYOUT" "ACAD_MATERIAL" "ACAD_PLOTSTYLENAME"))
             (is (member key keys :test #'string=)))
           (is (eq (not bricscad) (and (member "ACAD_COLOR" keys :test #'string=) t)))
@@ -326,3 +332,49 @@ space's LAYOUT (340) and the INSERTs referencing it ({BLKREFS 331})."
           (is (equal '(2 360 102 331 102 70 280 281) (mapcar #'car (nthcdr 6 record)))
               "~A BR1 record: ~S" dialect (mapcar #'car record))
           (is (eq insert (cdr (assoc 331 record)))))))))
+
+(test layer-348-follows-autocad-under-autocad-and-lax
+  "Layer 0's 348: AutoCAD lists it, pointing at an erased object (entget nil;
+entget-pointers section 12, job 17441114651); BricsCAD lists none. The
+AutoCAD and lax dialects follow AutoCAD, the others BricsCAD (pjb,
+2026-10-24). Making the erased target leaves DBMOD alone."
+  (dolist (case '((:autocad-2022 t) (:lax t) (:clautolisp nil) (:bricscad nil)))
+    (destructuring-bind (dialect listed) case
+      (%with-dialect (dialect)
+        (let* ((mock (make-cador))
+               (view (host-entget mock (host-tblobjname mock "LAYER" "0")))
+               (pointer (cdr (assoc 348 view))))
+          (is (eq listed (and pointer t)) "~A 348" dialect)
+          (when pointer
+            (is (null (host-entget mock pointer)) "~A 348 is erased" dialect))
+          (is (eql 0 (clautolisp.drawing:drawing-dbmod
+                      (clautolisp.cador::cador-active-drawing mock)))))))))
+
+(test empty-block-walk-starts-at-its-endblk
+  "An empty block's -2 names its ENDBLK (entget-pointers section 13; AutoCAD
+2022 job 17448966017, BricsCAD V26 job 17448966216): -1 0 [330 5 | 5 330]
+100 67 410 8 100, owned by the BLOCK_RECORD; handent reaches it. A walk of a
+block's entities does not end on it."
+  (dolist (dialect '(:autocad-2022 :bricscad))
+    (%with-dialect (dialect)
+      (let* ((mock (make-cador))
+             (ps (host-tblobjname mock "BLOCK" "*Paper_Space"))
+             (endblk (cdr (assoc -2 (host-entget mock ps))))
+             (view (host-entget mock endblk)))
+        (is (equal "ENDBLK" (autolisp-string-value (cdr (assoc 0 view)))))
+        (is (equal (if (eq dialect :bricscad)
+                       '(-1 0 5 330 100 67 410 8 100)
+                       '(-1 0 330 5 100 67 410 8 100))
+                   (mapcar #'car view))
+            "~A ENDBLK: ~S" dialect (mapcar #'car view))
+        (is (eq (cdr (assoc 330 (host-entget mock ps))) (cdr (assoc 330 view))))
+        (is (eq endblk (host-handent mock (autolisp-string-value (cdr (assoc 5 view))))))
+        (is (eq endblk (cdr (assoc -2 (host-tblsearch mock "BLOCK" "*Paper_Space")))))
+        ;; a block with contents: -2 is its first entity, the walk ends on nil
+        (host-entmakex mock (list (cons 0 "BLOCK") (cons 2 "EB1") (cons 70 0)
+                                  (list 10 0.0d0 0.0d0 0.0d0)))
+        (host-entmakex mock (make-line-data))
+        (host-entmakex mock (list (cons 0 "ENDBLK")))
+        (let ((first (cdr (assoc -2 (host-entget mock (host-tblobjname mock "BLOCK" "EB1"))))))
+          (is (equal "LINE" (autolisp-string-value (cdr (assoc 0 (host-entget mock first))))))
+          (is (null (host-entnext mock first))))))))

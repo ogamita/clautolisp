@@ -2,8 +2,9 @@
 """Generate clautolisp/cador/source/default-objects.lisp from entget-pointers
 probe results (section 12: the default objects of a new drawing).
 
-usage: gen-default-objects.py PRODUCT=RESULTS.sexp ... > default-objects.lisp
-  PRODUCT is autocad or bricscad; RESULTS.sexp a probe-results/<product>/<os>/
+usage: gen-default-objects.py PRODUCT-UNITS=RESULTS.sexp ... > default-objects.lisp
+  PRODUCT is autocad or bricscad, UNITS imperial or metric (the template the
+  probe:template-defaults job opened); RESULTS.sexp a probe-results/<product>/<os>/
   <stamp>/results.sexp of the entget-pointers probe. The file's encoding
   follows the CAD's platform (BricsCAD on macOS writes MacRoman, the Windows
   CADs cp1252); it is detected.
@@ -251,6 +252,7 @@ def main(argv):
     products = []
     for arg in argv:
         product, _, path = arg.partition('=')
+        product = '%s :%s' % tuple(product.split('-', 1))   # (:PRODUCT :UNITS)
         res = results(path)
         products.append((product, path, list(english_layouts(nod(res))), xdicts(res)))
     print(';;;; -*- mode:lisp; coding:utf-8 -*-')
@@ -263,24 +265,24 @@ def main(argv):
     print('(in-package #:clautolisp.cador)')
     print()
     print('(defparameter *measured-default-objects*')
-    print('  ;; PRODUCT -> ((KEY TYPE BODY MEMBERS [XDICT]) ...): BODY the groups after')
+    print('  ;; (PRODUCT UNITS) -> ((KEY TYPE BODY MEMBERS [XDICT]) ...): BODY the groups after')
     print('  ;; the header, a pointer (CODE :REF TYPE NAME); MEMBERS the same, for a')
     print('  ;; dictionary; XDICT the object\'s own extension dictionary, if it has one.')
     print("  '(")
     for product, _, forms, _ in products:
-        print('    (:%s' % product)
+        print('    ((:%s)' % product)
         for form in forms:
             print(emit(form, 5))
         print('     )')
     print('    ))')
     print()
     print('(defparameter *measured-extension-dictionaries*')
-    print('  ;; PRODUCT -> ((OWNER (KEY TYPE BODY MEMBERS)) ...): the extension')
+    print('  ;; (PRODUCT UNITS) -> ((OWNER (KEY TYPE BODY MEMBERS)) ...): the extension')
     print('  ;; dictionary of OWNER, (KIND NAME) a table record or (:TABLE KIND) a')
     print('  ;; symbol TABLE object.')
     print("  '(")
     for product, _, _, xds in products:
-        print('    (:%s' % product)
+        print('    ((:%s)' % product)
         for owner, form in xds:
             print('     (%s' % owner)
             print(emit(form, 6) + ')')

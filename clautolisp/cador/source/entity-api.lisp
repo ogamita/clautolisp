@@ -781,18 +781,18 @@ same container; returns the new ENTITY-HANDLE."
 wrapped group-code data, plus — for a BLOCK record — the vendors'
 (-2 . <first-entity ename>) group, the entry point of the classic
 block-contents walk ((entnext (cdr (assoc -2 (tblsearch \"BLOCK\" n)))).
-SPEC-UNCERTAIN: on the vendors an *empty* block's -2 names its ENDBLK
-entity; the host stores no ENDBLK and omits the group
-(deferred-spec-research.issue)."
+An EMPTY block's -2 names its ENDBLK (entget-pointers section 13, both
+products)."
   (let ((view (pure-data->al-view host (symbol-table-record-data record))))
     (if (eq (symbol-table-record-kind record) :block-record)
-        (let ((first-handle
-                (first (%block-entity-handles
-                        host (symbol-table-record-name record)))))
-          (if first-handle
-              (append view (list (cons -2 (handle->ename host first-handle))))
-              view))
+        (append view (list (cons -2 (handle->ename host (%block-walk-start host record)))))
         view)))
+
+(defun %block-walk-start (host record)
+  "The handle a block's -2 names: its first entity, else -- an empty block --
+its ENDBLK."
+  (or (first (%block-entity-handles host (symbol-table-record-name record)))
+      (%endblk-handle host record)))
 
 ;;; --- Table records, their TABLE objects, and the BLOCK entities -------
 ;;;
@@ -833,7 +833,7 @@ entity; the host stores no ENDBLK and omits the group
   ;; objects of the named-object dictionary. Other kinds: 2 70, then the
   ;; rest as stored.
   '((:layer (2) (70 . 0) (62 . 7) (6 . "Continuous") (290 . 1) (370 . -3)
-            (390 . :plot-style) (347 . :material))
+            (390 . :plot-style) (347 . :material) (348 . :erased))
     (:block-record (2) (70 . 0) (280 . 1) (281 . 0))))
 
 (defun %table-object-view (host entry ename)
@@ -876,7 +876,36 @@ subclass markers, 102 groups and -2 walk entry."
                    (and h (cons code h))))
     (:material (let ((h (%named-object-handle host "ACAD_MATERIAL" "Global")))
                  (and h (cons code h))))
+    (:erased (and (%layer-348-dialect-p)
+                  (cons code (%erased-placeholder-handle host))))
     (t (cons code default))))
+
+(defun %layer-348-dialect-p ()
+  "True under the dialects that list AutoCAD's layer 348 -- AutoCAD's and
+lax (pjb, 2026-10-24); the others follow BricsCAD, which lists none."
+  (let ((dialect (ignore-errors
+                  (clautolisp.autolisp-runtime:current-evaluation-dialect-name))))
+    (or (eq (%current-product) :autocad)
+        (and dialect
+             (eq :lax (clautolisp.autolisp-reader:autolisp-dialect-template-name
+                       dialect))))))
+
+(defun %erased-placeholder-handle (host)
+  "The handle of an erased object of the active drawing, made on first need:
+what AutoCAD's layer 0 348 points at in a new drawing (entget-pointers
+section 12: <erased>), so its entget is NIL there too. Making it is no
+change of the drawing."
+  (let ((table (%cador-extension-dictionaries host)))
+    (or (gethash :erased-placeholder table)
+        (setf (gethash :erased-placeholder table)
+              (let* ((drawing (cador-active-drawing host))
+                     (dbmod (clautolisp.drawing:drawing-dbmod drawing))
+                     (entity (let ((clautolisp.drawing:*drawing-modification-hook* nil))
+                               (clautolisp.drawing:add-entity
+                                drawing (list (cons 0 "XRECORD") (cons 100 "AcDbXrecord"))))))
+                (setf (clautolisp.drawing:entity-handle-deleted-p entity) t
+                      (clautolisp.drawing:drawing-dbmod drawing) dbmod)
+                (clautolisp.drawing:entity-handle-id entity))))))
 
 (defun %table-record-entget-view (host record ename)
   "The entget view of a table RECORD (a BLOCK record shows its BLOCK_RECORD)."
@@ -983,7 +1012,7 @@ CREATE is false, then NIL."
          (header (or (clautolisp.drawing:find-block (cador-active-drawing host) name)
                      (symbol-table-record-data record)))
          (first (first (%block-entity-handles host name)))
-         (walk (and first (list (cons -2 (handle->ename host first)))))
+         (walk (list (cons -2 (handle->ename host (or first (%endblk-handle host record))))))
          (layout (%space-layout-name name))
          (common (append (list (cons 100 "AcDbEntity")
                                (cons 67 (if (string-equal name "*Paper_Space") 1 0)))
@@ -1040,6 +1069,47 @@ that reference the block."
                          (mapcar (lambda (h) (cons 331 h)) inserts)
                          (list (cons 102 "}")))))))
 
+(defun %endblk-handle (host record &optional (create t))
+  "The handle of the block RECORD's ENDBLK, assigned on first need (NIL when
+CREATE is false and it has none yet)."
+  (let ((table (%cador-block-entity-handles host))
+        (key (list :endblk (symbol-table-record-name record))))
+    (or (gethash key table)
+        (and create (setf (gethash key table) (cador-allocate-handle host))))))
+
+(defun %find-block-record-by-endblk-handle (host handle)
+  "The :block-record SYMBOL-TABLE-RECORD whose ENDBLK is HANDLE, or NIL."
+  (and (stringp handle)
+       (block found
+         (maphash (lambda (name record)
+                    (declare (ignore name))
+                    (when (equalp handle (%endblk-handle host record nil))
+                      (return-from found record)))
+                  (cador-table host :block-record))
+         nil)))
+
+(defun %endblk-view (host record ename)
+  "The entget view of the block RECORD's ENDBLK (entget-pointers section 13):
+-1 0 [5 330 | 330 5] 100 67 [410] 8 100, owned by the BLOCK_RECORD."
+  (let* ((name (symbol-table-record-name record))
+         (header (or (clautolisp.drawing:find-block (cador-active-drawing host) name)
+                     (symbol-table-record-data record)))
+         (layout (%space-layout-name name))
+         (zero (cons 0 "ENDBLK"))
+         (five (cons 5 (%endblk-handle host record)))
+         (owner (cons 330 (symbol-table-record-id record))))
+    (cons (cons -1 ename)
+          (pure-data->al-view
+           host
+           (append (if (eq (%current-product) :bricscad)
+                       (list zero five owner)
+                       (list zero owner five))
+                   (list (cons 100 "AcDbEntity")
+                         (cons 67 (if (string-equal name "*Paper_Space") 1 0)))
+                   (and layout (list (cons 410 layout)))
+                   (list (cons 8 (or (%data-group-value header 8) "0"))
+                         (cons 100 "AcDbBlockEnd")))))))
+
 (defun %non-entity-view (host handle ename)
   "The entget view of the object HANDLE names when it is no entity: a table
 record, a BLOCK entity or a TABLE object; NIL otherwise."
@@ -1048,6 +1118,8 @@ record, a BLOCK entity or a TABLE object; NIL otherwise."
       (record (%table-record-entget-view host record ename))
       ((setf record (%find-block-record-by-entity-handle host handle))
        (%block-entity-view host record ename))
+      ((setf record (%find-block-record-by-endblk-handle host handle))
+       (%endblk-view host record ename))
       (t (let ((entry (find handle *symbol-tables* :key #'second :test #'equalp)))
            (and entry (%table-object-view host entry ename)))))))
 
@@ -1659,5 +1731,6 @@ value from tblobjname), or NIL."
           ((let ((up (string-upcase value)))
              (or (%find-table-record-by-id host up)
                  (%find-block-record-by-entity-handle host up)
+                 (%find-block-record-by-endblk-handle host up)
                  (find up *symbol-tables* :key #'second :test #'equal)))
            (handle->ename host (string-upcase value))))))
