@@ -234,8 +234,13 @@ NOD holds the product's default entries, which entnext does not walk."
         ;; item 5: the named-object dictionary
         (let ((keys (loop for (code . value) in (host-entget mock (host-namedobjdict mock))
                           when (eql code 3) collect (autolisp-string-value value))))
-          ;; the CADs' own templates (probe:template-defaults): 15 on both
-          (is (= 15 (length keys)) "~A NOD: ~S" dialect keys)
+          ;; the entries of the product's template (probe:template-defaults:
+          ;; AutoCAD 15, BricsCAD 15 or 16 by template)
+          (is (equal (mapcar #'first (clautolisp.cador::%measured-set
+                                      (clautolisp.cador::%default-objects-key mock)
+                                      clautolisp.cador::*measured-default-objects*))
+                     keys)
+              "~A NOD: ~S" dialect keys)
           (dolist (key '("ACAD_GROUP" "ACAD_LAYOUT" "ACAD_MATERIAL" "ACAD_PLOTSTYLENAME"))
             (is (member key keys :test #'string=)))
           (is (eq (not bricscad) (and (member "ACAD_COLOR" keys :test #'string=) t)))
