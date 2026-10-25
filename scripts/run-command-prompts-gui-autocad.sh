@@ -86,15 +86,33 @@ if [ ! -f "$acad" ]; then
   echo "FAILED: acad.exe not found at '$acad' (set AUTOCAD_ACAD)"; exit 2
 fi
 
+# A /b script runs in the STARTUP DRAWING's context. If acad starts on the
+# Start tab with no drawing open (the default profile here), the script never
+# runs and acad sits idle (observed 2026-10-25). So OPEN A DRAWING explicitly:
+# the runner's empty.dwg (the accoreconsole probes' PROBE_DWG), else a shipped
+# template via /t, else bare /b as a last resort.
+dwg_win="${PROBE_DWG:-c:/gitlab-runner/dwg/empty.dwg}"
+dwg_unix="$(printf '%s' "$dwg_win" | sed -E 's#^([A-Za-z]):/#/\L\1/#')"
+if [ -f "$dwg_unix" ]; then
+  launch=("$dwg_win" /b "$scr_win"); echo "drawing: $dwg_win"
+else
+  tmpl=$(ls "/c/Program Files/Autodesk/"*/Template/acadiso.dwt 2>/dev/null | head -1)
+  if [ -n "$tmpl" ]; then launch=(/t "$(winpath "$tmpl")" /b "$scr_win"); echo "template: $tmpl"
+  else launch=(/b "$scr_win"); echo "WARNING: no drawing/template -- acad may sit on the Start tab"; fi
+fi
+
 # MSYS/MINGW rewrites an argument that looks like a POSIX path -- notably the
 # `/b' switch -- into a Windows path before handing it to a native .exe, so
 # acad.exe would receive a bogus path and try to OPEN IT AS A DRAWING
 # ("fichier dessin introuvable"). Disable that conversion for this launch; our
 # paths are already Windows-form (C:/...), so nothing legitimate needs it.
 MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 \
-  "$acad" /b "$scr_win" >"$out_dir/acad.stdout" 2>"$out_dir/acad.stderr" &
+  "$acad" "${launch[@]}" >"$out_dir/acad.stdout" 2>"$out_dir/acad.stderr" &
 pid=$!
-trap 'kill "$pid" 2>/dev/null || true' EXIT
+# Kill acad on a graceful cancel (GitLab sends SIGTERM before SIGKILL), not
+# only on clean EXIT -- a plain EXIT trap is skipped by cancel, which is how an
+# earlier cancelled run left acad orphaned on the desktop.
+trap 'kill "$pid" 2>/dev/null || true' EXIT TERM INT
 
 elapsed=0
 while [ ! -f "$out_dir/done.txt" ] && [ "$elapsed" -lt "$timeout_s" ]; do
