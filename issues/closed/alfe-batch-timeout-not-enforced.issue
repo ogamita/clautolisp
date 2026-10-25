@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-batch-timeout-not-enforced -- alfe --mode batch --timeout 180 waited 20+ minutes on a BricsCAD that never answered
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -37,3 +37,33 @@ empty-ressource).
    the phase.
 3. Then retry the V25 metric template job: its set goes into cador's
    default objects as (:bricscad :metric 25) (MR !489 falls back to V26's).
+
+
+Resolved (2026-10-25, not an alfe bug; probe-template-lookup)
+-------------------------------------------------------------
+
+Misdiagnosed. The job's full trace (timestamps UTC) shows alfe's timeout
+DID fire, and the job was not cancelled but failed on its own at 18:06
+(19:07 Paris):
+
+: 17:50:56 run-probes: env - PATH=...
+: 18:03:41 run-probes: template Default-m.dwt -> .../V25x64/fr_FR/Templates/Default-m.dwt
+: 18:03:42   runner : ".../alfe-sbcl.exe" --no-init --bricscad --mode batch --timeout 180 ...
+: 18:06:44 alfe[warn]: backend BRICSCAD: READY timeout after 180.46 s; last status = "BOOTING"
+: 18:06:44 alfe[warn]: backend BRICSCAD: start aborted; terminating spawned engine (pid 7836)
+: 18:06:44 alfe: ... BricsCAD did not reach READY within 180 s (last status: "BOOTING";
+:          launcher exited with code 0). [READY-TIMEOUT]
+
+The 12m45s before the runner line were run-probes.sh's template lookup:
+FIND_TEMPLATE walked each whole root (%LOCALAPPDATA%, %APPDATA%, Program
+Files, ProgramData) to depth 9 and filtered on "*brics*" only afterwards
+(and HEAD -N 1 does not stop FIND). The imperial job, on the same root, took
+4 s: it depends on the disk cache. Fixed: PRODUCT_DIRS keeps each root's
+top-level folders the product's pattern names (AppData/Local/Bricsys,
+Program Files/Autodesk, BricsCAD V26.app; a root that is one already, such
+as Application Support/Bricsys, as is), and FIND_TEMPLATE (and the
+"templates found" listing) searches only those.
+
+What remains -- BricsCAD V25 stays BOOTING on Default-m.dwt while it reaches
+READY in seconds on Default-imperial.dwt -- is
+issues/open/bricscad-v25-metric-template-stays-booting.issue.
