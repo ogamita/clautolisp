@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: compiler-performance-followups -- optional performance work left when the compiler epic closed
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: performance
+#+DEPENDS: -
+#+BRANCH: -
+
 compiler-performance-followups -- optional performance work left when the compiler epic closed
 =============================================================================================
 

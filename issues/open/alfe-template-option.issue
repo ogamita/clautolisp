@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-template-option -- start the CAD session from a drawing made from a given template
-#+STATUS: OPEN
+#+STATUS: TODO
 #+PRIORITY: P2
 #+TYPE: feature
 #+DEPENDS: -

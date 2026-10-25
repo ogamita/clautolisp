@@ -1,4 +1,11 @@
--*- mode:org -*-
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: accoreconsole-macos-headless-qt-blocker — --cad accoreconsole on macOS: alfe now attempts it, but AcCoreConsole aborts bootstrap before READY (Qt init)
+#+STATUS: BLOCKED
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+BRANCH: -
+
 
 accoreconsole-macos-headless-qt-blocker — --cad accoreconsole on macOS: alfe now attempts it, but AcCoreConsole aborts bootstrap before READY (Qt init)
 =====================================================================================================================================================

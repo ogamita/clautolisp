@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: Vendor-validate uncertain behaviour in already-implemented builtins.
+#+STATUS: DEFERRED
+#+PRIORITY: P2
+#+TYPE: builtins
+#+DEPENDS: -
+#+BRANCH: -
+
 Vendor-validate uncertain behaviour in already-implemented builtins.
 
 Some builtins ship with implementations that satisfy the documented

@@ -1643,12 +1643,16 @@ NORMALISED without that 280 when SUPPLIED (the pure create data) had one."
   ;; Most recently created main-space MAIN entity that is not deleted:
   ;; block-definition contents are never entlast, and neither are
   ;; subentities (ATTRIB / VERTEX / SEQEND) — the vendor contract, so
-  ;; (entlast) after an attribute-bearing insert names the INSERT.
+  ;; (entlast) after an attribute-bearing insert names the INSERT. Nor is
+  ;; a non-graphical object: after an XRECORD or a DICTIONARY is made (and
+  ;; dictadded) both CADs still name the last LINE (entget-pointers section
+  ;; 14, AutoCAD 2022 job 17450023027, BricsCAD V25 17450023028).
   ;; creation-order is newest-first.
   (let ((drawing (cador-active-drawing host)))
     (loop for handle in (clautolisp.drawing:drawing-creation-order drawing)
           for entity = (clautolisp.drawing:find-entity drawing handle)
           when (and entity
+                    (clautolisp.drawing:graphical-entity-p entity)
                     (main-space-entity-p entity)
                     (not (member (entity-handle-kind entity)
                                  '(:attrib :vertex :seqend))))

@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: opendcl-wire-protocol — extend the sexp-wire grammar for OpenDCL
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: opendcl.plan
+#+BRANCH: -
+
 opendcl-wire-protocol — extend the sexp-wire grammar for OpenDCL
 ================================================================
 

@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cadtui localisation — command option-keyword probe (P3, CI/runner, hardest)
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: cadtui
+#+BRANCH: -
+
 cadtui localisation — command option-keyword probe (P3, CI/runner, hardest)
 
 Parent: cadtui.issue (Phase 7). Harvest the localised OPTION KEYWORDS of CAD

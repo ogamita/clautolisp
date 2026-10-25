@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: entity-family-3d-solids — ACIS + mesh + curve 3D entity families
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: entity-mutation-parity
+#+BRANCH: -
+
 entity-family-3d-solids — ACIS + mesh + curve 3D entity families
 ================================================================
 

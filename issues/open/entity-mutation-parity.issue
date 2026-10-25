@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: schms-entity-mutation-parity — complete the entity mutation subset needed by SCHMS regression tests
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: epic
+#+DEPENDS: drawing-database-api
+#+BRANCH: -
+
 schms-entity-mutation-parity — complete the entity mutation subset needed by SCHMS regression tests
 ====================================================================================================
 

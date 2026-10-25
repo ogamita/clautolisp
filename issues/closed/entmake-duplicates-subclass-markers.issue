@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: entmake-duplicates-subclass-markers — validate-entity-dxf appends 100 markers the data already has
-#+STATUS: DEFERRED
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 
@@ -55,3 +55,23 @@ measurement shows the positions either: the command probes drop group 100.
 To unblock: a probe that records the FULL entget (100 included) of one
 entity per registered family on AutoCAD and BricsCAD, then a per-subclass
 "first group" table in the registry.
+
+* Resolved (2026-10-25, clautolisp 2.3.59, MR !488)
+
+Both halves are done, the second by work this issue was waiting for:
+- the duplicates: since 2.2.168, VALIDATE-ENTITY-DXF adds only the markers the
+  data lacks;
+- the positions: only ENTGET shows them, and since 2.3.51 its view lays a
+  graphical entity out as the vendors do (%VENDOR-BODY-ORDER,
+  cador-entget-subclass-layout-and-record-pointers): (100 . "AcDbEntity"),
+  the common groups, then each class marker before its own groups -- from
+  the per-subclass layout the deferral asked for (*ENTGET-TYPE-LAYOUT*:
+  measured for LINE CIRCLE TEXT INSERT by entget-pointers section 10, the DXF
+  reference's split for ARC POINT ATTRIB ATTDEF), and for every other type its
+  own markers ahead of its groups (VERTEX's AcDbVertex has no group: both
+  markers first). Where a marker sits in the STORED data is not observable.
+
+Test ENTGET-LISTS-EACH-SUBCLASS-MARKER-ONCE-WHERE-THE-VENDORS-DO: an
+LWPOLYLINE entmade with and without its markers (BricsCAD synthesis), an ARC
+(AcDbCircle 10 40, AcDbArc 50 51) and a VERTEX list each marker once, in the
+vendors' place.

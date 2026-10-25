@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: drawing-database-api — a first-class CL drawing value, and the four surfaces over it
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: epic
+#+DEPENDS: -
+#+BRANCH: -
+
 drawing-database-api — a first-class CL drawing value, and the four surfaces over it
 ====================================================================================
 

@@ -378,3 +378,62 @@ block's entities does not end on it."
         (let ((first (cdr (assoc -2 (host-entget mock (host-tblobjname mock "BLOCK" "EB1"))))))
           (is (equal "LINE" (autolisp-string-value (cdr (assoc 0 (host-entget mock first))))))
           (is (null (host-entnext mock first))))))))
+
+(defun %marker-layout (mock ename)
+  "The entget codes of ENAME after its header, a marker as its name."
+  (mapcar (lambda (p) (if (eql 100 (car p)) (autolisp-string-value (cdr p)) (car p)))
+          (member 100 (host-entget mock ename) :key #'car)))
+
+(test entget-lists-each-subclass-marker-once-where-the-vendors-do
+  "entmake-duplicates-subclass-markers: whether the ENTMAKE data carried its
+markers or BricsCAD-style synthesis added them, the entget view lists each
+marker once, AcDbEntity before the common groups and each class marker
+before its own groups (%VENDOR-BODY-ORDER, 2.3.51)."
+  (%with-dialect (:bricscad)
+    (let* ((mock (make-cador))
+           (*error-output* (make-broadcast-stream))   ; the D1 warning
+           (bare (host-entmakex mock (list (cons 0 "LWPOLYLINE") (cons 8 "0") (cons 90 2)
+                                           (cons 70 0) (list 10 0.0d0 0.0d0)
+                                           (list 10 1.0d0 1.0d0))))
+           (given (host-entmakex mock (list (cons 0 "LWPOLYLINE") (cons 100 "AcDbEntity")
+                                            (cons 8 "0") (cons 100 "AcDbPolyline") (cons 90 2)
+                                            (cons 70 0) (list 10 0.0d0 0.0d0)
+                                            (list 10 1.0d0 1.0d0))))
+           (arc (host-entmakex mock (list (cons 0 "ARC") (cons 8 "0")
+                                          (list 10 0.0d0 0.0d0 0.0d0) (cons 40 1.0d0)
+                                          (cons 50 0.0d0) (cons 51 1.0d0)))))
+      (dolist (e (list bare given))
+        (let ((layout (%marker-layout mock e)))
+          (is (equal '("AcDbEntity" 67 410 8 "AcDbPolyline" 90 70) (subseq layout 0 7))
+              "LWPOLYLINE: ~S" layout)
+          (is (= 2 (count-if #'stringp layout)) "each marker once: ~S" layout)))
+      (is (equal '("AcDbEntity" 67 410 8 "AcDbCircle" 10 40 "AcDbArc" 50 51)
+                 (%marker-layout mock arc))
+          "ARC: ~S" (%marker-layout mock arc))
+      ;; a VERTEX: its two markers (AcDbVertex has no group of its own) first
+      (host-entmake mock (list (cons 0 "POLYLINE") (cons 8 "0") (cons 66 1) (cons 70 0)))
+      (host-entmake mock (list (cons 0 "VERTEX") (cons 8 "0") (list 10 1.0d0 2.0d0 0.0d0)))
+      (let* ((poly (host-entlast mock))
+             (vertex (host-entnext mock poly))
+             (layout (%marker-layout mock vertex)))
+        (host-entmake mock (list (cons 0 "SEQEND")))
+        (is (equal '("AcDbEntity" 67 410 8 "AcDbVertex" "AcDb2dVertex" 10)
+                   (subseq layout 0 7))
+            "VERTEX: ~S" layout)))))
+
+(test entlast-and-entnext-skip-non-graphical-objects
+  "entnext-nongraphical-enumeration: after an XRECORD or a DICTIONARY is made
+(and dictadded), (entlast) still names the last graphical entity, and the
+entnext walk does not reach the objects -- both CADs (entget-pointers
+sections 11 and 14)."
+  (dolist (dialect '(:autocad-2022 :bricscad))
+    (%with-dialect (dialect)
+      (let* ((mock (make-cador))
+             (line (%pd-line mock))
+             (x (%pd-xrecord mock (cons 1 "last")))
+             (d (host-entmakex mock (list (cons 0 "DICTIONARY") (cons 100 "AcDbDictionary")))))
+        (is (eq line (host-entlast mock)) "~A after XRECORD + DICTIONARY" dialect)
+        (host-dictadd mock (host-namedobjdict mock) (make-autolisp-string "LASTX") x)
+        (is (eq line (host-entlast mock)) "~A after dictadd" dialect)
+        (is (null (host-entnext mock line)))
+        (is (not (null d)))))))

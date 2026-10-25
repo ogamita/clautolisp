@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: CAD commands measured and deferred: each waits on a piece cador does not model
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: -
+#+BRANCH: -
+
 # CAD commands measured and deferred: each waits on a piece cador does not model
 
 Status: DEFERRED
