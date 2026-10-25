@@ -148,20 +148,36 @@ the made object of that type and key; an unresolved one is left out."
             (setf (clautolisp.drawing:entity-handle-data entity) data)))))))
 
 (defun %default-objects-key (host)
-  "(PRODUCT UNITS): the set of default objects a new drawing gets -- BricsCAD's
-under the BricsCAD dialects, AutoCAD's under the others; imperial when the
-drawing's MEASUREMENT is 0 (acad.dwt, Default-imperial.dwt), metric otherwise
-(acadiso.dwt, Default-m.dwt) -- the templates the probe:template-defaults
-jobs measured."
-  (let ((cell (cador-sysvar host "MEASUREMENT")))
+  "(PRODUCT UNITS VERSION): the set of default objects a new drawing gets --
+BricsCAD's under the BricsCAD dialects, AutoCAD's under the others; imperial
+when the drawing's MEASUREMENT is 0 (acad.dwt, Default-imperial.dwt), metric
+otherwise (acadiso.dwt, Default-m.dwt); the dialect's version (NIL for a
+versionless one) -- the templates the probe:template-defaults jobs measured,
+per version as the dialects distinguish them."
+  (let ((cell (cador-sysvar host "MEASUREMENT"))
+        (dialect (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect))))
     (list (if (eq (%current-product) :bricscad) :bricscad :autocad)
-          (if (and cell (eql 0 (sysvar-cell-value cell))) :imperial :metric))))
+          (if (and cell (eql 0 (sysvar-cell-value cell))) :imperial :metric)
+          (and dialect
+               (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-version dialect))))))
 
 (defun %measured-set (key table)
-  "The entries of TABLE ((PRODUCT UNITS) . entries) for KEY, else the same
+  "The entries of TABLE (((PRODUCT UNITS VERSION) . entries) ...) for KEY
+\(PRODUCT UNITS VERSION): that version's; else the same product and units
+at the nearest measured version (the newest when VERSION is NIL); else the
 product's other units (a set not measured yet)."
-  (cdr (or (assoc key table :test #'equal)
-           (find (first key) table :key #'caar))))
+  (destructuring-bind (product units version) key
+    (flet ((nearest (rows)
+             (first (sort (copy-list rows) #'<
+                          :key (lambda (row)
+                                 (let ((v (third (car row))))
+                                   (if version (abs (- v version)) (- v))))))))
+      (cdr (or (assoc key table :test #'equal)
+               (nearest (remove-if-not (lambda (row) (and (eq product (first (car row)))
+                                                          (eq units (second (car row)))))
+                                       table))
+               (nearest (remove-if-not (lambda (row) (eq product (first (car row))))
+                                       table)))))))
 
 (defun %extension-dictionary-owner-handle (host owner)
   "The handle of OWNER, (KIND NAME) a table record or (:TABLE KIND) a symbol

@@ -1959,6 +1959,20 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *A real prints as the dialect's product prints it* (2.3.62): under the
+  AutoCAD dialects =princ= / =prin1= / =vl-prin1-to-string= ... write six
+  significant digits as AutoCAD does (=0.333333=, =1.0e+06=), under the
+  BricsCAD dialects fifteen as BricsCAD does (=0.333333333333333=,
+  =1000000.0=); clautolisp, strict and lax keep clautolisp's spelling. A
+  =[real-format]= notice, once per session, flags the first printed real the
+  two products spell differently. Measured on AutoCAD 2022 and BricsCAD V25 /
+  V26.
+
+- *=LOCALE= before AutoCAD 2019* (2.3.60): under an AutoCAD dialect older
+  than 2019, =(getvar "LOCALE")= gives the three-letter Windows abbreviation
+  AutoCAD documented then ("FRA", "ENU", "DEU" ...), where 2019 and later
+  give the upper-case language ("FR").
+
 - *=entlast= ignores dictionaries and xrecords* (2.3.59): after an XRECORD
   or a DICTIONARY is made, =(entlast)= still names the last graphical entity,
   as on AutoCAD and BricsCAD (=entnext= already walked graphical entities

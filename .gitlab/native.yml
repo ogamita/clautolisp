@@ -1947,6 +1947,35 @@ probe:suite:bricscad:windows:
 # suite also runs inside the full probe:suite:* jobs; these narrow jobs give
 # the answer without the rest of the suite's queue time. SOFT, like every
 # probe: it measures, it gates nothing.
+# AutoCAD at LISPSYS 1 (dialect-platform-version-axis): the runner's AutoCAD
+# is at 0. scripts/run-lispsys1-probe.sh sets 1, measures in fresh sessions
+# (only if a fresh session reads 1), and ALWAYS sets it back to 0 and checks
+# it (pjb 2026-10-25: "Ok for LISPSYS 1, but restore it to 0 afterwards").
+# MANUAL even when its files change: it changes the machine's AutoCAD
+# setting, which the SCHMS jobs rely on. after_script repeats the reset.
+probe:lispsys1:autocad:windows:
+  extends: .gate-windows-cad-soft
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,lispsys1,/'
+      when: manual
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - bash scripts/run-lispsys1-probe.sh
+  after_script:
+    - bash scripts/run-lispsys1-probe.sh --reset-only
+  artifacts:
+    when: always
+    name: "probe-lispsys1-autocad-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
 probe:entget-pointers:autocad:windows:
   extends: .gate-windows-cad-soft
   # a PROBE: automatic only when its family changed (and the runner is

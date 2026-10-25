@@ -3753,7 +3753,8 @@ time it is called."
      ;; ("3.14", not "3.14d0"; "1.0e20", not "1.0d20"). Delegate to the
      ;; runtime's single host-independent formatter — princ alone diverges
      ;; between SBCL ("1.0e20") and CCL ("1.0E+20"). See AUTOLISP-FORMAT-REAL.
-     (clautolisp.autolisp-runtime:autolisp-format-real object))
+     ;; spelt as the dialect's product prints it (AUTOLISP-PRINT-REAL).
+     (clautolisp.autolisp-runtime:autolisp-print-real object))
     ((typep object 'autolisp-string)
      (if princp
          (autolisp-string-value object)

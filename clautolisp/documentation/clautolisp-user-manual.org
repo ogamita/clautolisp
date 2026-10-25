@@ -953,6 +953,16 @@ operator under its ~*** clautolisp~ note.
   ~Save~ / ~Restore~ / ~Delete~ -- and ~(setvar "CVPORT" n)~ makes viewport
   n current. ~Join~ is not implemented. ~(setview nil)~ is an error, except
   under the BricsCAD dialects (~nil~).
+- *How a real prints.* ~prin1~ / ~princ~ / ~print~ / ~vl-prin1-to-string~ /
+  ~vl-princ-to-string~ spell a real as the dialect's product does, as
+  measured: the ~autocad-*~ dialects with six significant digits (~0.333333~,
+  ~1.0e+06~, ~1.0e-05~), the ~bricscad*~ dialects with fifteen
+  (~0.333333333333333~, ~1000000.0~, ~1e-05~); ~clautolisp~, ~strict~ and
+  ~lax~ in clautolisp's own spelling (~0.3333333333333333~, ~1.0e-5~). The
+  first time a printed real is one the two products spell differently, a
+  ~[real-format]~ notice says so (once per session; not under ~lax~;
+  ~(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)~ silences it). ~rtos~ and
+  ~command~ keep the full value.
 - ~(layoutlist)~ -- the paper layouts, never ~"Model"~: sorted by name under
   the ~autocad-*~ dialects, as AutoCAD 2022 returns them, in tab order
   otherwise, as BricsCAD does.

@@ -108,6 +108,9 @@ FAMILIES = {
                       "scripts/probe-cad-instances.sh"],
     "sysvars": ["autolisp-spec/autolisp/dump-sysvars.lsp"],
     "entget-pointers": ["probes/sources/probe-entget-pointers.lsp"],
+    # sets the CAD's LISPSYS: its job stays MANUAL even when these change
+    "lispsys1": ["probes/sources/probe-lispsys.lsp",
+                 "scripts/run-lispsys1-probe.*"],
 }
 
 # What a probe file looks like; every tracked match must be in a family or

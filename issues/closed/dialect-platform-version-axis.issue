@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: Dialect platform + version axis (autocad vs autocad-mac, version suffixes)
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: dialect-design
 #+DEPENDS: -
@@ -319,3 +319,39 @@ DONE:
 LEFT: BricsCAD V18.1 tiny-double printing; LOCALE's pre-2019 three-letter
 form (needs the code table measured); AutoCAD at LISPSYS 1 measured (the CI
 machine is at 0) -- the Unicode side is documented, not measured.
+
+
+Resolved (2026-10-25, clautolisp 2.3.60 - 2.3.62, MR !489)
+-----------------------------------------------------------
+
+The LEFT list above, done:
+- AutoCAD at LISPSYS 1, MEASURED: probe:lispsys1:autocad:windows (job
+  17450350669) set LISPSYS 1, measured in fresh sessions (a fresh session
+  read 1 first), set it back to 0 and checked two fresh sessions read 0 (pjb:
+  "Ok for LISPSYS 1, but restore it to 0 afterwards"). The values match E1
+  (2026-10-06): (ascii (chr 8364)) 8364, OPEN's third argument works, plain
+  "r" reads cp1252 and UTF-8 alike, "r" "utf8" keeps a BOM and stops at a
+  bad byte -- implemented since 2.2.222 (autocad-open-encoding-lispsys-
+  divergence). ",ccs=" and unknown names stay lenient + warned (pjb
+  2026-10-06). Nothing to change.
+- LOCALE before 2019 (2.3.60): the three-letter LOCALE_SABBREVLANGNAME code
+  ("FRA", "ENU"), documented, not measured.
+- BricsCAD V18.1 "tiny doubles print 0.0": not what V25 / V26 do. Measured
+  instead how both print reals (probe-versions): AutoCAD %.6g with a point in
+  the mantissa (0.333333, 1.0e+06, 1.0e-05), BricsCAD %.15g (0.333333333333333,
+  1000000.0, 1e-05). pjb: "keep the 3 variants ... provide the dialect
+  formatting ... in strict, use clautolisp format, just as in lax ... and
+  document it". 2.3.62: AUTOLISP-PRINT-REAL spells a real per the dialect's
+  product for PRIN1 / PRINC / PRINT / VL-PRIN*-TO-STRING (RTOS and COMMAND
+  keep the full value); [real-format], once per session, not under lax, when
+  the two products spell a printed real differently. Tests
+  REAL-PRINTING-FOLLOWS-THE-DIALECT-PRODUCT,
+  REAL-FORMAT-NOTICE-ONCE-WHERE-THE-PRODUCTS-DIFFER; spec PRIN1 (Measured +
+  clautolisp) and its siblings; manual; dialect-warnings annex.
+
+Also on this MR: the default objects keyed by dialect version (2.3.61, pjb:
+"this is why we distinguish versions too in dialects").
+
+The open-ended items (populate the matrix as differences are measured; the
+optional "/..." extension to OPEN / LOAD) are
+issues/open/deferred-dialect-matrix-population.issue.
