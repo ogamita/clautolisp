@@ -36,9 +36,14 @@
   (if (vl-catch-all-error-p v) nil v))
 
 (defun cad-probe--cp-cancel ( / n)
+  ;; (command) with NO args = Esc, which CANCELS the active command. Sending
+  ;; "" (Enter) instead only advances a prompt and can leave the command
+  ;; waiting -- which, under a GUI acad running this as a script, wedges the
+  ;; whole UI until the script unblocks (observed 2026-10-25). Esc each active
+  ;; command, capped.
   (setq n 0)
   (while (and (< n 8) (> (cad-probe--cp-active) 0))
-    (vl-catch-all-apply 'command '(""))
+    (vl-catch-all-apply 'command nil)
     (setq n (1+ n))))
 
 (defun cad-probe--cp-step (name step)
