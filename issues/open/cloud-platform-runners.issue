@@ -2,6 +2,11 @@
 #+TITLE: look for on-demand macOS and windows cloud runners
 #+AUTHOR: Pascal J. Bourguignon
 #+DATE: 2026-07-23
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: ci-infra
+#+DEPENDS: -
+#+BRANCH: -
 
 The macOS (thalassa) and ms-windows (PC) runners are intermittent
 laptops. The platform test lanes (test:clautolisp:{macos,windows},

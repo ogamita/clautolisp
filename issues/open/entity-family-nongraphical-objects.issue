@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: entity-family-nongraphical-objects — the OBJECTS-section object families
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: entity-mutation-parity
+#+BRANCH: -
+
 entity-family-nongraphical-objects — the OBJECTS-section object families
 ========================================================================
 

@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cadtui localisation — CAD command-name probe via getcname (P2, CI/runner)
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: feature
+#+DEPENDS: cadtui
+#+BRANCH: -
+
 cadtui localisation — CAD command-name probe via getcname (P2, CI/runner)
 
 Parent: cadtui.issue (Phase 7). Harvest the localised CAD COMMAND NAMES that

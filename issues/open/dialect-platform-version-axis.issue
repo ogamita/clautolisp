@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: Dialect platform + version axis (autocad vs autocad-mac, version suffixes)
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: dialect-design
+#+DEPENDS: -
+#+BRANCH: -
+
 Dialect platform + version axis (autocad vs autocad-mac, version suffixes)
 =========================================================================
 

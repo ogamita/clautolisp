@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: Promote stubbed-as-no-op builtins to richer implementations.
+#+STATUS: DEFERRED
+#+PRIORITY: P2
+#+TYPE: builtins-epic
+#+DEPENDS: -
+#+BRANCH: -
+
 Promote stubbed-as-no-op builtins to richer implementations.
 
 A subset of the missing-functions milestones registers the

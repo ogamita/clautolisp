@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: salve-environment — SALVE: Superior AutoLisp Versatile Environment (a SLIME-like Emacs frontend)
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: clautolisp-debugger
+#+BRANCH: -
+
 salve-environment — SALVE: Superior AutoLisp Versatile Environment (a SLIME-like Emacs frontend)
 ===============================================================================================
 
