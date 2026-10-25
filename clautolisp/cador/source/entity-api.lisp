@@ -837,7 +837,20 @@ its ENDBLK."
   ;; rest as stored.
   '((:layer (2) (70 . 0) (62 . 7) (6 . "Continuous") (290 . 1) (370 . -3)
             (390 . :plot-style) (347 . :material) (348 . :erased))
-    (:block-record (2) (70 . 0) (280 . 1) (281 . 0))))
+    (:block-record (2) (70 . 0) (280 . 1) (281 . 0))
+    ;; The vendors' *Active order (their dxf-angles DXF); (:SYSVAR NAME) the
+    ;; viewport sysvar the group mirrors (viewports.lisp, *VPORT-SYSVARS*)
+    (:vport (2) (70 . 0) (10 0d0 0d0) (11 1d0 1d0)
+            (12 . (:sysvar "VIEWCTR")) (13 . (:sysvar "SNAPBASE"))
+            (14 . (:sysvar "SNAPUNIT")) (15 . (:sysvar "GRIDUNIT"))
+            (16 . (:sysvar "VIEWDIR")) (17 . (:sysvar "TARGET"))
+            (40 . (:sysvar "VIEWSIZE")) (42 . (:sysvar "LENSLENGTH"))
+            (43 . (:sysvar "FRONTZ")) (44 . (:sysvar "BACKZ"))
+            (50 . (:sysvar "SNAPANG")) (51 . (:sysvar "VIEWTWIST"))
+            (71 . (:sysvar "VIEWMODE")) (72 . :circle-zoom) (73 . 1)
+            (74 . (:sysvar "UCSICON")) (75 . (:sysvar "SNAPMODE"))
+            (76 . (:sysvar "GRIDMODE")) (77 . (:sysvar "SNAPSTYL"))
+            (78 . (:sysvar "SNAPISOPAIR")))))
 
 (defun %table-object-view (host entry ename)
   "The entget view of the TABLE object of the symbol table ENTRY (a
@@ -874,7 +887,13 @@ subclass markers, 102 groups and -2 walk entry."
           (t (push pair out)))))))
 
 (defun %record-default (host code default)
+  (when (and (consp default) (eq :sysvar (car default)))
+    (return-from %record-default
+      (funcall 'vport-sysvar-pair host code (second default))))
   (case default
+    ;; the "circle zoom percent" of a new drawing's *Active: 1000 on
+    ;; AutoCAD 2022, 100 on BricsCAD V25 / V26 (dxf-angles DXF)
+    (:circle-zoom (cons code (if (eq :bricscad (funcall '%viewport-product)) 100 1000)))
     (:plot-style (let ((h (%named-object-handle host "ACAD_PLOTSTYLENAME" "Normal")))
                    (and h (cons code h))))
     (:material (let ((h (%named-object-handle host "ACAD_MATERIAL" "Global")))

@@ -1,0 +1,70 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vport-active-snapang-and-handle — SNAPANG does not reach the VPORT *Active record, which has no handle
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-vport-active-snapang
+#+DATE: 2026-10-23
+
+* Symptom
+
+Found by the dxf-angles probe's clautolisp baseline run
+(=scripts/run-dxf-angles-probe.sh --backend clautolisp=, 2026-10-23):
+
+#+begin_example
+(setvar "SNAPANG" (/ pi 9))
+(getvar "SNAPANG")                         ; 0.349065850398866
+(entget (tblobjname "VPORT" "*ACTIVE"))    ; ((-1 . <Entity name: TBL-...>)
+                                           ;  (0 . "VPORT") (2 . "*Active"))
+#+end_example
+
+On AutoCAD / BricsCAD the VPORT *Active record carries the viewport
+settings: 50 snap rotation angle (= SNAPANG, radians in entget), 51 view
+twist, 10-17 corners / centre / snap / grid, 40-42 height, aspect, lens,
+70-79 modes, and a 5 handle. clautolisp's seeded record has only 0 and 2,
+so tblsearch / tblobjname + entget show none of it, and the DXF writer
+emits a VPORT record without handle or 50.
+
+* Proposal
+
+Mirror the viewport sysvars (SNAPANG, SNAPBASE, SNAPUNIT, GRIDUNIT,
+SNAPMODE, GRIDMODE, VIEWCTR, VIEWSIZE, VIEWTWIST via 51 ...) into the
+*Active record (or compute it on read), give the seeded symbol-table
+records handles, and compare with the dxf-angles probe's vendor reports
+(=DXFANG ENTGET vport 50/51=, =DXFANG FILE vport 50/51=).
+
+
+Resolved (2026-10-25, clautolisp 2.3.65)
+----------------------------------------
+
+The handle was there already (the seeded records get one since
+ENSURE-RECORD-HANDLE: the 2026-10-25 baseline shows "HANDLE vport VPORT
+18"). The groups were not. The vendors' dxf-angles reports and DXF, read
+again:
+
+| after (setvar "SNAPANG" (/ pi 9)) | entget *Active 50 | its DXF 50 |
+|-----------------------------------+-------------------+------------|
+| BricsCAD V25 / V26                | 0.349066          | 20.0       |
+| AutoCAD 2022                      | 0                 | 20.0       |
+
+BricsCAD updates the record at once; AutoCAD keeps it as stored until it
+saves. Now (cador/source/viewports.lisp, *RECORD-LAYOUTS* in entity-api):
+- the *Active entget shows the vendors' groups in their order (2 70 10 11
+  12-17 40 42-44 50 51 71-78); a group mirrors its viewport sysvar
+  (*VPORT-SYSVARS*: VIEWCTR 12, SNAPBASE 13, SNAPUNIT 14, GRIDUNIT 15,
+  VIEWDIR 16, TARGET 17, VIEWSIZE 40, LENSLENGTH 42, FRONTZ 43, BACKZ 44,
+  SNAPANG 50, VIEWTWIST 51, VIEWMODE 71, UCSICON 74, SNAPMODE 75, GRIDMODE
+  76, SNAPSTYL 77, SNAPISOPAIR 78); 72 (circle zoom) 1000 on AutoCAD, 100
+  on BricsCAD, as their DXF have it;
+- a setvar of one stores the new value in the record under the BricsCAD
+  dialects, the old one (if none stored yet) under the others;
+- a save (CADOR-SAVE-DRAWING) stores every current value, in that order,
+  so the DXF's *Active has 50 20.0 as both CADs write it.
+Test VPORT-ACTIVE-SHOWS-THE-VIEWPORT-SYSVARS-AS-EACH-PRODUCT-DOES.
+
+Not modelled: 41 (the display's aspect), 65 and the UCS groups 110-146,
+348 / 60 / 61 / 292 / 282 / 141 / 142 / 63 / 421; a DXF read does not set
+the sysvars from its *Active record; tiled viewports beyond the first
+have no *Active record of their own; TBLSEARCH still shows the stored
+record only.

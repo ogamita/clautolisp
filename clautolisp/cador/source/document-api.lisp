@@ -88,6 +88,10 @@ GETVAR answered nil there. Returns DRAWING."
 path's extension, and as a last resort the dialect's default (SAVEFORMAT /
 CLAUTOLISPDEFAULTDRAWINGFORMAT) -- and name it after the file, as AutoCAD's
 DWGNAME then reports. Clears DBMOD (WRITE-DRAWING). Returns PATH."
+  ;; the viewport sysvars go into the VPORT *Active record, as both CADs
+  ;; write them (viewports.lisp)
+  (when (eq drawing (cador-active-drawing host))
+    (funcall 'cador-sync-active-vport host))
   (multiple-value-bind (container default-version) (cador-default-drawing-format host)
     (let ((clautolisp.drawing:*default-drawing-format* container)
           (clautolisp.drawing:*default-drawing-version* default-version))

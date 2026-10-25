@@ -400,6 +400,8 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
               (rendered-name (clautolisp.autolisp-runtime:make-autolisp-string string)))
          (clautolisp.autolisp-runtime:signal-document-event
           document :sysvar :vlr-sysvarwillchange (list rendered-name))
+         ;; SNAPANG ... and the VPORT *Active record (viewports.lisp)
+         (funcall 'cador-vport-before-setvar host string coerced)
          (setf (sysvar-cell-value cell) coerced)
          ;; CVPORT is derived (viewports.lisp): setting it makes that tiled
          ;; viewport current, as on AutoCAD and BricsCAD (probe-viewports).

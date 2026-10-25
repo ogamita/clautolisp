@@ -953,6 +953,12 @@ operator under its ~*** clautolisp~ note.
   ~Save~ / ~Restore~ / ~Delete~ -- and ~(setvar "CVPORT" n)~ makes viewport
   n current. ~Join~ is not implemented. ~(setview nil)~ is an error, except
   under the BricsCAD dialects (~nil~).
+- *The VPORT ~*Active~ record.* ~(entget (tblobjname "VPORT" "*Active"))~
+  lists the viewport's groups (50 ~SNAPANG~, 51 ~VIEWTWIST~, 12 ~VIEWCTR~,
+  14 ~SNAPUNIT~ ...). After a ~setvar~ of one, the ~bricscad*~ dialects
+  show the new value at once, as BricsCAD does; the others the old one
+  until the drawing is saved, as AutoCAD does. Group 72 is 1000 under
+  AutoCAD, 100 under BricsCAD.
 - *How a real prints.* ~prin1~ / ~princ~ / ~print~ / ~vl-prin1-to-string~ /
   ~vl-princ-to-string~ spell a real as the dialect's product does, as
   measured: the ~autocad-*~ dialects with six significant digits (~0.333333~,

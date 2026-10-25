@@ -457,3 +457,40 @@ and an unmeasured units the product's other units."
       (is (eq (row '(:bricscad :metric 25)) (set-of '(:bricscad :metric 25))))
       (is (not (eq (row '(:bricscad :metric 26)) (set-of '(:bricscad :metric 25)))))
       (is (eq (row '(:bricscad :metric 25)) (set-of '(:bricscad :metric 23)))))))
+
+;;; --- The VPORT *Active record mirrors the viewport sysvars ---------------
+;;; vport-active-snapang-and-handle. dxf-angles probe: after
+;;; (setvar "SNAPANG" (/ pi 9)), BricsCAD V25 / V26's *Active shows 50
+;;; 0.349066 at once, AutoCAD 2022's 50 0 until it saves; both DXF 50 20.0.
+
+(defun %vport-50 (mock)
+  (cdr (assoc 50 (host-entget mock (host-tblobjname mock "VPORT" "*Active")))))
+
+(test vport-active-shows-the-viewport-sysvars-as-each-product-does
+  (let ((angle (/ pi 9)))
+    (%with-dialect (:bricscad-v26)
+      (let ((mock (make-cador)))
+        (is (zerop (%vport-50 mock)))
+        (host-setvar mock "SNAPANG" angle)
+        (is (< (abs (- angle (%vport-50 mock))) 1d-9) "BricsCAD: at once")
+        (let ((view (host-entget mock (host-tblobjname mock "VPORT" "*Active"))))
+          (is (eql 100 (cdr (assoc 72 view))))
+          (is (equal '(0.0d0 0.0d0 1.0d0) (cdr (assoc 16 view)))))))
+    (%with-dialect (:autocad-2022)
+      (let ((mock (make-cador)))
+        (host-setvar mock "SNAPANG" angle)
+        (is (zerop (%vport-50 mock)) "AutoCAD: as stored until a save")
+        (host-setvar mock "SNAPANG" (* 2 angle))
+        (is (zerop (%vport-50 mock)))
+        (is (eql 1000 (cdr (assoc 72 (host-entget mock (host-tblobjname mock "VPORT" "*Active"))))))
+        (uiop:with-temporary-file (:pathname p :type "dxf")
+          (clautolisp.cador::cador-save-drawing
+           mock (clautolisp.cador::cador-active-drawing mock) p :format :dxf-ascii)
+          (is (< (abs (- (* 2 angle) (%vport-50 mock))) 1d-9) "AutoCAD: after the save")
+          ;; the file's *Active: 50 in degrees, in the vendors' group order
+          (let* ((text (uiop:read-file-string p))
+                 (at (search "*Active" text)))
+            (is (search (format nil "~%50~%40.0") text :start2 at))
+            (is (< (search (format nil "~%70~%") text :start2 at)
+                   (search (format nil "~%50~%") text :start2 at)
+                   (search (format nil "~%72~%") text :start2 at)))))))))

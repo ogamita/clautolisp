@@ -1959,6 +1959,13 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *The VPORT =*Active= record shows the viewport* (2.3.65): its =entget=
+  lists the snap, grid and view groups (50 = =SNAPANG=, 51 = =VIEWTWIST=,
+  12 = =VIEWCTR= ...) the CADs list. Under the BricsCAD dialects a =setvar=
+  shows in it at once, under the others when the drawing is saved, as
+  measured on BricsCAD V25 / V26 and AutoCAD 2022; a DXF saved by clautolisp
+  carries them.
+
 - *DXF text encoding follows the version* (2.3.64): an ASCII DXF of
   AutoCAD 2007 (AC1021) or later is written and read as UTF-8, as the format
   says; an earlier one as ISO-8859-1 with =\U+XXXX= for the characters
