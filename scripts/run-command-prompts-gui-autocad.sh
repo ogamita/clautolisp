@@ -24,8 +24,11 @@
 # results. That outcome is itself the finding -- report it, do not retry blind.
 set -u
 
-out_dir="${1:?usage: $0 <out-dir>}"
-mkdir -p "$out_dir"
+mkdir -p "${1:?usage: $0 <out-dir>}"
+# Absolute: acad.exe does NOT run from the repo dir, so a relative /b script
+# path (and relative (load ...) paths) would be unfindable -- acad then opens
+# the drawing and sits idle (observed 2026-10-25, "nothing happens").
+out_dir="$(cd "$1" && pwd)"
 root="${CI_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 timeout_s="${PROBE_TIMEOUT:-300}"
 
