@@ -1964,7 +1964,9 @@ file or COM), and forwards the workload.
   =Default-m.dwt= ...) instead of alfe's embedded empty drawing, a French
   AutoCAD 2005 file. A NAME is looked up in the CAD's template folders;
   an unknown one exits 66 with the templates found listed.
-  =$AUTOLISP_TEMPLATE= is the same.
+  =$AUTOLISP_TEMPLATE= is the same. Checked on AutoCAD 2022 and BricsCAD
+  V25. Under =--bricscad=, =--dwg FILE= is now the drawing BricsCAD opens:
+  it was dropped, only =$AUTOLISP_DWG= reaching the launch.
 
 - *The VPORT =*Active= record shows the viewport* (2.3.65): its =entget=
   lists the snap, grid and view groups (50 = =SNAPANG=, 51 = =VIEWTWIST=,

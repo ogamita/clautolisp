@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-template-option -- start the CAD session from a drawing made from a given template
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: feature
 #+DEPENDS: -
@@ -52,3 +52,31 @@ into alfe's run directory as the session's drawing.
   and whose ACAD_LAYOUT holds the template's layouts; acadiso.dwt gives 1.
 - Both products, Windows and macOS runners; the default (no option) is
   unchanged.
+
+
+Resolved (2026-10-26, clautolisp / alfe 2.3.68, MR !495)
+--------------------------------------------------------
+
+alfe --template NAME|PATH (and $AUTOLISP_TEMPLATE): alfe.template
+(source/template.lisp) looks a NAME up in the product's own folders only
+(the run-probes.sh rule), the CLI copies it into the run's workdir as
+template.dwg and starts the engine on the copy (%SESSION-DWG), for every
+backend; it wins over --dwg. An unknown NAME exits 66 with the templates
+found listed. Manual, man page, option contract (:front-end), two alfe
+tests.
+
+Making it work on BricsCAD found a bug of --dwg itself: the BricsCAD
+backend's START-ENGINE ignored its DWG (the launch reads TEMPLATE-PATH,
+filled only from $AUTOLISP_DWG), so BricsCAD started on a new Dessin1.dwg.
+Fixed: the handed drawing goes into TEMPLATE-PATH for the run.
+
+Acceptance, verify:alfe-template:windows (job 17462574221, PF5S26B):
+: TEMPLATE bricscad Default-imperial.dwt MEASUREMENT=0 DWGNAME=template.dwg OK
+: TEMPLATE bricscad Default-m.dwt        MEASUREMENT=1 DWGNAME=template.dwg OK
+: TEMPLATE autocad acad.dwt              MEASUREMENT=0 DWGNAME=template.dwg OK
+: TEMPLATE autocad acadiso.dwt           MEASUREMENT=1 DWGNAME=template.dwg OK
+
+Not done: --template default, and the macOS run (thalassa could not
+resolve gitlab.com that day): issues/open/deferred-alfe-template-default-and-macos.issue.
+The probe harness keeps its own lookup (PROBE_TEMPLATE, same rule): moving
+it onto --template would re-run every probe family for no new data.
