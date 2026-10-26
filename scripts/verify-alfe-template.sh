@@ -13,7 +13,10 @@ set -u
 
 root="${CI_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 alfe="${ALFE_BIN:-$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl}"
-[ -x "$alfe" ] || [ -x "$alfe.exe" ] || {
+# Windows: the binary is alfe-sbcl.exe (a file without the suffix there is
+# not it: "cannot execute binary file")
+[ -f "$alfe.exe" ] && alfe="$alfe.exe"
+[ -x "$alfe" ] || {
   echo "alfe not found: $alfe (make -C autolisp-front-end build-alfe-sbcl)" >&2; exit 2; }
 
 backends=("$@")
