@@ -953,6 +953,12 @@ operator under its ~*** clautolisp~ note.
   ~Save~ / ~Restore~ / ~Delete~ -- and ~(setvar "CVPORT" n)~ makes viewport
   n current. ~Join~ is not implemented. ~(setview nil)~ is an error, except
   under the BricsCAD dialects (~nil~).
+- *~getcname~.* ~(getcname "_LINE")~ gives the command's local name and
+  ~(getcname "LIGNE")~ its ~"_LINE"~, from tables measured on each product
+  (French so far), in the session's language (~LANG~); under English a
+  command is its own local name. The ~bricscad*~ dialects answer as
+  BricsCAD (no ~.~ / ~'~ prefixes, its own command set), the others as
+  AutoCAD.
 - *The VPORT ~*Active~ record.* ~(entget (tblobjname "VPORT" "*Active"))~
   lists the viewport's groups (50 ~SNAPANG~, 51 ~VIEWTWIST~, 12 ~VIEWCTR~,
   14 ~SNAPUNIT~ ...). After a ~setvar~ of one, the ~bricscad*~ dialects

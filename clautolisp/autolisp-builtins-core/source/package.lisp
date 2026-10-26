@@ -166,6 +166,7 @@
                 #:host-dictrename
                 #:host-dictobjname
                 #:host-regapp
+                #:host-getcname
                 #:host-getvar
                 #:host-setvar
                 #:host-snapshot-sysvars
