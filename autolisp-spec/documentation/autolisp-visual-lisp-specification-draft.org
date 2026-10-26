@@ -10847,12 +10847,46 @@ In French AutoCAD:
 
 *** Availability
 - AutoCAD 2026: documented.
-- BricsCAD V26: presumed compatible (BricsCAD also localises command names).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- BricsCAD V25: measured (2026-10-26), with the differences noted below.
+- Status: AutoCAD documented and measured; BricsCAD measured.
 
 *** Source Notes
 - [getcname (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-1DCDFFA6-0372-479D-B00F-D165EC5B8A2C.htm)
 - Status: documented (Phase 3 body fill).
+
+*** Measured: what getcname answers
+Measured 2026-10-26 on French installs by the getcname probe (AutoCAD 2022
+GUI job 17460836644 and AcCoreConsole 17460836645, BricsCAD V25 Windows
+17460836643):
+
+| input                       | AutoCAD 2022     | BricsCAD V25     |
+|-----------------------------+------------------+------------------|
+| "_LINE", "_line"            | "LIGNE"          | "LIGNE"          |
+| "LIGNE", "ligne"            | "_LINE"          | "_LINE"          |
+| "LINE", "_LIGNE"            | nil              | nil              |
+| "_ZOOM" / "ZOOM"            | "ZOOM" / "_ZOOM" | "ZOOM" / "_ZOOM" |
+| "_-LAYER" / "-CALQUE"       | "-CALQUE" / "_-LAYER" | the same    |
+| "-LAYER", "-_LAYER"         | nil              | nil              |
+| "_.LINE" / ".LIGNE"         | "LIGNE" / "_LINE" | nil             |
+| "'ZOOM", "'_ZOOM" / "_'ZOOM" | "_ZOOM" / "ZOOM" | nil             |
+| "ÉTIRER" (the name: ETIRER) | "_STRETCH"       | nil              |
+| a C: command, "", "_"       | nil              | nil              |
+| 1, nil                      | bad argument type | bad argument type |
+
+A leading =_= asks for the local name of an international one; anything
+else is taken as a local name. The answer is upper case. The =-= of a
+command-line command is part of its name. AutoCAD also strips the =.= and
+='= prefixes and ignores accents. Each product knows its own commands: a
+French AutoCAD answers nil for =_RECTANG=, =_MTEXT=, =_PROPERTIES=, BricsCAD
+for =_BLEND=, =_XBIND=; AcCoreConsole knows fewer than the AutoCAD GUI
+(=_3DORBIT=).
+
+*** clautolisp: getcname
+=getcname= answers from the measured tables (=cador/data/getcname/=, one
+per locale, per product), with the rules above: the BricsCAD dialects as
+BricsCAD, the others as AutoCAD. The language is the session's (=LANG=):
+under one with no table (English), a command of the product's table is its
+own local name (="_LINE"= -> ="LINE"=, ="LINE"= -> ="_LINE"=).
 
 #+LATEX: \newpage
 

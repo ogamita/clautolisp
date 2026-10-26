@@ -6078,6 +6078,14 @@ never overwritten by a redundant (setvar \"CLAUTOLISPDROP\" 1)."
        (setf *clautolisp-drop-saved-binding* nil
              *clautolisp-drop-active* nil)))))
 
+(defun builtin-getcname (name)
+  "GETCNAME: \"_LINE\" -> the local name, a local name -> \"_LINE\", or nil
+when the command is unknown (the host's table, cadtui-locale-probe-getcname).
+A non-string is a bad argument, as on both products."
+  (let* ((string (autolisp-string-value (require-string name "GETCNAME")))
+         (other (host-getcname (current-evaluation-host) string)))
+    (and other (make-autolisp-string other))))
+
 (defun builtin-getvar (name)
   (let ((string (autolisp-string-value (require-string name "GETVAR"))))
     (when (%lispsys-name-p string)
@@ -11545,7 +11553,8 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     ;; Interactive prompts (GET*/INITGET) (5) — ALERT is the real
     ;; impl above and is NOT in this list. GETPROPERTYVALUE landed in
     ;; M2-M5 per the issue text and is excluded here.
-    "GETCNAME" "GETFILED" "GET_DISKSERIALID"
+    ;; GETCNAME is real (BUILTIN-GETCNAME, the host's measured tables).
+    "GETFILED" "GET_DISKSERIALID"
     "INITCOMMANDVERSION" "OSNAP")
   "Names registered as nil-returning M6 stubs. See *m6-stub-names*'s
 docstring above the def for the upgrade-path reference.")
@@ -11674,6 +11683,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "REGAPP"       #'builtin-regapp)
    (make-core-builtin-subr "XDSIZE"       #'builtin-xdsize)
    (make-core-builtin-subr "XDROOM"       #'builtin-xdroom)
+   (make-core-builtin-subr "GETCNAME"   #'builtin-getcname)
    (make-core-builtin-subr "GETVAR"     #'builtin-getvar)
    (make-core-builtin-subr "SETVAR"     #'builtin-setvar)
    ;; clautolisp exit-status channel: autolisp-set-status keeps the CAD

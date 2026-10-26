@@ -2,10 +2,10 @@
 ;;;; localised AutoCAD/BricsCAD install knows, for cadtui's locale dictionaries
 ;;;; (issues/open/cadtui-locale-probe-getcname).
 ;;;;
-;;;; This CANNOT be produced headless in clautolisp: getcname is a nil stub
-;;;; there, so a --clautolisp run only proves the probe itself is well-formed
-;;;; (every line ABSENT + the DONE sentinel). The payload comes from a localised
-;;;; real CAD -- the runners' BricsCAD is a French install, so getcname there
+;;;; This CANNOT be produced headless: clautolisp's getcname answers from
+;;;; tables made of these very measurements (scripts/getcname-to-cador.py),
+;;;; so a --clautolisp run shows what it reproduces. The payload comes from a
+;;;; localised real CAD -- the runners' CADs are French installs, so getcname there
 ;;;; returns the real fr_FR names (spec autolisp getcname page: (getcname
 ;;;; "_STRETCH") => "ETIRER", (getcname "ETIRER") => "_STRETCH").
 ;;;;

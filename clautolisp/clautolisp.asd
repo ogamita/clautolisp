@@ -247,6 +247,7 @@
    (:file "cador/source/command-builtins")
    (:file "cador/source/command-file")
    (:file "cador/source/viewports")
+   (:file "cador/source/getcname")
    (:file "cador/source/com-progids")
    (:file "cador/source/vlax-api"))
   :in-order-to ((asdf:test-op
@@ -617,6 +618,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "cador/tests/command-tests")
    (:file "cador/tests/vlax-tests")
    (:file "cador/tests/pointer-dialect-tests")
+   (:file "cador/tests/getcname-tests")
    (:file "cador/tests/intersect-tests")
    (:file "cador/tests/reactor-tests")
    (:file "cador/tests/sysvar-catalogue-tests")

@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cadtui localisation — CAD command-name probe via getcname (P2, CI/runner)
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: feature
 #+DEPENDS: cadtui
@@ -35,3 +35,31 @@ Matrix
 
 Output feeds cadtui-locale-data-format-and-loader.issue (commands.sexp via the
 converter). Missing entries fall back to the international form.
+
+
+Resolved (2026-10-26, clautolisp 2.3.69, MR !494)
+-------------------------------------------------
+
+fr_FR is harvested on the whole matrix: BricsCAD macOS and AutoCAD Windows
+since 2026-09-13/14 (cadtui's fr_FR/command.sexp, 118 commands), BricsCAD V25
+Windows, AutoCAD 2022 and AcCoreConsole on 2026-10-26 (jobs 17460836643,
+17460836644, 17460836645).
+
+The probe gained a GETCNAME-EDGE section (no underscore, case, the - ' .
+prefixes, accents, unknown names, a user C: command, non-strings). What it
+measured is in the spec's GETCNAME entry ("Measured"); the gist: a leading
+_ asks for the local name, anything else is a local name; AutoCAD also
+strips . and ' and ignores accents, BricsCAD does neither; each product
+knows its own command set.
+
+clautolisp's GETCNAME was a nil stub; it is now real (2.3.69): HOST-GETCNAME,
+cador's CADOR-GETCNAME over per-product tables (cador/data/getcname/
+fr_FR.sexp, made by scripts/getcname-to-cador.py from the reports, the
+identity commands kept), the BricsCAD dialects with BricsCAD's rules, the
+others AutoCAD's, in the session's language; under English a command is its
+own local name. Tests GETCNAME-FOLLOWS-EACH-PRODUCT-UNDER-FR-FR (every
+measured row, both products), GETCNAME-UNDER-A-LOCALE-WITHOUT-A-TABLE-IS-
+THE-IDENTITY, GETCNAME-BUILTIN-TAKES-A-STRING.
+
+Left (needs localised CAD installs on the runners, pjb):
+issues/open/deferred-getcname-other-locales.issue.
