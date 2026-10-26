@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: dxf-writer-header-not-utf8 — an AC1021+ ASCII DXF written by clautolisp holds ISO-8859-1 bytes
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -34,3 +34,31 @@ or keep ISO-8859-1 only for pre-2007 versions with \U+ escapes for
 characters outside $DWGCODEPAGE. Check those three header variables'
 values against a vendor-written DXF (the dxf-angles probe's DXF in
 =dist/dxf-angles/= is one).
+
+
+Resolved (2026-10-25, clautolisp 2.3.64)
+----------------------------------------
+
+The proposal's two halves, in clautolisp/drawing/source/dxf.lisp:
+- Writing: an ASCII DXF of AC1021 or later is written as UTF-8; an earlier
+  one as ISO-8859-1, a character above #xFF as \U+XXXX, and its
+  $DWGCODEPAGE as ANSI_1252 (the session's "UTF-8" would be false there).
+- Reading: $ACADVER is sniffed from the header; AC1021+ is read as UTF-8,
+  falling back to ISO-8859-1 on a file that is not valid UTF-8 (such as the
+  ones clautolisp wrote before); an earlier file as ISO-8859-1 with its
+  \U+XXXX escapes decoded.
+Binary DXF strings stay Latin-1 bytes (the binary codec's documented
+scope).
+
+Tests DXF-AC1021-AND-LATER-ARE-WRITTEN-AND-READ-AS-UTF-8,
+DXF-BEFORE-AC1021-ESCAPES-WHAT-LATIN-1-CANNOT-HOLD,
+DXF-UTF-8-VERSION-FALLS-BACK-TO-LATIN-1-ON-INVALID-BYTES. The repro
+(run-dxf-angles-probe.sh --backend clautolisp) now writes an AC1027 file
+that is valid UTF-8, the MICRO SIGN as C2 B5.
+
+The check against vendor DXF (dxf-angles: AutoCAD 2022, BricsCAD V25
+Windows / V26 macOS, all AC1032): none writes $AREAUNITS, $LENGTHUNITS or
+$VOLUMEUNITS -- they are BricsCAD sysvars, not DXF header variables -- and
+all write $DWGCODEPAGE with code 3, ANSI_1252. clautolisp writes every
+sysvar of the drawing into the header ($LENGTHUNITS even with its quotes):
+issues/open/deferred-dxf-header-only-header-variables.issue.

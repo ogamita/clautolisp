@@ -56,6 +56,10 @@ Z is CODE+20)."
 
 ;;; --- Reader: tokeniser ------------------------------------------
 
+(defvar *dxf-unicode-escapes* nil
+  "True while reading or writing an ASCII DXF before AC1021: a character
+above #xFF travels as \\U+XXXX (see +DXF-EXTERNAL-FORMAT+).")
+
 (defun dxf-code-line-p (line)
   "True if LINE is a bare DXF group code — a trimmed (optionally
 signed) integer. Used to detect when a string value has spilled onto
@@ -69,7 +73,7 @@ following physical lines."
 (defun dxf-parse-value (code raw)
   "Convert the RAW string value of group CODE to its typed CL value."
   (ecase (dxf-code-type code)
-    (:string raw)
+    (:string (if *dxf-unicode-escapes* (%dxf-unescape-string raw) raw))
     (:integer (values (parse-integer raw :junk-allowed t)))
     (:double (let ((*read-default-float-format* 'double-float))
                (coerce (read-from-string raw) 'double-float)))))
@@ -530,7 +534,9 @@ exponent marker)."
 (defun dxf-ascii-emit-pair (stream code value)
   (format stream "~D~%" code)
   (ecase (dxf-code-type code)
-    (:string  (format stream "~A~%" value))
+    (:string  (format stream "~A~%" (if *dxf-unicode-escapes*
+                                        (%dxf-escape-string (princ-to-string value))
+                                        value)))
     (:integer (format stream "~D~%" value))
     (:double  (format stream "~A~%" (dxf-format-double value)))))
 
@@ -627,6 +633,11 @@ string used as-is (upcased), or the R2013 default (\"AC1027\") otherwise."
           ;; version). See dwg-write-rejects-a-drawing-built-in-memory.
           (unless (or (string-equal name "HANDSEED")
                       (string-equal name "ACADVER"))
+            ;; A file before AC1021 is written as ISO-8859-1, not as the
+            ;; session's "UTF-8": say so with the codepage the CADs write
+            ;; (ANSI_1252, which ISO-8859-1 matches but for #x80-#x9F).
+            (when (and *dxf-unicode-escapes* (string-equal name "DWGCODEPAGE"))
+              (setf value "ANSI_1252"))
             (dxf-emit 9 (format nil "$~A" name))
             (dxf-write-data-pair
              (cons (dxf-header-value-code (sysvar-cell-kind cell) value) value)))))
@@ -1029,35 +1040,130 @@ DRAWING. Consumes and ignores the 22-byte sentinel."
 
 ;;; --- Codec registration -----------------------------------------
 
-;;; ASCII DXF is a codepage-based text format (ANSI_xxxx, with \U+
-;;; escapes for out-of-codepage characters), not UTF-8. ISO-8859-1 maps
-;;; every byte 1:1, so it never raises a decoding error on real-world
-;;; DXF (e.g. libredwg's output) and preserves bytes for round-trip.
-;;; (Honouring $DWGCODEPAGE precisely is a future refinement.)
-(defparameter +dxf-external-format+ :iso-8859-1)
+;;; An ASCII DXF of AC1021 (2007) or later is UTF-8. Before AC1021 it is
+;;; a codepage text ($DWGCODEPAGE, ANSI_xxxx) with \U+XXXX escapes for
+;;; the characters outside it: those files are read and written as
+;;; ISO-8859-1, which maps every byte 1:1 (never a decoding error, bytes
+;;; preserved), and a character above #xFF goes as \U+XXXX. (Honouring
+;;; $DWGCODEPAGE precisely, e.g. ANSI_1252's #x80-#x9F, is a future
+;;; refinement.) dxf-writer-header-not-utf8: the header's unit lists hold
+;;; a MICRO SIGN, written as the lone byte #xB5 in an AC1027 file.
+(defparameter +dxf-external-format+ :iso-8859-1
+  "The external format of an ASCII DXF before AC1021.")
+
+(defun %dxf-utf-8-version-p (acadver)
+  "True when ACADVER (a $ACADVER string such as \"AC1027\") is AC1021 or
+later, the versions whose ASCII DXF is UTF-8."
+  (let ((number (and (stringp acadver) (> (length acadver) 2)
+                     (string-equal "AC" acadver :end2 2)
+                     (parse-integer acadver :start 2 :junk-allowed t))))
+    (and number (>= number 1021))))
+
+(defun %dxf-escape-string (string)
+  "STRING with every character above #xFF written \\U+XXXX."
+  (if (every (lambda (c) (<= (char-code c) #xFF)) string)
+      string
+      (with-output-to-string (out)
+        (loop for c across string
+              do (if (<= (char-code c) #xFF)
+                     (write-char c out)
+                     (format out "\\U+~4,'0X" (char-code c)))))))
+
+(defun %dxf-unescape-string (string)
+  "STRING with every \\U+XXXX (four hex digits) replaced by its character."
+  (let ((start (search "\\U+" string)))
+    (if (null start)
+        string
+        (with-output-to-string (out)
+          (loop with i = 0
+                with n = (length string)
+                while (< i n)
+                do (let ((code (and (char= (char string i) #\\)
+                                    (<= (+ i 7) n)
+                                    (string= "\\U+" string :start2 i :end2 (+ i 3))
+                                    (every (lambda (c) (digit-char-p c 16))
+                                           (subseq string (+ i 3) (+ i 7)))
+                                    (parse-integer string :start (+ i 3) :end (+ i 7)
+                                                          :radix 16))))
+                     (if code
+                         (progn (write-char (code-char code) out) (incf i 7))
+                         (progn (write-char (char string i) out) (incf i)))))))))
+
+(defun %dxf-sniff-acadver (source)
+  "The $ACADVER string of the ASCII DXF SOURCE, or NIL when its header
+does not give one. Reads only the header's head, as ISO-8859-1."
+  (with-open-file (s source :external-format :iso-8859-1)
+    (loop repeat 2000
+          for line = (read-line s nil :eof)
+          until (eq line :eof)
+          do (let ((text (string-trim '(#\Space #\Tab #\Return) line)))
+               (cond ((string-equal text "$ACADVER")
+                      (read-line s nil :eof)    ; its group code (1)
+                      (let ((value (read-line s nil :eof)))
+                        (return (and (stringp value)
+                                     (string-trim '(#\Space #\Tab #\Return) value)))))
+                     ((string-equal text "ENDSEC") (return nil)))))))
+
+(defun %dxf-valid-utf-8-p (source)
+  "True when the bytes of SOURCE are well-formed UTF-8. Checked on the bytes
+rather than by catching a decoding error: CCL's UTF-8 decoder substitutes
+U+FFFD for a bad byte where SBCL's signals."
+  (with-open-file (s source :element-type '(unsigned-byte 8))
+    (let ((pending 0))                  ; continuation bytes still expected
+      (loop for b = (read-byte s nil nil)
+            while b
+            do (cond ((plusp pending)
+                      (if (= (logand b #xC0) #x80)
+                          (decf pending)
+                          (return-from %dxf-valid-utf-8-p nil)))
+                     ((< b #x80))
+                     ((<= #xC2 b #xDF) (setf pending 1))
+                     ((<= #xE0 b #xEF) (setf pending 2))
+                     ((<= #xF0 b #xF4) (setf pending 3))
+                     (t (return-from %dxf-valid-utf-8-p nil))))
+      (zerop pending))))
+
+(defun %dxf-read-ascii (source external-format unicode-escapes)
+  (let ((*dxf-unicode-escapes* unicode-escapes))
+    (with-open-file (s source :external-format external-format)
+      (dxf-read-drawing-from-stream s))))
 
 (defun dxf-read-drawing (source)
   "Read SOURCE as DXF, auto-detecting ASCII vs binary by its sentinel.
-Sets DRAWING-FORMAT precisely (READ-DRAWING leaves it as set)."
+Sets DRAWING-FORMAT precisely (READ-DRAWING leaves it as set). An ASCII
+DXF of AC1021 or later is read as UTF-8 (as ISO-8859-1 if it is not
+valid UTF-8), an earlier one as ISO-8859-1 with its \\U+XXXX escapes
+decoded."
   (if (dxf-binary-file-p source)
       (let ((drawing (with-open-file (s source :element-type '(unsigned-byte 8))
                        (dxf-read-binary-drawing-from-stream s))))
         (setf (drawing-format drawing) :dxf-binary)
         drawing)
-      (let ((drawing (with-open-file (s source :external-format +dxf-external-format+)
-                       (dxf-read-drawing-from-stream s))))
+      (let ((drawing (if (%dxf-utf-8-version-p (%dxf-sniff-acadver source))
+                         (%dxf-read-ascii source
+                                          (if (%dxf-valid-utf-8-p source)
+                                              :utf-8
+                                              +dxf-external-format+)
+                                          nil)
+                         (%dxf-read-ascii source +dxf-external-format+ t))))
         (setf (drawing-format drawing) :dxf-ascii)
         drawing)))
 
 (defun dxf-write-drawing (drawing destination &key version)
   "Write DRAWING to DESTINATION as ASCII DXF. VERSION (a $ACADVER keyword
 such as :ac1032) sets the emitted $ACADVER; NIL uses the drawing's own
-version, then the R2013 default."
-  (let ((*dxf-output-version* (or version (drawing-version drawing))))
+version, then the R2013 default. AC1021 and later are written as UTF-8,
+earlier versions as ISO-8859-1 with \\U+XXXX for the characters above
+#xFF."
+  (let* ((*dxf-output-version* (or version (drawing-version drawing)))
+         (utf-8 (%dxf-utf-8-version-p (%dxf-acadver-string *dxf-output-version*)))
+         (*dxf-unicode-escapes* (not utf-8)))
     (with-open-file (stream destination :direction :output
                                         :if-exists :supersede
                                         :if-does-not-exist :create
-                                        :external-format +dxf-external-format+)
+                                        :external-format (if utf-8
+                                                             :utf-8
+                                                             +dxf-external-format+))
       (dxf-write-drawing-to-stream drawing stream))))
 
 (defun dxf-write-binary-drawing (drawing destination &key version)
