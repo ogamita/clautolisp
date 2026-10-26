@@ -46,23 +46,30 @@
     (vl-catch-all-apply 'command nil)
     (setq n (1+ n))))
 
-(defun cad-probe--cp-step (name step)
-  ;; Record (CMDACTIVE . LASTPROMPT) as this step's value.
-  (cad-probe-capture "command-prompts" (strcat name "/" (itoa step))
-    (function (lambda () (cons (cad-probe--cp-active) (cad-probe--cp-lastprompt))))))
+;; BUFFER prompts while a command is active, flush AFTER it is cancelled.
+;; On real AutoCAD a probe that wrote its record mid-command captured only the
+;; ENV line (written at the Command: prompt) and nothing per-command, on both
+;; accoreconsole and GUI acad -- the symptom of file I/O (open) being blocked
+;; while a command is active. So collect (step active . prompt) rows in memory
+;; during driving, and emit them once back at the Command: prompt.
+(defun cad-probe--cp-row (rows step)
+  (cons (list step (cad-probe--cp-active) (cad-probe--cp-lastprompt)) rows))
 
-(defun cad-probe--cp-one (name tokens / step)
+(defun cad-probe--cp-one (name tokens / step rows)
   (cad-probe--cp-cancel)
   (vl-catch-all-apply 'command (list (strcat "_" name)))
-  (cad-probe--cp-step name 0)                 ; initial prompt + option list
+  (setq rows (cad-probe--cp-row nil 0))       ; initial prompt + option list
   (setq step 0)
   (foreach tok tokens
     (if (and (< step 8) (> (cad-probe--cp-active) 0))
         (progn
           (setq step (1+ step))
           (vl-catch-all-apply 'command (list tok))
-          (cad-probe--cp-step name step))))
-  (cad-probe--cp-cancel))
+          (setq rows (cad-probe--cp-row rows step)))))
+  (cad-probe--cp-cancel)                       ; back to Command: prompt; I/O works
+  (foreach r (reverse rows)
+    (cad-probe-capture "command-prompts" (strcat name "/" (itoa (car r)))
+      (function (lambda () (cdr r))))))         ; (active prompt)
 
 (defun cad-probe-run-command-prompts-probes ( / table)
   ;; Environment knobs that shape the prompts (TRIMEXTENDMODE drives the TRIM /

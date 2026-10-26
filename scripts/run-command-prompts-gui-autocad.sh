@@ -76,8 +76,8 @@ cat > "$scr" <<EOF
 (load "$wrapper_win")
 (setq __cp_done (open "$done_win" "w"))
 (if __cp_done (progn (princ "DONE" __cp_done) (close __cp_done)))
-QUIT
-Y
+_QUIT
+_N
 EOF
 scr_win="$(winpath "$scr")"
 
