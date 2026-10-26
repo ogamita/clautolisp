@@ -61,7 +61,7 @@ $bargs = @("--no-init")
 switch ($Backend) {
   "bricscad"   { $bargs += @("--bricscad","--mode","batch","--timeout","180") }
   "autocad"    { $bargs += @("--autocad","--mode","batch"); if ($Dwg) { $bargs += @("--dwg",$Dwg) } }
-  "clautolisp" { $bargs += @("--clautolisp","--host","mock") }
+  "clautolisp" { $bargs += @("--clautolisp") }
 }
 $bargs += @("-l",$probe)
 

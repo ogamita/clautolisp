@@ -44,7 +44,7 @@ case "$backend" in
   # AcCoreConsole. Whether the two translate identically is being measured.
   autocad)       bargs+=("--autocad" "--mode" "automation" "--timeout" "300") ;;
   accoreconsole) bargs+=("--autocad" "--mode" "batch" "--timeout" "300") ;;
-  clautolisp)    bargs+=("--clautolisp" "--host" "mock") ;;
+  clautolisp)    bargs+=("--clautolisp") ;;
   *) echo "unknown backend: $backend" >&2; exit 2 ;;
 esac
 bargs+=("-l" "$probe")

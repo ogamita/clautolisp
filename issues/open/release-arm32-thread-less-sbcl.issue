@@ -194,3 +194,42 @@ The lane's *other* two faults, both already fixed in 1.8.47:
 - =collect:release= skipping itself because this job was manual and
   unplayed — =optional: true= covers a need that is ABSENT, not one that
   is present but unplayed.
+
+* Measured (2026-10-25) -- a thread-less SBCL, on x86-64
+
+No armhf at hand, so a thread-less SBCL was built here instead: SBCL 2.5.2
+from source, =make.sh --without-sb-thread= (=:sb-thread= absent), 3
+minutes. Then =make -C clautolisp test-sbcl SBCL=<it>= (clautolisp 2.3.64):
+
+1. With Quicklisp's bordeaux-threads v0.9.4: the lane's exact error,
+   =LOAD-SYSTEM-DEFINITION-ERROR ... bordeaux-threads.asd: This
+   implementation is unsupported.= So the armhf failure is the missing
+   threads, not ARM or qemu, and it can be reproduced on any machine.
+2. With bordeaux-threads *v0.8.8* first in =CL_SOURCE_REGISTRY=: everything
+   builds and loads. The pin hypothesis above holds. Running the suites,
+   19 tests fail, every one with "There is no thread support in this
+   instance" (BT:MAKE-THREAD):
+   | suite   | tests | what they drive                                        |
+   |---------+-------+--------------------------------------------------------|
+   | debug   |     3 | TWO-THREAD-* (the threaded aldb session)                |
+   | runtime |    12 | scheduler.lisp: thread-backed contexts, park / resume / |
+   |         |       | switch (multi-document ACTIVATE)                        |
+   | cador   |     1 | CADOR-PROMPT-READ-PARKS-VIA-BRIDGE-AND-RESUMES          |
+   | cadtui  |     3 | CONSOLE-READ-* / CONSOLE-LOOP-* (the console line queue) |
+3. With those 19 left out (=#+sb-thread=, a local measurement, not
+   committed): *all 34 suites pass, 13113 checks*.
+
+What this changes:
+- The 2026-08-20 analysis is out of date: bordeaux-threads is no longer
+  pulled in only by autolisp-debug. clautolisp.asd lists it for four
+  systems, and the runtime's scheduler (thread-backed evaluation contexts,
+  so multi-document ACTIVATE), cadtui's console queue and cador's prompt
+  bridge all create threads. A thread-less clautolisp is a single-document
+  clautolisp with no cadtui console and no threaded aldb session.
+- The cheap route works mechanically: pin bordeaux-threads 0.8.x on the
+  arm32 lane (its own =CL_SOURCE_REGISTRY= entry; no Quicklisp dist
+  change), and mark the 19 tests =#+sb-thread= (or skip them when
+  =bt:*supports-threads-p*= is false).
+- Still pjb's decision: whether a release artefact that lacks those
+  features is worth shipping for armv7 (option 4, retire the lane, is
+  still open). Not yet checked on real armhf.
