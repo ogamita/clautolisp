@@ -56,6 +56,9 @@ EXPLICIT = {
     # scripts/probe-cad-session-state.ps1: {clautolisp, bricscad, autocad} x
     # {batch, automation, epure}, AutoCAD COM included.
     'probe:cad-session-state:windows': 'autocad',
+    # scripts/verify-alfe-template.sh bricscad autocad: alfe --autocad
+    # --mode batch (AcCoreConsole) as well as --bricscad.
+    'verify:alfe-template:windows': 'autocad',
 }
 
 document = yaml.safe_load(open(PATH, encoding='utf-8'))

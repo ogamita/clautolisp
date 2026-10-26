@@ -39,6 +39,7 @@
    #:cli-situation-encoding      ; AC — resolver: (opts situation &optional direction)
    #:*encoding-situations*       ; AC — the situation registry
    #:cli-options-dwg             ; A
+   #:cli-options-template        ; A — --template NAME|PATH (alfe)
    #:cli-options-plugin-options  ; A — alist (PLUGIN-NAME . plist of resolved option values)
    #:cli-options-plugins-active  ; A — names of the active plug-ins, in activation order
    #:cli-options-list-plugins-p  ; A — --list-plugins

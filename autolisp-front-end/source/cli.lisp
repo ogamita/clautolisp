@@ -114,6 +114,7 @@
                 #:cli-situation-encoding-explicit
                 #:encoding-keyword
                 #:cli-options-dwg
+                #:cli-options-template
                 #:cli-options-plugin-options
                 #:cli-options-plugins-active
                 #:cli-options-list-plugins-p
@@ -175,6 +176,7 @@
            #:situation-engine-keywords
            #:console-is-terminal-p
            #:cli-options-dwg
+           #:cli-options-template
            #:cli-options-plugin-options
            #:cli-options-plugins-active
            #:cli-options-list-plugins-p
@@ -259,6 +261,7 @@ a rebuild. Bound per RUN; set by RUN from the parsed option.")
     (:bootstrap-phase  . "AUTOLISP_BOOTSTRAP_PHASE")
     (:remote-io-mode   . "AUTOLISP_REMOTE_IO_MODE")
     (:dwg              . "AUTOLISP_DWG")
+    (:template         . "AUTOLISP_TEMPLATE")
     (:autocad-install  . "AUTOCAD_INSTALL")
     (:autocad-version  . "AUTOCAD_VERSION")
     (:bricscad-install . "BRICSCAD_INSTALL")
@@ -348,6 +351,10 @@ Dialect, host, encoding:
 
 CAD-specific options:
   --dwg FILE             Drawing to open before running the script.
+  --template NAME|PATH   Start from a copy of one of the CAD's own templates
+                         (acad.dwt, Default-m.dwt ...; looked up in the CAD's
+                         template folders) instead of alfe's empty drawing.
+                         Wins over --dwg. Env: AUTOLISP_TEMPLATE.
 
 Plug-ins:
   --plugin NAME          Activate the installed plug-in NAME (repeatable).
@@ -478,6 +485,7 @@ argument parsing so explicit CLI options always win."
         (env-backend (env-default :backend))
         (env-bootstrap (env-default :bootstrap-phase))
         (env-dwg     (env-default :dwg))
+        (env-template (env-default :template))
         (env-keep-workdir (env-default :keep-workdir))
         (env-write-workdir-path (env-default :write-workdir-path)))
     (when env-workdir
@@ -500,6 +508,8 @@ argument parsing so explicit CLI options always win."
             (parse-bootstrap-phase env-bootstrap "AUTOLISP_BOOTSTRAP_PHASE")))
     (when env-dwg
       (setf (cli-options-dwg options) env-dwg))
+    (when env-template
+      (setf (cli-options-template options) env-template))
     (when env-keep-workdir
       (setf (cli-options-keep-workdir-p options) t))
     (when env-write-workdir-path
@@ -641,6 +651,13 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (declare (ignore name))
                (setf (cli-options-dwg opts) value)))
+   ;; --template NAME|PATH: a per-run copy of one of the CAD's own templates
+   ;; as the session's drawing (alfe-template-option; %SESSION-DWG)
+   (make-option-spec
+    :longs '("--template") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-template opts) value)))
    ;; --plugin NAME activates an installed plug-in that has no flag of its
    ;; own (or that the caller prefers to name). --plugin-path and
    ;; --no-plugins are consumed by PRESCAN-PLUGIN-ARGUMENTS in RUN, before
@@ -1586,6 +1603,33 @@ takes effect regardless of option order."
     ;; slot defaults to :strict when the user gave no --dialect.
     (t (cli-options-dialect options))))
 
+(defun %session-dwg (options backend workdir)
+  "The drawing the session starts on: with --template NAME|PATH a copy of
+that template in WORKDIR (alfe-template-option) -- looked up in the folders
+of the backend's CAD, or of the dialect's product under clautolisp --
+else --dwg. An unknown template fails the run with the templates found
+listed (EX_NOINPUT)."
+  (let ((template (cli-options-template options)))
+    (if (null template)
+        (cli-options-dwg options)
+        (let* ((name (alfe.backend:backend-name backend))
+               (product (if (member name '(:autocad :bricscad))
+                            name
+                            (ignore-errors
+                             (clautolisp.autolisp-reader:autolisp-dialect-product
+                              (clautolisp.autolisp-reader:find-autolisp-dialect
+                               (effective-dialect options))))))
+               (source (alfe.template:find-template template product)))
+          (unless source
+            (error 'clautolisp.autolisp-cli:cli-error
+                   :option "--template"
+                   :status clautolisp.sysexits:+ex-noinput+
+                   :message (format nil "no template named ~A~@[ for ~(~A~)~]; the templates found:~:[ none~;~:*~{~%    ~A~}~]"
+                                    template product
+                                    (mapcar #'uiop:native-namestring
+                                            (alfe.template:list-templates product)))))
+          (uiop:native-namestring (alfe.template:copy-template source workdir))))))
+
 (defun %write-workdir-path-file (options workdir)
   "If --write-workdir-path FILE was given, write WORKDIR's absolute path to
 FILE (one line). Best-effort: a write failure is logged, never fatal — the
@@ -1668,7 +1712,7 @@ engine."
                          :interactive-p
                          (cli-options-interactive-p options)
                          :mode (cli-options-mode options)
-                         :dwg (cli-options-dwg options)
+                         :dwg (%session-dwg options backend workdir)
                          :load-encoding
                          (cli-options-load-encoding options)
                          :io-encoding
@@ -1896,7 +1940,7 @@ backend ~(~A~) runs in-process and has no external command line."
                            :bootstrap-phase (cli-options-bootstrap-phase options)
                            :interactive-p (cli-options-interactive-p options)
                            :mode (cli-options-mode options)
-                           :dwg (cli-options-dwg options)
+                           :dwg (%session-dwg options backend workdir)
                            :load-encoding (cli-options-load-encoding options)
                            :io-encoding (cli-options-io-encoding options)
                            :cli-options options

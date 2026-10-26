@@ -1959,6 +1959,15 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *=alfe --template NAME|PATH=* (2.3.68): start the session on a per-run
+  copy of one of the CAD's own templates (=acad.dwt=, =acadiso.dwt=,
+  =Default-m.dwt= ...) instead of alfe's embedded empty drawing, a French
+  AutoCAD 2005 file. A NAME is looked up in the CAD's template folders;
+  an unknown one exits 66 with the templates found listed.
+  =$AUTOLISP_TEMPLATE= is the same. Checked on AutoCAD 2022 and BricsCAD
+  V25. Under =--bricscad=, =--dwg FILE= is now the drawing BricsCAD opens:
+  it was dropped, only =$AUTOLISP_DWG= reaching the launch.
+
 - *=getcname= is real* (2.3.69): it was a nil stub. It now converts
   between a command's international and local names as measured on French
   AutoCAD 2022 and BricsCAD V25 (="_LINE"= <-> ="LIGNE"=, ="_-LAYER"= <->

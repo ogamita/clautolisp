@@ -152,6 +152,13 @@ terminal side (line-buffered by default).
 .BR \-\-dwg " " \fIFILE\fR
 Drawing to open before running the script.
 .TP
+.BR \-\-template " " \fINAME\fR|\fIPATH\fR
+Start on a per-run copy of one of the CAD's own templates instead of
+alfe's empty drawing. A NAME (\fIacad.dwt\fR, \fIDefault-m.dwt\fR, case
+ignored) is looked up in the template folders of the backend's CAD (under
+clautolisp, of the dialect's product); a PATH is used as given. Wins over
+\fB\-\-dwg\fR. An unknown NAME exits 66 with the templates found listed.
+.TP
 .BR \-\-cad " " \fIDENOTATION\fR
 Pick a specific installed CAD by its canonical denotation
 .RI ( acad-2026 ", " bricscad-v25-fr_FR ", " autocad-2022 ", ...).
@@ -471,7 +478,7 @@ Backend selector defaults; explicit
 .BR \-\-clautolisp " / " \-\-bricscad " / " \-\-autocad
 overrides.
 .TP
-.B AUTOLISP_BOOTSTRAP_PHASE\fR, \fBAUTOLISP_DWG
+.B AUTOLISP_BOOTSTRAP_PHASE\fR, \fBAUTOLISP_DWG\fR, \fBAUTOLISP_TEMPLATE
 CAD-side defaults.
 .TP
 .B ALFE_CLAUTOLISP_BIN

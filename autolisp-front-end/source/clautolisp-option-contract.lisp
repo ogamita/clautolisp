@@ -88,7 +88,8 @@
      :forward (%forward-host))
     ("--dwg"                :engine "direct: HOST-OPEN-STARTUP-DRAWING with the DWG codec loaded; subprocess: --dwg FILE; same message and status when unreadable"
      :forward (%forward-dwg))
-    ("--load"               :engine "direct: in-process load binding *AUTOLISP-LOAD-PATHNAME*; subprocess: -l"
+    ("--template"           :front-end "alfe copies the template into the run's workdir and starts the engine on the copy, as --dwg's drawing (%SESSION-DWG)")
+    ("--load"              :engine "direct: in-process load binding *AUTOLISP-LOAD-PATHNAME*; subprocess: -l"
      :forward :plan)
     ("--eval"               :engine "direct: in-process, binding *AUTOLISP-EXPRESSION*; subprocess: -x"
      :forward :plan)

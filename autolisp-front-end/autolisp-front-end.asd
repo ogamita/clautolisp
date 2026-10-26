@@ -60,6 +60,7 @@
    ;; backends or the CLI, so it loads before both (alfe-dribble.issue).
    (:file "source/dribble")
    (:file "source/workdir")
+   (:file "source/template")
    (:file "source/plugin")
    (:file "source/backend")
    (:file "source/backend-echo")
