@@ -1104,6 +1104,25 @@ does not give one. Reads only the header's head, as ISO-8859-1."
                                      (string-trim '(#\Space #\Tab #\Return) value)))))
                      ((string-equal text "ENDSEC") (return nil)))))))
 
+(defun %dxf-valid-utf-8-p (source)
+  "True when the bytes of SOURCE are well-formed UTF-8. Checked on the bytes
+rather than by catching a decoding error: CCL's UTF-8 decoder substitutes
+U+FFFD for a bad byte where SBCL's signals."
+  (with-open-file (s source :element-type '(unsigned-byte 8))
+    (let ((pending 0))                  ; continuation bytes still expected
+      (loop for b = (read-byte s nil nil)
+            while b
+            do (cond ((plusp pending)
+                      (if (= (logand b #xC0) #x80)
+                          (decf pending)
+                          (return-from %dxf-valid-utf-8-p nil)))
+                     ((< b #x80))
+                     ((<= #xC2 b #xDF) (setf pending 1))
+                     ((<= #xE0 b #xEF) (setf pending 2))
+                     ((<= #xF0 b #xF4) (setf pending 3))
+                     (t (return-from %dxf-valid-utf-8-p nil))))
+      (zerop pending))))
+
 (defun %dxf-read-ascii (source external-format unicode-escapes)
   (let ((*dxf-unicode-escapes* unicode-escapes))
     (with-open-file (s source :external-format external-format)
@@ -1121,10 +1140,11 @@ decoded."
         (setf (drawing-format drawing) :dxf-binary)
         drawing)
       (let ((drawing (if (%dxf-utf-8-version-p (%dxf-sniff-acadver source))
-                         (handler-case (%dxf-read-ascii source :utf-8 nil)
-                           (drawing-error (e) (error e))
-                           (error ()
-                             (%dxf-read-ascii source +dxf-external-format+ nil)))
+                         (%dxf-read-ascii source
+                                          (if (%dxf-valid-utf-8-p source)
+                                              :utf-8
+                                              +dxf-external-format+)
+                                          nil)
                          (%dxf-read-ascii source +dxf-external-format+ t))))
         (setf (drawing-format drawing) :dxf-ascii)
         drawing)))

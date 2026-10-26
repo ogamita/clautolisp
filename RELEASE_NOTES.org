@@ -1963,7 +1963,8 @@ file or COM), and forwards the workload.
   AutoCAD 2007 (AC1021) or later is written and read as UTF-8, as the format
   says; an earlier one as ISO-8859-1 with =\U+XXXX= for the characters
   outside it (and =$DWGCODEPAGE= ANSI_1252). A 2007+ DXF that is not valid
-  UTF-8 -- one clautolisp wrote before -- still reads.
+  UTF-8 -- one clautolisp wrote before -- still reads (2.3.66: on CCL too,
+  whose decoder replaces a bad byte instead of signalling).
 
 - *BricsCAD V25's metric defaults* (2.3.63): a new drawing under
   =bricscad-v25= with metric units gets the default objects measured on V25's
