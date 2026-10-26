@@ -1798,7 +1798,7 @@ own."
   ;; DIALECT is currently irrelevant on the CAD side: the AutoLISP
   ;; dialect lives inside the CAD engine and is not swappable from
   ;; outside. HOST is meaningful only to clautolisp.
-  (declare (ignore host mock-input dialect dwg load-encoding io-encoding
+  (declare (ignore host mock-input dialect load-encoding io-encoding
                    source-encoding file-read-encoding file-write-encoding
                    console-in-encoding console-out-encoding
                    cadstdio-in-encoding cadstdio-out-encoding
@@ -1807,6 +1807,15 @@ own."
   ;; A product-fixed situation is warned about, never silently ignored.
   (%warn-bricscad-console-input cli-options)
   (log-debug "backend BRICSCAD: workdir = ~A" workdir)
+  ;; The drawing the CLI hands over (--dwg, or --template's per-run copy)
+  ;; is the one BricsCAD opens: the launch reads the backend's TEMPLATE-PATH,
+  ;; which DETECT only fills from $AUTOLISP_DWG -- a --dwg / --template used
+  ;; to be dropped here, BricsCAD then starting on a new Dessin1.dwg
+  ;; (verify:alfe-template:windows, job 17461973387). One backend per alfe
+  ;; run, so this does not outlive the invocation.
+  (when (and dwg (probe-file dwg))
+    (setf (bricscad-backend-template-path backend)
+          (uiop:native-namestring (truename dwg))))
   ;; Let --timeout / $AUTOLISP_WAIT_SECS raise the READY timeout: a cold
   ;; BricsCAD launch (COM start + license + first document) can take well
   ;; over the 30 s default, which otherwise reports a spurious
