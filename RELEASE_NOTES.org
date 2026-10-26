@@ -1968,6 +1968,12 @@ file or COM), and forwards the workload.
   V25. Under =--bricscad=, =--dwg FILE= is now the drawing BricsCAD opens:
   it was dropped, only =$AUTOLISP_DWG= reaching the launch.
 
+- *=getcname= is real* (2.3.69): it was a nil stub. It now converts
+  between a command's international and local names as measured on French
+  AutoCAD 2022 and BricsCAD V25 (="_LINE"= <-> ="LIGNE"=, ="_-LAYER"= <->
+  ="-CALQUE"=), each product with its own command set and prefix rules, in
+  the session's language; under English a command is its own local name.
+
 - *The VPORT =*Active= record shows the viewport* (2.3.65): its =entget=
   lists the snap, grid and view groups (50 = =SNAPANG=, 51 = =VIEWTWIST=,
   12 = =VIEWCTR= ...) the CADs list. Under the BricsCAD dialects a =setvar=
