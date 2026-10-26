@@ -471,6 +471,24 @@ verify:vl-registry:windows:
 #
 # Manual, like its Linux counterpart: it is minutes of C and Lisp compilation
 # and nothing depends on its result.
+# alfe --template against the real CADs (alfe-template-option, acceptance):
+# acad.dwt / Default-imperial.dwt give MEASUREMENT 0, acadiso.dwt /
+# Default-m.dwt 1, on alfe's per-run copy. Manual: a CAD job not to add to
+# every pipeline's sweep; play it when template.lisp or %SESSION-DWG changes.
+verify:alfe-template:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  timeout: 30m
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - '& scripts/avec-bash.ps1 scripts/verify-alfe-template.sh bricscad autocad'
+    - 'if ($LASTEXITCODE -ne 0) { throw "alfe --template check failed ($LASTEXITCODE)" }'
+
 verify:packaged-dwg:windows:
   extends: .gate-windows-soft
   stage: test

@@ -752,6 +752,53 @@ had already parsed them."
       (is (equal '(:mode :batch :dwg "C:/tmp/test.dwg")
                  *capture-start-engine-args*)))))
 
+;;; alfe-template-option: --template NAME|PATH starts the session on a
+;;; per-run copy of one of the CAD's own templates.
+
+(defun %write-bytes (path bytes)
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output :if-exists :supersede
+                            :element-type '(unsigned-byte 8))
+    (write-sequence (coerce bytes '(vector (unsigned-byte 8))) out))
+  path)
+
+(test cli-template-path-starts-the-session-on-a-copy
+  (uiop:with-temporary-file (:pathname template :type "dwt")
+    (%write-bytes template '(65 67 49 48 51 50))
+    (let ((alfe.backend:*backends* (make-hash-table :test #'eql))
+          (*capture-start-engine-args* nil))
+      (alfe.backend:register-backend :capture (make-capture-backend))
+      (let ((options (parse-arguments (list "--dwg" "C:/tmp/test.dwg"
+                                            "--template" (uiop:native-namestring template)
+                                            "-x" "(+ 1 2)"))))
+        (setf (alfe.cli::cli-options-backend options) :capture)
+        (is (= 0 (alfe.cli::run-plan options (alfe.backend:find-backend :capture)
+                                     :version-text "0.0.1")))
+        (let ((dwg (getf *capture-start-engine-args* :dwg)))
+          ;; the copy in the run's workdir, not the template, not --dwg
+          (is (string= "template.dwg" (file-namestring dwg)))
+          (is (not (equal (uiop:native-namestring template) dwg))))))))
+
+(test template-lookup-searches-only-the-product-folders
+  (let* ((root (uiop:ensure-directory-pathname
+                (merge-pathnames (format nil "alfe-template-test-~D/" (random 999999))
+                                 (uiop:temporary-directory))))
+         (saved (uiop:getenv "LOCALAPPDATA")))
+    (unwind-protect
+         (progn
+           (%write-bytes (merge-pathnames "Bricsys/BricsCAD/V25x64/fr_FR/Templates/Default-m.dwt" root) '(1))
+           (%write-bytes (merge-pathnames "Autodesk/AutoCAD 2022/R24.1/fra/Template/acad.dwt" root) '(2))
+           (%write-bytes (merge-pathnames "Other/deep/Decoy.dwt" root) '(3))
+           (setf (uiop:getenv "LOCALAPPDATA") (uiop:native-namestring root))
+           (is (search "Bricsys" (namestring (alfe.template:find-template "DEFAULT-M.DWT" :bricscad))))
+           (is (null (alfe.template:find-template "Default-m.dwt" :autocad)))
+           (is (search "Autodesk" (namestring (alfe.template:find-template "acad.dwt" :autocad))))
+           (is (null (alfe.template:find-template "Decoy.dwt" nil)))
+           (is (= 2 (count-if (lambda (p) (search (namestring root) (namestring p)))
+                              (alfe.template:list-templates nil)))))
+      (setf (uiop:getenv "LOCALAPPDATA") (or saved ""))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+
 (test cli-run-eval-plus-1-2-against-echo-prints-three
   "End-to-end: -x \"(+ 1 2)\" against the echo backend prints \"3\\n\"
 on stdout and exits 0. Mirrors the headline acceptance criterion

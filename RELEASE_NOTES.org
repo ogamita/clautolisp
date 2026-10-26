@@ -1959,6 +1959,13 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *=alfe --template NAME|PATH=* (2.3.68): start the session on a per-run
+  copy of one of the CAD's own templates (=acad.dwt=, =acadiso.dwt=,
+  =Default-m.dwt= ...) instead of alfe's embedded empty drawing, a French
+  AutoCAD 2005 file. A NAME is looked up in the CAD's template folders;
+  an unknown one exits 66 with the templates found listed.
+  =$AUTOLISP_TEMPLATE= is the same.
+
 - *The VPORT =*Active= record shows the viewport* (2.3.65): its =entget=
   lists the snap, grid and view groups (50 = =SNAPANG=, 51 = =VIEWTWIST=,
   12 = =VIEWCTR= ...) the CADs list. Under the BricsCAD dialects a =setvar=

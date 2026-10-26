@@ -891,6 +891,28 @@ AutoCAD install. Only if all three miss does batch mode stop with a
 =NO-DWG= bootstrap error. Under =--clautolisp=, =--dwg FILE= (or
 =AUTOLISP_DWG=) is the drawing the engine starts on, in place of its
 untitled =Drawing1.dwg=, as =clautolisp --dwg FILE= does.
+
+=--template NAME|PATH= (or =AUTOLISP_TEMPLATE=) starts the session on
+a drawing made from one of the CAD's own templates, rather than on
+alfe's embedded =empty.dwg= (a French AutoCAD 2005 drawing, whose
+styles, layouts and metric units are not what a new drawing of the
+CAD holds). alfe copies the template into the run's work directory as
+=template.dwg= -- a fresh copy per run, so no other session holds a
+lock on it, and opened as a drawing, so the CAD asks for no units --
+and that copy is the drawing, for every backend; it wins over =--dwg=.
+A PATH (with a =/= or =\=) is used as given. A NAME (=acad.dwt=,
+=acadiso.dwt=, =Default-m.dwt=, case ignored) is looked up in the
+template folders of the backend's CAD -- under clautolisp, of the
+dialect's product: the top-level =Autodesk= or =Bricsys= folders of
+=%LOCALAPPDATA%=, =%APPDATA%=, the Program Files folders and
+=%PROGRAMDATA%=, or of =~/Library/Application Support= and
+=/Applications= on macOS, the user's first. An unknown NAME stops
+the run with exit status 66 and the templates found listed:
+
+#+begin_example
+$ alfe --bricscad --template Default-m.dwt -l probe.lsp   # MEASUREMENT 1
+$ alfe --autocad --mode batch --template acad.dwt -l probe.lsp
+#+end_example
 - Exit with any of: Ctrl-D (EOF), an empty line that equals =:quit=,
   =:q=, =:exit=, =(quit)=, =(exit)=, or by queuing a =--quit= action.
 
@@ -2018,6 +2040,7 @@ always wins.
 | =$AUTOLISP_BACKEND=, =$ALFE_BACKEND_OVERRIDE= | backend selection |
 | =$AUTOLISP_MODE=             | =--mode=            |
 | =$AUTOLISP_DWG=              | =--dwg=             |
+| =$AUTOLISP_TEMPLATE=         | =--template=        |
 | =$AUTOLISP_EPURE=            | =--epure=           |
 | =$AUTOLISP_EPURE_PROFILE=    | =--epure-profile=   |
 | =$AUTOLISP_EPURE_SCRIPT=     | =--epure-script=    |

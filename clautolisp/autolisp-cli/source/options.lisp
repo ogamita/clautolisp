@@ -30,6 +30,7 @@
                                       ;     built by the -E<situation>[-<dir>] / --<situation>-encoding family
   ;; Drawing
   (dwg              nil)              ; AC  --dwg FILE: the first drawing
+  (template         nil)              ; A   --template NAME|PATH: a copy of a CAD template (alfe)
   ;; Plug-ins (alfe). The options a plug-in defines are parsed into
   ;; PLUGIN-OPTIONS, an alist (NAME . PLIST) of plug-in name -> plist of
   ;; option key -> value, resolved (command line, then environment, then
