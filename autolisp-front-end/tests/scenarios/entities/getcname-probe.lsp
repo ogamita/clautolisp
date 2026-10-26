@@ -93,5 +93,27 @@ status is a string and result the returned name or an error message."
                "\n"))
 (princ (strcat "GETCNAME-COUNT\t" (itoa (length *getcname-commands*)) "\n"))
 (foreach n *getcname-commands* (probe-one n))
+
+;; Edge cases, for implementing getcname in clautolisp (the round trips above
+;; only cover a known command given in its exact forms): an English name
+;; without the underscore, case, the - / ' / . prefixes, an unknown name, a
+;; user command, the empty string, a non-string. One line each:
+;;   GETCNAME-EDGE <input> <status> <result>
+(defun c:GETCNAMEPROBE () (princ))
+(foreach input (list "LINE" "line" "_line" "_Line" "LIGNE" "ligne" "_LIGNE"
+                     ;; (chr 201): E acute in cp1252 and in Unicode alike
+                     "STRETCH" "ETIRER" (strcat (chr 201) "TIRER") "_ETIRER"
+                     "-LAYER" "_-LAYER" "-CALQUE" "-_LAYER"
+                     "'ZOOM" "'_ZOOM" "_'ZOOM"
+                     ".LINE" "_.LINE" "._LINE" ".LIGNE"
+                     "NOSUCHCMD" "_NOSUCHCMD" "" "_"
+                     "GETCNAMEPROBE" "_GETCNAMEPROBE"
+                     "VLIDE" "_VLIDE" "APPLOAD" "_APPLOAD" "_3DORBIT" "3DORBIT")
+  (setq sr (getcname-of input))
+  (princ (strcat "GETCNAME-EDGE\t" input "\t" (car sr) "\t" (cdr sr) "\n")))
+(setq sr (getcname-of 1))
+(princ (strcat "GETCNAME-EDGE\t<integer 1>\t" (car sr) "\t" (cdr sr) "\n"))
+(setq sr (getcname-of nil))
+(princ (strcat "GETCNAME-EDGE\t<nil>\t" (car sr) "\t" (cdr sr) "\n"))
 (princ "GETCNAME-DONE\n")
 (princ)
