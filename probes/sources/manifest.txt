@@ -45,6 +45,7 @@ probe-open-encoding.lsp       cad-probe-run-open-encoding-probes
 probe-logfile.lsp             cad-probe-run-logfile-probes
 probe-acad-strlsort-maxsort.lsp cad-probe-run-acad-strlsort-maxsort-probes
 probe-multiline-string.lsp    cad-probe-run-multiline-string-probes
+probe-entity-defaults.lsp     cad-probe-run-entity-defaults-probes
 # LAST: a NEW / OPEN may end the run.
 probe-documents.lsp           cad-probe-run-document-probes
 

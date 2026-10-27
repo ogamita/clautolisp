@@ -471,6 +471,11 @@ an object a dictionary owns."
     ;; dialects follow BricsCAD, every other dialect AutoCAD, the normative
     ;; reference (as for the pointer codes above).
     (setf rest (%vendor-body-order entity rest))
+    ;; a SEQEND names its run's header in -2, as its owner (AutoCAD 2022 and
+    ;; BricsCAD V25, probe entity-defaults 2026-10-27)
+    (when (and owner (equalp "SEQEND" (%data-type-string (entity-handle-data entity)))
+               (not (find -2 rest :key #'%view-code)))
+      (setf rest (append rest (list (cons -2 (cdr owner))))))
     (if (or reactors (eq (%current-product) :bricscad))
         (append (and zero (list zero))
                 (and five (list five))
@@ -514,7 +519,17 @@ an object a dictionary owns."
                ("AcDbAttributeDefinition" 3 2 70 73 74 280))
     ("ATTRIB"  ("AcDbText" 39 10 40 1 50 41 51 7 71 72 11 210)
                ("AcDbAttribute" 2 70 73 74 280))
-    ("INSERT"  ("AcDbBlockReference" 66 2 10 41 42 43 50 70 71 44 45 210))))
+    ("INSERT"  ("AcDbBlockReference" 66 2 10 41 42 43 50 70 71 44 45 210))
+    ;; probe entity-defaults, 2026-10-27 (both products); a SPLINE's repeated
+    ;; 40 / 10 follow its own groups
+    ("ELLIPSE" ("AcDbEllipse" 10 11 210 40 41 42))
+    ("SPLINE"  ("AcDbSpline" 210 70 71 72 73 74 42 43))
+    ("3DFACE"  ("AcDbFace" 10 11 12 13 70))))
+
+(defparameter *entget-type-trailing*
+  ;; TYPE -> codes listed after everything else (its repeated groups
+  ;; included), with their defaults: an LWPOLYLINE's 210 follows its vertices
+  '(("LWPOLYLINE" 210)))
 
 (defparameter *entget-type-defaults*
   ;; (TYPE (CODE . VALUE) ...), pure values; a point is a list of reals.
@@ -523,7 +538,65 @@ an object a dictionary owns."
     ("TEXT"   (50 . 0.0d0) (41 . 1.0d0) (51 . 0.0d0) (7 . "Standard") (71 . 0) (72 . 0)
               (11 0.0d0 0.0d0 0.0d0) (210 0.0d0 0.0d0 1.0d0) (73 . 0))
     ("INSERT" (41 . 1.0d0) (42 . 1.0d0) (43 . 1.0d0) (50 . 0.0d0) (70 . 0) (71 . 0)
-              (44 . 0.0d0) (45 . 0.0d0) (210 0.0d0 0.0d0 1.0d0))))
+              (44 . 0.0d0) (45 . 0.0d0) (210 0.0d0 0.0d0 1.0d0))
+    ;; Measured 2026-10-27 (probe entity-defaults: ENTMAKEX of the required
+    ;; codes only; AutoCAD 2022 job 17509517024, BricsCAD V25 17509517028):
+    ("POINT"   (210 0.0d0 0.0d0 1.0d0) (50 . 0.0d0))
+    ("ARC"     (210 0.0d0 0.0d0 1.0d0))
+    ("ELLIPSE" (210 0.0d0 0.0d0 1.0d0))
+    ("SPLINE"  (210 0.0d0 0.0d0 1.0d0) (74 . 0))
+    ;; MTEXT 42 / 43 (the text's measured width / height) depend on the font:
+    ;; not synthesized
+    ("MTEXT"   (41 . 0.0d0) (46 . 0.0d0) (71 . 1) (7 . "Standard") (210 0.0d0 0.0d0 1.0d0)
+               (11 1.0d0 0.0d0 0.0d0) (50 . 0.0d0) (73 . 1) (44 . 1.0d0))
+    ("3DFACE"  (70 . 0))
+    ("ATTDEF"  (50 . 0.0d0) (41 . 1.0d0) (51 . 0.0d0) (7 . "Standard") (71 . 0) (72 . 0)
+               (11 0.0d0 0.0d0 0.0d0) (210 0.0d0 0.0d0 1.0d0) (73 . 0) (74 . 0) (280 . 0))
+    ("ATTRIB"  (50 . 0.0d0) (41 . 1.0d0) (51 . 0.0d0) (7 . "Standard") (71 . 0) (72 . 0)
+               (11 0.0d0 0.0d0 0.0d0) (210 0.0d0 0.0d0 1.0d0) (73 . 0) (74 . 0) (280 . 0))
+    ("LWPOLYLINE" (210 0.0d0 0.0d0 1.0d0))
+    ("SOLID"   (210 0.0d0 0.0d0 1.0d0))
+    ("TRACE"   (210 0.0d0 0.0d0 1.0d0))
+    ("POLYLINE" (210 0.0d0 0.0d0 1.0d0))))
+
+;;; Where AutoCAD and BricsCAD differ (same probe): (PRODUCT TYPE ...),
+;;; replacing the type's layout / added to its defaults under that product.
+(defparameter *entget-type-layout-by-product*
+  '((:autocad "SOLID"    ("AcDbTrace" 10 11 12 13 39 210))
+    (:bricscad "SOLID"   ("AcDbTrace" 10 11 12 13 210))
+    (:autocad "TRACE"    ("AcDbTrace" 10 11 12 13 39 210))
+    (:bricscad "TRACE"   ("AcDbTrace" 10 11 12 13 210))
+    (:autocad "POLYLINE" ("AcDb2dPolyline" 66 10 70 40 41 210 71 72 73 74 75))
+    (:bricscad "POLYLINE" ("AcDb2dPolyline" 66 10 70 40 41 71 72 73 74 210 75))
+    (:autocad "VERTEX"   ("AcDbVertex") ("AcDb2dVertex" 10 40 41 42 91 70 50))
+    (:bricscad "VERTEX"  ("AcDbVertex") ("AcDb2dVertex" 10 40 41 42 70 50))
+    ;; AutoCAD lists a first 280 (the attribute's version) before the tag
+    (:autocad "ATTDEF"   ("AcDbText" 39 10 40 1 50 41 51 7 71 72 11 210)
+                         ("AcDbAttributeDefinition" 280 3 2 70 73 74 280))
+    (:autocad "ATTRIB"   ("AcDbText" 39 10 40 1 50 41 51 7 71 72 11 210)
+                         ("AcDbAttribute" 280 2 70 73 74 280))
+    (:autocad "MTEXT"    ("AcDbMText" 10 40 41 46 71 72 1 7 210 11 42 43 50 73 44))
+    (:bricscad "MTEXT"   ("AcDbMText" 10 40 41 46 71 72 1 7 210 11 42 43 50 73 44 75))))
+
+(defparameter *entget-type-defaults-by-product*
+  '((:autocad "SOLID"   (39 . 0.0d0))
+    (:autocad "TRACE"   (39 . 0.0d0))
+    (:autocad "VERTEX"  (91 . 0))
+    (:autocad "SPLINE"  (42 . 1.0d-9) (43 . 1.0d-10))
+    (:bricscad "SPLINE" (42 . 1.0d-7) (43 . 1.0d-7))
+    (:autocad "MTEXT"   (72 . 5))
+    (:bricscad "MTEXT"  (72 . 1) (75 . 0))))
+
+(defun %entget-type-layout (type product)
+  (or (cdr (assoc-if (lambda (key) (and (eq (first key) product) (string= (second key) type)))
+                     (mapcar (lambda (e) (cons (list (first e) (second e)) (cddr e)))
+                             *entget-type-layout-by-product*)))
+      (cdr (assoc type *entget-type-layout* :test #'string=))))
+
+(defun %entget-type-defaults (type product)
+  (append (cddr (find-if (lambda (e) (and (eq (first e) product) (string= (second e) type)))
+                         *entget-type-defaults-by-product*))
+          (cdr (assoc type *entget-type-defaults* :test #'string=))))
 
 (defun %al-default-pair (code value)
   (cons code (if (stringp value)
@@ -543,8 +616,11 @@ absent. Non-graphical objects and unknown types are left as they are."
     (if (not (and family (clautolisp.drawing:entity-family-graphical-p family)))
         rest
         (let* ((up (string-upcase type))
-               (layout (cdr (assoc up *entget-type-layout* :test #'string=)))
-               (defaults (cdr (assoc up *entget-type-defaults* :test #'string=)))
+               ;; the non-vendor dialects follow AutoCAD
+               (product (or (%current-product) :autocad))
+               (layout (%entget-type-layout up product))
+               (defaults (%entget-type-defaults up product))
+               (trailing (cdr (assoc up *entget-type-trailing* :test #'string=)))
                (markers (remove-if-not (lambda (pair) (eql 100 (%view-code pair))) rest))
                (others (remove-if (lambda (pair) (eql 100 (%view-code pair))) rest))
                (owner (entity-handle-block entity))
@@ -579,6 +655,9 @@ absent. Non-graphical objects and unknown types are left as they are."
                                          (loop for code in codes
                                                for pair = (take-or-default code defaults)
                                                when pair collect pair))))
+                   (tail (loop for code in trailing
+                               for pair = (take-or-default code defaults)
+                               when pair collect pair))
                    (leftover (remove-if (lambda (p) (member p used :test #'eq)) others)))
               (append (list (marker "AcDbEntity"))
                       common
@@ -590,7 +669,8 @@ absent. Non-graphical objects and unknown types are left as they are."
                           (append (remove-if (lambda (p)
                                                (string-equal "AcDbEntity" (%view-marker-name p)))
                                              markers)
-                                  leftover)))))))))
+                                  leftover))
+                      tail)))))))
 
 (defun %view-marker-name (pair)
   (let ((v (cdr pair)))

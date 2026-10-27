@@ -1,0 +1,31 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: entmake-subclass-group-order -- the CADs reject ENTMAKE data whose groups do not follow their own subclass marker; clautolisp accepts it
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: divergence
+#+DEPENDS: entity-mutation-parity
+#+BRANCH: -
+#+DATE: 2026-10-27
+
+* Measured (probe entity-defaults, 2026-10-27)
+
+ENTMAKEX with every subclass marker FIRST, then all the groups:
+
+| data                                                        | AutoCAD 2022 | BricsCAD V25 | clautolisp |
+|-------------------------------------------------------------+--------------+--------------+------------|
+| ARC: AcDbCircle AcDbArc, then 10 40 50 51                    | created      | rejected     | created    |
+| ATTDEF: AcDbText AcDbAttributeDefinition, then 10 40 1 3 2 70 | rejected     | rejected     | created    |
+| ATTRIB (after an INSERT 66 1): the same                       | rejected     | rejected     | created    |
+
+The same groups each after its own marker are created everywhere (the
+"ordered" cases). So a group is read as belonging to the subclass whose
+marker precedes it, and one that subclass does not have fails the
+ENTMAKE -- BricsCAD everywhere, AutoCAD at least for the attributes.
+
+* To do
+
+1. Probe more: which families / misplacements each product rejects
+   (AutoCAD's ARC case says its rule is narrower than BricsCAD's).
+2. Per-subclass group sets in the entity-family registry, and ENTMAKE
+   rejecting (nil, as for a missing required group) per the dialect's
+   product.

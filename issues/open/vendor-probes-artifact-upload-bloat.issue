@@ -1,0 +1,38 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vendor-probes-artifact-upload-bloat -- vendor:probes:* uploads 39701 files and hangs the CAD runner retrying
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: ci-infra
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-27
+
+* Symptom
+
+vendor:probes:bricscad (job 17509199185, PF5S26B, MR !497's pipeline): the
+probes ran and passed in a few minutes (entity-lifecycle 97 conforms / 4
+known divergences / 0 unexpected; drawing-data, selection PASS), then:
+
+: dist/vendor-probes/: found 39701 matching artifact files and directories
+: ERROR: Uploading artifacts as "archive" to coordinator... error ... invalid argument
+: WARNING: Retrying...
+
+for more than 25 minutes, holding the single CAD runner (the AutoCAD job
+queued behind it). Cancelled by hand.
+
+* Likely cause
+
+PROBE_KEEP_WORKDIR=1: each probe's workdir is copied into
+dist/vendor-probes/<backend>/<probe>-workdir. dist/ is untracked and the
+Windows runner reuses its build directory, so if the copies (or the
+workdirs they come from) are never cleaned, they accumulate run after run;
+39701 entries is far beyond one run's four workdirs.
+
+* To do
+
+1. On the runner: count what dist/vendor-probes/ holds and where it comes
+   from (one run's copies, or every run's).
+2. Clean dist/vendor-probes/ at the start of the job (or copy only the
+   protocol/ and log files a reader needs, not whole workdirs).
+3. Bound the artifact (paths / exclude), so a bad run fails fast instead of
+   retrying an upload for half an hour on the CAD runner.
