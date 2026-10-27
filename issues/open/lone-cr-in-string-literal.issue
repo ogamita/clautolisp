@@ -1,0 +1,48 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: lone-cr-in-string-literal -- a lone CR inside a string literal becomes LF in clautolisp
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-27
+
+* Symptom
+
+A line break written literally inside a string literal is accepted by
+every engine, and CR LF / LF both become a single LF (code 10)
+everywhere. A LONE CR (code 13) inside the string is where they differ:
+
+| reader | clautolisp 2.3.24 | AutoCAD 2022 Windows | BricsCAD V25 Windows | BricsCAD V26 macOS |
+|--------+-------------------+----------------------+----------------------+--------------------|
+| =read= | 10                | 13                   | 13                   | 13                 |
+| =load= | 10                | 13                   | 10                   | 10                 |
+
+=load= of ="ab<CR><CR>cd"= in a CR LF file: AutoCAD (13 13), BricsCAD
+and clautolisp (10 10).
+
+* Evidence
+
+Probe =probes/sources/probe-multiline-string.lsp= (fixtures in
+=probes/sources/fixtures/mls-*.lsp=, byte-exact), run 2026-10-27:
+
+- =probe-results/autocad/ms-windows/20261027T092452Z/=
+- =probe-results/bricscad/ms-windows/20261027T092505Z/=
+- =probe-results/bricscad/macos/20261027T092421Z/=
+- =probe-results/clautolisp/macos/20261027T092420Z/=
+
+* Classification (AGENTS.md, Dialect Divergence)
+
+- =read=: case 0 (all vendors agree: lone CR kept). clautolisp is WRONG
+  in every dialect -- =read= on a string is not a file boundary and must
+  not normalise line endings.
+- =load=: vendors disagree (AutoCAD keeps CR, BricsCAD turns it into LF),
+  no vendor document covers it: case 3 (unresolved) until the spec adopts
+  one. =--dialect autocad= should keep the CR.
+
+* To do
+
+1. Regression tests (reader) for both readers, then fix =read=.
+2. Make the =load= behaviour follow the product under =--dialect=.
+3. Add the results to the autolisp-spec "String Literal" reader entry
+   (version bump), with the case-3 note.

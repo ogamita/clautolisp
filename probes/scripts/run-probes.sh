@@ -322,6 +322,8 @@ emit_step_marker() {
   printf '(setq cad-probe-platform "%s")\n'      "$(lisp_escape "$platform")"
   printf '(setq cad-probe-product "%s")\n'       "$(lisp_escape "$product")"
   printf '(setq cad-probe-run-directory "%s")\n' "$(lisp_escape "$(cad_path "$run_dir")")"
+  # For suites that load committed fixture files (sources/fixtures/).
+  printf '(setq cad-probe-sources-directory "%s/")\n' "$(lisp_escape "$(cad_path "$sources_dir")")"
   # Write a marker BEFORE anything else can fail, so an empty result file
   # and a wrapper that started are distinguishable. Without it, "the load
   # failed" and "a suite died on its first form" look identical from
