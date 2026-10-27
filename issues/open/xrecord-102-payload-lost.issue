@@ -1,0 +1,73 @@
+#+TITLE: XRecord ENTMAKEX drops valid code-102 list payload (SCHMS PKPM)
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: master
+#+DATE: 2026-10-27
+
+* Reproducer -- no SCHMS dependency
+
+Run from the repository root:
+
+#+begin_src sh
+clautolisp -norc --host cador -l issues/open/xrecord-102-payload-lost-repro.lsp -q
+#+end_src
+
+The attached source creates ONE free XRecord, reads its payload with ENTGET,
+prints EXPECTED / ACTUAL and PASS / FAIL, then erases only its own object.
+No drawing file, dictionary, SCHMS source, ALFE bridge or DWG codec is needed.
+
+Expected:
+#+begin_example
+EXPECTED: ((102 . "{") (60 . 900) (60 . 1000) (102 . "}"))
+ACTUAL: ((102 . "{") (60 . 900) (60 . 1000) (102 . "}"))
+PASS: XRecord payload preserved
+#+end_example
+
+Observed with a fresh SBCL build of master =e98b17f2=, Clautolisp 2.3.72,
+macOS (the same loss occurs in Linux SCHMS CI):
+#+begin_example
+EXPECTED: ((102 . "{") (60 . 900) (60 . 1000) (102 . "}"))
+ACTUAL: nil
+FAIL: XRecord payload lost
+#+end_example
+
+The installed Clautolisp 2.3.24 preserves the exact payload (PASS).
+Additional isolation controls on 2.3.72: without 102 delimiters, the repeated
+=(60 . 900)= and =(60 . 1000)= survive; inside ={ ... }=, even a string
+=(1 . "value")= disappears. This is a lost 102 group, not integer precision
+or a boolean representation difference.
+
+* Code path and cause identified by inspection
+
+=clautolisp/cador/source/entity-api.lisp=:
+=al-data->pure= calls =%drop-view-only-groups=. This removes every group
+recognised by =%reactor-group-start-p= until =%reactor-group-end-p=.
+The start predicate accepts ANY code-102 string beginning with ={=,
+including the plain ="{"= used by an XRecord's application payload.
+Thus actual payload is discarded as if it were a synthesized ACAD_REACTORS
+header. Distinguish genuine synthesized header groups from XRecord payload;
+keep the existing ownership/reactor round-trip guarantees when fixing it.
+
+* Real regression and engine evidence
+
+SCHMS =src-vlx/xdata_codec.lsp= uses control code 102 to delimit lists in
+XRecords. =src-vlx/test-cad-tables.lsp= detects the loss in:
+- =postes-conservent-pkpm-booleen-et-reference= (900/1000 and 1900/2000);
+- =remplacement-retire-reordonne-et-remplace= (4/104 and 1004/1104).
+
+[[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/554138][SCHMS Linux job 554138]],
+pipeline 91127, source =a8c313cd=: 21/23 CAO tests, exactly these two fail
+with Clautolisp 2.3.72. Also observed under 2.3.70 (job 554046).
+Clautolisp 2.3.24 locally and 2.3.23 Windows pass these tests; AutoCAD passes
+23/23. BricsCAD passes 23/23 (job 554200). Native optimized DES and VLX both
+pass the 239 unit tests, so do not disable local binding optimization to hide
+this independent Cador loss.
+
+* Acceptance
+
+The attached reproducer must print PASS; add automated coverage for free AND
+dictionary-owned XRecords, nested 102 lists, ENTMAKE/ENTMAKEX and ENTMOD.
+Retain genuine ACAD_REACTORS / extension-dictionary round-trip tests.
+The original SCHMS CAO suite must return 23/23 with its expectations intact.

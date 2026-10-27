@@ -1,0 +1,136 @@
+#+TITLE: DRAFT — Outil d'analyse statique AutoLISP intégré à Clautolisp
+#+STATUS: DRAFT
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: pjb-decision
+#+BRANCH: -
+#+DATE: 2026-10-27
+
+* Destination et état
+
+Brouillon pour le projet =ogamita/clautolisp=, préparé avec l'évolution
+=parser-lisp/exp-pb-more-parsing=. Ce document est une proposition à revoir,
+pas une issue distante publiée et pas une fonctionnalité implémentée.
+
+* Besoin
+
+Fournir un outil comparable à =verif-lisp= pour détecter des défauts de lecture,
+de portée et de style dans des programmes AutoLISP avant leur chargement en CAO.
+L'intégrer au projet Clautolisp permettrait de réutiliser son lecteur, ses
+positions source et ses profils de dialecte au lieu d'entretenir une grammaire
+parallèle qui rejette du code reconnu par AutoCAD/BricsCAD.
+
+Le job SCHMS+ 550107 a signalé 181 fichiers illisibles. Reproduction avec la
+grammaire exacte de parser-lisp : 177 premiers blocages viennent des limites
+sur les symboles, listes pointées, chaînes multilignes, citations et commentaires ;
+quatre proviennent de sources à corriger (deux parenthèses, un marqueur DOS,
+un antislash hors chaîne). Le job analysait aussi les fichiers installés
+sous =.clautolisp/= : ceux-ci ne doivent pas être confondus avec les sources
+applicatives versionnées.
+
+* Existant à réutiliser
+
+Le lecteur =clautolisp/autolisp-reader= et ses tests de citations, listes,
+commentaires et dialectes constituent la base. Un inventaire ciblé de l'arbre
+n'a pas identifié de commande =--lint= ; confirmer ce point au démarrage de
+l'implémentation et compléter un outil existant s'il en existe un.
+
+Cette proposition ne demande pas de réutiliser le lecteur Common Lisp natif
+pour lire directement de l'AutoLISP, ni d'exécuter les programmes avec un hôte
+CAO factice. Elle doit rester dans la couche AutoLISP.
+
+* Contrat proposé
+
+** Lecture sans exécution
+
+- Lire les fichiers explicitement sélectionnés et conserver chemin, ligne,
+  colonne et étendue pour chaque diagnostic.
+- Aucune évaluation, aucun =load= demandé par le programme analysé, aucune
+  exécution de =command=, accès dessin, réseau, système de fichiers métier ou
+  initialisation ActiveX. Un fichier contenant un appel dangereux doit pouvoir
+  être analysé sans réaliser cet appel.
+- Respecter l'encodage et les fins de ligne de l'entrée, y compris Windows-1252,
+  UTF-8 et CR/LF. Les traiter à la frontière du lecteur.
+- Accepter les syntaxes reconnues par les probes AutoCAD/BricsCAD/Clautolisp :
+  listes propres/pointées générales, citations à tout niveau, chaînes avec de
+  vrais sauts de ligne et commentaires =;= et =;| ... |;= en contexte cité ou non.
+- Garder les données citées opaques aux diagnostics de code. Distinguer une
+  lambda citée effectivement utilisée comme callback d'une donnée simplement
+  stockée ; expliciter l'approximation lorsqu'on ne peut pas le prouver.
+- Ne pas recopier les restrictions accidentelles de la grammaire parser-lisp.
+
+** Contrôles et niveaux
+
+- Première étape : erreurs de lecture positionnées et contrats de diagnostics.
+- Étape suivante : proposer les contrôles analogues aux cinq règles de
+  parser-lisp : écritures globales implicites, paramètres/locaux inutilisés,
+  noms courts, appels =command= nécessitant une revue.
+- Résoudre ou déclarer les limites de portée dynamique : variables locales
+  fournies par l'appelant, fonctions nommées imbriquées, lambdas, rappels DCL,
+  états partagés des objets et signatures imposées par les protocoles.
+  Une référence libre ne prouve pas une fuite globale ; une locale non affectée
+  directement peut être indispensable à un auxiliaire.
+- Aucun remplacement automatique de =command= par =command-s= : les contextes
+  d'interaction, continuation et ordre d'évaluation doivent être distingués.
+- =--strict= ou une politique nommée peut avertir sur des symboles étendus
+  (=@inclure=, noms accentués), sans les rendre illisibles dans le lecteur.
+  Ne pas confondre politique de nommage et sélection d'un dialecte CAO.
+- Deux parenthèses en trop, le marqueur DOS brut =0x1A= et =\003= hors chaîne
+  restent des erreurs dans le corpus de qualification demandé.
+- Identifiants de règle stables, sévérité explicite, ordre déterministe, aucune
+  ligne de succès après échec de lecture. Pas de doublons dus au parcours.
+
+** CLI et intégration
+
+Choix à trancher : commande dédiée =clautolisp-lint= ou sous-mode du programme
+existant. Éviter de modifier les modes d'exécution/REPL habituels.
+
+- Mode texte initial, statut 0 sans erreur, non nul pour erreur de lecture ou
+  de règle ; avertissements non bloquants par défaut. Une éventuelle option
+  =--warnings-as-errors= serait distincte et explicite.
+- Formats structurés (JSON/SARIF/JUnit) et configuration de projet à examiner
+  après stabilisation du contrat texte, sans les annoncer disponibles d'avance.
+- Liste de fichiers fournie par Git/pre-commit/CI ; ne pas parcourir tacitement
+  les outils installés, caches, binaires et fichiers de sauvegarde.
+- Bibliothèque d'analyse réutilisable, résultat indépendant du dialecte/hôte
+  sauf lorsque le contrôle vise explicitement une divergence documentée.
+
+* Tests d'acceptation
+
+1. Reprendre les 11 formes minimales et leurs références réelles décrites dans
+   =parser-lisp/dev/doc/more-parsing.md=, ainsi que les tests du lecteur existant.
+2. Corpus figé avec nom de fichier, révision/artefact, extrait et résultat attendu.
+   Les 181 extraits de =parser-lisp/test/fixtures/schms-550107.json= distinguent
+   177 syntaxes acceptées et quatre erreurs obligatoires. Les fichiers complets
+   donnent aussi 177 acceptations et quatre rejets aux positions attendues.
+3. Tester plusieurs milliers de préfixes de citation, listes pointées imbriquées,
+   chaîne multiligne, commentaire documentation =@Global=, =;= seul en CR/LF,
+   commentaire bloc dans une liste citée, guillemets et antislashs dans les chaînes.
+4. Tests négatifs : parenthèses, points/queues en trop, citation/chaîne/bloc
+   inachevé, =0x1A= brut et =\003= hors chaîne. Les séquences échappées dans
+   une chaîne restent des données valides.
+5. Tester mode normal/strict, code de sortie, déduplication et positions, règles
+   anciennes encore bloquantes, absence de faux code extrait des chaînes ou données.
+6. Test de non-exécution observable : une source analysée contient une écriture
+   de fichier ou une commande ; aucun effet n'est produit par l'analyse.
+7. Exécuter la suite pure avec SBCL et CCL, sans licence CAO. Réserver les probes
+   natives à la confirmation de divergences et archiver leurs observations.
+
+* Livrables et hors périmètre initial
+
+Lecteur réutilisé, bibliothèque de diagnostics, commande batch, tests et
+spécification/manuels synchronisés. Documenter les limites avant d'activer
+un contrôle en CI sur tout un parc applicatif.
+
+Ni correction automatique massive des programmes, ni compilation DES/VLX,
+ni imitation des effets d'une CAO, ni reprise aveugle des faux positifs des
+cinq règles historiques. Les contrôles de compilation/applications relèvent
+d'une qualification séparée.
+
+* Références
+
+- Projet cible : https://gitlab.com/ogamita/clautolisp
+- Projet de référence : https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/parser-lisp
+- Job étudié : https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/550107
+- Évolution et corpus : =dev/doc/more-parsing.md= et
+  =test/fixtures/schms-550107.json= dans la branche =exp-pb-more-parsing=.
