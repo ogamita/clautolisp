@@ -3,11 +3,17 @@
 (defconstant +int32-min+ -2147483648)
 (defconstant +int32-max+ 2147483647)
 
+(defun line-break-char-p (ch)
+  "LF, or a lone CR: NORMALIZE-LINE-ENDINGS has already turned every CR LF
+into LF, and keeps a lone CR for SCAN-STRING-LITERAL to decide on."
+  (or (char= ch #\Newline)
+      (char= ch #\Return)))
+
 (defun whitespace-char-p (ch)
   (or (char= ch #\Space)
       (char= ch #\Tab)
       (char= ch #\Page)
-      (char= ch #\Newline)))
+      (line-break-char-p ch)))
 
 (defun delimiter-char-p (ch)
   (or (whitespace-char-p ch)
@@ -120,7 +126,7 @@
     (loop while (< index length)
           for ch = (char text index)
           do (cond
-               ((char= ch #\Newline)
+               ((line-break-char-p ch)
                 (incf index)
                 (incf line)
                 (setf column 1))
@@ -272,6 +278,25 @@
                 (write-char (char text (1+ index)) value-out)
                 (incf index 2)
                 (incf column 2)))))
+          ((char= ch #\Newline)
+           (write-char ch value-out)
+           (incf index)
+           (incf line)
+           (setf column 1))
+          ((char= ch #\Return)
+           ;; A LONE CR (a CR LF was already turned into LF): engines
+           ;; disagree on what it becomes, so the caller is told.
+           (signal 'clautolisp.autolisp-reader:lone-cr-in-string-literal
+                   :source-name (reader-options-source-name options)
+                   :line line
+                   :column column)
+           (write-char (if (eq (reader-options-lone-cr-in-string options) :newline)
+                           #\Newline
+                           #\Return)
+                       value-out)
+           (incf index)
+           (incf line)
+           (setf column 1))
           (t
            (write-char ch value-out)
            (incf index)
@@ -299,7 +324,7 @@ can capture them as doc-strings for the next form."
         (index start-index)
         (column0 column))
     (loop while (and (< index length)
-                     (not (char= (char text index) #\Newline)))
+                     (not (line-break-char-p (char text index))))
           do (incf index)
              (incf column))
     (values
@@ -352,7 +377,7 @@ can capture them as doc-strings for the next form."
                 line
                 end-column
                 '()))))
-          ((char= ch #\Newline)
+          ((line-break-char-p ch)
            (incf index)
            (incf line)
            (setf column 1))
@@ -464,7 +489,7 @@ can capture them as doc-strings for the next form."
             do (let ((ch (char text index)))
                  (cond
                    ((whitespace-char-p ch)
-                    (if (char= ch #\Newline)
+                    (if (line-break-char-p ch)
                         (progn
                           (incf index)
                           (incf line)

@@ -771,6 +771,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-builtins-core/tests/sysvar-dialect-tracking-tests")
    (:file "autolisp-builtins-core/tests/encoding-roundtrip-tests")
    (:file "autolisp-builtins-core/tests/path-dotdot-tests")
+   (:file "autolisp-builtins-core/tests/lone-cr-in-string-tests")
    (:file "autolisp-builtins-core/tests/case-insensitive-paths-tests")
    (:file "autolisp-builtins-core/tests/source-file-tests")
    (:file "autolisp-builtins-core/tests/multidocument-tests")

@@ -75,3 +75,59 @@ comment |;"
          (diagnostics (read-result-diagnostics result)))
     (is (eq :real (token-kind token)))
     (is (= 1 (length diagnostics)))))
+
+;;;; A line break written literally inside a string literal
+;;;; (issues/open/lone-cr-in-string-literal.issue, probe
+;;;; probes/sources/probe-multiline-string.lsp). LF and CR LF become one
+;;;; LF in every engine; a LONE CR is kept by READ in every vendor and by
+;;;; AutoCAD's LOAD, turned into LF by BricsCAD's LOAD. The reader keeps
+;;;; it by default and turns it into LF under :lone-cr-in-string :newline.
+
+(defun %string-token-value (text &rest options)
+  (token-value (first (read-result-objects (apply #'tokenize-string text options)))))
+
+(test string-literal-line-feed-is-kept
+  (is (string= (format nil "ab~Ccd" #\Newline)
+               (%string-token-value (format nil "\"ab~Ccd\"" #\Newline)))))
+
+(test string-literal-crlf-becomes-line-feed
+  (is (string= (format nil "ab~Ccd" #\Newline)
+               (%string-token-value (format nil "\"ab~C~Ccd\"" #\Return #\Newline))))
+  (is (string= (format nil "ab~Ccd" #\Newline)
+               (%string-token-value (format nil "\"ab~C~Ccd\"" #\Return #\Newline)
+                                    :lone-cr-in-string :keep))))
+
+(test string-literal-lone-cr-is-kept-by-default
+  (is (string= (format nil "ab~Ccd" #\Return)
+               (%string-token-value (format nil "\"ab~Ccd\"" #\Return))))
+  (is (string= (format nil "ab~C~Ccd" #\Return #\Return)
+               (%string-token-value (format nil "\"ab~C~Ccd\"" #\Return #\Return)))))
+
+(test string-literal-lone-cr-becomes-line-feed-on-request
+  (is (string= (format nil "ab~Ccd" #\Newline)
+               (%string-token-value (format nil "\"ab~Ccd\"" #\Return)
+                                    :lone-cr-in-string :newline))))
+
+(test string-literal-lone-cr-is-signalled-with-its-line
+  (let ((lines '()))
+    (handler-bind ((clautolisp.autolisp-reader:lone-cr-in-string-literal
+                     (lambda (condition)
+                       (push (clautolisp.autolisp-reader:lone-cr-in-string-literal-line
+                              condition)
+                             lines))))
+      (tokenize-string (format nil "a~C\"x~Cy\" \"p~C~Cq\"" #\Newline #\Return #\Return #\Newline)))
+    ;; Only the lone CR is reported; the CR LF in the second string is not.
+    (is (equal '(2) lines))))
+
+(test lone-cr-outside-strings-is-a-line-break
+  (let ((tokens (read-result-objects
+                 (tokenize-string (format nil "a~Cb ; c~Cd" #\Return #\Return)))))
+    (is (equal '(:symbol :symbol :symbol :eof) (mapcar #'token-kind tokens)))
+    (is (equal '(1 2 3)
+               (mapcar (lambda (token) (source-span-start-line (token-span token)))
+                       (butlast tokens))))))
+
+(test line-numbers-advance-across-a-multiline-string
+  (let ((tokens (read-result-objects
+                 (tokenize-string (format nil "\"x~Cy~C~Cz\" w" #\Newline #\Return #\Newline)))))
+    (is (eql 3 (source-span-start-line (token-span (second tokens)))))))
