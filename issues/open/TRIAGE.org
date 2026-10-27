@@ -890,5 +890,5 @@ opendcl-conformance. All =TODO=.
 
 | Issue | Priority | Status | Evidence / scope |
 |-------+----------+--------+------------------|
-| xrecord-102-payload-lost | P1 | NEXT | Minimal reproducible data loss; blocks SCHMS PKPM qualification; xrecord-102-payload-lost-repro.lsp |
+| xrecord-102-payload-lost | P1 | DONE | FERME 2026-10-27 (2.3.73) : un 102 nu "{" et tout 102 apres le premier 100 sont des donnees ; le corps d'un XRECORD aussi (330 compris). Reproducteur PASS ; reste la suite CAO SCHMS 23/23 a verifier. |
 | clautolisp-static-analysis-draft.org | P3 | DRAFT | Static AutoLISP analysis proposal transferred from parser-lisp at user request |
