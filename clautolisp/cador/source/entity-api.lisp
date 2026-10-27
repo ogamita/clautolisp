@@ -271,11 +271,23 @@ e)) or (entmake (cdr (entget e))) round trip stores none of them: the
 {ACAD_REACTORS ...} 102 groups (the drawing keeps ownership itself) and
 a 330 naming a symbol-table record (a main-space entity's owner, which
 the drawing keeps implicit)."
-  (let ((in-group nil) (out '()))
+  ;; The 102 groups only in the HEADER, before the first 100 marker: after
+  ;; it they are the object's data -- an XRECORD's (102 . \"{\") lists --
+  ;; and stored as given (xrecord-102-payload-lost). An XRECORD's whole body
+  ;; is data, its 330 pointers included; another object's 330 is its owner
+  ;; wherever it stands (a sequence's VERTEX / ATTRIB).
+  (let ((in-group nil) (in-body nil) (out '())
+        (xrecord-p (%xrecord-pairs-p data)))
     (dolist (pair data (nreverse out))
       (cond
+        ((and in-body (or xrecord-p (not (and (consp pair)
+                                              (group-code-equal-p (car pair) 330)))))
+         (push pair out))
         (in-group
          (when (%reactor-group-end-p pair) (setf in-group nil)))
+        ((%subclass-marker-p pair)
+         (setf in-body t)
+         (push pair out))
         ((%reactor-group-start-p pair)
          (setf in-group t))
         ((and (consp pair) (group-code-equal-p (car pair) 330)
@@ -358,11 +370,19 @@ supplies the ename intern cache for the (-1 . ename) head."
 ;;; implicit, so its view read -1 5 0 ... with no 330.
 
 (defun %reactor-group-start-p (pair)
+  "PAIR opens a NAMED 102 group, {ACAD_REACTORS / {ACAD_XDICTIONARY /
+{APPNAME: the header groups. A bare \"{\" is no header group but data -- an
+XRECORD's list delimiter (SCHMS's xdata_codec), which ENTMAKE must keep
+(xrecord-102-payload-lost)."
   (and (consp pair) (group-code-equal-p (car pair) 102)
        (let ((v (cdr pair)))
          (and (typep v 'clautolisp.autolisp-runtime:autolisp-string)
               (let ((s (clautolisp.autolisp-runtime:autolisp-string-value v)))
-                (and (plusp (length s)) (char= #\{ (char s 0))))))))
+                (and (> (length s) 1) (char= #\{ (char s 0))))))))
+
+(defun %subclass-marker-p (pair)
+  "PAIR is a (100 . marker): the header groups are all before the first."
+  (and (consp pair) (group-code-equal-p (car pair) 100)))
 
 (defun %reactor-group-end-p (pair)
   (and (consp pair) (group-code-equal-p (car pair) 102)
@@ -397,12 +417,22 @@ the rest in stored order; the owner 330 synthesized for a graphical
 entity that stores none, and the {ACAD_REACTORS (330 . dict)} group for
 an object a dictionary owns."
   (let ((zero nil) (five nil) (reactors '()) (owner nil) (rest '())
-        (in-group nil))
+        (in-group nil) (in-body nil)
+        (xrecord-p (%xrecord-pairs-p view)))
     (dolist (pair view)
       (cond
+        ;; past the first 100 marker a 102 group is the object's own data, as
+        ;; stored (an XRECORD's lists), and so is an XRECORD's 330 pointer
+        ((and in-body (not in-group) (consp pair)
+              (or (group-code-equal-p (car pair) 102)
+                  (and xrecord-p (group-code-equal-p (car pair) 330))))
+         (push pair rest))
         (in-group
          (push pair reactors)
          (when (%reactor-group-end-p pair) (setf in-group nil)))
+        ((and (not in-body) (%subclass-marker-p pair))
+         (setf in-body t)
+         (push pair rest))
         ((%reactor-group-start-p pair)
          (push pair reactors)
          (setf in-group t))
@@ -649,6 +679,17 @@ So under every dialect but the BricsCAD ones ENTMAKE / ENTMAKEX normalise."
   (dolist (pair data nil)
     (when (and (consp pair) (group-code-equal-p (car pair) 0) (stringp (cdr pair)))
       (return (cdr pair)))))
+
+(defun %xrecord-pairs-p (pairs)
+  "True when PAIRS -- pure data, an entmake list or an entget view, its
+strings CL or AutoLISP strings -- is an XRECORD's."
+  (let ((type (cdr (find-if (lambda (pair)
+                              (and (consp pair) (group-code-equal-p (car pair) 0)))
+                            pairs))))
+    (equalp "XRECORD"
+            (if (typep type 'clautolisp.autolisp-runtime:autolisp-string)
+                (clautolisp.autolisp-runtime:autolisp-string-value type)
+                type))))
 
 (defun %data-group-value (data code)
   "The value of the first CODE group in the pure group-code list DATA,

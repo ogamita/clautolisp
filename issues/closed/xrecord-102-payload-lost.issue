@@ -1,5 +1,5 @@
 #+TITLE: XRecord ENTMAKEX drops valid code-102 list payload (SCHMS PKPM)
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -11,7 +11,7 @@
 Run from the repository root:
 
 #+begin_src sh
-clautolisp -norc --host cador -l issues/open/xrecord-102-payload-lost-repro.lsp -q
+clautolisp -norc --host cador -l issues/closed/xrecord-102-payload-lost-repro.lsp -q
 #+end_src
 
 The attached source creates ONE free XRecord, reads its payload with ENTGET,
@@ -71,3 +71,34 @@ The attached reproducer must print PASS; add automated coverage for free AND
 dictionary-owned XRecords, nested 102 lists, ENTMAKE/ENTMAKEX and ENTMOD.
 Retain genuine ACAD_REACTORS / extension-dictionary round-trip tests.
 The original SCHMS CAO suite must return 23/23 with its expectations intact.
+
+
+Resolved (2026-10-27, clautolisp 2.3.73)
+----------------------------------------
+
+The cause was the one identified, introduced in 2.3.30 (the entget header
+work, cador-entget-owner-and-header-layout): %REACTOR-GROUP-START-P took
+ANY 102 string opening with "{" for a header group, so
+%DROP-VIEW-ONLY-GROUPS dropped an XRECORD's (102 . "{") ... (102 . "}")
+list at ENTMAKE, and %VENDOR-HEADER-ORDER would have moved such groups into
+the ENTGET header.
+
+Fixed in cador/source/entity-api.lisp:
+- a header group is a NAMED one ({ACAD_REACTORS, {ACAD_XDICTIONARY,
+  {APPNAME): a bare "{" is data;
+- and only before the first 100 marker: after it a 102 group is the
+  object's data, for every object;
+- an XRECORD's whole body is data, its 330 pointers included (a 330 naming
+  a layer is no longer taken for the owner); another object's 330 stays its
+  owner wherever it stands (a sequence's VERTEX / ATTRIB, as before).
+
+The reproducer prints PASS. Tests (cador/tests/xrecord-payload-tests.lisp),
+under autocad-2022, bricscad-v26 and strict: flat, nested and named 102
+lists through ENTMAKEX and ENTMAKE; a dictionary-owned XRECORD keeps its
+payload and exactly one {ACAD_REACTORS} group, and an ENTMOD round trip
+stores nothing twice (a new payload by ENTMOD is applied under BricsCAD,
+a no-op elsewhere, per [entmod-nongraphical]); a 330 pointer in the payload
+is kept. The existing ACAD_REACTORS / extension-dictionary / owner tests
+pass unchanged. test-sbcl and test-ccl green.
+
+Left to check where it runs: the SCHMS CAO suite (23/23) against 2.3.73.
