@@ -407,7 +407,8 @@ before its own groups (%VENDOR-BODY-ORDER, 2.3.51)."
           (is (equal '("AcDbEntity" 67 410 8 "AcDbPolyline" 90 70) (subseq layout 0 7))
               "LWPOLYLINE: ~S" layout)
           (is (= 2 (count-if #'stringp layout)) "each marker once: ~S" layout)))
-      (is (equal '("AcDbEntity" 67 410 8 "AcDbCircle" 10 40 "AcDbArc" 50 51)
+      ;; 210 shown (0 0 1) when absent: probe entity-defaults, 2026-10-27
+      (is (equal '("AcDbEntity" 67 410 8 "AcDbCircle" 10 40 210 "AcDbArc" 50 51)
                  (%marker-layout mock arc))
           "ARC: ~S" (%marker-layout mock arc))
       ;; a VERTEX: its two markers (AcDbVertex has no group of its own) first

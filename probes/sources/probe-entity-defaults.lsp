@@ -130,4 +130,30 @@
       (setq e (entlast) a (entnext e))
       (if a (setq a (entnext a)))
       (if a (cad-probe--ed-dump (entget a)) "none"))))
+  ;; Each subclass's groups AFTER its own marker (the cases above put every
+  ;; marker first: AutoCAD and BricsCAD V25 rejected that ATTDEF / ATTRIB,
+  ;; BricsCAD that ARC, 2026-10-27) -- the control, and the dumps.
+  (cad-probe--ed "ARC ordered"
+    '((0 . "ARC") (100 . "AcDbEntity") (100 . "AcDbCircle") (10 4.0 3.0 0.0) (40 . 2.0)
+      (100 . "AcDbArc") (50 . 0.0) (51 . 1.5)))
+  (cad-probe--ed "ATTDEF ordered"
+    '((0 . "ATTDEF") (100 . "AcDbEntity") (100 . "AcDbText") (10 0.0 0.0 0.0) (40 . 0.2) (1 . "v")
+      (100 . "AcDbAttributeDefinition") (3 . "Prompt") (2 . "TAG") (70 . 0)))
+  (cad-probe-capture "entity-defaults" "defaults: INSERT with ATTRIB run ordered"
+    (function (lambda ( / i a s)
+      (setq i (entmake (cad-probe--ed-entity "INSERT" '("AcDbBlockReference")
+                                              (list (cons 66 1) (cons 2 blk) (list 10 7.0 7.0 0.0)))))
+      (setq a (entmake '((0 . "ATTRIB") (100 . "AcDbEntity") (100 . "AcDbText") (10 7.0 7.0 0.0)
+                         (40 . 0.2) (1 . "v") (100 . "AcDbAttribute") (2 . "TAG") (70 . 0))))
+      (setq s (entmake (list (cons 0 "SEQEND"))))
+      (vl-prin1-to-string (list (not (null i)) (not (null a)) (not (null s)))))))
+  (cad-probe-capture "entity-defaults" "defaults: ATTRIB ordered"
+    (function (lambda ( / e)
+      (setq e (entnext (entlast)))
+      (if e (cad-probe--ed-dump (entget e)) "none"))))
+  (cad-probe-capture "entity-defaults" "defaults: SEQEND ordered"
+    (function (lambda ( / e a)
+      (setq e (entlast) a (entnext e))
+      (if a (setq a (entnext a)))
+      (if a (cad-probe--ed-dump (entget a)) "none"))))
   (princ))

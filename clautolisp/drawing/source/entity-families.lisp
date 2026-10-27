@@ -313,7 +313,11 @@ the ANCHOR group (or at the end), in the order given."
               (append data missing))))))
 
 (defun %complete-vertex (data)
-  (let* ((ordered '(10 40 41 42 70 50 71 72 73 74))
+  ;; 71-74 are a polyface mesh face's vertex indices (70 bit 128): a 2D
+  ;; vertex has none, on AutoCAD 2022 and BricsCAD V25 alike (probe
+  ;; entity-defaults, 2026-10-27).
+  (let* ((face-p (logtest 128 (or (cdr (assoc 70 data)) 0)))
+         (ordered (if face-p '(10 40 41 42 70 50 71 72 73 74) '(10 40 41 42 70 50)))
          (filled (loop for code in ordered
                        collect (or (assoc code data)
                                    (cons code (if (member code '(40 41 42 50)) 0.0d0 0)))))
