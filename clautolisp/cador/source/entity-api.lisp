@@ -471,6 +471,11 @@ an object a dictionary owns."
     ;; dialects follow BricsCAD, every other dialect AutoCAD, the normative
     ;; reference (as for the pointer codes above).
     (setf rest (%vendor-body-order entity rest))
+    ;; a SEQEND names its run's header in -2, as its owner (AutoCAD 2022 and
+    ;; BricsCAD V25, probe entity-defaults 2026-10-27)
+    (when (and owner (equalp "SEQEND" (%data-type-string (entity-handle-data entity)))
+               (not (find -2 rest :key #'%view-code)))
+      (setf rest (append rest (list (cons -2 (cdr owner))))))
     (if (or reactors (eq (%current-product) :bricscad))
         (append (and zero (list zero))
                 (and five (list five))
@@ -545,6 +550,10 @@ an object a dictionary owns."
     ("MTEXT"   (41 . 0.0d0) (46 . 0.0d0) (71 . 1) (7 . "Standard") (210 0.0d0 0.0d0 1.0d0)
                (11 1.0d0 0.0d0 0.0d0) (50 . 0.0d0) (73 . 1) (44 . 1.0d0))
     ("3DFACE"  (70 . 0))
+    ("ATTDEF"  (50 . 0.0d0) (41 . 1.0d0) (51 . 0.0d0) (7 . "Standard") (71 . 0) (72 . 0)
+               (11 0.0d0 0.0d0 0.0d0) (210 0.0d0 0.0d0 1.0d0) (73 . 0) (74 . 0) (280 . 0))
+    ("ATTRIB"  (50 . 0.0d0) (41 . 1.0d0) (51 . 0.0d0) (7 . "Standard") (71 . 0) (72 . 0)
+               (11 0.0d0 0.0d0 0.0d0) (210 0.0d0 0.0d0 1.0d0) (73 . 0) (74 . 0) (280 . 0))
     ("LWPOLYLINE" (210 0.0d0 0.0d0 1.0d0))
     ("SOLID"   (210 0.0d0 0.0d0 1.0d0))
     ("TRACE"   (210 0.0d0 0.0d0 1.0d0))
@@ -561,6 +570,11 @@ an object a dictionary owns."
     (:bricscad "POLYLINE" ("AcDb2dPolyline" 66 10 70 40 41 71 72 73 74 210 75))
     (:autocad "VERTEX"   ("AcDbVertex") ("AcDb2dVertex" 10 40 41 42 91 70 50))
     (:bricscad "VERTEX"  ("AcDbVertex") ("AcDb2dVertex" 10 40 41 42 70 50))
+    ;; AutoCAD lists a first 280 (the attribute's version) before the tag
+    (:autocad "ATTDEF"   ("AcDbText" 39 10 40 1 50 41 51 7 71 72 11 210)
+                         ("AcDbAttributeDefinition" 280 3 2 70 73 74 280))
+    (:autocad "ATTRIB"   ("AcDbText" 39 10 40 1 50 41 51 7 71 72 11 210)
+                         ("AcDbAttribute" 280 2 70 73 74 280))
     (:autocad "MTEXT"    ("AcDbMText" 10 40 41 46 71 72 1 7 210 11 42 43 50 73 44))
     (:bricscad "MTEXT"   ("AcDbMText" 10 40 41 46 71 72 1 7 210 11 42 43 50 73 44 75))))
 

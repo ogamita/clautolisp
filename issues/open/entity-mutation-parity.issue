@@ -164,3 +164,40 @@ entity-lifecycle probe + three alfe scenarios. The :clautolisp-only one
 runs green now; the :bricscad-only / :autocad-only ones self-skip until a
 BricsCAD / AutoCAD host is reachable. Running them there is the
 verification tail that closes this issue.
+
+
+================================================================
+STATUS 2026-10-27 (clautolisp 2.3.74, MR !498) -- vendor tail run
+================================================================
+
+Vendor-probe verification: DONE on Windows (macOS: thalassa could not
+resolve gitlab.com that day).
+- vendor:probes:autocad (job 17509199186): entity-lifecycle 101 conforms,
+  0 known-divergence, 0 unexpected; drawing-data 27; selection 21.
+- vendor:probes:bricscad (job 17509199185): entity-lifecycle 97 conforms,
+  4 known-divergence (D1: BricsCAD creates marker-less R13+ entities),
+  0 unexpected; drawing-data 26 + 1 known (D3: ENTMOD of an XRECORD
+  entry); selection 21.
+
+Optional-code defaulting: MEASURED and implemented. The new probe suite
+probes/sources/probe-entity-defaults.lsp ENTMAKEXes each family with its
+required codes only and records ENTGET (AutoCAD 2022 jobs 17509517024 /
+17511443216, BricsCAD V25 17509517028 / 17511443220). ENTGET now shows what
+both show: 210 (0 0 1) for POINT ARC ELLIPSE LWPOLYLINE SPLINE SOLID TRACE
+POLYLINE, POINT 50, SPLINE 74 42 43, 3DFACE 70, MTEXT's text defaults,
+ATTDEF / ATTRIB's AcDbText defaults and 73 74 280, SEQEND's -2 (its
+header); per product (*ENTGET-TYPE-LAYOUT-BY-PRODUCT* /
+*ENTGET-TYPE-DEFAULTS-BY-PRODUCT*): SOLID / TRACE 39 (AutoCAD), POLYLINE's
+210 place, VERTEX 91 (AutoCAD), MTEXT 72 (5 / 1) and 75 (BricsCAD), SPLINE
+tolerances (1e-9 / 1e-10 AutoCAD, 1e-7 BricsCAD), the attribute's first 280
+(AutoCAD). A 2D VERTEX no longer stores 71-74. Every measured family now
+matches both products, except MTEXT 42 / 43 (the text's measured extents,
+font-dependent: not synthesized). Tests entity-defaults-tests.lisp.
+
+Left:
+- ENTMAKE data whose groups do not follow their own subclass marker:
+  AutoCAD and BricsCAD reject an ATTDEF / ATTRIB with every marker first,
+  BricsCAD also such an ARC; clautolisp accepts them --
+  issues/open/entmake-subclass-group-order.issue.
+- The SCHMS inventory this issue asks for (pjb / SCHMS), and the deferred
+  families' own issues listed above.

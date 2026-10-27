@@ -1967,6 +1967,14 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *=entget= shows each entity's defaults as the CADs do* (2.3.74): an
+  entity made with its required groups only now lists what AutoCAD 2022 and
+  BricsCAD V25 list -- the extrusion 210, POINT 50, SPLINE 74 / 42 / 43,
+  3DFACE 70, MTEXT's and ATTDEF / ATTRIB's text defaults, SEQEND's =-2= --
+  with each product's differences (SOLID 39, VERTEX 91, MTEXT 72 / 75,
+  SPLINE tolerances ...). A 2D =VERTEX= no longer carries 71-74. Measured by
+  the new entity-defaults probe suite.
+
 - *An XRECORD keeps its 102 lists* (2.3.73): since 2.3.30 =entmake= /
   =entmakex= dropped an XRECORD's =(102 . "{")= ... =(102 . "}")= lists
   (SCHMS's xdata codec), taking them for the =ENTGET= header groups. Only
