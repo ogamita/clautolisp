@@ -338,16 +338,17 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
 
 (defun tokenize-string (text &key options (token-mode :strict) retain-comments-p
                                warn-on-integer-overflow-p
-                               extended-string-escapes-p
+                               extended-string-escapes-p lone-cr-in-string
                                source-name)
   (let* ((effective-options
-           (clautolisp.autolisp-reader.internal::ensure-reader-options
+           (apply #'clautolisp.autolisp-reader.internal::ensure-reader-options
             options
             :token-mode token-mode
             :retain-comments-p retain-comments-p
             :warn-on-integer-overflow-p warn-on-integer-overflow-p
             :extended-string-escapes-p extended-string-escapes-p
-            :source-name source-name))
+            :source-name source-name
+            (and lone-cr-in-string (list :lone-cr-in-string lone-cr-in-string))))
          (normalized
            (clautolisp.autolisp-reader.internal:normalize-line-endings text)))
     (clautolisp.autolisp-reader.internal::tokenize-normalized-text
@@ -355,7 +356,7 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
 
 (defun tokenize-stream (stream &key options (token-mode :strict) retain-comments-p
                                  warn-on-integer-overflow-p
-                                 extended-string-escapes-p
+                                 extended-string-escapes-p lone-cr-in-string
                                  source-name)
   (tokenize-string
    (clautolisp.autolisp-reader.internal:decode-and-normalize-stream stream)
@@ -364,11 +365,12 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
    :retain-comments-p retain-comments-p
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name source-name))
 
 (defun tokenize-file (path &key options (token-mode :strict) retain-comments-p
                                warn-on-integer-overflow-p source-name
-                               extended-string-escapes-p
+                               extended-string-escapes-p lone-cr-in-string
                                external-format)
   (tokenize-string
    (if external-format
@@ -380,20 +382,22 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
    :retain-comments-p retain-comments-p
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name (or source-name (namestring path))))
 
 (defun read-forms-from-string (text &key options (token-mode :strict)
                                     warn-on-integer-overflow-p
-                                    extended-string-escapes-p
+                                    extended-string-escapes-p lone-cr-in-string
                                     source-name)
   (let ((effective-options
-          (clautolisp.autolisp-reader.internal::ensure-reader-options
+          (apply #'clautolisp.autolisp-reader.internal::ensure-reader-options
            options
            :token-mode token-mode
            :retain-comments-p nil
            :warn-on-integer-overflow-p warn-on-integer-overflow-p
            :extended-string-escapes-p extended-string-escapes-p
-           :source-name source-name)))
+           :source-name source-name
+            (and lone-cr-in-string (list :lone-cr-in-string lone-cr-in-string)))))
     (clautolisp.autolisp-reader.internal::parse-normalized-text
      (clautolisp.autolisp-reader.internal:normalize-line-endings text)
      effective-options
@@ -401,7 +405,7 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
 
 (defun read-forms-from-stream (stream &key options (token-mode :strict)
                                       warn-on-integer-overflow-p
-                                      extended-string-escapes-p
+                                      extended-string-escapes-p lone-cr-in-string
                                       source-name)
   (read-forms-from-string
    (clautolisp.autolisp-reader.internal:decode-and-normalize-stream stream)
@@ -409,11 +413,12 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name source-name))
 
 (defun read-forms-from-file (path &key options (token-mode :strict)
                                        warn-on-integer-overflow-p source-name
-                                       extended-string-escapes-p
+                                       extended-string-escapes-p lone-cr-in-string
                                        external-format
                                        source-policy)
   (read-forms-from-string
@@ -431,20 +436,22 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name (or source-name (namestring path))))
 
 (defun read-concrete-from-string (text &key options (token-mode :strict)
                                        warn-on-integer-overflow-p
-                                       extended-string-escapes-p
+                                       extended-string-escapes-p lone-cr-in-string
                                        source-name)
   (let ((effective-options
-          (clautolisp.autolisp-reader.internal::ensure-reader-options
+          (apply #'clautolisp.autolisp-reader.internal::ensure-reader-options
            options
            :token-mode token-mode
            :retain-comments-p t
            :warn-on-integer-overflow-p warn-on-integer-overflow-p
            :extended-string-escapes-p extended-string-escapes-p
-           :source-name source-name)))
+           :source-name source-name
+            (and lone-cr-in-string (list :lone-cr-in-string lone-cr-in-string)))))
     (clautolisp.autolisp-reader.internal::parse-normalized-text
      (clautolisp.autolisp-reader.internal:normalize-line-endings text)
      effective-options
@@ -452,7 +459,7 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
 
 (defun read-concrete-from-stream (stream &key options (token-mode :strict)
                                          warn-on-integer-overflow-p
-                                         extended-string-escapes-p
+                                         extended-string-escapes-p lone-cr-in-string
                                          source-name)
   (read-concrete-from-string
    (clautolisp.autolisp-reader.internal:decode-and-normalize-stream stream)
@@ -460,11 +467,12 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name source-name))
 
 (defun read-concrete-from-file (path &key options (token-mode :strict)
                                           warn-on-integer-overflow-p source-name
-                                          extended-string-escapes-p
+                                          extended-string-escapes-p lone-cr-in-string
                                           external-format)
   (read-concrete-from-string
    (if external-format
@@ -475,6 +483,7 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name (or source-name (namestring path))))
 
 ;;; --- Host-independent external formats -------------------------------

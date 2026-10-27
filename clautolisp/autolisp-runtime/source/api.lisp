@@ -3393,6 +3393,49 @@ go to *ERROR-OUTPUT*."
           (unless (%dotdot-path-warning-seen-p path)
             (format *error-output* "~&~A~%" message)))))))
 
+(defun %load-lone-cr-in-string (dialect)
+  "What LOAD under DIALECT makes of a lone CR inside a string literal:
+:NEWLINE for BricsCAD, which reads it as a line feed, :KEEP everywhere
+else -- AutoCAD keeps it, and so does READ in every engine.
+issues/closed/lone-cr-in-string-literal.issue."
+  (if (eq :bricscad (ignore-errors
+                     (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))
+      :newline
+      :keep))
+
+(defun emit-lone-cr-in-string-warning (condition dialect behaviour)
+  "The `[lone-cr-in-string]' warning for one lone CR met by LOAD inside a
+string literal (CONDITION, a LONE-CR-IN-STRING-LITERAL). BEHAVIOUR is what
+the reader did with it (:KEEP or :NEWLINE).
+
+An unresolved divergence (autolisp-spec ch.25, case 3): AutoCAD keeps the
+CR, BricsCAD reads it as LF, so every dialect but --lax warns. Reported
+once per occurrence: each CR in the file is its own occurrence, and a file
+loaded twice is read twice. Honours PORTABILITY-WARNING-MODE like the
+other dialect notices: `:error' signals instead of printing."
+  (let ((name (and dialect
+                   (ignore-errors
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+        (mode (or (and dialect
+                       (ignore-errors
+                        (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                         dialect)))
+                  :warn)))
+    (unless (eq name :lax)
+      (let* ((file (clautolisp.autolisp-reader:lone-cr-in-string-literal-source-name
+                    condition))
+             (line (clautolisp.autolisp-reader:lone-cr-in-string-literal-line
+                    condition))
+             (message (%portability-diagnostic
+                       "lone-cr-in-string"
+                       (if file (format nil "~A:~D" file line) (format nil "line ~D" line))
+                       (if (eq behaviour :newline)
+                           "read as LF (code 10)"
+                           "kept as CR (code 13)"))))
+        (when (eq mode :error)
+          (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+        (format *error-output* "~&~A~%" message)))))
+
 (defvar *clautolisp-sysvar-warnings-seen* (make-hash-table :test 'equal)
   "Names of the clautolisp system variables already reported by
 EMIT-CLAUTOLISP-SYSVAR-WARNING in this run: the notice is once per variable,
@@ -5524,7 +5567,9 @@ UTF-8, :ANSI for windows-1252, NIL (plain decoding) for anything else."
                         :extended-string-escapes-p
                         (clautolisp.autolisp-reader:autolisp-dialect-extended-string-escapes-p dialect)
                         :warn-on-integer-overflow-p
-                        (clautolisp.autolisp-reader:autolisp-dialect-warn-on-integer-overflow-p dialect))))
+                        (clautolisp.autolisp-reader:autolisp-dialect-warn-on-integer-overflow-p dialect)
+                        :lone-cr-in-string
+                        (%load-lone-cr-in-string dialect))))
          (effective-encoding
           (cond
             (options-have-external-format nil) ; caller supplied one
@@ -5576,7 +5621,13 @@ UTF-8, :ANSI for windows-1252, NIL (plain decoding) for anything else."
                 ;; (LOAD -> EVAL -> clal-compile). Outside a session this is
                 ;; a plain eval-progn.
                 (autolisp-eval-toplevel-progn
-                 (apply #'read-runtime-from-file path effective-options)
+                 (handler-bind
+                     ((clautolisp.autolisp-reader:lone-cr-in-string-literal
+                        (lambda (condition)
+                          (emit-lone-cr-in-string-warning
+                           condition dialect
+                           (getf effective-options :lone-cr-in-string)))))
+                   (apply #'read-runtime-from-file path effective-options))
                  context)))
            (when (and *after-load-file-hook* resolved)
              (funcall *after-load-file-hook* resolved)))))

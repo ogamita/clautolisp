@@ -43,6 +43,9 @@
                 #:token
                 #:token-kind
                 #:token-lexeme
+                #:token-value
+                #:token-span
+                #:source-span-start-line
                 #:tokenize-string
                 #:autolisp-dialect
                 #:autolisp-dialect-name

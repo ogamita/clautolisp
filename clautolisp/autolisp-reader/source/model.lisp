@@ -22,6 +22,7 @@
                  (warn-on-integer-overflow-p nil)
                  (extended-string-escapes-p nil)
                  (canonical-case :upcase)
+                 (lone-cr-in-string :keep)
                  source-name)))
   (token-mode :strict :type keyword)
   (retain-comments-p nil :type boolean)
@@ -29,6 +30,11 @@
   (warn-on-integer-overflow-p nil :type boolean)
   (extended-string-escapes-p nil :type boolean)
   (canonical-case :upcase :type keyword)
+  ;; What a lone CR (code 13, not followed by LF) written literally inside
+  ;; a string literal becomes: :keep (the CR, as READ does in every vendor
+  ;; and LOAD does in AutoCAD) or :newline (an LF, as LOAD does in
+  ;; BricsCAD). issues/closed/lone-cr-in-string-literal.issue.
+  (lone-cr-in-string :keep :type (member :keep :newline))
   (source-name nil :type (or null string)))
 
 (defstruct token
@@ -110,6 +116,7 @@
          :extended-string-escapes-p
          (reader-options-extended-string-escapes-p options)
          :canonical-case (reader-options-canonical-case options)
+         :lone-cr-in-string (reader-options-lone-cr-in-string options)
          :source-name (reader-options-source-name options)
          initargs))
 

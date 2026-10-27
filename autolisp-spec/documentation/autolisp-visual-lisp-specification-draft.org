@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.14.4
+#+VERSION: 0.14.5
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.14.4*.
+The current document version is *0.14.5*.
 
 Any modification of this document must increment its version number.
 
@@ -240,6 +240,10 @@ A string literal denotes a string object.
 *** Acceptance Rules
 - a string is delimited by double quotes
 - backslash introduces escape/control sequences
+- a line break written literally between the double quotes is part of
+  the string (tested, see /Tested Behaviour/): the literal may span
+  several lines of the source, and any indentation on the following lines
+  is part of its value
 
 *** Strict/Lax Policy
 - strict: accept only documented or tested escapes
@@ -255,6 +259,55 @@ A string literal denotes a string object.
 
 *** Notes
 The complete escape repertoire remains under-specified in the current source corpus.
+
+*** Tested Behaviour
+Probe =probes/sources/probe-multiline-string.lsp= (fixtures
+=probes/sources/fixtures/mls-*.lsp=, byte-exact), run 2026-10-27 on
+AutoCAD 2022 (Windows), BricsCAD V25 (Windows) and BricsCAD V26 (macOS).
+Code lists are the characters of the string ="ab<break>cd"=.
+
+| line break in the literal             | AutoCAD 2022 | BricsCAD V25 / V26 |
+|---------------------------------------+--------------+--------------------|
+| LOAD, LF (LF file)                    | 10           | 10                 |
+| LOAD, CR LF (CR LF file)              | 10           | 10                 |
+| LOAD, LF LF + 3 spaces                | 10 10 32 32 32 | 10 10 32 32 32   |
+| LOAD, lone CR                         | 13           | 10                 |
+| LOAD, CR CR (CR LF file)              | 13 13        | 10 10              |
+| READ, LF                              | 10           | 10                 |
+| READ, CR LF                           | 10           | 10                 |
+| READ, lone CR                         | 13           | 13                 |
+
+In every case the form following the string in the file was read as
+well: the reader resynchronises after a multi-line literal.
+
+- A line break inside a string literal is accepted by both products, and
+  CR LF is read as a single LF (code 10): /common behaviour/.
+- READ keeps a lone CR (code 13): /common behaviour/.
+- LOAD of a source file holding a lone CR inside a string literal:
+  AutoCAD keeps it, BricsCAD reads it as LF. No vendor document covers
+  it, and this specification adopts neither: an /unresolved divergence/
+  (chapter 25, case 3). Portable code writes =\r= or =\n= instead.
+- Not tested: a line break typed inside a string at the CAD command line.
+
+*** clautolisp
+/clautolisp implementation deviation -- not part of the normative
+specification above./
+
+clautolisp reads a line break inside a string literal as both products
+do, keeps a lone CR under READ in every dialect, silently, and handles a
+lone CR met by LOAD per dialect (case 3: every dialect but =lax= warns
+=[lone-cr-in-string]=, with the file and line):
+
+| dialect         | LOAD of a lone CR in a string | warning |
+|-----------------+-------------------------------+---------|
+| =autocad=       | kept (13)                     | yes     |
+| =bricscad=      | read as LF (10)               | yes     |
+| =clautolisp=    | kept (13)                     | yes     |
+| =strict=        | kept (13)                     | yes     |
+| =lax=           | kept (13)                     | no      |
+
+=clautolisp= and =strict= keep the CR because that is what READ does in
+every engine and it loses nothing.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).

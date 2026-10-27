@@ -1,19 +1,36 @@
 (in-package #:clautolisp.autolisp-reader.internal)
 
 (defun normalize-line-endings (text)
+  "TEXT with every CR LF turned into one LF. A LONE CR is left in place:
+it is a line break for the tokenizer, except inside a string literal,
+where what it becomes depends on the engine being imitated
+ (READER-OPTIONS-LONE-CR-IN-STRING), so it cannot be decided here."
   (with-output-to-string (out)
     (loop
       with length = (length text)
       for index from 0 below length
       for ch = (char text index)
       do (cond
-           ((char= ch #\Return)
+           ((and (char= ch #\Return)
+                 (< (1+ index) length)
+                 (char= (char text (1+ index)) #\Newline))
             (write-char #\Newline out)
-            (when (and (< (1+ index) length)
-                       (char= (char text (1+ index)) #\Newline))
-              (incf index)))
+            (incf index))
            (t
             (write-char ch out))))))
+
+(define-condition clautolisp.autolisp-reader:lone-cr-in-string-literal (condition)
+  ((source-name :initarg :source-name :initform nil
+                :reader clautolisp.autolisp-reader:lone-cr-in-string-literal-source-name)
+   (line :initarg :line
+         :reader clautolisp.autolisp-reader:lone-cr-in-string-literal-line)
+   (column :initarg :column
+           :reader clautolisp.autolisp-reader:lone-cr-in-string-literal-column))
+  (:documentation
+   "SIGNALled (not warned: unhandled, it is silent) by the tokenizer for
+each lone CR met inside a string literal, so that a caller that knows the
+dialect -- the runtime's LOAD -- can issue the portability warning: the
+engines disagree on what it becomes."))
 
 (define-condition clautolisp.autolisp-reader:source-decoding-error (error)
   ((pathname :initarg :pathname

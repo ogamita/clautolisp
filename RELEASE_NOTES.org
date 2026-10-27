@@ -38,6 +38,14 @@ refactors with no user-visible effect do not require an entry.
 
 * clautolisp / read-autolisp (=clautolisp/documentation/clautolisp-user-manual.org=)
 
+- *A carriage return alone inside a string literal* (2.3.72): ~read~ now
+  keeps it (code 13), as AutoCAD and BricsCAD do; it used to become a line
+  feed. ~load~ follows the dialect -- a line feed under ~--dialect
+  bricscad~, the CR elsewhere, as AutoCAD -- and warns
+  ~[lone-cr-in-string]~ with the file and line in every dialect but
+  ~--lax~. Line numbers after a multi-line string literal are right again.
+  See the user manual, /Line breaks inside a string literal/.
+
 - Windows releases bundle recursive non-system DLL dependencies and their
   license notices, so startup and DWG saves work without MSYS2 on PATH.
   See the user manual, /Windows release installation/.

@@ -2052,6 +2052,34 @@ program runs, and the strings are wrong. A BOM removes the guess.
 The full rules, with the vendor sources, are in the ~open~ and ~load~
 entries of the AutoLISP specification.
 
+*** Line breaks inside a string literal
+A string literal may span several lines, as in Common Lisp; the line
+break, and the indentation of the lines that follow, are part of the
+string:
+
+#+BEGIN_SRC autolisp
+(setq s "ab
+cd")
+(vl-string->list s)                ; => (97 98 10 99 100)
+#+END_SRC
+
+AutoCAD and BricsCAD read it the same way, and a CR LF line ending is a
+single line feed (code 10) in all three. One case differs: a *carriage
+return alone* (code 13, not followed by a line feed), which a
+half-converted file can hold. ~read~ keeps it in every engine, and so
+does clautolisp, silently. ~load~ keeps it in AutoCAD and turns it into a
+line feed in BricsCAD, so clautolisp's ~load~ follows the dialect -- a
+line feed under ~--dialect bricscad~, the CR everywhere else -- and warns
+in every dialect but ~--lax~:
+
+#+BEGIN_EXAMPLE
+[lone-cr-in-string] menu.lsp:12: a carriage return alone inside a string literal is kept as CR (code 13) here; AutoCAD keeps it, BricsCAD reads it as a line feed
+#+END_EXAMPLE
+
+Write ~\r~ or ~\n~ to say which one you mean. The measurements are in the
+String Literal entry of the AutoLISP specification; the warning is
+described in the dialect-warnings annex.
+
 *** Launch-chain resolution and the degenerate case
 At startup the runtime resolves the file encoding via
 ~or-else(LC_ALL, LANG, LC_CTYPE, -e flag)~ and pushes the result

@@ -248,6 +248,40 @@ meaning changes when the program moves."
    ("Autodesk: open (AutoLISP), 2024 ENU" . "https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-AutoLISP-Reference/files/GUID-089A323F-21FF-4337-99A9-375758E23BA4.htm")))
 
 (register-dialect-warning
+ :tag "lone-cr-in-string"
+ :title "Lone carriage return inside a string literal"
+ :message "a carriage return alone inside a string literal is ~A here; AutoCAD keeps it, BricsCAD reads it as a line feed"
+ :arguments "what this dialect makes of it (\"kept as CR (code 13)\" or \"read as LF (code 10)\")"
+ :example ": [lone-cr-in-string] menu.lsp:12: a carriage return alone inside a string literal is kept as CR (code 13) here; AutoCAD keeps it, BricsCAD reads it as a line feed"
+ :dialects
+ "Only LOAD is concerned: a source file holding a CR (code 13) that is
+not followed by an LF, written literally between the double quotes of a
+string. A CR LF pair is read as one LF by every engine and is not
+reported, nor is a `\\r' escape.
+
+- AutoCAD (2022, Windows) keeps the CR: the string holds code 13.
+- BricsCAD (V25 Windows, V26 macOS) reads it as a line feed: code 10.
+
+No vendor document covers it, so the specification adopts neither
+(an unresolved divergence): --dialect autocad keeps the CR,
+--dialect bricscad turns it into an LF, and --dialect clautolisp and
+--strict keep it, as READ does in every engine. All of them warn; only
+--lax is silent (it keeps the CR).
+
+READ on a string holding a lone CR is NOT reported: every engine keeps
+the CR there."
+ :rationale
+ "A lone CR in a source file is almost always an accident -- an editor
+or a transfer that half-converted the line endings -- and the two
+engines then build different strings from the same file, with nothing
+visible in the source to say so. Write `\\r' or `\\n' to say which
+one you mean."
+ :references
+ '(("clautolisp: the probed matrix" . "issues/closed/lone-cr-in-string-literal.issue")
+   ("clautolisp: the probe" . "probes/sources/probe-multiline-string.lsp")
+   ("Vendor documentation" . "NONE -- neither the Autodesk nor the Bricsys reference says whether a string literal may span lines; behaviour established by probing.")))
+
+(register-dialect-warning
  :tag "path-slash-ellipsis"
  :title "Forward-slash `/...' subfolder-recursion wildcard"
  :message "~A ~S: `/...' needs the back-slash spelling on AutoCAD-Windows"
