@@ -430,3 +430,21 @@ on hardware (§ First capture). B3-B11 and B13 are specified above with exact
 probe expressions (from the 2026-10-24 spec harvest) and a schedule. The 18 =SPEC-UNCERTAIN= markers and the open =deferred-spec-research=
 questions are the fold-back targets; each batch's results fold into the spec's
 "Tested Behaviour" subsections in its own MR.
+
+* B3 reader-printer and B4 setvar-edges -- captured 2026-10-28 (MR !500)
+
+Both suites (probes/sources/probe-reader-printer.lsp, probe-setvar-edges.lsp)
+ran on AutoCAD 2022 (job 17540963671), BricsCAD V25 Windows (17540963675) and
+V26 macOS (17540963672); BricsCAD V25 and V26 agree but for code-page
+artefacts. Folded into the spec's READ, PRIN1 and SETVAR "Tested Behaviour".
+
+- B3: clautolisp read 1e3 / 1E+03 as SYMBOLS (both products: 1000.0), kept
+  the backslash of octal and unknown escapes (both decode / drop it), and
+  PRIN1 wrote control characters raw (both escape them): FIXED in 2.3.76.
+  Left (READ ".5", the per-product readings):
+  issues/open/reader-printer-vendor-divergences.issue.
+- B4: AutoCAD refuses out-of-range values (ERRNO 22) and bad types (87),
+  BricsCAD refuses or wraps to 16 bits with ERRNO 0; both use ERRNO 20 for a
+  read-only name, return the value given, accept a symbol name. clautolisp
+  checks no range and uses other ERRNOs:
+  issues/open/setvar-validation-as-measured.issue (needs B5's ranges).

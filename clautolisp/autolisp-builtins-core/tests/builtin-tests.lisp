@@ -9019,3 +9019,29 @@ error; its message is nil under the default dialect, as on AutoCAD 2022
     (is (zerop (notices "(vl-prin1-to-string 0.5) (vl-prin1-to-string 123.456)" :autocad-2022)))
     ;; RTOS is not concerned
     (is (zerop (notices "(rtos (/ 1.0 3.0) 2 8)" :autocad-2022)))))
+
+;;;; ----- PRIN1 escapes control characters (sunset campaign B3) ---------------
+;;;;
+;;;; probe reader-printer, 2026-10-28 (AutoCAD 2022, BricsCAD V25 / V26): tab,
+;;;; newline, return and escape by name, the other control characters in three
+;;;; octal digits, DEL as \177 on AutoCAD and as itself on BricsCAD; READ gives
+;;;; the string back.
+
+(test prin1-escapes-control-characters-as-the-vendors-do
+  (flet ((printed (code dialect)
+           (autolisp-string-value
+            (%real-print (format nil "(vl-prin1-to-string (chr ~D))" code) dialect))))
+    (dolist (dialect '(:autocad-2022 :bricscad-v26 :strict))
+      (is (string= "\"\\t\"" (printed 9 dialect)))
+      (is (string= "\"\\n\"" (printed 10 dialect)))
+      (is (string= "\"\\r\"" (printed 13 dialect)))
+      (is (string= "\"\\e\"" (printed 27 dialect)))
+      (is (string= "\"\\007\"" (printed 7 dialect)))
+      (is (string= "\"\\\\\"" (printed 92 dialect))))
+    (is (string= "\"\\177\"" (printed 127 :autocad-2022)))
+    (is (string= (coerce (list #\" (code-char 127) #\") 'string) (printed 127 :bricscad-v26)))
+    ;; and READ gives it back
+    (is (equal '(t t t)
+               (let ((v (%real-print "(mapcar (function (lambda (c) (= (chr c) (read (vl-prin1-to-string (chr c)))))) '(7 9 27))"
+                                     :autocad-2022)))
+                 (mapcar (lambda (x) (and x t)) v))))))

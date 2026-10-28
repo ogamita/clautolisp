@@ -48,6 +48,8 @@ probe-multiline-string.lsp    cad-probe-run-multiline-string-probes
 probe-entity-defaults.lsp     cad-probe-run-entity-defaults-probes
 probe-vle.lsp                 cad-probe-run-vle-probes
 probe-numeric-edges.lsp       cad-probe-run-numeric-edges-probes
+probe-reader-printer.lsp      cad-probe-run-reader-printer-probes
+probe-setvar-edges.lsp        cad-probe-run-setvar-edges-probes
 # Drives real commands (LINE/CIRCLE/...) to capture LASTPROMPT; keep near the
 # end, before the documents suite.
 probe-command-prompts.lsp     cad-probe-run-command-prompts-probes
