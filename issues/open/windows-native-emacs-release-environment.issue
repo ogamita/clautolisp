@@ -1,0 +1,47 @@
+#+TITLE: Native Windows Emacs release build needs writable temp and explicit UTF-8
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-28
+
+* Reproduction
+
+On pfenny, Windows MSYS2 over SSH, source =scripts/environnement-windows.sh=
+then run =make release install collect-artefacts= at 2.3.75 (upstream
+=1ad230be=). The resolved Emacs is the native mingw64 executable.
+The SSH environment does not define TMPDIR, TEMP or TMP.
+
+1. =org-texinfo-supports-math-p= calls =make-temp-file= during the dialect
+   warnings Texinfo export. Emacs selects the drive root and fails with
+   =permission-denied (Creating file with prefix Permission denied c:/test)=.
+2. After supplying a writable user temp directory, =build-paged-spec.el=
+   prompts =Select coding system (default utf-8)= when writing
+   =build/pages/1-brief-history.txt=. Its inherited coding system is
+   =iso-latin-1-dos=. In batch the prompt fails with =Error reading from stdin=.
+
+The source pages contain non-Latin-1 characters. This is a build environment
+failure, unrelated to the AutoLISP reader or SCHMS DCL.
+
+* Evidence and workaround
+
+=scripts/run-emacs.sh= normalizes Windows temp paths to POSIX paths without
+checking whether the selected Emacs is a POSIX or native Windows executable.
+The disposable build wrapper supplies TMPDIR/TEMP/TMP as Windows paths to an
+existing writable user temp directory and sets the Emacs language environment
+to UTF-8. The text and Org page generators then each emit 4652 pages.
+
+Adding =--eval= ahead of =--script= is not safe: Emacs reorders script loading
+and the custom script sees the eval option in =command-line-args-left=.
+The temporary wrapper maps =--script= to =--load= before adding its eval.
+A durable fix should keep the documented script invocation intact.
+
+* Acceptance
+
+- Run release documentation under native and POSIX Emacs on Windows.
+- Cover missing temp variables and Windows-form temp variables; require a
+  writable temp directory, without writing to the drive root.
+- Write all generated text/Org/HTML/reference files explicitly as UTF-8.
+- No interactive encoding prompts in batch, including non-Latin-1 input.
+- Preserve script arguments and check the full release/install/collection.
