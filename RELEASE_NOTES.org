@@ -1967,6 +1967,9 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *=getcname= under =bricscad-v26=* (2.3.75): ="_STRETCH"= gives ="ÉTIRER"=,
+  as BricsCAD V26 answers (V25: ="ETIRER"=); measured on macOS.
+
 - *=entget= shows each entity's defaults as the CADs do* (2.3.74): an
   entity made with its required groups only now lists what AutoCAD 2022 and
   BricsCAD V25 list -- the extrusion 210, POINT 50, SPLINE 74 / 42 / 43,

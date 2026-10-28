@@ -5,7 +5,7 @@
 # The vendors' templates cannot be committed, so dwg-reads-vendor-templates
 # (clautolisp/drawing-dwg/tests/dwg-tests.lisp) reads the ones named by
 # CLAUTOLISP_TEST_DWT; this script finds them and sets it. An entry with a
-# PRODUCT-UNITS key is cross-checked against what the entget-pointers probe
+# PRODUCT-UNITS-VERSION key is cross-checked against what the entget-pointers probe
 # measured on that very file (cador's *MEASURED-DEFAULT-OBJECTS*): BricsCAD
 # V26's en_US templates, which probe:template-defaults:bricscad-*:macos
 # opened. AutoCAD 2026's are read and checked, not cross-checked (the measured
@@ -20,8 +20,8 @@ add() {
   fi
 }
 bricscad="$HOME/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates"
-add "$bricscad/Default-imperial.dwt" bricscad-imperial
-add "$bricscad/Default-m.dwt" bricscad-metric
+add "$bricscad/Default-imperial.dwt" bricscad-imperial-26
+add "$bricscad/Default-m.dwt" bricscad-metric-26
 for d in /Applications/Autodesk/AutoCAD*/AutoCAD*.app/Contents/Resources/UserDataCache/en-us/Template; do
   add "$d/acad.dwt"
   add "$d/acadiso.dwt"
