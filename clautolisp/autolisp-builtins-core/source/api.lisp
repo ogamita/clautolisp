@@ -3730,17 +3730,31 @@ time it is called."
 ;; --- end atoi / atof -------------------------------------------------
 
 (defun escape-prin1-string (string)
-  (with-output-to-string (out)
-    (write-char #\" out)
-    (loop for character across string
-          do (case character
-               (#\\
-                (write-string "\\\\" out))
-               (#\"
-                (write-string "\\\"" out))
-               (t
-                (write-char character out))))
-    (write-char #\" out)))
+  "STRING as PRIN1 writes it. Measured on AutoCAD 2022 and BricsCAD V25 /
+V26 (probe reader-printer, sunset campaign B3, 2026-10-28): a control
+character is escaped -- tab, newline, return and escape by name (\\t \\n \\r
+\\e), the others in three octal digits (code 7 is \\007) -- and DEL (127) as
+\\177 on AutoCAD, as itself on BricsCAD; READ gives the string back."
+  (let ((escape-del-p (not (eq :bricscad
+                               (ignore-errors
+                                (clautolisp.autolisp-reader:autolisp-dialect-product
+                                 (current-evaluation-dialect)))))))
+    (with-output-to-string (out)
+      (write-char #\" out)
+      (loop for character across string
+            for code = (char-code character)
+            do (case character
+                 (#\\ (write-string "\\\\" out))
+                 (#\" (write-string "\\\"" out))
+                 (#\Tab (write-string "\\t" out))
+                 (#\Newline (write-string "\\n" out))
+                 (#\Return (write-string "\\r" out))
+                 (t
+                  (cond ((= code 27) (write-string "\\e" out))
+                        ((or (< code 32) (and (= code 127) escape-del-p))
+                         (format out "\\~3,'0O" code))
+                        (t (write-char character out))))))
+      (write-char #\" out))))
 
 (defun autolisp-value->string (object princp)
   (cond

@@ -1,0 +1,32 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: reader-printer-vendor-divergences -- READ / PRIN1 cases where AutoCAD and BricsCAD differ, or both differ from clautolisp, not modelled yet
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: divergence
+#+DEPENDS: windows-runner-sunset-probe-campaign
+#+BRANCH: -
+#+DATE: 2026-10-28
+
+Measured by the sunset campaign's B3 probe (probe-reader-printer.lsp,
+2026-10-28: AutoCAD 2022 job 17540963671, BricsCAD V25 Windows 17540963675,
+V26 macOS 17540963672); the full table is in the spec's READ / PRIN1
+"Tested Behaviour". Fixed in 2.3.76: exponent reals without a dot, octal
+escapes, unknown escapes dropping the backslash, PRIN1's control-character
+escapes. Left:
+
+1. BOTH products, clautolisp differs: READ ".5" is an error (AutoCAD
+   "misplaced dot", BricsCAD syntax error); clautolisp reads 0.5 (a
+   regression test, strict-real-accepts-dot-with-digits-on-either-side,
+   asserts it, from a SCHMS literal "42." -- which stays a real on both).
+   Decide: follow the products (READ and LOAD alike?) or keep the leniency
+   and warn. The probe measured READ only: measure LOAD of a file holding
+   (setq x .5) first.
+2. Per product, to model behind the dialect:
+   - "+.5" / "-.5": AutoCAD the symbol + / -, BricsCAD the symbol +.5;
+   - "1.5.2": AutoCAD the symbol 1, BricsCAD 1.5.2 (clautolisp's);
+   - "a.b": AutoCAD A (and "(a.b)" is (A)), BricsCAD A.B (clautolisp's);
+   - a block comment before the token: (read ";| c |; 3") is 3 on
+     AutoCAD, nil on BricsCAD (clautolisp's);
+   - "\u0041": AutoCAD "uu0041", BricsCAD "U0041" (clautolisp "u0041");
+   - "\0": AutoCAD ends the string, BricsCAD gives two NULs;
+   - PRIN1 of an astral character: AutoCAD \000 (its code page).

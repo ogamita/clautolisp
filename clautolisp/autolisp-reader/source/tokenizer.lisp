@@ -48,14 +48,29 @@ into LF, and keeps a lone CR for SCAN-STRING-LITERAL to decide on."
          (loop for index from exp-start below length
                always (digit-char-10-p (char lexeme index))))))
 
+(defun exponent-only-real-lexeme-p (lexeme)
+  "LEXEME is [sign] digits, an e or E, and a valid exponent: \"1e3\"."
+  (let* ((length (length lexeme))
+         (start (if (and (> length 0) (member (char lexeme 0) '(#\+ #\-))) 1 0))
+         (exp-pos (or (position #\e lexeme) (position #\E lexeme))))
+    (and exp-pos
+         (not (position #\. lexeme))
+         (> exp-pos start)
+         (loop for index from start below exp-pos
+               always (digit-char-10-p (char lexeme index)))
+         (exponent-part-valid-p lexeme exp-pos))))
+
 (defun strict-real-lexeme-p (lexeme)
-  ;; AutoLISP real literals accept "42.", "5.", and ".5" — at least
-  ;; one digit on *some* side of the dot is enough. Vendor AutoCAD
-  ;; and BricsCAD both read all three as reals (42.0, 5.0, 0.5).
-  ;; Common Lisp differs (CL reads "42." as the integer 42) — the
-  ;; AutoLISP dialect overrides that here; the spec's clautolisp
-  ;; lex model under "atof" already documents the OR rule, and the
-  ;; lax acceptor below uses the same one.
+  ;; AutoLISP real literals accept "42." and "5." -- at least one digit
+  ;; on *some* side of the dot is enough; Common Lisp differs (CL reads
+  ;; "42." as the integer 42). An exponent needs no dot: "1e3" and
+  ;; "1E+03" are 1000.0 on AutoCAD 2022 and BricsCAD V25 / V26 (probe
+  ;; reader-printer, sunset campaign B3, 2026-10-28), where clautolisp
+  ;; read them as symbols. ".5" is still accepted here, though READ of
+  ;; ".5" is an error on both products (a misplaced dot):
+  ;; issues/open/reader-printer-vendor-divergences.issue.
+  (when (exponent-only-real-lexeme-p lexeme)
+    (return-from strict-real-lexeme-p t))
   (let* ((length (length lexeme))
          (start (if (and (> length 0)
                          (member (char lexeme 0) '(#\+ #\-)))
@@ -224,6 +239,20 @@ into LF, and keeps a lone CR for SCAN-STRING-LITERAL to decide on."
                     line
                     end-column
                     '())))))
+          ;; An octal escape: \ and one to three octal digits, the character
+          ;; of that code ("\101" is "A", "\377" code 255) on AutoCAD 2022
+          ;; and BricsCAD V25 / V26 (probe reader-printer, 2026-10-28).
+          ;; "\0" alone is code 0 (as before).
+          ((and (char= ch #\\)
+                (< (1+ index) length)
+                (digit-char-p (char text (1+ index)) 8))
+           (let* ((end (loop for i from (1+ index) below (min length (+ index 4))
+                             while (digit-char-p (char text i) 8)
+                             finally (return i)))
+                  (code (parse-integer text :start (1+ index) :end end :radix 8)))
+             (write-char (code-char code) value-out)
+             (incf column (- end index))
+             (setf index end)))
           ;; Universal AutoLISP / Visual LISP single-character string
           ;; escapes. These are recognised in every dialect, not only
           ;; under extended-string-escapes-p; vendor reference pages
@@ -278,6 +307,15 @@ into LF, and keeps a lone CR for SCAN-STRING-LITERAL to decide on."
                 (write-char (char text (1+ index)) value-out)
                 (incf index 2)
                 (incf column 2)))))
+          ;; Any other escape: AutoCAD 2022 and BricsCAD V25 / V26 drop the
+          ;; backslash and keep the character ("\x41" is "x41", "\q" is
+          ;; "q": the classic "C:\dir" -> "C:dir"), whatever the token mode
+          ;; (the BricsCAD dialects tokenize in :lax mode, and BricsCAD drops
+          ;; it too). clautolisp used to keep the backslash.
+          ((and (char= ch #\\)
+                (< (1+ index) length))
+           (incf index)
+           (incf column))
           ((char= ch #\Newline)
            (write-char ch value-out)
            (incf index)

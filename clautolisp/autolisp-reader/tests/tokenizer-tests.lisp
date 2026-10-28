@@ -34,12 +34,32 @@ comment |;"
             (diagnostic-code (first diagnostics))))))
 
 (test strict-vs-lax-real-tokenization
-  (let* ((strict-result (tokenize-string "1e3"))
-         (lax-result (tokenize-string "1e3" :token-mode :lax))
-         (strict-token (first (read-result-objects strict-result)))
-         (lax-token (first (read-result-objects lax-result))))
-    (is (eq :symbol (token-kind strict-token)))
-    (is (eq :real (token-kind lax-token)))))
+  ;; An exponent needs no dot: "1e3" / "1E+03" read as 1000.0 on AutoCAD
+  ;; 2022 and BricsCAD V25 / V26 (probe reader-printer, 2026-10-28) -- in
+  ;; strict mode too, where it used to be a symbol.
+  (dolist (lexeme '("1e3" "1E+03" "-2e-1"))
+    (let* ((strict-token (first (read-result-objects (tokenize-string lexeme))))
+           (lax-token (first (read-result-objects (tokenize-string lexeme :token-mode :lax)))))
+      (is (eq :real (token-kind strict-token)) "strict ~A" lexeme)
+      (is (eq :real (token-kind lax-token)) "lax ~A" lexeme))))
+
+(test string-escapes-as-the-vendors-read-them
+  ;; probe reader-printer (sunset campaign B3), AutoCAD 2022 and BricsCAD
+  ;; V25 / V26: an octal escape is that character; any other unknown escape
+  ;; drops its backslash, in either token mode (the BricsCAD dialects
+  ;; tokenize in :lax mode).
+  (flet ((value (text &optional (mode :strict))
+           (token-value (first (read-result-objects
+                                (tokenize-string text :token-mode mode))))))
+    (is (string= "AAB" (value "\"A\\101B\"")))
+    (is (string= (coerce (list #\A (code-char 255) #\B) 'string) (value "\"A\\377B\"")))
+    (is (string= (coerce (list #\A (code-char 10) #\B) 'string) (value "\"A\\012B\"")))
+    (is (string= "Ax41B" (value "\"A\\x41B\"")))
+    (is (string= "AqB" (value "\"A\\qB\"")))
+    (is (string= "C:dir" (value "\"C:\\dir\"")))     ; (\t would be a tab)
+    (is (string= "AqB" (value "\"A\\qB\"" :lax)))
+    ;; the named escapes as before
+    (is (string= (coerce (list #\A #\Tab #\B) 'string) (value "\"A\\tB\"")))))
 
 (test strict-real-accepts-dot-with-digits-on-either-side
   ;; Regression for issues/closed/strict-dialect-autolisp-divergences

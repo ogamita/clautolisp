@@ -8826,6 +8826,33 @@ ch. 25) wherever the effective behavior is a hazard on a real engine:
 - `issues/closed/read-string-does-not-skip-comments.issue` — the product-tested vendor matrix and the clautolisp fix (dialect matrix, the `[read-leading-comment]` warning).
 - Status: documented (basic contract); comment-handling divergence product-tested, not vendor-documented.
 
+*** Tested Behaviour (sunset campaign B3, 2026-10-28)
+probe-reader-printer.lsp; AutoCAD 2022 job 17540963671, BricsCAD V25 Windows 17540963675, BricsCAD V26 macOS 17540963672. "both" = AutoCAD and BricsCAD alike.
+
+| input                        | AutoCAD 2022              | BricsCAD V25 / V26       |
+|------------------------------+---------------------------+--------------------------|
+| "1e3", "1E+03"               | 1000.0                    | 1000.0                   |
+| "1.", "1.e6"                 | 1.0, 1000000.0            | the same                 |
+| ".5"                         | error (misplaced dot)     | syntax error             |
+| "+.5", "-.5"                 | the symbol + / -          | the symbol +.5 / -.5     |
+| "1.5.2"                      | the symbol 1              | the symbol 1.5.2         |
+| "a.b", "(a.b)"               | A, (A)                    | A.B, (A.B)               |
+| "1 ; two", "1 ;\| c \|; 2" | 1                         | 1                        |
+| ";\| c \|; 3"              | 3                         | nil                      |
+| "A\101B", "A\377B"         | AAB, A<255>B (octal)      | the same                 |
+| "A\x41B", "A\qB"           | Ax41B, AqB (backslash dropped) | the same            |
+| "A\u0041B"                  | Auu0041B                  | AU0041B                  |
+| "A\0B"                      | A (the string ends)       | A<0><0>                  |
+| a#b a[b] a:b \|a b\| a'b a,b | the same on both (one token each, |a b| as \|A, a'b as A) | |
+
+*** clautolisp: READ
+Exponent reals without a dot (1e3) are reals, octal escapes are decoded and
+any other unknown escape drops its backslash, in every dialect, as both
+products (2.3.76; before: a symbol, and the backslash kept). The product
+differences above -- ".5" accepted as 0.5, the AutoCAD readings of +.5,
+1.5.2, a.b and a leading block comment, \u and \0 -- are not modelled yet:
+issues/open/reader-printer-vendor-divergences.issue.
+
 #+LATEX: \newpage
 
 * 13 Reader
@@ -8944,6 +8971,18 @@ the two products spell differently is printed, every dialect but =lax=
 prints a =[real-format]= notice -- once per session. =rtos= (with an explicit
 precision) is the portable way to print a real; =rtos= and =command= tokens
 keep the full value under every dialect.
+
+*** Tested Behaviour (sunset campaign B3, 2026-10-28)
+probe-reader-printer.lsp; AutoCAD 2022 job 17540963671, BricsCAD V25 Windows 17540963675, BricsCAD V26 macOS 17540963672. PRIN1 of a string escapes a control
+character -- tab, newline, return and escape by name (\t \n \r \e), the
+others in three octal digits (code 7: \007) -- on both products; DEL (127)
+as \177 on AutoCAD, as itself on BricsCAD; READ gives the string back. A
+character the CAD's code page (LISPSYS 0) cannot hold prints as that page
+maps it (AutoCAD: the euro as code 172, an astral character as \000;
+BricsCAD Windows: 128 and 62976).
+
+clautolisp (2.3.76): the same escapes; DEL as the dialect's product does;
+characters print as themselves (no code page).
 
 #+LATEX: \newpage
 
@@ -10023,6 +10062,32 @@ Errors if the variable is read-only, absent, or rejects the supplied value.
 
 *** Compatibility
 Supported on Windows, macOS, and Web in current Autodesk documentation.
+
+*** Tested Behaviour (sunset campaign B4, 2026-10-28)
+probe-setvar-edges.lsp; AutoCAD 2022 job 17540963671, BricsCAD V25 Windows 17540963675, BricsCAD V26 macOS 17540963672. (RESULT AFTER ERRNO) per case:
+
+| case                              | AutoCAD 2022                   | BricsCAD V25 / V26                |
+|-----------------------------------+--------------------------------+-----------------------------------|
+| out of the variable's range       | error, unchanged, ERRNO 22     | error, unchanged, ERRNO 0         |
+| (CMDECHO 2, LUNITS 7, OSMODE -1)  |                                |                                   |
+| OSMODE 70000, USERI1 40000        | error, ERRNO 22                | wrapped to 16 bits (4464, -25536) |
+| CMDECHO 1.0                       | returns 1.0, stores 1          | the same                          |
+| CMDECHO 0.7                       | error, ERRNO 87                | stores 0                          |
+| a string / nil for a number       | error, ERRNO 87                | "bad argument type", ERRNO 0      |
+| an integer for a real (USERR1 2)  | returns 2, stores 2.0          | the same                          |
+| SNAPBASE (a 2D point) '(1 2 3)    | error                          | stores (1.0 2.0)                  |
+| read-only (DWGNAME, ACADVER)      | error, ERRNO 20                | error, ERRNO 20                   |
+| unknown name                      | error, ERRNO 0                 | error, ERRNO 0                    |
+| (setvar 'OSMODE 1), a symbol name | accepted                       | accepted                          |
+| "osmode", "OsMode"                | accepted                       | accepted                          |
+| ANGBASE / SNAPANG under AUNITS 0, 3 | radians, AUNITS ignored      | the same                          |
+
+SETVAR returns the value it was GIVEN, not the one it stored.
+
+*** clautolisp: SETVAR
+Not yet as measured: no range check, ERRNO 1 for a read-only or unknown
+name and 4 for a bad type, the stored value returned, a symbol name refused:
+issues/open/setvar-validation-as-measured.issue.
 
 #+LATEX: \newpage
 

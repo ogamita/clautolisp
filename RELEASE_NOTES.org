@@ -1967,6 +1967,13 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
+- *READ and PRIN1 as AutoCAD and BricsCAD* (2.3.76): =1e3= and =1E+03= read
+  as the real 1000.0 (they were symbols outside the BricsCAD dialects); an
+  octal escape in a string literal is decoded (="\101"= is "A") and any other
+  unknown escape drops its backslash (="C:\dir"= is "C:dir"), as both
+  products do; PRIN1 writes a control character escaped (=\t=, =\n=,
+  =\007= ...). Measured by the sunset campaign's B3 probe.
+
 - *=getcname= under =bricscad-v26=* (2.3.75): ="_STRETCH"= gives ="ÉTIRER"=,
   as BricsCAD V26 answers (V25: ="ETIRER"=); measured on macOS.
 
