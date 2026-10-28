@@ -61,6 +61,28 @@ language \"fr\"), or NIL when no table matches."
                                           *getcname-tables*)))))))
     (cdr (assoc product tables))))
 
+(defparameter *getcname-version-overrides*
+  ;; ((PRODUCT VERSION LOCALE) (INTERNATIONAL . LOCAL) ...): where a version
+  ;; answers otherwise than the version its product's table was measured on
+  ;; (V25 Windows). BricsCAD V26 macOS (getcname probe job 17538633594,
+  ;; 2026-10-28) spells STRETCH with its accent. Its 3D commands answering nil
+  ;; there (BOX, EXTRUDE, LOFT, RENDER, REVOLVE, SECTION, SLICE, SWEEP) look
+  ;; like that install's edition, not the version: not encoded.
+  '(((:bricscad 26 "fr_FR") ("_STRETCH" . "ÉTIRER"))))
+
+(defun %getcname-overridden (table product version locale)
+  "TABLE with the overrides of (PRODUCT VERSION LOCALE) in place."
+  (let ((overrides (and version locale
+                        (cdr (assoc-if (lambda (key)
+                                         (and (eq product (first key))
+                                              (eql version (second key))
+                                              (string-equal locale (third key))))
+                                       *getcname-version-overrides*)))))
+    (if overrides
+        (append overrides
+                (remove-if (lambda (pair) (assoc (car pair) overrides :test #'string=)) table))
+        table)))
+
 (defun %getcname-english-table (product)
   "Under a locale with no table: PRODUCT's commands, each its own local name."
   (let ((seen (make-hash-table :test #'equal)))
@@ -76,15 +98,17 @@ language \"fr\"), or NIL when no table matches."
                    (if at (char "AAAAAACEEEEIIIINOOOOOUUUUY" at) c)))
        string))
 
-(defun cador-getcname (name product locale)
-  "GETCNAME of the string NAME for PRODUCT (:AUTOCAD / :BRICSCAD) under
-LOCALE (\"fr_FR\", or NIL): the other form of the command name, or NIL."
+(defun cador-getcname (name product locale &optional version)
+  "GETCNAME of the string NAME for PRODUCT (:AUTOCAD / :BRICSCAD) VERSION
+(26, or NIL) under LOCALE (\"fr_FR\", or NIL): the other form of the
+command name, or NIL."
   (let* ((upper (string-upcase name))
          (international-p (and (plusp (length upper)) (char= #\_ (char upper 0))))
          (core (if (eq product :bricscad)
                    (if international-p (subseq upper 1) upper)
                    (string-left-trim "_.'" upper)))
-         (table (or (%getcname-table product locale)
+         (table (or (let ((measured (%getcname-table product locale)))
+                      (and measured (%getcname-overridden measured product version locale)))
                     (%getcname-english-table product))))
     (cond
       ((zerop (length core)) nil)
@@ -97,6 +121,9 @@ LOCALE (\"fr_FR\", or NIL): the other form of the command name, or NIL."
                              :test (lambda (a b) (string= a (%fold-accents b)))))))))))
 
 (defmethod host-getcname ((host cador) name)
-  (cador-getcname name
-                  (if (eq (%current-product) :bricscad) :bricscad :autocad)
-                  (%locale-language-territory)))
+  (let ((dialect (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect))))
+    (cador-getcname name
+                    (if (eq (%current-product) :bricscad) :bricscad :autocad)
+                    (%locale-language-territory)
+                    (and dialect
+                         (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-version dialect))))))

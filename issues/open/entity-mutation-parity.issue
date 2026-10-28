@@ -170,8 +170,12 @@ verification tail that closes this issue.
 STATUS 2026-10-27 (clautolisp 2.3.74, MR !498) -- vendor tail run
 ================================================================
 
-Vendor-probe verification: DONE on Windows (macOS: thalassa could not
-resolve gitlab.com that day).
+Vendor-probe verification: DONE on Windows and, on 2026-10-28, on macOS
+(BricsCAD V26, thalassa: vendor:probes:bricscad:macos job 17538748002,
+entity-lifecycle 97 conforms + 4 known D1, 0 unexpected; drawing-data 26 + 1
+known D3; selection 21 -- the same as V25 Windows; probe:suite:bricscad:macos
+job 17538633220: entity-defaults identical to V25's but MTEXT 42 / 43 and the
+misordered cases of entmake-subclass-group-order).
 - vendor:probes:autocad (job 17509199186): entity-lifecycle 101 conforms,
   0 known-divergence, 0 unexpected; drawing-data 27; selection 21.
 - vendor:probes:bricscad (job 17509199185): entity-lifecycle 97 conforms,

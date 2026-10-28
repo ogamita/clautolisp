@@ -468,7 +468,7 @@ clautolisp / alfe executable image's prefix is searched."
 ;;; PROBE-DRAWING-FORMAT reads it as one. The vendors' templates cannot be
 ;;; committed (they are theirs), so this test reads the ones installed where
 ;;; it runs, named by CLAUTOLISP_TEST_DWT: entries separated by ";", each
-;;; PATH or PATH|PRODUCT-UNITS (bricscad-imperial, autocad-metric ...). It
+;;; PATH or PATH|PRODUCT-UNITS[-VERSION] (bricscad-imperial-26, autocad-metric ...). It
 ;;; checks what a reader must get right -- the format, the header, the
 ;;; named-object dictionary as handle-addressed objects -- and, for an entry
 ;;; naming the set the entget-pointers probe measured on that very template
@@ -484,10 +484,15 @@ clautolisp / alfe executable image's prefix is searched."
           for (path key) = (uiop:split-string entry :separator "|")
           unless (string= "" (string-trim " " path))
             collect (cons (string-trim " " path)
+                          ;; PRODUCT-UNITS[-VERSION] -> (PRODUCT UNITS VERSION), the
+                          ;; key cador's measured sets have had since 2.3.61; no
+                          ;; version: the newest set (CADOR's %MEASURED-SET)
                           (and key (plusp (length key))
-                               (let ((dash (position #\- key)))
-                                 (list (intern (string-upcase (subseq key 0 dash)) :keyword)
-                                       (intern (string-upcase (subseq key (1+ dash))) :keyword))))))))
+                               (destructuring-bind (product units &optional version)
+                                   (uiop:split-string key :separator "-")
+                                 (list (intern (string-upcase product) :keyword)
+                                       (intern (string-upcase units) :keyword)
+                                       (and version (parse-integer version :junk-allowed t)))))))))
 
 (defun %dwg-version-number (path)
   "The release number of the DWG at PATH, from its AC10nn magic (1014 for
@@ -533,8 +538,8 @@ R14, 1015 for R2000 ...), or 0."
                     "~A: no Model layout" path))))
           (is (member measurement '(0 1)) "~A: MEASUREMENT ~S" path measurement)
           (when key
-            (let ((measured (cdr (assoc key clautolisp.cador::*measured-default-objects*
-                                        :test #'equal))))
+            (let ((measured (clautolisp.cador::%measured-set
+                             key clautolisp.cador::*measured-default-objects*)))
               (is (not (null measured)) "~A: no measured set ~S" path key)
               (when measured
                 (is (equal (mapcar #'first measured) keys)

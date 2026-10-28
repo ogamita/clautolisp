@@ -29,6 +29,18 @@
            (is (equal bricscad (clautolisp.cador::cador-getcname input :bricscad "fr_FR"))
                "BricsCAD ~S" input)))
 
+(test getcname-bricscad-v26-spells-stretch-with-its-accent
+  ;; getcname probe, BricsCAD V26 macOS (job 17538633594): "_STRETCH" ->
+  ;; "ÉTIRER" there, "ETIRER" on V25 (the table's)
+  (let ((e-acute (concatenate 'string (string (code-char 201)) "TIRER")))
+    (is (equal e-acute (clautolisp.cador::cador-getcname "_STRETCH" :bricscad "fr_FR" 26)))
+    (is (equal "_STRETCH" (clautolisp.cador::cador-getcname e-acute :bricscad "fr_FR" 26)))
+    (is (null (clautolisp.cador::cador-getcname "ETIRER" :bricscad "fr_FR" 26)))
+    (is (equal "ETIRER" (clautolisp.cador::cador-getcname "_STRETCH" :bricscad "fr_FR" 25)))
+    (is (equal "ETIRER" (clautolisp.cador::cador-getcname "_STRETCH" :bricscad "fr_FR")))
+    ;; the other commands as the table has them
+    (is (equal "LIGNE" (clautolisp.cador::cador-getcname "_LINE" :bricscad "fr_FR" 26)))))
+
 (test getcname-under-a-locale-without-a-table-is-the-identity
   (dolist (locale '(nil "en_US" "C"))
     (is (equal "LINE" (clautolisp.cador::cador-getcname "_LINE" :autocad locale)))
