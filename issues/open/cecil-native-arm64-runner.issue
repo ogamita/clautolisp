@@ -103,6 +103,40 @@ matching no runner and silently drop arm64 from a release: the exact shape of
 the three faults that made 1.9.0's Windows products unusable. It goes in when
 a pipeline can run it.
 
+* Step 3 — DONE 2026-09-28: native arm64 test + docker jobs, emulated fallback
+
+The NON-release arm64 work the ticket recommended now runs on cecil/thalassa,
+without touching the release path Step 2 warns about.
+
+- =scripts/ci-detect-runners.py= gained an =ARM64_RUNNER= probe (tag =arm64=,
+  which matches BOTH native hosts; poseidon never carries it, so the lane is
+  genuinely intermittent). Fail-safe as the others: any API error ⇒ =offline=
+  ⇒ the emulated fallback runs.
+- =native:pipeline= forwards =ARM64_RUNNER= (and the pinned =ARM64_BASE=
+  digest) into =.gitlab/native.yml=.
+- =.gitlab/native.yml= gained a mutually-exclusive gate PAIR,
+  =.gate-linux-arm64-native= (=linux,arm64,docker=) and
+  =.gate-linux-arm64-emulated= (=linux,arm64,qemu=): online ⇒ native runs and
+  the emulated twin is skipped (native REPLACES emulated); offline ⇒ native is
+  skipped and the emulated twin runs (FALLBACK). Native blocks a release tag
+  when the machine is actually online; emulated is =allow_failure= throughout.
+- Jobs added as native/emulated pairs:
+  - =test:clautolisp:linux-arm64:{native,emulated}= — the SBCL unit suite on
+    arm64 (=make -C clautolisp test-sbcl=).
+  - =build:clautolisp-ci-image:arm64:{native,emulated}= — the arm64 CI/runtime
+    docker image (kaniko), pushed =:$CI_COMMIT_SHA-arm64= and, on master,
+    =:arm64=. Native auto-builds on master/tag, manual on MRs; the emulated
+    twin runs kaniko's own arm64 image under qemu (pinned by digest) and stays
+    manual because that build is slow.
+
+This spends cecil's capacity exactly where the ticket said it pays off with no
+release risk. =tags:= in cecil's =nvidia= sense are untouched; add =nvidia= to
+the =linux,arm64,docker= gate if a job must land on cecil specifically (GPU).
+
+Still open: Step 2 (pointing the release =release:linux:arm64= artefact at
+native cecil) remains deliberately NOT done — an intermittent machine must not
+gate a release — and is blocked anyway by namespace-storage-blocks-ci.
+
 * What cecil does NOT solve
 
 *arm32.* The DGX Spark's Grace cores are AArch64-only — the Cortex-X925 /
