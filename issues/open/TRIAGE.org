@@ -900,3 +900,7 @@ opendcl-conformance. All =TODO=.
 * Additional build issue (2026-10-28)
 
 - TODO =windows-native-emacs-release-environment= — P3, native Windows Emacs: missing writable temp and inherited Latin-1 interrupt release documentation over SSH; see issue for reproduction and workaround.
+
+* Additional Windows deployment issue (2026-10-28)
+
+- NEXT =windows-upgrade-selects-stale-libredwg= — P1, verified 2.3.23 -> 2.3.75 upgrade: stale DLL chosen ahead of the actual shim import; DWG write passes after isolating only the obsolete DLL.

@@ -1,0 +1,74 @@
+#+TITLE: Windows upgrade selects stale libredwg.dll instead of the shim import
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-28
+
+* Verified deployment regression
+
+After upgrading Windows from clautolisp/ALFE 2.3.23 to the 2.3.75 release
+built from upstream 1ad230be, version checks pass but VLA-SAVEAS fails with
+COM-SAVE-FAILED / no usable DWG native library. The release archives pass
+scripts/test-windows-release.ps1 on a fresh prefix on pfenny. The installed
+prefix on winservadm fails the same test with HOME absent and only Windows
+on PATH.
+
+The libraries archive contains clal_dwg.dll and msys-redwg.dll. Its shim's
+PE import table names msys-redwg.dll (checked with objdump -p). The old
+prefix also has libredwg.dll, retained by run-forest-run's merge installer.
+The error identifies THAT obsolete file as the dependency it cannot load.
+
+| File | SHA-256 in installed prefix |
+| clal_dwg.dll (new archive) | 03396fc4afa84778bdff029c44b2186fb4438112b3cf35be1e145fa6b84891e2 |
+| msys-redwg.dll (new archive) | 2573a26e5da1206d63d231544df3a668f2d4173d8c0fcee87fc462a4076dc85b |
+| libredwg.dll (obsolete) | c63ce812ab2d6515c7fbb3553fbbadcee4a33a942b2642d7fb5e52e4deacd692 |
+
+* Minimal runtime operation
+
+The native release test loads this operation in clautolisp, without a CAD:
+
+#+begin_src lisp
+(vl-load-com)
+(setq d (vla-get-activedocument (vlax-get-acad-object)))
+(vla-addline (vla-get-modelspace d)
+             (vlax-3d-point 0.0 0.0 0.0)
+             (vlax-3d-point 10.0 10.0 0.0))
+(vla-saveas d "native.dwg")
+#+end_src
+
+Use a disposable prefix extracted from the binaries and libraries ZIPs.
+Reproduce the upgrade state by adding the old libredwg.dll beside the new
+shim under lib/clautolisp/windows/x86-64, then run the native release test
+with -Prefix. Do not add an obsolete DLL to a production prefix.
+
+* Cause
+
+clautolisp/drawing-dwg/source/bindings.lisp:
+%libredwg-dependency-in picks the FIRST filename containing redwg;
+%libredwg-dependency-beside passes directory results directly to it.
+%try-load-shim preloads that arbitrary file rather than the shim's actual
+PE dependency. Several toolchain filenames can coexist after an upgrade;
+matching a substring does not identify the required library.
+
+* Verified workaround and result
+
+Moved only the obsolete libredwg.dll outside the prefix, preserving its
+hash and file for diagnosis. No executable or current DLL was changed.
+The same installed-prefix test then passes all five checks, including
+NATIVE-DWG-SAVED; the XRecord/PKPM reproducer also passes. This confirms
+an upgrade-prefix selection problem, not a missing DLL in the new ZIP.
+
+* Acceptance
+
+- Select the actual shim dependency (for example via build/install metadata
+  or PE imports), handling toolchain-dependent names without choosing an
+  arbitrary older library by directory order.
+- Add an upgrade test with two redwg DLL spellings, including an unusable
+  stale candidate before the current one. Verify the current import loads
+  and a DWG is written with only Windows on PATH.
+- Keep fresh-prefix native release tests and cover the installed-prefix
+  upgrade path; do not rely on a developer workspace fallback.
+- Coordinate package-owned obsolete-file cleanup with run-forest-run;
+  do not remove unrelated installed libraries.
