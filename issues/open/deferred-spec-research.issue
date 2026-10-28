@@ -33,6 +33,38 @@ Convention (project-wide, going forward):
     `autolisp-spec` Tested Behaviour section, or a probe-script
     name), and the issue entry is moved to the resolved tail.
 
+Probe suites written 2026-10-24 (pending a vendor run — see
+windows-runner-sunset-probe-campaign.issue, which schedules the whole
+backlog against the 8-week Windows-runner sunset):
+
+  * probes/sources/probe-vle.lsp — retires the nine VLE-* SPEC-UNCERTAIN
+    markers (vle-subst-nth out-of-range, vle-list-split shape, vle-member
+    boolean-vs-tail, vle-vector-normalise zero-length, vle-vector-getucs
+    +-Z, vle-string-replace first-vs-all, vle-string-split empty tokens,
+    vle-aci2rgb 10-249, vle-rgb2aci arg shape). BricsCAD behaviour +
+    AutoCAD absence.
+  * probes/sources/probe-numeric-edges.lsp — the atoi/atof lexical edges
+    below AND integer overflow + negative-division rounding. Baseline
+    divergence already visible: (atof "0x1p4") is 0.0 on clautolisp,
+    16.0 on BricsCAD V26; AutoCAD half open.
+
+Both run under probe:suite:{autocad,bricscad}:windows / :macos (manual,
+playable when the intermittent runner is up). When a run lands, fold its
+results.sexp into the spec entry's "Tested Behaviour" subsection and flip
+the source marker from ;;; SPEC-UNCERTAIN: to ;;; Vendor: — only THEN is
+the entry below resolved.
+
+CAPTURED 2026-10-24 (runner online): AutoCAD 2022 + BricsCAD V26, committed at
+probe-results/{autocad/ms-windows/20261024T201442Z,bricscad/macos/20261024T201604Z}/.
+Answers + the clautolisp divergences they surfaced are recorded in
+windows-runner-sunset-probe-campaign.issue § First capture. Headline: all nine
+VLE-* markers are resolved (AutoCAD confirms BricsCAD-only; BricsCAD gives the
+behaviour), and clautolisp is WRONG vs the vendors on vle-member (returns tail,
+should be T/nil), vle-vector-normalise (nil vs zero vector), vle-aci2rgb
+(10-249 un-tabulated), vle-rgb2aci (arg shape backwards), atof hex-float, and
+integer overflow (signals where AutoCAD wraps / BricsCAD widens). Fold into the
+spec and open per-builtin fix issues; only then are these resolved.
+
 Open uncertainties (open this list as you add SPEC-UNCERTAIN
 markers — keep it sorted by function name):
 

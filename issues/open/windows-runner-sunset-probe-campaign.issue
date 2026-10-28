@@ -1,0 +1,432 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: windows-runner-sunset-probe-campaign — write & run the probes that only AutoCAD can answer, before the Windows runner is lost
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: campaign
+
+* Deadline and why it bites
+
+The Windows CI runner is expected to go away in *8 weeks* (filed 2026-10-24,
+so target *~2026-12-19*). It is the fleet's ONLY path to real AutoCAD:
+AutoCAD runs on Windows alone, and the vendor probe jobs reach it through
+=accoreconsole.exe= on that runner. BricsCAD, by contrast, also runs natively
+on macOS (thalassa) year-round, so BricsCAD answers are NOT on the clock.
+
+Therefore the scarce, perishable resource is *AutoCAD ground truth*. Every
+spec entry whose only authority is a real AutoCAD — a divergence from
+BricsCAD, an AutoCAD-Windows-only function, a prompt sequence clautolisp's
+=(command ...)= depends on — becomes unverifiable the day the runner stops.
+This campaign front-loads exactly those.
+
+This is the sunset-scoped successor to =cad-vendor-probe-campaign= (P1, closed
+2026-10-03, which drove the first probe suites onto CI) and the execution arm
+of =deferred-spec-research.issue= and the =autolisp-spec= PLAN's "run the
+probes on a real AutoCAD" line (open since 2026-04-26, blocked then on a
+license seat).
+
+* Method (unchanged from the existing probe machinery)
+
+Evidence ranking (specification-resolution-plan.org): vendor docs < executable
+product tests. The probes ARE the product tests, and this file is the plan for
+writing the ones still missing.
+
+How a probe reaches AutoCAD, concretely:
+
+- The vendor-neutral suite lives in =probes/sources/probe-*.lsp= + one line in
+  =probes/sources/manifest.txt=. No Makefile/shell/YAML change is needed to
+  add a suite (probes/README.org § Adding a probe suite).
+- =scripts/ci-detect-probe-changes.py= maps =probes/**= to the =suite= family,
+  so any new suite makes =PROBES_CHANGED =~ /,suite,/= and the existing jobs
+  =probe:suite:autocad:windows= and =probe:suite:bricscad:{windows,macos}=
+  run it automatically on the MR that adds it. Those jobs are otherwise
+  *manual* (=when: manual, allow_failure: true=), i.e. playable by hand
+  whenever the intermittent runner is up — which is the "launched manually
+  when the windows CI runners are available" the campaign asks for.
+- Results commit to =probe-results/<product>/<platform>/<timestamp>/= (locally)
+  or travel as a 90-day artefact (in CI, =PROBE_NO_COMMIT=). The sexp records
+  are then folded into the spec entry's "Tested Behaviour" subsection and the
+  matching =;;; SPEC-UNCERTAIN:= / =;;; Vendor:= marker in the source.
+
+Portability rules that every suite here obeys (probes/README.org):
+
+- A form a host might refuse to PARSE or evaluate is held as a STRING and
+  =(eval (read text))='d at run time, so a refusal is that one case's recorded
+  =error=, never a dead LOAD or a dead run. Case name == exact expression.
+- No =(setq x (or x d))= (BricsCAD =or= returns T/nil). Emit only through the
+  =cad-probe-*= helpers.
+
+Two hazards that keep specific probes OUT of the normal suite:
+
+1. *Uncatchable aborts.* BricsCAD V26 *aborts the application* on real
+   =(/ 1.0 0.0)= (spec ch.8 harvest). =vl-catch-all-apply= cannot catch an
+   app abort, so such a case would take the whole BricsCAD run down — the same
+   hazard =probe-load-refusal.lsp= is quarantined for. Divide-by-zero and
+   kin go in a QUARANTINED suite (run alone + split, low timeout,
+   PROBE_ANY_RESULT_IS_SUCCESS) or are made AutoCAD-only. See batch B13.
+2. *Headless ceiling.* =accoreconsole= has no UI, no ActiveX, no viewport DCS,
+   and may not load Express Tools. So reactor firing, =vlax-for= over a live
+   collection, interactive command prompts, and the Arbitrary-Axis UCS-matrix
+   question cannot be fully answered headless. Those batches (B10–B12) must
+   either prove they work under accoreconsole FIRST (one gating probe) or be
+   scheduled on a GUI AutoCAD session — the harder, scarcer slot, so they rank
+   high on the calendar even when individual value is mixed.
+
+* Prioritisation principle
+
+Rank by *perishability first, value second*: AutoCAD-only-answerable >
+both-vendor-divergence (AutoCAD half perishable) > BricsCAD-only or
+both-confirm (not perishable — do after sunset on macOS). Within a rank, a
+correctness-critical gap (something clautolisp actively relies on, e.g. a
+=(command ...)= prompt token, an ERRNO code, a sysvar read-only flag that makes
+portable =setvar= error) beats a cosmetic one.
+
+* Backlog, batched as probe suites
+
+Each BATCH is one =probe-*.lsp= suite (unless marked otherwise) and runs under
+=probe:suite:*:windows/macos=. "AC-crit" = the answer is lost at sunset.
+Source: the 2026-10-24 spec harvest (4 readers over the 160k-line draft) +
+the 18 =;;; SPEC-UNCERTAIN:= markers in
+=clautolisp/autolisp-builtins-core/source/api.lisp= + =deferred-spec-research=.
+
+** B1 — numeric-edges  [LANDED this MR]  AC-crit: YES
+probe-numeric-edges.lsp. Integer width/overflow (does AutoCAD wrap / promote /
+signal at >=2^31? clautolisp SIGNALS), negative integer division rounding
+(=/ -7 2= -> -3 vs -4; REM sign), atoi/atof lexical edges (AutoCAD halves:
+octal-on-0, 0x autodetect, C99 hex-float =0x1p4=, locale comma, leading space,
+trailing junk). Baseline already shows a clautolisp-vs-BricsCAD divergence:
+=(atof "0x1p4")= is 0.0 on clautolisp, 16.0 on BricsCAD V26 — AutoCAD unknown.
+
+** B2 — vle (BricsCAD Visual Lisp Extensions)  [LANDED this MR]  AC-crit: NO
+probe-vle.lsp. Retires 9 =SPEC-UNCERTAIN= markers at once: vle-subst-nth
+out-of-range IDX, vle-list-split result shape, vle-member boolean-vs-tail,
+vle-vector-normalise zero-length, vle-vector-getucs +-Z orientation,
+vle-string-replace first-vs-all, vle-string-split empty tokens, vle-aci2rgb
+10–249 range, vle-rgb2aci arg shape. Behaviour is BricsCAD's (answerable on
+macOS); the AutoCAD column confirms absence for each symbol's Availability line.
+
+** B3 — reader-printer  AC-crit: YES (reader/printer authority perishes)
+probe-reader-printer.lsp (all string+read, safe). From ch.2/12/13/14 harvest:
+read trailing/between-call comment handling (=(read "1 ; two")=,
+=(read "1 ;| c |; 2")=); real-literal reader (=.5=, =1.=, =1.e6=, =+.5=,
+=1E+03= — and that =1.= reads as 1.0, not CL integer 1); symbol-token grammar
+(=a#b=, =a[b]=, =a:b=, =|a b|=, =a.b=); string-literal escape repertoire
+(=\101= octal, =\x41=, =\uNNNN=, unknown escape =\q=); prin1 escape repertoire
+on control chars / embedded quote+backslash / non-ASCII / astral (build the
+input with =chr= at run time, record the round-trip form). Critical for
+reader/printer round-trip portability.
+
+** B4 — setvar-edges  AC-crit: YES
+probe-setvar-edges.lsp (getvar/setvar with save+restore). Highest ch.16 value:
+the spec's integer-range rule is internally CONTRADICTORY (clamp to
+[-32768,32767] vs signal) — =(setvar "OSMODE" 70000)= then read back, or an
+error+ERRNO? Also setvar type-coercion strictness (=(setvar "CMDECHO" 1.0)=
+error or coerce?), setvar on unknown/read-only name (error form + ERRNO),
+ANGBASE/SNAPANG radians-regardless-of-AUNITS. Measure on both; AutoCAD half
+perishes.
+
+** B5 — sysvar read-only & default sweep  AC-crit: YES
+probe-sysvar-flags.lsp (extends the harvest:sysvars mechanism). The spec
+carries hundreds of per-vendor Divergence rows for read-only flags and default
+values, harvested from docs, never measured. SECURELOAD is self-contradictory
+(entry "read-only yes" vs its Divergence row "AutoCAD False, BricsCAD True") —
+security-critical (gates load/arxload). Confirm read-only on AutoCAD for
+BACKZ/FRONTZ (claimed RO on AutoCAD) and writability of TRUSTEDPATHS /
+LENSLENGTH / PUCSBASE / LEGACYCODESEARCH. Batch-sweep the default-value
+Divergence set (DIMZIN, APERTURE, …) on a clean imperial template — a one-shot
+=getvar= over the divergent-name list, AutoCAD defaults unverifiable after
+sunset. (The ~300 "AutoCAD Integer / BricsCAD Short" type rows are NOT
+probe-worthy — representation, already consistent.)
+
+** B6 — load & encoding  AC-crit: YES  (needs byte-inspection, see note)
+probe-load-encoding.lsp + a small file round-trip harness. load missing-file
+error form + ERRNO + onfailure handling ("host- and version-sensitive"); load
+of BOM-less UTF-8 vs UTF-8+BOM vs UTF-16LE source on AutoCAD (code-point
+compare); OPEN "a"/"w"/"r" with "utf8-bom" — does a CREATE write a leading BOM,
+does a READ skip it or return U+FEFF, behaviour at LISPSYS 0. Needs leading-byte
+inspection of the written file (EF BB BF), which the current sexp harness does
+not do — add a tiny read-raw-bytes helper or a companion .ps1 step. Overlaps the
+existing encoding:experiment jobs; reuse that harness where possible.
+
+** B7 — arx / vba (AutoCAD-Windows ONLY)  AC-crit: YES
+probe-arx-vba.lsp. No BricsCAD analogue at all, so sunset = never. arxload
+double-load error + ERRNO; arxunload of a locked default module; =(arx)=
+fresh-session module list + macOS .bundle/.crx forms; vl-vbaload missing-file
+return/error; vl-vbarun bad-macro return. These touch the real host state —
+keep each under vl-catch-all-apply and avoid side effects.
+
+** B8 — host functions  AC-crit: mixed (do AutoCAD halves first)
+probe-host-fns.lsp. snvalid char-rejection set under EXTNAMES 0/1 + bar flag;
+cvunit (acad.unt contents, degC->degF offset, incompatible->nil); getenv/setenv
+empty-vs-undefined + persistence + case; getcfg/setcfg invalid-name->nil +
+512-char truncation; startapp return/PATH-search/quoting; menucmd unsupported
+area on BricsCAD (error vs ignore); getcname localized<->English (needs a
+localized AutoCAD — scarcest of all, flag separately); menugroup Windows-vs-
+macOS return; tablet ERRNO with no digitiser.
+
+** B9 — entity access / entmake / entmod / entget / ERRNO  AC-crit: YES
+probe-entity-access.lsp (extends the entity-lifecycle scenario probes). ch.17
+harvest: entmake R13+ subclass-marker rejection on AutoCAD (confirms the
+normative rule; D1 already implemented, re-confirm the ERRNO=36); entget
+default group-code set + header pair ORDER after entmake (flagged "not
+normative"); entnext/entlast confinement of non-graphical XRECORD/DICTIONARY
+(clautolisp enumerates them — divergence); entmod on a non-graphical object
+(AutoCAD no-op vs BricsCAD applies — D3, re-confirm); ssget "X" malformed -4
+operator tail (error/ERRNO vs silent partial match); ERRNO codes after failed
+entmake/entmod/entnext-past-end. Several were measured in
+vendor-probe-autocad-bricscad-divergences; capture the still-open ERRNO/order
+details before sunset.
+
+** B10 — Express Tools (ch.23 acet-*)  AC-crit: YES  (GATED)
+probe-express-tools.lsp. FIRST a gating probe: =(acet-load-expresstools)= then
+=(acet-str-equal "a" "a")= under accoreconsole — if Express Tools do not bind
+headless, the whole chapter needs a GUI AutoCAD session (schedule accordingly).
+If they bind: acet-str-find index base + not-found sentinel + regex;
+acet-str-replace count/regex; acet-str-format printf directive set;
+acet-str-wcmatch/equal/collate return types; acet-file-cwd/dir/mkdir formats;
+acet-sys-lasterr/procid types. All "Vendor-defined" in the spec, AutoCAD-only.
+(Dialog/pointer acet-ui-*, acad_colordlg are GUI — defer or drop.)
+
+** B11 — ActiveX / reactors (ch.19/20/21)  AC-crit: YES  (GUI / live state)
+probe-activex-reactors.lsp — likely NOT headless. vlax-map-collection aggregate
+return (under-specified); vlax-for binds-vs-assigns loop var + survival;
+reactor firing under accoreconsole + the accepted event-name vocabulary
+(=:vlr-commandEnded= …). These need a live collection / a command to fire a
+reactor; prove headless feasibility with one probe, else GUI session. BricsCAD
+ActiveX parity items (vlax-tmatrix, vlr-* constructor set, vlr-pers family) are
+NOT perishable — macOS/after-sunset.
+
+** B12 — COMMAND prompt/option capture  AC-crit: YES  [HIGHEST LEVERAGE]  [HARNESS LANDED]
+A probes/ SUITE (=probes/sources/probe-command-prompts.lsp= + a manifest line),
+NOT an alfe scenario probe. It drives each command one token at a time and reads
+the prompt from the =LASTPROMPT= sysvar between tokens, bounded by =CMDACTIVE=
+and a cancel-reset so no half-fed command hangs the batch. clautolisp's
+=(command ...)= feeds these token sequences, yet the Options/Argument-Sequence
+rows in ch.28 are doc-harvested, never product-captured. AutoCAD's prompts are
+the irreplaceable half (BricsCAD's stay capturable on macOS).
+
+WHY A SUITE: =probe:suite:autocad:windows= runs the manifest DIRECTLY in
+accoreconsole (=runner_template "accoreconsole.exe /s run.scr"=, no alfe), so
+LASTPROMPT reflects the real command. The first attempt drove the command
+THROUGH alfe and LASTPROMPT came back as alfe's own injected bootstrap line
+(=": (if (getvar \"SECURELOAD\") ...)"=), not the command's prompt -- see § First
+capture. As a suite it also reuses the existing probe:suite job and the =suite=
+family; no new driver, family, or job. (The BricsCAD suite is still alfe-driven
+via detect-cad.sh, so its prompt column may show the same alfe artefact until a
+direct-BricsCAD path exists; AutoCAD -- the perishable half -- runs direct.)
+
+The correctness-critical subset is the ~18 commands cador actually drives
+(19 handlers incl. dash variants — =cador-command-names= / the
+=define-cador-command= table in command-api.lisp): LINE, CIRCLE, TEXT, DONUT,
+SOLID, ERASE, MOVE, COPY, ROTATE, BLOCK/-BLOCK, ARC, PLINE, MTEXT, WIPEOUT,
+MIRROR, INSERT/-INSERT, LAYER/-LAYER, LINETYPE/-LINETYPE. (The agent harvest's
+"85" was the spec-dictionary count, not the implemented set.)
+
+LANDED this MR: the suite + a SEED command table (LINE/CIRCLE/ARC/PLINE/TEXT
+completing scripts; -LAYER/-LINETYPE/-INSERT/RECTANG/OFFSET/FILLET/TRIM/EXTEND
+initial-prompt capture), run by =probe:suite:autocad:windows= directly in
+accoreconsole. (First built as an alfe scenario probe, which could not capture
+prompts -- see § First capture -- then reworked into this suite.) The headless
+clautolisp baseline confirms what makes the batch vendor-only: cador has NO
+interactive prompt loop (it consumes a whole token list in one call), so
+=LASTPROMPT= stays "" / =CMDACTIVE= 0 there -- the real prompt strings exist only
+on AutoCAD/BricsCAD. (=LASTPROMPT= itself reads fine on cador, so the mechanism
+is sound.)
+
+TODO on a live engine: grow the seed table toward the full implemented set with
+a confirmed safe token script per command; pin the known divergences — TRIM/
+EXTEND Quick-vs-Standard mode (TRIMEXTENDMODE, already surfaced in the ENV
+line), bare INSERT palette vs classic -INSERT, OFFSET "Both Sides"
+(BricsCAD-only), FILLET Expression/Chain/Loop. Also the command-PRESENCE sweeps
+(a separate, cheaper probe): the 706 "AutoCAD: not present" names and the
+version-drift ones (3DPAN, EATTEXT, CLASSIC*, JOGSECTION/DETECT, ASSISTANTOPEN,
+MENULOAD) — batch-type each, record "Unknown command" vs a prompt; any hit
+reclassifies the portability row. This batch is the single best use of a live
+AutoCAD slot.
+
+** B13 — divide-by-zero & abort hazards (QUARANTINED)  AC-crit: YES
+probe-div-zero.lsp, manifest flag =quarantine=, run via PROBE_SUITES like
+load-refusal (alone, split, low timeout, any-result-is-success). =(/ 1 0)=,
+=(/ 1.0 0.0)=, =(/ 0.0 0.0)=, =(rem 1 0)=: trappable error vs value vs hard
+abort, per vendor. MUST NOT be in the normal manifest (BricsCAD aborts).
+
+* 8-week schedule (front-load the perishable + the GUI-scarce)
+
+Weeks are elastic to the runner's office-hours availability; each batch is
+one MR that auto-runs its suite on the next online window, then manual re-runs.
+
+- *Week 1 (done in this MR):* B1 numeric-edges, B2 vle. Pattern + harness proven.
+- *Week 1–2:* B3 reader-printer, B4 setvar-edges — pure value probes, highest
+  AC-crit density, zero new harness.
+- *Week 2–3:* B12 — the command prompt-capture harness is now BUILT (seed
+  table). Grow it to the full implemented set and run it against AutoCAD while
+  the runner is reliably up — the highest-leverage AutoCAD-only work. Fold in
+  the presence sweeps.
+- *Week 3–4:* B9 entity/ERRNO, B5 sysvar read-only + default sweep.
+- *Week 4–5:* B6 load/encoding (byte-inspection harness), B7 arx/vba.
+- *Week 5–6:* B10 Express Tools (run the gating probe first; if GUI-only, book
+  the GUI slot now), B8 host-fns (AutoCAD halves; getcname localized if a
+  localized seat exists).
+- *Week 6–7:* B11 ActiveX/reactors (headless-feasibility probe, else GUI slot).
+  B13 quarantined div-zero (quick, any time a split run is scheduled).
+- *Week 7–8:* buffer — re-run flaky/empty results, fold every captured
+  results.sexp into the spec "Tested Behaviour" subsections and flip the
+  =SPEC-UNCERTAIN= markers to =Vendor:= cites. The RESULTS are the deliverable;
+  an unfolded result is half-done.
+
+* Risks / limits
+
+- *Intermittent runner:* a batch's job is manual; a maintainer plays it when
+  the runner is online. Do not gate anything that must happen on a schedule on
+  this runner (the release-1.8.43 lesson).
+- *Headless ceiling:* B10–B12 may need a GUI AutoCAD; that slot is scarcer than
+  the runner — book it deliberately, do not discover the need in week 8.
+- *License seat:* full AutoCAD (vs accoreconsole) needs a seat; the
+  autolisp-spec PLAN's AutoCAD run has been blocked on exactly this since
+  2026-04-26. Confirm a seat is reachable on the Windows runner early.
+- *Fold-back debt:* capturing is cheap; folding results into 974 spec entries +
+  source markers is the real cost. Budget week 7–8 for it and keep each batch's
+  spec edits in its own MR so nothing is left as a loose artefact.
+
+* First capture — 2026-10-24 (Windows runner online)
+
+The runner came up the day this was filed, so the B1/B2/B12 jobs ran on real
+hardware. Committed results: =probe-results/autocad/ms-windows/20261024T201442Z/=
+(AutoCAD 2022 accoreconsole, exit 0) and
+=probe-results/bricscad/macos/20261024T201604Z/= (BricsCAD V26). The
+=probe:suite:bricscad:windows= job FAILED (allow_failure; the macOS twin ran the
+same manifest green — a Windows-only crash to chase separately, the known
+BricsCAD-load hazard class). =command-prompts:*= all went green but see B12
+below.
+
+** B1 numeric-edges — a real 3-way integer-overflow divergence, and clautolisp wrong twice
+- *Integer overflow.* AutoCAD 2022 keeps a 32-bit int and WRAPS (two's
+  complement): =(+ 2147483640 100)= -> =-2147483556=, =(1+ 2147483647)= ->
+  =-2147483648=, =(* 100000 100000)= -> =1410065408=; but UNDERFLOW promotes to
+  REAL: =(- -2147483648 1)= -> =-2.14748e+09=. BricsCAD V26 WIDENS (>=64-bit):
+  same inputs give =2147483740=, =2147483648=, =10000000000=, =-2147483649=
+  (all INT). clautolisp currently SIGNALS "outside the 32-bit integer range" —
+  so it matches NEITHER vendor. => clautolisp bug: overflow must be
+  dialect-resolved (autocad=wrap + underflow-to-real; bricscad=widen).
+- *atof hex-float.* =(atof "0x1p4")= is =16.0= on BOTH AutoCAD and BricsCAD;
+  clautolisp returns =0.0=. => clautolisp bug (it rejects C99 hex-float both
+  vendors accept). Decimal-comma rejected on both (=3,5= -> =3.0=).
+- atoi edges and negative integer division / rem: AutoCAD == BricsCAD ==
+  clautolisp on every case (017->17, 0xbabe->0, 17x->17, " 17"->17, ""->0;
+  -7/2->-3 toward zero; (rem -7 2)->-1). Those entries can close to *tested*.
+
+** B2 vle — all nine markers resolved; AutoCAD confirms BricsCAD-only; clautolisp wrong on four
+AutoCAD: every VLE-* is "no function definition" => BricsCAD-only confirmed on
+hardware (Availability line settled for all nine). BricsCAD V26 answers:
+- vle-subst-nth out-of-range -> list UNCHANGED (clautolisp agrees).
+- vle-list-split -> 2-list =(head tail)=, splitter DROPPED; at head ->
+  =(nil (a b c))=; not present -> =((a b c) nil)= (clautolisp agrees).
+- vle-member -> *T/nil (pure boolean)*; clautolisp returns the TAIL => bug.
+- vle-vector-normalise of the zero vector -> =(0.0 0.0 0.0)= (zero vector);
+  clautolisp returns nil => bug.
+- vle-vector-getucs +Z->((1 0 0)(0 1 0)), -Z->((-1 0 0)(0 1 0)).
+- vle-string-replace -> replace-ALL (clautolisp agrees); empty new-str deletes.
+- vle-string-split -> empty tokens KEPT (clautolisp agrees).
+- vle-aci2rgb 10/150/249 -> =(255 0 0)=/=(0 127 255)=/=(76 38 47)=; clautolisp
+  returns nil for 10-249 => has the real table to fill now.
+- vle-rgb2aci accepts an INTEGER (=255=->1) and THREE ints (=255 0 0=->1) and
+  REJECTS the list form; clautolisp accepts ONLY the list => arg-shape backwards.
+
+clautolisp bugs surfaced (each wants its own fix issue, dialect-resolved where
+the vendors differ): integer-overflow policy, atof hex-float, vle-member return,
+vle-vector-normalise zero case, vle-aci2rgb 10-249 table, vle-rgb2aci arg shape.
+The committed results.sexp are the citations.
+
+** B12 — harness transport can't capture command prompts through alfe (design correction)
+The jobs ran green but the capture is EMPTY of real prompts: on BricsCAD every
+=CMDPROBE= line shows =active=4= and LASTPROMPT = alfe's own injected bootstrap
+line (=": (if (getvar \"SECURELOAD\") ...)"=), and on AutoCAD no per-command
+line appears at all. alfe drives the engine by feeding the probe as a lisp
+program over its protocol; it does not expose an interactive command loop where
+LASTPROMPT reflects the running command's prompt. So the incremental
+=(command name)= + LASTPROMPT technique does NOT survive the alfe transport.
+FIXED by reworking B12 from an alfe scenario probe into a probes/ SUITE
+(=probes/sources/probe-command-prompts.lsp=): =probe:suite:autocad:windows= runs
+the manifest DIRECTLY in accoreconsole (=accoreconsole /s run.scr=, no alfe), so
+LASTPROMPT reflects the real command. The lisp probe was sound (it ran, emitted,
+cancelled cleanly); only the vehicle changed -- and the suite needs no new
+driver/family/job. The BricsCAD suite is still alfe-driven (detect-cad.sh), so
+BricsCAD prompts may still show the alfe artefact until a direct-BricsCAD path
+exists; AutoCAD, the perishable half, runs direct.
+
+* Second capture — 2026-10-25: command prompts do NOT capture headless
+
+The suite reworked B12 to run DIRECT in accoreconsole, and it ran green
+(probe:suite:autocad:windows, probe-results/autocad/ms-windows/20261025T174713Z/).
+But the command-prompts suite emitted ONLY its ENV record -- CMDECHO 1,
+TRIMEXTENDMODE 0, LASTPROMPT-readable "Y" -- and ZERO per-command records (no
+"LINE/0", no step at all). The run completed normally (the documents suite ran
+after it), so it did not hang; the per-command driving simply produced nothing.
+The cador baseline, by contrast, DID emit a per-step record for every command
+((0 . "")), so the probe LOGIC is sound.
+
+Conclusion: *interactive command-line prompts are not capturable in headless
+accoreconsole.* In script/headless mode a loaded-lisp =(command "_LINE")= does
+not leave the command suspended with its prompt in LASTPROMPT the way an
+interactive session does, so the incremental =(command token)= + LASTPROMPT
+technique yields nothing. This is the "headless ceiling" this ticket's method
+section predicted for B10-B12. Both vehicles have now been ruled out: alfe
+(LASTPROMPT = alfe's channel) and direct accoreconsole (no per-command record).
+
+Paths forward for B12 (pick before spending more runner time):
+  1. A GUI AutoCAD (acad.exe) session, not accoreconsole -- the only place an
+     interactive prompt actually exists. Scarcer than the runner; book it.
+  2. A pure =.scr= that INTERLEAVES command tokens with
+     =(princ (getvar "LASTPROMPT"))= lines. In script mode each script LINE is
+     fed to the current prompt, so the command genuinely pauses between lines
+     and LASTPROMPT should hold the prompt -- unlike a single loaded-lisp
+     program that runs start-to-finish. Worth a one-command spike before
+     committing to it.
+The lisp probe and its SEED table stay as-is; only the capture vehicle is open.
+ENV did confirm one useful thing: TRIMEXTENDMODE defaults to 0 on this AutoCAD
+(Quick mode) vs 1 on BricsCAD -- the TRIM/EXTEND divergence, from the ENV line
+alone.
+
+* GUI AutoCAD attempt (B12 path 1) -- 2026-10-25/26: viable, but defeated by the queue
+
+Path 1 (a GUI acad.exe, since headless accoreconsole cannot capture prompts)
+was built and run on the live runner. Established on hardware:
+  - GUI acad LAUNCHES on the runner: desktop live (the gate's session check
+    reports DESKTOP-LIVE), a license seat is available, acad.exe starts.
+  - After a chain of launcher fixes it opens a drawing and is ready to run the
+    script. The fixes, each from an observed failure:
+    1. MSYS/MINGW mangled the =/b= switch into a path -> acad tried to open it
+       as a drawing ("fichier dessin introuvable"). Fix: MSYS2_ARG_CONV_EXCL.
+    2. acad started on the Start tab ("Debut") with no drawing -> the /b script
+       had no document and never ran. Fix: open the runner's empty.dwg (/t
+       template fallback).
+    3. the /b script path was RELATIVE; acad.exe does not run from the repo dir
+       -> script unfindable, acad idle. Fix: absolute out-dir paths.
+    Also: cancel each command with (command) [Esc], not "" [Enter] (an Enter
+    left commands waiting and wedged the GUI); and trap SIGTERM so a cancelled
+    run kills acad instead of orphaning it (an early cancel left a stuck window
+    the user had to kill by hand).
+
+What was NOT reached: the absolute-path run never executed. Queued behind ~20
+other CAD/Windows jobs on the serial runner, it sat pending ~2h and then FAILED
+=stuck_pending_no_matching_runners= -- the intermittent runner went offline
+(office hours / overnight) before the queue drained to it. So whether the
+script now runs to completion and LASTPROMPT captures the prompts in GUI acad
+is STILL UNVERIFIED; the driver is believed correct but unexercised on hardware.
+
+Lesson for the sunset window: do NOT let a GUI-acad capture wait behind a full
+pipeline on an intermittent serial runner -- the queue outlasts the runner's
+uptime. When the runner is next online, FAST-TRACK the job: cancel the competing
+CAD jobs (or run the driver outside a full pipeline) so acad.exe starts within
+minutes, while the runner is still up. The job (command-prompts:gui:autocad:
+windows) and driver (scripts/run-command-prompts-gui-autocad.sh) are ready.
+
+* Status
+
+NEXT. Landed in the MR that files this issue: three probe suites --
+B1 numeric-edges, B2 vle, and B12 command-prompts -- all in the =probes/=
+manifest, so all auto-run on =probe:suite:{autocad,bricscad}:windows/macos= (the
+=suite= family) and are re-playable on any online window; B1/B2 already captured
+on hardware (§ First capture). B3-B11 and B13 are specified above with exact
+probe expressions (from the 2026-10-24 spec harvest) and a schedule. The 18 =SPEC-UNCERTAIN= markers and the open =deferred-spec-research=
+questions are the fold-back targets; each batch's results fold into the spec's
+"Tested Behaviour" subsections in its own MR.
