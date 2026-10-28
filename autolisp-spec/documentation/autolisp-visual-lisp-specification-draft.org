@@ -8837,13 +8837,16 @@ probe-reader-printer.lsp; AutoCAD 2022 job 17540963671, BricsCAD V25 Windows 175
 | "+.5", "-.5"                 | the symbol + / -          | the symbol +.5 / -.5     |
 | "1.5.2"                      | the symbol 1              | the symbol 1.5.2         |
 | "a.b", "(a.b)"               | A, (A)                    | A.B, (A.B)               |
-| "1 ; two", "1 ;\| c \|; 2" | 1                         | 1                        |
-| ";\| c \|; 3"              | 3                         | nil                      |
 | "A\101B", "A\377B"         | AAB, A<255>B (octal)      | the same                 |
 | "A\x41B", "A\qB"           | Ax41B, AqB (backslash dropped) | the same            |
 | "A\u0041B"                  | Auu0041B                  | AU0041B                  |
 | "A\0B"                      | A (the string ends)       | A<0><0>                  |
-| a#b a[b] a:b \|a b\| a'b a,b | the same on both (one token each, |a b| as \|A, a'b as A) | |
+
+Comments: =(read "1 ; two")= is 1 on both, and so is a block comment between
+two tokens; but a block comment BEFORE the token, =(read ";| c |; 3")=, gives
+3 on AutoCAD and nil on BricsCAD. The symbol tokens =a#b=, =a[b]=, =a:b=,
+=a,b= read as one symbol each on both; =|a b|= reads as the symbol named
+"|A" and =a'b= as A on both.
 
 *** clautolisp: READ
 Exponent reals without a dot (1e3) are reals, octal escapes are decoded and
