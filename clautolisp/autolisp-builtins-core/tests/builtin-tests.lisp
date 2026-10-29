@@ -4722,14 +4722,17 @@ LENGTH2DYZ drops X."
          1.0d-9)))
 
 (test m3b-vle-vector-normalise
-  "NORMALISE produces a unit vector; zero-length input returns NIL."
+  "NORMALISE produces a unit vector; zero-length input returns the zero
+vector (0 0 0), as BricsCAD V26 does -- vle-extension-vendor-divergences."
   (reset-autolisp-symbol-table)
   (is (close-vec3-p
        (run-autolisp-string "(vle-vector-normalise '(0 3 0))"
                             :setup-fn #'install-core-into)
        '(0d0 1d0 0d0)))
-  (is (null (run-autolisp-string "(vle-vector-normalise '(0 0 0))"
-                                 :setup-fn #'install-core-into))))
+  (is (close-vec3-p
+       (run-autolisp-string "(vle-vector-normalise '(0 0 0))"
+                            :setup-fn #'install-core-into)
+       '(0d0 0d0 0d0))))
 
 (test m3b-vle-vector-angles
   "ANGLETO unsigned π/2 between X and Y axes; ANGLETOREF sign
@@ -5216,11 +5219,14 @@ to keep the test deterministic across hosts)."
 (test coverage-vle-member-and-enamep-and-picksetp
   "Three predicate-style gap-fills."
   (reset-autolisp-symbol-table)
-  ;; VLE-MEMBER: returns the tail starting at the match (CL MEMBER).
-  (let ((tail (run-autolisp-string "(vle-member 'b '(a b c))"
-                                   :setup-fn #'install-core-into)))
-    (is (consp tail))
-    (is (= 2 (length tail))))
+  ;; VLE-MEMBER: BricsCAD V26 returns the boolean T / nil, NOT the tail
+  ;; (the tail/index is VLE-SEARCH's job) -- vle-extension-vendor-divergences.
+  (let ((present (run-autolisp-string "(vle-member 'b '(a b c))"
+                                      :setup-fn #'install-core-into)))
+    (is (not (null present)))
+    (is (atom present)))          ; a boolean, not the (b c) tail
+  (is (null (run-autolisp-string "(vle-member 'z '(a b c))"
+                                 :setup-fn #'install-core-into)))
   ;; VLE-ENAMEP / VLE-PICKSETP: both nil for a bare integer.
   (is (null (run-autolisp-string "(vle-enamep 5)"
                                  :setup-fn #'install-core-into)))
