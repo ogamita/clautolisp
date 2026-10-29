@@ -921,3 +921,5 @@ opendcl-conformance. All =TODO=.
 
 * NEXT alfe-cad-owned-com-teardown (P1)
 [[file:alfe-cad-owned-com-teardown.issue][Ordered CAD restoration and owned COM process closure]]; native Windows validation pending.
+
+- NEXT =equal-list-fuzz= — P2, EQUAL ignores numeric fuzz inside lists; scalar/list reproducer and SCHMS rotation test reference included.

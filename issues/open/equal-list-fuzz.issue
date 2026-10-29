@@ -1,0 +1,48 @@
+#+TITLE: EQUAL ignores numeric fuzz inside lists and point coordinates
+#+STATUS: NEXT
+#+PRIORITY: P2
+#+TYPE: compatibility
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-29
+
+* Reproduction and observation
+
+Run the adjacent =equal-list-fuzz-repro.lsp= with:
+
+#+begin_src sh
+clautolisp --no-init --host cador --dialect bricscad-v26 \
+  -l issues/open/equal-list-fuzz-repro.lsp
+#+end_src
+
+Observed using the locally available SBCL executable 2.3.73: scalar T,
+list nil, outside-tolerance nil. The scalar and list use the exact same
+numeric values and tolerance; only the container differs.
+
+Source inspection of master b0942a5a (release source 2.3.78, not a newly
+built binary): =builtin-equal= in
+=clautolisp/autolisp-builtins-core/source/api.lisp= applies tolerance only
+when both top-level operands are numbers; lists fall back to
+=autolisp-equal-p= without passing tolerance.
+
+* Actual caller and impact
+
+SCHMS =src-vlx/geometry.lsp=, =schms_rotation_point=, returns a point.
+The new pure test =src-vlx/test-unitaire-geometry.lsp= compares rotation
+around (1 2 0) through a complete turn: error about 9e-16 is below 1e-9,
+yet list EQUAL rejects the point. SCHMS keeps the product computation and
+checks coordinates separately with the same 1e-9 bound. A negative control
+rejects a point displaced by 0.01.
+
+Native AutoLISP point comparison with fuzz should accept coordinates
+within the bound. Native qualification of this exact reproducer is still
+pending; do not claim this local observation is a native probe receipt.
+
+* Acceptance criteria
+
+Apply fuzz recursively to numeric leaves of proper lists, nested lists,
+points and dotted pairs, while retaining strict structure, length and
+non-numeric comparisons. Preserve the scalar behavior and add tests
+inside/outside tolerance, zero tolerance, negative fuzz and invalid fuzz
+according to the native contract. Qualify the minimal reproducer on both
+AutoCAD and BricsCAD.
