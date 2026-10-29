@@ -36,3 +36,18 @@ workdirs they come from) are never cleaned, they accumulate run after run;
    protocol/ and log files a reader needs, not whole workdirs).
 3. Bound the artifact (paths / exclude), so a bad run fails fast instead of
    retrying an upload for half an hour on the CAD runner.
+
+* Fixed 2026-10-29 (root cause) -- branch fix-vendor-probes-bloat
+
+Step 2 done: run-vendor-probes.{ps1,sh} now clean dist/vendor-probes/<backend>
+at the START of each run (Remove-Item -Recurse / rm -rf, before recreating it).
+That was the accumulation source -- the kept protocol workdirs are copied into
+that dir per probe, dist/ is untracked, and the Windows runner reuses its build
+directory, so run after run they piled up to 39701 entries. Cleaning only the
+backend's own subdir leaves the other backend's current-pipeline dir intact.
+No clautolisp source change (CI driver only), so no version bump.
+
+Remaining: step 1 (count what dist/vendor-probes/ held, needs runner access --
+expected now moot, as the clean caps it to one run) and step 3 (an explicit
+artifact paths/exclude bound as belt-and-braces against a future pathological
+run). Kept open for step 3.

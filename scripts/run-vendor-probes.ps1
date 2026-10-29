@@ -36,6 +36,14 @@ $root = if ($env:CI_PROJECT_DIR) { $env:CI_PROJECT_DIR } else { (Get-Location).P
 $alfe = Join-Path $root "autolisp-front-end/tools/alfe/bin/alfe-sbcl"
 $probeDir = Join-Path $root "autolisp-front-end/tests/scenarios/entities"
 $outDir = Join-Path $root "dist/vendor-probes/$Backend"
+# Clean this backend's dist dir at the START of the run. With
+# PROBE_KEEP_WORKDIR each probe's whole protocol workdir is copied in here, and
+# dist/ is untracked on the Windows runner's REUSED build directory -- so
+# without this the copies pile up run after run (vendor-probes-artifact-upload-
+# bloat: 39701 files, a 25-minute "invalid argument" upload retry holding the
+# single CAD runner). Cleaning only $Backend leaves the other backend's dir,
+# written by an earlier job in the same pipeline, intact.
+Remove-Item -Recurse -Force -Path $outDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
 # AUTOLISP_DWG is consulted by both backends' batch paths; --dwg (below) is
