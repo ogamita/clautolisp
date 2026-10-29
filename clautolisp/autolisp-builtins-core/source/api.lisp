@@ -2230,11 +2230,26 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
      object))
   object)
 
-(defun builtin-rem (first-number second-number)
+(defun builtin-rem (&rest numbers)
+  ;; AutoLISP REM takes integer OR real operands and is variadic, reduced
+  ;; left to right ((rem a b c) = (rem (rem a b) c)). The result is real
+  ;; when any operand is real (CL REM's float contagion), integer when all
+  ;; operands are integers. The remainder follows the dividend's sign
+  ;; (truncated division): (rem -7 2) = -1, (rem 7 -2) = 1, as AutoCAD and
+  ;; BricsCAD do (probe-numeric-edges, 2026-10-24). This was int-only
+  ;; (require-int32 on two operands), which rejected the real operands SCHMS
+  ;; arc geometry needs -- rem-real-operands.issue.
+  ;;; SPEC-UNCERTAIN: the exact value for zero / one operand. Autodesk
+  ;;;   documents that REM accepts them, but it is not probed; 0 (zero
+  ;;;   operands) and the operand itself (one operand) are the reduction's
+  ;;;   natural results. Confirm against a live product before relying on them.
+  (dolist (number numbers)
+    (require-number number "REM"))
   (handler-case
-      (arithmetic-result
-       (rem (require-int32 first-number "REM")
-            (require-int32 second-number "REM")))
+      (cond
+        ((null numbers)        (arithmetic-result 0))
+        ((null (cdr numbers))  (arithmetic-result (car numbers)))
+        (t                     (arithmetic-result (reduce #'rem numbers))))
     (division-by-zero ()
       (signal-builtin-host-error
        :division-by-zero

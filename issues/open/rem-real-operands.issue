@@ -47,3 +47,25 @@ verify, not something exercised by this minimal reproducer. Add language
 regressions for the supported dialects and run the SCHMS candidate geometry
 suite after updating the installed runtime. No CAD automation is necessary
 for the minimal failure.
+
+* Fixed 2026-10-29 (core) -- clautolisp 2.3.77, branch fix-rem-real-operands
+
+builtin-rem (api.lisp) was int-only (require-int32 on two operands); it now
+takes integer OR real operands and is variadic, reduced left to right. The
+result is real when any operand is real (CL REM's float contagion), integer
+when all are integers; the remainder follows the dividend's sign (truncated
+division: (rem -7 2) = -1, (rem 7 -2) = 1, as both products do). REM registers
+via make-core-builtin-subr like / and gcd, so the &rest signature made it
+variadic with no registration change. Division by zero still signals as before.
+
+Language regressions added to builtin-basic-arithmetic (the minimal repro's
+(rem 12.0 16) -> 12.0 REAL, plus mixed, negative, variadic (rem 42 12 3) -> 0,
+one-operand, and type assertions); builtin-basic-arithmetic + the div-by-zero
+test green (fiveam 57/57).
+
+Remaining (kept open until done):
+  - run the SCHMS candidate geometry suite against the rebuilt 2.3.77 runtime
+    (external; needs the SCHMS checkout) and un-pend the seven cases;
+  - verify on a live product the exact value for ZERO and ONE operand (SPEC-
+    UNCERTAIN in the source) and REAL zero-divisor behaviour (the fix keeps the
+    integer div-by-zero signal; a real 0.0 divisor is not yet pinned to vendor).
