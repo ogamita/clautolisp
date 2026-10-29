@@ -134,3 +134,35 @@ d'une qualification séparée.
 - Job étudié : https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/550107
 - Évolution et corpus : =dev/doc/more-parsing.md= et
   =test/fixtures/schms-550107.json= dans la branche =exp-pb-more-parsing=.
+
+
+* Contrats explicites de liaison et de callback (2026-10-29)
+
+La référence parser-lisp MR !14, révision =cd9311b=, permet désormais un
+=@AllowWarning règle symbole : justification= dans le commentaire bloc
+immédiatement avant le =defun= ou le =lambda= concerné. Une exception est
+limitée à une règle, un symbole exact et une portée ; elle ne se propage
+pas aux descendants ou aux fonctions voisines. Les déclarations mal formées,
+orphelines, dupliquées, de règle inconnue ou périmées font échouer le contrôle
+de qualité. Les diagnostics bruts restent consultables, les exceptions
+appliquées sont affichées avec leur justification. Pas de joker, de liste
+blanche implicite de noms SCHMS, ni de suppression d'erreur de syntaxe.
+
+Le futur outil Clautolisp doit spécifier et tester un contrat comparable :
+paramètres imposés par une arité de callback, locales protégeant un état
+partagé pendant un appel dynamique, sorties désignées par symbole. Ne pas
+faire disparaître une liaison protectrice ni insérer de lecture factice
+pour satisfaire l'analyseur. Ajouter des tests positifs et négatifs de
+confinement, de masquage et d'obsolescence des exceptions ; analyser les
+commentaires via le lecteur, sans confondre les marqueurs dans une chaîne
+avec des annotations. La suite de référence compte 277 tests, dont quinze
+cas de contrats explicites et de confinement.
+
+Exemple de preuve comportementale : SCHMS
+=DIAL/test-cad-activex-SIGFIC.lsp=, test
+=generation-preserve-angle-epure-appelant=. Un vrai SIGFIC est créé à un
+angle non nul ; sa rotation est correcte et la liaison =schms_agt= de
+l'appelant reste inchangée. Retirer temporairement la seule garde dans
+=src-vlx/objet_workflow.lsp= fait échouer précisément cette assertion.
+Les champs partagés et signatures imposées doivent rester des contrats
+explicites de l'application, pas des exceptions codées dans l'analyseur.
