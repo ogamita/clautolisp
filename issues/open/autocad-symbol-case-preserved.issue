@@ -24,3 +24,11 @@ Probe the print name of every symbol AutoCAD predefines (atoms-family 0
 on a fresh drawing, vl-symbol-name of each) to find which are not upper
 case, then generalise AUTOLISP-SYMBOL-PRINT-NAME to a measured table
 (AutoCAD dialects only), as for VARIANT / SAFEARRAY.
+
+* Batched probe prepared 2026-10-29 (branch prep-pending-probes)
+
+probes/sources/probe-pending-divergences.lsp (suite "pending-divergences",
+group symbol-case) captures this on real hardware. Run it via
+probe:suite:{autocad,bricscad}:windows / :macos when the Windows runner is next
+online (one session covers all three data-blocked issues). clautolisp baseline
+validated 2026-10-29.
