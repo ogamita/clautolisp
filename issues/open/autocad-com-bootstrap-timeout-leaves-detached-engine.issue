@@ -1,0 +1,65 @@
+#+TITLE: AutoCAD bootstrap timeout leaves a detached COM engine and blocks subsequent CI builds
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: compatibility
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-29
+
+* Confirmed failure sequence
+
+[[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/558988][SCHMS EPURE AutoCAD job 558988]] ran on runner2 from 12:14:08 to 12:17:12
+Europe/Paris on 2026-10-29. Alfe reported READY-TIMEOUT after 120 seconds,
+last state BOOTING, and terminated its spawned engine PID 22244.
+
+A separate =acad.exe /Automation -Embedding= process, PID 18312, survived.
+Its parent was the RPC service PID 952, not PID 22244. CIM confirmed owner
+runner2, session 18, creation 11:14:54.448 UTC, inside the failed job.
+Read-only process-handle inspection tied it unambiguously to
+=travail/runner2/558988/temp/= through two live temporary files. No foreign
+project path was used as ownership evidence.
+
+The survivor prevented later jobs from compiling because the legitimate
+preflight guard refuses to compile while AutoCAD is open in the same session:
+
+- [[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/559025][compile job 559025]], another branch, failed before compilation;
+- jobs 559119 (optimized DES qualification) and 559122 (compile) also failed
+  at this guard. This is not evidence of a DES or product Lisp regression.
+
+After confirming that job 558988 had ended, the survivor was closed using
+its exact PID, creation timestamp, owner, session and job-temporary-handle
+evidence. Only its process tree was terminated; the RPC parent and unrelated
+CAD instances were preserved. A follow-up CIM query confirmed PID 18312 gone.
+The first immediate CIM query after taskkill still returned the terminated
+process: cleanup must wait for the actual postcondition, not only request it.
+
+* Cause to fix independently of the original bootstrap failure
+
+Cleanup tracked the spawned launcher/engine but missed the different CAD
+server activated through COM. Killing only the launcher's process tree cannot
+reach a server whose parent is the RPC service. Bootstrap failure must not
+leave an owned detached server behind even when READY was never reached.
+
+The trace also warned that TRUSTEDPATHS could not be extended in the EPURE
+profile. Subsequent read-only inspection found both runner profiles present,
+owner FullControl, ExpandString values and SECURELOAD already 0. No registry
+value or ACL was changed. The warning alone therefore does not establish the
+reason for BOOTING; do not conflate this cleanup bug with that separate cause.
+The earlier session-state investigation remains in
+[[file:autocad-com-fails-in-disconnected-windows-session.issue][autocad-com-fails-in-disconnected-windows-session.issue]].
+
+* Acceptance and regression test
+
+Create a deterministic bootstrap-failure fixture for a fresh AutoCAD COM
+server, including the case where its PID differs from the spawned process
+and is parented by RPC. Fail before READY and verify that all processes
+positively owned by that invocation terminate within a bounded delay.
+Also cover cancellation, early bridge failure and normal shutdown.
+
+Keep a pre-existing CAD/COM process and a foreign job alive during the test;
+prove they remain untouched. A candidate created in the same account/session
+is not sufficient ownership evidence. Use the invocation's COM reference or
+an equally strong per-invocation marker (for this incident, the private job
+temp handles supplied that evidence). Never kill all acad.exe processes or
+the RPC service. Retain process receipts and bootstrap logs on failure, then
+replay EPURE AutoCAD and the following compilation in the same runner session.

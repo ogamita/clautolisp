@@ -913,3 +913,8 @@ opendcl-conformance. All =TODO=.
 
 | Priority | Status | Issue | Scope |
 | P2 | NEXT | [[file:rem-real-operands.issue][rem-real-operands]] | Real arithmetic blocks SCHMS arc regression qualification |
+
+* 2026-10-29 Detached AutoCAD COM server after bootstrap timeout
+
+| Priority | Status | Issue | Scope |
+| P1 | NEXT | [[file:autocad-com-bootstrap-timeout-leaves-detached-engine.issue][autocad-com-bootstrap-timeout-leaves-detached-engine]] | Failed EPURE bootstrap leaves RPC-parented acad.exe and blocks later compilation |
