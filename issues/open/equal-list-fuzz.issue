@@ -50,3 +50,26 @@ AutoCAD and BricsCAD.
 
 The minimal reproducer uses decimal literals to avoid conflating EQUAL
 with source-reader differences in scientific-notation token handling.
+
+* Fixed 2026-10-29 -- clautolisp 2.3.81, branch fix-equal-list-fuzz
+
+builtin-equal applied the fuzz only when both TOP-LEVEL operands were numbers;
+lists fell back to autolisp-equal-p with no tolerance. New helper
+autolisp-equal-fuzz-p (api.lisp) mirrors autolisp-equal-p but compares every
+NUMERIC LEAF within +-tolerance, recursing through proper lists, nested lists,
+points and both halves of a dotted pair; structure, length, strings and
+non-numeric atoms stay strict (a number is never fuzz-equal to a non-number;
+(5.0) is never equal to (5.0 5.0)). builtin-equal now routes BOTH the scalar and
+the list case through it when fuzz is non-zero; nil / 0 fuzz still reduce to
+strict autolisp-equal-p, and a non-number fuzz still signals. The scalar case is
+just two numeric leaves, so old scalar behaviour is preserved.
+
+Tests (builtin-apply-eval-eq-equal, fiveam 19/19): list inside/outside
+tolerance, a 3-coordinate point, a nested list, a dotted pair, length kept
+strict, non-numeric leaf strict with a fuzzed numeric sibling, and zero-fuzz =
+exact (equal and differing). The minimal reproducer's three lines now all hold.
+
+Remaining (native qualification, kept open): qualify the reproducer on AutoCAD
+and BricsCAD, and pin NEGATIVE fuzz and invalid-fuzz against the vendor contract
+-- clautolisp currently rejects everything under a negative tolerance (abs diff
+>= 0 > negative) and signals on a non-number fuzz; neither is vendor-probed.
