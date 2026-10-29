@@ -9976,16 +9976,14 @@ deciding membership."
   (apply #'append lists))
 
 (defun builtin-vle-member (item lst)
-  ;; (vle-member item lst) — verifies whether LST contains ITEM.
-  ;; Spec wording is loose: "verifies whether". We return the tail
-  ;; starting at ITEM (matching VL-MEMBER / CL MEMBER), so the
-  ;; result is truthy in IF / WHILE contexts and the user can pull
-  ;; the tail when needed.
-  ;;
-  ;;; SPEC-UNCERTAIN: pure boolean (T/NIL) vs tail-returning. Probe
-  ;;;   queued in deferred-spec-research.issue.
+  ;; (vle-member item lst) — T when LST contains ITEM, else nil.
+  ;;; Vendor: BricsCAD V26 returns the boolean T / nil, not the tail --
+  ;;;   measured by probe-vle.lsp 2026-10-24 (probe-results/bricscad/macos/
+  ;;;   20261024T201604Z). VLE-* is a BricsCAD extension (AutoCAD has no
+  ;;;   vle-member), so clautolisp follows BricsCAD. The tail / index is still
+  ;;;   available from VLE-SEARCH. vle-extension-vendor-divergences.issue.
   (require-proper-list lst "VLE-MEMBER")
-  (member item lst :test #'autolisp-value=))
+  (if (member item lst :test #'autolisp-value=) (autolisp-true) nil))
 
 (defun builtin-vle-search (item lst &optional as-idx)
   ;; (vle-search item lst asIdx) — search LST for ITEM. If ASIDX
@@ -10190,15 +10188,14 @@ when the input is zero-length under TOL."
 
 (defun builtin-vle-vector-normalise (v)
   ;; British spelling per the spec; AutoCAD docs use the same form.
-  ;; Returns nil for a zero-length input (Autodesk's documented
-  ;; "undefined" case — we surface nil instead of erroring).
-  ;;
-  ;;; SPEC-UNCERTAIN: zero-length input — return nil (our choice)
-  ;;;   vs return zero vector vs signal. Probe queued in
-  ;;;   deferred-spec-research.issue § VLE-VECTOR-NORMALISE.
+  ;;; Vendor: BricsCAD V26 returns the ZERO VECTOR (0.0 0.0 0.0) for a
+  ;;;   zero-length input, not nil -- measured by probe-vle.lsp 2026-10-24
+  ;;;   (probe-results/bricscad/macos/20261024T201604Z). VLE-* is a BricsCAD
+  ;;;   extension, so clautolisp follows BricsCAD.
+  ;;;   vle-extension-vendor-divergences.issue.
   (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-NORMALISE")
     (multiple-value-bind (nx ny nz) (vec3-normalize x y z)
-      (and nx (vec3-list nx ny nz)))))
+      (if nx (vec3-list nx ny nz) (vec3-list 0.0d0 0.0d0 0.0d0)))))
 
 (defun builtin-vle-vector-dotproduct (v1 v2)
   (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-DOTPRODUCT")
