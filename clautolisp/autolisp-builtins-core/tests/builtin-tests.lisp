@@ -57,6 +57,17 @@
     (is (= 2.5d0 (call-autolisp-function max-fn 1 2.5d0 2)))
     (is (= 1.5d0 (call-autolisp-function min-fn 3 1.5d0 2)))
     (is (= 2 (call-autolisp-function rem-fn 17 5)))
+    ;; REM takes real and mixed operands, real result when any operand is
+    ;; real; variadic reduce; remainder follows the dividend's sign. The
+    ;; real case is the one SCHMS arc geometry needs -- rem-real-operands.issue.
+    (is (= 12.0d0 (call-autolisp-function rem-fn 12.0d0 16)))         ; the SCHMS case
+    (is (typep (call-autolisp-function rem-fn 12.0d0 16) 'double-float))
+    (is (typep (call-autolisp-function rem-fn 17 5) '(signed-byte 32))) ; all-int -> int
+    (is (= 1.5d0 (call-autolisp-function rem-fn 7.5d0 3)))            ; mixed
+    (is (= -1 (call-autolisp-function rem-fn -7 2)))                  ; sign of dividend
+    (is (= 1 (call-autolisp-function rem-fn 7 -2)))
+    (is (= 0 (call-autolisp-function rem-fn 42 12 3)))               ; variadic: rem(rem(42,12),3)
+    (is (= 5 (call-autolisp-function rem-fn 5)))                     ; one operand -> itself
     (is (= 4 (call-autolisp-function gcd-fn 20 12)))
     (is (= 6 (call-autolisp-function gcd-fn 54 24 18)))
     (is (= 0 (call-autolisp-function gcd-fn)))
