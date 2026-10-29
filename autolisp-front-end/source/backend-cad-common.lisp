@@ -1850,7 +1850,9 @@ $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 do {
  $cad=Get-Process -Id $identity.pid -ErrorAction SilentlyContinue
  if(!$cad){exit 0}
- if($cad.StartTime.ToUniversalTime().Ticks -ne [int64]$identity.startTicks){exit 0}
+ try { $actualStart=$cad.StartTime.ToUniversalTime().Ticks }
+ catch { if($cad.HasExited){exit 0}; throw }
+ if($actualStart -ne [int64]$identity.startTicks){exit 0}
  if([DateTime]::UtcNow -ge $deadline){throw 'The owned CAD process did not exit within the cleanup deadline.'}
  Start-Sleep -Milliseconds 100
 } while($true)
@@ -1865,7 +1867,7 @@ lifeIdentity = fso.BuildPath(lifeRoot, \"owned-cad-process.json\")
 lifeRequest = fso.BuildPath(lifeRoot, \"close-owned.request\")
 lifeResult = fso.BuildPath(lifeRoot, \"close-owned.result\")
 If created Then
-  lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Capture -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34) & \" -WindowHandle \" & CStr(app.HWND), 0, True)
+  lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Capture -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34) & \" -WindowHandle \" & CStr(app.HWND), 0, True)
   If lifeCode <> 0 Then WScript.Quit 5
 End If
 ' The load below enters the file protocol loop; retain APP while it runs.
@@ -1887,7 +1889,7 @@ End If
       On Error GoTo 0
       ' A disconnected COM call can mean Quit succeeded. Only process identity
       ' disappearance, not COM disconnection, validates successful cleanup.
-      lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Wait -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34), 0, True)
+      lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Wait -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34), 0, True)
     End If
     Set lifeStream = fso.CreateTextFile(lifeResult & \".tmp\", True)
     lifeStream.WriteLine CStr(lifeCode)

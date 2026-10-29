@@ -2329,3 +2329,8 @@ runner account before a job is a separate runner preflight policy.
 The work directory contains =owned-cad-process.ps1=, a captured
 =owned-cad-process.json= identity, and the =close-owned.request/result= handshake.
 These files are private to one invocation and must not be reused by another.
+
+The generated PowerShell helper is invoked with a process-scoped execution
+policy; this does not change the machine or user execution-policy settings.
+Domain policy still takes precedence. A process exiting while its creation
+time is queried is accepted only when its process object confirms exit.

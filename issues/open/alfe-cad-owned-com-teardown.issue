@@ -21,3 +21,8 @@ time. Never quit attached instances. Fail on missing cleanup acknowledgement.
 Local regression tests and the full alfe suite are being checked. Native Windows
 AutoCAD/BricsCAD closure and log-release qualification remains required before
 closing this issue.
+
+Windows PowerShell validation found that the default execution policy refused
+the generated helper. Version 2.3.78 supplies only a process-scoped policy and
+handles a process exiting during its StartTime query; no persistent policy is
+changed. Native COM qualification remains pending deployment.

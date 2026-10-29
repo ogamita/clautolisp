@@ -3994,6 +3994,7 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
                           :error-path (merge-pathnames "protocol/stderr.txt" dir))
         (let ((text (uiop:read-file-string path)))
           (is (search "owned-cad-process.ps1" text))
+          (is (search "-ExecutionPolicy Bypass" text))
           (is (search "app.HWND" text))
           (is (search "close-owned.request" text))
           (is (search "lifeDoc.Close False" text))
