@@ -1,9 +1,9 @@
 ;; Equal must apply numeric fuzz recursively to point coordinates.
-(setq near-number (+ 5.0 1e-15))
+(setq near-number (+ 5.0 0.000000000000001))
 (princ "\nScalar comparison (expected T): ")
-(prin1 (equal 5.0 near-number 1e-9))
+(prin1 (equal 5.0 near-number 0.000000001))
 (princ "\nList comparison (expected T): ")
-(prin1 (equal '(5.0) (list near-number) 1e-9))
+(prin1 (equal '(5.0) (list near-number) 0.000000001))
 (princ "\nOutside tolerance (expected nil): ")
-(prin1 (equal '(5.0) '(5.01) 1e-9))
+(prin1 (equal '(5.0) '(5.01) 0.000000001))
 (princ "\n")

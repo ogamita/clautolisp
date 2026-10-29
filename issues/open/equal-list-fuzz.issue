@@ -34,7 +34,8 @@ yet list EQUAL rejects the point. SCHMS keeps the product computation and
 checks coordinates separately with the same 1e-9 bound. A negative control
 rejects a point displaced by 0.01.
 
-Native AutoLISP point comparison with fuzz should accept coordinates
+Autodesk explicitly documents fuzz for lists of real numbers, including
+points: [[https://help.autodesk.com/cloudhelp/2024/DEU/AutoCAD-AutoLISP-Reference/files/GUID-7E85CB8F-B4DA-42F3-ABD3-89342A11EF9B.htm][equal (AutoLISP)]]. Point comparison with fuzz should accept coordinates
 within the bound. Native qualification of this exact reproducer is still
 pending; do not claim this local observation is a native probe receipt.
 
@@ -46,3 +47,6 @@ non-numeric comparisons. Preserve the scalar behavior and add tests
 inside/outside tolerance, zero tolerance, negative fuzz and invalid fuzz
 according to the native contract. Qualify the minimal reproducer on both
 AutoCAD and BricsCAD.
+
+The minimal reproducer uses decimal literals to avoid conflating EQUAL
+with source-reader differences in scientific-notation token handling.
