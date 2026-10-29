@@ -902,7 +902,7 @@ reassembles identically on both sides."
 
 ;;; --- control sender ------------------------------------------------
 
-(defparameter +control-commands+ '("PING" "SHUTDOWN" "INTERRUPT")
+(defparameter +control-commands+ '("PING" "PREPARE-SHUTDOWN" "SHUTDOWN" "INTERRUPT")
   "The full set of out-of-band commands the spec defines for
 control.txt. Listed here so SEND-CONTROL can refuse anything
 unrecognised before it reaches the wire.")
@@ -944,6 +944,7 @@ BACKEND-PROTOCOL-ERROR."
   (let ((path (protocol-session-control-path session))
         (text (case command
                 (:ping      "PING")
+                (:prepare-shutdown "PREPARE-SHUTDOWN")
                 (:shutdown  "SHUTDOWN")
                 (:interrupt "INTERRUPT")
                 (otherwise
@@ -1817,3 +1818,16 @@ exactly as-checked-in."
         (uiop:copy-file source target)
         (setf (protocol-session-bootstrap-lsp-staged session) target)
         target))))
+
+
+(defun prepare-cad-shutdown (session &key (timeout 5))
+  "Require restoration acknowledgement before closing a live CAD transport."
+  (when (string= (or (read-current-status session) "") "STOPPED")
+    ;; The runtime's legacy stop path also restores before publishing STOPPED.
+    (return-from prepare-cad-shutdown t))
+  (send-control session :prepare-shutdown)
+  (unless (wait-for-status session "RESTORED" :timeout timeout)
+    (error 'backend-protocol-error :backend :file-protocol :phase :shutdown
+           :code :restore-not-acknowledged
+           :message "CAD did not acknowledge session restoration before shutdown."))
+  t)

@@ -1032,7 +1032,8 @@ TASKLIST's CSV output; NIL when TASKLIST cannot be run."
                ;; lines are VBScript already and must not be quote-doubled.
                (expand-plugin-slots
                 (substitute-placeholders
-                 *bridge-autocad-vbs-template*
+                 (alfe.backend.cad-common::instrument-owned-com-bridge
+                  *bridge-autocad-vbs-template* path)
                  `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
@@ -1634,6 +1635,9 @@ unwind-protect that reaps the engine when it does not get there."
                   ;; (alfe-request-timeout-aborts-long-eval).
                   :request-timeout (or explicit-timeout 30)
                   :keep-alive-while-running (null explicit-timeout)
+                  :defer-shutdown-p (and (windows-p)
+                                         (eq (autocad-session-variant session)
+                                             :automation))
                   :process-info (autocad-session-process-info session))))
     (session-state-set session
                        (ecase (alfe.backend:eval-result-status result)
@@ -1772,30 +1776,27 @@ the one this run created (~{~D~^, ~}) by its process id" created-pids)
   (unless (eq (session-state session) :stopped)
     (let ((protocol (autocad-session-protocol-session session))
           (info (autocad-session-process-info session)))
-      (ignore-errors (alfe.protocol.file:send-control protocol :shutdown))
-      (ignore-errors
-       (alfe.protocol.file:wait-for-status
-        protocol alfe.protocol.file:+status-stopped+ :timeout 5))
-      ;; NOT terminate + (uiop:wait-process info): that wait is UNBOUNDED,
-      ;; and on Windows a GUI CAD that is slow to die — or a child of it
-      ;; still holding the handles — hangs it, freezing alfe in shutdown
-      ;; and with it the whole CI job. The BricsCAD backend learned this
-      ;; and grew a bounded killer; AutoCAD had kept the unbounded call.
-      ;; KILL-ENGINE-PROCESS is now shared by both.
-      ;;
-      ;; The AutoCAD itself is quit FIRST, and only when this run created
-      ;; it: in automation mode the process killed below is cscript, and
-      ;; acad.exe is a child of Windows' COM service that no kill here can
-      ;; reach. Order matters only in that the quit needs COM alive; the
-      ;; kill below is unaffected either way.
-      (when (eq (autocad-session-variant session) :automation)
-        (ignore-errors (quit-created-autocad session)))
-      (kill-engine-process info)
-      ;; LAST, once the AutoCAD this run created is gone: it saves its
-      ;; profile -- TRUSTEDPATHS included -- when it exits, and would write
-      ;; back an entry removed while it still ran.
-      (ignore-errors (untrust-workdir (autocad-session-trusted session)))
-      (setf (autocad-session-trusted session) nil))
+      (unwind-protect
+           (when protocol
+             (if (and (windows-p)
+                      (eq (autocad-session-variant session) :automation))
+                 ;; The retained bridge quits only its CREATED object. Its
+                 ;; result requires PID + creation-time disappearance; no
+                 ;; STOPPED message is required from an engine that just quit.
+                 (progn
+                   (alfe.protocol.file::prepare-cad-shutdown protocol)
+                   (alfe.backend.cad-common::close-owned-com-bridge
+                    (session-workdir session)))
+                 (progn
+                   (alfe.protocol.file:send-control protocol :shutdown)
+                   (unless (alfe.protocol.file:wait-for-status
+                            protocol alfe.protocol.file:+status-stopped+ :timeout 5)
+                     (error 'backend-protocol-error :backend :autocad
+                            :code :shutdown-timeout
+                            :message "CAD did not stop its protocol.")))))
+        (kill-engine-process info)))
+    (ignore-errors (untrust-workdir (autocad-session-trusted session)))
+    (setf (autocad-session-trusted session) nil)
     (session-state-set session :stopped))
   session)
 

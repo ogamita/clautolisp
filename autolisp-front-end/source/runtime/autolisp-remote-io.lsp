@@ -133,7 +133,16 @@
     ((= alfe--control "PING")
       (autolisp-protocol-pulse-heartbeat)
       nil)
+    ((= alfe--control "PREPARE-SHUTDOWN")
+      (if (vl-catch-all-error-p
+            (vl-catch-all-apply 'autolisp-restore-session nil))
+        (autolisp-protocol-set-status "FAILED session restoration")
+        (progn
+          (setq *AUTOLISP_PROTOCOL_PREPARED_CLOSE* T)
+          (setq *AUTOLISP_PROTOCOL_STOP* T)))
+      T)
     ((= alfe--control "SHUTDOWN")
+      (autolisp-restore-session)
       (autolisp-protocol-set-status "STOPPING")
       (setq *AUTOLISP_PROTOCOL_STOP* T)
       T)
@@ -282,6 +291,7 @@ context this side always has."
 (defun autolisp-protocol-server-loop (/ alfe--keep alfe--form alfe--req-id alfe--result alfe--rc)
   (setq *AUTOLISP_PROTOCOL_INPUT_QUEUE* nil)
   (setq *AUTOLISP_PROTOCOL_STOP* nil)
+  (setq *AUTOLISP_PROTOCOL_PREPARED_CLOSE* nil)
   (setq *AUTOLISP_PROTOCOL_EMIT_WAITING_INPUT* nil)
   (autolisp-protocol-clear-stdout)
   (autolisp-protocol-clear-stderr)
@@ -357,7 +367,9 @@ context this side always has."
               (autolisp-set-status alfe--rc)
               (autolisp-protocol-set-status
                 (strcat "DONE " (itoa alfe--req-id) " OK"))))))))
-  (autolisp-protocol-set-status "STOPPED")
+  (autolisp-restore-session)
+  (autolisp-protocol-set-status
+    (if *AUTOLISP_PROTOCOL_PREPARED_CLOSE* "RESTORED" "STOPPED"))
   ;; Return nil, NOT (princ "") -- under AutoCAD the host lacks &rest so the
   ;; bootstrap keeps the fixed 2-arg `princ' shadow (obj file); a 1-arg
   ;; (princ "") then raises "nombre d'arguments insuffisants" and aborts the
@@ -368,6 +380,7 @@ context this side always has."
 (defun autolisp-protocol-selftest-loop (/ alfe--keep alfe--control alfe--line alfe--form)
   (setq *AUTOLISP_PROTOCOL_INPUT_QUEUE* nil)
   (setq *AUTOLISP_PROTOCOL_STOP* nil)
+  (setq *AUTOLISP_PROTOCOL_PREPARED_CLOSE* nil)
   (setq *AUTOLISP_PROTOCOL_EMIT_WAITING_INPUT* T)
   (autolisp-protocol-clear-stdout)
   (autolisp-protocol-clear-stderr)
@@ -390,7 +403,9 @@ context this side always has."
             (autolisp-protocol-write-stderr "STDERR done")
             (autolisp-protocol-set-status "READY"))
           (setq alfe--keep nil)))))
-  (autolisp-protocol-set-status "STOPPED")
+  (autolisp-restore-session)
+  (autolisp-protocol-set-status
+    (if *AUTOLISP_PROTOCOL_PREPARED_CLOSE* "RESTORED" "STOPPED"))
   ;; Return nil, NOT (princ "") -- under AutoCAD the host lacks &rest so the
   ;; bootstrap keeps the fixed 2-arg `princ' shadow (obj file); a 1-arg
   ;; (princ "") then raises "nombre d'arguments insuffisants" and aborts the

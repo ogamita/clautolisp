@@ -1239,3 +1239,13 @@ newer runner on that machine, which is pjb's call; until then this is the rule.
   `.claude/skills/bytecode-vm-and-compiler/SKILL.md` when that work starts.
 - P1 items are largely gated on CAD hardware access, `pjb-decision`, or
   upstream (libredwg) — see TRIAGE.org for the current gates.
+
+
+## Dedicated CAD CI runner accounts
+
+A CAD CI job owns its dedicated runner account for the duration of the job.
+Its preflight should stop residual acad.exe, accoreconsole.exe and bricscad.exe
+processes belonging to that exact account before launching the job's CAD.
+Verify the owner SID; do not apply this policy to another account, a service
+session, or an interactive attachment. ALFE's own teardown still restores the
+live session before closing only the COM application created by that invocation.

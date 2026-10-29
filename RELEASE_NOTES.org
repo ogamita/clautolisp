@@ -1899,6 +1899,12 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
+** alfe 2.3.77: ordered Windows CAD cleanup
+Restore native log/search settings before ending the protocol; quit the exact
+created COM application and validate its process exit. Attached applications
+remain open. See [[file:autolisp-front-end/documentation/alfe-user-manual.org::*CAD session cleanup and owned COM instances][CAD session cleanup]].
+
+
 - A quit-only subprocess plan exits successfully on Windows; its no-op
   expression survives native argument passing. See the user manual's
   discussion of subprocess plans and =--quit=.

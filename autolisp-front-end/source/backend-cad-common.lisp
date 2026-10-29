@@ -961,6 +961,7 @@ hook, carries. The mock launchers of the test suite ignore extra keys."
                                  (keep-alive-while-running t)
                                  (process-info nil)
                                  (shutdown-timeout 10)
+                                 (defer-shutdown-p nil)
                                  (input-stream  *standard-input*)
                                  (output-stream *standard-output*)
                                  (error-stream  *error-output*)
@@ -1266,6 +1267,7 @@ shows the error on stderr and the prompt comes back."
            (finish-output output-stream)
            (interactive-loop))
           (:quit
+           (unless defer-shutdown-p
            (alfe.protocol.file:send-control protocol-session :shutdown)
            (multiple-value-bind (matched elapsed last)
                (alfe.protocol.file:wait-for-status
@@ -1275,7 +1277,7 @@ shows the error on stderr and the prompt comes back."
              (declare (ignore elapsed last))
              (drain-live)
              (unless matched
-               (setf status :aborted)))))))
+               (setf status :aborted))))))))
     ;; Final drain — catches anything published between the last
     ;; wait-done's drain-live and now (e.g. a buffered newline).
     (let ((out (alfe.protocol.file:drain-stdout protocol-session))
@@ -1821,3 +1823,128 @@ that cannot be read is warned about and skipped."
           (log-warn "backend ~A: the CAD log ~A cannot be read: ~A"
                     backend-name (file-namestring path) e))))
     (values (nreverse entries) (if entries :collected :none))))
+
+
+;;; Owned COM lifecycle: keep the startup bridge and its exact APP reference.
+(defparameter *owned-cad-process-script*
+  "param([ValidateSet('Capture','Wait')][string]$Operation,[string]$IdentityFile,[Int64]$WindowHandle=0,[int]$TimeoutSeconds=20)
+$ErrorActionPreference='Stop'
+if($Operation -eq 'Capture') {
+ Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class OwnedCadWindow {
+ [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+}
+'@
+ [uint32]$cadId=0
+ [void][OwnedCadWindow]::GetWindowThreadProcessId([IntPtr]$WindowHandle,[ref]$cadId)
+ if(!$cadId){throw 'Cannot identify the COM application window process.'}
+ $cad=Get-Process -Id $cadId -ErrorAction Stop
+ $identity=@{pid=$cadId;startTicks=$cad.StartTime.ToUniversalTime().Ticks.ToString()}
+ $identity | ConvertTo-Json | Set-Content -LiteralPath $IdentityFile -Encoding ASCII
+ exit 0
+}
+$identity=Get-Content -LiteralPath $IdentityFile -Raw | ConvertFrom-Json
+$deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+do {
+ $cad=Get-Process -Id $identity.pid -ErrorAction SilentlyContinue
+ if(!$cad){exit 0}
+ if($cad.StartTime.ToUniversalTime().Ticks -ne [int64]$identity.startTicks){exit 0}
+ if([DateTime]::UtcNow -ge $deadline){throw 'The owned CAD process did not exit within the cleanup deadline.'}
+ Start-Sleep -Milliseconds 100
+} while($true)
+")
+(defparameter *owned-com-capture-vbs*
+  "' Keep this exact COM reference; never rediscover an arbitrary ROT instance.
+Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream
+Set lifeShell = CreateObject(\"WScript.Shell\")
+lifeRoot = fso.GetParentFolderName(runFile)
+lifeHelper = fso.BuildPath(lifeRoot, \"owned-cad-process.ps1\")
+lifeIdentity = fso.BuildPath(lifeRoot, \"owned-cad-process.json\")
+lifeRequest = fso.BuildPath(lifeRoot, \"close-owned.request\")
+lifeResult = fso.BuildPath(lifeRoot, \"close-owned.result\")
+If created Then
+  lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Capture -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34) & \" -WindowHandle \" & CStr(app.HWND), 0, True)
+  If lifeCode <> 0 Then WScript.Quit 5
+End If
+' The load below enters the file protocol loop; retain APP while it runs.
+")
+(defparameter *owned-com-wait-vbs*
+  "Do
+  If fso.FileExists(lifeRequest) Then
+    lifeCode = 0
+    If created Then
+      On Error Resume Next
+      For lifeIndex = app.Documents.Count - 1 To 0 Step -1
+        Set lifeDoc = app.Documents.Item(lifeIndex)
+        lifeDoc.Close False
+        If Err.Number <> 0 Then Exit For
+      Next
+      If Err.Number = 0 Then Call app.Quit
+      lifeCode = Err.Number
+      Err.Clear
+      On Error GoTo 0
+      ' A disconnected COM call can mean Quit succeeded. Only process identity
+      ' disappearance, not COM disconnection, validates successful cleanup.
+      lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Wait -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34), 0, True)
+    End If
+    Set lifeStream = fso.CreateTextFile(lifeResult & \".tmp\", True)
+    lifeStream.WriteLine CStr(lifeCode)
+    lifeStream.Close
+    fso.MoveFile lifeResult & \".tmp\", lifeResult
+    WScript.Quit lifeCode
+  End If
+  If fso.FileExists(statusFile) Then
+    Set lifeStream = fso.OpenTextFile(statusFile, 1)
+    lifeCode = Trim(lifeStream.ReadAll)
+    lifeStream.Close
+    If lifeCode = \"STOPPED\" And Not created Then
+      Set lifeStream = fso.CreateTextFile(lifeResult & \".tmp\", True)
+      lifeStream.WriteLine \"0\"
+      lifeStream.Close
+      fso.MoveFile lifeResult & \".tmp\", lifeResult
+      WScript.Quit 0
+    End If
+  End If
+  WScript.Sleep 100
+Loop
+")
+
+(defun instrument-owned-com-bridge (text path)
+  "Retain the exact COM object and validate its PID plus creation time on exit."
+  (let* ((marker "${PLUGIN_BEFORE_LOAD}")
+         (before (search marker text))
+         (end (search "WScript.Quit 0" text :from-end t))
+         (helper (merge-pathnames "owned-cad-process.ps1" path)))
+    (unless (and before end (< before end))
+      (error "Cannot locate the COM bridge lifecycle boundaries."))
+    (with-open-file (out helper :direction :output :if-exists :supersede
+                                :if-does-not-exist :create :external-format :utf-8)
+      (write-string *owned-cad-process-script* out))
+    (concatenate 'string (subseq text 0 before) *owned-com-capture-vbs*
+                 (subseq text before end) *owned-com-wait-vbs*
+                 (subseq text (+ end (length "WScript.Quit 0"))))))
+
+(defun close-owned-com-bridge (workdir &key (timeout 35))
+  "Request Quit on the startup bridge's object, then require process-exit proof.
+The bridge never quits an attached object. No process is killed here."
+  (let ((request (merge-pathnames "close-owned.request" workdir))
+        (result (merge-pathnames "close-owned.result" workdir))
+        (start (get-internal-real-time)))
+    (with-open-file (out request :direction :output :if-exists :supersede
+                                 :if-does-not-exist :create)
+      (write-line "CLOSE" out))
+    (loop
+      (when (probe-file result)
+        (let ((code (string-trim '(#\Space #\Tab #\Return #\Newline)
+                                 (uiop:read-file-string result))))
+          (unless (string= code "0")
+            (error 'backend-protocol-error :backend :cad :phase :shutdown :code :owned-cad-close-failed
+                   :message "The owned CAD did not close normally."))
+          (return t)))
+      (when (>= (/ (- (get-internal-real-time) start)
+                   internal-time-units-per-second) timeout)
+        (error 'backend-protocol-error :backend :cad :phase :shutdown :code :owned-cad-close-timeout
+               :message "Timed out awaiting owned CAD process disappearance."))
+      (sleep 0.1))))

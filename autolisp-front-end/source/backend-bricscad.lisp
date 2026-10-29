@@ -599,7 +599,8 @@ substituted from the provided session paths."
                ;; lines are VBScript already and must not be quote-doubled.
                (expand-plugin-slots
                 (substitute-placeholders
-                 *bridge-bricscad-vbs-template*
+                 (alfe.backend.cad-common::instrument-owned-com-bridge
+                  *bridge-bricscad-vbs-template* path)
                  `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
@@ -2083,6 +2084,9 @@ own."
                   ;; (alfe-request-timeout-aborts-long-eval).
                   :request-timeout (or explicit-timeout 30)
                   :keep-alive-while-running (null explicit-timeout)
+                  :defer-shutdown-p (and (windows-p)
+                                         (eq (bricscad-session-variant session)
+                                             :automation))
                   :process-info (bricscad-session-process-info session))))
     (session-state-set session
                        (ecase (alfe.backend:eval-result-status result)
@@ -2124,11 +2128,25 @@ own."
   (unless (eq (session-state session) :stopped)
     (let ((protocol (bricscad-session-protocol-session session))
           (info (bricscad-session-process-info session)))
-      (ignore-errors (alfe.protocol.file:send-control protocol :shutdown))
-      (ignore-errors
-       (alfe.protocol.file:wait-for-status
-        protocol alfe.protocol.file:+status-stopped+ :timeout 5))
-      (%kill-engine-process info))
+      (unwind-protect
+           (when protocol
+             (if (and (windows-p)
+                      (eq (bricscad-session-variant session) :automation))
+                 ;; The retained bridge quits only its CREATED object. Its
+                 ;; result requires PID + creation-time disappearance; no
+                 ;; STOPPED message is required from an engine that just quit.
+                 (progn
+                   (alfe.protocol.file::prepare-cad-shutdown protocol)
+                   (alfe.backend.cad-common::close-owned-com-bridge
+                    (session-workdir session)))
+                 (progn
+                   (alfe.protocol.file:send-control protocol :shutdown)
+                   (unless (alfe.protocol.file:wait-for-status
+                            protocol alfe.protocol.file:+status-stopped+ :timeout 5)
+                     (error 'backend-protocol-error :backend :bricscad
+                            :code :shutdown-timeout
+                            :message "CAD did not stop its protocol.")))))
+        (kill-engine-process info)))
     (session-state-set session :stopped))
   session)
 

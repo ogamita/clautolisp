@@ -1793,18 +1793,18 @@ engine."
                             (eval-result-status result) exit-code elapsed)
                exit-code)))
       (%safe-hook :pre-shutdown session :reason :cli-exit)
-      (ignore-errors (shutdown session :reason :cli-exit))
-      (%safe-hook :post-shutdown session :workdir workdir)
-      ;; The engine is down, so its log is closed; the workdir that holds it
-      ;; is still there.
-      (ignore-errors (write-cad-log-if-asked options backend workdir))
-      ;; Close the transcript before the workdir goes: the dribble lives outside
-      ;; it (a run that cleans up must still leave its record behind), but the
-      ;; open line is flushed here rather than at process exit, so a killed alfe
-      ;; loses at most the line in progress.
-      (ignore-errors (alfe.dribble:stop-dribble))
-      (ignore-errors (cleanup-workdir backend workdir
-                                      :keep-p (cli-options-keep-workdir-p options))))))
+      (let ((cleanup-error nil))
+        (handler-case (shutdown session :reason :cli-exit)
+          (error (condition) (setf cleanup-error condition)))
+        (%safe-hook :post-shutdown session :workdir workdir)
+        (ignore-errors (write-cad-log-if-asked options backend workdir))
+        (ignore-errors (alfe.dribble:stop-dribble))
+        ;; Failed cleanup is observable and retains the evidence. It must not
+        ;; turn successful assertions into a successful unattended CI job.
+        (ignore-errors (cleanup-workdir backend workdir
+                          :keep-p (or cleanup-error
+                                      (cli-options-keep-workdir-p options))))
+        (when cleanup-error (error cleanup-error))))))
 
 (defun write-cad-log-if-asked (options backend workdir)
   "--cad-log FILE: write the CAD's own command-history log of this run

@@ -1,0 +1,23 @@
+#+TITLE: Restore CAD log before protocol termination and close the created COM instance
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+#+BRANCH: codex/alfe-owned-shutdown
+#+DATE: 2026-10-29
+
+* Evidence
+SCHME jobs succeeded while the created BricsCAD remained alive. Restart Manager
+identified the surviving process holding an older job's command log. The emitted
+runtime exited its SHUTDOWN loop without autolisp-finish/log restoration; killing
+cscript did not close the COM application's separate process.
+
+* Implementation
+Restore settings before RESTORED, retain the exact startup COM reference, close
+created documents/application, and require disappearance of PID plus creation
+time. Never quit attached instances. Fail on missing cleanup acknowledgement.
+
+* Validation
+Local regression tests and the full alfe suite are being checked. Native Windows
+AutoCAD/BricsCAD closure and log-release qualification remains required before
+closing this issue.

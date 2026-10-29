@@ -740,3 +740,11 @@ or
 Pascal J. Bourguignon and contributors.
 .SH BUGS
 Report at https://gitlab.com/informatimago/lisp/-/issues.
+
+.SH CAD CLEANUP
+Windows COM runs restore the CAD log and search path before ending the runtime
+protocol. The retained startup bridge quits only an application it created,
+without saving its documents, and verifies that its PID and creation-time
+identity disappears. A missing final protocol message is normal after that
+exit; failed restoration or a cleanup timeout fails the invocation.
+Attached interactive applications are restored and left open.

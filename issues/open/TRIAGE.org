@@ -918,3 +918,6 @@ opendcl-conformance. All =TODO=.
 
 | Priority | Status | Issue | Scope |
 | P1 | NEXT | [[file:autocad-com-bootstrap-timeout-leaves-detached-engine.issue][autocad-com-bootstrap-timeout-leaves-detached-engine]] | Failed EPURE bootstrap leaves RPC-parented acad.exe and blocks later compilation |
+
+* NEXT alfe-cad-owned-com-teardown (P1)
+[[file:alfe-cad-owned-com-teardown.issue][Ordered CAD restoration and owned COM process closure]]; native Windows validation pending.

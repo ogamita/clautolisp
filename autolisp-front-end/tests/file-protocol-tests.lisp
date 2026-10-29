@@ -1486,6 +1486,7 @@ it unchanged."
 
 (defun drive-hosted-engine (binary forms &key assume-no-rest-p dialect
                                               (explicit-no-rest-p t)
+                                              prepare-shutdown-p
                                               open-write-ccs
                                               open-write-arg
                                               forms-fn)
@@ -1561,9 +1562,12 @@ OPEN-WRITE-CCS is emitted as *ALFE-OPEN-WRITE-CCS*, OPEN-WRITE-ARG as
                    (err (alfe.protocol.file:read-file-as-string
                          (alfe.protocol.file:protocol-session-stderr-path
                           session))))
-               (alfe.protocol.file:send-control session :shutdown)
-               (alfe.protocol.file:wait-for-status session "STOPPED"
-                                                   :timeout 30)
+               (if prepare-shutdown-p
+                   (alfe.protocol.file::prepare-cad-shutdown session :timeout 10)
+                   (progn
+                     (alfe.protocol.file:send-control session :shutdown)
+                     (alfe.protocol.file:wait-for-status session "STOPPED"
+                                                        :timeout 30)))
                (ignore-errors (uiop:wait-process engine))
                (values (nreverse statuses) out err
                        (let ((p (merge-pathnames "engine-stderr.txt"

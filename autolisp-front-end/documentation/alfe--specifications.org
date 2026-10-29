@@ -2876,3 +2876,17 @@ and prints only the action plan.
 | [[file:bugs-open/kebab-case.txt][kebab-case]]                 | Not applicable: convention applied by default by the new code.                                              |
 | [[file:bugs-open/identification-mark.txt][identification-mark]] | Not applicable: =*AUTOLISP_VERSION*= defined by default by the new runtime's LISP bootstrap.               |
 | [[file:bugs-open/final-comment.txt][final-comment]]           | Covered by =autolisp-reader= in the CL subproject; a small fix on the bash side is still conceivable.       |
+
+
+* Ordered Windows COM teardown
+
+PREPARE-SHUTDOWN is an out-of-band control command. The CAD restores the live
+session settings and leaves the server loop before publishing RESTORED. Failure
+publishes FAILED session restoration and does not authorize bridge closure.
+The alfe side then publishes close-owned.request. The retained startup bridge
+uses its exact application reference; created instances close normally and are
+validated by PID plus creation time, attached instances only release the bridge.
+The atomic close-owned.result contains zero only after successful cleanup.
+No final STOPPED from a process already exited is required. All acknowledgement
+and process-exit waits are bounded. Batch engines retain SHUTDOWN/STOPPED, with
+restoration preceding STOPPING.

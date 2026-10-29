@@ -2301,3 +2301,31 @@ Per the project-wide synchronisation rule (AGENTS.md, Documentation
 Synchronisation section), changes to the code, the alfe
 specifications, this user-manual, or the man page must be
 propagated to every track.
+
+
+* CAD session cleanup and owned COM instances
+
+On Windows, AutoCAD and BricsCAD automation retain the exact COM application
+reference returned at startup. After the evaluation results have been collected,
+alfe asks the live runtime to restore LOGFILEMODE, LOGFILEPATH and SRCHPATH.
+The runtime closes the current command log first, restores the saved settings,
+and acknowledges =RESTORED= only after leaving its protocol loop.
+
+For an application created by this invocation, the retained bridge closes its
+documents without saving and calls Quit on that same application. It does not
+look up a potentially different instance through GetObject. Successful cleanup
+requires disappearance of the captured window's process identity (PID plus UTC
+creation ticks), within 20 seconds. An absent final protocol SHUTDOWN/STOPPED
+message is normal after this owned process exits. A COM disconnection alone
+is not sufficient, and a timeout or failed restoration fails the invocation.
+Only the bridge subprocess is terminated on failure; the cleanup does not kill
+an unrelated CAD. Failure preserves the work directory for diagnosis.
+
+For interactive attachment, restoration ends the runtime loop and releases the
+bridge reference, but never closes the pre-existing application or documents.
+CI runners use fresh instances; clearing residual CAD processes of the dedicated
+runner account before a job is a separate runner preflight policy.
+
+The work directory contains =owned-cad-process.ps1=, a captured
+=owned-cad-process.json= identity, and the =close-owned.request/result= handshake.
+These files are private to one invocation and must not be reused by another.

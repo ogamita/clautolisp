@@ -10,6 +10,8 @@
 (defclass capture-backend (alfe.backend:backend) ())
 
 (defparameter *capture-start-engine-args* nil)
+(defvar *capture-shutdown-error* nil)
+(defvar *capture-cleanup-kept* nil)
 
 (defstruct (capture-session
             (:include alfe.backend:session)
@@ -56,12 +58,17 @@
 
 (defmethod alfe.backend:shutdown ((session capture-session) &key reason)
   (declare (ignore reason))
+  (when *capture-shutdown-error*
+    (error 'alfe.error:backend-protocol-error :backend :capture
+           :phase :shutdown :code :cleanup-fixture
+           :message "cleanup failed"))
   (alfe.backend:session-state-set session :stopped)
   session)
 
 (defmethod alfe.backend:cleanup-workdir ((backend capture-backend) workdir &key keep-p)
-  (declare (ignore backend keep-p))
-  (when (and workdir (probe-file workdir))
+  (declare (ignore backend))
+  (setf *capture-cleanup-kept* keep-p)
+  (when (and (not keep-p) workdir (probe-file workdir))
     (uiop:delete-directory-tree workdir :validate t
                                         :if-does-not-exist :ignore))
   nil)
@@ -872,3 +879,16 @@ loudly rather than yield an empty string."
              (run '("--print-command" "-x" "(princ)") :version "0.0.1"))))
     (is (= clautolisp.sysexits:+ex-usage+ exit-code))
     (is (search "--print-command" (get-output-stream-string stderr)))))
+
+
+(test cli-cleanup-failure-is-not-a-successful-test-run
+  (let ((alfe.backend:*backends* (make-hash-table :test #'eql))
+        (*capture-shutdown-error* t)
+        (*capture-cleanup-kept* nil))
+    (alfe.backend:register-backend :capture (make-capture-backend))
+    (let ((options (parse-arguments '("-x" "(+ 1 2)"))))
+      (setf (alfe.cli::cli-options-backend options) :capture)
+      (signals alfe.error:backend-protocol-error
+        (alfe.cli::run-plan options (alfe.backend:find-backend :capture)
+                            :version-text "test"))
+      (is (not (null *capture-cleanup-kept*))))))

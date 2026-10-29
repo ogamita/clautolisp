@@ -3982,3 +3982,124 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
                         (alfe.backend:find-backend :clautolisp) workdir)))
              (is (null (probe-file other)))))
       (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))
+
+(test owned-com-bridge-retains-exact-object-until-cleanup
+  (with-cad-test-directories
+    (dolist (emit '(alfe.backend.bricscad:emit-bridge-vbs
+                    alfe.backend.autocad:emit-bridge-vbs))
+      (let* ((dir (%fresh-test-directory))
+             (path (merge-pathnames "bridge.vbs" dir)))
+        (funcall emit path :runtime-load-path (merge-pathnames "run-common.lsp" dir)
+                          :status-path (merge-pathnames "protocol/status.txt" dir)
+                          :error-path (merge-pathnames "protocol/stderr.txt" dir))
+        (let ((text (uiop:read-file-string path)))
+          (is (search "owned-cad-process.ps1" text))
+          (is (search "app.HWND" text))
+          (is (search "close-owned.request" text))
+          (is (search "lifeDoc.Close False" text))
+          (is (search "Call app.Quit" text))
+          (is (search "If created Then" text))
+          (is (search "close-owned.result" text)))
+        (is (probe-file (merge-pathnames "owned-cad-process.ps1" dir)))))))
+
+
+(test owned-com-close-requires-process-exit-result
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (request (merge-pathnames "close-owned.request" dir))
+           (result (merge-pathnames "close-owned.result" dir))
+           (worker (bordeaux-threads:make-thread
+                    (lambda ()
+                      (loop repeat 200 until (probe-file request) do (sleep 0.01))
+                      (with-open-file (out result :direction :output
+                                                 :if-exists :supersede)
+                        (write-line "0" out))))))
+      (unwind-protect
+           (is (alfe.backend.cad-common::close-owned-com-bridge dir :timeout 3))
+        (bordeaux-threads:join-thread worker)))
+    (signals alfe.error:backend-protocol-error
+      (alfe.backend.cad-common::close-owned-com-bridge
+       (%fresh-test-directory) :timeout 0))))
+
+(test protocol-prepared-close-restores-before-loop-exit
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (fail "The hosted runtime is required for the cleanup regression test.")
+        (with-cad-test-directories
+          (let* ((dir (%fresh-test-directory))
+                 (marker (merge-pathnames "restored.txt" dir)))
+            (multiple-value-bind (statuses stdout stderr)
+                (drive-hosted-engine
+                 binary
+                 (list (format nil
+                         "(defun autolisp-restore-session (/ f) (setq f (open ~S \"w\")) (write-line \"restored\" f) (close f) T)"
+                         (namestring marker)))
+                 :prepare-shutdown-p t)
+              (declare (ignore stdout stderr))
+              (is (search "DONE 1 OK" (first statuses)))
+              (is (probe-file marker))
+              (is (search "restored" (uiop:read-file-string marker)))))))))
+
+(test cad-shutdown-restoration-precedes-owned-close
+  (let* ((restore-name 'alfe.protocol.file::prepare-cad-shutdown)
+         (close-name 'alfe.backend.cad-common::close-owned-com-bridge)
+         (old-restore (symbol-function restore-name))
+         (old-close (symbol-function close-name))
+         (events nil))
+    (unwind-protect
+         (progn
+           (setf (symbol-function restore-name)
+                 (lambda (&rest args) (declare (ignore args))
+                   (push :restore events) t)
+                 (symbol-function close-name)
+                 (lambda (&rest args) (declare (ignore args))
+                   (push :close events) t))
+           (let ((alfe.backend.cad-common:*host-os-override* :windows))
+             (dolist (session
+                      (list (alfe.backend.bricscad::%make-bricscad-session
+                             :variant :automation :protocol-session :mock)
+                            (alfe.backend.autocad::%make-autocad-session
+                             :variant :automation :protocol-session :mock)))
+               (setf events nil)
+               (alfe.backend:shutdown session)
+               (is (equal '(:close :restore) events))
+               (is (eq :stopped (alfe.backend:session-state session)))))
+           (setf (symbol-function restore-name)
+                 (lambda (&rest args) (declare (ignore args))
+                   (error "restore failed")))
+           (let ((alfe.backend.cad-common:*host-os-override* :windows)
+                 (session (alfe.backend.bricscad::%make-bricscad-session
+                           :variant :automation :protocol-session :mock)))
+             (setf events nil)
+             (signals error (alfe.backend:shutdown session))
+             (is (null events))
+             (is (not (eq :stopped (alfe.backend:session-state session))))))
+      (setf (symbol-function restore-name) old-restore
+            (symbol-function close-name) old-close))))
+
+(test cad-restore-session-is-idempotent-and-closes-current-log-first
+  (let ((binary (clautolisp-engine-binary)))
+    (unless binary (error "Hosted engine required"))
+    (multiple-value-bind (statuses stdout stderr)
+        (drive-hosted-engine
+         binary
+         '("(setq zz--setvars nil *AUTOLISP_LOG_STATE* '(1 \"old-log\") _autolisp_old_srchpath \"old-search\")"
+           "(defun setvar (name value) (setq zz--setvars (append zz--setvars (list (list name value)))) value)"
+           "(autolisp-restore-session)"
+           "(autolisp-restore-session)"
+           "(princ (if (and (equal zz--setvars '((\"LOGFILEMODE\" 0) (\"LOGFILEPATH\" \"old-log\") (\"LOGFILEMODE\" 1) (\"SRCHPATH\" \"old-search\"))) (null *AUTOLISP_LOG_STATE*) *AUTOLISP_SRCHPATH_RESTORED*) \"RESTORE-OK\" \"RESTORE-BAD\") nil)"))
+      (declare (ignore stderr))
+      (is (= 5 (length statuses)))
+      (is (every (lambda (s) (search " OK" s)) statuses))
+      (is (search "RESTORE-OK" stdout)))))
+
+
+(test cad-com-quit-action-defers-transport-teardown
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (protocol (alfe.protocol.file:init-session dir))
+           (result (alfe.backend.cad-common:drive-protocol-actions
+                    protocol (list (alfe.backend:make-action :quit))
+                    :defer-shutdown-p t)))
+      (is (eq :success (alfe.backend:eval-result-status result)))
+      (is (not (probe-file (alfe.protocol.file:protocol-session-control-path protocol)))))))
