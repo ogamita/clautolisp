@@ -1203,6 +1203,26 @@ when no debug session is active (the hook declines)."
           (autolisp-equal-p (cdr a) (cdr b))))
     (t nil)))
 
+(defun autolisp-equal-fuzz-p (a b tolerance)
+  ;; Like autolisp-equal-p, but every NUMERIC LEAF compares within
+  ;; +-TOLERANCE -- recursively, so the fuzz reaches the coordinates of a
+  ;; point, the leaves of a nested list, and both halves of a dotted pair.
+  ;; Structure, length, strings and non-numeric atoms stay strict (a
+  ;; number is never fuzz-equal to a non-number, and (5.0) is never equal
+  ;; to (5.0 5.0)). Autodesk documents this fuzz for lists of reals,
+  ;; points included -- equal-list-fuzz.issue. TOLERANCE is a non-zero
+  ;; number here (builtin-equal maps nil / 0 fuzz to strict autolisp-equal-p
+  ;; before calling this).
+  (cond
+    ((and (numberp a) (numberp b)) (<= (abs (- a b)) tolerance))
+    ((eql a b) t)
+    ((and (typep a 'autolisp-string) (typep b 'autolisp-string))
+     (string= (autolisp-string-value a) (autolisp-string-value b)))
+    ((and (consp a) (consp b))
+     (and (autolisp-equal-fuzz-p (car a) (car b) tolerance)
+          (autolisp-equal-fuzz-p (cdr a) (cdr b) tolerance)))
+    (t nil)))
+
 (defun builtin-eq (a b)
   ;; (eq a b) — pointer-level identity, with the standard exception
   ;; that two strings whose content is equal compare eq because the
@@ -1230,12 +1250,12 @@ when no debug session is active (the hook declines)."
         "EQUAL"
         "EQUAL fuzz must be a number, got ~S."
         fuzz))
-      ((and (numberp a) (numberp b))
-       (if (<= (abs (- a b)) tolerance)
-           (autolisp-true)
-           nil))
       (t
-       (if (autolisp-equal-p a b) (autolisp-true) nil)))))
+       ;; Fuzz applies to numeric leaves at any depth, not just when both
+       ;; top-level operands are numbers -- so (equal '(5.0) (list near) 1e-9)
+       ;; is T like the scalar case (equal-list-fuzz.issue). A scalar pair is
+       ;; just two numeric leaves, so this keeps the old scalar behaviour.
+       (if (autolisp-equal-fuzz-p a b tolerance) (autolisp-true) nil)))))
 
 (defun builtin-vl-every (function-designator first-list &rest more-lists)
   (let* ((function (resolve-autolisp-function-designator function-designator))

@@ -1929,7 +1929,39 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     ;; equal with fuzz tolerance.
     (is (eq t-symbol
             (call-autolisp-function equal-fn 1.0d0 1.0001d0 0.01d0)))
-    (is (null (call-autolisp-function equal-fn 1.0d0 1.05d0 0.01d0)))))
+    (is (null (call-autolisp-function equal-fn 1.0d0 1.05d0 0.01d0)))
+    ;; equal-list-fuzz.issue: fuzz reaches numeric LEAVES of lists, points,
+    ;; nested lists and dotted pairs -- not only top-level numbers.
+    (is (eq t-symbol                                              ; list, inside tol
+            (call-autolisp-function equal-fn
+                                    (list 5.0d0) (list (+ 5.0d0 1.0d-15)) 1.0d-9)))
+    (is (null (call-autolisp-function equal-fn                    ; list, outside tol
+                                      (list 5.0d0) (list 5.01d0) 1.0d-9)))
+    (is (eq t-symbol                                              ; point, 3 coords
+            (call-autolisp-function equal-fn
+                                    (list 1.0d0 2.0d0 0.0d0)
+                                    (list (+ 1.0d0 1.0d-15) 2.0d0 0.0d0) 1.0d-9)))
+    (is (eq t-symbol                                              ; nested list
+            (call-autolisp-function equal-fn
+                                    (list 1.0d0 (list 2.0d0 3.0d0))
+                                    (list 1.0d0 (list (+ 2.0d0 1.0d-15) 3.0d0)) 1.0d-9)))
+    (is (eq t-symbol                                              ; dotted pair
+            (call-autolisp-function equal-fn
+                                    (cons 1.0d0 2.0d0)
+                                    (cons (+ 1.0d0 1.0d-15) 2.0d0) 1.0d-9)))
+    (is (null (call-autolisp-function equal-fn                    ; length kept strict
+                                      (list 5.0d0) (list 5.0d0 5.0d0) 1.0d-9)))
+    (is (eq t-symbol                                              ; non-numeric strict + numeric fuzz
+            (call-autolisp-function equal-fn
+                                    (list (make-autolisp-string "p") 1.0d0)
+                                    (list (make-autolisp-string "p") (+ 1.0d0 1.0d-15)) 1.0d-9)))
+    (is (null (call-autolisp-function equal-fn                    ; non-numeric differs
+                                      (list (make-autolisp-string "p") 1.0d0)
+                                      (list (make-autolisp-string "q") 1.0d0) 1.0d-9)))
+    (is (eq t-symbol                                              ; zero fuzz = exact, equal
+            (call-autolisp-function equal-fn (list 5.0d0) (list 5.0d0) 0)))
+    (is (null (call-autolisp-function equal-fn                    ; zero fuzz = exact, differs
+                                      (list 5.0d0) (list (+ 5.0d0 1.0d-15)) 0)))))
 
 (test builtin-caxr-family
   ;; All depth-2 and depth-3 CAxR / CDxR walkers and a representative
