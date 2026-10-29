@@ -1,0 +1,49 @@
+#+TITLE: REM rejects real operands required by SCHMS arc geometry
+#+STATUS: NEXT
+#+PRIORITY: P2
+#+TYPE: compatibility
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-29
+
+* Minimal reproduction
+
+Run the adjacent =rem-real-operands-repro.lsp= with:
+
+#+begin_src sh
+clautolisp --no-init --host cador --dialect bricscad-v26 \
+  -l issues/open/rem-real-operands-repro.lsp
+#+end_src
+
+Observed with the locally installed SBCL binary 2.3.73:
+=REM expects a 32-bit AutoLISP integer, got 12.0d0.=
+
+The inspected master 38af2d74 (release source 2.3.76) still defines
+=builtin-rem= in =clautolisp/autolisp-builtins-core/source/api.lisp=
+with =require-int32= on both operands. This is a source inspection, not a
+claim that a newly built 2.3.76 binary was tested.
+
+* Native contract and affected code
+
+Autodesk documents integer or real operands and a real return if any
+operand is real. It also documents zero, one and multiple operands:
+[[https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CC43BEB-3215-41AE-839B-2DCE6354241A.htm][rem (AutoLISP), Autodesk reference]].
+
+Actual SCHMS source: =src-vlx/voies-chainage.lsp=, =schms_mod2pi=,
+called by =schms_split_bulge=. Seven newly prepared mathematical regression
+cases fail at REM (normalization, signed semicircles, asymmetric splits,
+transformation and endpoints). The existing 242-test unit baseline remains
+separate. No workaround to the valid product math or relaxed assertion is
+introduced. The nine candidate geometry tests (two pass, seven error) are
+kept explicitly pending in SCHMS =tests/warning-sites/pending/=.
+
+* Acceptance criteria
+
+Accept real and mixed integer/real operands, preserve numeric return types,
+and verify negative dividends/divisors, exact multiples and zero divisors
+against the native contract. Cover zero, one and multiple operands too;
+the current two-argument function signature is another contract gap to
+verify, not something exercised by this minimal reproducer. Add language
+regressions for the supported dialects and run the SCHMS candidate geometry
+suite after updating the installed runtime. No CAD automation is necessary
+for the minimal failure.

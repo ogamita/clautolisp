@@ -908,3 +908,8 @@ opendcl-conformance. All =TODO=.
 * Additional CAD host issue (2026-10-29)
 
 - NEXT =ssget-crossing-selection-unsupported= — P1, Cador rejects _C; minimal two-line reproducer and SCHMS occupancy regression references included. Native CAD qualification remains separate until implemented.
+
+* 2026-10-29 REM real operands
+
+| Priority | Status | Issue | Scope |
+| P2 | NEXT | [[file:rem-real-operands.issue][rem-real-operands]] | Real arithmetic blocks SCHMS arc regression qualification |
