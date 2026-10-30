@@ -52,6 +52,14 @@ cat > "$tmp/probe.lsp" <<'LSP'
   (setq counter 0)
   (while (< counter 2) (setq counter (1+ counter)))
   counter)
+;; Also consume the loop value: discarding it can hide broken temporaries
+;; through dead-code elimination on some host compiler versions.
+(defun probe-repeat-result (/ counter)
+  (setq counter 0)
+  (repeat 2 (setq counter (1+ counter))))
+(defun probe-while-result (/ counter)
+  (setq counter 0)
+  (while (< counter 2) (setq counter (1+ counter))))
 LSP
 
 status=0
@@ -105,11 +113,11 @@ esac
 # Both qualities are deliberate: lexical local bindings exercise a different
 # transpilation path from the debug build. A successful source evaluation alone
 # cannot prove that generated REPEAT/WHILE temporaries survive serialization.
-if out=$("$exe" --no-init -O speed=0,debug=3 -x "(progn (load \"$tmp/probe.lsp\") (princ \"\\nSOURCE-LOOPS=\") (princ (list (probe-repeat) (probe-while))) (princ \"\\n\"))" 2>&1) &&
-   printf '%s\n' "$out" | tr -d '\r' | grep -Fx 'SOURCE-LOOPS=(2 2)' >/dev/null; then
+if out=$("$exe" --no-init -O speed=0,debug=3 -x "(progn (load \"$tmp/probe.lsp\") (princ \"\\nSOURCE-LOOPS=\") (princ (list (probe-repeat) (probe-while) (probe-repeat-result) (probe-while-result))) (princ \"\\n\"))" 2>&1) &&
+   printf '%s\n' "$out" | tr -d '\r' | grep -Fx 'SOURCE-LOOPS=(2 2 2 2)' >/dev/null; then
     echo "shipped-compiler-test: source loops OK"
 else
-    echo "FAIL: source loops, expected SOURCE-LOOPS=(2 2)." >&2
+    echo "FAIL: source loops, expected SOURCE-LOOPS=(2 2 2 2)." >&2
     echo "      $out" >&2
     status=1
 fi
@@ -117,11 +125,11 @@ for quality in speed=0,debug=3 speed=3,debug=0; do
     rm -f "$tmp/probe.lap"
     if out=$("$exe" --no-init -O "$quality" -x "(princ (vlisp-compile 'lsm \"$tmp/probe.lsp\" \"$tmp/probe.lap\"))" 2>&1) &&
        [ -s "$tmp/probe.lap" ]; then
-        if out=$("$exe" --no-init -O "$quality" -x "(progn (load \"$tmp/probe.lap\") (princ \"\\nLAP-LOOPS=\") (princ (list (probe-repeat) (probe-while))) (princ \"\\n\"))" 2>&1) &&
-           printf '%s\n' "$out" | tr -d '\r' | grep -Fx 'LAP-LOOPS=(2 2)' >/dev/null; then
+        if out=$("$exe" --no-init -O "$quality" -x "(progn (load \"$tmp/probe.lap\") (princ \"\\nLAP-LOOPS=\") (princ (list (probe-repeat) (probe-while) (probe-repeat-result) (probe-while-result))) (princ \"\\n\"))" 2>&1) &&
+           printf '%s\n' "$out" | tr -d '\r' | grep -Fx 'LAP-LOOPS=(2 2 2 2)' >/dev/null; then
             echo "shipped-compiler-test: loops OK ($quality, fresh LAP load)"
         else
-            echo "FAIL: LAP loops ($quality), expected LAP-LOOPS=(2 2)." >&2
+            echo "FAIL: LAP loops ($quality), expected LAP-LOOPS=(2 2 2 2)." >&2
             echo "      $out" >&2
             status=1
         fi

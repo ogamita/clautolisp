@@ -38,6 +38,10 @@ refactors with no user-visible effect do not require an entry.
 
 * clautolisp / read-autolisp (=clautolisp/documentation/clautolisp-user-manual.org=)
 
+- LAP compilation preserves generated loop temporaries across save/load,
+  including REPEAT/WHILE return values on SBCL and CCL (2.3.83).
+  Recompile older LAPs; see the manual, /CLAL-COMPILE-FILE/ and /CLAL-COMPILE-SYSTEM/.
+
 - *A carriage return alone inside a string literal* (2.3.72): ~read~ now
   keeps it (code 13), as AutoCAD and BricsCAD do; it used to become a line
   feed. ~load~ follows the dialect -- a line feed under ~--dialect

@@ -1,9 +1,9 @@
 #+TITLE: LAP loop return values lose temporary symbol identity
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 #+DEPENDS:
-#+BRANCH:
+#+BRANCH: codex/test-lap-loop-roundtrip
 
 * Symptom and reproduction
 Found 2026-10-31 while extending shipped-compiler-test.sh for SCHME.
@@ -49,3 +49,17 @@ installed Windows SBCL executable pass it:
   both qualities with an unbound REPEAT-RESULT temporary.
 - CCL, job 17624068077: same result.
 Do not generalize the successful macOS/Windows SBCL run to all SBCL builds.
+
+* Resolved in source version 2.3.83
+WRITE-LAP-SOURCE now binds *PRINT-CIRCLE* true, preserving shared generated
+symbols with reader labels instead of printing separate #:NAME objects
+for a binding and its references. No interpreted fallback is introduced.
+
+The existing shipped-compiler test now checks four loop forms: REPEAT and
+WHILE with an explicit counter return, and each loop used directly as
+the function return value. Source and fresh-process LAP results must all
+be 2, at speed=0,debug=3 and speed=3,debug=0. The strengthened test was
+observed failing before the correction, then passed on freshly built
+SBCL and CCL executables. Existing compiler suites: 454/454 checks on
+each host, no skips. The user manual and release notes explain rebuilding
+older compiled applications. Linux CI validation follows the fix push.
