@@ -40,3 +40,12 @@ No compiler implementation change is included in the SCHME test extraction.
 Extend the existing shipped LAP regression with both loop-result forms;
 prove it fails before correction, then passes on SBCL and CCL in fresh
 processes, for both optimization qualities, without interpreted fallback.
+
+* Linux CI confirmation
+Pipeline 3010650231 at test commit 356f82ea reproduces the historical
+explicit-COUNTER case on BOTH Linux hosts, whereas macOS SBCL and the
+installed Windows SBCL executable pass it:
+- SBCL 2.2.9 (Debian), job 17624068076: source passes, LAP fails at
+  both qualities with an unbound REPEAT-RESULT temporary.
+- CCL, job 17624068077: same result.
+Do not generalize the successful macOS/Windows SBCL run to all SBCL builds.
