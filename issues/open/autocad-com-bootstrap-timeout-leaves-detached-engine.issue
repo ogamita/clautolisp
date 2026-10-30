@@ -63,3 +63,47 @@ an equally strong per-invocation marker (for this incident, the private job
 temp handles supplied that evidence). Never kill all acad.exe processes or
 the RPC service. Retain process receipts and bootstrap logs on failure, then
 replay EPURE AutoCAD and the following compilation in the same runner session.
+
+* Recurrence with ALFE 2.3.78 -- 2026-10-30
+
+[[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/561306][SCHMS ActiveX AutoCAD job 561306]], pipeline 91776, ran from 11:09:33 to
+11:12:51 Europe/Paris. It reported READY-TIMEOUT, BOOTING, and terminated
+spawned launcher PID 7212. No assertion ran.
+
+The archived bridge =com-flags.txt= positively identifies the detached server:
+
+#+begin_example
+CREATEDPID=12728
+ATTACHED=0
+CREATED=1
+#+end_example
+
+CIM subsequently confirmed acad.exe PID 12728, owner runner0, session 4,
+created 11:10:41 Europe/Paris, RPC parent 952, command line
+=acad.exe /Automation -Embedding=. The process survived the completed job.
+There was no =owned-cad-process.json= in the uploaded workdir, although
+=owned-cad-process.ps1= was emitted. The bridge's early CREATEDPID receipt
+therefore exists before the later identity-file capture succeeds.
+
+The server held the checkout-root drawing log =Dessin1_15c15bb02.log=.
+Subsequent SCHMS pipeline 91765 jobs 561170 through 561174 failed during
+pre_get_sources cleanup, before running their tests. This was a runner0
+residue affecting the shared pool, not a runner2 assertion failure.
+ALFE 2.3.78 was explicitly verified in the failing job and installed runner.
+Updating to that version alone does not close this bootstrap cleanup issue.
+The separate normal EPURE AutoCAD job 561184 passed its 3 assertions and
+exited successfully under the same installed version.
+
+After checking the completed-job status and the exact CREATEDPID, owner,
+session and creation timestamp, only PID 12728 and its descendants were
+terminated. The RPC service was preserved. The original drawing log and an
+ownership receipt were archived outside the checkout. PID disappearance and
+an exclusive FileShare.None open of the released log both succeeded before
+moving it out of the checkout. Marker: OWNED_12728_CLOSED_AND_LOG_RELEASED.
+
+Extend the failure-path regression to this gap: COM CreateObject has returned
+and CREATEDPID is recorded, but bootstrap never reaches READY and the later
+owned-process identity file is absent. Cleanup must use a positively owned
+reference or an identity captured before the blocking call; it must still
+preserve attached or foreign CAD processes. Requalify this path natively;
+normal shutdown coverage alone does not establish it.
