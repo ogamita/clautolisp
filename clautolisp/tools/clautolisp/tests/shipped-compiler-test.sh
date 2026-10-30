@@ -43,6 +43,15 @@ cat > "$tmp/probe.lsp" <<'LSP'
 ;; and re-read breaks there and nowhere else -- which is how GENSYMs in
 ;; transpiler output were found, after they had shipped.
 (defun probe-hof (n) (apply (lambda (x) (* x 2)) (list n)))
+;; Loop temporaries must retain their identity through LAP print/read.
+(defun probe-repeat (/ counter)
+  (setq counter 0)
+  (repeat 2 (setq counter (1+ counter)))
+  counter)
+(defun probe-while (/ counter)
+  (setq counter 0)
+  (while (< counter 2) (setq counter (1+ counter)))
+  counter)
 LSP
 
 status=0
@@ -91,6 +100,37 @@ case "$out" in
         status=1
         ;;
 esac
+
+# 2c. Positive loop regression: compile on disk and load in a NEW process.
+# Both qualities are deliberate: lexical local bindings exercise a different
+# transpilation path from the debug build. A successful source evaluation alone
+# cannot prove that generated REPEAT/WHILE temporaries survive serialization.
+if out=$("$exe" --no-init -O speed=0,debug=3 -x "(progn (load \"$tmp/probe.lsp\") (princ \"\\nSOURCE-LOOPS=\") (princ (list (probe-repeat) (probe-while))) (princ \"\\n\"))" 2>&1) &&
+   printf '%s\n' "$out" | tr -d '\r' | grep -Fx 'SOURCE-LOOPS=(2 2)' >/dev/null; then
+    echo "shipped-compiler-test: source loops OK"
+else
+    echo "FAIL: source loops, expected SOURCE-LOOPS=(2 2)." >&2
+    echo "      $out" >&2
+    status=1
+fi
+for quality in speed=0,debug=3 speed=3,debug=0; do
+    rm -f "$tmp/probe.lap"
+    if out=$("$exe" --no-init -O "$quality" -x "(princ (vlisp-compile 'lsm \"$tmp/probe.lsp\" \"$tmp/probe.lap\"))" 2>&1) &&
+       [ -s "$tmp/probe.lap" ]; then
+        if out=$("$exe" --no-init -O "$quality" -x "(progn (load \"$tmp/probe.lap\") (princ \"\\nLAP-LOOPS=\") (princ (list (probe-repeat) (probe-while))) (princ \"\\n\"))" 2>&1) &&
+           printf '%s\n' "$out" | tr -d '\r' | grep -Fx 'LAP-LOOPS=(2 2)' >/dev/null; then
+            echo "shipped-compiler-test: loops OK ($quality, fresh LAP load)"
+        else
+            echo "FAIL: LAP loops ($quality), expected LAP-LOOPS=(2 2)." >&2
+            echo "      $out" >&2
+            status=1
+        fi
+    else
+        echo "FAIL: LAP loop compilation ($quality) produced no usable artifact." >&2
+        echo "      $out" >&2
+        status=1
+    fi
+done
 
 # 3. -O reaches the engine: the qualities the option asked for are the
 #    qualities the engine reports.

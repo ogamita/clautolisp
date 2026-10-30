@@ -1,0 +1,42 @@
+#+TITLE: LAP loop return values lose temporary symbol identity
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS:
+#+BRANCH:
+
+* Symptom and reproduction
+Found 2026-10-31 while extending shipped-compiler-test.sh for SCHME.
+Reproduced with a freshly built SBCL executable from f92d783a (runtime
+source 2.3.81). Compile this source with VLISP-COMPILE LSM to a LAP,
+then load that LAP and call either function in a NEW process:
+
+#+begin_src lisp
+(defun repeat-result (/ counter)
+  (setq counter 0)
+  (repeat 2 (setq counter (1+ counter))))
+(defun while-result (/ counter)
+  (setq counter 0)
+  (while (< counter 2) (setq counter (1+ counter))))
+#+end_src
+
+Expected: 2 for each function, as with source evaluation. Actual:
+unbound #:REPEAT-RESULT / #:WHILE-RESULT. Both speed=0,debug=3 and
+speed=3,debug=0 exhibit the failure. The historical SCHME probe instead
+returns COUNTER explicitly AFTER the loop; that form passes, including
+Windows SBCL runtime 2.3.81 in a fresh process. However CCL still fails
+even with COUNTER after the loop, at both qualities; the positive regression
+in shipped-compiler-test.sh exposes it. Thus the removed SBCL restrictions
+must not be presented as evidence that every loop result now works.
+
+* Cause to verify
+TRANSPILE.LISP introduces a GENSYM result binding for each loop;
+WRITE-LAP-SOURCE prints generated code with *PRINT-CIRCLE* NIL. A
+print/read round trip can split references to that uninterned symbol.
+When the loop value is discarded, host optimization can hide the defect.
+No compiler implementation change is included in the SCHME test extraction.
+
+* Acceptance
+Extend the existing shipped LAP regression with both loop-result forms;
+prove it fails before correction, then passes on SBCL and CCL in fresh
+processes, for both optimization qualities, without interpreted fallback.
