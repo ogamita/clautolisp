@@ -606,6 +606,8 @@ Dim attached, created, rc, statusReadyFlag, flagsFile, progId, createdFile
 Dim errNumber, errDescription, lastTouchError, pidsBefore
 
 Set fso = CreateObject(\"Scripting.FileSystemObject\")
+Dim dwgFile
+dwgFile = \"${DWGFILE}\"
 runFile     = \"${RUNLSPFILE}\"
 statusFile  = \"${STATUSFILE}\"
 errFile     = \"${ERRFILE}\"
@@ -869,12 +871,16 @@ WaitQuiescent app, waitSecs
 ' \"transient\" looks like.
 Dim docReady, docAttempt
 docReady = False
+Set doc = Nothing
 For docAttempt = 1 To 20
   On Error Resume Next
-  If app.Documents.Count = 0 Then
-    Call app.Documents.Add(\"\")
+  If dwgFile <> \"\" Then
+    If doc Is Nothing Then Set doc = app.Documents.Open(dwgFile)
+    If Not (doc Is Nothing) Then doc.Activate
+  Else
+    If app.Documents.Count = 0 Then Call app.Documents.Add(\"\")
+    Set doc = app.ActiveDocument
   End If
-  Set doc = app.ActiveDocument
   If Err.Number = 0 Then
     On Error GoTo 0
     docReady = True
@@ -1018,6 +1024,7 @@ TASKLIST's CSV output; NIL when TASKLIST cannot be run."
 
 (defun emit-bridge-vbs (path
                         &key runtime-load-path
+                             drawing-path
                              status-path
                              error-path
                              debug-path
@@ -1034,7 +1041,8 @@ TASKLIST's CSV output; NIL when TASKLIST cannot be run."
                 (substitute-placeholders
                  (alfe.backend.cad-common::instrument-owned-com-bridge
                   *bridge-autocad-vbs-template* path)
-                 `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
+                 `(("DWGFILE" . ,(if drawing-path (namestring (pathname drawing-path)) ""))
+                   ("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
                    ("COMMODE"     . ,com-mode)
@@ -1462,6 +1470,7 @@ started is what ATTACHED/CREATED say.")
                  (check-com-attach-pid :autocad progid pid workdir)))
              (emit-bridge-vbs
               vbs
+              :drawing-path dwg
               :runtime-load-path run-common
               :status-path (alfe.protocol.file:protocol-session-status-path protocol)
               :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)

@@ -925,3 +925,8 @@ opendcl-conformance. All =TODO=.
 [[file:alfe-cad-owned-com-teardown.issue][Ordered CAD restoration and owned COM process closure]]; native Windows validation pending.
 
 - NEXT =equal-list-fuzz= — P2, EQUAL ignores numeric fuzz inside lists; scalar/list reproducer and SCHMS rotation test reference included.
+
+* SCHME historical-suite qualification incidents
+| Status | Priority | Issue | Remaining validation |
+| NEXT | P1 | [[file:alfe-com-dwg-ignored.issue][COM ignores explicit DWG]] | Native AutoCAD and BricsCAD |
+| NEXT | P1 | [[file:alfe-bricscad-bootstrap-secureload-zero.issue][BricsCAD bootstrap security]] | Native COM and separate batch correction |

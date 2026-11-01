@@ -4104,3 +4104,52 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
                     :defer-shutdown-p t)))
       (is (eq :success (alfe.backend:eval-result-status result)))
       (is (not (probe-file (alfe.protocol.file:protocol-session-control-path protocol)))))))
+
+(test automation-bridges-open-the-requested-job-drawing
+  "An explicit drawing must be opened before any plug-in or runtime load."
+  (let ((work (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-com-dwg-~D/" (random 1000000))
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist work)
+           (dolist (engine '(:autocad :bricscad))
+             (let ((vbs (merge-pathnames (format nil "~A.vbs" engine) work)))
+               (funcall (if (eq engine :autocad)
+                            #'alfe.backend.autocad:emit-bridge-vbs
+                            #'alfe.backend.bricscad:emit-bridge-vbs)
+                        vbs :runtime-load-path (merge-pathnames "run-common.lsp" work)
+                        :status-path (merge-pathnames "protocol/status.txt" work)
+                        :error-path (merge-pathnames "protocol/stderr.txt" work)
+                        :drawing-path "C:/job with spaces/dessin.dwg")
+               (let* ((text (read-back vbs))
+                      (open (search "app.Documents.Open(dwgFile)" text))
+                      (load (search "Call doc.SendCommand(cmd)" text)))
+                 (is (search "C:/job with spaces/dessin.dwg" text))
+                 (is (and open load (< open load)))
+                 (is (search "doc.Activate" text))))))
+      (uiop:delete-directory-tree work :validate t :if-does-not-exist :ignore))))
+
+(test bricscad-com-bootstrap-trust-is-scoped-and-restored
+  "Loading the runtime must not disable SECURELOAD or leak a trusted path."
+  (let ((work (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-bcad-trust-~D/" (random 1000000))
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist work)
+           (let ((vbs (merge-pathnames "bridge.vbs" work)))
+             (alfe.backend.bricscad:emit-bridge-vbs
+              vbs :runtime-load-path (merge-pathnames "run-common.lsp" work)
+              :status-path (merge-pathnames "protocol/status.txt" work)
+              :error-path (merge-pathnames "protocol/stderr.txt" work))
+             (let ((text (read-back vbs)))
+               (is (not (search "setvar \"\"SECURELOAD\"\" 0" text)))
+               (is (search "originalTrustedPaths = doc.GetVariable(" text))
+               (is (search "Call doc.SetVariable(" text))
+               (let* ((needle "Call RestoreBridgeTrust()")
+                      (first (search needle text)))
+                 (is (and first (search needle text :start2 (+ first (length needle))))))
+               (is (< (search "Call RestoreBridgeTrust()" text)
+                      (search "For lifeIndex = app.Documents.Count" text))))))
+      (uiop:delete-directory-tree work :validate t :if-does-not-exist :ignore))))

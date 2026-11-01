@@ -892,6 +892,13 @@ AutoCAD install. Only if all three miss does batch mode stop with a
 =AUTOLISP_DWG=) is the drawing the engine starts on, in place of its
 untitled =Drawing1.dwg=, as =clautolisp --dwg FILE= does.
 
+In Windows COM automation, AutoCAD and BricsCAD open and activate the explicit
+DWG before plug-in startup and the runtime. An opening failure is a bootstrap
+error; an unnamed active document is not a substitute for the requested file.
+BricsCAD COM adds only the runtime work directory to =TRUSTEDPATHS=, preserves
+=SECURELOAD=, and restores the original trusted paths before owned cleanup
+or an attached session exits.
+
 =--template NAME|PATH= (or =AUTOLISP_TEMPLATE=) starts the session on
 a drawing made from one of the CAD's own templates, rather than on
 alfe's embedded =empty.dwg= (a French AutoCAD 2005 drawing, whose

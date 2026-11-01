@@ -2890,3 +2890,11 @@ The atomic close-owned.result contains zero only after successful cleanup.
 No final STOPPED from a process already exited is required. All acknowledgement
 and process-exit waits are bounded. Batch engines retain SHUTDOWN/STOPPED, with
 restoration preceding STOPPING.
+
+* Windows COM document selection
+An explicit =--dwg= SHALL select that exact drawing before launch plug-ins
+and runtime loading. Both COM backends SHALL fail if the file cannot be
+opened; they SHALL NOT silently replace it with an unnamed active document.
+BricsCAD COM SHALL preserve =SECURELOAD= and restore any temporary workdir
+entry in =TRUSTEDPATHS= before closing an owned application or leaving an
+attached application open.

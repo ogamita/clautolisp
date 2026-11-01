@@ -1913,7 +1913,7 @@ End If
 Loop
 ")
 
-(defun instrument-owned-com-bridge (text path)
+(defun instrument-owned-com-bridge (text path &key before-close-vbs)
   "Retain the exact COM object and validate its PID plus creation time on exit."
   (let* ((marker "${PLUGIN_BEFORE_LOAD}")
          (before (search marker text))
@@ -1924,9 +1924,19 @@ Loop
     (with-open-file (out helper :direction :output :if-exists :supersede
                                 :if-does-not-exist :create :external-format :utf-8)
       (write-string *owned-cad-process-script* out))
-    (concatenate 'string (subseq text 0 before) *owned-com-capture-vbs*
-                 (subseq text before end) *owned-com-wait-vbs*
-                 (subseq text (+ end (length "WScript.Quit 0"))))))
+    (let ((wait *owned-com-wait-vbs*))
+      (when before-close-vbs
+        ;; Restore bridge-owned settings while its exact document still lives,
+        ;; both on an explicit close request and on an attached STOPPED exit.
+        (dolist (marker '("      Set lifeStream = fso.CreateTextFile"
+                          "    lifeCode = 0"))
+          (let ((position (search marker wait)))
+            (unless position (error "Missing owned-close restoration boundary."))
+            (setf wait (concatenate 'string (subseq wait 0 position)
+                                   before-close-vbs (subseq wait position))))))
+      (concatenate 'string (subseq text 0 before) *owned-com-capture-vbs*
+                   (subseq text before end) wait
+                   (subseq text (+ end (length "WScript.Quit 0")))))))
 
 (defun close-owned-com-bridge (workdir &key (timeout 35))
   "Request Quit on the startup bridge's object, then require process-exit proof.
