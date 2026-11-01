@@ -1040,8 +1040,8 @@ TASKLIST's CSV output; NIL when TASKLIST cannot be run."
                (expand-plugin-slots
                 (substitute-placeholders
                  (alfe.backend.cad-common::instrument-owned-com-bridge
-                  *bridge-autocad-vbs-template* path)
-                 `(("DWGFILE" . ,(if drawing-path (namestring (pathname drawing-path)) ""))
+                  *bridge-autocad-vbs-template* path :trust-runtime-p t)
+                 `(("DWGFILE" . ,(etypecase drawing-path (string drawing-path) (pathname (uiop:native-namestring drawing-path)) (null "")))
                    ("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
@@ -1515,12 +1515,13 @@ started is what ATTACHED/CREATED say.")
                          :protocol-session protocol
                          :variant variant
                          :progid progid))
-               ;; BEFORE the launch: with SECURELOAD=2 the CAD's first load,
+               ;; BEFORE a console launch: with SECURELOAD=2 the CAD's first load,
                ;; run-common.lsp from this workdir, is itself refused unless
                ;; the workdir is already trusted. Only for a REAL launch --
                ;; --print-command and the tests pass their own launcher, and
                ;; a dry run must not write the user's registry.
-               (_ (when (eq launcher #'uiop:launch-program)
+               (_ (when (and (eq variant :batch)
+                               (eq launcher #'uiop:launch-program))
                     (setf (autocad-session-trusted session)
                           (ignore-errors (trust-workdir-for-run workdir)))))
                (_ (log-verbose "backend AUTOCAD: launching: ~{~A~^ ~}" argv))

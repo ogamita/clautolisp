@@ -4138,9 +4138,10 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
     (unwind-protect
          (progn
            (ensure-directories-exist work)
-           (let ((vbs (merge-pathnames "bridge.vbs" work)))
-             (alfe.backend.bricscad:emit-bridge-vbs
-              vbs :runtime-load-path (merge-pathnames "run-common.lsp" work)
+           (dolist (emitter (list #'alfe.backend.bricscad:emit-bridge-vbs
+                                  #'alfe.backend.autocad:emit-bridge-vbs))
+            (let ((vbs (merge-pathnames "bridge.vbs" work)))
+             (funcall emitter vbs :runtime-load-path (merge-pathnames "run-common.lsp" work)
               :status-path (merge-pathnames "protocol/status.txt" work)
               :error-path (merge-pathnames "protocol/stderr.txt" work))
              (let ((text (read-back vbs)))
@@ -4151,5 +4152,5 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
                       (first (search needle text)))
                  (is (and first (search needle text :start2 (+ first (length needle))))))
                (is (< (search "Call RestoreBridgeTrust()" text)
-                      (search "For lifeIndex = app.Documents.Count" text))))))
+                      (search "For lifeIndex = app.Documents.Count" text)))))))
       (uiop:delete-directory-tree work :validate t :if-does-not-exist :ignore))))

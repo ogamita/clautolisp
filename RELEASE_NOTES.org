@@ -1899,6 +1899,11 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
+** alfe 2.3.83: scoped runtime trust for both COM backends
+AutoCAD COM now uses the same temporary native TRUSTEDPATHS scope as BricsCAD,
+restoring it before cleanup. Only accoreconsole still needs the registry
+bootstrap path; COM no longer writes every profile's registry value.
+
 ** alfe 2.3.82: explicit drawings in Windows COM sessions
 AutoCAD and BricsCAD open and activate the requested =--dwg= before plug-in
 startup and runtime loading. BricsCAD COM trusts only its runtime directory

@@ -561,19 +561,6 @@ End If
 ' issued too early can be silently dropped.
 If created Then WScript.Sleep 3000
 
-Dim originalTrustedPaths, bridgeTrustChanged
-bridgeTrustChanged = False
-Sub RestoreBridgeTrust()
-  If bridgeTrustChanged Then
-    Call doc.SetVariable(\"TRUSTEDPATHS\", originalTrustedPaths)
-    bridgeTrustChanged = False
-  End If
-End Sub
-' Approve only this invocation's runtime directory, preserving SECURELOAD.
-originalTrustedPaths = doc.GetVariable(\"TRUSTEDPATHS\")
-Call doc.SetVariable(\"TRUSTEDPATHS\", originalTrustedPaths & \";\" & Replace(fso.GetParentFolderName(runFile), \"\\\", \"/\") & \"/...\")
-bridgeTrustChanged = True
-
 ${PLUGIN_BEFORE_LOAD}
 Dim cmd
 cmd = \"(load \"\"\" & Replace(runFile, \"\\\", \"/\") & \"\"\") \"
@@ -633,8 +620,8 @@ substituted from the provided session paths."
                 (substitute-placeholders
                  (alfe.backend.cad-common::instrument-owned-com-bridge
                   *bridge-bricscad-vbs-template* path
-                  :before-close-vbs (format nil "    Call RestoreBridgeTrust()~%"))
-                 `(("DWGFILE" . ,(if drawing-path (namestring (pathname drawing-path)) ""))
+                  :trust-runtime-p t)
+                 `(("DWGFILE" . ,(etypecase drawing-path (string drawing-path) (pathname (uiop:native-namestring drawing-path)) (null "")))
                    ("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))

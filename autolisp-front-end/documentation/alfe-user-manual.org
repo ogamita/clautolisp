@@ -895,7 +895,7 @@ untitled =Drawing1.dwg=, as =clautolisp --dwg FILE= does.
 In Windows COM automation, AutoCAD and BricsCAD open and activate the explicit
 DWG before plug-in startup and the runtime. An opening failure is a bootstrap
 error; an unnamed active document is not a substitute for the requested file.
-BricsCAD COM adds only the runtime work directory to =TRUSTEDPATHS=, preserves
+Both COM backends add only the runtime work directory to =TRUSTEDPATHS=, preserves
 =SECURELOAD=, and restores the original trusted paths before owned cleanup
 or an attached session exits.
 

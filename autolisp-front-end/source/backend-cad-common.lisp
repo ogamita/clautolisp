@@ -1913,7 +1913,23 @@ End If
 Loop
 ")
 
-(defun instrument-owned-com-bridge (text path &key before-close-vbs)
+(defparameter *com-runtime-trust-vbs*
+  "Dim originalTrustedPaths, bridgeTrustChanged
+bridgeTrustChanged = False
+Sub RestoreBridgeTrust()
+  If bridgeTrustChanged Then
+    Call doc.SetVariable(\"TRUSTEDPATHS\", originalTrustedPaths)
+    bridgeTrustChanged = False
+  End If
+End Sub
+' Approve only this invocation's runtime directory, preserving SECURELOAD.
+originalTrustedPaths = doc.GetVariable(\"TRUSTEDPATHS\")
+Call doc.SetVariable(\"TRUSTEDPATHS\", originalTrustedPaths & \";\" & Replace(fso.GetParentFolderName(runFile), \"\\\", \"/\") & \"/...\")
+bridgeTrustChanged = True
+
+")
+
+(defun instrument-owned-com-bridge (text path &key before-close-vbs trust-runtime-p)
   "Retain the exact COM object and validate its PID plus creation time on exit."
   (let* ((marker "${PLUGIN_BEFORE_LOAD}")
          (before (search marker text))
@@ -1924,7 +1940,10 @@ Loop
     (with-open-file (out helper :direction :output :if-exists :supersede
                                 :if-does-not-exist :create :external-format :utf-8)
       (write-string *owned-cad-process-script* out))
-    (let ((wait *owned-com-wait-vbs*))
+    (let ((wait *owned-com-wait-vbs*)
+          (before-close-vbs (or before-close-vbs
+                                (and trust-runtime-p
+                                     (format nil "    Call RestoreBridgeTrust()~%")))))
       (when before-close-vbs
         ;; Restore bridge-owned settings while its exact document still lives,
         ;; both on an explicit close request and on an attached STOPPED exit.
@@ -1935,6 +1954,7 @@ Loop
             (setf wait (concatenate 'string (subseq wait 0 position)
                                    before-close-vbs (subseq wait position))))))
       (concatenate 'string (subseq text 0 before) *owned-com-capture-vbs*
+                   (if trust-runtime-p *com-runtime-trust-vbs* "")
                    (subseq text before end) wait
                    (subseq text (+ end (length "WScript.Quit 0")))))))
 
