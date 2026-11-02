@@ -25,8 +25,8 @@ public class Fixture {
   ProcessStartInfo info=new ProcessStartInfo(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,cad),"--workdir \""+work+"\"");
   info.UseShellExecute=false;info.CreateNoWindow=true;
   Process child=Process.Start(info);
-  Console.WriteLine("ALFE.API.COM_WAY.OK");
-  Console.WriteLine(mode=="duplicate-api" ? "ALFE.API.COM_WAY.OK" : "ALFE.API.COM_TL_CONTINU.OK");
+  Console.WriteLine(mode=="missing-api" ? "ALFE.API.COM_WAY.FAIL" : "ALFE.API.COM_WAY.OK");
+  Console.WriteLine(mode=="missing-api" ? "ALFE.API.COM_TL_CONTINU.FAIL" : (mode=="duplicate-api" ? "ALFE.API.COM_WAY.OK" : "ALFE.API.COM_TL_CONTINU.OK"));
   child.WaitForExit();
  }
 }
@@ -36,7 +36,7 @@ Add-Type -TypeDefinition $code -OutputAssembly $binary -OutputType ConsoleApplic
 $helper=Join-Path $PSScriptRoot '../verify-epure-lifecycle.ps1'
 # Also support an isolated checkout of the two fixture scripts.
 if(-not(Test-Path -LiteralPath $helper)){$helper=Join-Path $PSScriptRoot 'verify-epure-lifecycle.ps1'}
-foreach($mode in @('success','crash','duplicate-api')){
+foreach($mode in @('success','crash','duplicate-api','missing-api')){
  $repo=Join-Path $Workdir $mode
  $bin=Join-Path $repo 'autolisp-front-end/tools/alfe/bin'
  $null=New-Item -ItemType Directory -Path $bin -Force
@@ -49,16 +49,21 @@ foreach($mode in @('success','crash','duplicate-api')){
  & git -C $repo -c user.name=Fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false commit --allow-empty --quiet -m Fixture
  $previous=$env:EPURE_GATE_FIXTURE;$env:EPURE_GATE_FIXTURE=$mode
  try{
-  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'scripts/verify-epure-lifecycle.ps1') -CrashObservationSeconds 0 -TimeoutSeconds 15
+  $extra=if($mode -eq 'missing-api'){@('-IncludeControls')}else{@()}
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'scripts/verify-epure-lifecycle.ps1') -CrashObservationSeconds 0 -TimeoutSeconds 15 @extra
   $status=$LASTEXITCODE
  }finally{$env:EPURE_GATE_FIXTURE=$previous}
  $expected=if($mode -eq 'success'){0}else{1}
  if($status -ne $expected){throw "Unexpected gate exit for $mode : $status"}
  $summary=Get-Content (Join-Path $repo 'dist/epure-lifecycle/summary.json') -Raw|ConvertFrom-Json
- if(@($summary).Count -ne 2){throw 'Both fake engines must be observed.'}
+ $caseCount=if($mode -eq 'missing-api'){4}else{2}
+ if(@($summary).Count -ne $caseCount){throw 'Both fake engines must be observed.'}
  if($mode -eq 'crash' -and @($summary|Where-Object {$_.NativeExitHex -ne '0xC0000005' -or $_.Passed}).Count){throw 'Native crash was masked by CLI success.'}
  if($mode -eq 'duplicate-api' -and @($summary|Where-Object {$_.ApiMatches -ne 1 -or $_.Passed}).Count){throw 'Duplicated first API marker masked a missing second assertion.'}
+ if($mode -eq 'missing-api'){
+  foreach($r in $summary){if($r.ApiMatches -ne 0 -or $r.Passed -eq $r.EpurePlugin){throw 'Control cases masked missing EPURE APIs.'}}
+ }
  [xml]$junit=Get-Content (Join-Path $repo 'dist/epure-lifecycle/junit.xml') -Raw
- if([int]$junit.testsuite.tests -ne 2){throw 'JUnit cases missing.'}
+ if([int]$junit.testsuite.tests -ne $caseCount){throw 'JUnit cases missing.'}
  Write-Host "PASS $mode : two strongly owned native processes; expected lifecycle verdict and JUnit"
 }
