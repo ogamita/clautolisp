@@ -1,10 +1,10 @@
 # Strict native qualification; never sweep CAD processes from other invocations.
 [CmdletBinding()]
-param([switch]$RequireComDrawing,[switch]$IncludeBricsBatch,[int]$TimeoutSeconds=360,[ValidateRange(0,120)][int]$CrashObservationSeconds=30)
+param([string]$OutputDirectory, [switch]$RequireComDrawing,[switch]$IncludeBricsBatch,[int]$TimeoutSeconds=360,[ValidateRange(0,120)][int]$CrashObservationSeconds=30)
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 $alfe=Join-Path $repo 'autolisp-front-end/tools/alfe/bin/alfe-sbcl.exe'
-$root=Join-Path $repo 'dist/epure-lifecycle'
+$root=if($OutputDirectory){Join-Path $repo $OutputDirectory}else{Join-Path $repo 'dist/epure-lifecycle'}
 $null=New-Item -ItemType Directory -Path $root -Force
 $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $session=(Get-Process -Id $PID).SessionId
