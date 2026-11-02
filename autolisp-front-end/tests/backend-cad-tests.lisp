@@ -1956,8 +1956,9 @@ locale; no preference keeps discovery order."
                    (declare (ignore ignored))
                    (setf captured argv)
                    nil))
-      (is (member (alfe.backend.cad-common:cad-argument-path drawing)
-                  captured :test #'equal))
+      ;; DWG was passed as a CLI string; preserve that exact spelling.
+      ;; A pathname would instead be rendered with native Windows separators.
+      (is (member (namestring drawing) captured :test #'equal))
       (is (not (probe-file (merge-pathnames "empty.dwg" workdir)))))))
 
 (test bricscad-batch-drawings-are-private-to-each-session
