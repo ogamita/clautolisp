@@ -2313,7 +2313,10 @@ propagated to every track.
 * CAD session cleanup and owned COM instances
 
 On Windows, AutoCAD and BricsCAD automation retain the exact COM application
-reference returned at startup. After the evaluation results have been collected,
+reference returned at startup. Before opening an explicit drawing, both bridges
+require GetAcadState().IsQuiescent within 30 seconds. They capture the created
+application's process identity before file open; failure never substitutes a
+blank drawing or a different instance. After the evaluation results have been collected,
 alfe asks the live runtime to restore LOGFILEMODE, LOGFILEPATH and SRCHPATH.
 The runtime closes the current command log first, restores the saved settings,
 and acknowledges =RESTORED= only after leaving its protocol loop.

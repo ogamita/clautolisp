@@ -1899,6 +1899,12 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
+** alfe 2.3.85: gate explicit COM drawing open on native readiness
+Both COM bridges require a quiescent application before opening the job DWG.
+The check is bounded to 30 seconds and fails explicitly, without a blank-file
+fallback. Capture the exact created application's process before file open,
+so a native crash during drawing startup leaves ownership evidence.
+
 ** alfe 2.3.84: bounded owned COM close retries
 After native RESTORED, closing the retained application's documents and Quit
 are retried for up to 40 attempts, with errors preserved. Automation references

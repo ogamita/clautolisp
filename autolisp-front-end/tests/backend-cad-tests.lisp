@@ -4200,3 +4200,50 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
                            (string-trim '(#\Space #\Tab #\Return #\Newline)
                                         (uiop:read-file-string
                                          (merge-pathnames (concatenate 'string case ".result") dir)))))))))))
+
+(test owned-com-startup-is-quiescent-and-identified-before-open
+  "Do not open a drawing in a starting application or lose its identity on a crash."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+      (dolist (emitter (list #'alfe.backend.autocad:emit-bridge-vbs
+                            #'alfe.backend.bricscad::emit-bridge-vbs))
+        (let ((path (merge-pathnames "startup-ready.vbs" dir)))
+          (funcall emitter path :runtime-load-path #p"/w/run-common.lsp"
+                               :drawing-path "C:/job/dessin.dwg"
+                               :status-path #p"/w/s" :error-path #p"/w/e")
+          (let* ((text (uiop:read-file-string path))
+                 (ready (search "If Not OwnedComIsReady(app, 30) Then" text))
+                 (capture (search " -Operation Capture -IdentityFile " text))
+                 (open (search "app.Documents.Open(dwgFile)" text)))
+            (is (and ready capture open (< ready capture open)))
+            (is (search "Set state = a.GetAcadState" text))
+            (is (search "COM application did not become quiescent before opening the job drawing" text))))))))
+
+(test owned-com-ready-windows-mocked-handshake
+  "Exercise native VBScript object returns and bounded non-ready outcomes."
+  (if (not (uiop:os-windows-p))
+      (skip "Native cscript fixture requires Windows.")
+      (with-cad-test-directories
+        (let* ((dir (%fresh-test-directory))
+               (path (merge-pathnames "ready-fixture.vbs" dir))
+               (prefix (uiop:read-file-string
+                        (asdf:system-relative-pathname
+                         "autolisp-front-end" "tests/fixtures/owned-com-ready-mock.vbs")))
+               (ready alfe.backend.cad-common::*owned-com-ready-vbs*))
+          (with-open-file (out path :direction :output :if-exists :supersede)
+            (write-string prefix out)
+            (write-string (subseq ready 0 (search "If Not OwnedComIsReady(app, 30) Then" ready)) out)
+            (write-string "result=OwnedComIsReady(app, seconds)
+expected=(scenario=\"ready\")
+If result<>expected Then WScript.Quit 1
+If expected And calls<>3 Then WScript.Quit 2
+If Not expected And calls<>1 Then WScript.Quit 3
+WScript.Echo \"PASS \" & scenario
+" out))
+          (dolist (case '("ready" "busy" "rejected"))
+            (multiple-value-bind (stdout stderr code)
+                (uiop:run-program (list "cscript.exe" "//nologo" (namestring path) case)
+                                  :output :string :error-output :string :ignore-error-status t)
+              (declare (ignore stderr))
+              (is (= 0 code))
+              (is (search (concatenate 'string "PASS " case) stdout))))))))

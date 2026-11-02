@@ -935,3 +935,8 @@ opendcl-conformance. All =TODO=.
 [[file:alfe-owned-com-close-transient-rejection.issue]] — Native SCHME !339
 564957: 23 assertions pass, RESTORED, process still alive. Bounded close retries
 and reference release are under qualification; native close error not yet known.
+
+** NEXT COM readiness before explicit DWG open :P1:
+[[file:alfe-com-open-before-quiescent.issue]] — Native BricsCAD dies after early
+Documents.Open; require quiescence and capture ownership first. Crash cause
+not yet proven; native qualification required.

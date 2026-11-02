@@ -1942,9 +1942,50 @@ bridgeTrustChanged = True
 
 ")
 
+(defparameter *owned-com-ready-vbs*
+  "Function OwnedComIsReady(a, secs)
+  Dim deadline, state, idle, problem, detail
+  deadline = DateAdd(\"s\", secs, Now)
+  OwnedComIsReady = False
+  Do
+    Set state = Nothing
+    idle = False
+    On Error Resume Next
+    Err.Clear
+    Set state = a.GetAcadState
+    If Err.Number = 0 Then idle = state.IsQuiescent
+    problem = Err.Number
+    detail = Err.Description
+    Err.Clear
+    On Error GoTo 0
+    If problem = 0 And idle Then
+      OwnedComIsReady = True
+      Exit Function
+    End If
+    If Now >= deadline Then Exit Do
+    WScript.Sleep 250
+  Loop
+  AppendLine errFile, \"COM.READY.ERROR=\" & problem & \" \" & detail
+End Function
+If Not OwnedComIsReady(app, 30) Then
+  AppendLine errFile, \"ERROR COM bridge: COM application did not become quiescent before opening the job drawing\"
+  If created Then
+    On Error Resume Next
+    app.Quit
+    On Error GoTo 0
+  End If
+  WScript.Quit 4
+End If
+")
+
 (defun instrument-owned-com-bridge (text path &key before-close-vbs trust-runtime-p)
   "Retain the exact COM object and validate its PID plus creation time on exit."
-  (let* ((marker "${PLUGIN_BEFORE_LOAD}")
+  (let* ((document-start (or (search "Dim docReady, docAttempt" text)
+                             (error "Cannot locate COM drawing open boundary.")))
+         (text (concatenate 'string (subseq text 0 document-start)
+                            *owned-com-ready-vbs* *owned-com-capture-vbs*
+                            (subseq text document-start)))
+         (marker "${PLUGIN_BEFORE_LOAD}")
          (before (search marker text))
          (end (search "WScript.Quit 0" text :from-end t))
          (helper (merge-pathnames "owned-cad-process.ps1" path)))
@@ -1966,7 +2007,7 @@ bridgeTrustChanged = True
             (unless position (error "Missing owned-close restoration boundary."))
             (setf wait (concatenate 'string (subseq wait 0 position)
                                    before-close-vbs (subseq wait position))))))
-      (concatenate 'string (subseq text 0 before) *owned-com-capture-vbs*
+      (concatenate 'string (subseq text 0 before)
                    (if trust-runtime-p *com-runtime-trust-vbs* "")
                    (subseq text before end) wait
                    (subseq text (+ end (length "WScript.Quit 0")))))))
