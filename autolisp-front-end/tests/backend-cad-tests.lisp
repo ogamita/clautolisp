@@ -289,6 +289,10 @@ closing shortens the collection."
     (is (search "GetObject(, progId)" text))
     (is (search "${PROGID}" text))
     (is (search "doc.Close False" text))
+    (let ((released (search "Set doc = Nothing" text)))
+      (is (not (null released)))
+      (is (< released (search "If Not WaitIdle()" text :start2 released)
+             (search "  app.Quit" text))))
     (is (search "app.Quit" text))
     (is (search "Step -1" text)
         "the close loop must run downwards")
@@ -446,7 +450,7 @@ creates it. Backs the pre-launch quarantine of a corrupt per-user default.cui."
   "EMIT-RUN-SCR writes a SCR that:
    - loads run-common.lsp,
    - disables FILEDIA,
-   - issues _QUIT _N when QUIT-ON-FINISH-P is on."
+   - closes without saving before _QUIT when QUIT-ON-FINISH-P is on."
   (let* ((workdir (uiop:ensure-directory-pathname
                    (merge-pathnames
                     (format nil "alfe-test-bcad-scr-~D/" (random 999999))
@@ -466,7 +470,8 @@ creates it. Backs the pre-launch quarantine of a corrupt per-user default.cui."
             (is (search "(load" content))
             (is (search "run-common.lsp" content))
             (is (search "_FILEDIA 0" content))
-            (is (search "_QUIT _N" content))))
+            (is (search "(vla-close (vla-get-ActiveDocument (vlax-get-acad-object)) :vlax-false)" content))
+            (is (< (search "(vla-close" content) (search "._QUIT" content)))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
@@ -1935,6 +1940,55 @@ locale; no preference keeps discovery order."
                   :workdir (uiop:ensure-directory-pathname "/tmp/argv-probe/"))))
     (alfe.backend.bricscad:build-launch-argv backend session :mode :batch)))
 
+(test bricscad-batch-start-engine-forwards-requested-drawing
+  "The CLI's requested DWG reaches the native batch launch argv."
+  (with-cad-test-directories
+    (let* ((workdir (%fresh-test-directory))
+           (drawing (alfe.drawing:fresh-empty-dwg workdir :name "fixture.dwg"))
+           (backend (alfe.backend.bricscad:make-bricscad-backend
+                     :executable-path "/fake/bricscad.exe" :variant :batch))
+           (alfe.backend.cad-common:*host-os-override* :windows)
+           (captured nil))
+      (alfe.backend:start-engine
+       backend workdir :mode :batch :dwg (namestring drawing)
+       :wait-for-ready nil
+       :launcher (lambda (argv &rest ignored)
+                   (declare (ignore ignored))
+                   (setf captured argv)
+                   nil))
+      (is (member (alfe.backend.cad-common:cad-argument-path drawing)
+                  captured :test #'equal))
+      (is (not (probe-file (merge-pathnames "empty.dwg" workdir)))))))
+
+(test bricscad-batch-drawings-are-private-to-each-session
+  "Two default batch launches must not open the same writable drawing."
+  (let* ((root (merge-pathnames
+                (format nil "alfe-batch-private-~D/" (random 1000000000))
+                (uiop:temporary-directory)))
+         (a (merge-pathnames "a/" root))
+         (b (merge-pathnames "b/" root))
+         (backend (alfe.backend.bricscad:make-bricscad-backend
+                   :executable-path "/fake/bricscad.exe" :variant :batch))
+         (alfe.backend.cad-common:*host-os-override* :windows))
+    (unwind-protect
+        (let ((drawings
+                (loop for dir in (list a b)
+                      for session = (alfe.protocol.file::%make-protocol-session
+                                     :workdir dir)
+                      for argv = (alfe.backend.bricscad:build-launch-argv
+                                  backend session :mode :batch)
+                      for drawing = (find-if
+                                      (lambda (arg) (search "empty.dwg" arg))
+                                      argv)
+                      collect drawing)))
+          (is (every #'identity drawings))
+          (when (every #'identity drawings)
+            (is (not (equal (first drawings) (second drawings))))
+            (dolist (dir (list a b))
+              (is (probe-file (merge-pathnames "empty.dwg" dir))))))
+      (uiop:delete-directory-tree root :validate t
+                                     :if-does-not-exist :ignore))))
+
 (test bricscad-windows-batch-argv-has-single-automation-before-b
   "On Windows the direct batch argv carries exactly one /Automation, and it
 precedes the /b script pair (alfe-bricscad-batch-hidden-ui)."
@@ -2722,6 +2776,14 @@ fallback step, not the explicit-override steps ahead of it."
     (alfe.backend.cad-common:kill-engine-process info :timeout 5)
     (is (not (uiop:process-alive-p info))
         "the process outlived kill-engine-process")))
+
+(test kill-engine-process-allows-natural-exit
+  "A CAD that has acknowledged shutdown may still be finishing QUIT."
+  (let ((info (uiop:launch-program (list "sh" "-c" "sleep 0.3; exit 0")
+                                   :output nil :error-output nil)))
+    (alfe.backend.cad-common:kill-engine-process info :grace 2 :timeout 1)
+    (is (not (uiop:process-alive-p info)))
+    (is (= 0 (uiop:wait-process info)))))
 
 (test kill-engine-process-is-bounded-not-blocking
   "The point of the function: it must RETURN, even for a child that
