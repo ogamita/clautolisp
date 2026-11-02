@@ -1977,7 +1977,7 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
-- *Native CAD batch isolation and shutdown* (2.3.86): BricsCAD batch
+- *Native CAD batch isolation and shutdown* (2.3.87): BricsCAD batch
   launches honor =--dwg= and otherwise stage a private empty drawing.
   Shutdown restores the native printer functions after the protocol loop,
   closes documents without saving, retries transient AutoCAD COM rejections

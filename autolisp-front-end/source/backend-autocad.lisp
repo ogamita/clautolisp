@@ -1831,7 +1831,7 @@ the one this run created (~{~D~^, ~}) by its process id" created-pids)
                      (error 'backend-protocol-error :backend :autocad
                             :code :shutdown-timeout
                             :message "CAD did not stop its protocol.")))))
-        (kill-engine-process info)))
+        (kill-engine-process info :grace 10)))
     (ignore-errors (untrust-workdir (autocad-session-trusted session)))
     (setf (autocad-session-trusted session) nil)
     (session-state-set session :stopped))

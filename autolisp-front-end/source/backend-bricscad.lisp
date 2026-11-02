@@ -2149,7 +2149,7 @@ own."
                      (error 'backend-protocol-error :backend :bricscad
                             :code :shutdown-timeout
                             :message "CAD did not stop its protocol.")))))
-        (kill-engine-process info)))
+        (kill-engine-process info :grace 10)))
     (session-state-set session :stopped))
   session)
 
