@@ -1,0 +1,18 @@
+#+TITLE: Hosted runtime tests share persistent Windows logging preferences
+#+STATUS: NEXT
+#+PRIORITY: P2
+#+TYPE: bug
+
+* Evidence
+MR !507 Windows job17673025002: 2453 checks passed, two cleanup failures.
+PROTOCOL-PREPARED-CLOSE-RESTORES-BEFORE-LOOP-EXIT and
+CAD-RESTORE-SESSION-IS-IDEMPOTENT-AND-CLOSES-CURRENT-LOG-FIRST
+failed deleting Drawing1 logs with a Windows sharing violation. The hosted
+child was waited for, but LOGFILEMODE and LOGFILEPATH are shared persisted
+preferences: another concurrent process can reopen the same log.
+
+* Correction under qualification
+DRIVE-HOSTED-ENGINE gives each child CLAUTOLISP_REGISTRY_FILE in its own
+workdir and restores the caller environment afterwards. No locked file
+is ignored and no cleanup assertion is removed. Require both regressions
+and the full native Windows ALFE suite to pass before closing this issue.

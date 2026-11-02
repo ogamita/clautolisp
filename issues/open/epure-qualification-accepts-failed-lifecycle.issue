@@ -33,3 +33,14 @@ batch. Preserve raw stdout/stderr, full workdirs, identities, commands, code
 hash, exit status and delayed crash events as artifacts and lifecycle JUnit.
 A failed bootstrap, missing identity/report, timeout, crash or forced cleanup
 must fail. Never touch attached or pre-existing foreign instances.
+
+* Real native qualification, 2026-11-02
+MR !476 job17673022413 at commit0d6dffc9: valid JUnit, 3 cases,
+2 failures. AutoCAD PID24008 exposed both EPURE APIs, ALFE exited0,
+close-owned.result was0, but the retained native process handle reported
+0xC0000005. No forced cleanup occurred. BricsCAD COM exited0 but lacked
+both EPURE APIs. BricsCAD batch passed both APIs, the exact private DWG,
+native exit0 and post-exit observation. No crash root cause is established.
+MR !507 job17673025098 refused an existing workspace before starting CAD.
+Its archived reports were leftovers from !476, explicitly rejected as
+evidence. Subsequent jobs isolate artifacts under CI_JOB_ID.
