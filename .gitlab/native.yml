@@ -2761,3 +2761,28 @@ control-flow:probe:accoreconsole:windows:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-control-flow-probe.ps1 -Backend accoreconsole
+
+# A labelled MR requires explicit native lifecycle evidence before review.
+# Unlike the older diagnostic helpers, this job never sweeps foreign CADs.
+verify:epure-lifecycle:windows:
+  extends: .gate-windows-hard
+  tags: [windows, amd64, shell, cad]
+  stage: test
+  timeout: 30m
+  rules:
+    - if: '$CI_MERGE_REQUEST_LABELS =~ /qualification::epure-lifecycle/'
+      when: manual
+      allow_failure: false
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-epure-lifecycle.ps1
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-epure-lifecycle.ps1 -IncludeBricsBatch
+  artifacts:
+    when: always
+    paths: [dist/epure-lifecycle/]
+    reports:
+      junit: dist/epure-lifecycle/junit.xml
