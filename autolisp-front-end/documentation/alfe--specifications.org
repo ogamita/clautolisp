@@ -2889,3 +2889,14 @@ The atomic close-owned.result contains zero only after successful cleanup.
 No final STOPPED from a process already exited is required. All acknowledgement
 and process-exit waits are bounded. Batch engines retain SHUTDOWN/STOPPED, with
 restoration preceding STOPPING.
+
+** EPURE document startup in COM mode
+After opening the job drawing and activating the EPURE profile, the common
+runtime loads the control script synchronously, then runs the installed
+=on_start.lsp= (BricsCAD) or =AcadDoc.lsp= (AutoCAD) and =s::startup= when
+=com_startup_exe= is nil. Profile activation alone does not initialize the
+already open document. Batch launchers retain their existing startup path.
+
+Native lifecycle qualification also modifies the private test drawing and
+checks its SHA256 remains unchanged after shutdown. A nonzero native exit,
+including an unclassified BABE value, fails qualification even if Lisp passed.

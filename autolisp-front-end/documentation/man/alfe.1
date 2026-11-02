@@ -753,3 +753,8 @@ Attached interactive applications are restored and left open.
 The EPURE control script is loaded synchronously in the runtime prelude,
 before the bootstrap and protocol loop, in the selected job document.
 The bridge does not enqueue a separate SCRIPT command.
+
+.SH EPURE DOCUMENT STARTUP
+COM mode runs the installed EPURE document startup after synchronous control
+loading when com_startup_exe is unset: on_start.lsp on BricsCAD, AcadDoc.lsp
+on AutoCAD. Selecting a profile alone does not initialize an open drawing.

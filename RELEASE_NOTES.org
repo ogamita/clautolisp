@@ -2971,3 +2971,9 @@ or test clautolisp — and is loaded explicitly:
 * CAD qualification source 2.3.88
 Windows installed-prefix verification preserves full native diagnostic paths,
 including prefixes containing spaces; verified in Windows CI17671893337.
+
+* EPURE COM document initialization
+Replay the installed document startup once after profile activation so the
+selected job drawing exposes the EPURE API on BricsCAD and AutoCAD. Native
+qualification now requires a modified drawing to be discarded without changing
+the delivered fixture and rejects every unclassified nonzero native exit.

@@ -16,3 +16,12 @@ bootstrap, before entering the protocol server loop. Batch remains unchanged.
 The regression fails4/6 checks before the correction and passes6/6 after it.
 The related launcher tests pass on SBCL and CCL. Require native proof before
 closing: both EPURE APIs, correct DWG and clean owned process termination.
+
+** Native document-startup evidence (2026-11-02)
+Synchronous control loading alone left BricsCAD APIs absent. Profile selection
+after Documents.Open does not replay on_start.lsp/S::STARTUP. Running the real
+installed entry point when com_startup_exe is nil restores both APIs in the
+exact job DWG under a cold BricsCAD profile. A cold AutoCAD profile likewise
+needs AcadDoc.lsp/S::STARTUP; this restores both APIs. Shutdown qualification
+remains open separately: AutoCAD returns BABE variants and earlier real AVs.
+Failed experimental generic shutdown changes are excluded from this fix.
