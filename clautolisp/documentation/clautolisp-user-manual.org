@@ -3660,6 +3660,12 @@ with type ~.lap~, beside the source.
 single ~.lap~. Both compile; neither loads. Load the result with ~load~
 like any other file.
 
+Compilation preserves the values and local bindings of ~repeat~ and
+~while~, including when the loop supplies a function's return value.
+If an older compiled application signals an unbound loop-result temporary,
+recompile its sources with clautolisp 2.3.83 or later; loading an already
+compiled artifact cannot repair it.
+
 **** What a ~.lap~ is, and what it is not
 A ~.lap~ is a *native host FASL, renamed*. It loads into a running
 clautolisp alongside other applications, in any order — which is what an
