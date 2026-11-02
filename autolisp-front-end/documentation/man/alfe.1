@@ -768,3 +768,8 @@ without saving its documents, and verifies that its PID and creation-time
 identity disappears. A missing final protocol message is normal after that
 exit; failed restoration or a cleanup timeout fails the invocation.
 Attached interactive applications are restored and left open.
+
+.SS EPURE initialization through COM
+The EPURE control script is loaded synchronously in the runtime prelude,
+before the bootstrap and protocol loop, in the selected job document.
+The bridge does not enqueue a separate SCRIPT command.

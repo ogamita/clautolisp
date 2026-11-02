@@ -1946,6 +1946,12 @@ separate binary for tool integrators.
   ~--bricscad~ they are ignored with a warning. See the user manual,
   /Characters the encoding cannot hold: -Ereplacement/.
 
+** Synchronous EPURE initialization in COM
+The native runtime prelude LOADs EPURE before the bootstrap and server loop,
+so separate COM commands cannot start the runtime ahead of EPURE.
+See the alfe user manual, /How the control script is run/.
+
+
 ** alfe 2.3.78: ordered Windows CAD cleanup
 Restore native log/search settings before ending the protocol; quit the exact
 created COM application and validate its process exit. Attached applications
