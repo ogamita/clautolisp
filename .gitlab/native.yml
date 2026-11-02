@@ -352,7 +352,7 @@ default:
   - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
   - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
   - sbcl --non-interactive --load /tmp/ql.lisp --eval '(quicklisp-quickstart:install)'
-  - sbcl --noinform --no-userinit --non-interactive --load ~/quicklisp/setup.lisp --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)'
+  - sbcl --noinform --no-userinit --non-interactive --load ~/quicklisp/setup.lisp --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket" "cffi") :silent t)'
 
 # The clautolisp unit suite on arm64 (SBCL only -- Clozure CL has no arm64
 # build). Native on cecil/thalassa; emulated fallback under qemu on poseidon.
@@ -2780,9 +2780,9 @@ verify:epure-lifecycle:windows:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-epure-lifecycle.ps1
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-epure-lifecycle.ps1 -RequireComDrawing
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-epure-lifecycle.ps1 -OutputDirectory "dist/epure-lifecycle/$CI_JOB_ID" -RequireComDrawing
   artifacts:
     when: always
-    paths: [dist/epure-lifecycle/]
+    paths: ["dist/epure-lifecycle/$CI_JOB_ID/"]
     reports:
-      junit: dist/epure-lifecycle/junit.xml
+      junit: "dist/epure-lifecycle/$CI_JOB_ID/junit.xml"
