@@ -1,0 +1,22 @@
+#+TITLE: SNCF native ARX fails during AutoCAD startup in SSH diagnostics
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+
+* Evidence
+On 2026-11-02 at20:20 UTC, isolated SSH diagnostic AutoCAD PID28608 exits
+before READY. Windows Application events1000/1001 identify
+sncfoutilsarx64.arx version1.0.0.1, offset0x10379, exception0xC0000409,
+BEX64, fast-fail parameter2. A matching acad.exe.28608.dmp exists.
+The executable used in the first diagnostic was2.3.94 (MR !476), copied
+from a reused CI workspace, not the intended MR !507 build. That run is
+not qualification evidence for !507. A separately built2.3.91 also fails
+before READY under SSH. No owned COM identity was captured before failure;
+there is no CAD process left afterwards.
+
+* Investigation
+Keep this startup failure distinct from the earlier post-test0xC0000005
+and variable0x...BABE exits. Compare the normal GitLab runner environment
+with SSH and preserve the matching WER report and dump. Do not attribute
+all AutoCAD failures to one module without matching process evidence.

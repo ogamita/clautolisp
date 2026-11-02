@@ -2179,9 +2179,9 @@ GUI nor profiles, so:
 
 | Backend, mode              | What =--epure= does                                                       |
 |----------------------------+---------------------------------------------------------------------------|
-| BricsCAD, =batch= (default) | =bricscad.exe [template] /p PROFILE /b run.scr= from =UserDataCache=; =/Automation= (headless start) is *dropped*; =run.scr= runs =._SCRIPT= on the control script, then loads =run-common.lsp= |
-| BricsCAD, =automation= (COM) | the bridge tries to activate the profile through =Preferences.Profiles= (a failure is written to the errors file and the run continues on the current profile) and sends =._SCRIPT= before the load |
-| AutoCAD, =automation= (COM) | the default under =--epure=; the bridge activates the profile, sends =._SCRIPT= before the load |
+| BricsCAD, =batch= (default) | =bricscad.exe [template] /p PROFILE /b run.scr= from =UserDataCache=; =/Automation= (headless start) is *dropped*; =run.scr= LOADs the control script, then loads =run-common.lsp= |
+| BricsCAD, =automation= (COM) | the bridge tries to activate the profile through =Preferences.Profiles= (a failure is written to the errors file and the run continues on the current profile) and loads the control script synchronously in the runtime prelude |
+| AutoCAD, =automation= (COM) | the default under =--epure=; the bridge activates the profile; the runtime prelude LOADs the control script before the bootstrap |
 | AutoCAD, =batch= (accoreconsole) | refused: usage error (exit 64), "EPURE requires the full AutoCAD GUI; accoreconsole (--mode batch) has no profile support. Use --mode automation." |
 
 Under COM the run-time is loaded into the GUI session and its server loop
@@ -2189,13 +2189,12 @@ keeps the CAD's UI thread busy for as long as alfe drives it: the GUI is
 blocked for the duration of the run — acceptable for a scripted run, not for
 an interactive one.
 
-*Not validated on real CADs.* The plug-in was written and tested against the
-mock CAD, =--print-command= and an OS override, not against EPURE. Two
-assumptions come from the legacy wrapper and are tracked by
-=alfe-plugin-epure-windows-validation=: that a =._SCRIPT= nested in a =/b=
-script returns to the outer script, and that two consecutive COM
-=SendCommand= calls run in order. Should the first not hold, =--mode
-automation= (COM) is the fallback under BricsCAD too.
+Under COM, =:run-common-prelude= emits a native =(load CONTROL)= before
+the bootstrap. It executes on the same Lisp stack as the runtime, in
+the selected document; a separate asynchronous =SendCommand= for
+=SCRIPT= is not used. BricsCAD batch retains its sequential native
+LOADs. Native qualification must verify API presence and owned process
+closure separately from ALFE's own exit status.
 
 * EPUREE
 :PROPERTIES:
