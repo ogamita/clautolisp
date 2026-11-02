@@ -41,6 +41,8 @@ foreach($mode in @('success','crash','duplicate-api','missing-api')){
  $bin=Join-Path $repo 'autolisp-front-end/tools/alfe/bin'
  $null=New-Item -ItemType Directory -Path $bin -Force
  $null=New-Item -ItemType Directory -Path (Join-Path $repo 'autolisp-front-end/source') -Force
+ $null=New-Item -ItemType Directory -Path (Join-Path $repo 'autolisp-front-end/plugins/epure') -Force
+ Set-Content -LiteralPath (Join-Path $repo 'autolisp-front-end/plugins/epure/epure.lisp') -Value '; fake CLI never loads plugins'
  $null=New-Item -ItemType Directory -Path (Join-Path $repo 'scripts')
  Copy-Item -LiteralPath $helper -Destination (Join-Path $repo 'scripts/verify-epure-lifecycle.ps1')
  foreach($name in @('alfe-sbcl.exe','acad.exe','bricscad.exe')){Copy-Item -LiteralPath $binary -Destination (Join-Path $bin $name)}
@@ -49,7 +51,7 @@ foreach($mode in @('success','crash','duplicate-api','missing-api')){
  & git -C $repo -c user.name=Fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false commit --allow-empty --quiet -m Fixture
  $previous=$env:EPURE_GATE_FIXTURE;$env:EPURE_GATE_FIXTURE=$mode
  try{
-  $extra=if($mode -eq 'missing-api'){@('-IncludeControls')}else{@()}
+  $extra=@(if($mode -eq 'missing-api'){'-IncludeControls'})
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'scripts/verify-epure-lifecycle.ps1') -CrashObservationSeconds 0 -TimeoutSeconds 15 @extra
   $status=$LASTEXITCODE
  }finally{$env:EPURE_GATE_FIXTURE=$previous}

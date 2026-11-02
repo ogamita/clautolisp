@@ -40,12 +40,12 @@ foreach($case in $cases){
  }
  $forms+=@('(princ "\nDIAG.ATOMS=") (prin1 (atoms-family 1 (quote ("com_way" "COM_WAY" "com_tl_continu" "COM_TL_CONTINU"))))', '(princ "\nDIAG.ENV=") (prin1 (list (getvar "VENDORNAME") (getvar "CPROFILE") (getvar "SECURELOAD") (findfile "SNCF_Com.lsp") (getenv "APPDATA")))')
  $forms | Set-Content -LiteralPath $probe -Encoding ASCII
- $arguments=@('--no-init','--debug',('--'+$case.Cad),'--epure','--mode',$case.Mode,'--timeout',([string]$TimeoutSeconds),'--workdir',$work,'--keep-workdir','-l',$probe)
- if($case.Control){$arguments=@($arguments|Where-Object {$_ -ne '--epure'})}
+ $arguments=@('--no-init','--debug','--plugin-path',(Join-Path $repo 'autolisp-front-end/plugins'),('--'+$case.Cad),'--epure','--mode',$case.Mode,'--timeout',([string]$TimeoutSeconds),'--workdir',$work,'--keep-workdir','-l',$probe)
+ if($case.Control){$arguments=@($arguments|Where-Object {$_ -ne '--epure'})+@('--no-plugins')}
  if($RequireComDrawing -or $case.Mode -eq 'batch'){$arguments+=@('--dwg',$drawing)}
  $before=@{}
  Get-CimInstance Win32_Process -Filter "Name='acad.exe' OR Name='bricscad.exe' OR Name='accoreconsole.exe'" | ForEach-Object {$before[[string]$_.ProcessId]=$_.CreationDate.ToUniversalTime().Ticks}
- $record=[ordered]@{Name=$name;Commit=(& git -C $repo rev-parse HEAD);ExecutableHash=(Get-FileHash -LiteralPath $alfe -Algorithm SHA256).Hash;Arguments=$arguments;EpurePlugin=(-not [bool]$case.Control);Started=[DateTime]::UtcNow.ToString('o');CadPid=$null;CadStartTicks=$null;NativeTerminated=$false;NativeExit=$null;NativeExitHex=$null;CliExit=$null;CleanupRequested=$false;Forced=$false;CrashEvents=@();Dumps=@();ApiMatches=0;DrawingVerified=$false;Passed=$false;Error=$null}
+ $record=[ordered]@{Name=$name;Commit=(& git -C $repo rev-parse HEAD);ExecutableHash=(Get-FileHash -LiteralPath $alfe -Algorithm SHA256).Hash;EpurePluginHash=(Get-FileHash -LiteralPath (Join-Path $repo 'autolisp-front-end/plugins/epure/epure.lisp') -Algorithm SHA256).Hash;Arguments=$arguments;EpurePlugin=(-not [bool]$case.Control);Started=[DateTime]::UtcNow.ToString('o');CadPid=$null;CadStartTicks=$null;NativeTerminated=$false;NativeExit=$null;NativeExitHex=$null;CliExit=$null;CleanupRequested=$false;Forced=$false;CrashEvents=@();Dumps=@();ApiMatches=0;DrawingVerified=$false;Passed=$false;Error=$null}
  $start=Get-Date
  $native=$null;$cli=$null
  try{
