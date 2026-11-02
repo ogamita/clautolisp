@@ -910,12 +910,13 @@ live pipe to its end would wait for the process."
   (alfe.plugin:run-hook :launcher-lines slot :kind kind :variant variant))
 
 (defun expand-plugin-slots (template variant)
-  "TEMPLATE with each of its two VBScript plug-in slot lines,
-${PLUGIN_AFTER_APP} and ${PLUGIN_BEFORE_LOAD}, replaced by the lines the
+  "TEMPLATE with each of its three VBScript plug-in slot lines,
+${PLUGIN_AFTER_APP}, ${PLUGIN_AFTER_DOCUMENT} and ${PLUGIN_BEFORE_LOAD}, replaced by the lines the
 active plug-ins provide for it, or removed with its newline when there are
 none — so a run with no plug-in emits the template byte for byte."
   (let ((out template))
     (loop for (placeholder slot) in '(("${PLUGIN_AFTER_APP}"   :after-app)
+                                      ("${PLUGIN_AFTER_DOCUMENT}" :after-document)
                                       ("${PLUGIN_BEFORE_LOAD}" :before-load))
           do (let ((lines (launcher-lines slot :vbs variant)))
                ;; A string replaces the placeholder; NIL removes it, and with
@@ -1859,7 +1860,7 @@ do {
 ")
 (defparameter *owned-com-capture-vbs*
   "' Keep this exact COM reference; never rediscover an arbitrary ROT instance.
-Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream
+Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription
 Set lifeShell = CreateObject(\"WScript.Shell\")
 lifeRoot = fso.GetParentFolderName(runFile)
 lifeHelper = fso.BuildPath(lifeRoot, \"owned-cad-process.ps1\")
@@ -1877,16 +1878,29 @@ End If
   If fso.FileExists(lifeRequest) Then
     lifeCode = 0
     If created Then
-      On Error Resume Next
-      For lifeIndex = app.Documents.Count - 1 To 0 Step -1
-        Set lifeDoc = app.Documents.Item(lifeIndex)
-        lifeDoc.Close False
-        If Err.Number <> 0 Then Exit For
+      ' The native command can still be unwinding after RESTORED.
+      ' Bound retries on this exact application; never rediscover or kill one.
+      For lifeAttempt = 1 To 40
+        On Error Resume Next
+        Err.Clear
+        For lifeIndex = app.Documents.Count - 1 To 0 Step -1
+          Set lifeDoc = app.Documents.Item(lifeIndex)
+          lifeDoc.Close False
+          If Err.Number <> 0 Then Exit For
+        Next
+        If Err.Number = 0 Then Call app.Quit
+        lifeError = Err.Number
+        lifeDescription = Err.Description
+        Err.Clear
+        On Error GoTo 0
+        If lifeError = 0 Then Exit For
+        AppendLine errFile, \"OWNED-COM-CLOSE attempt=\" & lifeAttempt & \" error=\" & lifeError & \" description=\" & lifeDescription
+        WScript.Sleep 250
       Next
-      If Err.Number = 0 Then Call app.Quit
-      lifeCode = Err.Number
-      Err.Clear
-      On Error GoTo 0
+      ' Quit may need the last automation references released before exit.
+      Set lifeDoc = Nothing
+      Set doc = Nothing
+      Set app = Nothing
       ' A disconnected COM call can mean Quit succeeded. Only process identity
       ' disappearance, not COM disconnection, validates successful cleanup.
       lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Wait -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34), 0, True)
@@ -1913,9 +1927,66 @@ End If
 Loop
 ")
 
-(defun instrument-owned-com-bridge (text path)
+(defparameter *com-runtime-trust-vbs*
+  "Dim originalTrustedPaths, bridgeTrustChanged
+bridgeTrustChanged = False
+Sub RestoreBridgeTrust()
+  If bridgeTrustChanged Then
+    Call doc.SetVariable(\"TRUSTEDPATHS\", originalTrustedPaths)
+    bridgeTrustChanged = False
+  End If
+End Sub
+' Approve only this invocation's runtime directory, preserving SECURELOAD.
+originalTrustedPaths = doc.GetVariable(\"TRUSTEDPATHS\")
+Call doc.SetVariable(\"TRUSTEDPATHS\", originalTrustedPaths & \";\" & Replace(fso.GetParentFolderName(runFile), \"\\\", \"/\") & \"/...\")
+bridgeTrustChanged = True
+
+")
+
+(defparameter *owned-com-ready-vbs*
+  "Function OwnedComIsReady(a, secs)
+  Dim deadline, state, idle, problem, detail
+  deadline = DateAdd(\"s\", secs, Now)
+  OwnedComIsReady = False
+  Do
+    Set state = Nothing
+    idle = False
+    On Error Resume Next
+    Err.Clear
+    Set state = a.GetAcadState
+    If Err.Number = 0 Then idle = state.IsQuiescent
+    problem = Err.Number
+    detail = Err.Description
+    Err.Clear
+    On Error GoTo 0
+    If problem = 0 And idle Then
+      OwnedComIsReady = True
+      Exit Function
+    End If
+    If Now >= deadline Then Exit Do
+    WScript.Sleep 250
+  Loop
+  AppendLine errFile, \"COM.READY.ERROR=\" & problem & \" \" & detail
+End Function
+If Not OwnedComIsReady(app, 30) Then
+  AppendLine errFile, \"ERROR COM bridge: COM application did not become quiescent before opening the job drawing\"
+  If created Then
+    On Error Resume Next
+    app.Quit
+    On Error GoTo 0
+  End If
+  WScript.Quit 4
+End If
+")
+
+(defun instrument-owned-com-bridge (text path &key before-close-vbs trust-runtime-p)
   "Retain the exact COM object and validate its PID plus creation time on exit."
-  (let* ((marker "${PLUGIN_BEFORE_LOAD}")
+  (let* ((document-start (or (search "Dim docReady, docAttempt" text)
+                             (error "Cannot locate COM drawing open boundary.")))
+         (text (concatenate 'string (subseq text 0 document-start)
+                            *owned-com-ready-vbs* *owned-com-capture-vbs*
+                            (subseq text document-start)))
+         (marker "${PLUGIN_BEFORE_LOAD}")
          (before (search marker text))
          (end (search "WScript.Quit 0" text :from-end t))
          (helper (merge-pathnames "owned-cad-process.ps1" path)))
@@ -1924,9 +1995,23 @@ Loop
     (with-open-file (out helper :direction :output :if-exists :supersede
                                 :if-does-not-exist :create :external-format :utf-8)
       (write-string *owned-cad-process-script* out))
-    (concatenate 'string (subseq text 0 before) *owned-com-capture-vbs*
-                 (subseq text before end) *owned-com-wait-vbs*
-                 (subseq text (+ end (length "WScript.Quit 0"))))))
+    (let ((wait *owned-com-wait-vbs*)
+          (before-close-vbs (or before-close-vbs
+                                (and trust-runtime-p
+                                     (format nil "    Call RestoreBridgeTrust()~%")))))
+      (when before-close-vbs
+        ;; Restore bridge-owned settings while its exact document still lives,
+        ;; both on an explicit close request and on an attached STOPPED exit.
+        (dolist (marker '("      Set lifeStream = fso.CreateTextFile"
+                          "    lifeCode = 0"))
+          (let ((position (search marker wait)))
+            (unless position (error "Missing owned-close restoration boundary."))
+            (setf wait (concatenate 'string (subseq wait 0 position)
+                                   before-close-vbs (subseq wait position))))))
+      (concatenate 'string (subseq text 0 before)
+                   (if trust-runtime-p *com-runtime-trust-vbs* "")
+                   (subseq text before end) wait
+                   (subseq text (+ end (length "WScript.Quit 0")))))))
 
 (defun close-owned-com-bridge (workdir &key (timeout 35))
   "Request Quit on the startup bridge's object, then require process-exit proof.

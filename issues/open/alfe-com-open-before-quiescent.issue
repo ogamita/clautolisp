@@ -1,0 +1,24 @@
+#+TITLE: Require native COM quiescence before opening the job DWG
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+#+BRANCH: codex/alfe-com-job-drawing
+
+* Evidence
+SCHME !339 BricsCAD jobs 564960, 564958 and 565290 lose their application
+before READY, at app.HWND, after Documents.Open/Activate. Windows events for
+564960 record BricsCAD faults in KERNELBASE.dll and ntdll.dll. The bridge opens
+the requested DWG immediately after CreateObject responds, and only then
+captures the owned process. The exact native crash cause remains unconfirmed.
+
+* Correction under qualification
+Both COM emitters require GetAcadState().IsQuiescent before Documents.Open,
+with a bounded 30-second check. Capture the exact created application's window
+process identity before opening the file, so a file-open crash does not erase
+the ownership evidence. No attach/replacement instance lookup and no fallback
+to a blank drawing. A failed readiness check remains a startup failure.
+
+* References
+- https://help.autodesk.com/cloudhelp/2024/KOR/AutoCAD-ActiveX-Reference/files/GUID-820F93B4-7B83-4708-8E21-0D43D7D1C828.htm
+- https://developer.bricsys.com/bricscad/help/en_US/V9/DevRef/source/IDR_VBA_Objects953.htm

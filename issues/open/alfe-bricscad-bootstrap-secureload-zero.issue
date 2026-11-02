@@ -1,0 +1,16 @@
+#+TITLE: BricsCAD bootstrap disables SECURELOAD
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+#+BRANCH: codex/alfe-com-job-drawing
+
+* Evidence
+The emitted COM bridge of SCHME job 564204 unconditionally sent SECURELOAD=0
+before runtime loading. The batch SCR emitter contains the same legacy rule.
+
+* Implementation
+The COM bridge now approves only the invocation runtime directory through
+TRUSTEDPATHS and restores the original value before cleanup, without changing
+SECURELOAD. Emitter regression checks pass; native COM validation remains.
+The separate batch emitter still needs its own correction and validation.

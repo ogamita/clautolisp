@@ -930,6 +930,26 @@ opendcl-conformance. All =TODO=.
 
 - NEXT =equal-list-fuzz= — P2, EQUAL ignores numeric fuzz inside lists; scalar/list reproducer and SCHMS rotation test reference included.
 
+* SCHME historical-suite qualification incidents
+| Status | Priority | Issue | Remaining validation |
+| NEXT | P1 | [[file:alfe-com-dwg-ignored.issue][COM ignores explicit DWG]] | Native AutoCAD and BricsCAD |
+| NEXT | P1 | [[file:alfe-bricscad-bootstrap-secureload-zero.issue][BricsCAD bootstrap security]] | Native COM and separate batch correction |
+
+** NEXT Owned COM close transient rejection :P1:
+[[file:alfe-owned-com-close-transient-rejection.issue]] — Native SCHME !339
+564957: 23 assertions pass, RESTORED, process still alive. Bounded close retries
+and reference release are under qualification; native close error not yet known.
+
+** NEXT COM readiness before explicit DWG open :P1:
+[[file:alfe-com-open-before-quiescent.issue]] — Native BricsCAD dies after early
+Documents.Open; require quiescence and capture ownership first. Crash cause
+not yet proven; native qualification required.
+
+** NEXT EPURE profile before target document guard :P1:
+[[file:alfe-epure-profile-before-target-document.issue]] — Human-confirmed
+SCHME news dialogue before READY. New :after-document profile ordering and
+shared native ACK guard are awaiting qualification.
+
 * 2026-11-02 Collecte des données de crash CAO par ALFE
 
 | Priority | Status | Issue | Scope |

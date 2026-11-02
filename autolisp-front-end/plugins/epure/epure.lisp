@@ -220,5 +220,7 @@ to the errors file and the run goes on with the current profile."
       (:scr (when (and (eq slot :before-load) script)
               (list (format nil "(load ~S)" script))))
       (:vbs (case slot
-              (:after-app (profile-activation-lines (plugin-option :profile)))
+              ;; Select the target document before profile activation: a caller
+              ;; can install its native UI guard in that exact namespace first.
+              (:after-document (profile-activation-lines (plugin-option :profile)))
               (:before-load (when script (send-script-lines script))))))))

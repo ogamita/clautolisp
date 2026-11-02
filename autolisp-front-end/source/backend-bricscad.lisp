@@ -446,6 +446,8 @@ Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile
 Dim attached, created, rc
 
 Set fso = CreateObject(\"Scripting.FileSystemObject\")
+Dim dwgFile
+dwgFile = \"${DWGFILE}\"
 runFile     = \"${RUNLSPFILE}\"
 statusFile  = \"${STATUSFILE}\"
 errFile     = \"${ERRFILE}\"
@@ -522,27 +524,44 @@ VBSDebug \"app.Name=\" & app.Name & \" ver=\" & app.Version & \" docs=\" & app.D
 Err.Clear
 On Error GoTo 0
 
-If app.Documents.Count = 0 Then
-  VBSDebug \"no document; Documents.Add\"
-  Call app.Documents.Add(\"\")
+Dim docReady, docAttempt, docError
+docReady = False
+Set doc = Nothing
+For docAttempt = 1 To 20
+  On Error Resume Next
+  If dwgFile <> \"\" Then
+    If doc Is Nothing Then Set doc = app.Documents.Open(dwgFile)
+    If Not (doc Is Nothing) Then doc.Activate
+  Else
+    If app.Documents.Count = 0 Then Call app.Documents.Add(\"\")
+    Set doc = app.ActiveDocument
+  End If
+  If Err.Number = 0 And Not (doc Is Nothing) Then
+    docReady = True
+    On Error GoTo 0
+    Exit For
+  End If
+  docError = Err.Number & \" \" & Err.Description
+  Err.Clear
+  On Error GoTo 0
+  WScript.Sleep 1000
+Next
+If Not docReady Then
+  AppendLine errFile, \"ERROR COM bridge: cannot open requested drawing: \" & dwgFile & \" (\" & docError & \")\"
+  If created Then
+    On Error Resume Next
+    app.Quit
+    On Error GoTo 0
+  End If
+  WScript.Quit 4
 End If
-Set doc = app.ActiveDocument
 
 ' Give a freshly-created BricsCAD a moment to finish initialising its
 ' document/command context before pushing a command at it; a SendCommand
 ' issued too early can be silently dropped.
 If created Then WScript.Sleep 3000
 
-' Disable the LISP load-security prompt for this session: the runtime
-' lives in a temp workdir, which SECURELOAD>0 would block with a modal
-' \"load unsigned file?\" dialog -- and a modal dialog leaves the (load)
-' never running, exactly the observed \"stuck at BOOTING\" symptom.
-On Error Resume Next
-Call doc.SendCommand(\"(setvar \"\"SECURELOAD\"\" 0) \")
-VBSDebug \"SECURELOAD 0 dispatched: Err=\" & Err.Number
-Err.Clear
-On Error GoTo 0
-
+${PLUGIN_AFTER_DOCUMENT}
 ${PLUGIN_BEFORE_LOAD}
 Dim cmd
 cmd = \"(load \"\"\" & Replace(runFile, \"\\\", \"/\") & \"\"\") \"
@@ -587,6 +606,7 @@ turned it into the un-runnable `do shell script \"\"open -a \"\" & ...'."
 
 (defun emit-bridge-vbs (path
                         &key runtime-load-path
+                             drawing-path
                              status-path
                              error-path
                              debug-path
@@ -600,8 +620,10 @@ substituted from the provided session paths."
                (expand-plugin-slots
                 (substitute-placeholders
                  (alfe.backend.cad-common::instrument-owned-com-bridge
-                  *bridge-bricscad-vbs-template* path)
-                 `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
+                  *bridge-bricscad-vbs-template* path
+                  :trust-runtime-p t)
+                 `(("DWGFILE" . ,(etypecase drawing-path (string drawing-path) (pathname (uiop:native-namestring drawing-path)) (null "")))
+                   ("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
                    ("COMMODE"     . ,com-mode)
@@ -1909,7 +1931,8 @@ own."
                                           pid workdir))
                   (emit-bridge-vbs
                    vbs
-                   :runtime-load-path run-common
+                   :drawing-path dwg
+              :runtime-load-path run-common
                    :status-path (alfe.protocol.file:protocol-session-status-path protocol)
                    :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
                    ;; Always trace the COM bridge into the workdir. Under

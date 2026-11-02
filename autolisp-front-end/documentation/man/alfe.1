@@ -768,3 +768,10 @@ without saving its documents, and verifies that its PID and creation-time
 identity disappears. A missing final protocol message is normal after that
 exit; failed restoration or a cleanup timeout fails the invocation.
 Attached interactive applications are restored and left open.
+
+.SH WINDOWS COM DRAWINGS
+With an explicit \-\-dwg, AutoCAD and BricsCAD open and activate that file
+before plug-in startup and runtime loading. Opening failure is an error;
+an unnamed active drawing is not used as a substitute.
+Both COM backends preserve SECURELOAD, temporarily trusts the runtime directory,
+and restores the original TRUSTEDPATHS before session cleanup.

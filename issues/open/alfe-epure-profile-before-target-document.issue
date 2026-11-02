@@ -1,0 +1,21 @@
+#+TITLE: EPURE profile starts application before the target document guard
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+#+BRANCH: codex/alfe-com-job-drawing
+
+* Evidence
+Pascal confirms that SCHME !339 job565287 on runner0 is blocked on the SCHME
+news dialogue (with mojibake), before READY, not the foreign-DWG warning.
+The shared RFR guard is loaded before EPURE's explicit control script, but
+the epure plugin previously activated its profile in :after-app, before the
+requested DWG was opened. A guard loaded later cannot prevent earlier native
+profile/document initialization. This does not prove an early NOP restoration.
+
+* Correction under qualification
+Add :after-document to both Windows COM emitters; activate EPURE's profile
+there, before runtime trust setup and control. The RFR caller installs its
+factorized guard in that exact document first, requires a native ACK and
+restores its temporary trusted paths. A missing ACK, wrong document or wrong
+explicit profile fails startup; no business assertion is simulated.

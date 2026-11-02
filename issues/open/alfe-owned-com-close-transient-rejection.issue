@@ -1,0 +1,20 @@
+#+TITLE: Owned COM close fails after native tests and RESTORED
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+#+BRANCH: codex/alfe-com-job-drawing
+
+* Evidence
+SCHME !339 job 564957 executes all 23 local historical assertions successfully
+with ALFE 2.3.83. The protocol reaches RESTORED, but close-owned.result is 1
+and the owned AutoCAD remains alive, blocking profile restoration. The emitted
+bridge attempts Document.Close and Quit only once, then waits for process exit
+while retaining its COM references. It discards the original COM error.
+The exact reason for this native close rejection remains to be confirmed.
+
+* Correction under qualification
+Retry document closure and Quit at most 40 times, 250 ms apart; preserve the
+COM error, release owned automation references, and still require captured
+PID/creation identity disappearance. Never attach to or kill another instance.
+Persistent failure must remain a nonzero CLI result. Attached sessions stay open.

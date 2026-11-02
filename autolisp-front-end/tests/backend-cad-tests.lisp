@@ -4104,3 +4104,146 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
                     :defer-shutdown-p t)))
       (is (eq :success (alfe.backend:eval-result-status result)))
       (is (not (probe-file (alfe.protocol.file:protocol-session-control-path protocol)))))))
+
+(test automation-bridges-open-the-requested-job-drawing
+  "An explicit drawing must be opened before any plug-in or runtime load."
+  (let ((work (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-com-dwg-~D/" (random 1000000))
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist work)
+           (dolist (engine '(:autocad :bricscad))
+             (let ((vbs (merge-pathnames (format nil "~A.vbs" engine) work)))
+               (funcall (if (eq engine :autocad)
+                            #'alfe.backend.autocad:emit-bridge-vbs
+                            #'alfe.backend.bricscad:emit-bridge-vbs)
+                        vbs :runtime-load-path (merge-pathnames "run-common.lsp" work)
+                        :status-path (merge-pathnames "protocol/status.txt" work)
+                        :error-path (merge-pathnames "protocol/stderr.txt" work)
+                        :drawing-path "C:/job with spaces/dessin.dwg")
+               (let* ((text (read-back vbs))
+                      (open (search "app.Documents.Open(dwgFile)" text))
+                      (load (search "Call doc.SendCommand(cmd)" text)))
+                 (is (search "C:/job with spaces/dessin.dwg" text))
+                 (is (and open load (< open load)))
+                 (is (search "doc.Activate" text))))))
+      (uiop:delete-directory-tree work :validate t :if-does-not-exist :ignore))))
+
+(test bricscad-com-bootstrap-trust-is-scoped-and-restored
+  "Loading the runtime must not disable SECURELOAD or leak a trusted path."
+  (let ((work (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-bcad-trust-~D/" (random 1000000))
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist work)
+           (dolist (emitter (list #'alfe.backend.bricscad:emit-bridge-vbs
+                                  #'alfe.backend.autocad:emit-bridge-vbs))
+            (let ((vbs (merge-pathnames "bridge.vbs" work)))
+             (funcall emitter vbs :runtime-load-path (merge-pathnames "run-common.lsp" work)
+              :status-path (merge-pathnames "protocol/status.txt" work)
+              :error-path (merge-pathnames "protocol/stderr.txt" work))
+             (let ((text (read-back vbs)))
+               (is (not (search "setvar \"\"SECURELOAD\"\" 0" text)))
+               (is (search "originalTrustedPaths = doc.GetVariable(" text))
+               (is (search "Call doc.SetVariable(" text))
+               (let* ((needle "Call RestoreBridgeTrust()")
+                      (first (search needle text)))
+                 (is (and first (search needle text :start2 (+ first (length needle))))))
+               (is (< (search "Call RestoreBridgeTrust()" text)
+                      (search "For lifeIndex = app.Documents.Count" text)))))))
+      (uiop:delete-directory-tree work :validate t :if-does-not-exist :ignore))))
+
+(test owned-com-close-retries-and-releases-before-wait
+  "A busy COM application gets bounded retries; process exit is still mandatory."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+    (dolist (emitter (list #'alfe.backend.autocad:emit-bridge-vbs
+                          #'alfe.backend.bricscad::emit-bridge-vbs))
+      (let ((path (merge-pathnames "cleanup-retry.vbs" dir)))
+        (funcall emitter path :runtime-load-path #p"/w/run-common.lsp"
+                             :status-path #p"/w/s" :error-path #p"/w/e")
+        (let* ((text (uiop:read-file-string path))
+               (retry (search "For lifeAttempt = 1 To 40" text))
+               (quit (search "If Err.Number = 0 Then Call app.Quit" text))
+               (release (search "Set app = Nothing" text :start2 (or quit 0)))
+               (wait (search " -Operation Wait -IdentityFile " text)))
+          (is (and retry quit (< retry quit)))
+          (is (and quit release wait (< quit release wait)))
+          (is (search "OWNED-COM-CLOSE attempt=" text))
+          (is (search "WScript.Sleep 250" text))))))))
+
+(test owned-com-close-windows-mocked-lifecycle
+  "Exercise emitted VBScript with fake automation objects, never a real CAD."
+  (if (not (uiop:os-windows-p))
+      (fiveam:skip "Native cscript fixture requires Windows.")
+      (with-cad-test-directories
+        (let* ((dir (%fresh-test-directory))
+               (path (merge-pathnames "close-fixture.vbs" dir))
+               (prefix (uiop:read-file-string
+                        (asdf:system-relative-pathname
+                         "autolisp-front-end" "tests/fixtures/owned-com-close-mock.vbs"))))
+          (with-open-file (out path :direction :output :if-exists :supersede)
+            (write-string prefix out)
+            (write-string alfe.backend.cad-common::*owned-com-wait-vbs* out))
+          (dolist (case '("transient" "persistent" "attached"))
+            (let ((expected (if (string= case "persistent") 1 0)))
+              (multiple-value-bind (stdout stderr code)
+                  (uiop:run-program (list "cscript.exe" "//nologo" (namestring path)
+                                          (namestring dir) case)
+                                    :output :string :error-output :string
+                                    :ignore-error-status t)
+                (declare (ignore stdout stderr))
+                (is (= expected code)))
+              (is (string= (write-to-string expected)
+                           (string-trim '(#\Space #\Tab #\Return #\Newline)
+                                        (uiop:read-file-string
+                                         (merge-pathnames (concatenate 'string case ".result") dir)))))))))))
+
+(test owned-com-startup-is-quiescent-and-identified-before-open
+  "Do not open a drawing in a starting application or lose its identity on a crash."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+      (dolist (emitter (list #'alfe.backend.autocad:emit-bridge-vbs
+                            #'alfe.backend.bricscad::emit-bridge-vbs))
+        (let ((path (merge-pathnames "startup-ready.vbs" dir)))
+          (funcall emitter path :runtime-load-path #p"/w/run-common.lsp"
+                               :drawing-path "C:/job/dessin.dwg"
+                               :status-path #p"/w/s" :error-path #p"/w/e")
+          (let* ((text (uiop:read-file-string path))
+                 (ready (search "If Not OwnedComIsReady(app, 30) Then" text))
+                 (capture (search " -Operation Capture -IdentityFile " text))
+                 (open (search "app.Documents.Open(dwgFile)" text)))
+            (is (and ready capture open (< ready capture open)))
+            (is (search "Set state = a.GetAcadState" text))
+            (is (search "COM application did not become quiescent before opening the job drawing" text))))))))
+
+(test owned-com-ready-windows-mocked-handshake
+  "Exercise native VBScript object returns and bounded non-ready outcomes."
+  (if (not (uiop:os-windows-p))
+      (fiveam:skip "Native cscript fixture requires Windows.")
+      (with-cad-test-directories
+        (let* ((dir (%fresh-test-directory))
+               (path (merge-pathnames "ready-fixture.vbs" dir))
+               (prefix (uiop:read-file-string
+                        (asdf:system-relative-pathname
+                         "autolisp-front-end" "tests/fixtures/owned-com-ready-mock.vbs")))
+               (ready alfe.backend.cad-common::*owned-com-ready-vbs*))
+          (with-open-file (out path :direction :output :if-exists :supersede)
+            (write-string prefix out)
+            (write-string (subseq ready 0 (search "If Not OwnedComIsReady(app, 30) Then" ready)) out)
+            (write-string "result=OwnedComIsReady(app, seconds)
+expected=(scenario=\"ready\")
+If result<>expected Then WScript.Quit 1
+If expected And calls<>3 Then WScript.Quit 2
+If Not expected And calls<>1 Then WScript.Quit 3
+WScript.Echo \"PASS \" & scenario
+" out))
+          (dolist (case '("ready" "busy" "rejected"))
+            (multiple-value-bind (stdout stderr code)
+                (uiop:run-program (list "cscript.exe" "//nologo" (namestring path) case)
+                                  :output :string :error-output :string :ignore-error-status t)
+              (declare (ignore stderr))
+              (is (= 0 code))
+              (is (search (concatenate 'string "PASS " case) stdout))))))))

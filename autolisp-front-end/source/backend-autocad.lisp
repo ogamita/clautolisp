@@ -606,6 +606,8 @@ Dim attached, created, rc, statusReadyFlag, flagsFile, progId, createdFile
 Dim errNumber, errDescription, lastTouchError, pidsBefore
 
 Set fso = CreateObject(\"Scripting.FileSystemObject\")
+Dim dwgFile
+dwgFile = \"${DWGFILE}\"
 runFile     = \"${RUNLSPFILE}\"
 statusFile  = \"${STATUSFILE}\"
 errFile     = \"${ERRFILE}\"
@@ -869,12 +871,16 @@ WaitQuiescent app, waitSecs
 ' \"transient\" looks like.
 Dim docReady, docAttempt
 docReady = False
+Set doc = Nothing
 For docAttempt = 1 To 20
   On Error Resume Next
-  If app.Documents.Count = 0 Then
-    Call app.Documents.Add(\"\")
+  If dwgFile <> \"\" Then
+    If doc Is Nothing Then Set doc = app.Documents.Open(dwgFile)
+    If Not (doc Is Nothing) Then doc.Activate
+  Else
+    If app.Documents.Count = 0 Then Call app.Documents.Add(\"\")
+    Set doc = app.ActiveDocument
   End If
-  Set doc = app.ActiveDocument
   If Err.Number = 0 Then
     On Error GoTo 0
     docReady = True
@@ -895,6 +901,7 @@ If Not docReady Then
   WScript.Quit 4
 End If
 
+${PLUGIN_AFTER_DOCUMENT}
 ${PLUGIN_BEFORE_LOAD}
 VBSDebug \"SendCommand (load ...)\"
 Dim cmd
@@ -1018,6 +1025,7 @@ TASKLIST's CSV output; NIL when TASKLIST cannot be run."
 
 (defun emit-bridge-vbs (path
                         &key runtime-load-path
+                             drawing-path
                              status-path
                              error-path
                              debug-path
@@ -1033,8 +1041,9 @@ TASKLIST's CSV output; NIL when TASKLIST cannot be run."
                (expand-plugin-slots
                 (substitute-placeholders
                  (alfe.backend.cad-common::instrument-owned-com-bridge
-                  *bridge-autocad-vbs-template* path)
-                 `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
+                  *bridge-autocad-vbs-template* path :trust-runtime-p t)
+                 `(("DWGFILE" . ,(etypecase drawing-path (string drawing-path) (pathname (uiop:native-namestring drawing-path)) (null "")))
+                   ("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
                    ("COMMODE"     . ,com-mode)
@@ -1462,6 +1471,7 @@ started is what ATTACHED/CREATED say.")
                  (check-com-attach-pid :autocad progid pid workdir)))
              (emit-bridge-vbs
               vbs
+              :drawing-path dwg
               :runtime-load-path run-common
               :status-path (alfe.protocol.file:protocol-session-status-path protocol)
               :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
@@ -1506,12 +1516,13 @@ started is what ATTACHED/CREATED say.")
                          :protocol-session protocol
                          :variant variant
                          :progid progid))
-               ;; BEFORE the launch: with SECURELOAD=2 the CAD's first load,
+               ;; BEFORE a console launch: with SECURELOAD=2 the CAD's first load,
                ;; run-common.lsp from this workdir, is itself refused unless
                ;; the workdir is already trusted. Only for a REAL launch --
                ;; --print-command and the tests pass their own launcher, and
                ;; a dry run must not write the user's registry.
-               (_ (when (eq launcher #'uiop:launch-program)
+               (_ (when (and (eq variant :batch)
+                               (eq launcher #'uiop:launch-program))
                     (setf (autocad-session-trusted session)
                           (ignore-errors (trust-workdir-for-run workdir)))))
                (_ (log-verbose "backend AUTOCAD: launching: ~{~A~^ ~}" argv))

@@ -320,14 +320,16 @@ directory when there is none."
                      (lines :before-load :scr)))
           (is (null (lines :after-load :scr)))
           ;; VBScript: ASCII, quotes doubled.
-          (let ((after-app (format nil "~{~A~%~}" (lines :after-app :vbs)))
+          (let ((after-document (format nil "~{~A~%~}" (lines :after-document :vbs)))
+                (after-app (format nil "~{~A~%~}" (lines :after-app :vbs)))
                 (before-load (format nil "~{~A~%~}" (lines :before-load :vbs))))
-            (is (search "app.Preferences.Profiles.ActiveProfile = \"Ep\"\"ure\"" after-app))
-            (is (search "On Error Resume Next" after-app))
+            (is (string= "" after-app))
+            (is (search "app.Preferences.Profiles.ActiveProfile = \"Ep\"\"ure\"" after-document))
+            (is (search "On Error Resume Next" after-document))
             (is (search "._SCRIPT" before-load))
             (is (search script before-load))
             (is (search "doc.SendCommand(epureCmd)" before-load))
-            (is (every (lambda (c) (< (char-code c) 128)) (concatenate 'string after-app before-load)))))))))
+            (is (every (lambda (c) (< (char-code c) 128)) (concatenate 'string after-app after-document before-load)))))))))
 
 ;;; --- EPURE through the backends (mock CAD, --print-command) ---------------
 
@@ -403,9 +405,8 @@ EPURE's control script before it loads alfe's run-common.lsp. Without
               (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))))))
 
 (test epure-autocad-automation-end-to-end
-  "--autocad --epure: COM automation, the bridge activates the profile after
-the application exists (before it waits for it) and sends the control script
-after the document is active, before the (load …) of run-common.lsp."
+  "--autocad --epure: select the document before activating its profile,
+then send the control script before the (load ...) of run-common.lsp."
   (with-shipped-plugins
     (with-plugin-temp-directory (dir)
       (let* ((script (namestring (%write-file (merge-pathnames "control.scr" dir) "x")))
@@ -429,7 +430,7 @@ after the document is active, before the (load …) of run-common.lsp."
                    (is (search "cscript" command))
                    (is (not (search "${" vbs)) "no unfilled slot")
                    (is (every #'integerp (list profile quiescent active sends load)))
-                   (is (< profile quiescent))
+                   (is (< quiescent active profile sends load))
                    (is (< active sends load))
                    (is (search "control.scr" vbs)))
               (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))))))
@@ -462,7 +463,7 @@ templates: the slot lines are removed, nothing else changes."
               ;; still contribute no lines when none are enabled.
               (let ((base (alfe.backend.cad-common::instrument-owned-com-bridge
                            template (merge-pathnames "x.vbs" dir))))
-                (is (= (- (length (%lines base)) 2) (length (%lines text))))))))))))
+                (is (= (- (length (%lines base)) 3) (length (%lines text))))))))))))
 
 (test epure-shows-in-dry-run-and-run-off-windows
   "The scenario every CI host can run: --epure with --bricscad, dry run."
