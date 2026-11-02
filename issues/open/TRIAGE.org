@@ -966,3 +966,5 @@ Resolved notes) stay.
 | P3 | DONE | optimization | DEBUG >= SPACE / SPEED levels, clal-compile-system and the lexical-locals fork all shipped with the compiler epic. issues/closed/ |
 | P3 | TODO | [[file:sysvar-corpus-generator-drift.issue][sysvar-corpus-generator-drift]] | inventory-coverage.lsp drifted from generate-sysvar-corpus.lisp (~120 lines of getvar-default tests); found fixing errno-setvar |
 | P3 | NOTE | referentiel-qualite-autolisp.md | research note (French, 2026-10-08) on an AutoLISP quality / security rule set; reference material, not an actionable issue |
+* NEXT Windows installed-prefix diagnostic wrapping (P3)
+[[file:verify-installed-prefix-powershell-wraps-stderr.issue]] — Native stderr formatting truncates source paths; Windows CI validation pending.
