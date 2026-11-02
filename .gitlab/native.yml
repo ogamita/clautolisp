@@ -45,10 +45,8 @@ stages:
   - build      # arm64 docker image (kaniko); nothing in `test' depends on it
   - test
 
-# A child pipeline inherits NEITHER the parent's anchors NOR its top-level
-# variables. CI_REGISTRY* are predefined everywhere, so the image name is
-# rederived here rather than forwarded; ARM64_BASE (a pinned digest) IS
-# forwarded by native:pipeline to avoid duplicating the digest.
+# Child pipelines have their own anchors/templates. Default YAML variables
+# (including the pinned ARM64_BASE) are forwarded by the parent trigger.
 variables:
   CLAUTOLISP_CI_IMAGE: $CI_REGISTRY_IMAGE/clautolisp-ci
 
