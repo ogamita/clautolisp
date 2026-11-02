@@ -910,12 +910,13 @@ live pipe to its end would wait for the process."
   (alfe.plugin:run-hook :launcher-lines slot :kind kind :variant variant))
 
 (defun expand-plugin-slots (template variant)
-  "TEMPLATE with each of its two VBScript plug-in slot lines,
-${PLUGIN_AFTER_APP} and ${PLUGIN_BEFORE_LOAD}, replaced by the lines the
+  "TEMPLATE with each of its three VBScript plug-in slot lines,
+${PLUGIN_AFTER_APP}, ${PLUGIN_AFTER_DOCUMENT} and ${PLUGIN_BEFORE_LOAD}, replaced by the lines the
 active plug-ins provide for it, or removed with its newline when there are
 none — so a run with no plug-in emits the template byte for byte."
   (let ((out template))
     (loop for (placeholder slot) in '(("${PLUGIN_AFTER_APP}"   :after-app)
+                                      ("${PLUGIN_AFTER_DOCUMENT}" :after-document)
                                       ("${PLUGIN_BEFORE_LOAD}" :before-load))
           do (let ((lines (launcher-lines slot :vbs variant)))
                ;; A string replaces the placeholder; NIL removes it, and with

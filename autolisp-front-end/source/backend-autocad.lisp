@@ -901,6 +901,7 @@ If Not docReady Then
   WScript.Quit 4
 End If
 
+${PLUGIN_AFTER_DOCUMENT}
 ${PLUGIN_BEFORE_LOAD}
 VBSDebug \"SendCommand (load ...)\"
 Dim cmd

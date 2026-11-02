@@ -561,6 +561,7 @@ End If
 ' issued too early can be silently dropped.
 If created Then WScript.Sleep 3000
 
+${PLUGIN_AFTER_DOCUMENT}
 ${PLUGIN_BEFORE_LOAD}
 Dim cmd
 cmd = \"(load \"\"\" & Replace(runFile, \"\\\", \"/\") & \"\"\") \"

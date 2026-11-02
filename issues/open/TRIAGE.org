@@ -940,3 +940,8 @@ and reference release are under qualification; native close error not yet known.
 [[file:alfe-com-open-before-quiescent.issue]] — Native BricsCAD dies after early
 Documents.Open; require quiescence and capture ownership first. Crash cause
 not yet proven; native qualification required.
+
+** NEXT EPURE profile before target document guard :P1:
+[[file:alfe-epure-profile-before-target-document.issue]] — Human-confirmed
+SCHME news dialogue before READY. New :after-document profile ordering and
+shared native ACK guard are awaiting qualification.

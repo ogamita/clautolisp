@@ -2110,6 +2110,7 @@ slot; the handler returns its lines when the slot is one it cares about.
 | =:scr=  | =run.scr= (BricsCAD batch), the accoreconsole SCR | =:before-load= | immediately before the =(load run-common.lsp)= line |
 |         |                                     | =:after-load=   | after it, before the final =_QUIT= (the load only returns when the session ends) |
 | =:vbs=  | =bridge-bricscad.vbs=, =bridge-autocad.vbs= | =:after-app= | once the COM application object exists, before waiting for it and before the document is used |
+|        | | =:after-document= | target document selected; before profile-triggered application initialization and runtime trust setup |
 |         |                                     | =:before-load=  | once the document is active, immediately before the =(load run-common.lsp)= is sent |
 
 SCR lines are script lines (a command, its answers, or an AutoLISP form).
