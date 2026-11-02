@@ -1,5 +1,5 @@
 #+TITLE: Windows installed-prefix verification truncates native stderr paths
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: ci
 #+DEPENDS: native-windows-validation
@@ -17,3 +17,8 @@ Capture the diagnostic with Out-String -Width32767 in both invocations.
 A real Windows fake-executable fixture reproduces truncation at width80 and
 preserves the complete source path with the explicit width. Native installed
 and moved-prefix CI must still pass before this issue can be closed.
+
+* Resolved -- 2026-11-02
+Windows job17671893337 (pipeline3018736618) passes the full installed, bare
+launcher, moved-prefix and explicit-override checks with the correction.
+The source script is identical in the two CAD qualification branches.
