@@ -20,3 +20,19 @@ Keep this startup failure distinct from the earlier post-test0xC0000005
 and variable0x...BABE exits. Compare the normal GitLab runner environment
 with SSH and preserve the matching WER report and dump. Do not attribute
 all AutoCAD failures to one module without matching process evidence.
+
+** Further isolated native controls (2026-11-02)
+On pfenny, starting from the existing unnamed AutoCAD profile avoids the
+early SNCF ARX failure in this trial. Control loading alone exposes neither
+EPURE API. Explicit AcadDoc.lsp/S::STARTUP after opening the job DWG restores
+both APIs. The modified private DWG is discarded with its SHA256 unchanged.
+AutoCAD nevertheless exits 0x0141BABE without forced cleanup, WER event or dump.
+A preceding cold-profile run with neither EPURE API loaded exits 0x013CBABE.
+Therefore BABE alone does not establish that EPURE caused the exit; its meaning
+remains unclassified and the strict lifecycle gate continues to fail it.
+ProcDump attached to the exact owned process observed no C0000005 in these
+two trials. Earlier real C0000005 and startup C0000409 evidence is retained.
+The startup timeout left PID9584 recorded by this diagnostic launcher; its
+67 MB dump was preserved before terminating that exact PID after verifying
+creation time and owner. User profiles were restored to Epure and temporary
+scheduled tasks removed. No generic shutdown experiment is shipped.
