@@ -4154,3 +4154,49 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
                (is (< (search "Call RestoreBridgeTrust()" text)
                       (search "For lifeIndex = app.Documents.Count" text)))))))
       (uiop:delete-directory-tree work :validate t :if-does-not-exist :ignore))))
+
+(test owned-com-close-retries-and-releases-before-wait
+  "A busy COM application gets bounded retries; process exit is still mandatory."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+    (dolist (emitter (list #'alfe.backend.autocad:emit-bridge-vbs
+                          #'alfe.backend.bricscad::emit-bridge-vbs))
+      (let ((path (merge-pathnames "cleanup-retry.vbs" dir)))
+        (funcall emitter path :runtime-load-path #p"/w/run-common.lsp"
+                             :status-path #p"/w/s" :error-path #p"/w/e")
+        (let* ((text (uiop:read-file-string path))
+               (retry (search "For lifeAttempt = 1 To 40" text))
+               (quit (search "If Err.Number = 0 Then Call app.Quit" text))
+               (release (search "Set app = Nothing" text :start2 (or quit 0)))
+               (wait (search " -Operation Wait -IdentityFile " text)))
+          (is (and retry quit (< retry quit)))
+          (is (and quit release wait (< quit release wait)))
+          (is (search "OWNED-COM-CLOSE attempt=" text))
+          (is (search "WScript.Sleep 250" text))))))))
+
+(test owned-com-close-windows-mocked-lifecycle
+  "Exercise emitted VBScript with fake automation objects, never a real CAD."
+  (if (not (uiop:os-windows-p))
+      (skip "Native cscript fixture requires Windows.")
+      (with-cad-test-directories
+        (let* ((dir (%fresh-test-directory))
+               (path (merge-pathnames "close-fixture.vbs" dir))
+               (prefix (uiop:read-file-string
+                        (asdf:system-relative-pathname
+                         "autolisp-front-end" "tests/fixtures/owned-com-close-mock.vbs"))))
+          (with-open-file (out path :direction :output :if-exists :supersede)
+            (write-string prefix out)
+            (write-string alfe.backend.cad-common::*owned-com-wait-vbs* out))
+          (dolist (case '("transient" "persistent" "attached"))
+            (let ((expected (if (string= case "persistent") 1 0)))
+              (multiple-value-bind (stdout stderr code)
+                  (uiop:run-program (list "cscript.exe" "//nologo" (namestring path)
+                                          (namestring dir) case)
+                                    :output :string :error-output :string
+                                    :ignore-error-status t)
+                (declare (ignore stdout stderr))
+                (is (= expected code)))
+              (is (string= (write-to-string expected)
+                           (string-trim '(#\Space #\Tab #\Return #\Newline)
+                                        (uiop:read-file-string
+                                         (merge-pathnames (concatenate 'string case ".result") dir)))))))))))

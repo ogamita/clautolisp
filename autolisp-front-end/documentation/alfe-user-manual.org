@@ -2319,7 +2319,10 @@ The runtime closes the current command log first, restores the saved settings,
 and acknowledges =RESTORED= only after leaving its protocol loop.
 
 For an application created by this invocation, the retained bridge closes its
-documents without saving and calls Quit on that same application. It does not
+documents without saving and calls Quit on that same application. Transient
+COM rejections are retried at most 40 times, 250 milliseconds apart, with their
+exact error preserved. The bridge releases its automation references before
+waiting for process exit. It does not
 look up a potentially different instance through GetObject. Successful cleanup
 requires disappearance of the captured window's process identity (PID plus UTC
 creation ticks), within 20 seconds. An absent final protocol SHUTDOWN/STOPPED

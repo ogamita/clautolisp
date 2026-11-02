@@ -1859,7 +1859,7 @@ do {
 ")
 (defparameter *owned-com-capture-vbs*
   "' Keep this exact COM reference; never rediscover an arbitrary ROT instance.
-Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream
+Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription
 Set lifeShell = CreateObject(\"WScript.Shell\")
 lifeRoot = fso.GetParentFolderName(runFile)
 lifeHelper = fso.BuildPath(lifeRoot, \"owned-cad-process.ps1\")
@@ -1877,16 +1877,29 @@ End If
   If fso.FileExists(lifeRequest) Then
     lifeCode = 0
     If created Then
-      On Error Resume Next
-      For lifeIndex = app.Documents.Count - 1 To 0 Step -1
-        Set lifeDoc = app.Documents.Item(lifeIndex)
-        lifeDoc.Close False
-        If Err.Number <> 0 Then Exit For
+      ' The native command can still be unwinding after RESTORED.
+      ' Bound retries on this exact application; never rediscover or kill one.
+      For lifeAttempt = 1 To 40
+        On Error Resume Next
+        Err.Clear
+        For lifeIndex = app.Documents.Count - 1 To 0 Step -1
+          Set lifeDoc = app.Documents.Item(lifeIndex)
+          lifeDoc.Close False
+          If Err.Number <> 0 Then Exit For
+        Next
+        If Err.Number = 0 Then Call app.Quit
+        lifeError = Err.Number
+        lifeDescription = Err.Description
+        Err.Clear
+        On Error GoTo 0
+        If lifeError = 0 Then Exit For
+        AppendLine errFile, \"OWNED-COM-CLOSE attempt=\" & lifeAttempt & \" error=\" & lifeError & \" description=\" & lifeDescription
+        WScript.Sleep 250
       Next
-      If Err.Number = 0 Then Call app.Quit
-      lifeCode = Err.Number
-      Err.Clear
-      On Error GoTo 0
+      ' Quit may need the last automation references released before exit.
+      Set lifeDoc = Nothing
+      Set doc = Nothing
+      Set app = Nothing
       ' A disconnected COM call can mean Quit succeeded. Only process identity
       ' disappearance, not COM disconnection, validates successful cleanup.
       lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Wait -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34), 0, True)

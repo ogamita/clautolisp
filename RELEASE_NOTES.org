@@ -1899,6 +1899,13 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
+** alfe 2.3.84: bounded owned COM close retries
+After native RESTORED, closing the retained application's documents and Quit
+are retried for up to 40 attempts, with errors preserved. Automation references
+are released before requiring disappearance of the captured process identity.
+A persistent rejection, failed restoration or live process still fails cleanup.
+No unrelated instance is discovered or terminated.
+
 ** alfe 2.3.83: scoped runtime trust for both COM backends
 AutoCAD COM now uses the same temporary native TRUSTEDPATHS scope as BricsCAD,
 restoring it before cleanup. Only accoreconsole still needs the registry

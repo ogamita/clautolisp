@@ -930,3 +930,8 @@ opendcl-conformance. All =TODO=.
 | Status | Priority | Issue | Remaining validation |
 | NEXT | P1 | [[file:alfe-com-dwg-ignored.issue][COM ignores explicit DWG]] | Native AutoCAD and BricsCAD |
 | NEXT | P1 | [[file:alfe-bricscad-bootstrap-secureload-zero.issue][BricsCAD bootstrap security]] | Native COM and separate batch correction |
+
+** NEXT Owned COM close transient rejection :P1:
+[[file:alfe-owned-com-close-transient-rejection.issue]] — Native SCHME !339
+564957: 23 assertions pass, RESTORED, process still alive. Bounded close retries
+and reference release are under qualification; native close error not yet known.
