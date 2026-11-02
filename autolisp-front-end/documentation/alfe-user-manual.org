@@ -2447,3 +2447,14 @@ The generated PowerShell helper is invoked with a process-scoped execution
 policy; this does not change the machine or user execution-policy settings.
 Domain policy still takes precedence. A process exiting while its creation
 time is queried is accepted only when its process object confirms exit.
+
+** EPURE document startup in COM mode
+After opening the job drawing and activating the EPURE profile, the common
+runtime loads the control script synchronously, then runs the installed
+=on_start.lsp= (BricsCAD) or =AcadDoc.lsp= (AutoCAD) and =s::startup= when
+=com_startup_exe= is nil. Profile activation alone does not initialize the
+already open document. Batch launchers retain their existing startup path.
+
+Native lifecycle qualification also modifies the private test drawing and
+checks its SHA256 remains unchanged after shutdown. A nonzero native exit,
+including an unclassified BABE value, fails qualification even if Lisp passed.

@@ -19,7 +19,7 @@ public class Fixture {
    Process p=Process.GetCurrentProcess();
    File.WriteAllText(Path.Combine(work,"owned-cad-process.json"),"{\"pid\":"+p.Id+",\"startTicks\":\""+p.StartTime.ToUniversalTime().Ticks+"\"}");
    Thread.Sleep(2500);
-   Environment.Exit(mode=="crash" ? unchecked((int)0xc0000005) : 0);
+   Environment.Exit(mode=="crash" ? unchecked((int)0xc0000005) : (mode=="nonzero" ? 47806 : 0));
   }
   string cad=Array.IndexOf(args,"--autocad")>=0 ? "acad.exe" : "bricscad.exe";
   ProcessStartInfo info=new ProcessStartInfo(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,cad),"--workdir \""+work+"\"");
@@ -27,6 +27,7 @@ public class Fixture {
   Process child=Process.Start(info);
   Console.WriteLine(mode=="missing-api" ? "ALFE.API.COM_WAY.FAIL" : "ALFE.API.COM_WAY.OK");
   Console.WriteLine(mode=="missing-api" ? "ALFE.API.COM_TL_CONTINU.FAIL" : (mode=="duplicate-api" ? "ALFE.API.COM_WAY.OK" : "ALFE.API.COM_TL_CONTINU.OK"));
+  Console.WriteLine("ALFE.DIRTY.OK");
   child.WaitForExit();
  }
 }
@@ -36,7 +37,7 @@ Add-Type -TypeDefinition $code -OutputAssembly $binary -OutputType ConsoleApplic
 $helper=Join-Path $PSScriptRoot '../verify-epure-lifecycle.ps1'
 # Also support an isolated checkout of the two fixture scripts.
 if(-not(Test-Path -LiteralPath $helper)){$helper=Join-Path $PSScriptRoot 'verify-epure-lifecycle.ps1'}
-foreach($mode in @('success','crash','duplicate-api','missing-api')){
+foreach($mode in @('success','crash','duplicate-api','missing-api','nonzero')){
  $repo=Join-Path $Workdir $mode
  $bin=Join-Path $repo 'autolisp-front-end/tools/alfe/bin'
  $null=New-Item -ItemType Directory -Path $bin -Force
@@ -61,6 +62,7 @@ foreach($mode in @('success','crash','duplicate-api','missing-api')){
  $caseCount=if($mode -eq 'missing-api'){4}else{2}
  if(@($summary).Count -ne $caseCount){throw 'Both fake engines must be observed.'}
  if($mode -eq 'crash' -and @($summary|Where-Object {$_.NativeExitHex -ne '0xC0000005' -or $_.Passed}).Count){throw 'Native crash was masked by CLI success.'}
+ if($mode -eq 'nonzero' -and @($summary|Where-Object {$_.NativeExitHex -ne '0x0000BABE' -or $_.Passed}).Count){throw 'Nonzero native sentinel was accepted.'}
  if($mode -eq 'duplicate-api' -and @($summary|Where-Object {$_.ApiMatches -ne 1 -or $_.Passed}).Count){throw 'Duplicated first API marker masked a missing second assertion.'}
  if($mode -eq 'missing-api'){
   foreach($r in $summary){if($r.ApiMatches -ne 0 -or $r.Passed -eq $r.EpurePlugin){throw 'Control cases masked missing EPURE APIs.'}}
