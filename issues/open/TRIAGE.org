@@ -945,3 +945,6 @@ opendcl-conformance. All =TODO=.
 
 * NEXT Native child ARM64 image self-reference (P3)
 [[file:native-child-arm64-image-self-reference.issue]] — Docker receives the literal variable; inherited pinned digest must be qualified.
+
+* NEXT Strict EPURE native lifecycle qualification (P1)
+[[file:epure-qualification-accepts-failed-lifecycle.issue]] — Diagnostic green is insufficient; owned PID/kernel/exit and API assertions are required.
