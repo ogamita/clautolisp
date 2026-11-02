@@ -197,7 +197,37 @@ or NIL when the type is not in the registry."
   (register-entity-family "DICTIONARY"
     :required '()
     :subclasses '("AcDbDictionary")
-    :graphical-p nil))
+    :graphical-p nil)
+  ;; The objects a fresh drawing's named-object dictionary holds
+  ;; (entget-pointers section 11, BricsCAD V26 job 17439813492): registered
+  ;; so the selection scan and the entnext walk leave them out.
+  (register-entity-family "ACDBDICTIONARYWDFLT"
+    :required '()
+    :subclasses '("AcDbDictionary" "AcDbDictionaryWithDefault")
+    :graphical-p nil)
+  (register-entity-family "ACDBPLACEHOLDER"
+    :required '()
+    :subclasses '()
+    :graphical-p nil)
+  (register-entity-family "MATERIAL"
+    :required '()
+    :subclasses '("AcDbMaterial")
+    :graphical-p nil)
+  (register-entity-family "RASTERVARIABLES"
+    :required '()
+    :subclasses '("AcDbRasterVariables")
+    :graphical-p nil)
+  (register-entity-family "MENTALRAYRENDERSETTINGS"
+    :required '()
+    :subclasses '("AcDbRenderSettings" "AcDbMentalRayRenderSettings")
+    :graphical-p nil)
+  ;; ... and what its dictionaries hold (section 12, cador's
+  ;; default-objects.lisp). No subclass list: nothing is synthesized or
+  ;; required when one is entmade.
+  (dolist (type '("ACDBDETAILVIEWSTYLE" "ACDBSECTIONVIEWSTYLE" "DICTIONARYVAR"
+                  "LAYOUT" "MLEADERSTYLE" "MLINESTYLE" "SCALE" "TABLESTYLE"
+                  "VISUALSTYLE"))
+    (register-entity-family type :required '() :subclasses '() :graphical-p nil)))
 
 (%install-entity-families)
 
@@ -283,7 +313,11 @@ the ANCHOR group (or at the end), in the order given."
               (append data missing))))))
 
 (defun %complete-vertex (data)
-  (let* ((ordered '(10 40 41 42 70 50 71 72 73 74))
+  ;; 71-74 are a polyface mesh face's vertex indices (70 bit 128): a 2D
+  ;; vertex has none, on AutoCAD 2022 and BricsCAD V25 alike (probe
+  ;; entity-defaults, 2026-10-27).
+  (let* ((face-p (logtest 128 (or (cdr (assoc 70 data)) 0)))
+         (ordered (if face-p '(10 40 41 42 70 50 71 72 73 74) '(10 40 41 42 70 50)))
          (filled (loop for code in ordered
                        collect (or (assoc code data)
                                    (cons code (if (member code '(40 41 42 50)) 0.0d0 0)))))

@@ -43,10 +43,31 @@ coordinates does not reject a point computed on the curve.")
 (defparameter *curve-param-tolerance* 1d-9
   "Relative slack accepted on a parameter or distance at a curve's ends.")
 
-(defparameter *curve-bricscad-dist-tolerance* 1d-6
-  "BricsCAD answers getParamAtDist a little past an end like at the end, and
-far past it with the curve's LENGTH (measured at 1e-9 and 1.0; the
-threshold in between is not measured).")
+(defparameter *curve-bricscad-dist-tolerance* 1d-3
+  "How far past an end, as a DISTANCE, BricsCAD's getParamAtDist still
+answers the end's param (probe curve-geometry, second round, BricsCAD V26
+macOS, 2026-10-24): up to 1e-4 past either end it does, 1e-2 past it answers
+the curve's LENGTH; the threshold lies in (1e-4, 1e-2).")
+
+(defparameter *curve-autocad-lwpolyline-dist-slack* 5d-7
+  "AutoCAD 2022's LWPOLYLINE getParamAtDist: 1e-8 and 1e-7 past the length
+answer the end param, 1e-6 nil; ANY distance below 0 (-1e-8) is nil (probe
+curve-geometry second round, job 17435959369).")
+
+(defparameter *curve-bricscad-arc-extrapolation* 5d-9
+  "Up to how far past an end BricsCAD's getParamAtDist on an ARC still
+EXTRAPOLATES: 1e-9 past the length answers end + 1e-10 (R 10), 1e-8 answers
+the end itself (same runs, first and second round); in [1e-9, 1e-8).")
+
+(defparameter *curve-bricscad-arc-param-slack* 1d-3
+  "How far past its end PARAM BricsCAD's getDistAtParam still answers an
+ARC's length: 1e-4 rad yes, 1e-2 nil (same run); in [1e-4, 1e-2).")
+
+(defparameter *curve-bricscad-polyline-param-slack* 5d-5
+  "The same for an LWPOLYLINE / 2D POLYLINE: 1e-5 yes, 1e-4 nil (same run);
+in [1e-5, 1e-4). Not a distance: on the ARC 1e-4 rad is 1e-3 along it and
+accepted, on the polyline 1e-4 is 1e-3 along a straight end segment and
+refused.")
 
 (defconstant +two-pi+ (* 2 pi))
 
@@ -322,6 +343,18 @@ is unbounded."
   (let ((s (curve-start-param curve)) (e (curve-end-param curve)))
     (%clamp-into p s e (max (abs (or s 0)) (abs (or e 0))))))
 
+(defun %bricscad-param-in-reach (curve p)
+  "BricsCAD: P clamped into the parameter range when it overshoots an end by
+no more than the type's slack (*CURVE-BRICSCAD-ARC-PARAM-SLACK*,
+*CURVE-BRICSCAD-POLYLINE-PARAM-SLACK*); else NIL."
+  (let ((s (curve-start-param curve)) (e (curve-end-param curve))
+        (slack (if (eq (getf curve :type) :arc)
+                   *curve-bricscad-arc-param-slack*
+                   *curve-bricscad-polyline-param-slack*)))
+    (cond ((and s (< p s)) (and (<= (- s p) slack) s))
+          ((and e (> p e)) (and (<= (- p e) slack) e))
+          (t p))))
+
 (defun %arc-param-on-arc (curve p)
   "The parameter of angle P on an ARC, brought into [start, end] modulo 2pi,
 or NIL when the angle is not on the arc. Measured on both vendors:
@@ -383,10 +416,12 @@ first segment (measured -0.1 -> -0.1 * 5pi), nil above its end."
   (case (getf curve :type)
     ((:line :ray :xline) param)
     (:circle (* (getf curve :radius) param))
-    (:arc (let ((p (if (%bricscad-p curve) (%valid-param curve param) param)))
+    (:arc (let ((p (if (%bricscad-p curve) (%bricscad-param-in-reach curve param) param)))
             (and p (* (getf curve :radius) (- p (getf curve :start-angle))))))
     (:polyline
-     (let ((p (%valid-param curve param)))
+     (let ((p (if (%bricscad-p curve)
+                  (%bricscad-param-in-reach curve param)
+                  (%valid-param curve param))))
        (cond
          (p (multiple-value-bind (seg f i) (%polyline-locate curve p)
               (+ (reduce #'+ (subseq (%segments curve) 0 i)
@@ -423,15 +458,28 @@ nil at exactly getDistAtParam of the end param)."
                  ;; AutoCAD: exactly 2pi stays 2pi (measured), beyond wraps
                  (if (or bricscad (<= 0 p +two-pi+)) p (%cg-norm-angle p))))
       (:arc
-       (if (and bricscad
-                (or (< dist (- *curve-bricscad-dist-tolerance*))
-                    (> dist (+ len *curve-bricscad-dist-tolerance*))))
-           len
-           (+ (getf curve :start-angle) (/ dist (getf curve :radius)))))
+       (cond ((not bricscad)
+              (+ (getf curve :start-angle) (/ dist (getf curve :radius))))
+             ;; BricsCAD: a hair past an end extrapolates (1e-9 measured), a
+             ;; little past is the end (1e-8 .. 1e-4), far past the LENGTH
+             ((or (< dist (- *curve-bricscad-dist-tolerance*))
+                  (> dist (+ len *curve-bricscad-dist-tolerance*)))
+              len)
+             ((or (< dist (- *curve-bricscad-arc-extrapolation*))
+                  (> dist (+ len *curve-bricscad-arc-extrapolation*)))
+              (+ (getf curve :start-angle)
+                 (/ (max 0d0 (min len dist)) (getf curve :radius))))
+             (t (+ (getf curve :start-angle) (/ dist (getf curve :radius))))))
       (:polyline
        (cond
          ((%heavy-autocad-p curve)
           (and (<= 0 dist) (< dist len) (%polyline-param-at-dist curve dist)))
+         ((not bricscad)
+          (cond ((< dist 0d0) nil)
+                ((<= dist len) (%polyline-param-at-dist curve dist))
+                ((<= dist (+ len *curve-autocad-lwpolyline-dist-slack*))
+                 (%polyline-param-at-dist curve len))
+                (t nil)))
          (t
           (let ((d (%clamp-into dist 0.0d0 len len)))
             (cond (d (%polyline-param-at-dist curve d))
@@ -543,17 +591,156 @@ for AutoCAD, not for BricsCAD)."
 (defun curve-closest-point (curve pt &optional extend)
   (values (%closest-and-param curve (%plane-point curve pt) extend)))
 
-(defparameter *curve-bricscad-lwpolyline-tolerance* 1d-6
-  "BricsCAD's LWPOLYLINE accepts a point 1e-7 above its end vertex and
-rejects one 1e-4 above (measured); the threshold in between is not.")
+(defparameter *curve-bricscad-lwpolyline-tolerance* 1d-7
+  "BricsCAD's LWPOLYLINE accepts a point 1e-8 off it in its plane (x and y
+both: 1.41e-8) and answers it as off at 1e-6 (probe curve-geometry second
+round, BricsCAD V26 macOS); in [1.41e-8, 1.41e-6).")
+
+(defparameter *curve-bricscad-lwpolyline-normal-tolerance* 5d-6
+  "BricsCAD's LWPOLYLINE accepts a point 1e-6 above the end of a STRAIGHT
+segment and answers it as off at 1e-5 (same run); in [1e-6, 1e-5).")
+
+(defparameter *curve-bricscad-bulge-normal-tolerance* 5d-7
+  "Above the end of a BULGE segment (an LWPOLYLINE at elevation 5) it accepts
+1e-7 (lwpoly-bulge-elevation-5) and refuses 1e-6 (same run); in [1e-7, 1e-6).")
+
+(defparameter *curve-bricscad-line-tolerance* 5d-8
+  "BricsCAD's LINE accepts a point 1e-8 off it (x and y both, and in Z, at
+Z 0 and Z 5) and answers it as off at 1e-7 above its end (line-10, V26 and
+V25 alike) and at 1e-6 (same runs): in [1.41e-8, 1e-7).")
+
+(defparameter *curve-bricscad-arc-tolerance* 5d-10
+  "BricsCAD's ARC (R 10) accepts a point (1e-10, 1e-10) beside it in its
+plane and refuses one (1e-9, 1e-9) beside it, about 1e-9 off radially (same
+run): in [1e-10, 1e-9).")
+
+(defparameter *curve-bricscad-arc-normal-tolerance* 5d-9
+  "Above the ARC's plane it accepts 1e-9 and refuses 1e-8 (same run).")
+
+(defparameter *curve-bricscad-v25-arc-tolerance* 5d-8
+  "BricsCAD V25 (Windows, job 17435959368) is far looser on an ARC: 1e-8
+beside or above it is on, 1e-7 above its end point (every arc-* and the
+circle) and 1e-6 off, in its plane and across it alike -- in [1.41e-8, 1e-7). The two runs differ in version AND platform (V25 Windows, V26
+macOS); the rule is taken as the version's, a geometric tolerance being more
+likely to change between releases than between platforms.")
+
+(defun %bricscad-dialect-version ()
+  (ignore-errors
+   (clautolisp.autolisp-reader:autolisp-dialect-version
+    (clautolisp.autolisp-runtime:current-evaluation-dialect))))
+
+(defun %bricscad-arc-tolerances ()
+  "(values IN-PLANE ACROSS) for a point on a BricsCAD ARC / CIRCLE."
+  (if (eql (%bricscad-dialect-version) 25)
+      (values *curve-bricscad-v25-arc-tolerance* *curve-bricscad-v25-arc-tolerance*)
+      (values *curve-bricscad-arc-tolerance* *curve-bricscad-arc-normal-tolerance*)))
+
+(defun %bricscad-lwpolyline-p (curve)
+  (and (%bricscad-p curve)
+       (eq (getf curve :type) :polyline)
+       (eq (getf curve :subtype) :lwpolyline)))
+
+(defparameter *curve-autocad-line-tolerance* 1d-10
+  "AutoCAD 2022's LINE (probe curve-geometry second round, job 17435959369):
+1e-10 above it is ON (inclusive: at Z 5, (5 + 1e-10) - 5 rounds above 1e-10
+and is off), (1e-10, 1e-10) beside it -- 1.41e-10 -- is off.")
+
+(defparameter *curve-autocad-lwpolyline-tolerance* 5d-6
+  "AutoCAD's LWPOLYLINE, in its plane (the Z of the point is ignored), at
+the end of a STRAIGHT segment: (1e-6, 1e-6) is on, (1e-5, 1e-5) off -- in
+[1.41e-6, 1.41e-5).")
+
+(defparameter *curve-autocad-bulge-tolerance* 1d-7
+  "... at the end of a BULGE segment: (1e-8, 1e-8) on, (1e-6, 1e-6) off --
+in [1.41e-8, 1.41e-6).")
+
+(defun %segment-at (curve p)
+  (and (eq (getf curve :type) :polyline)
+       (values (%polyline-locate curve (or p 0d0)))))
+
+(defun %on-curve-tolerances (curve p)
+  "How far off CURVE a point may be at its param P and still be on it:
+(values IN-PLANE ACROSS) when the plane offset and the normal one are
+weighed apart, (values DISTANCE NIL) for a plain 3D distance (inclusive),
+or (values NIL NIL) for the strict default *CURVE-POINT-TOLERANCE*."
+  (let ((type (getf curve :type)))
+    (cond
+      ((member type '(:arc :circle))
+       ;; AutoCAD 2022 and BricsCAD V26 alike: in [1e-10, 1e-9) beside, in
+       ;; [1e-9, 1e-8) above; BricsCAD V25 looser
+       (if (%bricscad-p curve)
+           (%bricscad-arc-tolerances)
+           (values *curve-bricscad-arc-tolerance* *curve-bricscad-arc-normal-tolerance*)))
+      ((%bricscad-lwpolyline-p curve)
+       (values *curve-bricscad-lwpolyline-tolerance*
+               (if (eq (getf (%segment-at curve p) :kind) :arc)
+                   *curve-bricscad-bulge-normal-tolerance*
+                   *curve-bricscad-lwpolyline-normal-tolerance*)))
+      ((and (eq type :polyline) (eq (getf curve :subtype) :lwpolyline))
+       ;; AutoCAD: the point was put in the plane already (Z ignored)
+       (values (if (eq (getf (%segment-at curve p) :kind) :arc)
+                   *curve-autocad-bulge-tolerance*
+                   *curve-autocad-lwpolyline-tolerance*)
+               most-positive-double-float))
+      ((eq type :line)
+       (values (if (%bricscad-p curve)
+                   *curve-bricscad-line-tolerance*
+                   *curve-autocad-line-tolerance*)
+               nil))
+      (t (values nil nil)))))
 
 (defun %point-tolerance (curve pt)
-  (max (if (and (%bricscad-p curve)
-                (eq (getf curve :type) :polyline)
-                (eq (getf curve :subtype) :lwpolyline))
-           *curve-bricscad-lwpolyline-tolerance*
-           *curve-point-tolerance*)
+  "The strict default distance, widened by the coordinates' magnitude."
+  (declare (ignore curve))
+  (max *curve-point-tolerance*
        (* 1d-14 (reduce #'max (mapcar #'abs pt) :initial-value 1d0))))
+
+(defun %on-curve-p (curve pt cp p)
+  "Whether PT, whose closest point on CURVE is CP at param P, counts as on
+it, by the measured tolerances of %ON-CURVE-TOLERANCES."
+  (let ((slack (* 1d-14 (reduce #'max (mapcar #'abs pt) :initial-value 1d0))))
+    (multiple-value-bind (in across) (%on-curve-tolerances curve p)
+      (cond
+        ((and in across)
+         (and (<= (sqrt (+ (expt (- (first pt) (first cp)) 2)
+                           (expt (- (second pt) (second cp)) 2)))
+                  (max in slack))
+              (<= (abs (- (or (third pt) 0d0) (or (third cp) 0d0))) across)))
+        (in (<= (%cg-dist pt cp) (max in slack)))
+        (t (< (%cg-dist pt cp) (%point-tolerance curve pt)))))))
+
+(defun %polyline-projected-end-param (curve pt p)
+  "P, or -- when P is a polyline's start / end param and the segment there is
+straight -- the param of PT's projection on that segment's line, past the
+end: both vendors answer a point a hair past an LWPOLYLINE's end with end +
+hair / segment length (AutoCAD 2.0000001 for 1e-6 on a 10-long segment,
+BricsCAD 2.000000001 for 1e-8)."
+  (let* ((segs (%segments curve))
+         (s (curve-start-param curve)) (e (curve-end-param curve)))
+    (flet ((beyond (seg from to sign base)
+             (if (eq (getf seg :kind) :line)
+                 (let* ((u (%cg- to from))
+                        (l2 (reduce #'+ (mapcar #'* u u)))
+                        (tt (if (zerop l2) 0d0
+                                (/ (reduce #'+ (mapcar #'* u (%cg- pt from))) l2))))
+                   (if (> tt 1d0) (+ base (* sign (- tt 1d0))) p))
+                 p)))
+      (cond ((and (not (getf curve :closed)) segs (= p e))
+             (let ((seg (car (last segs))))
+               (beyond seg (getf seg :a) (getf seg :b) 1 e)))
+            ((and (not (getf curve :closed)) segs (= p s))
+             (let ((seg (first segs)))
+               (beyond seg (getf seg :b) (getf seg :a) -1 s)))
+            (t p)))))
+
+(defun %bricscad-line-param (curve pt)
+  "The param of PT projected on the LINE's infinite line: BricsCAD answers
+a point a hair past the end with end + that hair (10 + 1e-8 measured), not
+the end."
+  (let* ((a (getf curve :start))
+         (u (%cg-unit (%cg- (getf curve :end) a)))
+         (v (%cg- pt a)))
+    (reduce #'+ (mapcar #'* u v))))
 
 (defun curve-param-at-point (curve pt)
   "Parameter of PT when it lies on the curve, else NIL -- with the measured
@@ -570,11 +757,16 @@ AutoCAD and 0 on BricsCAD."
       (setf pt (list (first pt) (second pt) (%curve-plane-z curve))))
     (multiple-value-bind (cp p) (%closest-and-param curve pt nil)
       (cond
-        ((and cp (< (%cg-dist pt cp) (%point-tolerance curve pt)))
-         (if (and bricscad (eq (getf curve :type) :circle)
-                  (> p (- +two-pi+ 1d-10)))
-             0.0d0
-             p))
+        ((and cp (%on-curve-p curve pt cp p))
+         (cond ((and bricscad (eq (getf curve :type) :circle)
+                     (> p (- +two-pi+ 1d-10)))
+                0.0d0)
+               ((and bricscad (eq (getf curve :type) :line))
+                (%bricscad-line-param curve pt))
+               ((and (eq (getf curve :type) :polyline)
+                     (eq (getf curve :subtype) :lwpolyline))
+                (%polyline-projected-end-param curve pt p))
+               (t p)))
         ((and bricscad cp
               (member (getf curve :type) '(:line :polyline))
               (zerop (%curve-plane-z curve)))

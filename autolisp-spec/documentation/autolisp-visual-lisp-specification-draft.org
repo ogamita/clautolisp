@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.14.4
+#+VERSION: 0.14.5
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.14.4*.
+The current document version is *0.14.5*.
 
 Any modification of this document must increment its version number.
 
@@ -240,6 +240,10 @@ A string literal denotes a string object.
 *** Acceptance Rules
 - a string is delimited by double quotes
 - backslash introduces escape/control sequences
+- a line break written literally between the double quotes is part of
+  the string (tested, see /Tested Behaviour/): the literal may span
+  several lines of the source, and any indentation on the following lines
+  is part of its value
 
 *** Strict/Lax Policy
 - strict: accept only documented or tested escapes
@@ -255,6 +259,55 @@ A string literal denotes a string object.
 
 *** Notes
 The complete escape repertoire remains under-specified in the current source corpus.
+
+*** Tested Behaviour
+Probe =probes/sources/probe-multiline-string.lsp= (fixtures
+=probes/sources/fixtures/mls-*.lsp=, byte-exact), run 2026-10-27 on
+AutoCAD 2022 (Windows), BricsCAD V25 (Windows) and BricsCAD V26 (macOS).
+Code lists are the characters of the string ="ab<break>cd"=.
+
+| line break in the literal             | AutoCAD 2022 | BricsCAD V25 / V26 |
+|---------------------------------------+--------------+--------------------|
+| LOAD, LF (LF file)                    | 10           | 10                 |
+| LOAD, CR LF (CR LF file)              | 10           | 10                 |
+| LOAD, LF LF + 3 spaces                | 10 10 32 32 32 | 10 10 32 32 32   |
+| LOAD, lone CR                         | 13           | 10                 |
+| LOAD, CR CR (CR LF file)              | 13 13        | 10 10              |
+| READ, LF                              | 10           | 10                 |
+| READ, CR LF                           | 10           | 10                 |
+| READ, lone CR                         | 13           | 13                 |
+
+In every case the form following the string in the file was read as
+well: the reader resynchronises after a multi-line literal.
+
+- A line break inside a string literal is accepted by both products, and
+  CR LF is read as a single LF (code 10): /common behaviour/.
+- READ keeps a lone CR (code 13): /common behaviour/.
+- LOAD of a source file holding a lone CR inside a string literal:
+  AutoCAD keeps it, BricsCAD reads it as LF. No vendor document covers
+  it, and this specification adopts neither: an /unresolved divergence/
+  (chapter 25, case 3). Portable code writes =\r= or =\n= instead.
+- Not tested: a line break typed inside a string at the CAD command line.
+
+*** clautolisp
+/clautolisp implementation deviation -- not part of the normative
+specification above./
+
+clautolisp reads a line break inside a string literal as both products
+do, keeps a lone CR under READ in every dialect, silently, and handles a
+lone CR met by LOAD per dialect (case 3: every dialect but =lax= warns
+=[lone-cr-in-string]=, with the file and line):
+
+| dialect         | LOAD of a lone CR in a string | warning |
+|-----------------+-------------------------------+---------|
+| =autocad=       | kept (13)                     | yes     |
+| =bricscad=      | read as LF (10)               | yes     |
+| =clautolisp=    | kept (13)                     | yes     |
+| =strict=        | kept (13)                     | yes     |
+| =lax=           | kept (13)                     | no      |
+
+=clautolisp= and =strict= keep the CR because that is what READ does in
+every engine and it loses nothing.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -1804,12 +1857,17 @@ error model:
   symbol, or ~&rest~ appearing after ~/~ (where it would name a local
   rather than introduce a rest parameter).
 
-Dialect handling: the default clautolisp dialect accepts ~&rest~
-silently. =dialect bricscad= accepts it (and is expected to warn that it
-is an undocumented BricsCAD extension); =dialect strict= / =autocad=
-reject it at ~defun~ time with =:strict-lambda-list-extension=. The
-dialect-warning wiring is tracked in
-~issues/open/bricscad-undocumented-clisms.issue~.
+Dialect handling: ~&rest~ is accepted under every dialect. It is silent
+under =clautolisp=, =lax= and the BricsCAD dialects (where it is native,
+though undocumented); under =strict= and the AutoCAD dialects it draws
+the =[lambda-list-extension]= dialect portability warning (see
+/Normative Rules: Dialect Portability Warnings/), since AutoCAD has no
+rest parameter.
+
+Only =&REST= (in any case) is a separator. A bare ~&~ is an ordinary
+symbol, and in a lambda list an ordinary parameter name: it was an early
+clautolisp proposal, which BricsCAD does not need (it has ~&rest~) and
+AutoCAD does not want (pjb, 2026-10-23).
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -7717,7 +7775,9 @@ above:
 - ~",ccs=ENC"~: warns under the AutoCAD dialects and the non-Windows
   BricsCAD dialects (ignored there); silent under the Windows BricsCAD
   dialects for ~UTF-8~ / ~UTF-16LE~ (honoured, measured), warns for any
-  other name there (unmeasured).
+  other name there (unmeasured). Honoured as BricsCAD V25 does: mode ~"w"~
+  writes the byte-order mark first; ~"a"~ on an existing file writes none;
+  ~"a"~ creating the file writes it, as ~"w"~ (unmeasured).
 - ~strict~ warns for every form (not portable); ~clautolisp~ and ~lax~ are
   silent.
 
@@ -8766,6 +8826,36 @@ ch. 25) wherever the effective behavior is a hazard on a real engine:
 - `issues/closed/read-string-does-not-skip-comments.issue` — the product-tested vendor matrix and the clautolisp fix (dialect matrix, the `[read-leading-comment]` warning).
 - Status: documented (basic contract); comment-handling divergence product-tested, not vendor-documented.
 
+*** Tested Behaviour (sunset campaign B3, 2026-10-28)
+probe-reader-printer.lsp; AutoCAD 2022 job 17540963671, BricsCAD V25 Windows 17540963675, BricsCAD V26 macOS 17540963672. "both" = AutoCAD and BricsCAD alike.
+
+| input                        | AutoCAD 2022              | BricsCAD V25 / V26       |
+|------------------------------+---------------------------+--------------------------|
+| "1e3", "1E+03"               | 1000.0                    | 1000.0                   |
+| "1.", "1.e6"                 | 1.0, 1000000.0            | the same                 |
+| ".5"                         | error (misplaced dot)     | syntax error             |
+| "+.5", "-.5"                 | the symbol + / -          | the symbol +.5 / -.5     |
+| "1.5.2"                      | the symbol 1              | the symbol 1.5.2         |
+| "a.b", "(a.b)"               | A, (A)                    | A.B, (A.B)               |
+| "A\101B", "A\377B"         | AAB, A<255>B (octal)      | the same                 |
+| "A\x41B", "A\qB"           | Ax41B, AqB (backslash dropped) | the same            |
+| "A\u0041B"                  | Auu0041B                  | AU0041B                  |
+| "A\0B"                      | A (the string ends)       | A<0><0>                  |
+
+Comments: =(read "1 ; two")= is 1 on both, and so is a block comment between
+two tokens; but a block comment BEFORE the token, =(read ";| c |; 3")=, gives
+3 on AutoCAD and nil on BricsCAD. The symbol tokens =a#b=, =a[b]=, =a:b=,
+=a,b= read as one symbol each on both; =|a b|= reads as the symbol named
+"|A" and =a'b= as A on both.
+
+*** clautolisp: READ
+Exponent reals without a dot (1e3) are reals, octal escapes are decoded and
+any other unknown escape drops its backslash, in every dialect, as both
+products (2.3.76; before: a symbol, and the backslash kept). The product
+differences above -- ".5" accepted as 0.5, the AutoCAD readings of +.5,
+1.5.2, a.b and a leading block comment, \u and \0 -- are not modelled yet:
+issues/open/reader-printer-vendor-divergences.issue.
+
 #+LATEX: \newpage
 
 * 13 Reader
@@ -8851,6 +8941,52 @@ With `(setq x 123)`:
 - [prin1 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/prin1.htm)
 - Status: documented and product-tested (Phase 5 closure).
 
+*** Measured: how a real prints
+Measured 2026-10-25 (probe-versions; AutoCAD 2022 job 17450478986, BricsCAD
+V26 macOS 17450478987, V25 Windows 17450350668), the same for =prin1=,
+=princ=, =vl-prin1-to-string= and =vl-princ-to-string=:
+
+| value          | AutoCAD 2022   | BricsCAD V25 / V26   |
+|----------------+----------------+----------------------|
+| 1/3            | 0.333333       | 0.333333333333333    |
+| 123.456        | 123.456        | 123.456              |
+| 100.0          | 100.0          | 100.0                |
+| 1.0e6          | 1.0e+06        | 1000000.0            |
+| 12345678.0     | 1.23457e+07    | 12345678.0           |
+| 1.0e15         | 1.0e+15        | 1e+15                |
+| 1.0e-5         | 1.0e-05        | 1e-05                |
+| 1.0e-20        | 1.0e-20        | 1e-20                |
+| -2.5e30        | -2.5e+30       | -2.5e+30             |
+
+AutoCAD writes C's =%.6g= (six significant digits) with a point always in
+the mantissa; BricsCAD =%.15g= with =.0= added when there is neither a point
+nor an exponent. The exponent is signed, with at least two digits, on both.
+BricsCAD V18.1's release note "tiny doubles print 0.0" is not what V25 / V26
+do.
+
+*** clautolisp: how a real prints
+The AutoCAD dialects print a real as AutoCAD does, the BricsCAD dialects as
+BricsCAD does; =clautolisp=, =strict= and =lax= keep clautolisp's own
+spelling, which shows the shortest digits that read back to the same value
+(=0.3333333333333333=, =1000000.0=, =1.2345678e7=, =1.0e-5=). Neither
+vendor's choice follows from a format specifier, so the first time a real
+the two products spell differently is printed, every dialect but =lax=
+prints a =[real-format]= notice -- once per session. =rtos= (with an explicit
+precision) is the portable way to print a real; =rtos= and =command= tokens
+keep the full value under every dialect.
+
+*** Tested Behaviour (sunset campaign B3, 2026-10-28)
+probe-reader-printer.lsp; AutoCAD 2022 job 17540963671, BricsCAD V25 Windows 17540963675, BricsCAD V26 macOS 17540963672. PRIN1 of a string escapes a control
+character -- tab, newline, return and escape by name (\t \n \r \e), the
+others in three octal digits (code 7: \007) -- on both products; DEL (127)
+as \177 on AutoCAD, as itself on BricsCAD; READ gives the string back. A
+character the CAD's code page (LISPSYS 0) cannot hold prints as that page
+maps it (AutoCAD: the euro as code 172, an astral character as \000;
+BricsCAD Windows: 128 and 62976).
+
+clautolisp (2.3.76): the same escapes; DEL as the dialect's product does;
+characters print as themselves (no code page).
+
 #+LATEX: \newpage
 
 ** Function Entry: PRINC
@@ -8902,6 +9038,12 @@ With `(setq x 123)`:
 - [princ (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/princ.htm)
 - Status: documented and product-tested (Phase 5 closure).
 
+*** clautolisp: how a real prints
+As =prin1= (see its "Measured" and "clautolisp" notes): the AutoCAD dialects
+print a real as AutoCAD (=0.333333=), the BricsCAD dialects as BricsCAD
+(=0.333333333333333=), =clautolisp= / =strict= / =lax= in clautolisp's own
+spelling; a =[real-format]= notice the first time the products differ.
+
 #+LATEX: \newpage
 
 ** Function Entry: PRINT
@@ -8951,6 +9093,12 @@ With `(setq x 123)`:
 - [print (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4EE74BA9-6ED4-4734-9C47-90A81E0B0971.htm)
 - [print (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/print.htm)
 - Status: documented (Phase 5 closure).
+
+*** clautolisp: how a real prints
+As =prin1= (see its "Measured" and "clautolisp" notes): the AutoCAD dialects
+print a real as AutoCAD (=0.333333=), the BricsCAD dialects as BricsCAD
+(=0.333333333333333=), =clautolisp= / =strict= / =lax= in clautolisp's own
+spelling; a =[real-format]= notice the first time the products differ.
 
 #+LATEX: \newpage
 
@@ -9918,6 +10066,32 @@ Errors if the variable is read-only, absent, or rejects the supplied value.
 *** Compatibility
 Supported on Windows, macOS, and Web in current Autodesk documentation.
 
+*** Tested Behaviour (sunset campaign B4, 2026-10-28)
+probe-setvar-edges.lsp; AutoCAD 2022 job 17540963671, BricsCAD V25 Windows 17540963675, BricsCAD V26 macOS 17540963672. (RESULT AFTER ERRNO) per case:
+
+| case                              | AutoCAD 2022                   | BricsCAD V25 / V26                |
+|-----------------------------------+--------------------------------+-----------------------------------|
+| out of the variable's range       | error, unchanged, ERRNO 22     | error, unchanged, ERRNO 0         |
+| (CMDECHO 2, LUNITS 7, OSMODE -1)  |                                |                                   |
+| OSMODE 70000, USERI1 40000        | error, ERRNO 22                | wrapped to 16 bits (4464, -25536) |
+| CMDECHO 1.0                       | returns 1.0, stores 1          | the same                          |
+| CMDECHO 0.7                       | error, ERRNO 87                | stores 0                          |
+| a string / nil for a number       | error, ERRNO 87                | "bad argument type", ERRNO 0      |
+| an integer for a real (USERR1 2)  | returns 2, stores 2.0          | the same                          |
+| SNAPBASE (a 2D point) '(1 2 3)    | error                          | stores (1.0 2.0)                  |
+| read-only (DWGNAME, ACADVER)      | error, ERRNO 20                | error, ERRNO 20                   |
+| unknown name                      | error, ERRNO 0                 | error, ERRNO 0                    |
+| (setvar 'OSMODE 1), a symbol name | accepted                       | accepted                          |
+| "osmode", "OsMode"                | accepted                       | accepted                          |
+| ANGBASE / SNAPANG under AUNITS 0, 3 | radians, AUNITS ignored      | the same                          |
+
+SETVAR returns the value it was GIVEN, not the one it stored.
+
+*** clautolisp: SETVAR
+Not yet as measured: no range check, ERRNO 1 for a read-only or unknown
+name and 4 for a bad type, the stored value returned, a symbol name refused:
+issues/open/setvar-validation-as-measured.issue.
+
 #+LATEX: \newpage
 
 ** Function Entry: COMMAND-S
@@ -10794,12 +10968,46 @@ In French AutoCAD:
 
 *** Availability
 - AutoCAD 2026: documented.
-- BricsCAD V26: presumed compatible (BricsCAD also localises command names).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- BricsCAD V25: measured (2026-10-26), with the differences noted below.
+- Status: AutoCAD documented and measured; BricsCAD measured.
 
 *** Source Notes
 - [getcname (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-1DCDFFA6-0372-479D-B00F-D165EC5B8A2C.htm)
 - Status: documented (Phase 3 body fill).
+
+*** Measured: what getcname answers
+Measured 2026-10-26 on French installs by the getcname probe (AutoCAD 2022
+GUI job 17460836644 and AcCoreConsole 17460836645, BricsCAD V25 Windows
+17460836643):
+
+| input                       | AutoCAD 2022     | BricsCAD V25     |
+|-----------------------------+------------------+------------------|
+| "_LINE", "_line"            | "LIGNE"          | "LIGNE"          |
+| "LIGNE", "ligne"            | "_LINE"          | "_LINE"          |
+| "LINE", "_LIGNE"            | nil              | nil              |
+| "_ZOOM" / "ZOOM"            | "ZOOM" / "_ZOOM" | "ZOOM" / "_ZOOM" |
+| "_-LAYER" / "-CALQUE"       | "-CALQUE" / "_-LAYER" | the same    |
+| "-LAYER", "-_LAYER"         | nil              | nil              |
+| "_.LINE" / ".LIGNE"         | "LIGNE" / "_LINE" | nil             |
+| "'ZOOM", "'_ZOOM" / "_'ZOOM" | "_ZOOM" / "ZOOM" | nil             |
+| "ÉTIRER" (the name: ETIRER) | "_STRETCH"       | nil              |
+| a C: command, "", "_"       | nil              | nil              |
+| 1, nil                      | bad argument type | bad argument type |
+
+A leading =_= asks for the local name of an international one; anything
+else is taken as a local name. The answer is upper case. The =-= of a
+command-line command is part of its name. AutoCAD also strips the =.= and
+='= prefixes and ignores accents. Each product knows its own commands: a
+French AutoCAD answers nil for =_RECTANG=, =_MTEXT=, =_PROPERTIES=, BricsCAD
+for =_BLEND=, =_XBIND=; AcCoreConsole knows fewer than the AutoCAD GUI
+(=_3DORBIT=).
+
+*** clautolisp: getcname
+=getcname= answers from the measured tables (=cador/data/getcname/=, one
+per locale, per product), with the rules above: the BricsCAD dialects as
+BricsCAD, the others as AutoCAD. The language is the session's (=LANG=):
+under one with no table (English), a command of the product's table is its
+own local name (="_LINE"= -> ="LINE"=, ="LINE"= -> ="_LINE"=).
 
 #+LATEX: \newpage
 
@@ -38571,6 +38779,18 @@ Displays a code that indicates the current language.
 *** Compatibility
 AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
 
+*** Measured
+A French locale: AutoCAD 2022 "FR" (job 16921381038); BricsCAD V25 / V26
+"fr_FR" (jobs 16913315157 / 16921381045).
+
+*** clautolisp
+LOCALE takes its dialect's form, from the locale (LC_ALL, LC_MESSAGES,
+LANG): the BricsCAD dialects "fr_FR"; the AutoCAD dialects from 2019 the
+upper-case language, "FR" ("now returns a code that contains a two or
+more-letter abbreviation", AutoCAD 2019); before 2019 the three-letter
+abbreviation Windows' GetLocaleInfo gives with LOCALE_SABBREVLANGNAME,
+"FRA" ("ENU", "DEU", "FRC" ...) -- documented, not measured.
+
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FC7C9C59-4335-4511-8804-36E1724534CC
 - BricsCAD: https://help.bricsys.com/en-us/document/system-variable-reference/l/locale-system-variable
@@ -38845,6 +39065,9 @@ bytes =44 E9 70 61 72 74=). BricsCAD V25 logs only its command channel
 
 *** clautolisp
 One log per drawing; a registry preference, per product, read at launch.
+Written in windows-1252 without a byte-order mark under the AutoCAD and the
+Windows BricsCAD dialects, as measured; in UTF-8 under the macOS / Linux
+BricsCAD dialects and every other dialect; =-Elog= overrides it.
 See the clautolisp user manual, "The command-history log file".
 
 *** Source Notes
@@ -69860,6 +70083,12 @@ None.
 - [vl-prin1-to-string (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-4AA25012-28D5-4723-8AD3-B8BF9AE62425.htm)
 - Status: documented.
 
+*** clautolisp: how a real prints
+As =prin1= (see its "Measured" and "clautolisp" notes): the AutoCAD dialects
+print a real as AutoCAD (=0.333333=), the BricsCAD dialects as BricsCAD
+(=0.333333333333333=), =clautolisp= / =strict= / =lax= in clautolisp's own
+spelling; a =[real-format]= notice the first time the products differ.
+
 #+LATEX: \newpage
 
 ** Function Entry: VL-PRINC-TO-STRING
@@ -69898,6 +70127,12 @@ None.
 *** Source Notes
 - [vl-princ-to-string (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-33B0CA43-84F2-46DE-88BE-8FFF22C83FAD.htm)
 - Status: documented.
+
+*** clautolisp: how a real prints
+As =prin1= (see its "Measured" and "clautolisp" notes): the AutoCAD dialects
+print a real as AutoCAD (=0.333333=), the BricsCAD dialects as BricsCAD
+(=0.333333333333333=), =clautolisp= / =strict= / =lax= in clautolisp's own
+spelling; a =[real-format]= notice the first time the products differ.
 
 #+LATEX: \newpage
 

@@ -20,3 +20,29 @@ cause remain unknown; a process or external scanner may hold the file.
 Capture the locking process and child exit state when this recurs before
 choosing a lifecycle fix or a bounded cleanup retry. Do not suppress
 cleanup errors or assume this is fixed by the quit-only argv correction.
+
+* Additional SCHMS evidence -- 2026-10-27 (installed ALFE 2.3.23)
+
+[[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/554713][AutoCAD ActiveX job 554713]]
+expired in BOOTSTRAP after 120 seconds with status BOOTING. Following jobs
+554714 and 554715 failed BEFORE checkout because the drawing log remained
+locked. Earlier in this qualification, a concrete owner was identified:
+acad.exe /Automation -Embedding, runner0, created at 12:59:20 UTC. Its drawing
+log contained the load of SCHMS test-cad-activex's run-common.lsp. That instance
+was still alive when diagnosed at 14:37 UTC; it was closed only after verifying
+its identity, creation time, owner and the completed-test log. Other projects'
+active CAD instances were preserved. The log then opened exclusively.
+
+A separate operational fault was also found and removed: two gitlab-runner
+supervisors used the SAME runner0 configuration. Do not conflate that with the
+COM lifecycle issue. A per-configuration OS lock now prevents that duplication
+(run-forest-run MR !5).
+
+The installed Windows bridge is old (2.3.23). Current master already contains
+created-PID and COM quit work; verify this failure path on the current Windows
+build before choosing a further source fix or closing this ticket. The observed
+2.3.23 timeout must not leave an invisible COM server holding the checkout.
+SCHMS's pure ActiveX suite now uses its native GUI launcher with an explicit
+clean profile and the same assertions, avoiding the old bridge for this lane.
+This is a qualification workaround, not proof that ALFE's current lifecycle is
+fixed. No failed assertion is suppressed.

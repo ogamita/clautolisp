@@ -1,0 +1,40 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-probe-scripts-host-mock -- probe scripts' clautolisp backend passes --host mock, which alfe rejects
+#+STATUS: DONE
+#+PRIORITY: P4
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-22
+
+* Symptom
+
+Found while checking encoding-probe-artifacts-and-macos-forward
+(2026-10-22): every scripts/run-*-probe.{sh,ps1} and
+run-encoding-experiment.{sh,ps1} builds its clautolisp backend arguments as
+=--clautolisp --host mock=, and alfe now answers
+
+: alfe: --host: Unknown --host "mock" (expected cador, cadtui, nihil)
+
+so a clautolisp run of these scripts produces an empty report (only the
+headers). The CAD backends are unaffected; no CI job runs the clautolisp
+backend of these scripts (=grep -rl '"--host" "mock"' scripts= lists them).
+
+* Proposal
+
+Use =--host nihil= (or drop --host when the default fits) in those scripts,
+then check one clautolisp run per script locally.
+
+
+Resolved (2026-10-25)
+---------------------
+
+The 16 scripts (8 .sh, 8 .ps1) now pass =--clautolisp= alone, as
+run-dxf-angles-probe already did: alfe's default host is the drawing host
+these probes need. One clautolisp run per .sh script, locally (Linux, alfe
+2.3.64), each report non-empty: pathname 16 lines, path-sysvars 61,
+curve-geometry 982, pgp 4 (no alias file: none is shipped), optkw 117,
+intersectwith (61 KB), getcname 147 (every name ABSENT: clautolisp's
+GETCNAME knows none of them -- cadtui-locale-probe-getcname),
+encoding-experiment. The .ps1 twins got the same one-word change, not run
+(Windows).

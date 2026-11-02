@@ -27,3 +27,11 @@ with LOAD, and via alfe -l / -x; record (type f) and (type (function
 f)), plus (type car). Then decide whether clautolisp's USUBR needs a
 per-situation answer (compiled-function / load path) -- see
 clautolisp's own compiled bodies, which are not SUBRs today.
+
+* Batched probe prepared 2026-10-29 (branch prep-pending-probes)
+
+probes/sources/probe-pending-divergences.lsp (suite "pending-divergences",
+group type-of-fn) captures this on real hardware. Run it via
+probe:suite:{autocad,bricscad}:windows / :macos when the Windows runner is next
+online (one session covers all three data-blocked issues). clautolisp baseline
+validated 2026-10-29.

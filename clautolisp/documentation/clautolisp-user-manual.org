@@ -224,7 +224,7 @@ active dialect's product, as measured on AutoCAD 2022 and BricsCAD V25 / V26:
 | dialect          | LOGFILENAME                                    | logged                         | encoding     |
 |------------------+------------------------------------------------+--------------------------------+--------------|
 | AutoCAD          | ~<path>/<drawing>_1<8 hex>.log~                | the whole command line         | windows-1252 |
-| BricsCAD         | ~<path>/<drawing>_YYYY-MM-DD_HH-MM-SS.log~     | the command channel only       | UTF-8        |
+| BricsCAD         | ~<path>/<drawing>_YYYY-MM-DD_HH-MM-SS.log~     | the command channel only       | windows-1252 |
 | BricsCAD (macOS) | ~bricscad.log~ (in ~LOGFILEPATH~)              | the command channel only       | UTF-8        |
 | other dialects   | ~<path>/<drawing>_YYYY-MM-DD_HH-MM-SS.log~     | the whole command line         | UTF-8        |
 
@@ -234,11 +234,10 @@ line" adds the REPL's own output (~princ~ ...) and the lines typed at it.
 BricsCAD adds a trailing separator to ~LOGFILEPATH~; AutoCAD keeps it as
 given. ~-Elog ENC~ (~--log-encoding~) chooses the encoding.
 
-Known gap: BricsCAD V25 on Windows was since measured (2026-10-08) to write
-its log in windows-1252 without a byte-order mark, while clautolisp writes
-UTF-8 under every BricsCAD dialect; until that is aligned
-(=issues/open/cador-bricscad-windows-log-encoding.issue=), pass
-~-Elog windows-1252~ to get the bytes BricsCAD writes on Windows.
+"BricsCAD" is a Windows BricsCAD dialect (the unqualified ones, and
+~-win~): like AutoCAD it writes windows-1252 without a byte-order mark, as
+BricsCAD V25 on Windows was measured to do (2026-10-08). The macOS (and
+Linux) BricsCAD dialects write UTF-8.
 
 *** Recording the session: the dribble
 
@@ -954,6 +953,28 @@ operator under its ~*** clautolisp~ note.
   ~Save~ / ~Restore~ / ~Delete~ -- and ~(setvar "CVPORT" n)~ makes viewport
   n current. ~Join~ is not implemented. ~(setview nil)~ is an error, except
   under the BricsCAD dialects (~nil~).
+- *~getcname~.* ~(getcname "_LINE")~ gives the command's local name and
+  ~(getcname "LIGNE")~ its ~"_LINE"~, from tables measured on each product
+  (French so far), in the session's language (~LANG~); under English a
+  command is its own local name. The ~bricscad*~ dialects answer as
+  BricsCAD (no ~.~ / ~'~ prefixes, its own command set), the others as
+  AutoCAD.
+- *The VPORT ~*Active~ record.* ~(entget (tblobjname "VPORT" "*Active"))~
+  lists the viewport's groups (50 ~SNAPANG~, 51 ~VIEWTWIST~, 12 ~VIEWCTR~,
+  14 ~SNAPUNIT~ ...). After a ~setvar~ of one, the ~bricscad*~ dialects
+  show the new value at once, as BricsCAD does; the others the old one
+  until the drawing is saved, as AutoCAD does. Group 72 is 1000 under
+  AutoCAD, 100 under BricsCAD.
+- *How a real prints.* ~prin1~ / ~princ~ / ~print~ / ~vl-prin1-to-string~ /
+  ~vl-princ-to-string~ spell a real as the dialect's product does, as
+  measured: the ~autocad-*~ dialects with six significant digits (~0.333333~,
+  ~1.0e+06~, ~1.0e-05~), the ~bricscad*~ dialects with fifteen
+  (~0.333333333333333~, ~1000000.0~, ~1e-05~); ~clautolisp~, ~strict~ and
+  ~lax~ in clautolisp's own spelling (~0.3333333333333333~, ~1.0e-5~). The
+  first time a printed real is one the two products spell differently, a
+  ~[real-format]~ notice says so (once per session; not under ~lax~;
+  ~(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)~ silences it). ~rtos~ and
+  ~command~ keep the full value.
 - ~(layoutlist)~ -- the paper layouts, never ~"Model"~: sorted by name under
   the ~autocad-*~ dialects, as AutoCAD 2022 returns them, in tab order
   otherwise, as BricsCAD does.
@@ -999,7 +1020,11 @@ operator under its ~*** clautolisp~ note.
   byte-order mark, ~(open f "r" "utf8")~ returns a BOM as the character
   65279 and stops at the first byte that is not UTF-8, and the default
   (no encoding argument) read and write follow AutoCAD -- see /Under the
-  AutoCAD dialects, LISPSYS decides/.
+  AutoCAD dialects, LISPSYS decides/. And the Windows BricsCAD dialects do
+  what BricsCAD V25 was measured to do (clautolisp 2.3.49):
+  ~(open f "w,ccs=UTF-8")~ / ~"w,ccs=UTF-16LE"~ write a byte-order mark
+  first, and an append with the same suffix adds none to an existing file
+  (an append that creates the file writes one, as ~"w"~ does -- unmeasured).
 - ~vl-file-systime~ — the day-of-week element (third position) is
   ~0~ for Sunday under ~strict~, ~clautolisp~, ~lax~ and the
   ~autocad-*~ dialects, and ~7~ under ~bricscad-v25~ /
@@ -2026,6 +2051,34 @@ program runs, and the strings are wrong. A BOM removes the guess.
 
 The full rules, with the vendor sources, are in the ~open~ and ~load~
 entries of the AutoLISP specification.
+
+*** Line breaks inside a string literal
+A string literal may span several lines, as in Common Lisp; the line
+break, and the indentation of the lines that follow, are part of the
+string:
+
+#+BEGIN_SRC autolisp
+(setq s "ab
+cd")
+(vl-string->list s)                ; => (97 98 10 99 100)
+#+END_SRC
+
+AutoCAD and BricsCAD read it the same way, and a CR LF line ending is a
+single line feed (code 10) in all three. One case differs: a *carriage
+return alone* (code 13, not followed by a line feed), which a
+half-converted file can hold. ~read~ keeps it in every engine, and so
+does clautolisp, silently. ~load~ keeps it in AutoCAD and turns it into a
+line feed in BricsCAD, so clautolisp's ~load~ follows the dialect -- a
+line feed under ~--dialect bricscad~, the CR everywhere else -- and warns
+in every dialect but ~--lax~:
+
+#+BEGIN_EXAMPLE
+[lone-cr-in-string] menu.lsp:12: a carriage return alone inside a string literal is kept as CR (code 13) here; AutoCAD keeps it, BricsCAD reads it as a line feed
+#+END_EXAMPLE
+
+Write ~\r~ or ~\n~ to say which one you mean. The measurements are in the
+String Literal entry of the AutoLISP specification; the warning is
+described in the dialect-warnings annex.
 
 *** Launch-chain resolution and the degenerate case
 At startup the runtime resolves the file encoding via
@@ -3606,6 +3659,12 @@ with type ~.lap~, beside the source.
 ~(clal-compile-system OUTPUT SOURCES)~ compiles a list of sources into a
 single ~.lap~. Both compile; neither loads. Load the result with ~load~
 like any other file.
+
+Compilation preserves the values and local bindings of ~repeat~ and
+~while~, including when the loop supplies a function's return value.
+If an older compiled application signals an unbound loop-result temporary,
+recompile its sources with clautolisp 2.3.83 or later; loading an already
+compiled artifact cannot repair it.
 
 **** What a ~.lap~ is, and what it is not
 A ~.lap~ is a *native host FASL, renamed*. It loads into a running

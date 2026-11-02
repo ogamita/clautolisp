@@ -53,7 +53,7 @@ switch ($Backend) {
   # --mode automation is the GUI engine (acad); --mode batch is AcCoreConsole.
   "autocad"       { $bargs += @("--autocad","--mode","automation","--timeout","300") }
   "accoreconsole" { $bargs += @("--autocad","--mode","batch","--timeout","300") }
-  "clautolisp"    { $bargs += @("--clautolisp","--host","mock") }
+  "clautolisp"    { $bargs += @("--clautolisp") }
 }
 $bargs += @("-l", $probe)
 

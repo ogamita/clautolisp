@@ -19,6 +19,7 @@
   (mode             :auto)            ; A   :auto / :automation / :batch
   (backend-variant  nil)              ; A   :attach / :launch / :direct / :subprocess
   (cad              nil)              ; A   --cad DENOTATION (alfe backend selection)
+  (attach-pid       nil)              ; A   --attach-pid PID: attach to that running CAD
   ;; Dialect + host
   (dialect          :strict)          ; AC  :strict / :autocad-2026 / :bricscad-v26 / :clautolisp
   (host             :mock)            ; AC  :mock / :null (default :mock)
@@ -29,6 +30,7 @@
                                       ;     built by the -E<situation>[-<dir>] / --<situation>-encoding family
   ;; Drawing
   (dwg              nil)              ; AC  --dwg FILE: the first drawing
+  (template         nil)              ; A   --template NAME|PATH: a copy of a CAD template (alfe)
   ;; Plug-ins (alfe). The options a plug-in defines are parsed into
   ;; PLUGIN-OPTIONS, an alist (NAME . PLIST) of plug-in name -> plist of
   ;; option key -> value, resolved (command line, then environment, then

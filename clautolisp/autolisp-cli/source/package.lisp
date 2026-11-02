@@ -27,6 +27,7 @@
    #:cli-options-mode            ; A — :auto / :automation / :batch
    #:cli-options-backend-variant ; A — :attach / :launch / …
    #:cli-options-cad             ; A — --cad DENOTATION (alfe backend selection)
+   #:cli-options-attach-pid      ; A — --attach-pid PID (attach to that running CAD)
    #:cli-options-actions         ; AC — ordered action list ((:file . PATH)/(:expression . TEXT))
    #:cli-options-interactive-p   ; AC
    #:cli-options-quit-p          ; A
@@ -38,6 +39,7 @@
    #:cli-situation-encoding      ; AC — resolver: (opts situation &optional direction)
    #:*encoding-situations*       ; AC — the situation registry
    #:cli-options-dwg             ; A
+   #:cli-options-template        ; A — --template NAME|PATH (alfe)
    #:cli-options-plugin-options  ; A — alist (PLUGIN-NAME . plist of resolved option values)
    #:cli-options-plugins-active  ; A — names of the active plug-ins, in activation order
    #:cli-options-list-plugins-p  ; A — --list-plugins

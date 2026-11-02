@@ -2,11 +2,15 @@
 # runner availability (runner-availability-gating.issue).
 #
 # Triggered by the parent's `native:pipeline`, which passes MACOS_RUNNER /
-# WINDOWS_RUNNER (online|offline) from detect:runners. Here they are ordinary
-# variables, KNOWN at this pipeline's creation, so the gate rules: below pick
+# WINDOWS_RUNNER / ARM64_RUNNER (online|offline) from detect:runners. Here they
+# are ordinary variables, KNOWN at this pipeline's creation, so the gate rules:
+# below pick
 #   online  -> when: on_success  (the job runs automatically)
 #   offline -> when: manual      (fallback: clickable, non-blocking, never
 #                                 stuck-pending, never reddens the pipeline)
+# arm64 is the exception whose offline fallback is not `manual' but an
+# EMULATED twin on poseidon's always-on qemu lane -- see the arm64 gate
+# templates below (cecil-native-arm64-runner.issue).
 # and a release-* TAG keeps the jobs that used to be release-mandatory
 # mandatory (block the release).
 #
@@ -38,7 +42,15 @@
 #   - the *:linux encoding / pathname probes (Linux runner is always-on).
 
 stages:
+  - build      # arm64 docker image (kaniko); nothing in `test' depends on it
   - test
+
+# A child pipeline inherits NEITHER the parent's anchors NOR its top-level
+# variables. CI_REGISTRY* are predefined everywhere, so the image name is
+# rederived here rather than forwarded; ARM64_BASE (a pinned digest) IS
+# forwarded by native:pipeline to avoid duplicating the digest.
+variables:
+  CLAUTOLISP_CI_IMAGE: $CI_REGISTRY_IMAGE/clautolisp-ci
 
 # EVERY job here is interruptible, so a superseded child pipeline can be
 # auto-cancelled instead of living for ever
@@ -295,6 +307,139 @@ default:
   before_script:
     - sh scripts/ci-build-cache.sh restore fasl
 
+# --- arm64 (native cecil/thalassa preferred, emulated poseidon fallback) ----
+# A native arm64 machine joined the fleet (cecil, the NVIDIA DGX Spark; and
+# thalassa already offers native linux/arm64 docker). Both are intermittent
+# (office hours), so detect:runners publishes ARM64_RUNNER (online|offline)
+# from the `arm64' tag and native:pipeline forwards it here.
+#
+# The macOS/Windows gates fall back to a MANUAL click when their runner is
+# offline, because those platforms have no other runner. arm64 does: poseidon
+# runs it under qemu-user ([linux, arm64, qemu]). So the arm64 gates come as a
+# mutually-exclusive PAIR, and every arm64 job is defined twice, once per gate,
+# sharing one script:
+#   ARM64_RUNNER online  -> the :native job runs, the :emulated twin is skipped
+#                           (native REPLACES emulated -- pjb, 2026-09-28)
+#   ARM64_RUNNER offline -> the :native job is skipped, the :emulated twin runs
+#                           (emulated FALLBACK)
+# native BLOCKS a release tag when the machine is actually online (like
+# .gate-*-hard); emulated is allow_failure everywhere (qemu is slow, and this
+# is non-release validation). The release arm64 ARTEFACT stays on the parent's
+# always-on qemu lane, deliberately -- an intermittent machine must never
+# silently drop arm64 from a release (cecil-native-arm64-runner.issue Step 2).
+.gate-linux-arm64-native:
+  tags: [linux, arm64, docker]     # cecil or thalassa, whichever is awake
+  image: $ARM64_BASE               # native pull on arm64; no emulation
+  rules:
+    - if: '$ARM64_RUNNER != "online"'
+      when: never                  # native absent -> the :emulated twin covers it
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+      when: on_success
+      allow_failure: false         # native present on a tag: a failure is real
+    - when: on_success
+      allow_failure: true          # native present off a tag: run, non-blocking
+
+.gate-linux-arm64-emulated:
+  tags: [linux, arm64, qemu]       # poseidon qemu-user (always-on)
+  image: $ARM64_BASE               # arm64 manifest digest; binfmt runs it
+  rules:
+    - if: '$ARM64_RUNNER == "online"'
+      when: never                  # native present -> it REPLACES emulated
+    - when: on_success
+      allow_failure: true          # native absent: emulated fallback (slow)
+
+# $ARM64_BASE is a bare buildpack-deps, not the Lisp CI image (which is
+# amd64-only), so install the toolchain the same way release:linux:arm64 does.
+.arm64-lisp-toolchain: &arm64-lisp-toolchain
+  - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
+  - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
+  - sbcl --non-interactive --load /tmp/ql.lisp --eval '(quicklisp-quickstart:install)'
+  - sbcl --noinform --no-userinit --non-interactive --load ~/quicklisp/setup.lisp --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)'
+
+# The clautolisp unit suite on arm64 (SBCL only -- Clozure CL has no arm64
+# build). Native on cecil/thalassa; emulated fallback under qemu on poseidon.
+test:clautolisp:linux-arm64:native:
+  extends: .gate-linux-arm64-native
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  before_script: *arm64-lisp-toolchain
+  script:
+    - make -C clautolisp test-sbcl
+
+test:clautolisp:linux-arm64:emulated:
+  extends: .gate-linux-arm64-emulated
+  stage: test
+  timeout: 45m                     # the full suite under qemu-user is slow
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  before_script: *arm64-lisp-toolchain
+  script:
+    - make -C clautolisp test-sbcl
+
+# arm64 docker image -- an arm64 "release package": the clautolisp CI/runtime
+# image built for linux/arm64 and pushed to the GitLab registry with an -arm64
+# tag. kaniko (no daemon, no privileged), exactly like the parent's
+# build:clautolisp-ci-image, but on an arm64 runner so its RUN steps execute
+# arm64. On master/tag the native lane builds automatically; on an MR it is
+# manual (an arm64 image build is minutes of work, rarely needed per MR). The
+# emulated lane runs kaniko ITSELF as arm64 under qemu, which is slow, so it
+# stays manual whatever the ref.
+.build-arm64-ci-image: &build-arm64-ci-image
+  - |
+    mkdir -p /kaniko/.docker
+    cat > /kaniko/.docker/config.json <<EOF
+    {"auths":{"$CI_REGISTRY":{"username":"$CI_REGISTRY_USER","password":"$CI_REGISTRY_PASSWORD"}}}
+    EOF
+    # :$CI_COMMIT_SHA-arm64 always; :arm64 (the moving arm64 latest) on master.
+    DESTS="--destination $CLAUTOLISP_CI_IMAGE:$CI_COMMIT_SHA-arm64"
+    [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && DESTS="$DESTS --destination $CLAUTOLISP_CI_IMAGE:arm64"
+    /kaniko/executor \
+      --context "$CI_PROJECT_DIR" \
+      --dockerfile "$CI_PROJECT_DIR/clautolisp/docker/Dockerfile" \
+      --custom-platform=linux/arm64 \
+      $DESTS \
+      --cache=true \
+      --cache-repo "$CLAUTOLISP_CI_IMAGE/cache-arm64"
+
+build:clautolisp-ci-image:arm64:native:
+  stage: build
+  tags: [linux, arm64, docker]     # cecil or thalassa
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  retry: 2
+  rules:
+    - if: '$ARM64_RUNNER != "online"'
+      when: never                  # native absent -> the :emulated twin
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+      when: on_success
+      allow_failure: true          # an image build never blocks a release
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+      allow_failure: true
+    - when: manual                 # MRs: build by hand
+      allow_failure: true
+  script: *build-arm64-ci-image
+
+build:clautolisp-ci-image:arm64:emulated:
+  stage: build
+  tags: [linux, arm64, qemu]       # poseidon qemu-user
+  image:
+    # kaniko's OWN arm64 image, pinned by digest, so binfmt runs it and its RUN
+    # steps execute arm64 (a plain tag would be pulled amd64 -- gitlab-runner
+    # 19.1 ignores platform). Refresh alongside the tag in the native twin above
+    # and build:clautolisp-ci-image in .gitlab-ci.yml.
+    name: gcr.io/kaniko-project/executor@sha256:6fcac15aa570456d7f89be1145e44d16f453fd420d6d8a2738fab3b19513fd39
+    entrypoint: [""]
+  retry: 2
+  rules:
+    - if: '$ARM64_RUNNER == "online"'
+      when: never                  # native present -> it REPLACES emulated
+    - when: manual                 # emulated arm64 image build is SLOW: by hand
+      allow_failure: true
+  script: *build-arm64-ci-image
+
 # --- unit suites on the real OS --------------------------------------------
 test:clautolisp:macos:
   extends: [.gate-macos-hard, .fasl-cache]
@@ -305,6 +450,20 @@ test:clautolisp:macos:
     - make -C clautolisp test-sbcl
     - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
     - sh scripts/ci-build-cache.sh save fasl
+
+# The DWG codec on REAL vendor templates (.dwt): BricsCAD V26's and AutoCAD
+# 2026's, installed on thalassa -- they cannot be committed. Builds libredwg,
+# then reads each template and cross-checks BricsCAD's named-object
+# dictionary against what the entget-pointers probe measured on the same
+# files (scripts/test-vendor-templates.sh).
+test:dwt:macos:
+  extends: .gate-macos-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive   # libredwg, for build-libraries
+  script:
+    - make build-libraries
+    - sh scripts/test-vendor-templates.sh
 
 test:clautolisp:windows:
   extends: .gate-windows-hard
@@ -457,6 +616,24 @@ verify:vl-registry:windows:
 #
 # Manual, like its Linux counterpart: it is minutes of C and Lisp compilation
 # and nothing depends on its result.
+# alfe --template against the real CADs (alfe-template-option, acceptance):
+# acad.dwt / Default-imperial.dwt give MEASUREMENT 0, acadiso.dwt /
+# Default-m.dwt 1, on alfe's per-run copy. Manual: a CAD job not to add to
+# every pipeline's sweep; play it when template.lisp or %SESSION-DWG changes.
+verify:alfe-template:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  timeout: 30m
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - '& scripts/avec-bash.ps1 scripts/verify-alfe-template.sh bricscad autocad'
+    - 'if ($LASTEXITCODE -ne 0) { throw "alfe --template check failed ($LASTEXITCODE)" }'
+
 verify:packaged-dwg:windows:
   extends: .gate-windows-soft
   stage: test
@@ -601,6 +778,22 @@ verify:autocad-x-output:windows:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-autocad-x-output.ps1
+
+# alfe-cad-nil-catch-all-message, the vendor check: on AutoCAD a caught
+# error can carry a NIL message (vl-exit-with-error outside a VLX); a -x
+# request failing so must report FAIL, not DONE OK, on the GUI and on
+# AcCoreConsole. Manual: one run settles it.
+verify:autocad-nil-catch-all:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-autocad-nil-catch-all.ps1
 
 # The other half of the COM work: a REAL AutoCAD, launched through the
 # bridge, evaluating ActiveX. The registry probe above says which ProgID
@@ -1250,6 +1443,32 @@ pathname:probe:autocad:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend autocad
 
+# --- COMMAND prompts from GUI AutoCAD (windows-runner-sunset B12, path 1) -----
+#
+# Headless accoreconsole cannot capture interactive command prompts: a
+# loaded-lisp (command "_LINE") does not suspend there, so LASTPROMPT stays
+# empty (proven 2026-10-25). A GUI acad.exe, launched with /b run.scr, runs the
+# SAME probe suite in the real interactive app where (command ...) suspends and
+# LASTPROMPT holds the prompt. MANUAL + allow_failure on purpose: GUI acad on a
+# CI runner may have no interactive desktop or no GUI license seat, in which
+# case it times out with no results -- that outcome is itself the finding.
+command-prompts:gui:autocad:windows:
+  extends: .gate-windows-cad-soft
+  rules:
+    - when: manual
+      allow_failure: true
+  stage: test
+  interruptible: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - bash scripts/run-command-prompts-gui-autocad.sh dist/command-prompts-gui
+  artifacts:
+    when: always
+    name: "command-prompts-gui-$CI_COMMIT_SHORT_SHA"
+    paths: [dist/command-prompts-gui/]
+    expire_in: 30 days
+
 # --- ActiveX IntersectWith: what the vendors return --------------------------
 #
 # cador-intersectwith-missing.issue. clautolisp implements IntersectWith from
@@ -1511,6 +1730,72 @@ dxf-angles:probe:accoreconsole:windows:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-dxf-angles-probe.ps1 -Backend accoreconsole
+
+# --- a second CAD instance: what COM / LaunchServices offer ----------------
+# alfe-cad-launch-new-by-default: alfe is to LAUNCH a new CAD by default and
+# attach to a running one only on request, to a given instance by PID. These
+# jobs MEASURE what that can rest on: whether a second CreateObject / launch
+# gives a second process, which instance GetActiveObject returns, what the
+# Running Object Table holds per instance, and whether System Events can
+# target one of two same-named BricsCAD processes by unix id. Soft: a probe
+# measures, never gates.
+.cad-instances-artifacts:
+  interruptible: true
+  artifacts:
+    name: "cad-instances-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/cad-instances/]
+    expire_in: 30 days
+
+cad-instances:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .cad-instances-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,cad-instances,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - bash scripts/probe-cad-instances.sh
+
+cad-instances:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .cad-instances-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,cad-instances,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-probe-cad-instances-paths.ps1
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-instances.ps1 -Backend bricscad
+
+cad-instances:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .cad-instances-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,cad-instances,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-probe-cad-instances-paths.ps1
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-instances.ps1 -Backend autocad
 
 # --- user globals through alfe: a (setq f ...) must reach the global ------
 #
@@ -1851,6 +2136,35 @@ probe:suite:bricscad:windows:
 # suite also runs inside the full probe:suite:* jobs; these narrow jobs give
 # the answer without the rest of the suite's queue time. SOFT, like every
 # probe: it measures, it gates nothing.
+# AutoCAD at LISPSYS 1 (dialect-platform-version-axis): the runner's AutoCAD
+# is at 0. scripts/run-lispsys1-probe.sh sets 1, measures in fresh sessions
+# (only if a fresh session reads 1), and ALWAYS sets it back to 0 and checks
+# it (pjb 2026-10-25: "Ok for LISPSYS 1, but restore it to 0 afterwards").
+# MANUAL even when its files change: it changes the machine's AutoCAD
+# setting, which the SCHMS jobs rely on. after_script repeats the reset.
+probe:lispsys1:autocad:windows:
+  extends: .gate-windows-cad-soft
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,lispsys1,/'
+      when: manual
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - bash scripts/run-lispsys1-probe.sh
+  after_script:
+    - bash scripts/run-lispsys1-probe.sh --reset-only
+  artifacts:
+    when: always
+    name: "probe-lispsys1-autocad-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
 probe:entget-pointers:autocad:windows:
   extends: .gate-windows-cad-soft
   # a PROBE: automatic only when its family changed (and the runner is
@@ -1924,6 +2238,174 @@ probe:entget-pointers:bricscad:macos:
   artifacts:
     when: always
     name: "probe-entget-pointers-bricscad-macos-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:autocad-imperial:windows:
+  extends: .gate-windows-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN imperial template (acad.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'acad.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-autocad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-autocad-imperial-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:autocad-metric:windows:
+  extends: .gate-windows-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN metric template (acadiso.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'acadiso.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-autocad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-autocad-metric-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-imperial:windows:
+  extends: .gate-windows-bricscad-soft
+  # entget-pointers on a drawing of the CAD's OWN imperial template (Default-imperial.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-imperial.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-imperial-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-metric:windows:
+  extends: .gate-windows-bricscad-soft
+  # entget-pointers on a drawing of the CAD's OWN metric template (Default-m.dwt,
+  # BricsCAD's BASEFILE on the runners),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-m.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-metric-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-imperial:macos:
+  extends: .gate-macos-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN imperial template (Default-imperial.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-imperial.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-imperial-macos-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-metric:macos:
+  extends: .gate-macos-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN metric template (Default-m.dwt,
+  # BricsCAD's BASEFILE on the runners),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-m.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-metric-macos-$CI_COMMIT_SHORT_SHA"
     paths: [probe-results/]
     expire_in: 90 days
 

@@ -1203,6 +1203,26 @@ when no debug session is active (the hook declines)."
           (autolisp-equal-p (cdr a) (cdr b))))
     (t nil)))
 
+(defun autolisp-equal-fuzz-p (a b tolerance)
+  ;; Like autolisp-equal-p, but every NUMERIC LEAF compares within
+  ;; +-TOLERANCE -- recursively, so the fuzz reaches the coordinates of a
+  ;; point, the leaves of a nested list, and both halves of a dotted pair.
+  ;; Structure, length, strings and non-numeric atoms stay strict (a
+  ;; number is never fuzz-equal to a non-number, and (5.0) is never equal
+  ;; to (5.0 5.0)). Autodesk documents this fuzz for lists of reals,
+  ;; points included -- equal-list-fuzz.issue. TOLERANCE is a non-zero
+  ;; number here (builtin-equal maps nil / 0 fuzz to strict autolisp-equal-p
+  ;; before calling this).
+  (cond
+    ((and (numberp a) (numberp b)) (<= (abs (- a b)) tolerance))
+    ((eql a b) t)
+    ((and (typep a 'autolisp-string) (typep b 'autolisp-string))
+     (string= (autolisp-string-value a) (autolisp-string-value b)))
+    ((and (consp a) (consp b))
+     (and (autolisp-equal-fuzz-p (car a) (car b) tolerance)
+          (autolisp-equal-fuzz-p (cdr a) (cdr b) tolerance)))
+    (t nil)))
+
 (defun builtin-eq (a b)
   ;; (eq a b) — pointer-level identity, with the standard exception
   ;; that two strings whose content is equal compare eq because the
@@ -1230,12 +1250,12 @@ when no debug session is active (the hook declines)."
         "EQUAL"
         "EQUAL fuzz must be a number, got ~S."
         fuzz))
-      ((and (numberp a) (numberp b))
-       (if (<= (abs (- a b)) tolerance)
-           (autolisp-true)
-           nil))
       (t
-       (if (autolisp-equal-p a b) (autolisp-true) nil)))))
+       ;; Fuzz applies to numeric leaves at any depth, not just when both
+       ;; top-level operands are numbers -- so (equal '(5.0) (list near) 1e-9)
+       ;; is T like the scalar case (equal-list-fuzz.issue). A scalar pair is
+       ;; just two numeric leaves, so this keeps the old scalar behaviour.
+       (if (autolisp-equal-fuzz-p a b tolerance) (autolisp-true) nil)))))
 
 (defun builtin-vl-every (function-designator first-list &rest more-lists)
   (let* ((function (resolve-autolisp-function-designator function-designator))
@@ -2230,11 +2250,26 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
      object))
   object)
 
-(defun builtin-rem (first-number second-number)
+(defun builtin-rem (&rest numbers)
+  ;; AutoLISP REM takes integer OR real operands and is variadic, reduced
+  ;; left to right ((rem a b c) = (rem (rem a b) c)). The result is real
+  ;; when any operand is real (CL REM's float contagion), integer when all
+  ;; operands are integers. The remainder follows the dividend's sign
+  ;; (truncated division): (rem -7 2) = -1, (rem 7 -2) = 1, as AutoCAD and
+  ;; BricsCAD do (probe-numeric-edges, 2026-10-24). This was int-only
+  ;; (require-int32 on two operands), which rejected the real operands SCHMS
+  ;; arc geometry needs -- rem-real-operands.issue.
+  ;;; SPEC-UNCERTAIN: the exact value for zero / one operand. Autodesk
+  ;;;   documents that REM accepts them, but it is not probed; 0 (zero
+  ;;;   operands) and the operand itself (one operand) are the reduction's
+  ;;;   natural results. Confirm against a live product before relying on them.
+  (dolist (number numbers)
+    (require-number number "REM"))
   (handler-case
-      (arithmetic-result
-       (rem (require-int32 first-number "REM")
-            (require-int32 second-number "REM")))
+      (cond
+        ((null numbers)        (arithmetic-result 0))
+        ((null (cdr numbers))  (arithmetic-result (car numbers)))
+        (t                     (arithmetic-result (reduce #'rem numbers))))
     (division-by-zero ()
       (signal-builtin-host-error
        :division-by-zero
@@ -2892,8 +2927,41 @@ it never creates under a folded name."
                 (clautolisp.autolisp-reader:autolisp-dialect-product
                  (current-evaluation-dialect)))))
 
+(defun %bricscad-windows-dialect-p ()
+  "True when the current dialect is a BricsCAD one on Windows (any version)."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (and dialect
+         (eq :bricscad (ignore-errors
+                        (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))
+         (eq :windows (ignore-errors
+                       (clautolisp.autolisp-reader:autolisp-dialect-platform dialect))))))
+
+(defun %open-ccs-writes-bom-p (path mode-string ccs-string encoding-string)
+  "Whether this OPEN writes a byte-order mark first: under a Windows BricsCAD
+dialect, a \",ccs=UTF-8\" or \",ccs=UTF-16LE\" suffix (and no positional
+encoding, which wins over it) on mode \"w\", or on mode \"a\" when the file
+is new or empty. BricsCAD V25 on Windows writes the BOM on \"w\" and none on
+an append to an existing file (probe-open-encoding, jobs 16968316289 and
+17027935338); an \"a\" that creates the file is unmeasured, and writes it as
+\"w\" does, since the file it creates is the same."
+  (and ccs-string
+       (null encoding-string)
+       (plusp (length mode-string))
+       (member (clautolisp.autolisp-runtime:squeeze-encoding-name ccs-string)
+               '("UTF8" "UTF16LE") :test #'string=)
+       (%bricscad-windows-dialect-p)
+       (case (char-downcase (char mode-string 0))
+         (#\w t)
+         (#\a (let ((existing (probe-file path)))
+                (or (null existing)
+                    (ignore-errors
+                     (with-open-file (in existing :element-type '(unsigned-byte 8))
+                       (zerop (file-length in)))))))
+         (t nil))))
+
 (defun %open-file-stream (path direction if-exists if-does-not-exist
-                          external-format read-policy encoding-string mode-string)
+                          external-format read-policy encoding-string mode-string
+                          &optional ccs-string)
   "The host stream OPEN hands back, or NIL. Plain
 OPEN-WITH-EXTERNAL-FORMAT, except under the AutoCAD dialects where three
 measured behaviours of AutoCAD 2022 (LISPSYS 1 / 2; E1 job 16980926802,
@@ -2906,9 +2974,11 @@ autocad-open-encoding-lispsys-divergence) are reproduced:
     character, and the data ends at the first byte that is not UTF-8;
   - (open f \"w\" \"utf8-bom\"): a BOM (EF BB BF) first.
 
-The other dialects keep the plain open: BricsCAD was measured not to write
-the BOM (probe-open-encoding), and the clautolisp / lax / strict behaviour
-is unchanged."
+Under the Windows BricsCAD dialects, a \",ccs=UTF-8\" / \",ccs=UTF-16LE\"
+mode suffix writes the BOM first on \"w\" (and on an \"a\" that creates the
+file), as BricsCAD V25 does: %OPEN-CCS-WRITES-BOM-P. BricsCAD's positional
+encoding argument was measured to write none (probe-open-encoding), and the
+clautolisp / lax / strict behaviour is unchanged."
   (flet ((plain (format)
            (clautolisp.autolisp-reader:open-with-external-format
             path
@@ -2941,6 +3011,13 @@ is unchanged."
             (string= mode-string "w")
             (string-equal encoding-string "utf8-bom")
             (%autocad-dialect-p))
+       (let ((stream (plain external-format)))
+         (when stream
+           (write-char (code-char #xFEFF) stream))
+         stream))
+      ((and (eq direction :output)
+            (%open-ccs-writes-bom-p path mode-string ccs-string encoding-string))
+       ;; Decided before opening: "a" asks whether the file is new or empty.
        (let ((stream (plain external-format)))
          (when stream
            (write-char (code-char #xFEFF) stream))
@@ -3039,7 +3116,8 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
         (handler-case
             (let ((stream (%open-file-stream path direction if-exists if-does-not-exist
                                              external-format read-policy
-                                             encoding-string mode-string)))
+                                             encoding-string mode-string
+                                             ccs-encoding-string)))
               (if stream
                   (errno-and-return 0 (make-autolisp-file stream path-string raw-mode-string))
                   (errno-and-return 22 nil)))
@@ -3687,17 +3765,31 @@ time it is called."
 ;; --- end atoi / atof -------------------------------------------------
 
 (defun escape-prin1-string (string)
-  (with-output-to-string (out)
-    (write-char #\" out)
-    (loop for character across string
-          do (case character
-               (#\\
-                (write-string "\\\\" out))
-               (#\"
-                (write-string "\\\"" out))
-               (t
-                (write-char character out))))
-    (write-char #\" out)))
+  "STRING as PRIN1 writes it. Measured on AutoCAD 2022 and BricsCAD V25 /
+V26 (probe reader-printer, sunset campaign B3, 2026-10-28): a control
+character is escaped -- tab, newline, return and escape by name (\\t \\n \\r
+\\e), the others in three octal digits (code 7 is \\007) -- and DEL (127) as
+\\177 on AutoCAD, as itself on BricsCAD; READ gives the string back."
+  (let ((escape-del-p (not (eq :bricscad
+                               (ignore-errors
+                                (clautolisp.autolisp-reader:autolisp-dialect-product
+                                 (current-evaluation-dialect)))))))
+    (with-output-to-string (out)
+      (write-char #\" out)
+      (loop for character across string
+            for code = (char-code character)
+            do (case character
+                 (#\\ (write-string "\\\\" out))
+                 (#\" (write-string "\\\"" out))
+                 (#\Tab (write-string "\\t" out))
+                 (#\Newline (write-string "\\n" out))
+                 (#\Return (write-string "\\r" out))
+                 (t
+                  (cond ((= code 27) (write-string "\\e" out))
+                        ((or (< code 32) (and (= code 127) escape-del-p))
+                         (format out "\\~3,'0O" code))
+                        (t (write-char character out))))))
+      (write-char #\" out))))
 
 (defun autolisp-value->string (object princp)
   (cond
@@ -3710,7 +3802,8 @@ time it is called."
      ;; ("3.14", not "3.14d0"; "1.0e20", not "1.0d20"). Delegate to the
      ;; runtime's single host-independent formatter — princ alone diverges
      ;; between SBCL ("1.0e20") and CCL ("1.0E+20"). See AUTOLISP-FORMAT-REAL.
-     (clautolisp.autolisp-runtime:autolisp-format-real object))
+     ;; spelt as the dialect's product prints it (AUTOLISP-PRINT-REAL).
+     (clautolisp.autolisp-runtime:autolisp-print-real object))
     ((typep object 'autolisp-string)
      (if princp
          (autolisp-string-value object)
@@ -6033,6 +6126,14 @@ never overwritten by a redundant (setvar \"CLAUTOLISPDROP\" 1)."
              (clautolisp.autolisp-runtime:autolisp-makunbound symbol)))
        (setf *clautolisp-drop-saved-binding* nil
              *clautolisp-drop-active* nil)))))
+
+(defun builtin-getcname (name)
+  "GETCNAME: \"_LINE\" -> the local name, a local name -> \"_LINE\", or nil
+when the command is unknown (the host's table, cadtui-locale-probe-getcname).
+A non-string is a bad argument, as on both products."
+  (let* ((string (autolisp-string-value (require-string name "GETCNAME")))
+         (other (host-getcname (current-evaluation-host) string)))
+    (and other (make-autolisp-string other))))
 
 (defun builtin-getvar (name)
   (let ((string (autolisp-string-value (require-string name "GETVAR"))))
@@ -9910,16 +10011,14 @@ deciding membership."
   (apply #'append lists))
 
 (defun builtin-vle-member (item lst)
-  ;; (vle-member item lst) — verifies whether LST contains ITEM.
-  ;; Spec wording is loose: "verifies whether". We return the tail
-  ;; starting at ITEM (matching VL-MEMBER / CL MEMBER), so the
-  ;; result is truthy in IF / WHILE contexts and the user can pull
-  ;; the tail when needed.
-  ;;
-  ;;; SPEC-UNCERTAIN: pure boolean (T/NIL) vs tail-returning. Probe
-  ;;;   queued in deferred-spec-research.issue.
+  ;; (vle-member item lst) — T when LST contains ITEM, else nil.
+  ;;; Vendor: BricsCAD V26 returns the boolean T / nil, not the tail --
+  ;;;   measured by probe-vle.lsp 2026-10-24 (probe-results/bricscad/macos/
+  ;;;   20261024T201604Z). VLE-* is a BricsCAD extension (AutoCAD has no
+  ;;;   vle-member), so clautolisp follows BricsCAD. The tail / index is still
+  ;;;   available from VLE-SEARCH. vle-extension-vendor-divergences.issue.
   (require-proper-list lst "VLE-MEMBER")
-  (member item lst :test #'autolisp-value=))
+  (if (member item lst :test #'autolisp-value=) (autolisp-true) nil))
 
 (defun builtin-vle-search (item lst &optional as-idx)
   ;; (vle-search item lst asIdx) — search LST for ITEM. If ASIDX
@@ -10124,15 +10223,14 @@ when the input is zero-length under TOL."
 
 (defun builtin-vle-vector-normalise (v)
   ;; British spelling per the spec; AutoCAD docs use the same form.
-  ;; Returns nil for a zero-length input (Autodesk's documented
-  ;; "undefined" case — we surface nil instead of erroring).
-  ;;
-  ;;; SPEC-UNCERTAIN: zero-length input — return nil (our choice)
-  ;;;   vs return zero vector vs signal. Probe queued in
-  ;;;   deferred-spec-research.issue § VLE-VECTOR-NORMALISE.
+  ;;; Vendor: BricsCAD V26 returns the ZERO VECTOR (0.0 0.0 0.0) for a
+  ;;;   zero-length input, not nil -- measured by probe-vle.lsp 2026-10-24
+  ;;;   (probe-results/bricscad/macos/20261024T201604Z). VLE-* is a BricsCAD
+  ;;;   extension, so clautolisp follows BricsCAD.
+  ;;;   vle-extension-vendor-divergences.issue.
   (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-NORMALISE")
     (multiple-value-bind (nx ny nz) (vec3-normalize x y z)
-      (and nx (vec3-list nx ny nz)))))
+      (if nx (vec3-list nx ny nz) (vec3-list 0.0d0 0.0d0 0.0d0)))))
 
 (defun builtin-vle-vector-dotproduct (v1 v2)
   (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-DOTPRODUCT")
@@ -11501,7 +11599,8 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     ;; Interactive prompts (GET*/INITGET) (5) — ALERT is the real
     ;; impl above and is NOT in this list. GETPROPERTYVALUE landed in
     ;; M2-M5 per the issue text and is excluded here.
-    "GETCNAME" "GETFILED" "GET_DISKSERIALID"
+    ;; GETCNAME is real (BUILTIN-GETCNAME, the host's measured tables).
+    "GETFILED" "GET_DISKSERIALID"
     "INITCOMMANDVERSION" "OSNAP")
   "Names registered as nil-returning M6 stubs. See *m6-stub-names*'s
 docstring above the def for the upgrade-path reference.")
@@ -11630,6 +11729,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "REGAPP"       #'builtin-regapp)
    (make-core-builtin-subr "XDSIZE"       #'builtin-xdsize)
    (make-core-builtin-subr "XDROOM"       #'builtin-xdroom)
+   (make-core-builtin-subr "GETCNAME"   #'builtin-getcname)
    (make-core-builtin-subr "GETVAR"     #'builtin-getvar)
    (make-core-builtin-subr "SETVAR"     #'builtin-setvar)
    ;; clautolisp exit-status channel: autolisp-set-status keeps the CAD

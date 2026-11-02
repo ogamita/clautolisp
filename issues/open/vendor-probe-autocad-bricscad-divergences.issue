@@ -1,4 +1,11 @@
--*- coding:utf-8 -*-
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vendor-probe-autocad-bricscad-divergences — real AutoCAD-vs-BricsCAD differences surfaced by the vendor probes
+#+STATUS: DEFERRED
+#+PRIORITY: P1
+#+TYPE: divergence-cat
+#+DEPENDS: -
+#+BRANCH: -
+
 
 vendor-probe-autocad-bricscad-divergences — real AutoCAD-vs-BricsCAD differences surfaced by the vendor probes
 =============================================================================================================

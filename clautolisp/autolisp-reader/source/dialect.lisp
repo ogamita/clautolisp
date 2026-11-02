@@ -500,6 +500,10 @@ platform+version spelling (dialect-platform-version-axis.issue):
     ;; measured on AutoCAD 2022, French: "FR" (job 16921381038). BricsCAD
     ;; returns "fr_FR" (harvests 16913315157 / 16921381045).
     (:locale-form :autocad  t 2019 :language)
+    ;; Before 2019, the three-letter abbreviation Windows' GetLocaleInfo
+    ;; gives with LOCALE_SABBREVLANGNAME (AutoCAD's documented LOCALE:
+    ;; "ENU", "FRA" ...). Documented, not measured (no AutoCAD < 2019 here).
+    (:locale-form :autocad  t nil  :abbreviation)
     (:locale-form :bricscad t nil  :language-territory)
     ;; When a lifecycle command (NEW / OPEN) run inside a routine switches
     ;; drawing (probe-documents, 2026-10-05). BricsCAD V26 macOS (job

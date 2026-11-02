@@ -38,6 +38,18 @@ refactors with no user-visible effect do not require an entry.
 
 * clautolisp / read-autolisp (=clautolisp/documentation/clautolisp-user-manual.org=)
 
+- LAP compilation preserves generated loop temporaries across save/load,
+  including REPEAT/WHILE return values on SBCL and CCL (2.3.83).
+  Recompile older LAPs; see the manual, /CLAL-COMPILE-FILE/ and /CLAL-COMPILE-SYSTEM/.
+
+- *A carriage return alone inside a string literal* (2.3.72): ~read~ now
+  keeps it (code 13), as AutoCAD and BricsCAD do; it used to become a line
+  feed. ~load~ follows the dialect -- a line feed under ~--dialect
+  bricscad~, the CR elsewhere, as AutoCAD -- and warns
+  ~[lone-cr-in-string]~ with the file and line in every dialect but
+  ~--lax~. Line numbers after a multi-line string literal are right again.
+  See the user manual, /Line breaks inside a string literal/.
+
 - Windows releases bundle recursive non-system DLL dependencies and their
   license notices, so startup and DWG saves work without MSYS2 on PATH.
   See the user manual, /Windows release installation/.
@@ -1891,6 +1903,12 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
+** alfe 2.3.78: ordered Windows CAD cleanup
+Restore native log/search settings before ending the protocol; quit the exact
+created COM application and validate its process exit. Attached applications
+remain open. See [[file:autolisp-front-end/documentation/alfe-user-manual.org::*CAD session cleanup and owned COM instances][CAD session cleanup]].
+
+
 - A quit-only subprocess plan exits successfully on Windows; its no-op
   expression survives native argument passing. See the user manual's
   discussion of subprocess plans and =--quit=.
@@ -1959,12 +1977,185 @@ file or COM), and forwards the workload.
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
 
-- *Native CAD batch isolation and shutdown* (2.3.46): BricsCAD batch
+- *Native CAD batch isolation and shutdown* (2.3.86): BricsCAD batch
   launches honor =--dwg= and otherwise stage a private empty drawing.
   Shutdown restores the native printer functions after the protocol loop,
   closes documents without saving, retries transient AutoCAD COM rejections
   and bounds process cleanup. This does not resolve the intermittent EPURE
   WPF exception observed at AutoCAD exit.
+
+- *READ and PRIN1 as AutoCAD and BricsCAD* (2.3.76): =1e3= and =1E+03= read
+  as the real 1000.0 (they were symbols outside the BricsCAD dialects); an
+  octal escape in a string literal is decoded (="\101"= is "A") and any other
+  unknown escape drops its backslash (="C:\dir"= is "C:dir"), as both
+  products do; PRIN1 writes a control character escaped (=\t=, =\n=,
+  =\007= ...). Measured by the sunset campaign's B3 probe.
+
+- *=getcname= under =bricscad-v26=* (2.3.75): ="_STRETCH"= gives ="ÉTIRER"=,
+  as BricsCAD V26 answers (V25: ="ETIRER"=); measured on macOS.
+
+- *=entget= shows each entity's defaults as the CADs do* (2.3.74): an
+  entity made with its required groups only now lists what AutoCAD 2022 and
+  BricsCAD V25 list -- the extrusion 210, POINT 50, SPLINE 74 / 42 / 43,
+  3DFACE 70, MTEXT's and ATTDEF / ATTRIB's text defaults, SEQEND's =-2= --
+  with each product's differences (SOLID 39, VERTEX 91, MTEXT 72 / 75,
+  SPLINE tolerances ...). A 2D =VERTEX= no longer carries 71-74. Measured by
+  the new entity-defaults probe suite.
+
+- *An XRECORD keeps its 102 lists* (2.3.73): since 2.3.30 =entmake= /
+  =entmakex= dropped an XRECORD's =(102 . "{")= ... =(102 . "}")= lists
+  (SCHMS's xdata codec), taking them for the =ENTGET= header groups. Only
+  the named groups before the first =100= (={ACAD_REACTORS=,
+  ={ACAD_XDICTIONARY=) are header groups now; an XRECORD's body, its =330=
+  pointers included, is stored as given.
+
+- *=alfe --template NAME|PATH=* (2.3.68): start the session on a per-run
+  copy of one of the CAD's own templates (=acad.dwt=, =acadiso.dwt=,
+  =Default-m.dwt= ...) instead of alfe's embedded empty drawing, a French
+  AutoCAD 2005 file. A NAME is looked up in the CAD's template folders;
+  an unknown one exits 66 with the templates found listed.
+  =$AUTOLISP_TEMPLATE= is the same. Checked on AutoCAD 2022 and BricsCAD
+  V25. Under =--bricscad=, =--dwg FILE= is now the drawing BricsCAD opens:
+  it was dropped, only =$AUTOLISP_DWG= reaching the launch.
+
+- *=getcname= is real* (2.3.69): it was a nil stub. It now converts
+  between a command's international and local names as measured on French
+  AutoCAD 2022 and BricsCAD V25 (="_LINE"= <-> ="LIGNE"=, ="_-LAYER"= <->
+  ="-CALQUE"=), each product with its own command set and prefix rules, in
+  the session's language; under English a command is its own local name.
+
+- *The VPORT =*Active= record shows the viewport* (2.3.65): its =entget=
+  lists the snap, grid and view groups (50 = =SNAPANG=, 51 = =VIEWTWIST=,
+  12 = =VIEWCTR= ...) the CADs list. Under the BricsCAD dialects a =setvar=
+  shows in it at once, under the others when the drawing is saved, as
+  measured on BricsCAD V25 / V26 and AutoCAD 2022; a DXF saved by clautolisp
+  carries them.
+
+- *DXF text encoding follows the version* (2.3.64): an ASCII DXF of
+  AutoCAD 2007 (AC1021) or later is written and read as UTF-8, as the format
+  says; an earlier one as ISO-8859-1 with =\U+XXXX= for the characters
+  outside it (and =$DWGCODEPAGE= ANSI_1252). A 2007+ DXF that is not valid
+  UTF-8 -- one clautolisp wrote before -- still reads (2.3.66: on CCL too,
+  whose decoder replaces a bad byte instead of signalling).
+
+- *BricsCAD V25's metric defaults* (2.3.63): a new drawing under
+  =bricscad-v25= with metric units gets the default objects measured on V25's
+  own Default-m.dwt (its Model layout has an ISO A4 page setup), no longer
+  V26's.
+
+- *A real prints as the dialect's product prints it* (2.3.62): under the
+  AutoCAD dialects =princ= / =prin1= / =vl-prin1-to-string= ... write six
+  significant digits as AutoCAD does (=0.333333=, =1.0e+06=), under the
+  BricsCAD dialects fifteen as BricsCAD does (=0.333333333333333=,
+  =1000000.0=); clautolisp, strict and lax keep clautolisp's spelling. A
+  =[real-format]= notice, once per session, flags the first printed real the
+  two products spell differently. Measured on AutoCAD 2022 and BricsCAD V25 /
+  V26.
+
+- *=LOCALE= before AutoCAD 2019* (2.3.60): under an AutoCAD dialect older
+  than 2019, =(getvar "LOCALE")= gives the three-letter Windows abbreviation
+  AutoCAD documented then ("FRA", "ENU", "DEU" ...), where 2019 and later
+  give the upper-case language ("FR").
+
+- *=entlast= ignores dictionaries and xrecords* (2.3.59): after an XRECORD
+  or a DICTIONARY is made, =(entlast)= still names the last graphical entity,
+  as on AutoCAD and BricsCAD (=entnext= already walked graphical entities
+  only).
+
+- *A dictionary lists its entries in key order* (2.3.58): =dictnext= and
+  a dictionary's =entget= list the entries sorted by key, as AutoCAD and
+  BricsCAD do, whatever order the drawing stores them in (found by reading
+  BricsCAD's own templates, whose NOD is stored unsorted).
+
+- *A new drawing's objects are its template's, and blocks end on ENDBLK*
+  (2.3.56): the default objects come from the CADs' own templates (AutoCAD's
+  acad.dwt / acadiso.dwt, BricsCAD's Default-imperial.dwt / Default-m.dwt),
+  imperial or metric by the drawing's =MEASUREMENT= -- they had been measured
+  on alfe's empty.dwg; an empty block's =-2= names its ENDBLK, whose =entget=
+  lists the BLOCK_RECORD, the space and the layer as the CADs do.
+
+- *Layer 0's 348, and =type= of a =vl-catch-all-apply= error* (2.3.55):
+  under the AutoCAD and lax dialects layer 0 lists AutoCAD's 348, a pointer
+  to an erased object (=entget= nil), the other dialects none, as BricsCAD;
+  =(type (vl-catch-all-apply ...))= of an error answers
+  =VL-CATCH-ALL-APPLY-ERROR= where clautolisp signalled.
+
+- *Dictionaries and xrecords are saved and reloaded as such* (2.3.54): a
+  DXF or DWG save writes them to the OBJECTS section (they went to ENTITIES,
+  where libredwg dropped them), and a loaded drawing's named-object
+  dictionary is what =namedobjdict= reaches. The default objects carry their
+  own extension dictionaries (AutoCAD's materials' FBXASSET ...), and a
+  BLOCK_RECORD's =entget= lists its BLOCK (360), a space's layout (340) and
+  the INSERTs referencing it ({BLKREFS 331 ...}); a space's BLOCK its layout
+  (410). Measured on AutoCAD 2022 and BricsCAD V25 / V26.
+
+- *A new drawing's dictionaries hold what the CADs put in them* (2.3.53):
+  layouts (Model, Layout1, Layout2), the ByBlock / ByLayer / Global
+  materials, the Standard mline / mleader / table styles, the detail and
+  section view styles, the scale list, the visual styles and the variable
+  dictionary, with every group as AutoCAD 2022 and BricsCAD V25 / V26 list
+  them and their pointers resolved (a layout's block record, a style's text
+  style); under the AutoCAD dialects layer 0, model space's block record and
+  the LAYER table carry AutoCAD's extension dictionaries (ACAD_LAYERSTATES).
+
+- *Table records, BLOCKs and the named-object dictionary as the CADs show
+  them* (2.3.52): a table record has a handle (=handent= of it is =eq= to
+  =tblobjname='s ename) and its =entget= lists the TABLE owner, the subclass
+  markers and, for a layer, 70 62 6 290 370 and the plot style / material
+  pointers; =(tblobjname "BLOCK" n)= is the BLOCK entity, whose 330 is the
+  BLOCK_RECORD an entity's 330 names; a fresh drawing's =namedobjdict= holds
+  the product's default entries (ACAD_GROUP, ACAD_LAYOUT, ACAD_MATERIAL ...),
+  which =entnext= does not walk. Measured on AutoCAD 2022 and BricsCAD V25 /
+  V26.
+
+- *=entget= lists an entity as the CADs do* (2.3.51): after the header,
+  =(100 . "AcDbEntity")=, the common groups (67, 410, 8 ...), then each
+  subclass marker followed by its own groups, with the defaults the CADs
+  show (67 / 410 / 210, and TEXT's 50 41 51 7 71 72 11 73) -- measured on
+  AutoCAD 2022 and BricsCAD V26 for LINE, CIRCLE, TEXT, INSERT. Only the
+  view changes; nothing extra is stored.
+
+- *=vlax-curve-*= at the ends and off the curve as BricsCAD measures them*
+  (2.3.50): under the BricsCAD dialects a distance or param a little past an
+  end answers the end (1e-8 .. 1e-4 measured), far past the length or nil,
+  and a point counts as on an ARC, a LINE or an LWPOLYLINE with BricsCAD's
+  own tolerances in the plane and across it (second curve-geometry probe
+  round, BricsCAD V26). =Coordinates= of a 2D POLYLINE (x y z per vertex).
+
+- *=(open f "w,ccs=UTF-8")= writes a BOM under the Windows BricsCAD
+  dialects* (2.3.49): as BricsCAD V25 was measured to, =,ccs=UTF-8= and
+  =,ccs=UTF-16LE= on mode ="w"= write the byte-order mark first; an append
+  with the same suffix adds none to an existing file. Other dialects
+  unchanged.
+
+- *A checkout no longer loads an installed DWG library* (2.3.48): code run
+  in a bare SBCL / CCL (a checkout, the test suites) took that Lisp's prefix
+  for its own and could load the =clal_dwg= of a clautolisp installed there
+  (=/opt/local=, the default prefix) instead of the checkout's -- so =alfe
+  --clautolisp --dwg= opened a drawing in-process that =--backend subprocess=
+  could not. Only a clautolisp / alfe executable's prefix is searched now.
+
+- *The command-history log in windows-1252 under the Windows BricsCAD
+  dialects* (2.3.47): =LOGFILEMODE='s log is written in windows-1252 without
+  a byte-order mark, as BricsCAD V25 on Windows was measured to write it (it
+  was UTF-8 under every BricsCAD dialect); the macOS / Linux BricsCAD
+  dialects keep UTF-8. =-Elog= still overrides.
+
+- *A bare =&= is an ordinary symbol* (2.3.46): only =&rest= (any case)
+  introduces a rest parameter in a =defun= / =lambda= lambda list; =&= alone,
+  clautolisp's early proposal, is now an ordinary parameter name, as on
+  BricsCAD (which rejects it as a separator) and AutoCAD. =&rest= still warns
+  =[lambda-list-extension]= under =--dialect strict= and the AutoCAD
+  dialects; =setf= and =let*= stay undefined (an error, not a warning).
+
+- *alfe launches a new CAD by default; attaching is explicit* (2.3.45):
+  =--autocad= / =--bricscad= start a NEW instance even when one is open
+  (COM =CreateObject=, macOS =open -n=), so a batch run never works inside
+  somebody's CAD. =--backend attach= attaches to the running one (implies
+  =--mode automation=), =--attach-pid PID= to a given one: by unix id on
+  macOS; through COM on Windows only when PID is the instance COM hands out
+  (measured: AutoCAD 2022 and BricsCAD V25 reach only the first-registered
+  instance). Shutdown ends only the =acad.exe= this run started.
 
 - *An unattended run never saves the CAD's drawing on quit* (2.3.44): alfe
   ended every non-interactive AutoCAD / BricsCAD session with QUIT

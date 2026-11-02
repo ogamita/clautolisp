@@ -1,0 +1,77 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: entmake-duplicates-subclass-markers — validate-entity-dxf appends 100 markers the data already has
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+
+* Symptom
+
+ENTGET of an LWPOLYLINE made by RECTANG (or by any ENTMAKE whose data
+already carries its markers) ends with a second copy of its subclass
+markers:
+
+: ((-1 . <Entity name: 10>) (5 . "10") (0 . "LWPOLYLINE") (100 . "AcDbEntity")
+:  (100 . "AcDbPolyline") (8 . "0") (90 . 4) (70 . 1) ... (91 . 0)
+:  (100 . "AcDbEntity") (100 . "AcDbPolyline"))
+
+The vendors list each marker once, ahead of its subclass's groups.
+
+* Repro
+
+: (command "_.RECTANG" "0,0" "4,2") (entget (entlast))
+
+* Cause
+
+drawing/source/entity-families.lisp, VALIDATE-ENTITY-DXF: for a registered
+family it always appends (100 . base-marker) and every family subclass
+marker at the END of the data, whether or not the data already has them.
+The command-probe summaries never record group 100, so the vendor
+comparisons did not show it. Found 2026-10-04 while building alref S6.
+
+* Fix
+
+Append only the markers that are absent. For fidelity, also insert them
+where the vendors put them (AcDbEntity before 8, the class marker before
+the class's first group) instead of at the end.
+
+* Progress (2026-10-04, clautolisp 2.2.168)
+
+DUPLICATES FIXED: VALIDATE-ENTITY-DXF adds only the markers the data lacks
+(test validate-adds-only-the-absent-subclass-markers; RECTANG's ENTGET
+checked on the built executable). STILL OPEN, lower priority: a marker the
+data LACKS is still appended at the end instead of where the vendors put it
+(AcDbEntity before 8, the class marker before the class's first group).
+
+* Deferred (pjb 2026-10-04: "If we know all that is needed for the subclass
+  marker position, then do it now, otherwise defer the issue.")
+
+Not all of it is known. The entity-family registry
+(drawing/source/entity-families.lisp) records each family's marker NAMES,
+not which groups belong to which subclass, and the multi-marker families
+need that boundary: ARC (AcDbCircle, then AcDbArc ahead of 50), TEXT
+(AcDbText twice -- where the second goes), VERTEX (AcDbVertex /
+AcDb2dVertex), ATTRIB / ATTDEF (AcDbText + AcDbAttribute*). No vendor
+measurement shows the positions either: the command probes drop group 100.
+To unblock: a probe that records the FULL entget (100 included) of one
+entity per registered family on AutoCAD and BricsCAD, then a per-subclass
+"first group" table in the registry.
+
+* Resolved (2026-10-25, clautolisp 2.3.59, MR !488)
+
+Both halves are done, the second by work this issue was waiting for:
+- the duplicates: since 2.2.168, VALIDATE-ENTITY-DXF adds only the markers the
+  data lacks;
+- the positions: only ENTGET shows them, and since 2.3.51 its view lays a
+  graphical entity out as the vendors do (%VENDOR-BODY-ORDER,
+  cador-entget-subclass-layout-and-record-pointers): (100 . "AcDbEntity"),
+  the common groups, then each class marker before its own groups -- from
+  the per-subclass layout the deferral asked for (*ENTGET-TYPE-LAYOUT*:
+  measured for LINE CIRCLE TEXT INSERT by entget-pointers section 10, the DXF
+  reference's split for ARC POINT ATTRIB ATTDEF), and for every other type its
+  own markers ahead of its groups (VERTEX's AcDbVertex has no group: both
+  markers first). Where a marker sits in the STORED data is not observable.
+
+Test ENTGET-LISTS-EACH-SUBCLASS-MARKER-ONCE-WHERE-THE-VENDORS-DO: an
+LWPOLYLINE entmade with and without its markers (BricsCAD synthesis), an ARC
+(AcDbCircle 10 40, AcDbArc 50 51) and a VERTEX list each marker once, in the
+vendors' place.

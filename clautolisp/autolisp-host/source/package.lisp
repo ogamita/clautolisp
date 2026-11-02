@@ -63,6 +63,7 @@
    #:host-dictobjname
    #:host-regapp
    ;; --- System variables -----------------------------------------
+   #:host-getcname
    #:host-getvar
    #:host-setvar
    #:host-set-derived-sysvar

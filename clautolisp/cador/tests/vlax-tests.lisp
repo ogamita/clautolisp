@@ -1562,6 +1562,9 @@ entity; returns (values HATCH-DATA MOCK)."
              (is (string= "FR" (autolisp-string-value (host-getvar (make-cador) "LOCALE")))))
            (%with-dialect (:autocad-2020)
              (is (null (host-getvar (make-cador) "LISPSYS"))))
+           ;; Before 2019: the three-letter Windows abbreviation (documented).
+           (%with-dialect (:autocad-2018)
+             (is (string= "FRA" (autolisp-string-value (host-getvar (make-cador) "LOCALE")))))
            (%with-dialect (:bricscad-v22)
              (is (null (host-getvar (make-cador) "LISPSYS"))))
            (%with-dialect (:bricscad-v26)

@@ -23,7 +23,10 @@ plus the canonical group-0 marker giving the entity kind)."
   (block     nil)
   (layer     nil)
   (data      nil :type list)
-  (deleted-p nil :type boolean))
+  (deleted-p nil :type boolean)
+  ;; T for an object read from a file's OBJECTS section: never graphical,
+  ;; whatever its type (an unknown type would otherwise count as one).
+  (object-p  nil :type boolean))
 
 ;;; --- Symbol-table record ---------------------------------------
 

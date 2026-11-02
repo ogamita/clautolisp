@@ -45,11 +45,12 @@ tables so tblsearch / tblnext have a sensible baseline."
                       (setf (gethash kind (cador-tables host))
                             (make-hash-table :test #'equalp)))))
     (unless (or (null name) (string= name "") (gethash name per-kind))
-      (setf (gethash name per-kind)
-            (make-symbol-table-record
-             :kind kind :name name
-             :data (list (cons 0 (substitute #\_ #\- (string-upcase (symbol-name kind))))
-                         (cons 2 name)))))))
+      (let ((record (make-symbol-table-record
+                     :kind kind :name name
+                     :data (list (cons 0 (substitute #\_ #\- (string-upcase (symbol-name kind))))
+                                 (cons 2 name)))))
+        (clautolisp.drawing:ensure-record-handle (cador-active-drawing host) record)
+        (setf (gethash name per-kind) record)))))
 
 ;;; --- Sysvar defaults --------------------------------------------
 
@@ -477,6 +478,9 @@ it on first reference."
 
 (defun cador-add-table-record (host record)
   (let ((per-kind (cador-table host (symbol-table-record-kind record))))
+    (clautolisp.drawing:ensure-record-handle
+     (cador-active-drawing host) record
+     (gethash (symbol-table-record-name record) per-kind))
     (setf (gethash (symbol-table-record-name record) per-kind) record)
     record))
 

@@ -10,6 +10,8 @@
 (defclass capture-backend (alfe.backend:backend) ())
 
 (defparameter *capture-start-engine-args* nil)
+(defvar *capture-shutdown-error* nil)
+(defvar *capture-cleanup-kept* nil)
 
 (defstruct (capture-session
             (:include alfe.backend:session)
@@ -56,12 +58,17 @@
 
 (defmethod alfe.backend:shutdown ((session capture-session) &key reason)
   (declare (ignore reason))
+  (when *capture-shutdown-error*
+    (error 'alfe.error:backend-protocol-error :backend :capture
+           :phase :shutdown :code :cleanup-fixture
+           :message "cleanup failed"))
   (alfe.backend:session-state-set session :stopped)
   session)
 
 (defmethod alfe.backend:cleanup-workdir ((backend capture-backend) workdir &key keep-p)
-  (declare (ignore backend keep-p))
-  (when (and workdir (probe-file workdir))
+  (declare (ignore backend))
+  (setf *capture-cleanup-kept* keep-p)
+  (when (and (not keep-p) workdir (probe-file workdir))
     (uiop:delete-directory-tree workdir :validate t
                                         :if-does-not-exist :ignore))
   nil)
@@ -95,6 +102,65 @@
   ;; symbol since it's not exported.
   (is (eq :attach (alfe.cli::cli-options-backend-variant
                    (parse-arguments '("--backend" "attach"))))))
+
+;;; alfe-cad-launch-new-by-default: a CAD run LAUNCHES a new instance unless
+;;; asked to attach; an attach implies --mode automation.
+
+(defun %policy (&rest argv)
+  (alfe.cli::apply-cad-instance-policy (parse-arguments argv)))
+
+(test cli-cad-instance-policy-defaults-to-launch
+  "Without --backend, a CAD run neither attaches nor changes --mode, and the
+bridges' COM mode is \"launch\" -- whatever --mode says."
+  (let ((opts (%policy "--autocad")))
+    (is (null (alfe.cli::cli-options-backend-variant opts)))
+    (is (eq :auto (cli-options-mode opts))))
+  (let ((old (uiop:getenv "AUTOCAD_COM_MODE")))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "AUTOCAD_COM_MODE") "")
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  (%policy "--autocad") "AUTOCAD_COM_MODE")))
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  nil "AUTOCAD_COM_MODE")))
+           ;; The environment may still pick a mode when the command line
+           ;; does not, and the command line wins over it.
+           (setf (uiop:getenv "AUTOCAD_COM_MODE") "auto")
+           (is (string= "auto" (alfe.backend.cad-common:cad-com-mode
+                                (%policy "--autocad") "AUTOCAD_COM_MODE")))
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  (%policy "--autocad" "--backend" "launch")
+                                  "AUTOCAD_COM_MODE")))
+           (setf (uiop:getenv "AUTOCAD_COM_MODE") "bogus")
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  (%policy "--autocad") "AUTOCAD_COM_MODE"))))
+      (setf (uiop:getenv "AUTOCAD_COM_MODE") (or old "")))))
+
+(test cli-cad-instance-policy-attach-implies-automation
+  "--backend attach and --attach-pid select the attach COM mode and turn
+--mode auto into automation, in either option order."
+  (let ((opts (%policy "--bricscad" "--backend" "attach")))
+    (is (eq :automation (cli-options-mode opts)))
+    (is (string= "attach" (alfe.backend.cad-common:cad-com-mode
+                           opts "BRICSCAD_COM_MODE"))))
+  (dolist (argv '(("--autocad" "--attach-pid" "4242")
+                  ("--attach-pid=4242" "--autocad")))
+    (let ((opts (apply #'%policy argv)))
+      (is (= 4242 (alfe.cli:cli-options-attach-pid opts)))
+      (is (eq :attach (alfe.cli::cli-options-backend-variant opts)))
+      (is (eq :automation (cli-options-mode opts))))))
+
+(test cli-cad-instance-policy-usage-errors
+  "Contradictions are usage errors, not silent launches."
+  ;; batch always starts its own CAD process
+  (signals cli-usage-error (%policy "--autocad" "--mode" "batch" "--backend" "attach"))
+  (signals cli-usage-error (%policy "--bricscad" "--mode" "batch" "--attach-pid" "12"))
+  ;; --attach-pid against --backend launch, or without a CAD backend
+  (signals cli-usage-error (%policy "--autocad" "--backend" "launch" "--attach-pid" "12"))
+  (signals cli-usage-error (%policy "--attach-pid" "12"))
+  ;; not a process id
+  (signals cli-usage-error (parse-arguments '("--autocad" "--attach-pid" "acad")))
+  (signals cli-usage-error (parse-arguments '("--autocad" "--attach-pid" "0"))))
 
 (test cli-builds-action-plan-in-order
   "Actions appear in the plan in the order they're seen on the CLI."
@@ -693,6 +759,53 @@ had already parsed them."
       (is (equal '(:mode :batch :dwg "C:/tmp/test.dwg")
                  *capture-start-engine-args*)))))
 
+;;; alfe-template-option: --template NAME|PATH starts the session on a
+;;; per-run copy of one of the CAD's own templates.
+
+(defun %write-bytes (path bytes)
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output :if-exists :supersede
+                            :element-type '(unsigned-byte 8))
+    (write-sequence (coerce bytes '(vector (unsigned-byte 8))) out))
+  path)
+
+(test cli-template-path-starts-the-session-on-a-copy
+  (uiop:with-temporary-file (:pathname template :type "dwt")
+    (%write-bytes template '(65 67 49 48 51 50))
+    (let ((alfe.backend:*backends* (make-hash-table :test #'eql))
+          (*capture-start-engine-args* nil))
+      (alfe.backend:register-backend :capture (make-capture-backend))
+      (let ((options (parse-arguments (list "--dwg" "C:/tmp/test.dwg"
+                                            "--template" (uiop:native-namestring template)
+                                            "-x" "(+ 1 2)"))))
+        (setf (alfe.cli::cli-options-backend options) :capture)
+        (is (= 0 (alfe.cli::run-plan options (alfe.backend:find-backend :capture)
+                                     :version-text "0.0.1")))
+        (let ((dwg (getf *capture-start-engine-args* :dwg)))
+          ;; the copy in the run's workdir, not the template, not --dwg
+          (is (string= "template.dwg" (file-namestring dwg)))
+          (is (not (equal (uiop:native-namestring template) dwg))))))))
+
+(test template-lookup-searches-only-the-product-folders
+  (let* ((root (uiop:ensure-directory-pathname
+                (merge-pathnames (format nil "alfe-template-test-~D/" (random 999999))
+                                 (uiop:temporary-directory))))
+         (saved (uiop:getenv "LOCALAPPDATA")))
+    (unwind-protect
+         (progn
+           (%write-bytes (merge-pathnames "Bricsys/BricsCAD/V25x64/fr_FR/Templates/Default-m.dwt" root) '(1))
+           (%write-bytes (merge-pathnames "Autodesk/AutoCAD 2022/R24.1/fra/Template/acad.dwt" root) '(2))
+           (%write-bytes (merge-pathnames "Other/deep/Decoy.dwt" root) '(3))
+           (setf (uiop:getenv "LOCALAPPDATA") (uiop:native-namestring root))
+           (is (search "Bricsys" (namestring (alfe.template:find-template "DEFAULT-M.DWT" :bricscad))))
+           (is (null (alfe.template:find-template "Default-m.dwt" :autocad)))
+           (is (search "Autodesk" (namestring (alfe.template:find-template "acad.dwt" :autocad))))
+           (is (null (alfe.template:find-template "Decoy.dwt" nil)))
+           (is (= 2 (count-if (lambda (p) (search (namestring root) (namestring p)))
+                              (alfe.template:list-templates nil)))))
+      (setf (uiop:getenv "LOCALAPPDATA") (or saved ""))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+
 (test cli-run-eval-plus-1-2-against-echo-prints-three
   "End-to-end: -x \"(+ 1 2)\" against the echo backend prints \"3\\n\"
 on stdout and exits 0. Mirrors the headline acceptance criterion
@@ -766,3 +879,16 @@ loudly rather than yield an empty string."
              (run '("--print-command" "-x" "(princ)") :version "0.0.1"))))
     (is (= clautolisp.sysexits:+ex-usage+ exit-code))
     (is (search "--print-command" (get-output-stream-string stderr)))))
+
+
+(test cli-cleanup-failure-is-not-a-successful-test-run
+  (let ((alfe.backend:*backends* (make-hash-table :test #'eql))
+        (*capture-shutdown-error* t)
+        (*capture-cleanup-kept* nil))
+    (alfe.backend:register-backend :capture (make-capture-backend))
+    (let ((options (parse-arguments '("-x" "(+ 1 2)"))))
+      (setf (alfe.cli::cli-options-backend options) :capture)
+      (signals alfe.error:backend-protocol-error
+        (alfe.cli::run-plan options (alfe.backend:find-backend :capture)
+                            :version-text "test"))
+      (is (not (null *capture-cleanup-kept*))))))

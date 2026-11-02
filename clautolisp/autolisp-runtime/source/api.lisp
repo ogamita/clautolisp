@@ -3036,30 +3036,24 @@ matches on :undefined-function is affected."
        (string= "/" (autolisp-symbol-name symbol))))
 
 (defun autolisp-ampersand-symbol-p (symbol)
-  "T iff SYMBOL is the AutoLISP rest-parameter separator — either
-the bare `&' (clautolisp's original spelling proposed in
-`issues/closed/variadic-functions.issue') or `&REST' (BricsCAD V26's
-spelling, confirmed by Bricsys support and observed in the user's
-own `(defun foo (&rest args) …)' transcripts). Match is
-case-insensitive on the symbol name only; we do NOT implement a
-full Common Lisp lambda-list parser — `&body', `&optional', `&key'
-remain unsupported."
+  "T iff SYMBOL is the AutoLISP rest-parameter separator `&REST' -- the
+spelling BricsCAD V25 / V26 implement (undocumented, confirmed by the
+2026-08-07 harvest) and clautolisp provides. Match is case-insensitive
+on the symbol name only; we do NOT implement a full Common Lisp
+lambda-list parser — `&body', `&optional', `&key' remain unsupported.
+
+The bare `&' is NOT a separator (pjb, 2026-10-23): it was clautolisp's
+own proposal (issues/closed/variadic-functions.issue), BricsCAD does not
+need it since it has `&REST', and AutoCAD wants neither spelling. So `&'
+is an ordinary symbol, and in a lambda list an ordinary parameter name."
   (and (typep symbol 'autolisp-symbol)
-       (let ((name (string-upcase (autolisp-symbol-name symbol))))
-         (or (string= "&" name)
-             (string= "&REST" name)))))
+       (string= "&REST" (string-upcase (autolisp-symbol-name symbol)))))
 
 (defun autolisp-ampersand-spelling (symbol)
-  "Return :ampersand if SYMBOL is `&', :and-rest if it is `&REST'
-(any case). Returns NIL when SYMBOL is not a recognised
-rest-separator. Used by the dialect-warning path to format the
-exact spelling the user wrote."
-  (when (typep symbol 'autolisp-symbol)
-    (let ((name (string-upcase (autolisp-symbol-name symbol))))
-      (cond
-        ((string= "&" name)     :ampersand)
-        ((string= "&REST" name) :and-rest)
-        (t nil)))))
+  "Return :and-rest if SYMBOL is `&REST' (any case), NIL otherwise. Used
+by the dialect-warning path to name the separator in the diagnostic."
+  (when (autolisp-ampersand-symbol-p symbol)
+    :and-rest))
 
 (defun %portability-warning-occurrence-seen-p (occurrence)
   "T iff this OCCURRENCE (a source object identity — the lambda-list
@@ -3157,18 +3151,18 @@ that spelling.
 Per `issues/open/bricscad-undocumented-clisms.issue' and the user's
 2026-06-07 ruling:
 
-  - :clautolisp dialect — silent for both `&' and `&REST' (both
-    are blessed by the spec extension).
-  - :bricscad-v26 dialect — silent for `&REST' (BricsCAD's native
-    undocumented form), warns for `&' (clautolisp's spelling that
-    BricsCAD does NOT accept).
+  - :clautolisp dialect — silent (`&REST' is its blessed extension).
+  - :bricscad-v25 / :bricscad-v26 — silent (BricsCAD's native,
+    undocumented form).
   - :lax dialect — silent for everything. `--lax' is the catch-all
     `accept every vendor's extensions without complaining' mode;
     extending that contract to lambda-list extensions matches the
     same dialect's behavior on encoding diagnostics
     (see `%enc-dialect-is-lax-p').
-  - :strict, :autocad-2026 — warn for both spellings (they are
-    non-portable across vendors).
+  - :strict, :autocad-* — warn: AutoCAD has no rest parameter.
+
+The bare `&' is no separator at all (pjb, 2026-10-23), so it never
+reaches this function: it is an ordinary parameter name.
 
 Once-per-occurrence (autolisp-spec ch.25): a warning fires at most
 once per run for each distinct source OCCURRENCE (the lambda-list
@@ -3198,8 +3192,7 @@ run surfaces (stderr is not swallowed by the quiet/verbosity knobs)."
                           dialect)))
                    :warn))
          (token (case spelling
-                  (:ampersand "&")
-                  (:and-rest  "&REST")
+                  (:and-rest "&REST")
                   (t "<rest-separator>")))
          ;; The support decision comes from the ONE knowledge base
          ;; (autolisp-spec ch.25); this used to be an inline `case'.
@@ -3399,6 +3392,49 @@ go to *ERROR-OUTPUT*."
             (signal-autolisp-runtime-error :non-portable-construct "~A" message))
           (unless (%dotdot-path-warning-seen-p path)
             (format *error-output* "~&~A~%" message)))))))
+
+(defun %load-lone-cr-in-string (dialect)
+  "What LOAD under DIALECT makes of a lone CR inside a string literal:
+:NEWLINE for BricsCAD, which reads it as a line feed, :KEEP everywhere
+else -- AutoCAD keeps it, and so does READ in every engine.
+issues/closed/lone-cr-in-string-literal.issue."
+  (if (eq :bricscad (ignore-errors
+                     (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))
+      :newline
+      :keep))
+
+(defun emit-lone-cr-in-string-warning (condition dialect behaviour)
+  "The `[lone-cr-in-string]' warning for one lone CR met by LOAD inside a
+string literal (CONDITION, a LONE-CR-IN-STRING-LITERAL). BEHAVIOUR is what
+the reader did with it (:KEEP or :NEWLINE).
+
+An unresolved divergence (autolisp-spec ch.25, case 3): AutoCAD keeps the
+CR, BricsCAD reads it as LF, so every dialect but --lax warns. Reported
+once per occurrence: each CR in the file is its own occurrence, and a file
+loaded twice is read twice. Honours PORTABILITY-WARNING-MODE like the
+other dialect notices: `:error' signals instead of printing."
+  (let ((name (and dialect
+                   (ignore-errors
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+        (mode (or (and dialect
+                       (ignore-errors
+                        (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                         dialect)))
+                  :warn)))
+    (unless (eq name :lax)
+      (let* ((file (clautolisp.autolisp-reader:lone-cr-in-string-literal-source-name
+                    condition))
+             (line (clautolisp.autolisp-reader:lone-cr-in-string-literal-line
+                    condition))
+             (message (%portability-diagnostic
+                       "lone-cr-in-string"
+                       (if file (format nil "~A:~D" file line) (format nil "line ~D" line))
+                       (if (eq behaviour :newline)
+                           "read as LF (code 10)"
+                           "kept as CR (code 13)"))))
+        (when (eq mode :error)
+          (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+        (format *error-output* "~&~A~%" message)))))
 
 (defvar *clautolisp-sysvar-warnings-seen* (make-hash-table :test 'equal)
   "Names of the clautolisp system variables already reported by
@@ -3815,17 +3851,18 @@ runtime error. Warnings go to *ERROR-OUTPUT*."
   "Walk LAMBDA-LIST and split it into the three positional groups
 clautolisp's `defun' / `lambda' recognises:
 
-  required* [`&' rest-param] [`/' locals*]
+  required* [`&REST' rest-param] [`/' locals*]
 
 Return three values: REQUIRED (list of symbols), REST-PARAM (the
-single symbol after `&', or NIL when no `&' is present), LOCALS
-(list of symbols after `/').
+single symbol after `&REST', or NIL when there is none), LOCALS
+(list of symbols after `/'). A bare `&' is an ordinary parameter
+name, not a separator (pjb, 2026-10-23).
 
 Errors signalled:
   :invalid-lambda-list  — LAMBDA-LIST is not a proper list.
-  :invalid-rest-parameter — `&' is present but the following slot
+  :invalid-rest-parameter — `&REST' is present but the following slot
     is missing, is not a single symbol, or there is more than one
-    symbol between `&' and `/'.
+    symbol between `&REST' and `/'.
 
 The `/'-locals slot stays exactly as before for back-compat with
 every existing AutoLISP defun."
@@ -3837,12 +3874,12 @@ every existing AutoLISP defun."
   (let* ((amp-pos   (position-if #'autolisp-ampersand-symbol-p lambda-list))
          (slash-pos (position-if #'autolisp-slash-symbol-p lambda-list)))
     (when (and amp-pos slash-pos (>= amp-pos slash-pos))
-      ;; `&' appearing AFTER `/' is meaningless: it would name a
+      ;; `&REST' appearing AFTER `/' is meaningless: it would name a
       ;; local. Refuse it explicitly so users hit a clean error
       ;; rather than a silent mis-bind.
       (signal-autolisp-runtime-error
        :invalid-rest-parameter
-       "AutoLISP lambda list: `&' must precede `/', got ~S."
+       "AutoLISP lambda list: `&REST' must precede `/', got ~S."
        lambda-list))
     (let* ((required (subseq lambda-list 0 (or amp-pos slash-pos
                                                (length lambda-list))))
@@ -3856,12 +3893,12 @@ every existing AutoLISP defun."
         (unless (= 1 (length rest-slice))
           (signal-autolisp-runtime-error
            :invalid-rest-parameter
-           "AutoLISP lambda list: `&' must be followed by exactly one symbol, got ~S."
+           "AutoLISP lambda list: `&REST' must be followed by exactly one symbol, got ~S."
            rest-slice))
         (unless (typep (first rest-slice) 'autolisp-symbol)
           (signal-autolisp-runtime-error
            :invalid-rest-parameter
-           "AutoLISP lambda list: rest-parameter after `&' must be a symbol, got ~S."
+           "AutoLISP lambda list: rest-parameter after `&REST' must be a symbol, got ~S."
            (first rest-slice))))
       (values required
               (when amp-pos (first rest-slice))
@@ -4465,6 +4502,113 @@ both hosts agree on the SBCL-canonical form (float-printer-omits-double-float
                (digits   (string-left-trim "0" (string-left-trim "+-" exp))))
           (when (zerop (length digits)) (setf digits "0"))
           (concatenate 'string mantissa "e" (if neg "-" "") digits)))))
+
+;;; --- Real printing per product (dialect-platform-version-axis) -------------
+;;;
+;;; Measured (probe-versions, 2026-10-25; probe:suite AutoCAD 2022 job
+;;; 17450478986, BricsCAD V26 macOS 17450478987, V25 Windows 17450350668):
+;;;   AutoCAD   C %.6g, with ".0" added to a mantissa that has no point:
+;;;             0.333333  1.0e+06  1.23457e+07  1.0e-05  100.0
+;;;   BricsCAD  C %.15g, with ".0" added only when there is neither a point
+;;;             nor an exponent: 0.333333333333333  1000000.0  1e+15  1e-05
+;;; and clautolisp's own spelling (AUTOLISP-FORMAT-REAL) for clautolisp,
+;;; strict and lax (pjb, 2026-10-25: "keep the 3 variants ... in strict, use
+;;; clautolisp format, just as in lax"). BricsCAD V18.1's "tiny doubles print
+;;; 0.0" is not what either prints today.
+
+(defun %c-g-format (value precision)
+  "VALUE as C's printf %.<PRECISION>g writes it: PRECISION significant digits
+of the double's exact value, fixed notation when the decimal exponent X is in
+[-4, PRECISION), else scientific; trailing zeros (and a trailing point)
+removed; the exponent signed, with at least two digits."
+  (let ((d (coerce value 'double-float)))
+    (if (zerop d)
+        (if (minusp (float-sign d)) "-0" "0")
+        (let* ((r (abs (rational d)))
+               (x (floor (log (coerce r 'double-float) 10d0))))
+          ;; exact: 10^x <= r < 10^(x+1)
+          (loop while (< r (expt 10 x)) do (decf x))
+          (loop while (>= r (expt 10 (1+ x))) do (incf x))
+          (let ((n (round (* r (expt 10 (- (1- precision) x))))))
+            ;; rounding up to 10^precision moves the exponent
+            (when (>= n (expt 10 precision))
+              (setf n (round n 10))
+              (incf x))
+            (let* ((digits (format nil "~D" n))      ; PRECISION digits
+                   (sign (if (minusp d) "-" "")))
+              (flet ((trim (text)
+                       (if (find #\. text)
+                           (string-right-trim "." (string-right-trim "0" text))
+                           text)))
+                (if (and (<= -4 x) (< x precision))
+                    (concatenate 'string sign
+                                 (trim (if (minusp x)
+                                           (concatenate 'string "0."
+                                                        (make-string (- -1 x) :initial-element #\0)
+                                                        digits)
+                                           (concatenate 'string (subseq digits 0 (1+ x)) "."
+                                                        (subseq digits (1+ x))))))
+                    (format nil "~A~Ae~A~2,'0D" sign
+                            (trim (concatenate 'string (subseq digits 0 1) "." (subseq digits 1)))
+                            (if (minusp x) "-" "+")
+                            (abs x))))))))))
+
+(defun autolisp-format-real-as (value product)
+  "The spelling PRODUCT's printer gives the real VALUE: :AUTOCAD, :BRICSCAD,
+or NIL for clautolisp's own (AUTOLISP-FORMAT-REAL)."
+  (case product
+    (:autocad
+     (let* ((s (%c-g-format value 6))
+            (e (position #\e s))
+            (mantissa (subseq s 0 (or e (length s)))))
+       (if (find #\. mantissa)
+           s
+           (concatenate 'string mantissa ".0" (if e (subseq s e) "")))))
+    (:bricscad
+     (let ((s (%c-g-format value 15)))
+       (if (or (find #\. s) (find #\e s)) s (concatenate 'string s ".0"))))
+    (t (autolisp-format-real value))))
+
+(defun %real-format-product ()
+  "The product whose real spelling the active dialect prints with, or NIL."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (and dialect (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+
+(defun autolisp-print-real (value)
+  "The real VALUE as the active dialect's printer spells it (PRIN1 / PRINC /
+VL-PRIN1-TO-STRING ...), after the `[real-format]' notice when AutoCAD and
+BricsCAD would spell it differently. COMMAND tokens and RTOS do not come
+here: they keep AUTOLISP-FORMAT-REAL's full precision."
+  (emit-real-format-warning value)
+  (autolisp-format-real-as value (%real-format-product)))
+
+(defun emit-real-format-warning (value)
+  "The `[real-format]' notice: printing VALUE, which AutoCAD and BricsCAD
+spell differently (0.333333 / 0.333333333333333, 1.0e+06 / 1000000.0 ...).
+Once per session; silent under lax; :error mode signals
+:non-portable-construct; *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL silences it."
+  (let ((autocad (autolisp-format-real-as value :autocad))
+        (bricscad (autolisp-format-real-as value :bricscad)))
+    (unless (string= autocad bricscad)
+      (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+             (name (and dialect (ignore-errors
+                                 (clautolisp.autolisp-reader:autolisp-dialect-template-name
+                                  (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))))
+             (context (ignore-errors (current-evaluation-context))))
+        (when (and dialect (not (eq name :lax)) (%warn-out-of-dialect-p context))
+          (let ((mode (or (ignore-errors
+                           (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                            dialect))
+                          :warn))
+                (message (%portability-diagnostic
+                          "real-format"
+                          (%portability-warning-location nil)
+                          autocad bricscad
+                          (autolisp-format-real-as value nil))))
+            (when (eq mode :error)
+              (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+            (unless (%vendor-operator-warning-seen-p "real-format")
+              (format *error-output* "~&~A~%" message))))))))
 
 (defun format-command-number (value)
   "Format the number VALUE as a CAD command-line token: integers in
@@ -5275,6 +5419,10 @@ forms have unevaluated operands it must not instrument (spec §5.3)."
      (intern-autolisp-symbol "VARIANT"))
     ((typep object 'autolisp-vla-object)
      (intern-autolisp-symbol "VLA-OBJECT"))
+    ;; what vl-catch-all-apply returns on an error (entget-pointers probe,
+    ;; section 13); TYPE signalled on it
+    ((typep object 'autolisp-catch-all-error)
+     (intern-autolisp-symbol "VL-CATCH-ALL-APPLY-ERROR"))
     ((typep object 'autolisp-lisp-object)
      ;; an opaque handle onto a CL object reports its own type designator,
      ;; e.g. (type (clal-make-window …)) -> WINDOW
@@ -5419,7 +5567,9 @@ UTF-8, :ANSI for windows-1252, NIL (plain decoding) for anything else."
                         :extended-string-escapes-p
                         (clautolisp.autolisp-reader:autolisp-dialect-extended-string-escapes-p dialect)
                         :warn-on-integer-overflow-p
-                        (clautolisp.autolisp-reader:autolisp-dialect-warn-on-integer-overflow-p dialect))))
+                        (clautolisp.autolisp-reader:autolisp-dialect-warn-on-integer-overflow-p dialect)
+                        :lone-cr-in-string
+                        (%load-lone-cr-in-string dialect))))
          (effective-encoding
           (cond
             (options-have-external-format nil) ; caller supplied one
@@ -5471,7 +5621,13 @@ UTF-8, :ANSI for windows-1252, NIL (plain decoding) for anything else."
                 ;; (LOAD -> EVAL -> clal-compile). Outside a session this is
                 ;; a plain eval-progn.
                 (autolisp-eval-toplevel-progn
-                 (apply #'read-runtime-from-file path effective-options)
+                 (handler-bind
+                     ((clautolisp.autolisp-reader:lone-cr-in-string-literal
+                        (lambda (condition)
+                          (emit-lone-cr-in-string-warning
+                           condition dialect
+                           (getf effective-options :lone-cr-in-string)))))
+                   (apply #'read-runtime-from-file path effective-options))
                  context)))
            (when (and *after-load-file-hook* resolved)
              (funcall *after-load-file-hook* resolved)))))

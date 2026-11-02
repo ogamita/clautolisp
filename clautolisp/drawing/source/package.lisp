@@ -50,6 +50,7 @@ from the cador package before the Phase-17a extraction.")
    #:entity-handle-layer
    #:entity-handle-data
    #:entity-handle-deleted-p
+   #:entity-handle-object-p
    ;; Data carrier: symbol-table record.
    #:symbol-table-record
    #:make-symbol-table-record
@@ -135,6 +136,7 @@ from the cador package before the Phase-17a extraction.")
    #:drawing-table
    #:map-table-records
    #:find-table-record
+   #:find-table-record-by-handle
    #:table-record-dxf
    ;; Block definitions.
    #:drawing-blocks
@@ -159,6 +161,7 @@ from the cador package before the Phase-17a extraction.")
    #:ensure-root-dictionary
    #:find-dictionary
    #:dictionary-object-entries
+   #:dictionary-data-sorted
    #:dictionary-member-handle
    #:dictionary-add-entry
    #:dictionary-remove-entry
@@ -179,6 +182,7 @@ from the cador package before the Phase-17a extraction.")
    #:set-drawing-variable
    #:ensure-drawing-variable
    #:add-table-record
+   #:ensure-record-handle
    #:remove-table-record
    ;; Entity-family registry + ENTMAKE/ENTMAKEX validation.
    #:entity-family

@@ -160,24 +160,21 @@ annex generator and for any `--list-dialect-warnings' style report."
  :example ": [lambda-list-extension] drawing.lsp:12 in COMPUTE-AREA: DEFUN `&REST': rest parameter not portable to strict"
  :dialects
  "Portable AutoLISP has NO rest parameter: a defun/lambda lambda list is
-`required* [/ locals*]' and nothing else. The two spellings differ:
+`required* [/ locals*]' and nothing else.
 
-- `&REST' is a real, undocumented BricsCAD extension (V25 and V26) --
-  confirmed by harvest, EXTPROBE REST-BINDS=(2 3 4). Silent under
-  --dialect bricscad-v25 / bricscad-v26.
-- `&' is clautolisp's own historical spelling and is native NOWHERE:
-  the same harvest had BricsCAD REJECT it (\"too few / too many
-  arguments\"). It therefore warns under every dialect except
-  clautolisp and lax.
+`&REST' is a real, undocumented BricsCAD extension (V25 and V26) --
+confirmed by harvest, EXTPROBE REST-BINDS=(2 3 4) -- and clautolisp
+provides it. Silent under --dialect bricscad-v25 / bricscad-v26,
+clautolisp and lax; --strict and the AutoCAD dialects warn.
 
---dialect clautolisp is silent for both (they are its blessed
-extensions); --dialect lax is silent for everything; --strict and the
-AutoCAD dialects warn for both."
+A bare `&' is NOT a rest separator: it is an ordinary symbol, and in a
+lambda list an ordinary parameter name. It was clautolisp's own early
+proposal; BricsCAD has `&REST' and rejects `&' (\"too few / too many
+arguments\"), and AutoCAD wants neither (pjb, 2026-10-23)."
  :rationale
  "A function written with a rest parameter will not load on AutoCAD at
-all, and one written with `&' will not load on BricsCAD either. The
-warning fires when the defun/lambda is EVALUATED, so a guarded branch
-that is never reached never warns."
+all. The warning fires when the defun/lambda is EVALUATED, so a guarded
+branch that is never reached never warns."
  :references
  '(("clautolisp: the governing issue" . "issues/closed/clautolisp-dialect-portability-warnings.issue")
    ("clautolisp: harvest evidence" . "autolisp-spec/documentation/bricscad-undocumented-extensions.org")
@@ -249,6 +246,40 @@ meaning changes when the program moves."
  :references
  '(("clautolisp: the probed matrix" . "issues/closed/cad-path-dotdot-resolution.issue")
    ("Autodesk: open (AutoLISP), 2024 ENU" . "https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-AutoLISP-Reference/files/GUID-089A323F-21FF-4337-99A9-375758E23BA4.htm")))
+
+(register-dialect-warning
+ :tag "lone-cr-in-string"
+ :title "Lone carriage return inside a string literal"
+ :message "a carriage return alone inside a string literal is ~A here; AutoCAD keeps it, BricsCAD reads it as a line feed"
+ :arguments "what this dialect makes of it (\"kept as CR (code 13)\" or \"read as LF (code 10)\")"
+ :example ": [lone-cr-in-string] menu.lsp:12: a carriage return alone inside a string literal is kept as CR (code 13) here; AutoCAD keeps it, BricsCAD reads it as a line feed"
+ :dialects
+ "Only LOAD is concerned: a source file holding a CR (code 13) that is
+not followed by an LF, written literally between the double quotes of a
+string. A CR LF pair is read as one LF by every engine and is not
+reported, nor is a `\\r' escape.
+
+- AutoCAD (2022, Windows) keeps the CR: the string holds code 13.
+- BricsCAD (V25 Windows, V26 macOS) reads it as a line feed: code 10.
+
+No vendor document covers it, so the specification adopts neither
+(an unresolved divergence): --dialect autocad keeps the CR,
+--dialect bricscad turns it into an LF, and --dialect clautolisp and
+--strict keep it, as READ does in every engine. All of them warn; only
+--lax is silent (it keeps the CR).
+
+READ on a string holding a lone CR is NOT reported: every engine keeps
+the CR there."
+ :rationale
+ "A lone CR in a source file is almost always an accident -- an editor
+or a transfer that half-converted the line endings -- and the two
+engines then build different strings from the same file, with nothing
+visible in the source to say so. Write `\\r' or `\\n' to say which
+one you mean."
+ :references
+ '(("clautolisp: the probed matrix" . "issues/closed/lone-cr-in-string-literal.issue")
+   ("clautolisp: the probe" . "probes/sources/probe-multiline-string.lsp")
+   ("Vendor documentation" . "NONE -- neither the Autodesk nor the Bricsys reference says whether a string literal may span lines; behaviour established by probing.")))
 
 (register-dialect-warning
  :tag "path-slash-ellipsis"
@@ -498,6 +529,39 @@ from ENTMAKE with no other sign. Adding the markers works on both."
  :references
  '(("clautolisp: emitted by" . "clautolisp/cador/source/entity-api.lisp, EMIT-ENTMAKE-MARKER-DIVERGENCE-WARNING")
    ("clautolisp: divergence register" . "issues/open/vendor-probe-autocad-bricscad-divergences.issue")))
+
+(register-dialect-warning
+ :tag "real-format"
+ :title "a real AutoCAD and BricsCAD print differently"
+ :kind :vendor-divergence
+ :message "this real prints as ~A on AutoCAD and as ~A on BricsCAD (~A in clautolisp's own spelling)"
+ :arguments "the AutoCAD spelling, the BricsCAD spelling, clautolisp's"
+ :example ": [real-format] in SHOW: this real prints as 0.333333 on AutoCAD and as 0.333333333333333 on BricsCAD (0.3333333333333333 in clautolisp's own spelling)"
+ :dialects
+ "PRIN1, PRINC, PRINT and the VL-PRIN*-TO-STRING functions spell a real
+the way the dialect's product does -- measured on AutoCAD 2022 and BricsCAD
+V25 / V26 (probe-versions, 2026-10-25): AutoCAD prints six significant
+digits (C %.6g, a point always in the mantissa: 0.333333, 1.0e+06,
+1.0e-05), BricsCAD fifteen (C %.15g: 0.333333333333333, 1000000.0, 1e-05);
+clautolisp, strict and lax keep clautolisp's own spelling (pjb, 2026-10-25:
+\"keep the 3 variants\"). Neither vendor's choice follows from a format
+specifier, so a program whose output depends on it is not portable.
+
+The notice fires, under every dialect but lax, the first time a printed
+real is one the two products spell differently -- more than six significant
+digits, or outside the range where both print it plainly. Once per session.
+(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil) silences it; portability-warning-
+mode :error makes it an error instead. RTOS and COMMAND tokens are not
+concerned: they keep the full value."
+ :rationale
+ "A report or a file written with PRINC shows 0.333333 on AutoCAD and
+0.333333333333333 on BricsCAD -- and a program that READs it back gets a
+different number on each. RTOS (with an explicit precision) is the portable
+way to print a real."
+ :references
+ '(("clautolisp: the printer" . "clautolisp/autolisp-runtime/source/api.lisp, AUTOLISP-PRINT-REAL")
+   ("clautolisp: the measurement" . "probes/sources/probe-versions.lsp")
+   ("clautolisp: the ticket" . "issues/open/dialect-platform-version-axis.issue")))
 
 (register-dialect-warning
  :tag "vl-catch-all-apply-arity"
@@ -1069,10 +1133,11 @@ is not the catalogue's business and never warns."
  :summary "LET* does not exist on BricsCAD V26 either; it is not a vendor extension."
  :evidence +bricscad-harvest-evidence+)
 
-;;; The two rest-parameter spellings. These predate the catalogue; since
-;;; pjb's 2026-08-14 ruling their message text comes from the register's
-;;; "lambda-list-extension" entry like every other, and these entries
-;;; carry only the support decision.
+;;; The rest-parameter separator. It predates the catalogue; since pjb's
+;;; 2026-08-14 ruling its message text comes from the register's
+;;; "lambda-list-extension" entry like every other, and this entry carries
+;;; only the support decision. The bare `&' had an entry too; since pjb's
+;;; 2026-10-23 ruling it is no separator but an ordinary symbol.
 
 (register-portability-construct
  :label "&REST"
@@ -1082,19 +1147,6 @@ is not the catalogue's business and never warns."
  :native-in '(:bricscad-v25 :bricscad-v26)
  :silent-in '(:clautolisp :lax)
  :summary "Rest parameter in a defun/lambda lambda-list, spelled &REST."
- :evidence +bricscad-harvest-evidence+)
-
-(register-portability-construct
- :label "&"
- :kind :provided
- :tag "lambda-list-extension"
- ;; EXTPROBE AMP-BINDS=ERROR:too few / too many -- BricsCAD REJECTS
- ;; the bare ampersand, so unlike &REST it is native to no vendor.
- ;; clautolisp still accepts it (its own historical spelling), which
- ;; is exactly why it warns everywhere except clautolisp/lax.
- :native-in '()
- :silent-in '(:clautolisp :lax)
- :summary "Rest parameter spelled with a bare &; accepted by clautolisp only, rejected by BricsCAD."
  :evidence +bricscad-harvest-evidence+)
 
 ;;; ==================================================================

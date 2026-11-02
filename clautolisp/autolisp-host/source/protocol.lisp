@@ -194,6 +194,11 @@ when the file cannot be read."))
 ;; Registered applications (XData namespaces)
 (defgeneric host-regapp       (host name)              (:documentation "Register the application NAME for XData. Returns NAME on success, nil if already registered."))
 
+;; Command names
+(defgeneric host-getcname (host name)
+  (:documentation "GETCNAME: the other form of the command name NAME (a CL string) -- \"_LINE\" -> the local name, a local name -> \"_LINE\" -- as a CL string, or NIL when HOST does not know the command. The default knows none.")
+  (:method (host name) (declare (ignore host name)) nil))
+
 ;; System variables
 (defgeneric host-getvar (host name)                   (:documentation "Return the value of the named system variable."))
 (defgeneric host-setvar (host name value)             (:documentation "Set the named system variable to VALUE; returns VALUE."))

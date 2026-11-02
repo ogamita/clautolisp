@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: entity-family-tables-viewport-misc — TABLE, VIEWPORT, and misc graphical
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: entity-mutation-parity
+#+BRANCH: -
+
 entity-family-tables-viewport-misc — TABLE, VIEWPORT, and misc graphical
 ========================================================================
 

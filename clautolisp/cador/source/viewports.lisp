@@ -220,3 +220,89 @@ absent: the default -- Vertical for 2, Right for 3)."
   tokens)
 
 (define-cador-command "-VPORTS" '%cmd-vports)
+
+;;; --- The VPORT *Active record and the viewport sysvars ---------------
+;;;
+;;; vport-active-snapang-and-handle. Measured by the dxf-angles probe
+;;; ((setvar "SNAPANG" (/ pi 9)), then entget of (tblobjname "VPORT"
+;;; "*Active"), then SaveAs DXF): BricsCAD V25 / V26 show the new value in
+;;; the record at once (50 0.349066, its DXF 50 20.0); AutoCAD 2022 keeps
+;;; the record as it was (50 0) until it saves -- its DXF has 50 20.0 too.
+;;; So a group of *Active shows its stored value, else the sysvar's; a
+;;; setvar stores the NEW value under BricsCAD, the OLD one (the first time)
+;;; under AutoCAD; a save stores every current value (CADOR-SYNC-ACTIVE-VPORT).
+
+(defparameter *vport-sysvars*
+  ;; sysvar -> the *Active group code that mirrors it
+  '(("VIEWCTR" . 12) ("SNAPBASE" . 13) ("SNAPUNIT" . 14) ("GRIDUNIT" . 15)
+    ("VIEWDIR" . 16) ("TARGET" . 17) ("VIEWSIZE" . 40) ("LENSLENGTH" . 42)
+    ("FRONTZ" . 43) ("BACKZ" . 44) ("SNAPANG" . 50) ("VIEWTWIST" . 51)
+    ("VIEWMODE" . 71) ("UCSICON" . 74) ("SNAPMODE" . 75) ("GRIDMODE" . 76)
+    ("SNAPSTYL" . 77) ("SNAPISOPAIR" . 78)))
+
+(defun %vport-group (code value)
+  "The *Active group CODE for the sysvar VALUE: a 2D point for 12-15, a 3D
+point for 16 / 17, else the value."
+  (flet ((point (n)
+           (let ((v (if (listp value) value (list value))))
+             (loop for i below n
+                   collect (coerce (or (nth i v) 0) 'double-float)))))
+    (cond ((<= 12 code 15) (cons code (point 2)))
+          ((<= 16 code 17) (cons code (point 3)))
+          (t (cons code value)))))
+
+(defun vport-sysvar-pair (host code name)
+  "The *Active group CODE from the current value of the sysvar NAME, or NIL
+when HOST has no such sysvar."
+  (let ((cell (ignore-errors (cador-sysvar host name))))
+    (and cell (%vport-group code (sysvar-cell-value cell)))))
+
+(defun %active-vport-record (host)
+  (ignore-errors (cador-find-table-record host :vport "*Active")))
+
+(defun %store-vport-group (record pair)
+  "Replace (or add) RECORD's group (CAR PAIR) with PAIR."
+  (let* ((data (symbol-table-record-data record))
+         (old (find (car pair) data :key (lambda (p) (and (consp p) (car p))))))
+    (setf (symbol-table-record-data record)
+          (if old
+              (substitute pair old data :test #'eq)
+              (append data (list pair))))))
+
+(defun cador-vport-before-setvar (host name new-value)
+  "Before the sysvar NAME takes NEW-VALUE: keep the *Active record as the
+product does (see above)."
+  (let ((code (cdr (assoc name *vport-sysvars* :test #'string-equal)))
+        (record (%active-vport-record host)))
+    (when (and code record)
+      (if (eq :bricscad (%viewport-product))
+          (%store-vport-group record (%vport-group code new-value))
+          (unless (find code (symbol-table-record-data record)
+                        :key (lambda (p) (and (consp p) (car p))))
+            (let ((old (vport-sysvar-pair host code name)))
+              (when old (%store-vport-group record old))))))))
+
+(defun cador-sync-active-vport (host)
+  "Store every viewport sysvar's current value in the *Active record, as
+both products do when they save: the record's own groups become the
+layout's, in the vendors' order (*RECORD-LAYOUTS*), then any others."
+  (let ((record (%active-vport-record host)))
+    (when record
+      (loop for (name . code) in *vport-sysvars*
+            for pair = (vport-sysvar-pair host code name)
+            when pair do (%store-vport-group record pair))
+      (let* ((data (symbol-table-record-data record))
+             (body (%record-body data))
+             (header (remove-if (lambda (p) (member p body :test #'eq)) data))
+             (used '())
+             (ordered
+               (loop for (code . default) in (cdr (assoc :vport *record-layouts*))
+                     for pair = (or (let ((p (find code body
+                                                   :key (lambda (p) (and (consp p) (car p))))))
+                                      (when p (push p used))
+                                      p)
+                                    (and default (%record-default host code default)))
+                     when pair collect pair)))
+        (setf (symbol-table-record-data record)
+              (append header ordered
+                      (remove-if (lambda (p) (member p used :test #'eq)) body)))))))

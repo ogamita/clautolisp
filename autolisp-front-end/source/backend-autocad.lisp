@@ -61,6 +61,8 @@
                 #:vbs-escape
                 #:expand-plugin-slots
                 #:launcher-lines
+                #:cad-com-mode
+                #:check-com-attach-pid
                 #:call-launcher
                 #:discover-runtime-lsp
                 #:discover-bootstrap-lsp
@@ -601,7 +603,7 @@ The next job reads this file and can end what the last one left."
 Option Explicit
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile, waitSecs
 Dim attached, created, rc, statusReadyFlag, flagsFile, progId, createdFile
-Dim errNumber, errDescription, lastTouchError
+Dim errNumber, errDescription, lastTouchError, pidsBefore
 
 Set fso = CreateObject(\"Scripting.FileSystemObject\")
 runFile     = \"${RUNLSPFILE}\"
@@ -657,9 +659,35 @@ End Sub
 '
 ' The acad.exe that COM starts is a child of the COM service, not of
 ' cscript, so there is no process tree to walk: WMI is how it is found.
-Sub RecordCreatedProcesses(path)
+'
+' ONLY THE PROCESSES THAT APPEARED (alfe-cad-launch-new-by-default): alfe
+' now launches a new AutoCAD even when one is running, so \"every acad.exe
+' started with /Automation\" can include an instance this run did not
+' create -- an earlier run's, or a person's. BEFORE is the list of the
+' acad.exe PIDs taken just before CreateObject (AcadPidList); a PID in it
+' is not ours. Each new one also goes to the flags file as CREATEDPID=,
+' which is how alfe's shutdown knows which acad.exe is its own.
+Function AcadPidList()
+  Dim wmi, processes, proc, s
+  s = \",\"
+  On Error Resume Next
+  Set wmi = GetObject(\"winmgmts:\\\\.\\root\\cimv2\")
+  If Err.Number <> 0 Then
+    Err.Clear
+    AcadPidList = s
+    Exit Function
+  End If
+  Set processes = wmi.ExecQuery(\"SELECT ProcessId FROM Win32_Process WHERE Name = 'acad.exe'\")
+  For Each proc In processes
+    s = s & proc.ProcessId & \",\"
+  Next
+  Err.Clear
+  On Error GoTo 0
+  AcadPidList = s
+End Function
+
+Sub RecordCreatedProcesses(path, before)
   Dim wmi, processes, proc
-  If path = \"\" Then Exit Sub
   On Error Resume Next
   Set wmi = GetObject(\"winmgmts:\\\\.\\root\\cimv2\")
   If Err.Number <> 0 Then
@@ -670,8 +698,10 @@ Sub RecordCreatedProcesses(path)
   Set processes = wmi.ExecQuery( _
     \"SELECT ProcessId, CreationDate, CommandLine FROM Win32_Process WHERE Name = 'acad.exe'\")
   For Each proc In processes
-    If InStr(1, proc.CommandLine & \"\", \"/Automation\", 1) > 0 Then
-      AppendLine path, \"PID=\" & proc.ProcessId & \" CREATED=\" & proc.CreationDate
+    If InStr(1, proc.CommandLine & \"\", \"/Automation\", 1) > 0 _
+       And InStr(before, \",\" & proc.ProcessId & \",\") = 0 Then
+      If path <> \"\" Then AppendLine path, \"PID=\" & proc.ProcessId & \" CREATED=\" & proc.CreationDate
+      If flagsFile <> \"\" Then AppendLine flagsFile, \"CREATEDPID=\" & proc.ProcessId
       VBSDebug \"recorded created acad.exe pid \" & proc.ProcessId
     End If
   Next
@@ -779,6 +809,8 @@ If app Is Nothing Then
     EmitFlags False, False
     WScript.Quit 4
   End If
+  pidsBefore = AcadPidList()
+  VBSDebug \"acad.exe before CreateObject: \" & pidsBefore
   On Error Resume Next
   Set app = CreateObject(progId)
   errNumber = Err.Number
@@ -792,7 +824,7 @@ If app Is Nothing Then
   Err.Clear
   On Error GoTo 0
   created = True
-  RecordCreatedProcesses createdFile
+  RecordCreatedProcesses createdFile, pidsBefore
 End If
 
 If Not TouchApp(app, 10) Then
@@ -978,14 +1010,17 @@ start bridge used, so the instance quit is the instance created."
   path)
 
 (defun read-com-flags (workdir)
-  "Return (values ATTACHED-P CREATED-P) from the bridge's flags file.
+  "Return (values ATTACHED-P CREATED-P CREATED-PIDS) from the bridge's flags
+file. CREATED-PIDS are the acad.exe processes that appeared with this run's
+CreateObject (CREATEDPID= lines).
 
-Both NIL when the file is missing or unreadable — which is the SAFE
+All NIL when the file is missing or unreadable — which is the SAFE
 default: alfe quits only what it can SHOW it created, so a bridge that
 died before reporting leaves AutoCAD alone."
   (let ((path (merge-pathnames "com-flags.txt" workdir))
         (attached nil)
-        (created nil))
+        (created nil)
+        (pids '()))
     (when (probe-file path)
       (ignore-errors
        (with-open-file (in path :direction :input :external-format :utf-8)
@@ -993,8 +1028,30 @@ died before reporting leaves AutoCAD alone."
                while line
                do (let ((trimmed (string-trim '(#\Space #\Tab #\Return) line)))
                     (cond ((string= trimmed "ATTACHED=1") (setf attached t))
-                          ((string= trimmed "CREATED=1")  (setf created t))))))))
-    (values attached created)))
+                          ((string= trimmed "CREATED=1")  (setf created t))
+                          ((and (> (length trimmed) 11)
+                                (string= "CREATEDPID=" trimmed :end2 11))
+                           (let ((pid (parse-integer trimmed :start 11
+                                                             :junk-allowed t)))
+                             (when pid (pushnew pid pids))))))))))
+    (values attached created (nreverse pids))))
+
+(defun windows-image-pids (image &key (launcher #'uiop:run-program))
+  "The PIDs of the running processes named IMAGE (\"acad.exe\"), from
+TASKLIST's CSV output; NIL when TASKLIST cannot be run."
+  (let ((text (ignore-errors
+               (funcall launcher
+                        (list "tasklist" "/FI" (format nil "IMAGENAME eq ~A" image)
+                              "/FO" "CSV" "/NH")
+                        :output :string :error-output nil :ignore-error-status t))))
+    (when text
+      (loop for line in (uiop:split-string text :separator '(#\Newline))
+            for fields = (uiop:split-string (string-trim '(#\Return) line)
+                                            :separator '(#\,))
+            for pid = (and (second fields)
+                           (parse-integer (string-trim "\"" (second fields))
+                                          :junk-allowed t))
+            when pid collect pid))))
 
 (defun emit-bridge-vbs (path
                         &key runtime-load-path
@@ -1004,7 +1061,7 @@ died before reporting leaves AutoCAD alone."
                              flags-path
                              progid
                              (created-registry (created-cad-registry-path))
-                             (com-mode "auto")
+                             (com-mode "launch")
                              (wait-secs 60))
   (let ((text (alfe.plugin:run-hook
                :launcher-script
@@ -1012,7 +1069,8 @@ died before reporting leaves AutoCAD alone."
                ;; lines are VBScript already and must not be quote-doubled.
                (expand-plugin-slots
                 (substitute-placeholders
-                 *bridge-autocad-vbs-template*
+                 (alfe.backend.cad-common::instrument-owned-com-bridge
+                  *bridge-autocad-vbs-template* path)
                  `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
@@ -1436,6 +1494,9 @@ started is what ATTACHED/CREATED say.")
                       ;; (alfe-autocad-progid-registry-probe-fails).
                       :explicit-p (and named t))))
              (log-verbose "backend AUTOCAD: COM server = ~A" progid)
+             (let ((pid (and cli-options (alfe.cli:cli-options-attach-pid cli-options))))
+               (when pid
+                 (check-com-attach-pid :autocad progid pid workdir)))
              (emit-bridge-vbs
               vbs
               :runtime-load-path run-common
@@ -1443,7 +1504,7 @@ started is what ATTACHED/CREATED say.")
               :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
               :flags-path  (merge-pathnames "com-flags.txt" workdir)
               :progid      progid
-              :com-mode    (or (uiop:getenv "AUTOCAD_COM_MODE") "auto"))
+              :com-mode    (cad-com-mode cli-options "AUTOCAD_COM_MODE"))
              (log-debug "backend AUTOCAD: wrote bridge-autocad.vbs -> ~A" vbs)))
           (:batch
            (let ((scr (merge-pathnames "run.scr" workdir)))
@@ -1611,6 +1672,9 @@ unwind-protect that reaps the engine when it does not get there."
                   ;; (alfe-request-timeout-aborts-long-eval).
                   :request-timeout (or explicit-timeout 30)
                   :keep-alive-while-running (null explicit-timeout)
+                  :defer-shutdown-p (and (windows-p)
+                                         (eq (autocad-session-variant session)
+                                             :automation))
                   :process-info (autocad-session-process-info session))))
     (session-state-set session
                        (ecase (alfe.backend:eval-result-status result)
@@ -1639,8 +1703,44 @@ unwind-protect that reaps the engine when it does not get there."
     (:shutdown  :stopped)
     (:interrupt :interrupted)))
 
+(defun %other-autocad-running-p (created-pids runner)
+  "True when this run's own acad.exe PIDs are known and an acad.exe that is
+not one of them is running: the instance the quit bridge's GetObject would
+name may then be that other one. With the PIDs unknown (WMI unavailable to
+the bridge, which is rare) the quit bridge is used, as before."
+  (and created-pids
+       (some (lambda (pid) (not (member pid created-pids)))
+             (windows-image-pids "acad.exe" :launcher runner))))
+
+(defun %end-created-autocad (created-pids runner timeout)
+  "End the acad.exe processes this run created, by PID: TASKKILL first without
+/F (a close request), then with /F for those still running after TIMEOUT
+seconds. The IMAGENAME filter keeps a PID Windows reused for another program
+out of reach."
+  (flet ((alive ()
+           (intersection created-pids
+                         (windows-image-pids "acad.exe" :launcher runner)))
+         (taskkill (pid force)
+           (ignore-errors
+            (funcall runner (append (list "taskkill")
+                                    (when force (list "/F"))
+                                    (list "/FI" "IMAGENAME eq acad.exe"
+                                          "/FI" (format nil "PID eq ~D" pid)))
+                     :output nil :error-output nil :ignore-error-status t))))
+    (dolist (pid (alive)) (taskkill pid nil))
+    (let ((start (get-internal-real-time)))
+      (loop while (and (alive)
+                       (< (/ (float (- (get-internal-real-time) start))
+                             internal-time-units-per-second)
+                          timeout))
+            do (sleep 0.5)))
+    (dolist (pid (alive))
+      (log-verbose "backend AUTOCAD: acad.exe ~D did not close; killing it" pid)
+      (taskkill pid t))))
+
 (defun quit-created-autocad (session &key (timeout 20)
-                                          (launcher #'uiop:launch-program))
+                                          (launcher #'uiop:launch-program)
+                                          (runner #'uiop:run-program))
   "Quit the AutoCAD this session CREATED, if it created one.
 
 WHY THIS EXISTS. In automation mode alfe does not run AutoCAD: it runs
@@ -1663,16 +1763,30 @@ which nothing read — is what licenses the quit.
 BOUNDED, like every other shutdown step here: the quit is itself a
 cscript, so it gets the same treatment as the engine — poll, then
 KILL-ENGINE-PROCESS. A CAD that hangs on a dialog while being asked to
-quit must not hang alfe, or the cure becomes the disease."
+quit must not hang alfe, or the cure becomes the disease.
+
+ANOTHER AUTOCAD MAY BE RUNNING (alfe-cad-launch-new-by-default): alfe now
+launches a new instance even when one is open, and the quit bridge's
+GetObject(, ProgID) names whichever instance COM has registered -- not
+necessarily ours. When the bridge reported this run's acad.exe PIDs and
+another acad.exe is running, ours is ended by its PID (TASKKILL, /F after
+TIMEOUT) instead. RUNNER runs those synchronous commands (tests inject it)."
   (let ((workdir (session-workdir session)))
     (when workdir
-      (multiple-value-bind (attached created) (read-com-flags workdir)
+      (multiple-value-bind (attached created created-pids) (read-com-flags workdir)
         (declare (ignore attached))
         (cond
           ((not created)
            (log-debug "backend AUTOCAD: not quitting AutoCAD (this run did ~
 not create it)")
            nil)
+          ((%other-autocad-running-p created-pids runner)
+           ;; The quit bridge would ask COM for THE AutoCAD, and with another
+           ;; one running that may be the other one: end ours by its PID.
+           (log-verbose "backend AUTOCAD: another AutoCAD is running; ending ~
+the one this run created (~{~D~^, ~}) by its process id" created-pids)
+           (%end-created-autocad created-pids runner timeout)
+           t)
           (t
            (log-verbose "backend AUTOCAD: quitting the AutoCAD this run created")
            (ignore-errors
@@ -1699,30 +1813,27 @@ not create it)")
   (unless (eq (session-state session) :stopped)
     (let ((protocol (autocad-session-protocol-session session))
           (info (autocad-session-process-info session)))
-      (ignore-errors (alfe.protocol.file:send-control protocol :shutdown))
-      (ignore-errors
-       (alfe.protocol.file:wait-for-status
-        protocol alfe.protocol.file:+status-stopped+ :timeout 5))
-      ;; NOT terminate + (uiop:wait-process info): that wait is UNBOUNDED,
-      ;; and on Windows a GUI CAD that is slow to die — or a child of it
-      ;; still holding the handles — hangs it, freezing alfe in shutdown
-      ;; and with it the whole CI job. The BricsCAD backend learned this
-      ;; and grew a bounded killer; AutoCAD had kept the unbounded call.
-      ;; KILL-ENGINE-PROCESS is now shared by both.
-      ;;
-      ;; The AutoCAD itself is quit FIRST, and only when this run created
-      ;; it: in automation mode the process killed below is cscript, and
-      ;; acad.exe is a child of Windows' COM service that no kill here can
-      ;; reach. Order matters only in that the quit needs COM alive; the
-      ;; kill below is unaffected either way.
-      (when (eq (autocad-session-variant session) :automation)
-        (ignore-errors (quit-created-autocad session)))
-      (kill-engine-process info)
-      ;; LAST, once the AutoCAD this run created is gone: it saves its
-      ;; profile -- TRUSTEDPATHS included -- when it exits, and would write
-      ;; back an entry removed while it still ran.
-      (ignore-errors (untrust-workdir (autocad-session-trusted session)))
-      (setf (autocad-session-trusted session) nil))
+      (unwind-protect
+           (when protocol
+             (if (and (windows-p)
+                      (eq (autocad-session-variant session) :automation))
+                 ;; The retained bridge quits only its CREATED object. Its
+                 ;; result requires PID + creation-time disappearance; no
+                 ;; STOPPED message is required from an engine that just quit.
+                 (progn
+                   (alfe.protocol.file::prepare-cad-shutdown protocol)
+                   (alfe.backend.cad-common::close-owned-com-bridge
+                    (session-workdir session)))
+                 (progn
+                   (alfe.protocol.file:send-control protocol :shutdown)
+                   (unless (alfe.protocol.file:wait-for-status
+                            protocol alfe.protocol.file:+status-stopped+ :timeout 5)
+                     (error 'backend-protocol-error :backend :autocad
+                            :code :shutdown-timeout
+                            :message "CAD did not stop its protocol.")))))
+        (kill-engine-process info)))
+    (ignore-errors (untrust-workdir (autocad-session-trusted session)))
+    (setf (autocad-session-trusted session) nil)
     (session-state-set session :stopped))
   session)
 

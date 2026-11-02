@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: entity-family-hatch-image-boundary — HATCH / raster / OLE entity families
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: entity-mutation-parity
+#+BRANCH: -
+
 entity-family-hatch-image-boundary — HATCH / raster / OLE entity families
 =========================================================================
 

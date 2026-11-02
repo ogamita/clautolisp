@@ -10,6 +10,12 @@
         (cons 10 start)
         (cons 11 end)))
 
+(defun %model-space-record (mock)
+  "Model space's BLOCK_RECORD: the owner a main-space entity's 330 names --
+the 330 of the BLOCK entity (tblobjname \"BLOCK\" \"*Model_Space\") returns
+\(cador-entget-subclass-layout-and-record-pointers, item 4)."
+  (cdr (assoc 330 (host-entget mock (host-tblobjname mock "BLOCK" "*Model_Space")))))
+
 (test entmake-allocates-handle-and-injects-bookkeeping
   (let* ((mock (make-cador))
          (data (host-entmake mock (make-line-data))))
@@ -26,12 +32,14 @@
     (is (equal '(-1 0 330 5) (mapcar #'car (subseq data 0 4))))
     (let ((five (fourth data)))
       (is (typep (cdr five) 'autolisp-string))
-      (is (string= "10" (autolisp-string-value (cdr five)))))
-    (is (eq (host-tblobjname mock "BLOCK" "*Model_Space") (cdr (third data))))
+      ;; the handle the ename denotes (table records took the first ones)
+      (is (string= (autolisp-ename-value (cdr (first data)))
+                   (autolisp-string-value (cdr five)))))
+    (is (eq (%model-space-record mock) (cdr (third data))))
     ;; entlast surfaces the same ename as the entry just made.
     (let ((last-ename (host-entlast mock)))
       (is (typep last-ename 'autolisp-ename))
-      (is (string= "10" (autolisp-ename-value last-ename))))))
+      (is (eq (cdr (first data)) last-ename)))))
 
 (test entget-returns-the-stored-data-list
   (let* ((mock (make-cador))
@@ -93,13 +101,13 @@
          (a (cdr (first (host-entmake mock (make-line-data :layer "L1")))))
          (b (cdr (first (host-entmake mock (make-line-data :layer "L2")))))
          (c (cdr (first (host-entmake mock (make-line-data :layer "L3"))))))
-    (is (string= "12" (autolisp-ename-value (host-entlast mock))))
-    (let ((first-ename (host-entnext mock nil)))
-      (is (string= "10" (autolisp-ename-value first-ename))))
-    (let ((second (host-entnext mock a)))
-      (is (string= "11" (autolisp-ename-value second))))
-    (let ((third (host-entnext mock b)))
-      (is (string= "12" (autolisp-ename-value third))))
+    (is (eq c (host-entlast mock)))
+    (is (eq a (host-entnext mock nil)))
+    (is (eq b (host-entnext mock a)))
+    (is (eq c (host-entnext mock b)))
+    ;; consecutive handles, in creation order
+    (is (= (1+ (parse-integer (autolisp-ename-value a) :radix 16))
+           (parse-integer (autolisp-ename-value b) :radix 16)))
     ;; Past the end -> nil.
     (is (null (host-entnext mock c)))))
 
@@ -250,7 +258,7 @@
     ;; closed): its owner is model space's BLOCK_RECORD, as for any
     ;; main-space entity (cador-entget-owner-and-header-layout).
     (let ((line (host-entmakex mock (make-line-data))))
-      (is (eq (host-tblobjname mock "BLOCK" "*Model_Space")
+      (is (eq (%model-space-record mock)
               (cdr (assoc 330 (host-entget mock line))))))
     ;; ENTNEXT walks the whole structure in creation order.
     (is (string= poly-handle (autolisp-ename-value (host-entnext mock nil))))
@@ -481,7 +489,7 @@ synthesized owner and reactor groups back in; neither may be stored."
                                                :key (lambda (p) (and (consp p) (car p))))))))
       (is (typep copy 'autolisp-ename))
       (is (null (member 330 (%stored-codes mock copy))))
-      (is (eq (host-tblobjname mock "BLOCK" "*Model_Space")
+      (is (eq (%model-space-record mock)
               (cdr (assoc 330 (host-entget mock copy))))))))
 
 (test entget-of-a-dictionary-member-has-the-reactor-group

@@ -195,7 +195,9 @@
   :description "Tests for the clautolisp DWG codec (libredwg)."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/drawing-dwg" "fiveam")
+  ;; cador: the default objects the CADs listed for their own templates, which
+  ;; a vendor .dwt read here is checked against (dwg-reads-vendor-templates)
+  :depends-on ("clautolisp/drawing-dwg" "clautolisp/cador" "fiveam")
   :serial t
   :components
   ((:file "drawing-dwg/tests/package")
@@ -225,6 +227,7 @@
    (:file "cador/source/api")
    (:file "cador/source/entity-api")
    (:file "cador/source/selection-api")
+   (:file "cador/source/default-objects")
    (:file "cador/source/dictionary-api")
    (:file "cador/source/table-api")
    (:file "cador/source/sysvar-api")
@@ -244,6 +247,7 @@
    (:file "cador/source/command-builtins")
    (:file "cador/source/command-file")
    (:file "cador/source/viewports")
+   (:file "cador/source/getcname")
    (:file "cador/source/com-progids")
    (:file "cador/source/vlax-api"))
   :in-order-to ((asdf:test-op
@@ -614,6 +618,9 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "cador/tests/command-tests")
    (:file "cador/tests/vlax-tests")
    (:file "cador/tests/pointer-dialect-tests")
+   (:file "cador/tests/getcname-tests")
+   (:file "cador/tests/entity-defaults-tests")
+   (:file "cador/tests/xrecord-payload-tests")
    (:file "cador/tests/intersect-tests")
    (:file "cador/tests/reactor-tests")
    (:file "cador/tests/sysvar-catalogue-tests")
@@ -766,6 +773,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-builtins-core/tests/sysvar-dialect-tracking-tests")
    (:file "autolisp-builtins-core/tests/encoding-roundtrip-tests")
    (:file "autolisp-builtins-core/tests/path-dotdot-tests")
+   (:file "autolisp-builtins-core/tests/lone-cr-in-string-tests")
    (:file "autolisp-builtins-core/tests/case-insensitive-paths-tests")
    (:file "autolisp-builtins-core/tests/source-file-tests")
    (:file "autolisp-builtins-core/tests/multidocument-tests")

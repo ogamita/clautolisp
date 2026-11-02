@@ -103,7 +103,13 @@ result is EQ to any other ename for the same record. (ename-eq-identity)"
            (table-record-al-view+extras host next)))))))
 
 (defmethod host-tblobjname ((host cador) kind name)
-  (let ((record (cador-find-table-record host
-                                              (resolve-table-kind kind 'tblobjname)
-                                              (resolve-record-name name 'tblobjname))))
-    (and record (table-record->ename host record))))
+  ;; A BLOCK answers its BLOCK entity, not the BLOCK_RECORD (that is the
+  ;; entity's 330, and the owner a LINE names): entget-pointers sections 10
+  ;; and 11 on both vendors.
+  (let* ((kind (resolve-table-kind kind 'tblobjname))
+         (record (cador-find-table-record host kind
+                                          (resolve-record-name name 'tblobjname))))
+    (and record
+         (if (eq kind :block-record)
+             (handle->ename host (%block-entity-handle host record))
+             (table-record->ename host record)))))

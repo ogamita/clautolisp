@@ -458,8 +458,11 @@ templates: the slot lines are removed, nothing else changes."
               (is (search "${PLUGIN_AFTER_APP}" template))
               (is (search "${PLUGIN_BEFORE_LOAD}" template))
               (is (not (search "PLUGIN_" text)))
-              ;; Same number of lines as the template less its two slot lines.
-              (is (= (- (length (%lines template)) 2) (length (%lines text)))))))))))
+              ;; The base now includes the retained COM lifecycle; plug-ins
+              ;; still contribute no lines when none are enabled.
+              (let ((base (alfe.backend.cad-common::instrument-owned-com-bridge
+                           template (merge-pathnames "x.vbs" dir))))
+                (is (= (- (length (%lines base)) 2) (length (%lines text))))))))))))
 
 (test epure-shows-in-dry-run-and-run-off-windows
   "The scenario every CI host can run: --epure with --bricscad, dry run."

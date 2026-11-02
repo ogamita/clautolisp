@@ -34,3 +34,27 @@ alfe.exe-old* was still running; pjb terminated it.
    (by image path under the runner's build directory), and report them.
 3. Check that a CI job that times out kills alfe and its CAD (job objects /
    taskkill /T).
+
+* Found (2026-10-24)
+
+1. The rename: %MOVE-ASIDE-OLD-EXECUTABLE in
+   clautolisp/autolisp-reader/tools/read-autolisp/generate.lisp, shared by
+   every image build (alfe-sbcl, clautolisp-sbcl, read-autolisp). On
+   Windows a running executable cannot be overwritten, only renamed: the
+   build renames it to <name>.exe.old-<universal-time> (pjb's
+   "alfe.exe-old*") and deletes such leftovers at a later build once they
+   are no longer locked. So the suspended process was an alfe of an EARLIER
+   job, still alive when a later job rebuilt alfe-sbcl.exe -- most likely
+   the alfe of the dxf-angles AutoCAD run that sat on the Save-changes
+   prompt (alfe-cad-quit-saves-modified-drawing, fixed in 2.3.44: that run
+   cannot hang there any more).
+2. Not done, by pjb's ruling (2026-10-23): the pre-job sweep is NOT widened
+   to end leftover alfe processes -- alfe / clautolisp have no exclusion and
+   may run as several instances in parallel, also beside a CAD.
+
+* Remaining
+
+3. Check, on the Windows runner, that a CI job that times out or is
+   cancelled ends alfe and the CAD it started (the GitLab Windows shell
+   executor's kill of the job's process tree; acad.exe started by COM is
+   not in that tree -- the sweep's created-instance registry covers it).

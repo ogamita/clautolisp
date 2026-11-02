@@ -152,6 +152,131 @@ have been launched AT ALL, which is the whole decision."
       (is (null result))
       (is (null launched)))))
 
+;;; alfe-cad-launch-new-by-default: alfe launches a new AutoCAD even when one
+;;; is running, so the quit must not ask COM for "the" AutoCAD then.
+
+(defun %quit-pid-workdir (&rest pids)
+  "A workdir whose flags say CREATED=1 with these CREATEDPID= lines."
+  (let ((dir (%fresh-test-directory)))
+    (with-open-file (out (merge-pathnames "com-flags.txt" dir)
+                         :direction :output :if-exists :supersede
+                         :if-does-not-exist :create)
+      (format out "~{CREATEDPID=~D~%~}ATTACHED=0~%CREATED=1~%" pids))
+    dir))
+
+(defun %fake-windows (running)
+  "A RUNNER playing tasklist / taskkill over the list of PIDs in the cons
+RUNNING: taskkill removes its PID. Returns (values RUNNER CALLS-CELL)."
+  (let ((calls (list '())))
+    (values
+     (lambda (argv &rest keys)
+       (declare (ignore keys))
+       (push argv (car calls))
+       (cond ((equal "tasklist" (first argv))
+              (format nil "~{\"acad.exe\",\"~D\",\"Console\",\"1\",\"900 000 Ko\"~%~}"
+                      (car running)))
+             ((equal "taskkill" (first argv))
+              (let* ((filter (find-if (lambda (a) (search "PID eq " a)) argv))
+                     (pid (parse-integer filter :start 7)))
+                (setf (car running) (remove pid (car running)))
+                ""))))
+     calls)))
+
+(test autocad-com-flags-carry-the-created-pids
+  "The bridge writes CREATEDPID= for each acad.exe its CreateObject started;
+READ-COM-FLAGS returns them as a third value."
+  (with-cad-test-directories
+    (multiple-value-bind (att cre pids)
+        (alfe.backend.autocad::read-com-flags (%quit-pid-workdir 4242 77))
+      (is (null att))
+      (is (eq t cre))
+      (is (equal '(4242 77) pids)))))
+
+(test autocad-quit-by-pid-when-another-autocad-runs
+  "With another acad.exe running, the quit bridge (GetObject) is NOT launched:
+this run's own acad.exe is ended by its PID, and the other one is left alone.
+With only ours running, the quit bridge is used as before."
+  (with-cad-test-directories
+    (let ((running (list (list 4242 1000))))
+      (multiple-value-bind (runner calls) (%fake-windows running)
+        (let* ((launched '())
+               (session (alfe.backend.autocad::%make-autocad-session
+                         :workdir (%quit-pid-workdir 4242)
+                         :variant :automation))
+               (result (alfe.backend.autocad::quit-created-autocad
+                        session
+                        :timeout 1
+                        :runner runner
+                        :launcher (lambda (argv &rest ignored)
+                                    (declare (ignore ignored))
+                                    (push argv launched)
+                                    nil))))
+          (is (eq t result))
+          (is (null launched) "the quit bridge would ask COM for the other AutoCAD")
+          (is (equal '(1000) (car running)) "ours ended, the other one untouched")
+          (is (some (lambda (argv) (and (equal "taskkill" (first argv))
+                                        (member "PID eq 4242" argv :test #'equal)))
+                    (car calls)))
+          (is (notany (lambda (argv) (member "PID eq 1000" argv :test #'equal))
+                      (car calls))))))
+    ;; only ours: the quit bridge, as before
+    (let ((running (list (list 4242))))
+      (multiple-value-bind (runner calls) (%fake-windows running)
+        (declare (ignore calls))
+        (let* ((launched '())
+               (session (alfe.backend.autocad::%make-autocad-session
+                         :workdir (%quit-pid-workdir 4242)
+                         :variant :automation)))
+          (alfe.backend.autocad::quit-created-autocad
+           session
+           :timeout 1
+           :runner runner
+           :launcher (lambda (argv &rest ignored)
+                       (declare (ignore ignored))
+                       (push argv launched)
+                       nil))
+          (is (= 1 (length launched)))
+          (is (equal "cscript" (first (first launched)))))))))
+
+(test com-attach-pid-only-reaches-the-registered-instance
+  "Probe cad-instances (BricsCAD V25, 2026-10-23): COM hands out only the
+instance registered first. --attach-pid passes when it names that one, and is
+a BACKEND-BOOTSTRAP-ERROR naming the reachable PID otherwise, or when none is
+registered -- never a silent attach to another CAD."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+      (flet ((runner (answer)
+               (lambda (argv &rest keys)
+                 (declare (ignore keys))
+                 (assert (equal "powershell" (first argv)))
+                 answer)))
+        (is (= 4242 (alfe.backend.cad-common:check-com-attach-pid
+                     :autocad "AutoCAD.Application" 4242 dir
+                     :runner (runner (format nil "PID=4242~%")))))
+        (is (probe-file (merge-pathnames "com-active-pid.ps1" dir)))
+        (handler-case
+            (progn (alfe.backend.cad-common:check-com-attach-pid
+                    :bricscad "BricscadApp.AcadApplication" 4242 dir
+                    :runner (runner (format nil "PID=1000~%")))
+                   (fail "a PID COM cannot reach was accepted"))
+          (alfe.error:backend-bootstrap-error (e)
+            (is (search "process 1000" (princ-to-string e)))))
+        (signals alfe.error:backend-bootstrap-error
+          (alfe.backend.cad-common:check-com-attach-pid
+           :autocad "AutoCAD.Application" 4242 dir
+           :runner (runner (format nil "NONE~%"))))))))
+
+(test autocad-bridge-records-only-the-processes-it-started
+  "RecordCreatedProcesses skips the acad.exe PIDs that were running before
+CreateObject (AcadPidList), and reports the new ones as CREATEDPID=."
+  (let ((text alfe.backend.autocad::*bridge-autocad-vbs-template*))
+    (is (search "Function AcadPidList()" text))
+    (is (search "pidsBefore = AcadPidList()" text))
+    (is (search "RecordCreatedProcesses createdFile, pidsBefore" text))
+    (is (search "CREATEDPID=" text))
+    (is (< (search "pidsBefore = AcadPidList()" text)
+           (search "Set app = CreateObject(progId)" text)))))
+
 (test autocad-quit-bridge-closes-documents-without-saving
   "The document the bridge adds is UNNAMED (Dessin1/Drawing1), so
 app.Quit alone would raise the Save-changes dialog — a modal dialog on
@@ -1998,7 +2123,8 @@ returns NIL for a plain unix binary."
   (is (null (alfe.backend.bricscad:macos-app-bundle-for nil))))
 
 (defun %emitted-applescript (executable-path &key (code-only t)
-                                                  (template-path "/tmp/tpl/Default-mm.dwt"))
+                                                  (template-path "/tmp/tpl/Default-mm.dwt")
+                                                  (policy :launch) pid)
   "The AppleScript EMIT-LAUNCHER-APPLESCRIPT writes for EXECUTABLE-PATH.
 With CODE-ONLY (the default) the `--' comment lines are dropped, so the
 assertions below test what osascript will RUN. The template's comments
@@ -2012,7 +2138,8 @@ comments), and matching against them would make every check vacuous."
            (alfe.backend.bricscad:emit-launcher-applescript
             path :runtime-load-path "/tmp/wd/run-common.lsp"
                  :executable-path executable-path
-                 :template-path template-path)
+                 :template-path template-path
+                 :policy policy :pid pid)
            (let ((text (uiop:read-file-string path)))
              (if code-only
                  (format nil "~{~A~^~%~}"
@@ -2028,14 +2155,15 @@ comments), and matching against them would make every check vacuous."
 (test macos-launcher-applescript-avoids-reserved-word-and-app-name-guess
   "The emitted launcher must not use the reserved term `running' as a
 variable, must not address a guessed \"BricsCAD\" application name, and
-must launch the real bundle via `open -a' with AppleScript quoting."
+must launch the real bundle via `open -n -a' (a NEW instance,
+alfe-cad-launch-new-by-default) with AppleScript quoting."
   (let ((script (%emitted-applescript
                  "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad")))
     ;; The two faults that made the first macOS probe run a silent no-op.
     (is (not (search "set running to" script)))
     (is (not (search "tell application \"BricsCAD\" to activate" script)))
     ;; What it does instead.
-    (is (search "open -a " script))
+    (is (search "open -n -a " script))
     (is (search "quoted form of appPath" script))
     (is (search "/Applications/BricsCAD V26.app" script))
     ;; The payload still gets typed.
@@ -2179,11 +2307,11 @@ always passes a template."
     (is (search "quoted form of docPath" with-doc))
     (is (search "/tmp/tpl/Default-mm.dwt" with-doc))
     ;; Still shell-quoted (a template path has spaces on a real install).
-    (is (search "open -a " with-doc))
+    (is (search "open -n -a " with-doc))
     ;; With no template discovered we still launch the app rather than
-    ;; emitting a broken `open -a APP ""'.
+    ;; emitting a broken `open -n -a APP ""'.
     (is (not (search "quoted form of docPath" no-doc)))
-    (is (search "open -a " no-doc))))
+    (is (search "open -n -a " no-doc))))
 
 (test macos-launcher-applescript-checks-already-running-before-opening-doc
   "alfe-bricscad-automation-macos-reopens-welcome-page: `open -a app
@@ -2200,15 +2328,20 @@ live that this is too coarse — a freshly-launched, running-but-no-
 document-yet BricsCAD needs docPath exactly as much as no process at
 all, so the check must be \"does a document/console window already
 exist\", the same exclusion-by-product-name signal FINDCONSOLEWINDOW
-uses, not merely process existence."
+uses, not merely process existence.
+
+Since alfe-cad-launch-new-by-default this concerns an ATTACH only: a
+launched instance is new and has no document, so it always gets docPath."
   (let ((script (%emitted-applescript
                  "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad"
-                 :template-path "/tmp/tpl/Default-mm.dwt")))
+                 :template-path "/tmp/tpl/Default-mm.dwt"
+                 :policy :attach)))
     ;; The check itself, and NOT the reserved word `running' as a bare
     ;; variable name (Round 6's own fault, still guarded against).
     (is (search "alreadyHasDoc" script))
     (is (not (search "set running to" script)))
-    (is (search "exists (processes whose name contains" script))
+    ;; ... on the ONE instance attached to, by unix id
+    (is (search "tell (my cadProcess())" script))
     ;; Must check for an existing DOCUMENT window, not merely that the
     ;; process exists — the same exclusion-by-name signal as
     ;; FINDCONSOLEWINDOW, so a running-but-doc-less BricsCAD still gets
@@ -2221,6 +2354,42 @@ uses, not merely process existence."
     ;; conditional, not unconditionally.
     (is (search "if alreadyHasDoc then" script))
     (is (search "else" script))))
+
+(test macos-launcher-applescript-launches-and-targets-one-instance-by-pid
+  "alfe-cad-launch-new-by-default: the launcher starts a NEW BricsCAD
+(`open -n -a'), takes as its target the process that appeared, and from
+then on addresses that one process by unix id -- never `process
+\"bricscad\"' by name, which with two instances running names either.
+Measured by probe cad-instances (BricsCAD V26 macOS, 2026-10-23)."
+  (let ((script (%emitted-applescript
+                 "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad")))
+    (is (search "set pidsBefore to my cadPids()" script))
+    (is (search "open -n -a " script))
+    (is (search "pidsBefore does not contain" script))
+    (is (search "pgrep -U $(id -u) -f " script))
+    (is (search "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad" script))
+    (is (search "first application process whose unix id is cadPid" script))
+    (is (search "frontPid = cadPid" script))
+    (is (not (search "process procName" script)))
+    (is (not (search "tell process \"bricscad\"" script)))))
+
+(test macos-launcher-applescript-attaches-to-a-named-pid
+  "--attach-pid: no launch at all; the PID must be a running BricsCAD of
+this user, and becomes the target."
+  (let ((script (%emitted-applescript
+                 "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad"
+                 :policy :attach :pid 4242)))
+    (is (not (search "open -n -a " script)))
+    (is (not (search "open -a " script)))
+    (is (search "cadRunning does not contain \"4242\"" script))
+    (is (search "set cadPid to 4242" script))
+    (is (search "no running BricsCAD has this process id" script)))
+  ;; --backend attach without a PID: refuses to launch when none runs.
+  (let ((script (%emitted-applescript
+                 "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad"
+                 :policy :attach)))
+    (is (not (search "open -n -a " script)))
+    (is (search "no BricsCAD is running" script))))
 
 (test macos-launcher-applescript-dismisses-startup-dialogs
   "A genuinely COLD BricsCAD launch on this installation can show a STACK
@@ -3875,3 +4044,125 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
                         (alfe.backend:find-backend :clautolisp) workdir)))
              (is (null (probe-file other)))))
       (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))
+
+(test owned-com-bridge-retains-exact-object-until-cleanup
+  (with-cad-test-directories
+    (dolist (emit '(alfe.backend.bricscad:emit-bridge-vbs
+                    alfe.backend.autocad:emit-bridge-vbs))
+      (let* ((dir (%fresh-test-directory))
+             (path (merge-pathnames "bridge.vbs" dir)))
+        (funcall emit path :runtime-load-path (merge-pathnames "run-common.lsp" dir)
+                          :status-path (merge-pathnames "protocol/status.txt" dir)
+                          :error-path (merge-pathnames "protocol/stderr.txt" dir))
+        (let ((text (uiop:read-file-string path)))
+          (is (search "owned-cad-process.ps1" text))
+          (is (search "-ExecutionPolicy Bypass" text))
+          (is (search "app.HWND" text))
+          (is (search "close-owned.request" text))
+          (is (search "lifeDoc.Close False" text))
+          (is (search "Call app.Quit" text))
+          (is (search "If created Then" text))
+          (is (search "close-owned.result" text)))
+        (is (probe-file (merge-pathnames "owned-cad-process.ps1" dir)))))))
+
+
+(test owned-com-close-requires-process-exit-result
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (request (merge-pathnames "close-owned.request" dir))
+           (result (merge-pathnames "close-owned.result" dir))
+           (worker (bordeaux-threads:make-thread
+                    (lambda ()
+                      (loop repeat 200 until (probe-file request) do (sleep 0.01))
+                      (with-open-file (out result :direction :output
+                                                 :if-exists :supersede)
+                        (write-line "0" out))))))
+      (unwind-protect
+           (is (alfe.backend.cad-common::close-owned-com-bridge dir :timeout 3))
+        (bordeaux-threads:join-thread worker)))
+    (signals alfe.error:backend-protocol-error
+      (alfe.backend.cad-common::close-owned-com-bridge
+       (%fresh-test-directory) :timeout 0))))
+
+(test protocol-prepared-close-restores-before-loop-exit
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (fail "The hosted runtime is required for the cleanup regression test.")
+        (with-cad-test-directories
+          (let* ((dir (%fresh-test-directory))
+                 (marker (merge-pathnames "restored.txt" dir)))
+            (multiple-value-bind (statuses stdout stderr)
+                (drive-hosted-engine
+                 binary
+                 (list (format nil
+                         "(defun autolisp-restore-session (/ f) (setq f (open ~S \"w\")) (write-line \"restored\" f) (close f) T)"
+                         (namestring marker)))
+                 :prepare-shutdown-p t)
+              (declare (ignore stdout stderr))
+              (is (search "DONE 1 OK" (first statuses)))
+              (is (probe-file marker))
+              (is (search "restored" (uiop:read-file-string marker)))))))))
+
+(test cad-shutdown-restoration-precedes-owned-close
+  (let* ((restore-name 'alfe.protocol.file::prepare-cad-shutdown)
+         (close-name 'alfe.backend.cad-common::close-owned-com-bridge)
+         (old-restore (symbol-function restore-name))
+         (old-close (symbol-function close-name))
+         (events nil))
+    (unwind-protect
+         (progn
+           (setf (symbol-function restore-name)
+                 (lambda (&rest args) (declare (ignore args))
+                   (push :restore events) t)
+                 (symbol-function close-name)
+                 (lambda (&rest args) (declare (ignore args))
+                   (push :close events) t))
+           (let ((alfe.backend.cad-common:*host-os-override* :windows))
+             (dolist (session
+                      (list (alfe.backend.bricscad::%make-bricscad-session
+                             :variant :automation :protocol-session :mock)
+                            (alfe.backend.autocad::%make-autocad-session
+                             :variant :automation :protocol-session :mock)))
+               (setf events nil)
+               (alfe.backend:shutdown session)
+               (is (equal '(:close :restore) events))
+               (is (eq :stopped (alfe.backend:session-state session)))))
+           (setf (symbol-function restore-name)
+                 (lambda (&rest args) (declare (ignore args))
+                   (error "restore failed")))
+           (let ((alfe.backend.cad-common:*host-os-override* :windows)
+                 (session (alfe.backend.bricscad::%make-bricscad-session
+                           :variant :automation :protocol-session :mock)))
+             (setf events nil)
+             (signals error (alfe.backend:shutdown session))
+             (is (null events))
+             (is (not (eq :stopped (alfe.backend:session-state session))))))
+      (setf (symbol-function restore-name) old-restore
+            (symbol-function close-name) old-close))))
+
+(test cad-restore-session-is-idempotent-and-closes-current-log-first
+  (let ((binary (clautolisp-engine-binary)))
+    (unless binary (error "Hosted engine required"))
+    (multiple-value-bind (statuses stdout stderr)
+        (drive-hosted-engine
+         binary
+         '("(setq zz--setvars nil *AUTOLISP_LOG_STATE* '(1 \"old-log\") _autolisp_old_srchpath \"old-search\")"
+           "(defun setvar (name value) (setq zz--setvars (append zz--setvars (list (list name value)))) value)"
+           "(autolisp-restore-session)"
+           "(autolisp-restore-session)"
+           "(princ (if (and (equal zz--setvars '((\"LOGFILEMODE\" 0) (\"LOGFILEPATH\" \"old-log\") (\"LOGFILEMODE\" 1) (\"SRCHPATH\" \"old-search\"))) (null *AUTOLISP_LOG_STATE*) *AUTOLISP_SRCHPATH_RESTORED*) \"RESTORE-OK\" \"RESTORE-BAD\") nil)"))
+      (declare (ignore stderr))
+      (is (= 5 (length statuses)))
+      (is (every (lambda (s) (search " OK" s)) statuses))
+      (is (search "RESTORE-OK" stdout)))))
+
+
+(test cad-com-quit-action-defers-transport-teardown
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (protocol (alfe.protocol.file:init-session dir))
+           (result (alfe.backend.cad-common:drive-protocol-actions
+                    protocol (list (alfe.backend:make-action :quit))
+                    :defer-shutdown-p t)))
+      (is (eq :success (alfe.backend:eval-result-status result)))
+      (is (not (probe-file (alfe.protocol.file:protocol-session-control-path protocol)))))))

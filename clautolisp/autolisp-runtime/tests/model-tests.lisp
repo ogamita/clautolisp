@@ -1261,7 +1261,10 @@ binding must win, and popping must reveal the outer one -- unchanged."
 
 (test load-file-inherits-session-reader-dialect
   ;; SCHMS CAD sampling uses 1e-6 in a nested LOAD. Strict tokenization
-  ;; silently turns this literal into an unbound symbol instead of a real.
+  ;; used to turn this literal into an unbound symbol instead of a real;
+  ;; since the sunset campaign's B3 probe (2026-10-28: "1e3" is 1000.0 on
+  ;; AutoCAD 2022 and BricsCAD V25 / V26) every token mode reads it as the
+  ;; real, so it is a number under every dialect and token mode.
   (reset-autolisp-symbol-table)
   (let ((path (merge-pathnames
                (format nil "load-dialect-~36R.lsp" (random (expt 36 6)))
@@ -1277,11 +1280,10 @@ binding must win, and popping must reveal the outer one -- unchanged."
                     (value (autolisp-load-file-in-context path context)))
                (is (numberp value))
                (when (numberp value) (is (< (abs (- value 1d-6)) 1d-15)))
-               ;; An explicitly requested token mode still takes precedence.
-               (is (typep (autolisp-load-file-in-context path context :token-mode :strict)
-                          'autolisp-symbol))))
+               ;; an explicitly requested strict token mode reads it alike
+               (is (numberp (autolisp-load-file-in-context path context :token-mode :strict)))))
            (let ((context (make-evaluation-context
                            :session (make-runtime-session
                                      :dialect (clautolisp.autolisp-reader:autolisp-dialect-strict)))))
-             (is (typep (autolisp-load-file-in-context path context) 'autolisp-symbol))))
+             (is (numberp (autolisp-load-file-in-context path context)))))
       (when (probe-file path) (delete-file path)))))

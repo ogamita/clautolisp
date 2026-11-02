@@ -1165,8 +1165,10 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
     ("Delta"         (:line)                          nil)
     ("Closed"        (:lwpolyline :polyline)          t)
     ;; measured on AutoCAD and BricsCAD: (vlax-get pl 'Coordinates) of the
-    ;; LWPOLYLINE (0,0) (10,0) (10,10) => (0 0 10 0 10 10)
-    ("Coordinates"   (:lwpolyline)                    t))
+    ;; LWPOLYLINE (0,0) (10,0) (10,10) => (0 0 10 0 10 10); of a 2D POLYLINE
+    ;; (0,0) (10,0) => (0 0 0 10 0 0), x y z per vertex (BricsCAD V26,
+    ;; probe curve-geometry second round). Writable on the LWPOLYLINE only.
+    ("Coordinates"   (:lwpolyline :polyline)          t))
   "Computed (geometry-derived) entity COM properties.")
 
 (defun %curve-com-property-entry (entity name)
@@ -1204,6 +1206,19 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
                  (if (minusp ang) (+ ang (* 2 pi)) ang)))))
         ((is "Closed")
          (logbitp 0 (let ((f (%entity-group-value entity 70))) (if (integerp f) f 0))))
+        ((and (is "Coordinates") (eq (entity-handle-kind entity) :polyline))
+         ;; The header carries no vertex: they come from the VERTEX entities,
+         ;; through the curve descriptor -- each segment's start, and the last
+         ;; one's end unless the polyline is closed.
+         (and curve
+              (let* ((segs (getf curve :segments))
+                     (points (append (mapcar (lambda (seg) (getf seg :a)) segs)
+                                     (unless (getf curve :closed)
+                                       (list (getf (car (last segs)) :b))))))
+                (%wrap-com-point
+                 (loop for point in points
+                       append (mapcar (lambda (x) (coerce x 'double-float))
+                                      (subseq (append point (list 0 0 0)) 0 3)))))))
         ((is "Coordinates")
          (%wrap-com-point
           (loop for pair in (entity-handle-data entity)
@@ -1227,6 +1242,11 @@ bridged, (values NIL NIL) when unknown; a read-only property signals
         ((string-equal name "Diameter") (%entity-set-group entity 40 (/ (real-value) 2)))
         ((string-equal name "Circumference")
          (%entity-set-group entity 40 (/ (real-value) (* 2 pi))))
+        ((and (string-equal name "Coordinates")
+              (eq (entity-handle-kind entity) :polyline))
+         (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+          :com-read-only-property
+          "VLA-OBJECT property Coordinates of a 2D POLYLINE is read-only in cador."))
         ((string-equal name "Coordinates")
          (let* ((xs (%unwrap-com-point value name))
                 (cells (remove-if-not (lambda (pair) (and (consp pair) (eql (car pair) 10)))

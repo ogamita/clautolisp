@@ -44,9 +44,23 @@ probe-conformance.lsp         cad-probe-run-conformance-probes
 probe-open-encoding.lsp       cad-probe-run-open-encoding-probes
 probe-logfile.lsp             cad-probe-run-logfile-probes
 probe-acad-strlsort-maxsort.lsp cad-probe-run-acad-strlsort-maxsort-probes
+probe-multiline-string.lsp    cad-probe-run-multiline-string-probes
+probe-entity-defaults.lsp     cad-probe-run-entity-defaults-probes
+probe-pending-divergences.lsp cad-probe-run-pending-divergences-probes
+probe-vle.lsp                 cad-probe-run-vle-probes
+probe-numeric-edges.lsp       cad-probe-run-numeric-edges-probes
+probe-reader-printer.lsp      cad-probe-run-reader-printer-probes
+probe-setvar-edges.lsp        cad-probe-run-setvar-edges-probes
+# Drives real commands (LINE/CIRCLE/...) to capture LASTPROMPT; keep near the
+# end, before the documents suite.
+probe-command-prompts.lsp     cad-probe-run-command-prompts-probes
 # LAST: a NEW / OPEN may end the run.
 probe-documents.lsp           cad-probe-run-document-probes
 
 # QUARANTINED -- run alone and split, never as part of a normal run:
 #     PROBE_SUITES=load-refusal PROBE_SPLIT_SUITES=load-refusal
 probe-load-refusal.lsp        cad-probe-run-load-refusal-probes    quarantine
+
+# QUARANTINED -- it SETS the CAD's LISPSYS (persisted): only through
+# scripts/run-lispsys1-probe.sh, which sets it back to 0.
+probe-lispsys.lsp             cad-probe-run-lispsys-probes         quarantine

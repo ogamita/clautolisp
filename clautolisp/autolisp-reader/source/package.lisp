@@ -9,6 +9,7 @@
    #:reader-options-warn-on-integer-overflow-p
    #:reader-options-extended-string-escapes-p
    #:reader-options-canonical-case
+   #:reader-options-lone-cr-in-string
    #:reader-options-source-name
    #:source-span
    #:source-span-source-name
@@ -20,6 +21,10 @@
    #:diagnostic-severity
    #:diagnostic-code
    #:diagnostic-message
+   #:lone-cr-in-string-literal
+   #:lone-cr-in-string-literal-source-name
+   #:lone-cr-in-string-literal-line
+   #:lone-cr-in-string-literal-column
    #:source-decoding-error
    #:source-decoding-error-pathname
    #:source-is-a-directory

@@ -56,6 +56,10 @@ Z is CODE+20)."
 
 ;;; --- Reader: tokeniser ------------------------------------------
 
+(defvar *dxf-unicode-escapes* nil
+  "True while reading or writing an ASCII DXF before AC1021: a character
+above #xFF travels as \\U+XXXX (see +DXF-EXTERNAL-FORMAT+).")
+
 (defun dxf-code-line-p (line)
   "True if LINE is a bare DXF group code — a trimmed (optionally
 signed) integer. Used to detect when a string value has spilled onto
@@ -69,7 +73,7 @@ following physical lines."
 (defun dxf-parse-value (code raw)
   "Convert the RAW string value of group CODE to its typed CL value."
   (ecase (dxf-code-type code)
-    (:string raw)
+    (:string (if *dxf-unicode-escapes* (%dxf-unescape-string raw) raw))
     (:integer (values (parse-integer raw :junk-allowed t)))
     (:double (let ((*read-default-float-format* 'double-float))
                (coerce (read-from-string raw) 'double-float)))))
@@ -474,7 +478,20 @@ the section round-trips losslessly."
     (dolist (obj objs)
       (let ((h (dxf-object-handle obj)))
         (when (and h (not (dxf-dictionary-object-p obj)))
-          (add-object drawing h obj))))))
+          (add-object drawing h obj))))
+    ;; ... and every object, dictionaries included, as a handle-addressed
+    ;; object -- what (namedobjdict) / entget / dictsearch reach and the
+    ;; writer writes back (deferred-nod-default-contents, item 4). The root
+    ;; is the section's first dictionary.
+    (dolist (obj objs)
+      (let ((h (dxf-object-handle obj)))
+        (when (and h (not (find-entity drawing h :include-deleted t)))
+          (add-entity drawing (dxf-entity-from-file obj) :handle h :object-p t))))
+    (when root
+      (let ((h (dxf-object-handle root)))
+        (when (and h (find-entity drawing h))
+          (setf (drawing-root-dictionary-handle drawing)
+                (entity-handle-id (find-entity drawing h))))))))
 
 (defun dxf-build-drawing (typed-pairs)
   "Build a DRAWING from a flat list of (CODE . TYPED-VALUE) pairs,
@@ -517,7 +534,9 @@ exponent marker)."
 (defun dxf-ascii-emit-pair (stream code value)
   (format stream "~D~%" code)
   (ecase (dxf-code-type code)
-    (:string  (format stream "~A~%" value))
+    (:string  (format stream "~A~%" (if *dxf-unicode-escapes*
+                                        (%dxf-escape-string (princ-to-string value))
+                                        value)))
     (:integer (format stream "~D~%" value))
     (:double  (format stream "~A~%" (dxf-format-double value)))))
 
@@ -614,6 +633,11 @@ string used as-is (upcased), or the R2013 default (\"AC1027\") otherwise."
           ;; version). See dwg-write-rejects-a-drawing-built-in-memory.
           (unless (or (string-equal name "HANDSEED")
                       (string-equal name "ACADVER"))
+            ;; A file before AC1021 is written as ISO-8859-1, not as the
+            ;; session's "UTF-8": say so with the codepage the CADs write
+            ;; (ANSI_1252, which ISO-8859-1 matches but for #x80-#x9F).
+            (when (and *dxf-unicode-escapes* (string-equal name "DWGCODEPAGE"))
+              (setf value "ANSI_1252"))
             (dxf-emit 9 (format nil "$~A" name))
             (dxf-write-data-pair
              (cons (dxf-header-value-code (sysvar-cell-kind cell) value) value)))))
@@ -630,12 +654,25 @@ string used as-is (upcased), or the R2013 default (\"AC1027\") otherwise."
         (dxf-emit 70 (hash-table-count table))
         (maphash (lambda (name record)
                    (declare (ignore name))
-                   ;; Radians -> degrees, on a copy.
+                   ;; Radians -> degrees, on a copy; with the record's
+                   ;; handle, so a reload gives it the same one.
                    (dxf-write-object
-                    (dxf-entity-for-file (symbol-table-record-data record))))
+                    (dxf-entity-for-file (dxf-record-data-with-handle record))))
                  table)
         (dxf-emit 0 "ENDTAB"))
       (drawing-tables drawing)))))
+
+(defun dxf-record-data-with-handle (record)
+  "RECORD's group-code list with its (5 . handle) after the (0 . type) pair
+when the data carries none (ADD-TABLE-RECORD gave the record one)."
+  (let ((data (symbol-table-record-data record))
+        (id (symbol-table-record-id record)))
+    (if (or (assoc 5 data) (not (stringp id)))
+        data
+        (let ((zero (assoc 0 data)))
+          (if zero
+              (list* zero (cons 5 id) (remove zero data :test #'eq))
+              (cons (cons 5 id) data))))))
 
 (defun dxf-ordered-entity-data (data)
   "Return DATA with its (0 . TYPE) pair first: a DXF entity must begin
@@ -662,7 +699,12 @@ this takes the DRAWING -- the seed lives there."
       (let* ((data (symbol-table-record-data record))
              (existing (cdr (assoc 5 data))))
         (or existing
-            (let ((handle (format nil "~X" (allocate-handle drawing)))
+            ;; The record's own handle (ADD-TABLE-RECORD gives every record
+            ;; one), so TBLOBJNAME, HANDENT and the file agree.
+            (let ((handle (let ((id (symbol-table-record-id record)))
+                            (if (stringp id)
+                                id
+                                (format nil "~X" (allocate-handle drawing)))))
                   (zero (assoc 0 data)))
               ;; AFTER the (0 . type) pair: a DXF object must begin with
               ;; its type marker, and a table record is written in the
@@ -702,7 +744,9 @@ NIL block owner). Block-owned entities are emitted inside BLOCKS."
    "ENTITIES"
    (lambda ()
      (map-entities (lambda (entity)
-                     (unless (entity-handle-block entity)
+                     ;; the objects go to OBJECTS
+                     (unless (or (entity-handle-block entity)
+                                 (not (graphical-entity-p entity)))
                        (dxf-write-object
                         (dxf-entity-data-with-owner drawing entity))))
                    drawing))))
@@ -716,7 +760,8 @@ owned entities, then ENDBLK."
      (map-blocks
       (lambda (name header)
         (dxf-write-object (dxf-ordered-entity-data header))
-        (dolist (entity (block-entities drawing name))
+        (dolist (entity (remove-if-not #'graphical-entity-p
+                                       (block-entities drawing name)))
           ;; Same owner rule inside a block: the entity belongs to that
           ;; block's record, and without group 330 libredwg drops it.
           (dxf-write-object (dxf-entity-data-with-owner drawing entity)))
@@ -759,9 +804,35 @@ its assigned handle; any other value is emitted as its handle string."
                       (dxf-write-dictionary-tree value handles)))
                   dict))
 
+(defun dxf-write-handle-addressed-objects (drawing)
+  "Emit the OBJECTS section from the handle-addressed objects: the root
+dictionary first (a reader takes the first DICTIONARY for the NOD), then
+every other non-graphical object in creation order, each as stored (its
+owner and entries are handles already); then the stored OBJECTS-section
+objects no handle-addressed one replaced."
+  (let ((root (find-entity drawing (drawing-root-dictionary-handle drawing))))
+    (dxf-write-section
+     "OBJECTS"
+     (lambda ()
+       (when root
+         (dxf-write-object (dxf-ordered-entity-data (entity-handle-data root))))
+       (map-entities (lambda (entity)
+                       (unless (or (eq entity root) (graphical-entity-p entity))
+                         (dxf-write-object
+                          (dxf-ordered-entity-data (entity-handle-data entity)))))
+                     drawing)
+       (maphash (lambda (handle obj)
+                  (unless (find-entity drawing handle :include-deleted t)
+                    (dxf-write-object (dxf-ordered-entity-data obj))))
+                (drawing-objects drawing))))))
+
 (defun dxf-write-objects (drawing)
-  "Emit the OBJECTS section: the named-object dictionary tree (handle
--linked) followed by the standalone non-graphical objects (xrecords)."
+  "Emit the OBJECTS section: the handle-addressed objects when the drawing
+has its root dictionary as one (DXF-WRITE-HANDLE-ADDRESSED-OBJECTS), else
+the legacy named-object dictionary tree (handle-linked) followed by the
+standalone non-graphical objects (xrecords)."
+  (when (drawing-root-dictionary-handle drawing)
+    (return-from dxf-write-objects (dxf-write-handle-addressed-objects drawing)))
   (let ((nod (drawing-named-object-dictionary drawing))
         (objects (drawing-objects drawing)))
     (when (or (plusp (hash-table-count (dictionary-entries nod)))
@@ -969,35 +1040,130 @@ DRAWING. Consumes and ignores the 22-byte sentinel."
 
 ;;; --- Codec registration -----------------------------------------
 
-;;; ASCII DXF is a codepage-based text format (ANSI_xxxx, with \U+
-;;; escapes for out-of-codepage characters), not UTF-8. ISO-8859-1 maps
-;;; every byte 1:1, so it never raises a decoding error on real-world
-;;; DXF (e.g. libredwg's output) and preserves bytes for round-trip.
-;;; (Honouring $DWGCODEPAGE precisely is a future refinement.)
-(defparameter +dxf-external-format+ :iso-8859-1)
+;;; An ASCII DXF of AC1021 (2007) or later is UTF-8. Before AC1021 it is
+;;; a codepage text ($DWGCODEPAGE, ANSI_xxxx) with \U+XXXX escapes for
+;;; the characters outside it: those files are read and written as
+;;; ISO-8859-1, which maps every byte 1:1 (never a decoding error, bytes
+;;; preserved), and a character above #xFF goes as \U+XXXX. (Honouring
+;;; $DWGCODEPAGE precisely, e.g. ANSI_1252's #x80-#x9F, is a future
+;;; refinement.) dxf-writer-header-not-utf8: the header's unit lists hold
+;;; a MICRO SIGN, written as the lone byte #xB5 in an AC1027 file.
+(defparameter +dxf-external-format+ :iso-8859-1
+  "The external format of an ASCII DXF before AC1021.")
+
+(defun %dxf-utf-8-version-p (acadver)
+  "True when ACADVER (a $ACADVER string such as \"AC1027\") is AC1021 or
+later, the versions whose ASCII DXF is UTF-8."
+  (let ((number (and (stringp acadver) (> (length acadver) 2)
+                     (string-equal "AC" acadver :end2 2)
+                     (parse-integer acadver :start 2 :junk-allowed t))))
+    (and number (>= number 1021))))
+
+(defun %dxf-escape-string (string)
+  "STRING with every character above #xFF written \\U+XXXX."
+  (if (every (lambda (c) (<= (char-code c) #xFF)) string)
+      string
+      (with-output-to-string (out)
+        (loop for c across string
+              do (if (<= (char-code c) #xFF)
+                     (write-char c out)
+                     (format out "\\U+~4,'0X" (char-code c)))))))
+
+(defun %dxf-unescape-string (string)
+  "STRING with every \\U+XXXX (four hex digits) replaced by its character."
+  (let ((start (search "\\U+" string)))
+    (if (null start)
+        string
+        (with-output-to-string (out)
+          (loop with i = 0
+                with n = (length string)
+                while (< i n)
+                do (let ((code (and (char= (char string i) #\\)
+                                    (<= (+ i 7) n)
+                                    (string= "\\U+" string :start2 i :end2 (+ i 3))
+                                    (every (lambda (c) (digit-char-p c 16))
+                                           (subseq string (+ i 3) (+ i 7)))
+                                    (parse-integer string :start (+ i 3) :end (+ i 7)
+                                                          :radix 16))))
+                     (if code
+                         (progn (write-char (code-char code) out) (incf i 7))
+                         (progn (write-char (char string i) out) (incf i)))))))))
+
+(defun %dxf-sniff-acadver (source)
+  "The $ACADVER string of the ASCII DXF SOURCE, or NIL when its header
+does not give one. Reads only the header's head, as ISO-8859-1."
+  (with-open-file (s source :external-format :iso-8859-1)
+    (loop repeat 2000
+          for line = (read-line s nil :eof)
+          until (eq line :eof)
+          do (let ((text (string-trim '(#\Space #\Tab #\Return) line)))
+               (cond ((string-equal text "$ACADVER")
+                      (read-line s nil :eof)    ; its group code (1)
+                      (let ((value (read-line s nil :eof)))
+                        (return (and (stringp value)
+                                     (string-trim '(#\Space #\Tab #\Return) value)))))
+                     ((string-equal text "ENDSEC") (return nil)))))))
+
+(defun %dxf-valid-utf-8-p (source)
+  "True when the bytes of SOURCE are well-formed UTF-8. Checked on the bytes
+rather than by catching a decoding error: CCL's UTF-8 decoder substitutes
+U+FFFD for a bad byte where SBCL's signals."
+  (with-open-file (s source :element-type '(unsigned-byte 8))
+    (let ((pending 0))                  ; continuation bytes still expected
+      (loop for b = (read-byte s nil nil)
+            while b
+            do (cond ((plusp pending)
+                      (if (= (logand b #xC0) #x80)
+                          (decf pending)
+                          (return-from %dxf-valid-utf-8-p nil)))
+                     ((< b #x80))
+                     ((<= #xC2 b #xDF) (setf pending 1))
+                     ((<= #xE0 b #xEF) (setf pending 2))
+                     ((<= #xF0 b #xF4) (setf pending 3))
+                     (t (return-from %dxf-valid-utf-8-p nil))))
+      (zerop pending))))
+
+(defun %dxf-read-ascii (source external-format unicode-escapes)
+  (let ((*dxf-unicode-escapes* unicode-escapes))
+    (with-open-file (s source :external-format external-format)
+      (dxf-read-drawing-from-stream s))))
 
 (defun dxf-read-drawing (source)
   "Read SOURCE as DXF, auto-detecting ASCII vs binary by its sentinel.
-Sets DRAWING-FORMAT precisely (READ-DRAWING leaves it as set)."
+Sets DRAWING-FORMAT precisely (READ-DRAWING leaves it as set). An ASCII
+DXF of AC1021 or later is read as UTF-8 (as ISO-8859-1 if it is not
+valid UTF-8), an earlier one as ISO-8859-1 with its \\U+XXXX escapes
+decoded."
   (if (dxf-binary-file-p source)
       (let ((drawing (with-open-file (s source :element-type '(unsigned-byte 8))
                        (dxf-read-binary-drawing-from-stream s))))
         (setf (drawing-format drawing) :dxf-binary)
         drawing)
-      (let ((drawing (with-open-file (s source :external-format +dxf-external-format+)
-                       (dxf-read-drawing-from-stream s))))
+      (let ((drawing (if (%dxf-utf-8-version-p (%dxf-sniff-acadver source))
+                         (%dxf-read-ascii source
+                                          (if (%dxf-valid-utf-8-p source)
+                                              :utf-8
+                                              +dxf-external-format+)
+                                          nil)
+                         (%dxf-read-ascii source +dxf-external-format+ t))))
         (setf (drawing-format drawing) :dxf-ascii)
         drawing)))
 
 (defun dxf-write-drawing (drawing destination &key version)
   "Write DRAWING to DESTINATION as ASCII DXF. VERSION (a $ACADVER keyword
 such as :ac1032) sets the emitted $ACADVER; NIL uses the drawing's own
-version, then the R2013 default."
-  (let ((*dxf-output-version* (or version (drawing-version drawing))))
+version, then the R2013 default. AC1021 and later are written as UTF-8,
+earlier versions as ISO-8859-1 with \\U+XXXX for the characters above
+#xFF."
+  (let* ((*dxf-output-version* (or version (drawing-version drawing)))
+         (utf-8 (%dxf-utf-8-version-p (%dxf-acadver-string *dxf-output-version*)))
+         (*dxf-unicode-escapes* (not utf-8)))
     (with-open-file (stream destination :direction :output
                                         :if-exists :supersede
                                         :if-does-not-exist :create
-                                        :external-format +dxf-external-format+)
+                                        :external-format (if utf-8
+                                                             :utf-8
+                                                             +dxf-external-format+))
       (dxf-write-drawing-to-stream drawing stream))))
 
 (defun dxf-write-binary-drawing (drawing destination &key version)
