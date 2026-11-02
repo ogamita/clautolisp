@@ -2780,7 +2780,7 @@ verify:epure-lifecycle:windows:
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-epure-lifecycle.ps1
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-epure-lifecycle.ps1 -OutputDirectory "dist/epure-lifecycle/$CI_JOB_ID" -RequireComDrawing
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-epure-lifecycle.ps1 -IncludeControls -OutputDirectory "dist/epure-lifecycle/$CI_JOB_ID" -RequireComDrawing
   artifacts:
     when: always
     paths: ["dist/epure-lifecycle/$CI_JOB_ID/"]

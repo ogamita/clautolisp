@@ -991,5 +991,5 @@ Resolved notes) stay.
 * NEXT Strict EPURE native lifecycle qualification (P1)
 [[file:epure-qualification-accepts-failed-lifecycle.issue]] — Diagnostic green is insufficient; owned PID/kernel/exit and API assertions are required.
 
-** NEXT Hosted tests share Windows log preferences
-   [[file:alfe-hosted-tests-share-windows-log-preferences.issue]]
+** DONE Hosted tests share Windows log preferences
+   [[file:../closed/alfe-hosted-tests-share-windows-log-preferences.issue]]

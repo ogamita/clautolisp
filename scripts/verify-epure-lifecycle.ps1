@@ -1,6 +1,6 @@
 # Strict native qualification; never sweep CAD processes from other invocations.
 [CmdletBinding()]
-param([string]$OutputDirectory, [switch]$RequireComDrawing,[switch]$IncludeBricsBatch,[int]$TimeoutSeconds=360,[ValidateRange(0,120)][int]$CrashObservationSeconds=30)
+param([string]$OutputDirectory, [switch]$IncludeControls,[switch]$RequireComDrawing,[switch]$IncludeBricsBatch,[int]$TimeoutSeconds=360,[ValidateRange(0,120)][int]$CrashObservationSeconds=30)
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
 $alfe=Join-Path $repo 'autolisp-front-end/tools/alfe/bin/alfe-sbcl.exe'
@@ -22,9 +22,11 @@ function Quote-Argument([string]$value) {
 }
 $cases=@([pscustomobject]@{Cad='autocad';Mode='automation'},[pscustomobject]@{Cad='bricscad';Mode='automation'})
 if($IncludeBricsBatch){$cases+=[pscustomobject]@{Cad='bricscad';Mode='batch'}}
+if($IncludeControls){$cases+=@([pscustomobject]@{Cad='autocad';Mode='automation';Control=$true},[pscustomobject]@{Cad='bricscad';Mode='automation';Control=$true})}
 $results=@()
 foreach($case in $cases){
  $name=$case.Cad+'-'+$case.Mode
+ if($case.Control){$name+='-without-epure-plugin'}
  $work=Join-Path $root $name
  if(Test-Path -LiteralPath $work){throw 'Qualification workdir already exists; refusing to mix receipts.'}
  $null=New-Item -ItemType Directory -Path $work
@@ -36,12 +38,14 @@ foreach($case in $cases){
   $wanted=$drawing.Replace('\','/').ToUpperInvariant()
   $forms+='(if (= (strcase (vl-string-translate (chr 92) "/" (strcat (getvar "DWGPREFIX") (getvar "DWGNAME")))) "'+$wanted+'") (princ "\nALFE.DWG.OK\n") (princ "\nALFE.DWG.BAD\n"))'
  }
+ $forms+=@('(princ "\nDIAG.ATOMS=") (prin1 (atoms-family 1 (quote ("com_way" "COM_WAY" "com_tl_continu" "COM_TL_CONTINU"))))', '(princ "\nDIAG.ENV=") (prin1 (list (getvar "VENDORNAME") (getvar "CPROFILE") (getvar "SECURELOAD") (findfile "SNCF_Com.lsp") (getenv "APPDATA")))')
  $forms | Set-Content -LiteralPath $probe -Encoding ASCII
  $arguments=@('--no-init','--debug',('--'+$case.Cad),'--epure','--mode',$case.Mode,'--timeout',([string]$TimeoutSeconds),'--workdir',$work,'--keep-workdir','-l',$probe)
+ if($case.Control){$arguments=@($arguments|Where-Object {$_ -ne '--epure'})}
  if($RequireComDrawing -or $case.Mode -eq 'batch'){$arguments+=@('--dwg',$drawing)}
  $before=@{}
  Get-CimInstance Win32_Process -Filter "Name='acad.exe' OR Name='bricscad.exe' OR Name='accoreconsole.exe'" | ForEach-Object {$before[[string]$_.ProcessId]=$_.CreationDate.ToUniversalTime().Ticks}
- $record=[ordered]@{Name=$name;Commit=(& git -C $repo rev-parse HEAD);ExecutableHash=(Get-FileHash -LiteralPath $alfe -Algorithm SHA256).Hash;Arguments=$arguments;Started=[DateTime]::UtcNow.ToString('o');CadPid=$null;CadStartTicks=$null;NativeTerminated=$false;NativeExit=$null;NativeExitHex=$null;CliExit=$null;CleanupRequested=$false;Forced=$false;CrashEvents=@();Dumps=@();ApiMatches=0;DrawingVerified=$false;Passed=$false;Error=$null}
+ $record=[ordered]@{Name=$name;Commit=(& git -C $repo rev-parse HEAD);ExecutableHash=(Get-FileHash -LiteralPath $alfe -Algorithm SHA256).Hash;Arguments=$arguments;EpurePlugin=(-not [bool]$case.Control);Started=[DateTime]::UtcNow.ToString('o');CadPid=$null;CadStartTicks=$null;NativeTerminated=$false;NativeExit=$null;NativeExitHex=$null;CliExit=$null;CleanupRequested=$false;Forced=$false;CrashEvents=@();Dumps=@();ApiMatches=0;DrawingVerified=$false;Passed=$false;Error=$null}
  $start=Get-Date
  $native=$null;$cli=$null
  try{
@@ -88,7 +92,7 @@ foreach($case in $cases){
   # signaled termination. Preserve it explicitly; never accept SEH codes.
   $allowedExit=($record.NativeExit -eq 0 -or ($case.Cad -eq 'autocad' -and $record.NativeExit -eq 47806))
   $drawingOk=(-not($RequireComDrawing -or $case.Mode -eq 'batch') -or $record.DrawingVerified)
-  $record.Passed=($record.CliExit -eq 0 -and $allowedExit -and $record.ApiMatches -eq 2 -and $drawingOk -and $text -notmatch 'natural shutdown; terminating it|OWNED-CAD-CLOSE-FAILED')
+  $record.Passed=($record.CliExit -eq 0 -and $allowedExit -and ($case.Control -or $record.ApiMatches -eq 2) -and $drawingOk -and $text -notmatch 'natural shutdown; terminating it|OWNED-CAD-CLOSE-FAILED')
  }catch{$record.Error=$_.Exception.Message;$record.Passed=$false}
  finally{
   if($cli -and -not $cli.WaitForExit(0)){$cli.Kill();$null=$cli.WaitForExit(5000);$record.Forced=$true;$record.Passed=$false}
