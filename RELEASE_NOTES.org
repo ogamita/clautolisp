@@ -2980,3 +2980,7 @@ or test clautolisp — and is loaded explicitly:
 (asdf:load-asd #p"$PREFIX/share/common-lisp/source/clautolisp/autolisp-debug-ui-tui-charms/clautolisp-charms.asd")
 (asdf:load-system "clautolisp/autolisp-debug-ui-tui-charms")
 #+END_EXAMPLE
+
+* CAD qualification source 2.3.86
+Windows installed-prefix verification preserves full native diagnostic paths,
+including prefixes containing spaces; verified in Windows CI17671893337.

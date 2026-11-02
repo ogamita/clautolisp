@@ -954,5 +954,5 @@ shared native ACK guard are awaiting qualification.
 | Priority | Status | Issue | Scope |
 | P1 | TODO | [[file:alfe-cad-crash-report-collection.issue][alfe-cad-crash-report-collection]] | Collecter rapports Autodesk/WER et dumps attribués au job dans le workdir avant nettoyage ; un crash post-JUnit reste un échec |
 
-* NEXT Windows installed-prefix diagnostic wrapping (P3)
-[[file:verify-installed-prefix-powershell-wraps-stderr.issue]] — Native stderr formatting truncates source paths; Windows CI validation pending.
+* DONE Windows installed-prefix diagnostic wrapping (P3)
+[[file:../closed/verify-installed-prefix-powershell-wraps-stderr.issue]] — Windows CI17671893337 passes after preserving complete native stderr paths.
