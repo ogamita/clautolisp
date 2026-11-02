@@ -1472,8 +1472,14 @@ earlier spelling nested a =._SCRIPT= inside =run.scr= instead, inherited
 from the legacy wrapper on the assumption that control comes back from
 one. On BricsCAD V25 it does not: =run.scr= began and stopped there,
 BricsCAD sitting at =BOOTING= until the timeout, while the same script
-without EPURE ran to completion. AutoCAD's COM bridge still sends
-=._SCRIPT= through =SendCommand=, where it works.
+without EPURE ran to completion.
+
+Under COM, the native =LOAD= of EPURE is the first operation in
+=run-common.lsp='s prelude, before the bootstrap and protocol loop.
+The bridge sends one runtime command: it does not enqueue a separate
+=._SCRIPT= command whose completion could race with the runtime load.
+Both AutoCAD and BricsCAD execute the control script in the selected
+job document. BricsCAD batch retains the sequential =LOAD= lines above.
 
 *** EPURE is slow to load, and alfe waits for it
 
@@ -1523,10 +1529,10 @@ with EPURE 2022_b installed:
   COM bridge hung at attach/create even *without* EPURE, so BricsCAD COM
   automation is a separate matter from this plug-in.
 
-Two assumptions inherited from the legacy wrapper remain to be confirmed
-separately: that a =._SCRIPT= nested in a =/b= script gives control back
-to the outer script, and that COM =SendCommand= preserves the order of
-two sends. AutoCAD's result above is consistent with the second.
+Current COM startup no longer relies on a nested =SCRIPT= returning or
+on the order of two separate =SendCommand= calls. Native qualification
+checks the requested drawing, actual EPURE symbols, and the owned CAD
+process after shutdown; reaching READY alone does not establish success.
 
 *Why the mode matters.* EPURE is a full-GUI application: it needs the
 CAD's profile, menus and CUIX. accoreconsole (AutoCAD's batch mode) has
@@ -1535,8 +1541,8 @@ neither a GUI nor profiles. So:
 | Backend, mode                           | What =--epure= does                                                                                                                                                                                                             |
 |-----------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | BricsCAD, =batch= (the default)         | Starts =bricscad.exe [template] /p PROFILE /b run.scr= from =UserDataCache=. The =/Automation= switch, which hides the main window, is *dropped*. =run.scr= =LOAD=s the control script, then loads =run-common.lsp=. |
-| BricsCAD, =--mode automation= (COM)     | The bridge tries to activate the profile through =Preferences.Profiles= (a failure is written to the errors file and the run carries on with the current profile), and sends =._SCRIPT= before the load.                        |
-| AutoCAD, =automation= (COM)             | The default under =--epure=. The bridge activates the profile and sends =._SCRIPT= before the load.                                                                                                                             |
+| BricsCAD, =--mode automation= (COM)     | The bridge tries to activate the profile through =Preferences.Profiles= (a failure is written to the errors file and the run carries on with the current profile), and loads EPURE synchronously in the runtime prelude.                        |
+| AutoCAD, =automation= (COM)             | The default under =--epure=. The bridge activates the profile and loads EPURE synchronously in the runtime prelude.                                                                                                                             |
 | AutoCAD, =--mode batch= (accoreconsole) | Refused: usage error (exit status 64), "EPURE requires the full AutoCAD GUI; accoreconsole (--mode batch) has no profile support. Use --mode automation."                                                                                                              |
 
 Under COM the run-time is loaded into the GUI session, and its server
@@ -1550,18 +1556,12 @@ alfe --autocad --epure --epure-profile Epure -l check.lsp
 alfe --bricscad --epure --epure-script 'D:\epure\control_path.scr' -l check.lsp
 #+end_src
 
-*Not validated on real CADs.* The plug-in was written and tested against
-the mock CAD, =--print-command= and an OS override, not against EPURE
-itself. Two assumptions come from the legacy wrapper and have not been
-re-checked on a real installation: that a =._SCRIPT= nested in a =/b=
-script returns control to the outer script (so the =(load …)= after it
-runs), and that two consecutive COM =SendCommand= calls run in order. If
-the first does not hold, =--mode automation= (COM) is the fallback under
-BricsCAD too. Also unchecked: that dropping =/Automation= is right, that
-the default control-script paths — which name EPURE 2022 — match your
-installation (use =--epure-script= when they do not), and that the GUI
-stays usable after the run-time is loaded. The validation on real CADs
-is tracked as =alfe-plugin-epure-windows-validation=.
+*Native verification.* BricsCAD batch and AutoCAD COM have exercised
+EPURE's APIs on the Windows runner. COM lifecycle qualification also
+checks the captured native process, exit status and crash evidence.
+The 2026-11-02 qualification identified missing BricsCAD COM APIs and
+abnormal AutoCAD exits; these are tracked independently of whether
+ALFE itself returns success.
 
 ** The EPUREE plug-in
 :PROPERTIES:

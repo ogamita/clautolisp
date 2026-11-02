@@ -755,3 +755,8 @@ before plug-in startup and runtime loading. Opening failure is an error;
 an unnamed active drawing is not used as a substitute.
 Both COM backends preserve SECURELOAD, temporarily trusts the runtime directory,
 and restores the original TRUSTEDPATHS before session cleanup.
+
+.SS EPURE initialization through COM
+The EPURE control script is loaded synchronously in the runtime prelude,
+before the bootstrap and protocol loop, in the selected job document.
+The bridge does not enqueue a separate SCRIPT command.

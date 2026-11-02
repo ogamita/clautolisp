@@ -965,3 +965,9 @@ shared native ACK guard are awaiting qualification.
 
 ** DONE Hosted tests share Windows log preferences
    [[file:../closed/alfe-hosted-tests-share-windows-log-preferences.issue]]
+
+** NEXT EPURE COM script/runtime ordering
+[[file:alfe-epure-com-script-runtime-race.issue]]
+
+** NEXT SNCF ARX startup failure under SSH
+[[file:alfe-autocad-sncf-arx-startup-failure.issue]]

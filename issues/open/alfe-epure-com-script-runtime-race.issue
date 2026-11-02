@@ -1,0 +1,18 @@
+#+TITLE: COM runtime can overtake asynchronous EPURE SCRIPT startup
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+
+* Evidence
+MR !507 job17673570646 verifies the exact BricsCAD job DWG but both EPURE
+APIs are absent. The bridge dispatches SCRIPT and the runtime LOAD as
+separate SendCommand calls. A single-line SCRIPT wrapper does not fix it
+(job17673828953), so parsing the control file alone is not the cause.
+
+* Correction under qualification
+COM loads EPURE in :run-common-prelude, on the same Lisp stack as the
+bootstrap, before entering the protocol server loop. Batch remains unchanged.
+The regression fails4/6 checks before the correction and passes6/6 after it.
+The related launcher tests pass on SBCL and CCL. Require native proof before
+closing: both EPURE APIs, correct DWG and clean owned process termination.
