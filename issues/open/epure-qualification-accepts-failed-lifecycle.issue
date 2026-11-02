@@ -44,3 +44,12 @@ native exit0 and post-exit observation. No crash root cause is established.
 MR !507 job17673025098 refused an existing workspace before starting CAD.
 Its archived reports were leftovers from !476, explicitly rejected as
 evidence. Subsequent jobs isolate artifacts under CI_JOB_ID.
+
+* Diagnostic expansion, 2026-11-02
+Record lower/uppercase ATOMS-FAMILY results, effective profile, SECURELOAD,
+SNCF_Com.lsp resolution and APPDATA. Add separately named controls without
+the EPURE plugin to distinguish COM/runtime exit behaviour from EPURE.
+A control never replaces either required EPURE API assertion. The fake
+native-process fixture now proves missing APIs fail EPURE cases even when
+controls pass. SSH on pfenny timed out before the banner; native evidence
+therefore continues through its still-responsive GitLab runner.

@@ -1,5 +1,5 @@
 #+TITLE: Hosted runtime tests share persistent Windows logging preferences
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: bug
 
@@ -16,3 +16,9 @@ DRIVE-HOSTED-ENGINE gives each child CLAUTOLISP_REGISTRY_FILE in its own
 workdir and restores the caller environment afterwards. No locked file
 is ignored and no cleanup assertion is removed. Require both regressions
 and the full native Windows ALFE suite to pass before closing this issue.
+
+* Resolved in 2.3.91
+The private registry store removes both locked-log failures on Windows.
+MR !507 Windows job17673828857 passes2459/2459 with no skips.
+MR !476 Windows job17673832295 has neither log failure; its independent
+CLI/pathname spelling assertion was corrected and passes2/2 on Windows.
