@@ -1,0 +1,65 @@
+#+TITLE: LAP loop return values lose temporary symbol identity
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS:
+#+BRANCH: codex/test-lap-loop-roundtrip
+
+* Symptom and reproduction
+Found 2026-10-31 while extending shipped-compiler-test.sh for SCHME.
+Reproduced with a freshly built SBCL executable from f92d783a (runtime
+source 2.3.81). Compile this source with VLISP-COMPILE LSM to a LAP,
+then load that LAP and call either function in a NEW process:
+
+#+begin_src lisp
+(defun repeat-result (/ counter)
+  (setq counter 0)
+  (repeat 2 (setq counter (1+ counter))))
+(defun while-result (/ counter)
+  (setq counter 0)
+  (while (< counter 2) (setq counter (1+ counter))))
+#+end_src
+
+Expected: 2 for each function, as with source evaluation. Actual:
+unbound #:REPEAT-RESULT / #:WHILE-RESULT. Both speed=0,debug=3 and
+speed=3,debug=0 exhibit the failure. The historical SCHME probe instead
+returns COUNTER explicitly AFTER the loop; that form passes, including
+Windows SBCL runtime 2.3.81 in a fresh process. However CCL still fails
+even with COUNTER after the loop, at both qualities; the positive regression
+in shipped-compiler-test.sh exposes it. Thus the removed SBCL restrictions
+must not be presented as evidence that every loop result now works.
+
+* Cause to verify
+TRANSPILE.LISP introduces a GENSYM result binding for each loop;
+WRITE-LAP-SOURCE prints generated code with *PRINT-CIRCLE* NIL. A
+print/read round trip can split references to that uninterned symbol.
+When the loop value is discarded, host optimization can hide the defect.
+No compiler implementation change is included in the SCHME test extraction.
+
+* Acceptance
+Extend the existing shipped LAP regression with both loop-result forms;
+prove it fails before correction, then passes on SBCL and CCL in fresh
+processes, for both optimization qualities, without interpreted fallback.
+
+* Linux CI confirmation
+Pipeline 3010650231 at test commit 356f82ea reproduces the historical
+explicit-COUNTER case on BOTH Linux hosts, whereas macOS SBCL and the
+installed Windows SBCL executable pass it:
+- SBCL 2.2.9 (Debian), job 17624068076: source passes, LAP fails at
+  both qualities with an unbound REPEAT-RESULT temporary.
+- CCL, job 17624068077: same result.
+Do not generalize the successful macOS/Windows SBCL run to all SBCL builds.
+
+* Resolved in source version 2.3.83
+WRITE-LAP-SOURCE now binds *PRINT-CIRCLE* true, preserving shared generated
+symbols with reader labels instead of printing separate #:NAME objects
+for a binding and its references. No interpreted fallback is introduced.
+
+The existing shipped-compiler test now checks four loop forms: REPEAT and
+WHILE with an explicit counter return, and each loop used directly as
+the function return value. Source and fresh-process LAP results must all
+be 2, at speed=0,debug=3 and speed=3,debug=0. The strengthened test was
+observed failing before the correction, then passed on freshly built
+SBCL and CCL executables. Existing compiler suites: 454/454 checks on
+each host, no skips. The user manual and release notes explain rebuilding
+older compiled applications. Linux CI validation follows the fix push.
