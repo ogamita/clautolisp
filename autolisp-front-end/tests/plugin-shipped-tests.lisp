@@ -458,11 +458,12 @@ templates: the slot lines are removed, nothing else changes."
             (let ((text (emitted function)))
               (is (search "${PLUGIN_AFTER_APP}" template))
               (is (search "${PLUGIN_BEFORE_LOAD}" template))
+              (is (search "${PLUGIN_AFTER_DOCUMENT}" template))
               (is (not (search "PLUGIN_" text)))
               ;; The base now includes the retained COM lifecycle; plug-ins
               ;; still contribute no lines when none are enabled.
               (let ((base (alfe.backend.cad-common::instrument-owned-com-bridge
-                           template (merge-pathnames "x.vbs" dir))))
+                           template (merge-pathnames "x.vbs" dir) :trust-runtime-p t)))
                 (is (= (- (length (%lines base)) 3) (length (%lines text))))))))))))
 
 (test epure-shows-in-dry-run-and-run-off-windows
