@@ -926,3 +926,8 @@ opendcl-conformance. All =TODO=.
 [[file:alfe-cad-owned-com-teardown.issue][Ordered CAD restoration and owned COM process closure]]; native Windows validation pending.
 
 - NEXT =equal-list-fuzz= — P2, EQUAL ignores numeric fuzz inside lists; scalar/list reproducer and SCHMS rotation test reference included.
+
+* 2026-11-02 Collecte des données de crash CAO par ALFE
+
+| Priority | Status | Issue | Scope |
+| P1 | TODO | [[file:alfe-cad-crash-report-collection.issue][alfe-cad-crash-report-collection]] | Collecter rapports Autodesk/WER et dumps attribués au job dans le workdir avant nettoyage ; un crash post-JUnit reste un échec |
