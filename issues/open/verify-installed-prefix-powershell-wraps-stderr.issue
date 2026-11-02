@@ -1,0 +1,19 @@
+#+TITLE: Windows installed-prefix verification truncates native stderr paths
+#+STATUS: NEXT
+#+PRIORITY: P3
+#+TYPE: ci
+#+DEPENDS: native-windows-validation
+#+BRANCH: codex/fermeture-cao-20261023
+#+DATE: 2026-11-02
+
+* Evidence
+GitLab job17671615240 reports six prefix failures, although both runtime assets
+are staged successfully. Windows PowerShell converts native stderr to error
+records; Out-String's default width wraps paths containing spaces before the
+prefix parser sees them. Each of three installations loses the two paths.
+
+* Correction under qualification
+Capture the diagnostic with Out-String -Width32767 in both invocations.
+A real Windows fake-executable fixture reproduces truncation at width80 and
+preserves the complete source path with the explicit width. Native installed
+and moved-prefix CI must still pass before this issue can be closed.

@@ -64,8 +64,10 @@ function Check-Install([string]$where, [string]$exe, [string]$label) {
     Write-Host "=== $label : $exe"
     if (-not (Test-Path $exe)) { Assert $false "$label : executable exists"; return }
     Push-Location $elsewhere
+    # Windows PowerShell formats native stderr as ErrorRecord objects.
+    # Keep full diagnostic paths on one line before extracting their prefix.
     $out = & $exe --no-init --debug --cad autocad --mode automation `
-        --print-command --keep-workdir -x '(princ 1)' 2>&1 | Out-String
+        --print-command --keep-workdir -x '(princ 1)' 2>&1 | Out-String -Width 32767
     $status = $LASTEXITCODE
     Pop-Location
     Write-Host $out
@@ -116,7 +118,7 @@ Set-Content -Path $own -Value '(princ)' -Encoding ASCII
 $env:ALFE_RUNTIME_LSP = $own
 Push-Location $elsewhere
 $out = & (Join-Path $moved 'bin\alfe.exe') --no-init --debug --cad autocad `
-    --mode automation --print-command -x '(princ 1)' 2>&1 | Out-String
+    --mode automation --print-command -x '(princ 1)' 2>&1 | Out-String -Width 32767
 Pop-Location
 Remove-Item Env:\ALFE_RUNTIME_LSP -ErrorAction SilentlyContinue
 Write-Host $out
