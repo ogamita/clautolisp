@@ -38,14 +38,15 @@ foreach($case in $cases){
   $wanted=$drawing.Replace('\','/').ToUpperInvariant()
   $forms+='(if (= (strcase (vl-string-translate (chr 92) "/" (strcat (getvar "DWGPREFIX") (getvar "DWGNAME")))) "'+$wanted+'") (princ "\nALFE.DWG.OK\n") (princ "\nALFE.DWG.BAD\n"))'
  }
- $forms+=@('(princ "\nDIAG.ATOMS=") (prin1 (atoms-family 1 (quote ("com_way" "COM_WAY" "com_tl_continu" "COM_TL_CONTINU"))))', '(princ "\nDIAG.ENV=") (prin1 (list (getvar "VENDORNAME") (getvar "CPROFILE") (getvar "SECURELOAD") (findfile "SNCF_Com.lsp") (getenv "APPDATA")))')
+ $forms+=@('(princ "\nDIAG.ATOMS=") (prin1 (atoms-family 1 (quote ("com_way" "COM_WAY" "com_tl_continu" "COM_TL_CONTINU"))))', '(princ "\nDIAG.ENV=") (prin1 (list (getvar "VENDORNAME") (getvar "CPROFILE") (getvar "SECURELOAD") (findfile "com/lisp/sncf_startup.lsp") (findfile "on_start.lsp") (getenv "APPDATA")))')
+ $forms+='(if (entmakex (quote ((0 . "LINE") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0)))) (princ "\nALFE.DIRTY.OK\n") (princ "\nALFE.DIRTY.FAIL\n"))'
  $forms | Set-Content -LiteralPath $probe -Encoding ASCII
  $arguments=@('--no-init','--debug','--plugin-path',(Join-Path $repo 'autolisp-front-end/plugins'),('--'+$case.Cad),'--epure','--mode',$case.Mode,'--timeout',([string]$TimeoutSeconds),'--workdir',$work,'--keep-workdir','-l',$probe)
  if($case.Control){$arguments=@($arguments|Where-Object {$_ -ne '--epure'})+@('--no-plugins')}
  if($RequireComDrawing -or $case.Mode -eq 'batch'){$arguments+=@('--dwg',$drawing)}
  $before=@{}
  Get-CimInstance Win32_Process -Filter "Name='acad.exe' OR Name='bricscad.exe' OR Name='accoreconsole.exe'" | ForEach-Object {$before[[string]$_.ProcessId]=$_.CreationDate.ToUniversalTime().Ticks}
- $record=[ordered]@{Name=$name;Commit=(& git -C $repo rev-parse HEAD);ExecutableHash=(Get-FileHash -LiteralPath $alfe -Algorithm SHA256).Hash;EpurePluginHash=(Get-FileHash -LiteralPath (Join-Path $repo 'autolisp-front-end/plugins/epure/epure.lisp') -Algorithm SHA256).Hash;Arguments=$arguments;EpurePlugin=(-not [bool]$case.Control);Started=[DateTime]::UtcNow.ToString('o');CadPid=$null;CadStartTicks=$null;NativeTerminated=$false;NativeExit=$null;NativeExitHex=$null;CliExit=$null;CleanupRequested=$false;Forced=$false;CrashEvents=@();Dumps=@();ApiMatches=0;DrawingVerified=$false;Passed=$false;Error=$null}
+ $record=[ordered]@{Name=$name;Commit=(& git -C $repo rev-parse HEAD);ExecutableHash=(Get-FileHash -LiteralPath $alfe -Algorithm SHA256).Hash;EpurePluginHash=(Get-FileHash -LiteralPath (Join-Path $repo 'autolisp-front-end/plugins/epure/epure.lisp') -Algorithm SHA256).Hash;Arguments=$arguments;EpurePlugin=(-not [bool]$case.Control);DrawingBefore=(Get-FileHash -LiteralPath $drawing -Algorithm SHA256).Hash;DrawingUnchanged=$false;DirtyVerified=$false;Started=[DateTime]::UtcNow.ToString('o');CadPid=$null;CadStartTicks=$null;NativeTerminated=$false;NativeExit=$null;NativeExitHex=$null;CliExit=$null;CleanupRequested=$false;Forced=$false;CrashEvents=@();Dumps=@();ApiMatches=0;DrawingVerified=$false;Passed=$false;Error=$null}
  $start=Get-Date
  $native=$null;$cli=$null
  try{
@@ -88,11 +89,12 @@ foreach($case in $cases){
   $text=$stdout+(Get-Content -LiteralPath (Join-Path $work 'alfe.stderr') -Raw)
   $record.ApiMatches=[int]($stdout -match '(?m)^ALFE.API.COM_WAY.OK\r?$')+[int]($stdout -match '(?m)^ALFE.API.COM_TL_CONTINU.OK\r?$')
   $record.DrawingVerified=($stdout -match '(?m)^ALFE.DWG.OK\r?$')
-  # AutoCAD has also been observed returning its 47806 sentinel after a
-  # signaled termination. Preserve it explicitly; never accept SEH codes.
-  $allowedExit=($record.NativeExit -eq 0 -or ($case.Cad -eq 'autocad' -and $record.NativeExit -eq 47806))
+  $record.DirtyVerified=($stdout -match '(?m)^ALFE.DIRTY.OK\r?$')
+  $record.DrawingUnchanged=((Get-FileHash -LiteralPath $drawing -Algorithm SHA256).Hash -eq $record.DrawingBefore)
+  # A natural native exit must be zero; neither SEH nor BABE variants are success.
+  $allowedExit=($record.NativeExit -eq 0)
   $drawingOk=(-not($RequireComDrawing -or $case.Mode -eq 'batch') -or $record.DrawingVerified)
-  $record.Passed=($record.CliExit -eq 0 -and $allowedExit -and ($case.Control -or $record.ApiMatches -eq 2) -and $drawingOk -and $text -notmatch 'natural shutdown; terminating it|OWNED-CAD-CLOSE-FAILED')
+  $record.Passed=($record.CliExit -eq 0 -and $allowedExit -and ($case.Control -or $record.ApiMatches -eq 2) -and $drawingOk -and $record.DirtyVerified -and $record.DrawingUnchanged -and $text -notmatch 'natural shutdown; terminating it|OWNED-CAD-CLOSE-FAILED')
  }catch{$record.Error=$_.Exception.Message;$record.Passed=$false}
  finally{
   if($cli -and -not $cli.WaitForExit(0)){$cli.Kill();$null=$cli.WaitForExit(5000);$record.Forced=$true;$record.Passed=$false}

@@ -629,8 +629,30 @@ places the run is refused with the places tried."
                                         "--epure" "--mode" "automation"
                                         "--epure-script" "C:/epure/control.scr")
                                   :backend backend)
-        (is (equal '("(load \"C:/epure/control.scr\")")
+        (is (equal (list "(load \"C:/epure/control.scr\")"
+                         (format nil "(if (not com_startup_exe) (progn (alfe-debug-log \"EPURE document startup\") (load ~S) (s::startup)))"
+                                 (if (eq backend :bricscad) "on_start.lsp" "AcadDoc.lsp")))
                    (alfe.plugin:run-hook :run-common-prelude nil :variant :automation)))
         (is (null (alfe.plugin:run-hook :launcher-lines :before-load
                                         :kind :vbs :variant :automation)))
         (is (null (alfe.plugin:run-hook :run-common-prelude nil :variant :batch)))))))
+
+(test epure-bricscad-com-startup-precedes-bootstrap
+  "The selected document runs the real EPURE document startup before READY."
+  (with-shipped-plugins
+    (with-plugin-temp-directory (dir)
+      (let* ((script (namestring (%write-file (merge-pathnames "control.scr" dir) "x")))
+             (backend (alfe.backend.bricscad:make-bricscad-backend
+                       :executable-path (%fake-cad dir "bricscad.exe") :variant :automation)))
+        (with-epure-context (options (list "--bricscad" "--mode" "automation" "--epure"
+                                         "--epure-script" script "-x" "(princ 1)"))
+          (multiple-value-bind (command workdir) (%print-command options backend)
+            (declare (ignore command))
+            (unwind-protect
+                 (let* ((runtime (uiop:read-file-string (merge-pathnames "run-common.lsp" workdir)))
+                        (control (search (format nil "(load ~S)" script) runtime))
+                        (startup (search "(if (not com_startup_exe)" runtime))
+                        (bootstrap (search "loading bootstrap:" runtime)))
+                   (is (and control startup bootstrap (< control startup bootstrap)))
+                   (is (search "(load \"on_start.lsp\") (s::startup)" runtime)))
+              (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))))))

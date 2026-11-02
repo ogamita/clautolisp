@@ -195,7 +195,13 @@ to the errors file and the run goes on with the current profile."
   (when (eq variant :automation)
     (let ((script (control-script (context-backend ctx))))
       (when script
-        (list (format nil "(load ~S)" script))))))
+        (append (list (format nil "(load ~S)" script))
+                ;; Profile activation does not replay document startup in the
+                ;; already opened job drawing. Use EPURE's installed entry point
+                ;; once, rather than loading selected API implementation files.
+                (list (format nil "(if (not com_startup_exe) (progn (alfe-debug-log \"EPURE document startup\") (load ~S) (s::startup)))"
+                              (if (eq (context-backend ctx) :bricscad)
+                                  "on_start.lsp" "AcadDoc.lsp"))))))))
 
 (define-plugin-hook "epure" :launcher-lines (ctx slot &key kind backend)
   (let ((script (control-script backend)))
