@@ -4166,3 +4166,26 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
                     :defer-shutdown-p t)))
       (is (eq :success (alfe.backend:eval-result-status result)))
       (is (not (probe-file (alfe.protocol.file:protocol-session-control-path protocol)))))))
+
+(test cad-batch-shutdown-allows-native-quit-after-stopped
+  "STOPPED acknowledges the loop, not completion of the CAD's final QUIT."
+  (with-cad-test-directories
+    (dolist (constructor '(alfe.backend.bricscad::%make-bricscad-session
+                           alfe.backend.autocad::%make-autocad-session))
+      (let* ((workdir (%fresh-test-directory))
+             (protocol (alfe.protocol.file:init-session workdir))
+             (info (uiop:launch-program '("sh" "-c" "sleep 0.3; exit 0")
+                                        :output nil :error-output nil))
+             (session (funcall constructor :workdir workdir :state :ready
+                              :variant :batch :protocol-session protocol
+                              :process-info info)))
+        (unwind-protect
+            (progn
+              (with-open-file (out (alfe.protocol.file:protocol-session-status-path protocol)
+                                   :direction :output :if-exists :supersede)
+                (write-line "STOPPED" out))
+              (alfe.backend:shutdown session)
+              (is (= 0 (uiop:wait-process info))
+                  "shutdown killed the native process before its final QUIT")
+              (is (eq :stopped (alfe.backend:session-state session))))
+          (alfe.backend.cad-common:kill-engine-process info))))))
