@@ -968,3 +968,5 @@ Resolved notes) stay.
 | P3 | NOTE | referentiel-qualite-autolisp.md | research note (French, 2026-10-08) on an AutoLISP quality / security rule set; reference material, not an actionable issue |
 * NEXT Windows installed-prefix diagnostic wrapping (P3)
 [[file:verify-installed-prefix-powershell-wraps-stderr.issue]] — Native stderr formatting truncates source paths; Windows CI validation pending.
+* DONE Windows installed-prefix diagnostic wrapping (P3)
+[[file:../closed/verify-installed-prefix-powershell-wraps-stderr.issue]] — Windows CI17671893337 passes after preserving complete native stderr paths.
