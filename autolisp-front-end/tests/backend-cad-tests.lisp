@@ -4177,7 +4177,7 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
 (test owned-com-close-windows-mocked-lifecycle
   "Exercise emitted VBScript with fake automation objects, never a real CAD."
   (if (not (uiop:os-windows-p))
-      (skip "Native cscript fixture requires Windows.")
+      (fiveam:skip "Native cscript fixture requires Windows.")
       (with-cad-test-directories
         (let* ((dir (%fresh-test-directory))
                (path (merge-pathnames "close-fixture.vbs" dir))
@@ -4222,7 +4222,7 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
 (test owned-com-ready-windows-mocked-handshake
   "Exercise native VBScript object returns and bounded non-ready outcomes."
   (if (not (uiop:os-windows-p))
-      (skip "Native cscript fixture requires Windows.")
+      (fiveam:skip "Native cscript fixture requires Windows.")
       (with-cad-test-directories
         (let* ((dir (%fresh-test-directory))
                (path (merge-pathnames "ready-fixture.vbs" dir))
