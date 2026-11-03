@@ -61,3 +61,7 @@ runner launches reach READY and both APIs.
 The vendor routine itself remains defective for callers bypassing this
 safeguard or explicitly supplying an empty/oversized value. The separate
 post-test C0000005 shutdown is tracked in epure-autocad-clean-profile-quit.issue.
+
+The implemented ALFE environment requirement has its own resolved issue:
+[[file:../closed/alfe-windows-missing-userprofile.issue]]. The proprietary
+ARX defect tracked here remains open; neither issue resolves shutdown.
