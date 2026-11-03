@@ -1,0 +1,29 @@
+#+TITLE: Parallel Windows unit suites share temporary fixture names
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+
+* Evidence
+Native jobs17693487997 (!507) and17693490276 (!476) ran concurrently on the
+same Windows account. Both use C:/msys64/tmp. The core suite reports four
+failures: the CRLF fixture reads lone CR contents, another fixture cannot be
+deleted because another process holds it, and a SECURELOAD fixture disappears.
+The fixture uses process-local RANDOM state, so separate processes can choose
+the same names.
+
+* Correction
+All three native Windows unit lanes inherit a common unit-test template.
+A reusable PowerShell initializer sets TEMP, TMP and TMPDIR for the current
+job process to CI_BUILDS_DIR/.clautolisp-unit-tmp/CI_JOB_ID, created after
+checkout. An after_script removes only that job's directory when possible.
+The directory is outside the checkout, so a leftover locked file cannot break
+the next job's get_sources. Real CAD jobs retain the existing shared TEMP
+because their orphan/trusted-path journals must survive across jobs.
+
+* Validation
+The regression starts two real PowerShell child processes in parallel.
+They create the same fixture basename with different contents, verify each
+keeps its contents, report distinct paths and PIDs, and exercise cleanup.
+The parent environment remains unchanged. Passed on Windows PowerShell5.1
+on pfenny and PowerShell7 on macOS. The CI core unit lane runs this regression
+before its normal suite. The full Windows unit lanes are rerun in CI to verify integration.

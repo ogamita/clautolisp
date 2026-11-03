@@ -960,3 +960,6 @@ opendcl-conformance. All =TODO=.
 
 ** NEXT EPURE AutoCAD clean quit outside ALFE
 [[file:epure-autocad-clean-profile-quit.issue]] — Native C0000005 under the EPURE profile, exit0 under the unnamed-profile control. Blocks !476/!507 qualification.
+
+** DONE Parallel Windows unit temporary fixtures
+[[file:../closed/ci-windows-unit-temp-collision.issue]] — Per-job TEMP/TMP/TMPDIR for unit lanes; native Windows/macOS parallel-process regression passes.
