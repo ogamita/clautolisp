@@ -765,3 +765,8 @@ The bridge does not enqueue a separate SCRIPT command.
 COM mode runs the installed EPURE document startup after synchronous control
 loading when com_startup_exe is unset: on_start.lsp on BricsCAD, AcadDoc.lsp
 on AutoCAD. Selecting a profile alone does not initialize an open drawing.
+
+.SH WINDOWS PROFILE ENVIRONMENT
+A missing USERPROFILE is resolved with the Windows known-folder API for CAD
+child launches. Existing values and explicit launch overrides are preserved.
+The parent environment is restored after spawning; no registry value is changed.

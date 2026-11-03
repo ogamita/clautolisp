@@ -1,0 +1,46 @@
+#+TITLE: EPURE AutoCAD profile returns C0000005 on an unchanged drawing quit
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+
+** Minimal native control
+On pfenny, normal interactive Windows account, AutoCAD.Application.24.1
+(AutoCAD 2022), create a fresh COM application, wait for quiescence, inspect
+the initial document (DBMOD=0), release the document reference and call Quit.
+No ALFE, test Lisp, target drawing, runtime trust or file protocol is used.
+Temporarily select the existing unnamed profile or Epure before creation;
+restore the original profile in finally. Record native PID, creation ticks,
+owner SID, kernel handle and natural exit. Never reuse a foreign instance.
+
+| Profile | Native exit | Forced | Error |
+| unnamed, no loaded EPURE modules | 00000000 | false | none |
+| Epure, initial unchanged drawing | C0000005 | false | none |
+
+A separate visible-window control posts WM_CLOSE to the exact owned AutoCAD
+window under Epure; it also exits C0000005 naturally. The corresponding COM
+visible-window trial was rejected as transiently busy and forced to clean up;
+it is NOT used as successful closure evidence.
+
+** Scope and evidence
+This reproduces outside ALFE. It does not identify which EPURE component is
+responsible. Loaded native components include DOSLib24x64.arx,
+SNCFOutilsARX64.arx, FLSNCFIG.dll and several SNCF DLLs.
+Proprietary EPURE sources/PDBs are unavailable to the project maintainer.
+Do not blame the ARX's separately established USERPROFILE startup buffer bug
+for this shutdown without matching evidence. No vendor binaries are patched.
+
+CI native jobs17691248610 (!507, 4f10bab7) and17691251293 (!476, efb2377f)
+pass EPURE API checks and the exact dirty-drawing discard invariant. BricsCAD
+COM passes naturally with exit0 in both MRs; BricsCAD batch also passes in
+!476. AutoCAD exits BABE variants or C0000005, without forced cleanup.
+The lifecycle JUnit records these as failures. A first-chance AV monitor
+attached after the test observed no C0000005 exception in one C0000005-exit
+trial; its earlier startup was not monitored, so the exit remains unclassified.
+
+** Required resolution
+Identify and correct the EPURE profile shutdown defect, or obtain vendor
+confirmation of its intended exit contract with sufficient independent crash
+evidence. Do not whitelist C0000005/BABE, kill the process as success, or
+disable vendor shutdown callbacks merely to obtain a green pipeline.
+Keep both MRs unmerged and native qualification blocking.
