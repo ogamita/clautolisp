@@ -88,3 +88,20 @@ occurred. No leftover capture task/CAD/debugger; profile restored, both PF5
 runners unpaused. Administrative execution is needed for the next capture.
 Detailed receipt, full-memory findings and limits are in the linked report.
 Keep the issue open and both MRs unmerged; do not whitelist the exit.
+
+** Administrator-assisted page heap follow-up (2026-11-03)
+Global full page heap was enabled by a separate administrator controller;
+AutoCAD remained under the existing CAD account. First AV was captured in
+memcpy from accore's wide-string initialization before quiescence/Quit,
+not in the MFC shutdown path. Source allocation is14 bytes, source+8,
+requested copy16: an allocated-buffer over-read into a guard page.
+See autocad-pageheap-startup-wide-string-overread.issue for that obstacle.
+Capture timeout required cleanup of the exact owned instance, recorded as
+Forced=true. The controller restored its exact image option, removed the
+capture task, and both runners were reactivated. No shutdown success claim.
+
+A 480-byte protected-allocation filter is prepared to target the suspected
+thread-state lifetime defect without being stopped by the unrelated small
+allocation. Settings are backed up/restored by existence, type and value.
+The limited capture task is registered but not started; administrator READY
+and a newly coordinated reservation are still required. No merge.
