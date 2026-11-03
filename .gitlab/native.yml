@@ -154,6 +154,16 @@ default:
     - when: manual
       allow_failure: true
 
+# Unit suites can run concurrently on one Windows account. A process-local
+# random fixture name is not unique in the account's shared TEMP directory.
+# CAD jobs keep their durable orphan/trust journals in the existing TEMP.
+.gate-windows-unit-tests:
+  extends: .gate-windows-hard
+  before_script:
+    - '& "$env:CI_PROJECT_DIR/scripts/ci-windows-unit-environment.ps1"'
+  after_script:
+    - '& "$env:CI_PROJECT_DIR/scripts/ci-windows-unit-environment.ps1" -Cleanup'
+
 .gate-macos-soft:
   tags: [macos, arm64, shell]
   rules:
@@ -464,11 +474,12 @@ test:dwt:macos:
     - sh scripts/test-vendor-templates.sh
 
 test:clautolisp:windows:
-  extends: .gate-windows-hard
+  extends: .gate-windows-unit-tests
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
   script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-ci-windows-unit-environment.ps1
     - make -C clautolisp test-sbcl
     - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
@@ -482,7 +493,7 @@ test:autolisp-test:macos:
     - sh scripts/ci-build-cache.sh save fasl
 
 test:autolisp-test:windows:
-  extends: .gate-windows-hard
+  extends: .gate-windows-unit-tests
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -531,7 +542,7 @@ test:alfe:ccl:macos:
       make -C autolisp-front-end test-ccl CCL="$CCLBIN" TEST_TIMEOUT=1800
 
 test:alfe:windows:
-  extends: .gate-windows-hard
+  extends: .gate-windows-unit-tests
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none

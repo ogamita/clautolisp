@@ -3035,3 +3035,9 @@ CAD launch, preserving explicit values and restoring the parent environment.
 This guards EPURE helpers whose missing-profile handling corrupts the stack.
 MRs requiring EPURE lifecycle qualification now mirror the native child status
 in the parent pipeline. Unexpected native exits remain blocking.
+
+* Native Windows unit isolation
+Give parallel Windows unit jobs separate temporary directories through a
+shared initializer and clean only their own files. CAD orphan/trust journals
+retain their durable location. This prevents cross-job fixture overwrites,
+locked-file cleanup errors and missing SECURELOAD fixtures.
