@@ -53,3 +53,10 @@ A control never replaces either required EPURE API assertion. The fake
 native-process fixture now proves missing APIs fail EPURE cases even when
 controls pass. SSH on pfenny timed out before the banner; native evidence
 therefore continues through its still-responsive GitLab runner.
+
+** Parent status propagation (2026-11-03)
+The labelled child job was blocking, but native:pipeline intentionally did not
+wait for the child. Parent pipelines could remain green after a native failure.
+The new native:qualification bridge inherits the native setup and mirrors its
+child status, with allow_failure false, only for explicitly labelled MRs.
+GitLab lint and live failed-child propagation are required before closing.

@@ -953,12 +953,85 @@ sets the variable to the empty string (the portable form of \"unset\")."
       (dolist (pair previous)
         (setf (uiop:getenv (car pair)) (or (cdr pair) ""))))))
 
+#+(or win32 windows mswindows)
+(progn
+  (cffi:define-foreign-library cad-profile-shell32 (t "shell32.dll"))
+  (cffi:define-foreign-library cad-profile-ole32 (t "ole32.dll")))
+
+(defun windows-user-profile-directory ()
+  "Resolve the current user's profile with SHGetKnownFolderPath, or NIL.
+This uses FOLDERID_Profile rather than HOME or an assumed C:/Users path;
+SSH/MSYS may omit USERPROFILE and use a different HOME. The Windows-allocated
+UTF-16 result is always released, including on conversion failure."
+  #+(or win32 windows mswindows)
+  (handler-case
+      (progn
+        (cffi:use-foreign-library cad-profile-shell32)
+        (cffi:use-foreign-library cad-profile-ole32)
+        (cffi:with-foreign-objects ((guid :uint8 16) (result :pointer))
+          ;; FOLDERID_Profile {5E6C858F-0E22-4760-9AFE-EA3317B67173},
+          ;; with the first three GUID fields in Windows little-endian order.
+          (loop for octet across #(#x8f #x85 #x6c #x5e #x22 #x0e #x60 #x47
+                                   #x9a #xfe #xea #x33 #x17 #xb6 #x71 #x73)
+                for index from 0
+                do (setf (cffi:mem-aref guid :uint8 index) octet))
+          (setf (cffi:mem-ref result :pointer) (cffi:null-pointer))
+          (unwind-protect
+               (when (zerop
+                      (cffi:foreign-funcall-pointer
+                       (cffi:foreign-symbol-pointer "SHGetKnownFolderPath"
+                                                    :library 'cad-profile-shell32)
+                       (:convention :stdcall)
+                       :pointer guid :uint32 0 :pointer (cffi:null-pointer)
+                       :pointer result :int32))
+                 (let ((pointer (cffi:mem-ref result :pointer)))
+                   (unless (cffi:null-pointer-p pointer)
+                     (cffi:foreign-string-to-lisp pointer :encoding :utf-16le))))
+            (let ((pointer (cffi:mem-ref result :pointer)))
+              (unless (cffi:null-pointer-p pointer)
+                (cffi:foreign-funcall-pointer
+                 (cffi:foreign-symbol-pointer "CoTaskMemFree"
+                                              :library 'cad-profile-ole32)
+                 (:convention :stdcall)
+                 :pointer pointer :void))))))
+    (error (condition)
+      (log-debug "Cannot resolve the Windows user profile: ~A" condition)
+      nil))
+  #-(or win32 windows mswindows)
+  nil)
+
+(defun windows-profile-environment (environment current-profile resolver)
+  "Return ENVIRONMENT with a missing USERPROFILE resolved for the child.
+An explicit launch override, even an unset value, takes precedence. A nonempty
+CURRENT-PROFILE needs no repair. Otherwise call RESOLVER once and add its
+nonempty result without modifying ENVIRONMENT; fail before spawning if the
+actual Windows profile cannot be resolved. No registry setting is changed."
+  (cond
+    ((or (assoc "USERPROFILE" environment :test #'string-equal)
+         (and (stringp current-profile) (plusp (length current-profile))))
+     environment)
+    (t
+     (let ((profile (funcall resolver)))
+       (unless (and (stringp profile) (plusp (length profile)))
+         (error 'backend-bootstrap-error :backend :cad :code :missing-user-profile
+                :message "USERPROFILE is missing and the Windows profile could not be resolved; supply the actual Windows user profile before launching CAD."))
+       (log-debug "Restoring missing USERPROFILE for the CAD launcher from the Windows known folder")
+       (acons "USERPROFILE" profile environment)))))
+
 (defun call-launcher (launcher argv launch-options &rest keys)
   "Call LAUNCHER as (LAUNCHER ARGV . KEYS), adding :DIRECTORY and applying
 the :ENVIRONMENT that LAUNCH-OPTIONS, the result of the :launch-options
-hook, carries. The mock launchers of the test suite ignore extra keys."
+hook, carries. The mock launchers of the test suite ignore extra keys.
+On native Windows,
+a missing USERPROFILE is resolved from the current Windows known folder for
+the child launch only; explicit launch environment overrides take precedence."
   (let ((directory (getf launch-options :directory))
-        (environment (getf launch-options :environment)))
+        (environment #+(or win32 windows mswindows)
+                       (windows-profile-environment
+                        (getf launch-options :environment) (uiop:getenv "USERPROFILE")
+                        #'windows-user-profile-directory)
+                       #-(or win32 windows mswindows)
+                       (getf launch-options :environment)))
     (flet ((launch ()
              (apply launcher argv
                     (append (when directory (list :directory directory)) keys))))

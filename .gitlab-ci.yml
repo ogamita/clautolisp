@@ -1297,6 +1297,9 @@ native:pipeline:
     # ARM64_BASE is inherited from the top-level variables automatically.
     # Redeclaring it here as "$ARM64_BASE" shadows that value recursively.
   rules:
+    # Explicit qualification has its own mirrored bridge below.
+    - if: '$CI_MERGE_REQUEST_LABELS =~ /qualification::epure-lifecycle/'
+      when: never
     - *not-on-schedule
     # A TAG and MASTER always spawn the child: those are the refs whose results
     # anybody relies on, and `changes:' against a merge commit compares with the
@@ -1407,6 +1410,18 @@ native:pipeline:
     # are `manual` and the child pipeline never "completes", so depending on it
     # would hang this parent job (re-creating the pile-up we're avoiding). The
     # child runs independently; its jobs are allow_failure anyway.
+
+# Qualification is an explicit review gate, including the blocking native
+# lifecycle job. Mirror its status so a failed child cannot leave a green MR.
+native:qualification:
+  extends: native:pipeline
+  allow_failure: false
+  rules:
+    - *not-on-schedule
+    - if: '$CI_MERGE_REQUEST_LABELS =~ /qualification::epure-lifecycle/'
+    - when: never
+  trigger:
+    strategy: mirror
 
 # NOTE: build:alfe:{macos,windows} moved to the child pipeline
 # .gitlab/native.yml so they are runner-availability gated (on_success when

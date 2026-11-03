@@ -4190,3 +4190,71 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
                   "shutdown killed the native process before its final QUIT")
               (is (eq :stopped (alfe.backend:session-state session))))
           (alfe.backend.cad-common:kill-engine-process info))))))
+
+(test cad-windows-profile-environment-preserves-overrides
+  "Do not overwrite an explicit launch environment or an existing profile."
+  (let ((environment '(("APPDATA" . "C:/Users/real/AppData/Roaming")))
+        (explicit '(("userprofile" . "D:/Profile"))))
+    (flet ((must-not-resolve () (error "Unexpected profile lookup")))
+      (is (eq explicit (alfe.backend.cad-common::windows-profile-environment
+                        explicit nil #'must-not-resolve)))
+      (is (eq environment (alfe.backend.cad-common::windows-profile-environment
+                           environment "C:/Users/real" #'must-not-resolve))))))
+
+(test cad-windows-profile-environment-resolves-missing-profile
+  "Resolve the actual Windows profile, preserving unrelated settings."
+  (let* ((environment '(("APPDATA" . "C:/Users/real/AppData/Roaming")))
+         (calls 0)
+         (result (alfe.backend.cad-common::windows-profile-environment
+                  environment "" (lambda () (incf calls) "C:/Users/real"))))
+    (is (= 1 calls))
+    (is (equal "C:/Users/real" (cdr (assoc "USERPROFILE" result :test #'string-equal))))
+    (is (equal environment (cdr result)))
+    (is (= 1 (length environment)))))
+
+(test cad-windows-profile-environment-rejects-unresolved-profile
+  "Fail before launching CAD rather than passing an empty vendor input."
+  (signals alfe.error:backend-bootstrap-error
+    (alfe.backend.cad-common::windows-profile-environment nil nil (constantly nil)))
+  (signals alfe.error:backend-bootstrap-error
+    (alfe.backend.cad-common::windows-profile-environment nil nil (constantly ""))))
+
+#+(or win32 windows mswindows)
+(test cad-windows-known-profile-does-not-require-userprofile-environment
+  "Exercise the native known-folder API with USERPROFILE absent."
+  (let ((previous (uiop:getenv "USERPROFILE")))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "USERPROFILE") "")
+           (let ((profile (alfe.backend.cad-common::windows-user-profile-directory)))
+             (is (and (stringp profile) (plusp (length profile))))
+             (is (uiop:directory-exists-p profile))))
+      (setf (uiop:getenv "USERPROFILE") (or previous "")))))
+
+#+(or win32 windows mswindows)
+(test cad-windows-profile-reaches-native-child-and-restores-parent
+  "A real cscript child receives the repaired Windows process environment."
+  (let ((previous (uiop:getenv "USERPROFILE"))
+        (expected (alfe.backend.cad-common::windows-user-profile-directory)))
+    (unwind-protect
+         (uiop:with-temporary-file (:stream stream :pathname path :type "vbs")
+           (write-line "Set sh = CreateObject(\"WScript.Shell\")" stream)
+           ;; ASCII hex preserves native UTF-16 code units across console locales.
+           (write-line "value = sh.Environment(\"PROCESS\")(\"USERPROFILE\")" stream)
+           (write-line "For i = 1 To Len(value)" stream)
+           (write-line "WScript.StdOut.Write Right(\"0000\" & Hex(AscW(Mid(value,i,1))),4)" stream)
+           (write-line "Next" stream)
+           (close stream)
+           (setf (uiop:getenv "USERPROFILE") "")
+           (multiple-value-bind (out err code)
+               (alfe.backend.cad-common:call-launcher
+                #'uiop:run-program (list "cscript" "//nologo" (uiop:native-namestring path))
+                nil :output :string :error-output :string
+                :ignore-error-status t)
+             (declare (ignore err))
+             (is (= 0 code))
+             (is (equal (format nil "~{~2,'0X~}"
+                                (coerce (babel:string-to-octets expected :encoding :utf-16be) 'list))
+                        (string-trim '(#\Return #\Newline #\Space) out)))
+             (is (zerop (length (or (uiop:getenv "USERPROFILE") ""))))))
+      (setf (uiop:getenv "USERPROFILE") (or previous "")))))
