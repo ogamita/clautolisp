@@ -963,3 +963,6 @@ opendcl-conformance. All =TODO=.
 
 ** DONE Parallel Windows unit temporary fixtures
 [[file:../closed/ci-windows-unit-temp-collision.issue]] — Per-job TEMP/TMP/TMPDIR for unit lanes; native Windows/macOS parallel-process regression passes.
+
+** DONE Supply missing Windows USERPROFILE in ALFE child launches
+[[file:../closed/alfe-windows-missing-userprofile.issue]] — Known-folder resolution, scoped environment and native child regression; implemented on unmerged !476/!507.
