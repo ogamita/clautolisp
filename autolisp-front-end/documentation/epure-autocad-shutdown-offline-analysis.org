@@ -1,7 +1,7 @@
 #+TITLE: AutoCAD EPURE shutdown: offline exception and heap analysis
 #+DATE: 2026-11-03
 
-* Result and attribution boundary
+* Initial termination dump: result and attribution boundary
 The available exit dump localizes an access violation to Windows heap
 coalescing while MFC destroys its OLE module state. The specific released
 member is AFX_MODULE_STATE::m_strUnregisterList, not a Lisp request or a
@@ -126,3 +126,91 @@ that a particular vendor DLL violates the contract in this captured failure:
 https://learn.microsoft.com/en-us/cpp/mfc/tn058-mfc-module-state-implementation
 Symbol files were retrieved from Microsoft's symbol server, using the RSDS
 identities listed above: https://msdl.microsoft.com/download/symbols/
+
+* First-chance full dump captured on 2026-11-03
+** Isolation, capture and restoration
+The follow-up used a new pure-COM AutoCAD.Application.24.1 instance under the
+Epure profile, with its initial drawing unchanged (DBMOD=0), without ALFE,
+Lisp tests or a test DWG. The other chat confirmed the PF5 reservation.
+No CAD process was active before launch. The created HWND/PID, start ticks,
+owner SID and interactive session were checked before attachment.
+
+- Native PID: 36612; creation ticks: 639293070136555377.
+- Quit requested: 12:50:43 UTC (13:50:43 Europe/Paris).
+- First observed matching exception: 12:50:46 UTC (13:50:46 Europe/Paris).
+- ProcDump: -ma -e 1 -g -f C0000005 -n 1, attached before Quit.
+  Nonmatching first-chance exceptions were logged but did not trigger dumps.
+- File size: 1444478238 bytes; SHA256:
+  6fea6f5f93984f2a30f40b365e6171f65fdce56ab16fee752da72c02cd27d91f.
+- Off-host SHA256 equals the Windows capture receipt. Minidump flags
+  0x661826 include MiniDumpWithFullMemory; Memory64List and ExceptionStream
+  are present. The exception context is direct, not reconstructed from a
+  termination dump.
+- No forced cleanup; profile restored to its exact original Epure value.
+  The receipt formats the held native process's final exit as zero; this
+  instrumented run is not a clean-lifecycle qualification. Its recorded
+  first-chance access violation is independent of that final exit value.
+- The temporary capture task was removed, no CAD/debugger process remained,
+  and the runner was reactivated. All dump parsing and binary analysis ran
+  outside Windows. Raw memory remains private, outside Git and CI artifacts.
+
+** Original failure reproduced with full memory
+ExceptionStream contains C0000005, read from address zero, at ntdll+9750.
+The direct saved R15 is zero, matching mov rax,[r15]. Unwind metadata again
+leads through RtlpCoalesceFreeBlocks -> RtlpFreeHeap -> RtlFreeHeap ->
+_free_base -> AFX_MODULE_STATE destructor+82, releasing the CString in
+_afxOleModuleState.m_strUnregisterList during MFC process detach.
+
+The full memory snapshot now permits inspection of the two adjacent blocks:
+- The CString header remains consistent with length zero and allocation
+  length 4096 characters. It is being released normally by its MFC manager.
+- Immediately before its heap entry is a 0x1F0-byte free block: 16-byte heap
+  header plus 480-byte former user allocation. Its free-list Flink points
+  to a valid bucket/list structure, but its Blink is zero. Reading that
+  null Blink produces the captured access violation.
+- Its remaining payload is consistent with _AFX_THREAD_STATE (Microsoft
+  PDB type size 480): m_szTempClassName at offset 216 contains an Afx:...
+  generated window-class name, matching the type's precise inline layout.
+  m_pModuleState is at offset 8 of that former object, exactly overlapping
+  Blink after the allocator reuses the object's first two words as links.
+- A later write of a null module state through a stale thread-state pointer
+  would therefore explain the precise corruption. This is a strong
+  use-after-free hypothesis, not a captured write instruction or proof of
+  the identity of its caller.
+
+The complete snapshot has one remaining thread. AutoCAD still has a global
+reference to this former object; static references found in acad.exe use its
+current-message fields. A retained pointer is not proof of a post-free write.
+No proprietary EPURE instruction is on the reconstructed failing stack.
+The available heap is not recording allocation/free backtraces, so this dump
+does not identify which call first invalidated the block or later wrote it.
+Do not convert this hypothesis into blame against SNCFOutilsARX64.arx,
+FLSNCFIG.dll, EPURELIB, AutoCAD or MFC itself without observing the operation.
+
+** Follow-up instrumentation and access boundary
+A second capture was prepared to enable full page heap for acad.exe only,
+backing up its exact existing image option and restoring it in finally.
+The purpose is to catch access to the former object at the offending
+instruction rather than at the subsequent heap coalescing operation.
+The existing account cannot register the required elevated task:
+Register-ScheduledTask with RunLevel Highest returns access denied.
+The task never started, its workdir was never created, no image option was
+written, and no second CAD instance was launched. Final read-only checks
+show no GlobalFlag value for acad.exe and no remaining capture task/process.
+Both PF5 CAD/general Windows runners were restored to paused=false.
+An administrative execution path is needed for that prepared capture.
+
+Microsoft documents full page heap for an image as FLG_HEAP_PAGE_ALLOCS
+0x02000000, equivalent to gflags /i ImageFile +hpa; it is intended to make
+invalid heap accesses fault at their source. No such setting was enabled
+in the completed first capture, or left enabled after the denied attempt.
+https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/enable-page-heap
+https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/gflags-and-pageheap
+
+** Current conclusion
+The full first-chance capture confirms the same defect independently of
+ALFE and narrows the damaged neighbor to a former MFC thread-state object.
+It still does not identify an EPURE writer. The precise next evidence is a
+page-heap capture of the offending access with allocation/free provenance.
+No source workaround, vendor binary patch, exit-code whitelist or merge is
+justified by this snapshot.
