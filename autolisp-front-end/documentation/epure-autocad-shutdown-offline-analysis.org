@@ -214,3 +214,90 @@ It still does not identify an EPURE writer. The precise next evidence is a
 page-heap capture of the offending access with allocation/free provenance.
 No source workaround, vendor binary patch, exit-code whitelist or merge is
 justified by this snapshot.
+
+* Global page-heap capture: startup over-read, 2026-11-03
+** Coordinated execution and restoration
+The administrator controller and limited capture task were deliberately
+separated: AutoCAD ran under its existing PPBN02261 interactive account,
+not the administrator's account. The capture task was registered by the CAD
+account itself after cross-account task registration failed to resolve its
+cloud SID. The other chat confirmed the PF5 slot. Both PF5 runners were
+paused only after confirming no running jobs and no CAD processes.
+A fresh nonce/timestamp reservation signal released the waiting controller.
+
+The controller temporarily set acad.exe's GlobalFlag to 0x02000000 and
+started the limited-user task. Native PID33364, creation ticks
+639293171372805793, was verified by HWND, account SID, session and start time
+before ProcDump attached (-ma -e 1 -g -f C0000005 -n 1).
+The target started at 15:38:57 UTC; the dump was triggered at 15:39:49 UTC
+(16:39:49 Europe/Paris), while waiting for quiescence, BEFORE any Quit request.
+
+Full dump: 3767186581 bytes, SHA256
+7f8f0cdf97d5d7f210debc2ff078f56d30a264e4d2e6a77543dc3a8337fa8a51.
+The full off-host copy matches the Windows receipt and includes a direct
+ExceptionStream and Memory64List. Capture finished at 15:42:50 UTC after
+COM quiescence timed out. The exact owned instance required forced cleanup;
+its recorded final exit is FFFFFFFF. DBMOD and the actual active profile
+could not be queried. Epure was selected before creation and the profile
+setting was restored afterwards. This run is NOT shutdown qualification.
+
+Controller receipt: Restored=true, Error=null, CaptureStillRunning=false;
+the limited task was unregistered. Read-only final checks found no GlobalFlag
+value and no CAD/debugger process. Both runners were restored to paused=false,
+and the slot was released explicitly to the other chat. No merge occurred.
+Raw dumps, DLLs and PDBs remain private outside the repository/CI artifacts.
+The Windows side performed capture, file copying and compression only;
+all parsing, symbol resolution and disassembly ran off Windows.
+
+** What the first protected exception establishes
+The read fault is VCRUNTIME140.dll+0x10B36, memcpy_avx_ermsb_amd+0x126,
+not the previous ntdll+9750 heap coalescing fault. The instruction is
+movdqu xmm1,[rdx], with R8=16 bytes. Source starts eight bytes before a
+protected page; this 16-byte load crosses into that page.
+
+The source lies eight bytes inside an allocation requested as 14 bytes.
+Its DPH_BLOCK_INFORMATION allocation stamp is ABCDBBBB (allocated), not
+a freed-block stamp. Thus only six requested bytes remain at the source,
+followed by two fill bytes and the protected page. This is an allocated
+buffer over-read, not the previously hypothesized freed 480-byte thread state.
+
+Matching PE unwind tables reconstruct memcpy -> accore+78E5D ->
+accore+9832E -> accore+98017 -> accore+2078BC, followed by further accore
+initialization frames, acad+4F765, MFC startup and acad's entry path.
+The accore helpers construct a wide std::basic_string using an explicit
+count of eight characters, leading to a 16-byte copy from that short source.
+The source allocation header is present; its allocation backtrace is not
+stored in that header. Autodesk's matching accore PDB request returned 404,
+so internal function names are not asserted from nearest exports.
+No proprietary EPURE native frame appears in the reconstructed stack.
+That does not exclude an application/profile input trigger, and does not
+establish a relationship with the earlier MFC shutdown corruption.
+
+A separate open issue records this startup obstacle. Do not relabel this
+capture as the writer of the original heap corruption or as a clean exit.
+
+** Prepared narrower follow-up; not executed
+Global full page heap finds this earlier over-read before the shutdown path
+can be reached. The next prepared capture narrows protected allocations to
+requested size 480 bytes, the size of the former _AFX_THREAD_STATE identified
+in the preceding full shutdown dump. Other allocation sizes remain outside
+full guard-page selection; the startup over-read remains reported separately.
+This changes instrumentation coverage, not product code or exit acceptance.
+
+The installed verifier.dll and its matching Microsoft PDB were inspected
+OFF Windows to verify the configuration rather than guess registry names.
+AVrfpDphShouldAllocateInPageHeap tests bit 0x80 and compares the requested
+size inclusively against AVrfpDphSizeRangeStart/End. The initialization code
+reads DWORD PageHeapSizeRangeStart and PageHeapSizeRangeEnd.
+The prepared controller uses PageHeapFlags=0x83 (full selection 0x01,
+base 0x02, size range 0x80), both range values 480, and GlobalFlag 0x02000000.
+Its backup/finally logic preserves/restores the exact existence, type and
+value of ALL FOUR settings. The limited task checks the expected filter
+before creating AutoCAD. The next dump must verify the effective runtime
+filter before any attribution is made.
+
+Verifier PDB identity: 2EFDAF32-8395-3477-8CAC-51F2B1127025, age1.
+VCRUNTIME140 PDB identity: 724C8CA1-45D5-E181-3863-A893D4FED39E, age1.
+The limited task is registered and its principal/action/idle state verified;
+its administrator controller is prepared but has not been run. A new admin
+READY/reservation handshake is required; no diagnostic setting is active.
