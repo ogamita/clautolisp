@@ -70,3 +70,21 @@ Detailed evidence, symbol identities and limits:
 [[file:../../autolisp-front-end/documentation/epure-autocad-shutdown-offline-analysis.org]].
 The ALFE USERPROFILE safeguard is recorded separately in
 [[file:../closed/alfe-windows-missing-userprofile.issue]].
+
+** Full first-chance capture (2026-11-03)
+Pure COM, no ALFE, Epure profile, DBMOD=0, owned PID36612. ProcDump full
+first-chance C0000005 capture is 1444478238 bytes, off-host SHA256 verified:
+6fea6f5f93984f2a30f40b365e6171f65fdce56ab16fee752da72c02cd27d91f.
+The direct ExceptionStream reproduces ntdll+9750 and the MFC OLE-state
+CString destructor path. The adjacent 0x1F0-byte free block has a null Blink
+and payload matching _AFX_THREAD_STATE (480 bytes, exact inline class-name
+layout). Its m_pModuleState at offset8 overlaps the null Blink: a strong
+use-after-free hypothesis. The earlier writer/free caller is still unknown.
+This is not proof against a specific proprietary EPURE module.
+
+A page-heap follow-up capture is prepared but could not start: elevated task
+creation is denied to PPBN02261. No GlobalFlag change or second CAD launch
+occurred. No leftover capture task/CAD/debugger; profile restored, both PF5
+runners unpaused. Administrative execution is needed for the next capture.
+Detailed receipt, full-memory findings and limits are in the linked report.
+Keep the issue open and both MRs unmerged; do not whitelist the exit.
