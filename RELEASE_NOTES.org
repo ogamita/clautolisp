@@ -3047,3 +3047,10 @@ Replay the installed document startup once after profile activation so the
 selected job drawing exposes the EPURE API on BricsCAD and AutoCAD. Native
 qualification now requires a modified drawing to be discarded without changing
 the delivered fixture and rejects every unclassified nonzero native exit.
+
+* Windows CAD launch and required native qualification
+Resolve a missing USERPROFILE from the actual Windows known folder before a
+CAD launch, preserving explicit values and restoring the parent environment.
+This guards EPURE helpers whose missing-profile handling corrupts the stack.
+MRs requiring EPURE lifecycle qualification now mirror the native child status
+in the parent pipeline. Unexpected native exits remain blocking.

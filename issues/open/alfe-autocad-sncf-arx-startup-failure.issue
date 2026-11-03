@@ -36,3 +36,28 @@ The startup timeout left PID9584 recorded by this diagnostic launcher; its
 67 MB dump was preserved before terminating that exact PID after verifying
 creation time and owner. User profiles were restored to Epure and temporary
 scheduled tasks removed. No generic shutdown experiment is shipped.
+
+** Offline native analysis and scoped mitigation (2026-11-03)
+No disassembly or dump analysis was performed on Windows. Private copies of
+the ARX and captured dumps were analyzed off-host; no vendor binary is patched
+or committed. The ARX SHA256 is
+ee093357e74701bf80061f6aaea65d50a50826b0c784889a92c2c9841c2af97c.
+
+RVA 10379 is the MSVC INT 29 / fast-fail code 2, not the original bad write.
+The checked caller a160..a456 calls GetEnvironmentVariableW(USERPROFILE) into
+a 260-wchar stack buffer, checks only for a negative signed result, then calls
+unbounded wcscat with the ntuser.dat suffix. Windows returns zero on failure.
+The startup dump's native PEB has no USERPROFILE, the buffer contains CC debug
+fill and the cookie is overwritten by UTF16 ntuser.dat fragments.
+
+The shared launcher now supplies a missing USERPROFILE using FOLDERID_Profile.
+Native Windows tests verify known-folder resolution with the variable absent,
+FASL compilation/loading, an actual cscript child's environment, and parent
+restoration. A new owned AutoCAD dump confirms the repaired native PEB value
+and no C0000409; SSH COM still times out waiting for quiescence in that trial,
+so this is not claimed as complete SSH GUI qualification. Normal interactive
+runner launches reach READY and both APIs.
+
+The vendor routine itself remains defective for callers bypassing this
+safeguard or explicitly supplying an empty/oversized value. The separate
+post-test C0000005 shutdown is tracked in epure-autocad-clean-profile-quit.issue.

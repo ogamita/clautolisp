@@ -2928,3 +2928,20 @@ already open document. Batch launchers retain their existing startup path.
 Native lifecycle qualification also modifies the private test drawing and
 checks its SHA256 remains unchanged after shutdown. A nonzero native exit,
 including an unclassified BABE value, fails qualification even if Lisp passed.
+
+** Native Windows profile environment
+Before launching CAD on Windows, alfe resolves a missing =USERPROFILE= with
+=SHGetKnownFolderPath(FOLDERID_Profile)=. It supplies that value for the child
+launch and restores the parent environment afterwards. Existing values and
+explicit launch environment overrides take precedence. It does not infer a
+Windows profile from MSYS =HOME= or write registry settings. If Windows cannot
+resolve the profile, bootstrap fails before spawning CAD. This avoids passing
+an absent profile to native EPURE helpers that do not validate that input.
+A GUI COM server still needs a working interactive Windows session.
+
+** Required EPURE lifecycle qualification
+An MR labelled =qualification::epure-lifecycle= uses the =native:qualification=
+bridge with =strategy: mirror= and =allow_failure: false=. Its parent waits for
+the blocking native lifecycle job and reflects its failure. The regular native
+bridge retains its optional behavior for other pipelines. Native nonzero exit
+codes, correlated crashes and forced cleanup remain qualification failures.
