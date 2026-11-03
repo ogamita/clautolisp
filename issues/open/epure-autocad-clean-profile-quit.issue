@@ -44,3 +44,29 @@ confirmation of its intended exit contract with sufficient independent crash
 evidence. Do not whitelist C0000005/BABE, kill the process as success, or
 disable vendor shutdown callbacks merely to obtain a green pipeline.
 Keep both MRs unmerged and native qualification blocking.
+
+** Offline shutdown dump analysis (2026-11-03)
+The existing PID1072 termination dump retains the active exception's original
+CONTEXT and EXCEPTION_RECORD, despite lacking an ExceptionStream. x64 unwind
+metadata reconstructs RtlDispatchException/KiUserExceptionDispatcher and the
+original failure: read of address zero at ntdll+9750,
+RtlpCoalesceFreeBlocks+300 -> RtlpFreeHeap -> RtlFreeHeap -> _free_base ->
+AFX_MODULE_STATE::~AFX_MODULE_STATE+82 during CRT/MFC DLL process detach.
+Microsoft PDBs identify the object as _afxOleModuleState and the CString
+member being released as m_strUnregisterList (offset 104). The relevant heap
+blocks are absent, so the originating overwrite/free remains unattributed.
+
+ProcDump records C0000005 before this diagnostic's natural 012EBABE exit.
+Therefore that particular BABE value accompanies a real access violation;
+absence of a WER event does not establish a clean exit. This is a private
+ALFE2.3.91 diagnostic with candidate plugins, not a final-head MR result or
+the independent pure-COM control. SNCFOutilsARX64.arx and DOSLib are already
+unloaded; FLSNCFIG pointers found in raw stack memory are not true frames.
+Do not assign blame to those modules or the managed SCHMS library without
+identifying the earlier writer. No new native test or binary modification
+was performed for this analysis.
+
+Detailed evidence, symbol identities and limits:
+[[file:../../autolisp-front-end/documentation/epure-autocad-shutdown-offline-analysis.org]].
+The ALFE USERPROFILE safeguard is recorded separately in
+[[file:../closed/alfe-windows-missing-userprofile.issue]].
