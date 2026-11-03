@@ -2945,3 +2945,10 @@ bridge with =strategy: mirror= and =allow_failure: false=. Its parent waits for
 the blocking native lifecycle job and reflects its failure. The regular native
 bridge retains its optional behavior for other pipelines. Native nonzero exit
 codes, correlated crashes and forced cleanup remain qualification failures.
+
+** Windows CI unit temporary directories
+Native Windows unit lanes initialize process-scoped TEMP, TMP and TMPDIR
+under a CI job ID directory outside the checkout. The shared PowerShell helper
+is invoked in the current shell with =&=; spawning a new PowerShell process
+for initialization would not propagate the environment. CAD jobs retain their
+cross-job journals. Unit cleanup is scoped to the current numeric job ID.
