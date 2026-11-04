@@ -1899,6 +1899,78 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     (is (string= (concatenate 'string (string #\Newline) "\"hello\" ") contents))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))))
 
+(test builtin-printers-explicit-nil-file-per-dialect
+  ;; autocad-output-explicit-nil-file-rejected. Both vendor references
+  ;; accept an explicit NIL file argument for princ / print / prin1
+  ;; (Autodesk: "Type: File or nil"; Bricsys: "if omitted or NIL is used,
+  ;; output goes to command line"), and BricsCAD V26 does (measured
+  ;; 2026-11-04). AutoCAD 2022 rejects it ("type d'argument incorrect:
+  ;; FILE nil", accoreconsole, LISPSYS 0, measured 2026-11-04): a product
+  ;; contradicting an agreed doc, case 2. The AutoCAD dialects reproduce
+  ;; the error and warn; strict accepts and warns; bricscad, clautolisp
+  ;; and lax accept silently. The 1-argument call never warns.
+  (reset-autolisp-symbol-table)
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (install-core-builtins)
+  (let ((session (clautolisp.autolisp-runtime:evaluation-context-session
+                  (clautolisp.autolisp-runtime:current-evaluation-context))))
+    (labels ((call (name &rest args)
+               ;; (values outcome stdout stderr): OUTCOME is :error-CODE or
+               ;; the returned value.
+               (let* ((fn (autolisp-symbol-function (find-autolisp-symbol name)))
+                      (out (make-string-output-stream))
+                      (err (make-string-output-stream))
+                      (outcome
+                        (let ((*standard-output* out) (*error-output* err))
+                          (handler-case (apply #'call-autolisp-function fn args)
+                            (autolisp-runtime-error (condition)
+                              (list :error (clautolisp.autolisp-runtime:autolisp-runtime-error-code
+                                            condition)))))))
+                 (values outcome (get-output-stream-string out)
+                         (get-output-stream-string err))))
+             (in-dialect (name)
+               (clautolisp.autolisp-runtime:set-runtime-session-dialect
+                session (clautolisp.autolisp-reader:find-autolisp-dialect name))
+               (setf clautolisp.autolisp-runtime::*printer-nil-file-warned* nil)))
+      (let ((x (make-autolisp-string "x"))
+            (results '()))
+        (dolist (dialect '(:autocad :autocad-2022 :strict :bricscad :clautolisp :lax))
+          (in-dialect dialect)
+          (dolist (name '("PRINC" "PRINT" "PRIN1"))
+            ;; The notice is once per run: re-arm it for each operator.
+            (setf clautolisp.autolisp-runtime::*printer-nil-file-warned* nil)
+            (multiple-value-bind (outcome out err) (call name x nil)
+              (push (list dialect name
+                          (if (consp outcome) (first outcome) :value)
+                          (plusp (length out))
+                          (and (search "[printer-nil-file]" err) t))
+                    results)))
+          (multiple-value-bind (outcome out err) (call "PRINC" x)
+            (declare (ignore outcome out))
+            (push (list dialect :one-arg-warns (and (search "[printer-nil-file]" err) t))
+                  results)))
+        (setf results (reverse results))
+        (in-dialect :strict)
+        (dolist (name '("PRINC" "PRINT" "PRIN1"))
+          ;; (dialect name outcome wrote-p warned-p)
+          (is (equal (list :autocad name :error nil t)
+                     (find-if (lambda (r) (and (eq (first r) :autocad) (equal (second r) name))) results))
+              "autocad ~A: ~S" name results)
+          (is (equal (list :autocad-2022 name :error nil t)
+                     (find-if (lambda (r) (and (eq (first r) :autocad-2022) (equal (second r) name))) results))
+              "autocad-2022 ~A: ~S" name results)
+          (is (equal (list :strict name :value t t)
+                     (find-if (lambda (r) (and (eq (first r) :strict) (equal (second r) name))) results))
+              "strict ~A: ~S" name results)
+          (dolist (quiet '(:bricscad :clautolisp :lax))
+            (is (equal (list quiet name :value t nil)
+                       (find-if (lambda (r) (and (eq (first r) quiet) (equal (second r) name))) results))
+                "~A ~A: ~S" quiet name results)))
+        (dolist (dialect '(:autocad :autocad-2022 :strict :bricscad :clautolisp :lax))
+          (is (equal (list dialect :one-arg-warns nil)
+                     (find-if (lambda (r) (and (eq (first r) dialect) (eq (second r) :one-arg-warns))) results))
+              "~A: (princ x) must not warn" dialect))))))
+
 (test builtin-atoi-strtol-style
   ;; AutoLISP `atoi` follows a strtol(..., 10) C-style lex model.
   ;; Confirmed against BricsCAD V26 by the Phase-5 product test on

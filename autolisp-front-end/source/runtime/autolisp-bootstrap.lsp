@@ -1567,7 +1567,7 @@
 ;; TEXT, the source of one form, with the rewrite of
 ;; autolisp-normalize-princ-call-impl made textually (the table above
 ;; autolisp-output-call-target): (princ X) -> (autolisp-princ-to X nil),
-;; (princ X F) -> (autolisp-princ-to X F), (princ) / (terpri) ->
+;; (princ X F) -> (autolisp-princ-to-file X F), (princ) / (terpri) ->
 ;; (autolisp-princ-newline), (prompt X) -> (autolisp-emit-prompt X),
 ;; (load X) -> (load X nil); print / prin1 likewise.
 ;; Like the form walker, it leaves alone a list quoted by ' or headed by
@@ -1676,7 +1676,9 @@
              (T
               (setq alfe--edits (alfe-text-edit-insert
                                   (list (nth 3 alfe--f) (nth 4 alfe--f)
-                                        (strcase (vl-symbol-name (autolisp-output-call-target alfe--kind)) T))
+                                        (strcase (vl-symbol-name (autolisp-output-call-target
+                                                                  alfe--kind (= (nth 2 alfe--f) 3)))
+                                                 T))
                                   alfe--edits))
               (cond
                 ((= (nth 2 alfe--f) 1)
@@ -1764,9 +1766,10 @@
 ;; rewrites the calls of the code IT evaluates onto alfe-owned fixed-arity
 ;; functions, whose output reaches alfe's stream:
 ;;   (princ)                     -> (autolisp-princ-newline)
-;;   (princ X)    / (princ X F)  -> (autolisp-princ-to X nil) / (... X F)
+;;   (princ X)    / (princ X F)  -> (autolisp-princ-to X nil) / (autolisp-princ-to-file X F)
 ;;   (print)      / (prin1)      -> (autolisp-print-to "" nil) / (autolisp-prin1-to "" nil)
 ;;   (print X ..) / (prin1 X ..) -> (autolisp-print-to X nil)  / (autolisp-prin1-to X nil), ...
+;;                                  and the *-to-file ones with a FILE argument
 ;;   (prompt X)                  -> (autolisp-emit-prompt X)
 ;;   (terpri)                    -> (autolisp-princ-newline)
 ;;   (load X)                    -> (load X nil)
@@ -1778,12 +1781,13 @@
 ;; this runs -- BricsCAD is unaffected.)
 
 ;; The alfe-owned function a call headed by S ("PRINC" / "PRINT" / "PRIN1")
-;; is rewritten onto.
-(defun autolisp-output-call-target (alfe--s)
+;; is rewritten onto: the *-to-file one when the call has its FILE argument
+;; (FILE-P), which leaves a NIL file to the CAD's own primitive.
+(defun autolisp-output-call-target (alfe--s alfe--file-p)
   (cond
-    ((= alfe--s "PRINC") 'autolisp-princ-to)
-    ((= alfe--s "PRINT") 'autolisp-print-to)
-    (T 'autolisp-prin1-to)))
+    ((= alfe--s "PRINC") (if alfe--file-p 'autolisp-princ-to-file 'autolisp-princ-to))
+    ((= alfe--s "PRINT") (if alfe--file-p 'autolisp-print-to-file 'autolisp-print-to))
+    (T (if alfe--file-p 'autolisp-prin1-to-file 'autolisp-prin1-to))))
 
 ;; Cheap-walk pre-check: T iff FORM contains a call the normaliser rewrites
 ;; (see the table above). Walks the tree without consing. Stops at QUOTE /
@@ -1846,13 +1850,13 @@
           ((= (length alfe--form) 1)
            (if (= alfe--s "PRINC")
              (list 'autolisp-princ-newline)
-             (list (autolisp-output-call-target alfe--s) "" nil)))
+             (list (autolisp-output-call-target alfe--s nil) "" nil)))
           ((= (length alfe--form) 2)
-           (list (autolisp-output-call-target alfe--s)
+           (list (autolisp-output-call-target alfe--s nil)
                  (autolisp-normalize-princ-call-impl (cadr alfe--form))
                  nil))
           (T
-           (list (autolisp-output-call-target alfe--s)
+           (list (autolisp-output-call-target alfe--s T)
                  (autolisp-normalize-princ-call-impl (cadr alfe--form))
                  (autolisp-normalize-princ-call-impl (caddr alfe--form))))))
        ((and (= (type alfe--head) 'SYM)
@@ -2238,6 +2242,22 @@
     (autolisp-emit-user-line "")
     (terpri))
   nil)
+
+;; (princ X F) / (print X F) / (prin1 X F) as written in the code alfe
+;; evaluates: a file descriptor F writes there; a NIL F is handed to the CAD's
+;; OWN primitive, so the CAD judges it -- AutoCAD 2022 rejects an explicit nil
+;; ("bad argument type: FILE nil", measured), BricsCAD prints to its command
+;; line -- and alfe-evaluated code behaves as the same code compiled into a
+;; VLX (autocad-output-explicit-nil-file-rejected). Only the no-&rest
+;; normaliser emits these; the primitives are not shadowed there.
+(defun autolisp-princ-to-file (alfe--obj alfe--file)
+  (if alfe--file (autolisp-princ-to alfe--obj alfe--file) (princ alfe--obj alfe--file)))
+
+(defun autolisp-print-to-file (alfe--obj alfe--file)
+  (if alfe--file (autolisp-print-to alfe--obj alfe--file) (print alfe--obj alfe--file)))
+
+(defun autolisp-prin1-to-file (alfe--obj alfe--file)
+  (if alfe--file (autolisp-prin1-to alfe--obj alfe--file) (prin1 alfe--obj alfe--file)))
 
 ;; (prompt MSG), rewritten by the normaliser like princ. prompt takes exactly
 ;; one argument on every CAD, so this is not about arity but about leaving

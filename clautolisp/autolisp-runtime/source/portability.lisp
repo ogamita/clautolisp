@@ -460,6 +460,37 @@ code page's characters."
    ("Microsoft: WideCharToMultiByte (best-fit)" . "https://learn.microsoft.com/en-us/windows/win32/api/stringapiset/nf-stringapiset-widechartomultibyte")))
 
 (register-dialect-warning
+ :tag "printer-nil-file"
+ :title "PRINC / PRINT / PRIN1 with an explicit NIL file"
+ :kind :portability
+ :message "(~(~A~) X nil): an explicit NIL file argument is documented by AutoCAD and BricsCAD (output to the command line) but rejected by AutoCAD 2022 (\"bad argument type: FILE nil\"); ~A"
+ :arguments "the operator, and what clautolisp does under the dialect"
+ :example ": [printer-nil-file] in REPORT: (princ X nil): an explicit NIL file argument is documented by AutoCAD and BricsCAD (output to the command line) but rejected by AutoCAD 2022 (\"bad argument type: FILE nil\"); clautolisp rejects it, as AutoCAD does"
+ :dialects
+ "Both references allow an explicit NIL file: Autodesk types the argument
+\"File or nil\", Bricsys says \"if omitted or NIL is used, output goes to
+command line\", and BricsCAD V26 (macOS) does so (measured 2026-11-04).
+AutoCAD 2022 (accoreconsole, LISPSYS 0) rejects it for all three printers,
+\"type d'argument incorrect: FILE nil\" (measured 2026-11-04): the
+product contradicts its own reference, so the specification keeps the
+documented behaviour as normative.
+
+--dialect autocad (every version) reproduces AutoCAD's error and warns;
+--strict prints to the command line and warns; --dialect bricscad,
+--clautolisp and --lax print to the command line silently. The
+one-argument call (princ X) is the same everywhere and never warns. Once
+per run."
+ :rationale
+ "Code that passes NIL to mean \"the console\" -- a helper taking an
+optional file, called without one -- works on BricsCAD and stops AutoCAD
+2022 at the first print. The portable spelling is to omit the argument:
+(if f (princ x f) (princ x))."
+ :references
+ '(("clautolisp: the ticket" . "issues/closed/autocad-output-explicit-nil-file-rejected.issue")
+   ("Autodesk: princ (AutoLISP)" . "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7DDA298B-A97C-49C9-94BA-46C77B50AE99.htm")
+   ("Bricsys: princ" . "https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/princ.htm")))
+
+(register-dialect-warning
  :tag "clautolisp-sysvar"
  :title "clautolisp-only system variable"
  :kind :extension-notice

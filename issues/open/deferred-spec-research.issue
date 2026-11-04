@@ -269,7 +269,7 @@ vendor memory failures return nil or signal. No deliberate native OOM
 experiment is needed for the MAXSORT regression.
 
 * Encoding replacement: what each CAD writes for an unencodable character
-From encoding-replacement-character-option (clautolisp 2.3.87). The
+From encoding-replacement-character-option (clautolisp 2.3.89). The
 per-dialect defaults rest on catalogue cases 535-545 (2026-11-03): AutoCAD
 2022 accoreconsole, BricsCAD V25 Windows, BricsCAD V26 macOS. Still to probe
 (the SPEC-UNCERTAIN markers in DIALECT-ENCODING-REPLACEMENT-DEFAULT and
@@ -283,3 +283,13 @@ ENCODING-REPLACEMENT-TEXT):
   diacritic and otherwise writes "?".
 - BricsCAD V26 macOS default write encoding: é read back as 142, i.e.
   Mac Roman? (not the replacement, but measured in the same cases).
+
+* PRINC / PRINT / PRIN1: explicit NIL file on AutoCAD 2026 and LISPSYS 1 / 2
+(opened 2.3.88, autocad-output-explicit-nil-file-rejected) AutoCAD 2022 at
+LISPSYS 0 rejects (princ "x" nil), (print "x" nil) and (prin1 "x" nil) with
+"type d'argument incorrect: FILE nil"; BricsCAD V26 macOS accepts all three,
+and both references document NIL. clautolisp reproduces the error under every
+--dialect autocad version. Probe AutoCAD 2026 (Windows) and AutoCAD 2022 at
+LISPSYS 1 and 2: if one of them accepts NIL, gate the error on the dialect's
+version. Also probe write-line / write-char with a NIL file on AutoCAD (BricsCAD
+V26 accepts both; AutoCAD unmeasured -- pfenny went offline mid-probe).

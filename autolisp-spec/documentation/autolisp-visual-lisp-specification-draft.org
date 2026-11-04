@@ -9063,6 +9063,14 @@ BricsCAD Windows: 128 and 62976).
 clautolisp (2.3.76): the same escapes; DEL as the dialect's product does;
 characters print as themselves (no code page).
 
+*** clautolisp: an explicit NIL file
+clautolisp implementation deviation -- not part of the normative
+specification above. =(prin1 x nil)= follows the same per-dialect rule as
+=princ= (see its "Tested Behaviour (explicit NIL file)" and "clautolisp: an
+explicit NIL file"): an error and a =[printer-nil-file]= warning under
+=--dialect autocad=, as AutoCAD 2022 does; output to the command line,
+warned under =--strict=, silent under the other dialects.
+
 #+LATEX: \newpage
 
 ** Function Entry: PRINC
@@ -9120,6 +9128,38 @@ print a real as AutoCAD (=0.333333=), the BricsCAD dialects as BricsCAD
 (=0.333333333333333=), =clautolisp= / =strict= / =lax= in clautolisp's own
 spelling; a =[real-format]= notice the first time the products differ.
 
+*** Tested Behaviour (explicit NIL file, 2026-11-04)
+=(princ "x" nil)=, =(print "x" nil)= and =(prin1 "x" nil)=, called through
+=vl-catch-all-apply= with the products' own primitives:
+
+- AutoCAD 2022 (accoreconsole, Windows, ACADVER 24.1, LISPSYS 0): all three
+  are an error, "type d'argument incorrect: FILE nil" (bad argument type).
+- BricsCAD V26 (macOS): all three print to the command line and return
+  ="x"=; =(write-line "x" nil)= and =(write-char 65 nil)= are accepted too.
+
+Both references document NIL: Autodesk types the argument "File or nil",
+Bricsys says "if omitted or NIL is used, output goes to command line". So
+AutoCAD 2022 contradicts its own reference, and the Arguments above keep the
+documented behaviour.
+
+*** clautolisp: an explicit NIL file
+clautolisp implementation deviation -- not part of the normative
+specification above. A product contradicting an agreed reference: case 2
+of the dialect divergence rules, the documented behaviour normative.
+
+- =--dialect autocad= (every version): reproduces AutoCAD 2022 -- an
+  explicit NIL file is a bad-argument error -- and warns;
+- =--strict=: prints to the command line, as documented, and warns;
+- =--dialect bricscad=, =--dialect clautolisp=, =--lax=: print to the
+  command line, silently.
+
+The warning is =[printer-nil-file]=, once per run. The one-argument call
+(=(princ x)=) is the same everywhere and never warns. Portable spelling:
+omit the argument, =(if f (princ x f) (princ x))=. AutoCAD 2026 and
+LISPSYS 1 / 2 are unmeasured and assumed to behave as AutoCAD 2022
+(deferred-spec-research). See
+issues/closed/autocad-output-explicit-nil-file-rejected.issue.
+
 #+LATEX: \newpage
 
 ** Function Entry: PRINT
@@ -9175,6 +9215,14 @@ As =prin1= (see its "Measured" and "clautolisp" notes): the AutoCAD dialects
 print a real as AutoCAD (=0.333333=), the BricsCAD dialects as BricsCAD
 (=0.333333333333333=), =clautolisp= / =strict= / =lax= in clautolisp's own
 spelling; a =[real-format]= notice the first time the products differ.
+
+*** clautolisp: an explicit NIL file
+clautolisp implementation deviation -- not part of the normative
+specification above. =(print x nil)= follows the same per-dialect rule as
+=princ= (see its "Tested Behaviour (explicit NIL file)" and "clautolisp: an
+explicit NIL file"): an error and a =[printer-nil-file]= warning under
+=--dialect autocad=, as AutoCAD 2022 does; output to the command line,
+warned under =--strict=, silent under the other dialects.
 
 #+LATEX: \newpage
 

@@ -39,7 +39,7 @@ refactors with no user-visible effect do not require an entry.
 * clautolisp / read-autolisp (=clautolisp/documentation/clautolisp-user-manual.org=)
 
 - *A character the file's encoding cannot hold no longer aborts the
-  program unasked* (2.3.88): ~-Ereplacement R~ / ~--encoding-replacement R~
+  program unasked* (2.3.89): ~-Ereplacement R~ / ~--encoding-replacement R~
   (and ~-Efile-write-replacement~, ~-Eterminal-out-replacement~), surfaced
   as ~*AUTOLISP-ENCODING-REPLACEMENT*~, choose one character, ~error~,
   ~low-byte~ (AutoCAD), ~best-fit~ (BricsCAD on Windows) or ~escape~
@@ -51,6 +51,13 @@ refactors with no user-visible effect do not require an entry.
   is an AutoLISP error ~vl-catch-all-apply~ catches, raised before anything
   is written, on SBCL and CCL alike. See the user manual, /Characters the
   encoding cannot hold/.
+
+- *An explicit ~nil~ file to ~princ~ / ~print~ / ~prin1~* (2.3.88): an error
+  under ~--dialect autocad~, as on AutoCAD 2022, which rejects it although
+  Autodesk documents it; output to the console elsewhere, as documented.
+  Flagged by ~[printer-nil-file]~ under the AutoCAD dialects and ~--strict~.
+  In alfe on AutoCAD, such a call now reaches AutoCAD's own primitive. See
+  the user manual's per-dialect behaviours.
 
 - *An error in a ~-l~ / ~-x~ before ~-i~ no longer takes the REPL away*
   (2.3.86): it is reported (under ~--on-error debug~, the interactive
@@ -1934,7 +1941,7 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
-- ~-Ereplacement~ and its per-situation forms (alfe 2.3.88) are passed to the
+- ~-Ereplacement~ and its per-situation forms (alfe 2.3.89) are passed to the
   clautolisp engine, in-process and as a subprocess; under ~--autocad~ /
   ~--bricscad~ they are ignored with a warning. See the user manual,
   /Characters the encoding cannot hold: -Ereplacement/.

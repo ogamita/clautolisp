@@ -975,6 +975,13 @@ operator under its ~*** clautolisp~ note.
   ~[real-format]~ notice says so (once per session; not under ~lax~;
   ~(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)~ silences it). ~rtos~ and
   ~command~ keep the full value.
+- *An explicit ~nil~ file.* ~(princ x nil)~, ~(print x nil)~ and ~(prin1 x
+  nil)~ print to the console, as both vendors document -- except under the
+  ~autocad-*~ dialects, where they are a bad-argument error, as AutoCAD 2022
+  makes them (measured, 2.3.88). A ~[printer-nil-file]~ notice says so once
+  per run under ~autocad-*~ and ~strict~; ~bricscad*~, ~clautolisp~ and
+  ~lax~ are silent. Leave the argument out to print to the console
+  portably: ~(if f (princ x f) (princ x))~.
 - ~(layoutlist)~ -- the paper layouts, never ~"Model"~: sorted by name under
   the ~autocad-*~ dialects, as AutoCAD 2022 returns them, in tab order
   otherwise, as BricsCAD does.

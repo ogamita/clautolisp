@@ -4040,20 +4040,33 @@ dialects follow BricsCAD; every other dialect AutoCAD and the spec."
       (if (eq operator :prin1) (make-autolisp-string "nil") nil)
       (autolisp-void-symbol)))
 
-(defun builtin-prin1 (&optional (object nil object-p) file)
+(defun %check-printer-file-argument (file file-p operator-name)
+  "An explicit NIL FILE is documented by both vendors (output to the command
+line) and rejected by AutoCAD 2022 (autocad-output-explicit-nil-file-rejected):
+under the AutoCAD dialects reproduce that bad-argument error, elsewhere print
+to the command line; warn as the dialect asks (`[printer-nil-file]')."
+  (when (and file-p (null file)
+             (eq :deviant (clautolisp.autolisp-runtime:printer-explicit-nil-file-action
+                           operator-name)))
+    (require-file file operator-name)))
+
+(defun builtin-prin1 (&optional (object nil object-p) (file nil file-p))
   (unless object-p (return-from builtin-prin1 (%no-argument-printer-value :prin1)))
+  (%check-printer-file-argument file file-p "PRIN1")
   (%write-autolisp-text (autolisp-value->string object nil) file "PRIN1")
   object)
 
-(defun builtin-princ (&optional (object nil object-p) file)
+(defun builtin-princ (&optional (object nil object-p) (file nil file-p))
   (unless object-p (return-from builtin-princ (%no-argument-printer-value :princ)))
+  (%check-printer-file-argument file file-p "PRINC")
   ;; (princ nil) writes "nil" like any other value: the old WHEN only kept
   ;; the no-argument call silent, which now returns above.
   (%write-autolisp-text (autolisp-value->string object t) file "PRINC")
   object)
 
-(defun builtin-print (&optional (object nil object-p) file)
+(defun builtin-print (&optional (object nil object-p) (file nil file-p))
   (unless object-p (return-from builtin-print (%no-argument-printer-value :print)))
+  (%check-printer-file-argument file file-p "PRINT")
   ;; AutoLISP `print` is `prin1` with a leading newline AND a trailing
   ;; SPACE (not a trailing newline) — confirmed by the Phase-5 BricsCAD
   ;; V26 product test on 2026-04-26 (autolisp-spec/results/bricscad/

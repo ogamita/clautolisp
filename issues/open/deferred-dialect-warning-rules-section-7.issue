@@ -8,7 +8,7 @@
 #+DATE: 2026-11-04
 
 DRAFT for pjb to revise. It was written while finishing
-encoding-replacement-character-option (MR !509, clautolisp / alfe 2.3.88). It
+encoding-replacement-character-option (MR !509, clautolisp / alfe 2.3.89). It
 collects (A) what that MR did not implement and (B) where pjb's section 7 of
 error-processing-per-dialect.issue ("Reminder for dialect warning rules and
 clautolisp behavior") disagrees with section 4 of the same issue, with
@@ -111,8 +111,11 @@ do something different each:
 | [vendor-operator]      | the owner's dialect, --lax | once per operator per session         | yes                                    |
 | [version-operator]     | (version gates)            | once per operator per session         | yes                                    |
 | [encoding-replacement] | --lax                      | once per (caller, operator) (MR !509) | no                                     |
+| [printer-nil-file]     | bricscad, clautolisp, lax  | once per run (a single flag)          | no                                     |
 
-[errno-setvar] contradicts B.2 as well: silent under --clautolisp.
+[errno-setvar] and [printer-nil-file] (merged 2026-11-04, 2.3.88) follow
+AGENTS.md case 2, not section 7: --clautolisp, the adopted vendor's dialect,
+is silent. That is B.2 again.
 
 Questions to settle:
 - what "the caller" is: the innermost user DEFUN, as
@@ -138,7 +141,7 @@ signal plus that warning, but section 7 should say so.
 ** B.5 Section 2.7 text is stale
 
 Section 2.7 still says "clautolisp signals: WRITE-LINE ... cannot be
-encoded". Since 2.3.88 it writes per the dialect (low byte / best fit /
+encoded". Since 2.3.89 it writes per the dialect (low byte / best fit /
 \U+XXXX) and warns. Left untouched by MR !509 because the section sits in
 pjb's unpushed commit 9cf7f953.
 
