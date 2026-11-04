@@ -2003,10 +2003,10 @@ no probing:
 
 *** Characters the encoding cannot hold
 A file written in windows-1252 -- the vendors' default write -- cannot hold
-~(chr 300)~ (Ĭ) or 中. No CAD signals; each writes something else in its
+~(chr 300)~ (Ĭ) or U+4E2D (a CJK ideograph). No CAD signals; each writes something else in its
 place (measured 2026-11-03, catalogue cases 535-545):
 
-| engine                 | ~(write-line (chr 300) f)~ | ~(write-line "a中b" f)~ |
+| engine                 | ~(write-line (chr 300) f)~ | ~(write-line (strcat "a" (chr 20013) "b") f)~ |
 |------------------------+----------------------------+-------------------------|
 | AutoCAD 2022           | ~,~ (the low byte, 44)     | ~a-b~                   |
 | BricsCAD V25 Windows   | ~I~ (best fit)             | ~a?b~                   |
