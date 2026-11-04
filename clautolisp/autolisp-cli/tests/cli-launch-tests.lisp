@@ -309,3 +309,38 @@ alongside tui/gui/auto; a typo is a usage error (dcl-ncurses-renderer.issue)."
 (test action-boundaries-off-run-the-action-plain
   (is (eql 42 (clautolisp.autolisp-cli:call-at-action-boundaries
                nil 1 :expression nil (lambda () 42)))))
+
+;;; --- the encoding replacement options (encoding-replacement-character-option) ---
+
+(defun %parse-common (&rest argv)
+  (clautolisp.autolisp-cli::parse-arguments-with-spec
+   clautolisp.autolisp-cli::*common-option-specs* argv))
+
+(test encoding-replacement-options-parse
+  (let ((opts (%parse-common "-Ereplacement" "?")))
+    (is (equal "?" (clautolisp.autolisp-cli:cli-encoding-replacement opts)))
+    (is (equal "?" (clautolisp.autolisp-cli:cli-encoding-replacement opts "file/write"))))
+  (let ((opts (%parse-common "--encoding-replacement" "ESCAPE")))
+    (is (equal "escape" (clautolisp.autolisp-cli:cli-encoding-replacement opts))))
+  ;; the specific option wins over the bare one, whatever the order
+  (let ((opts (%parse-common "-Efile-write-replacement" "error" "-Ereplacement" "#")))
+    (is (equal "error" (clautolisp.autolisp-cli:cli-encoding-replacement opts "file/write")))
+    (is (equal "#" (clautolisp.autolisp-cli:cli-encoding-replacement opts "terminal/out"))))
+  (let ((opts (%parse-common "--terminal-output-encoding-replacement" "low-byte")))
+    (is (equal "low-byte" (clautolisp.autolisp-cli:cli-encoding-replacement opts "terminal/out")))
+    (is (null (clautolisp.autolisp-cli:cli-encoding-replacement opts "file/write")))
+    (is (equal '("-Eterminal-out-replacement" "low-byte")
+               (clautolisp.autolisp-cli:encoding-replacement-option-arguments opts))))
+  (signals clautolisp.autolisp-cli:cli-usage-error (%parse-common "-Ereplacement" "question"))
+  (signals clautolisp.autolisp-cli:cli-usage-error (%parse-common "-Ereplacement" "")))
+
+(test encoding-replacement-options-transmitted
+  ;; -Ereplacement seeds *AUTOLISP-ENCODING-REPLACEMENT*; the others stay nil.
+  (let* ((opts (%parse-common "-Ereplacement" "?" "-Efile-write-replacement" "best-fit"))
+         (bindings (clautolisp.autolisp-cli::cli-options->transmit-bindings opts)))
+    (flet ((value (name)
+             (let ((v (second (assoc name bindings :test #'string=))))
+               (and v (clautolisp.autolisp-runtime:autolisp-string-value v)))))
+      (is (equal "?" (value "*AUTOLISP-ENCODING-REPLACEMENT*")))
+      (is (equal "best-fit" (value "*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*")))
+      (is (null (value "*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*"))))))

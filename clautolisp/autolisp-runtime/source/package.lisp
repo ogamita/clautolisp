@@ -133,6 +133,7 @@
    #:with-host-request
    #:autolisp-file
    #:make-autolisp-file
+   #:autolisp-file-external-format
    #:autolisp-format-real
    #:autolisp-format-real-as
    #:autolisp-print-real
@@ -424,6 +425,16 @@
    #:emit-clautolisp-sysvar-warning
    #:emit-errno-setvar-warning
    #:*errno-setvar-warned*
+   ;; encoding-replacement-character-option: the replacement policy and its
+   ;; `[encoding-replacement]' notice.
+   #:parse-encoding-replacement
+   #:encoding-replacement-policy-name
+   #:dialect-encoding-replacement-default
+   #:resolve-encoding-replacement
+   #:emit-encoding-replacement-warning
+   #:*encoding-replacement-warnings-seen*
+   #:+encoding-replacement-sysvar+
+   #:*internal-sysvar-read*
    #:*clautolisp-sysvar-warnings-seen*
    ;; `/...' subfolder-recursion warning, platform-gated to Windows
    ;; (dialect-platform-version-axis): AutoCAD-Windows accepts only the

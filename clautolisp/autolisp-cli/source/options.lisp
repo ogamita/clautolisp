@@ -28,6 +28,8 @@
   (io-encoding      nil)              ; AC  = the `terminal' situation (-Eterminal); mirrored for downstream
   (situation-encodings nil)           ; AC  alist (KEY . canonical-enc): KEY = "all" | "<situation>" | "<situation>/<dir>"
                                       ;     built by the -E<situation>[-<dir>] / --<situation>-encoding family
+  (encoding-replacements nil)         ; AC  alist (KEY . policy-name): KEY = "all" | "file/write" | "terminal/out"
+                                      ;     built by -Ereplacement / -Efile-write-replacement / -Eterminal-out-replacement
   ;; Drawing
   (dwg              nil)              ; AC  --dwg FILE: the first drawing
   (template         nil)              ; A   --template NAME|PATH: a copy of a CAD template (alfe)

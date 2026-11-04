@@ -221,6 +221,53 @@ Declared terminal-IO encoding. Surfaced as
 .B *AUTOLISP-TERMINAL-ENCODING*
 to user code. The CL streams are not rebound at runtime — terminal
 IO is line-buffered.
+.TP
+.BR \-Ereplacement " " \fIR\fR ", " \-\-encoding\-replacement " " \fIR\fR
+What a write puts in place of a character its encoding cannot hold
+(a file
+.B open
+makes, or the terminal): one character (e.g.
+.BR ? ),
+or
+.B error
+(an AutoLISP error, nothing written),
+.B low\-byte
+(AutoCAD's way),
+.B best\-fit
+(the unaccented letter, else
+.BR ? ;
+BricsCAD on Windows) or
+.B escape
+(\fB\eU+XXXX\fR; BricsCAD on macOS). Without it, the system variable
+.B CLAUTOLISPENCODINGREPLACEMENT
+(seeded from the environment variable of the same name), then the
+dialect:
+.BR autocad :
+.BR low\-byte ;
+.BR bricscad :
+.B best\-fit
+on Windows,
+.B escape
+elsewhere;
+.BR clautolisp ", " strict " and " lax :
+.BR escape .
+A substitution prints the
+.B [encoding\-replacement]
+warning the first time a calling function makes a builtin substitute
+(not under
+.BR lax ).
+Surfaced as
+.BR *AUTOLISP-ENCODING-REPLACEMENT* .
+.TP
+.BR \-Efile\-write\-replacement " " \fIR\fR ", " \-\-file\-write\-encoding\-replacement " " \fIR\fR
+The same, for the files
+.B open
+makes only
+.RB ( *AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT* ).
+.TP
+.BR \-Eterminal\-out\-replacement " " \fIR\fR ", " \-\-terminal\-output\-encoding\-replacement " " \fIR\fR
+The same, for the terminal only
+.RB ( *AUTOLISP-TERMINAL-ENCODING-REPLACEMENT* ).
 .SS Init files
 .TP
 .BR \-norc ", " \-\-no-init
@@ -308,6 +355,12 @@ are consulted next when it is unset.
 .B CLAUTOLISP_DWG_LIBDIR
 Directory holding the DWG codec shared library, searched before the
 development tree and the installed layout.
+.TP
+.B CLAUTOLISPENCODINGREPLACEMENT
+Initial value of the system variable of the same name: what a write puts
+in place of a character its encoding cannot hold (see
+.BR \-Ereplacement ).
+An unknown value is ignored.
 .TP
 .B CLAUTOLISP_PREFIX
 .B $PREFIX

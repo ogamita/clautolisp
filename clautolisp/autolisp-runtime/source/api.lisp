@@ -1748,11 +1748,16 @@ binding. A no-op when SYMBOL has no namespace cell yet."
 (defun autolisp-file-stream (object)
   (clautolisp.autolisp-runtime.internal::autolisp-file-stream object))
 
-(defun make-autolisp-file (stream path mode)
+(defun make-autolisp-file (stream path mode &optional external-format)
   (clautolisp.autolisp-runtime.internal::make-autolisp-file
    :stream stream
    :path path
-   :mode mode))
+   :mode mode
+   :external-format external-format))
+
+(defun autolisp-file-external-format (object)
+  "The external format OPEN opened OBJECT's stream with, or NIL."
+  (clautolisp.autolisp-runtime.internal::autolisp-file-external-format object))
 
 (defun autolisp-file-path (object)
   (clautolisp.autolisp-runtime.internal::autolisp-file-path object))
@@ -3463,10 +3468,168 @@ PORTABILITY-WARNING-MODE: `:error' signals instead of printing."
           (setf *errno-setvar-warned* t)
           (format *error-output* "~&~A~%" message))))))
 
+;;; --- the encoding replacement (encoding-replacement-character-option) ---
+;;;
+;;; What a write does with a character the target encoding cannot hold. No
+;;; vendor signals (catalogue cases 535-545, 2026-11-03): AutoCAD keeps the low
+;;; byte, BricsCAD best-fits on Windows and writes \U+XXXX on macOS. The policy
+;;; comes from, in order: the per-situation global
+;;; (*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT* /
+;;; *AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*), the general
+;;; *AUTOLISP-ENCODING-REPLACEMENT*, then the dialect's default. The CLI's
+;;; -Ereplacement family seeds the globals; user code may SETQ them.
+
+(defparameter *encoding-replacement-policy-names*
+  '(("error" . :error) ("low-byte" . :low-byte)
+    ("best-fit" . :best-fit) ("escape" . :escape))
+  "The named policies a replacement value may give instead of a character.")
+
+(defun parse-encoding-replacement (text)
+  "The policy TEXT (a CL string) names: a CHARACTER when TEXT is one
+character, :ERROR / :LOW-BYTE / :BEST-FIT / :ESCAPE for those words (any
+case), NIL for an empty TEXT, :INVALID for anything else."
+  (cond
+    ((zerop (length text)) nil)
+    ((= 1 (length text)) (char text 0))
+    (t (or (cdr (assoc text *encoding-replacement-policy-names* :test #'string-equal))
+           :invalid))))
+
+(defun encoding-replacement-policy-name (policy)
+  "POLICY spelt as the option and the global take it back."
+  (if (characterp policy)
+      (string policy)
+      (car (rassoc policy *encoding-replacement-policy-names*))))
+
+;;; SPEC-UNCERTAIN: the BricsCAD best-fit / escape split is assumed to be the
+;;; platform's (V25-Windows and V26-macOS measured only, Linux not at all),
+;;; and AutoCAD's low byte was measured at an unrecorded LISPSYS --
+;;; issues/open/deferred-spec-research.issue, "Encoding replacement".
+(defun dialect-encoding-replacement-default (dialect)
+  "The policy DIALECT applies when nothing was asked. pjb's rule
+(error-processing-per-dialect.issue, section 7): a vendor dialect does what
+its vendor was measured to do (DIALECT-FEATURE :ENCODING-REPLACEMENT);
+--dialect clautolisp does what BricsCAD V26 on macOS does, the \\U+XXXX
+escape -- it loses nothing and reads back unambiguously -- and --strict and
+--lax do as --dialect clautolisp."
+  (let ((product (and dialect
+                      (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+    (if (member product '(:autocad :bricscad))
+        (or (ignore-errors
+             (clautolisp.autolisp-reader:dialect-feature-for dialect :encoding-replacement))
+            :escape)
+        :escape)))
+
+(defun %encoding-replacement-variable (name context)
+  "The policy the AutoLISP global NAME gives, or NIL when it is unbound or
+nil. A string or a symbol is read by PARSE-ENCODING-REPLACEMENT; anything else
+-- and a word that names no policy -- is an AutoLISP error naming the
+variable, raised where the write needs it."
+  (multiple-value-bind (value boundp)
+      (ignore-errors (lookup-variable (intern-autolisp-symbol name) context))
+    (when (and boundp value)
+      (let ((policy (cond ((typep value 'autolisp-string)
+                           (parse-encoding-replacement (autolisp-string-value value)))
+                          ((typep value 'autolisp-symbol)
+                           (parse-encoding-replacement (autolisp-symbol-name value)))
+                          (t :invalid))))
+        (when (eq policy :invalid)
+          (signal-autolisp-runtime-error
+           :invalid-encoding-replacement
+           "~A is ~A: expected a one-character string, or \"error\", \"low-byte\", ~
+\"best-fit\" or \"escape\" (nil for the dialect's default)."
+           name (autolisp-princ-to-string-for-message value)))
+        policy))))
+
+(defun autolisp-princ-to-string-for-message (value)
+  (cond ((typep value 'autolisp-string) (format nil "~S" (autolisp-string-value value)))
+        ((typep value 'autolisp-symbol) (autolisp-symbol-name value))
+        (t (princ-to-string value))))
+
+(defparameter +encoding-replacement-sysvar+ "CLAUTOLISPENCODINGREPLACEMENT"
+  "The clautolisp system variable -- and the environment variable that seeds
+it -- giving the replacement policy when no AutoLISP global does.")
+
+(defun resolve-encoding-replacement (situation
+                                     &key (context (current-evaluation-context))
+                                          sysvar-value)
+  "The replacement policy for SITUATION (:FILE, a stream OPEN made, or
+:TERMINAL), as (values POLICY SOURCE): a CHARACTER, :LOW-BYTE, :BEST-FIT,
+:ESCAPE, or :ERROR to signal. In order: the per-situation global, the
+general *AUTOLISP-ENCODING-REPLACEMENT* (both seeded by the -Ereplacement
+options), SYSVAR-VALUE -- the CLAUTOLISPENCODINGREPLACEMENT system variable,
+read by the caller from the host, seeded from the environment variable of the
+same name -- and the dialect's default. SOURCE is :GLOBAL, :SYSVAR or
+:DIALECT."
+  (let ((policy (or (%encoding-replacement-variable
+                     (ecase situation
+                       (:file "*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*")
+                       (:terminal "*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*"))
+                     context)
+                    (%encoding-replacement-variable "*AUTOLISP-ENCODING-REPLACEMENT*"
+                                                    context))))
+    (cond
+      (policy (values policy :global))
+      ((and (stringp sysvar-value)
+            (plusp (length (string-trim " " sysvar-value))))
+       (let ((from-sysvar (parse-encoding-replacement (string-trim " " sysvar-value))))
+         (when (eq from-sysvar :invalid)
+           (signal-autolisp-runtime-error
+            :invalid-encoding-replacement
+            "~A is ~S: expected one character, or \"error\", \"low-byte\", ~
+\"best-fit\" or \"escape\" (\"\" for the dialect's default)."
+            +encoding-replacement-sysvar+ sysvar-value))
+         (values from-sysvar :sysvar)))
+      (t
+       (values (dialect-encoding-replacement-default
+                (ignore-errors (current-evaluation-dialect)))
+               :dialect)))))
+
+(defvar *encoding-replacement-warnings-seen* (make-hash-table :test 'equal)
+  "(CALLER . WHO) pairs already reported by EMIT-ENCODING-REPLACEMENT-WARNING
+in this run: the notice is once per calling function and builtin, the first
+time that caller makes that builtin substitute -- not once per character.")
+
+(defun emit-encoding-replacement-warning (who character encoding replacement)
+  "The `[encoding-replacement]' notice: WHO (a builtin name) wrote
+REPLACEMENT (a string) in place of CHARACTER, which ENCODING cannot hold.
+
+pjb's rule (error-processing-per-dialect.issue, section 7): each dialect
+behaves as its product does, and an argument in the dialect-specific set is
+reported the first time the CALLER calls the function with it, so the user
+can wrap the call portably. Every dialect warns but --lax, --dialect
+clautolisp and --strict included: the vendors substitute three different ways.
+Honours PORTABILITY-WARNING-MODE: `:error' signals instead of printing."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (dialect-name (and dialect
+                            (ignore-errors
+                             (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn)))
+    (unless (eq dialect-name :lax)
+      (let ((message (%portability-diagnostic
+                      "encoding-replacement" (%portability-warning-location nil)
+                      who (char-code character)
+                      (string-upcase (princ-to-string encoding))
+                      replacement))
+            (key (cons (ignore-errors (%portability-warning-function-name)) who)))
+        (when (eq mode :error)
+          (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+        (unless (gethash key *encoding-replacement-warnings-seen*)
+          (setf (gethash key *encoding-replacement-warnings-seen*) t)
+          (format *error-output* "~&~A~%" message))))))
+
 (defvar *clautolisp-sysvar-warnings-seen* (make-hash-table :test 'equal)
   "Names of the clautolisp system variables already reported by
 EMIT-CLAUTOLISP-SYSVAR-WARNING in this run: the notice is once per variable,
 not once per read.")
+
+(defvar *internal-sysvar-read* nil
+  "True while clautolisp itself reads one of its own system variables (the
+write builtins reading CLAUTOLISPENCODINGREPLACEMENT): the program did not
+use it, so the `[clautolisp-sysvar]' notice is not due.")
 
 (defun emit-clautolisp-sysvar-warning (name &optional vendor-note)
   "Emit the `[clautolisp-sysvar]' extension notice: the clautolisp system
@@ -3485,7 +3648,8 @@ dialect notices do. Warnings go to *ERROR-OUTPUT*; the operation proceeds."
                          (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
                           dialect)))
                    :warn)))
-    (unless (member dialect-name '(:clautolisp :lax))
+    (unless (or *internal-sysvar-read*
+                (member dialect-name '(:clautolisp :lax)))
       (let ((message (%portability-diagnostic
                       "clautolisp-sysvar"
                       (%portability-warning-location nil)

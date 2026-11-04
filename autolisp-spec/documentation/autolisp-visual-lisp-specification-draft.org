@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.14.7
+#+VERSION: 0.14.8
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.14.7*.
+The current document version is *0.14.8*.
 
 Any modification of this document must increment its version number.
 
@@ -8748,6 +8748,59 @@ End-of-line representation is an external-file concern and may differ from the i
 - [write-line (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-CB4F3ABC-F0F6-41DA-A911-75B90D9F974A.htm)
 - [About File Descriptors (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/CHT/AutoCAD-AutoLISP/files/GUID-EDADF856-4D64-4E19-A7BD-5017C4135A01.htm)
 - Status: documented.
+
+*** Notes
+**** Tested Behaviour (product-tested, 2026-11-03 -- a character the file's encoding cannot hold)
+The error-processing catalogue (probes/error-processing/, cases 535-545)
+wrote a string with =write-line= through =(open f "w")=, the product's
+default write encoding, and read the file back with =read-char=. Neither
+reference documents the case; no product signals:
+
+| string written | AutoCAD 2022 (accoreconsole) | BricsCAD V25 Windows | BricsCAD V26 macOS |
+|----------------+------------------------------+----------------------+--------------------|
+| (chr 300)      | "," (44): the low byte       | "I": best fit        | the 8 characters \U+012C |
+| "a" U+4E2D "b" | "a-b"                        | "a?b"                | "a\U+4E2Db"        |
+
+AutoCAD already keeps the low byte in CHR (=(ascii (chr 300))= is 44), so
+its file only follows; BricsCAD V25 applies the Windows best-fit conversion
+to its code page; BricsCAD V26 keeps the character and escapes it on output.
+
+*** clautolisp
+/clautolisp implementation deviation -- not part of the normative
+specification above./ The specification adopts none of the three
+behaviours. clautolisp applies a /replacement policy/ to WRITE-LINE,
+WRITE-CHAR, PRINC, PRIN1, PRINT and PROMPT whenever a character does not fit
+the destination's encoding: one character, =error=, =low-byte=, =best-fit= or
+=escape=. In order: the command-line option =-Ereplacement= (or
+=-Efile-write-replacement= / =-Eterminal-out-replacement=) through the
+=setq=-able globals =*AUTOLISP-ENCODING-REPLACEMENT*=,
+=*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*= and
+=*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*=; the clautolisp system variable
+=CLAUTOLISPENCODINGREPLACEMENT= (seeded from the environment variable of the
+same name); then the dialect. Each dialect behaves as its product, and
+=--dialect clautolisp= as BricsCAD V26 macOS (pjb, error-processing-per-dialect
+section 7):
+
+| dialect                             | policy     | warning                  |
+|-------------------------------------+------------+--------------------------|
+| =--dialect autocad[-*]=             | =low-byte= | =[encoding-replacement]= |
+| =--dialect bricscad[-v*]= (Windows) | =best-fit= | =[encoding-replacement]= |
+| =--dialect bricscad-mac= / =-linux= | =escape=   | =[encoding-replacement]= |
+| =--dialect clautolisp=, =--strict=  | =escape=   | =[encoding-replacement]= |
+| =--lax=                             | =escape=   | silent                   |
+
+The warning fires the first time a calling function makes a builtin
+substitute, under every dialect but =--lax=, including when the user chose
+the policy. With =error=, the write signals an ordinary AutoLISP error
+(=*error*=, =vl-catch-all-apply=) before anything is written. An explicit
+OPEN external format carrying its own =:replacement= keeps its precedence.
+
+SPEC-UNCERTAIN: the BricsCAD split is taken to be the platform's (Windows'
+conversion API), not the version's -- only V25-Windows and V26-macOS were
+measured, and Linux not at all; clautolisp's best fit strips the diacritic
+from a Latin letter, which approximates but is not Windows' best-fit table;
+AutoCAD's low byte was measured at an unrecorded LISPSYS, and only in
+accoreconsole.
 
 #+LATEX: \newpage
 

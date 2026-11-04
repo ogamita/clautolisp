@@ -3130,7 +3130,8 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
                                              encoding-string mode-string
                                              ccs-encoding-string)))
               (if stream
-                  (errno-and-return 0 (make-autolisp-file stream path-string raw-mode-string))
+                  (errno-and-return 0 (make-autolisp-file stream path-string raw-mode-string
+                                                                     external-format))
                   (errno-and-return 22 nil)))
           (error ()
             (errno-and-return 22 nil)))))))
@@ -3638,29 +3639,168 @@ time it is called."
             (%character->code character (%character-code-mode))
             nil))))
 
+;;; --- the encoding replacement (encoding-replacement-character-option) ---
+;;;
+;;; A character the target encoding cannot hold used to reach the host stream,
+;;; where SBCL signalled (the run aborted unless caught) and CCL substituted a
+;;; character of its own. Now every write builtin hands its text through
+;;; %ENCODABLE-OUTPUT-TEXT first: it finds the encoding(s) the destination
+;;; writes in, and when a character does not fit applies the replacement
+;;; policy (RESOLVE-ENCODING-REPLACEMENT is the runtime's: option, global,
+;;; dialect default). :ERROR signals an ordinary AutoLISP error BEFORE
+;;; anything is written -- no half line, no host condition.
+;;;
+;;; A file OPEN was given an explicit external format carrying its own
+;;; :REPLACEMENT -- (open f "w" "(:cp1252 :replacement #\?)") -- is left to
+;;; that designator, which keeps its precedence.
+
+(defun %external-format-carries-replacement-p (external-format)
+  (and (consp external-format)
+       (not (null (getf (rest external-format) :replacement)))))
+
+(defun %host-stream-external-format (stream)
+  "The external format of the host character stream STREAM, normalised to a
+keyword or a (KEYWORD . OPTIONS) list, or NIL."
+  (let ((format (ignore-errors (stream-external-format stream))))
+    #+ccl
+    (when (and format (not (or (keywordp format) (consp format))))
+      (setf format (ignore-errors
+                    (ccl::external-format-character-encoding format))))
+    (and (or (keywordp format) (consp format)) format)))
+
+(defun %stream-external-formats (stream &optional (depth 0))
+  "The external formats every character written to STREAM ends up encoded
+in: through synonym, broadcast, two-way and echo streams to the file and fd
+streams underneath. A string stream, or any stream we cannot see into,
+contributes none -- there is nothing for us to check."
+  (when (< depth 8)
+    (typecase stream
+      (synonym-stream
+       (%stream-external-formats
+        (ignore-errors (symbol-value (synonym-stream-symbol stream))) (1+ depth)))
+      (broadcast-stream
+       (loop for component in (broadcast-stream-streams stream)
+             append (%stream-external-formats component (1+ depth))))
+      ;; An echo stream is a two-way stream (SBCL) or answers the same
+      ;; reader: the output side is what is written.
+      (two-way-stream
+       (%stream-external-formats (two-way-stream-output-stream stream) (1+ depth)))
+      (string-stream nil)
+      (clautolisp.autolisp-reader.internal::single-octet-output-stream
+       (list (clautolisp.autolisp-reader.internal::single-octet-stream-encoding stream)))
+      (file-stream
+       (let ((format (%host-stream-external-format stream)))
+         (and format (list format))))
+      (t
+       #+sbcl
+       (when (typep stream 'sb-sys:fd-stream)
+         (let ((format (%host-stream-external-format stream)))
+           (and format (list format))))
+       #-sbcl
+       (let ((format (and (ignore-errors (streamp stream))
+                          (%host-stream-external-format stream))))
+         (and format (list format)))))))
+
+(defun %encoding-replacement-sysvar-value ()
+  "The host's CLAUTOLISPENCODINGREPLACEMENT system variable (a string), or NIL
+when the host has none (--host nihil)."
+  (let ((value (let ((clautolisp.autolisp-runtime:*internal-sysvar-read* t))
+                 (ignore-errors
+                  (host-getvar (%sysvar-host (current-evaluation-host))
+                               clautolisp.autolisp-runtime:+encoding-replacement-sysvar+)))))
+    (cond ((typep value 'autolisp-string) (autolisp-string-value value))
+          ((stringp value) value))))
+
+(defun %first-unencodable-format (character formats)
+  (find-if-not (lambda (format)
+                 (clautolisp.autolisp-reader:character-encodable-p character format))
+               formats))
+
+(defun %encodable-output-text (text stream operator-name &optional file)
+  "TEXT made writable to STREAM (FILE the AutoLISP file object when the
+destination is one, else the terminal): TEXT itself when every character fits
+the destination's encoding, else TEXT with each misfit replaced as the policy
+says -- or an AutoLISP error when the policy is to signal."
+  (let ((formats (if file
+                     (let ((format (autolisp-file-external-format file)))
+                       (cond ((null format) (%stream-external-formats stream))
+                             ((%external-format-carries-replacement-p format) nil)
+                             (t (list format))))
+                     (remove-if #'%external-format-carries-replacement-p
+                                (%stream-external-formats stream)))))
+    (if (or (null formats)
+            (every (lambda (character)
+                     (null (%first-unencodable-format character formats)))
+                   text))
+        text
+        (multiple-value-bind (policy source)
+            (clautolisp.autolisp-runtime:resolve-encoding-replacement
+             (if file :file :terminal)
+             :sysvar-value (%encoding-replacement-sysvar-value))
+          (declare (ignore source))
+          (with-output-to-string (out)
+            (loop for character across text
+                  for misfit = (%first-unencodable-format character formats)
+                  do (if (null misfit)
+                         (write-char character out)
+                         (let ((replacement
+                                 (and (not (eq policy :error))
+                                      (clautolisp.autolisp-reader:encoding-replacement-text
+                                       character misfit policy))))
+                           (when (and replacement
+                                      (%first-unencodable-format-in-string replacement formats))
+                             (setf replacement nil))
+                           (unless replacement
+                             (%signal-unencodable-character operator-name character misfit policy))
+                           (clautolisp.autolisp-runtime:emit-encoding-replacement-warning
+                            operator-name character
+                            (clautolisp.autolisp-reader:external-format-base misfit)
+                            replacement)
+                           (write-string replacement out)))))))))
+
+(defun %first-unencodable-format-in-string (string formats)
+  (some (lambda (character) (%first-unencodable-format character formats)) string))
+
+(defun %signal-unencodable-character (operator-name character format policy)
+  (signal-builtin-host-error
+   :unencodable-character
+   operator-name
+   "~A: the character U+~4,'0X cannot be encoded in ~A~:[~;, nor its replacement ~S~]."
+   operator-name (char-code character)
+   (string-upcase (princ-to-string (clautolisp.autolisp-reader:external-format-base format)))
+   (not (eq policy :error))
+   (and (not (eq policy :error))
+        (clautolisp.autolisp-runtime:encoding-replacement-policy-name policy))))
+
+(defun %write-output-text (text stream operator-name file)
+  "WRITE-STRING TEXT to STREAM after the encoding replacement."
+  (write-string (%encodable-output-text text stream operator-name file) stream))
+
 (defun builtin-write-line (string &optional file)
   ;; Documented to set ERRNO on failure. Success path resets to 0.
   ;; We don't currently surface a write-error case here; the host
   ;; CL ~write-line~ either succeeds or signals, which the
   ;; wrap-builtin-function harness converts into a runtime error
-  ;; before the user sees nil.
+  ;; before the user sees nil. A character the encoding cannot hold is
+  ;; settled before (%ENCODABLE-OUTPUT-TEXT).
   (let ((value (autolisp-string-value (require-string string "WRITE-LINE"))))
     (if file
         (let ((stream (require-open-file-stream file "WRITE-LINE")))
-          (write-line value stream)
+          (write-line (%encodable-output-text value stream "WRITE-LINE" file) stream)
           (errno-and-return 0 string))
         (progn
-          (write-line value *standard-output*)
+          (write-line (%encodable-output-text value *standard-output* "WRITE-LINE")
+                      *standard-output*)
           (errno-and-return 0 string)))))
 
 (defun builtin-write-char (char-code &optional file)
   (let ((character (int32->character char-code "WRITE-CHAR")))
     (if file
         (let ((stream (require-open-file-stream file "WRITE-CHAR")))
-          (write-char character stream)
+          (%write-output-text (string character) stream "WRITE-CHAR" file)
           char-code)
         (progn
-          (write-char character *standard-output*)
+          (%write-output-text (string character) *standard-output* "WRITE-CHAR" nil)
           char-code))))
 
 ;; --- atoi / atof (Phase-5 product-tested model) ----------------------
@@ -3869,6 +4009,13 @@ character is escaped -- tab, newline, return and escape by name (\\t \\n \\r
       (require-open-file-stream file operator-name)
       *standard-output*))
 
+(defun %write-autolisp-text (text file operator-name)
+  "Write TEXT where FILE (an AutoLISP file object, or NIL for the terminal)
+says, after the encoding replacement. The PRIN1 / PRINC / PRINT path."
+  (let ((stream (output-stream-for-file file operator-name)))
+    (%write-output-text text stream operator-name (and file (require-file file operator-name)))
+    stream))
+
 (defun builtin-vl-prin1-to-string (object)
   (make-autolisp-string (autolisp-value->string object nil)))
 
@@ -3895,16 +4042,14 @@ dialects follow BricsCAD; every other dialect AutoCAD and the spec."
 
 (defun builtin-prin1 (&optional (object nil object-p) file)
   (unless object-p (return-from builtin-prin1 (%no-argument-printer-value :prin1)))
-  (write-string (autolisp-value->string object nil)
-                (output-stream-for-file file "PRIN1"))
+  (%write-autolisp-text (autolisp-value->string object nil) file "PRIN1")
   object)
 
 (defun builtin-princ (&optional (object nil object-p) file)
   (unless object-p (return-from builtin-princ (%no-argument-printer-value :princ)))
   ;; (princ nil) writes "nil" like any other value: the old WHEN only kept
   ;; the no-argument call silent, which now returns above.
-  (write-string (autolisp-value->string object t)
-                (output-stream-for-file file "PRINC"))
+  (%write-autolisp-text (autolisp-value->string object t) file "PRINC")
   object)
 
 (defun builtin-print (&optional (object nil object-p) file)
@@ -3918,7 +4063,8 @@ dialects follow BricsCAD; every other dialect AutoCAD and the spec."
   ;; space afterwards".
   (let ((stream (output-stream-for-file file "PRINT")))
     (terpri stream)
-    (write-string (autolisp-value->string object nil) stream)
+    (%write-output-text (autolisp-value->string object nil) stream "PRINT"
+                        (and file (require-file file "PRINT")))
     (write-char #\Space stream))
   object)
 
@@ -3970,7 +4116,7 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
 
 (defun builtin-prompt (string)
   (let ((value (autolisp-string-value (require-string string "PROMPT"))))
-    (write-string value *standard-output*)
+    (%write-output-text value *standard-output* "PROMPT" nil)
     nil))
 
 (defun comparison-value (object operator-name)

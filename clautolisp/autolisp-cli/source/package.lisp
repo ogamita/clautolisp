@@ -38,6 +38,11 @@
    #:cli-options-situation-encodings ; AC — the -E<situation>[-<dir>] alist
    #:cli-situation-encoding      ; AC — resolver: (opts situation &optional direction)
    #:*encoding-situations*       ; AC — the situation registry
+   #:cli-options-encoding-replacements ; AC — the -Ereplacement family's alist
+   #:cli-encoding-replacement    ; AC — resolver: (opts &optional "file/write" | "terminal/out")
+   #:cli-encoding-replacement-explicit ; AC — (opts "all" | "file/write" | "terminal/out")
+   #:*encoding-replacement-options* ; AC — (KEY LONG SHORT) per replacement option
+   #:encoding-replacement-option-arguments ; AC — argv fragment for a child clautolisp
    #:cli-options-dwg             ; A
    #:cli-options-template        ; A — --template NAME|PATH (alfe)
    #:cli-options-plugin-options  ; A — alist (PLUGIN-NAME . plist of resolved option values)

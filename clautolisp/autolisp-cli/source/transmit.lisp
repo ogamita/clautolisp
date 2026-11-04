@@ -152,6 +152,16 @@ derived value."
          (make-autolisp-string (or (cli-situation-encoding options "file" "read") "")))
    (list "*AUTOLISP-FILE-WRITE-ENCODING*"
          (make-autolisp-string (or (cli-situation-encoding options "file" "write") "")))
+   ;; The encoding replacement (-Ereplacement, -Efile-write-replacement,
+   ;; -Eterminal-out-replacement): what a write puts in place of a character
+   ;; the encoding cannot hold -- nil when not given (then the dialect's
+   ;; default; encoding-replacement-character-option).
+   (list "*AUTOLISP-ENCODING-REPLACEMENT*"
+         (autolisp-string-or-nil (cli-encoding-replacement-explicit options "all")))
+   (list "*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*"
+         (autolisp-string-or-nil (cli-encoding-replacement-explicit options "file/write")))
+   (list "*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*"
+         (autolisp-string-or-nil (cli-encoding-replacement-explicit options "terminal/out")))
    ;; The `log' situation (-Elog): the encoding of the command-history log
    ;; file (cador command-log.lisp) -- empty when not given (then the
    ;; product's: windows-1252 for AutoCAD, UTF-8 otherwise).

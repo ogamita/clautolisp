@@ -512,7 +512,18 @@ platform+version spelling (dialect-platform-version-axis.issue):
     ;; (job 16932759881): the routine stays in its drawing (DWGNAME unchanged),
     ;; the switch at the next top-level read, as documented for MDI.
     (:document-switch :autocad  t nil  :deferred)
-    (:document-switch :bricscad t nil  :drawing-immediate))
+    (:document-switch :bricscad t nil  :drawing-immediate)
+    ;; What a write puts in place of a character the target encoding cannot
+    ;; hold (encoding-replacement-character-option, catalogue cases 535-545,
+    ;; 2026-11-03). No vendor signals. AutoCAD 2022 keeps the LOW BYTE of the
+    ;; code point (U+012C -> ","); BricsCAD V25 Windows best-fits to the code
+    ;; page with "?" for the rest (WideCharToMultiByte: U+012C -> "I");
+    ;; BricsCAD V26 macOS writes the escape \U+012C. The BricsCAD split is
+    ;; taken to be the PLATFORM's (Windows' conversion API), not the version's:
+    ;; only V25-Windows and V26-macOS were measured, and Linux is unmeasured.
+    (:encoding-replacement :autocad  t        nil :low-byte)
+    (:encoding-replacement :bricscad :windows nil :best-fit)
+    (:encoding-replacement :bricscad t        nil :escape))
   "SEED feature/version matrix — see the block comment above for the row
 shape and the incremental-population contract. Query via
 DIALECT-FEATURE.")

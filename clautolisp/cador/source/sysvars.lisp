@@ -147,9 +147,30 @@ dialect.")
 ;;; initform. One definition, in the earliest file that needs it, rather than
 ;;; the same name written twice (AGENTS.md: never scatter name tables).
 
+;;; CLAUTOLISPENCODINGREPLACEMENT -- what a write puts in place of a character
+;;; its encoding cannot hold (encoding-replacement-character-option, pjb
+;;; 2026-11-04: "an option for replacement-characters, with a
+;;; clautolisp-specific sysvar / envvar"). A string: one character, or
+;;; "error", "low-byte", "best-fit", "escape"; "" (the default) leaves it to
+;;; the -Ereplacement globals, then the dialect. Seeded from the environment
+;;; variable of the same name; read by the write builtins at each write.
+
+(defun %encoding-replacement-initial-value ()
+  "The initial CLAUTOLISPENCODINGREPLACEMENT value: the environment variable
+of the same name when it names a policy, otherwise \"\" (a bad value is
+dropped here rather than failing every later write)."
+  (let* ((env (uiop:getenv clautolisp.autolisp-runtime:+encoding-replacement-sysvar+))
+         (text (and env (string-trim '(#\Space #\Tab) env))))
+    (if (and text
+             (plusp (length text))
+             (not (eq :invalid (clautolisp.autolisp-runtime:parse-encoding-replacement text))))
+        (if (= 1 (length text)) text (string-downcase text))
+        "")))
+
 (defparameter *clautolisp-extension-sysvar-names*
   (list +default-drawing-format-sysvar+
-        +new-drawing-template-sysvar+)
+        +new-drawing-template-sysvar+
+        clautolisp.autolisp-runtime:+encoding-replacement-sysvar+)
   "The clautolisp-specific system variables with no vendor counterpart, which
 INSTALL-CLAUTOLISP-EXTENSION-SYSVARS adds on top of whichever vendor catalogue
 was loaded (SAVEFORMAT is NOT here — it is a BricsCAD sysvar already in the
@@ -279,7 +300,8 @@ document is actually created, not at start-up."
 (defun install-clautolisp-extension-sysvars (host)
   "Install the clautolisp-specific system variables that have no vendor
 counterpart, on top of whichever vendor catalogue was loaded:
-CLAUTOLISPDEFAULTDRAWINGFORMAT and CLAUTOLISPNEWDRAWINGTEMPLATE. Returns HOST."
+CLAUTOLISPDEFAULTDRAWINGFORMAT, CLAUTOLISPNEWDRAWINGTEMPLATE and
+CLAUTOLISPENCODINGREPLACEMENT. Returns HOST."
   (setf (gethash +default-drawing-format-sysvar+ (cador-sysvars host))
         (make-sysvar-cell :name +default-drawing-format-sysvar+
                           :kind :string
@@ -291,6 +313,13 @@ CLAUTOLISPDEFAULTDRAWINGFORMAT and CLAUTOLISPNEWDRAWINGTEMPLATE. Returns HOST."
         (make-sysvar-cell :name +new-drawing-template-sysvar+
                           :kind :string
                           :value (%new-drawing-template-initial-value)
+                          :read-only-p nil
+                          :host-derived-p nil
+                          :scope :not-saved))
+  (setf (gethash clautolisp.autolisp-runtime:+encoding-replacement-sysvar+ (cador-sysvars host))
+        (make-sysvar-cell :name clautolisp.autolisp-runtime:+encoding-replacement-sysvar+
+                          :kind :string
+                          :value (%encoding-replacement-initial-value)
                           :read-only-p nil
                           :host-derived-p nil
                           :scope :not-saved))

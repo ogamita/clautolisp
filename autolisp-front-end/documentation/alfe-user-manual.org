@@ -1045,6 +1045,34 @@ still an error, but a fixed boundary is never silently wrong).
   it when =--cad-log FILE= asks for a copy (see [[#cad-log][The CAD's log:
   =--cad-log=]]); a bare =-E= does not reach it.
 
+** Characters the encoding cannot hold: =-Ereplacement=
+
+=-Ereplacement R= (=--encoding-replacement R=) chooses what a write puts in
+place of a character its encoding cannot hold -- =(chr 300)= written to a
+windows-1252 file: one character (=?=), or =error= (an AutoLISP error),
+=low-byte=, =best-fit= or =escape= (=\U+XXXX=). =-Efile-write-replacement R=
+(=--file-write-encoding-replacement=) and =-Eterminal-out-replacement R=
+(=--terminal-output-encoding-replacement=) restrict it to the files =open=
+makes or to the terminal, and win over the bare one.
+
+- Under =--clautolisp= the options are passed to the engine: in-process as
+  the globals =*AUTOLISP-ENCODING-REPLACEMENT*=,
+  =*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*= and
+  =*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*=; to a spawned clautolisp
+  (=--backend subprocess=) as the same options on its command line. Without
+  them clautolisp's =CLAUTOLISPENCODINGREPLACEMENT= system / environment
+  variable, then the dialect decides (=autocad= keeps the low byte,
+  =bricscad= best-fits on Windows and escapes elsewhere, the others escape);
+  the policy and the =[encoding-replacement]= warning are clautolisp's,
+  described in its user manual ("Characters the encoding cannot hold").
+  alfe does not touch =$CLAUTOLISPENCODINGREPLACEMENT=: a spawned clautolisp
+  inherits it from alfe's environment, and the in-process engine reads it
+  likewise.
+- Under =--autocad= / =--bricscad= they are ignored, with a warning: each
+  CAD writes such a character its own way -- AutoCAD 2022 the low byte,
+  BricsCAD V25 on Windows a best fit, BricsCAD V26 on macOS =\U+XXXX= --
+  and nothing alfe can pass it changes that.
+
 ** Per-target defaults (measured 2026-07)
 
 These are the encodings each target exhibits with NO override — the reason
