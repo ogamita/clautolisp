@@ -386,6 +386,17 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
         :unknown-sysvar
         "cador has no system variable named ~A."
         string))
+      ;; ERRNO is documented read-only by both vendors, and both ACCEPT
+      ;; (setvar "ERRNO" n) (AutoCAD 2022, BricsCAD V25, V26 -- the
+      ;; error-processing catalogue resets it that way before each case):
+      ;; write the session errno, return the value, and flag the
+      ;; undocumented tolerance (errno-setvar-accepted-by-vendors).
+      ((errno-name-p string)
+       (let ((coerced (coerce-sysvar-value (sysvar-cell-kind cell) value string)))
+         (clautolisp.autolisp-runtime:emit-errno-setvar-warning coerced)
+         (clautolisp.autolisp-runtime:set-autolisp-errno coerced)
+         (setf (sysvar-cell-value cell) coerced)
+         coerced))
       ((sysvar-cell-read-only-p cell)
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
         :sysvar-read-only

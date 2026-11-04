@@ -946,7 +946,7 @@ Resolved notes) stay.
 | Priority | Status | Issue | Scope |
 |----------+--------+-------+-------|
 | P1 | DONE | vl-directory-files-dot-entries-and-default-selector | FERME 2026-11-04 (2.3.84, spec 0.14.6); issues/closed/. Etait : "." and ".." are entries ("*", "*.*" match them); default selector 0, as on the three products (catalogue case 464) |
-| P2 | TODO | [[file:errno-setvar-accepted-by-vendors.issue][errno-setvar-accepted-by-vendors]] | (setvar "ERRNO" 0) accepted by AutoCAD and BricsCAD; clautolisp refuses it |
+| P2 | DONE | errno-setvar-accepted-by-vendors | FERME 2026-11-04 (2.3.85, spec 0.14.7); issues/closed/. Etait : (setvar "ERRNO" 0) accepted by AutoCAD and BricsCAD; clautolisp refuses it |
 | P2 | TODO | [[file:clautolisp-issue-on-error.issue][clautolisp-issue-on-error]] | an error in a -l file before -i exits the program: --on-error ignore does not continue, the REPL never starts |
 | P1 | TODO | [[file:alfe-autocad-fixed-arity-output-shadows.issue][alfe-autocad-fixed-arity-output-shadows]] | alfe's fixed 2-arg princ/print/prin1 shadows break compiled and natively loaded code under AutoCAD |
 | P1 | TODO | [[file:error-processing-per-dialect.issue][error-processing-per-dialect]] | EPIC: *error* mechanism and 546-case catalogue, AutoCAD vs BricsCAD vs clautolisp; to split into per-family tickets |
@@ -955,4 +955,5 @@ Resolved notes) stay.
 | P2 | DONE | relational-operators-reject-strings | already fixed by comparison-operators-vendor-semantics (2.2.90); rechecked on 2.3.81. issues/closed/ |
 | P2 | DONE | windows-path | /c/... load under MSYS2: fixed in 2.2.4 (windows-msys-paths-in-autolisp-load); rechecked on PF5S26BT with 2.3.78. issues/closed/ |
 | P3 | DONE | optimization | DEBUG >= SPACE / SPEED levels, clal-compile-system and the lexical-locals fork all shipped with the compiler epic. issues/closed/ |
+| P3 | TODO | [[file:sysvar-corpus-generator-drift.issue][sysvar-corpus-generator-drift]] | inventory-coverage.lsp drifted from generate-sysvar-corpus.lisp (~120 lines of getvar-default tests); found fixing errno-setvar |
 | P3 | NOTE | referentiel-qualite-autolisp.md | research note (French, 2026-10-08) on an AutoLISP quality / security rule set; reference material, not an actionable issue |

@@ -422,6 +422,8 @@
    ;; `[clautolisp-sysvar]' notice (clal-drawing-sysvars-silent-out-of-dialect):
    ;; a clautolisp-only system variable used under a vendor dialect.
    #:emit-clautolisp-sysvar-warning
+   #:emit-errno-setvar-warning
+   #:*errno-setvar-warned*
    #:*clautolisp-sysvar-warnings-seen*
    ;; `/...' subfolder-recursion warning, platform-gated to Windows
    ;; (dialect-platform-version-axis): AutoCAD-Windows accepts only the

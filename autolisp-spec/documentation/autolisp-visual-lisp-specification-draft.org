@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.14.6
+#+VERSION: 0.14.7
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.14.6*.
+The current document version is *0.14.7*.
 
 Any modification of this document must increment its version number.
 
@@ -10103,12 +10103,18 @@ probe-setvar-edges.lsp; AutoCAD 2022 job 17540963671, BricsCAD V25 Windows 17540
 | an integer for a real (USERR1 2)  | returns 2, stores 2.0          | the same                          |
 | SNAPBASE (a 2D point) '(1 2 3)    | error                          | stores (1.0 2.0)                  |
 | read-only (DWGNAME, ACADVER)      | error, ERRNO 20                | error, ERRNO 20                   |
+| ERRNO (documented read-only)      | accepted, ERRNO = the value    | accepted, ERRNO = the value       |
 | unknown name                      | error, ERRNO 0                 | error, ERRNO 0                    |
 | (setvar 'OSMODE 1), a symbol name | accepted                       | accepted                          |
 | "osmode", "OsMode"                | accepted                       | accepted                          |
 | ANGBASE / SNAPANG under AUNITS 0, 3 | radians, AUNITS ignored      | the same                          |
 
 SETVAR returns the value it was GIVEN, not the one it stored.
+
+The ERRNO row comes from the error-processing catalogue
+(probes/error-processing/, 2026-11-03), which resets ERRNO with
+=(setvar "ERRNO" 0)= before each of its cases on AutoCAD 2022
+(accoreconsole), BricsCAD V25 (Windows) and BricsCAD V26 (macOS).
 
 *** clautolisp: SETVAR
 Not yet as measured: no range check, ERRNO 1 for a read-only or unknown
@@ -30337,9 +30343,27 @@ Displays the number of the appropriate error code when an AutoLISP function call
 AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
 Divergence: type AutoCAD Integer, BricsCAD Short.
 
+*** Tested Behaviour
+Although both vendors document ERRNO as read-only, =(setvar "ERRNO" 0)=
+is ACCEPTED by AutoCAD 2022 (accoreconsole), BricsCAD V25 (Windows) and
+BricsCAD V26 (macOS): =(getvar "ERRNO")= then gives 0 until the next
+failing builtin sets it again (error-processing catalogue,
+probes/error-processing/, 2026-11-03).
+
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-08E19480-F87B-46E9-9C37-64693F95F680
 - BricsCAD: https://help.bricsys.com/en-us/document/system-variable-reference/e/errno-system-variable
+
+*** clautolisp
+clautolisp implementation note -- not part of the normative specification
+above. Since clautolisp 2.3.85, =(setvar "ERRNO" n)= writes the session
+errno and returns =n= in every dialect, as the products do (before, it
+signalled "Sysvar ERRNO is read-only"). Being an undocumented tolerance
+that every engine has, it is flagged by the =[errno-setvar]= notice --
+once per run, under =--dialect autocad=, =--dialect bricscad= and
+=--strict= (pjb, 2026-11-03); =--clautolisp= and =--lax= are silent. The
+same treatment as =[vl-catch-all-apply-arity]=
+(=errno-setvar-accepted-by-vendors=).
 
 #+LATEX: \newpage
 

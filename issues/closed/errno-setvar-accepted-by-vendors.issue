@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: errno-setvar-accepted-by-vendors -- (setvar "ERRNO" 0) works on AutoCAD and BricsCAD, clautolisp refuses it
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: divergence
 #+DEPENDS: -
@@ -71,3 +71,25 @@ which the measurement contradicts.
 - error-processing-per-dialect.issue: the probe that found this.
 - Spec SETVAR table (autolisp-visual-lisp-specification-draft.org:10072-10087):
   setvar ERRNO codes on both vendors.
+
+* Resolved (clautolisp 2.3.85 / alfe 2.3.85, 2026-11-04)
+
+- cador HOST-SETVAR: an ERRNO branch before the read-only check coerces the
+  value, writes it with SET-AUTOLISP-ERRNO (and the cell, for snapshots)
+  and returns it, in EVERY dialect.
+- The warning: register entry [errno-setvar] (portability.lisp) and
+  EMIT-ERRNO-SETVAR-WARNING (autolisp-runtime api.lisp), once per run,
+  under --dialect autocad-* / bricscad-* and --strict (item 3 decided as
+  the issue suggested: accept and warn); silent under --clautolisp and
+  --lax; portability-warning-mode :error signals. Annex regenerated.
+- Tests (cador sysvar-catalogue-tests.lisp): host-setvar-on-errno-signals-
+  read-only is replaced by HOST-SETVAR-ON-ERRNO-WRITES-THE-SESSION-ERRNO
+  (seven dialects) and HOST-SETVAR-ON-ERRNO-WARNS-ONCE-EXCEPT-CLAUTOLISP-
+  AND-LAX. Red before the fix.
+- autolisp-test: coupling-errno.lsp sysvar-errno-setvar-accepted-and-read-back
+  replaces the read-only test; the corpus generator knows ERRNO is
+  writable (*read-only-but-writable*) and the one generated entry was
+  patched by hand (the file had drifted from its generator:
+  sysvar-corpus-generator-drift).
+- Spec 0.14.7: ERRNO sysvar entry (Tested Behaviour + clautolisp note),
+  SETVAR Tested Behaviour row. RELEASE_NOTES entry.

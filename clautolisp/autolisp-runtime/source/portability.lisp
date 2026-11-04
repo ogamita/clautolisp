@@ -384,6 +384,36 @@ arguments error on the vendor engines."
  '(("clautolisp: emitted by" . "clautolisp/autolisp-builtins-core/source/api.lisp, the TERPRI builtin")))
 
 (register-dialect-warning
+ :tag "errno-setvar"
+ :title "SETVAR on the read-only ERRNO"
+ :kind :portability
+ :message "(setvar \"ERRNO\" ~A) is accepted by AutoCAD and BricsCAD although both document ERRNO as read-only; clautolisp writes the session errno"
+ :arguments "the value written"
+ :example ": [errno-setvar] in RUN-CASE: (setvar \"ERRNO\" 0) is accepted by AutoCAD and BricsCAD although both document ERRNO as read-only; clautolisp writes the session errno"
+ :dialects
+ "Both vendors document ERRNO as read-only, and both ACCEPT it: AutoCAD
+2022 (accoreconsole), BricsCAD V25 (Windows) and BricsCAD V26 (macOS) ran
+the error-processing catalogue, which resets ERRNO with (setvar \"ERRNO\"
+0) before each of its cases; a refusal would have stopped it at the first.
+The next failing builtin sets ERRNO again, as usual.
+
+So every dialect writes the session errno and SETVAR returns the value.
+Like [vl-catch-all-apply-arity], this is an UNDOCUMENTED tolerance that
+every engine has, and relying on it is flagged: the notice fires under
+--dialect autocad, --dialect bricscad and --strict (pjb, 2026-11-03: \"with
+warning\"); --clautolisp and --lax are silent. Once per run."
+ :rationale
+ "A documented read-only variable that the engines happen to accept today
+is not a promise for tomorrow's version. The (setvar \"ERRNO\" 0) idiom
+before a call that may fail is common and works everywhere measured; the
+notice only says that no vendor guarantees it."
+ :references
+ '(("clautolisp: the ticket" . "issues/closed/errno-setvar-accepted-by-vendors.issue")
+   ("clautolisp: the measurement" . "probes/error-processing/probe-error-catalogue.lsp")
+   ("Autodesk: ERRNO (System Variable)" . "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-08E19480-F87B-46E9-9C37-64693F95F680")
+   ("Bricsys: ERRNO system variable" . "https://help.bricsys.com/en-us/document/system-variable-reference/e/errno-system-variable")))
+
+(register-dialect-warning
  :tag "clautolisp-sysvar"
  :title "clautolisp-only system variable"
  :kind :extension-notice

@@ -3436,6 +3436,33 @@ other dialect notices: `:error' signals instead of printing."
           (signal-autolisp-runtime-error :non-portable-construct "~A" message))
         (format *error-output* "~&~A~%" message)))))
 
+(defvar *errno-setvar-warned* nil
+  "True once EMIT-ERRNO-SETVAR-WARNING has printed in this run: the
+`[errno-setvar]' notice is once per run, not once per setvar.")
+
+(defun emit-errno-setvar-warning (value)
+  "Emit the `[errno-setvar]' notice for (setvar \"ERRNO\" VALUE): both vendors
+document ERRNO as read-only and both accept the write
+(errno-setvar-accepted-by-vendors). Under the vendor dialects and --strict,
+once per run; silent under --clautolisp and --lax. Honours the dialect's
+PORTABILITY-WARNING-MODE: `:error' signals instead of printing."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (dialect-name (and dialect
+                            (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn)))
+    (unless (member dialect-name '(:clautolisp :lax))
+      (let ((message (%portability-diagnostic
+                      "errno-setvar" (%portability-warning-location nil) value)))
+        (when (eq mode :error)
+          (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+        (unless *errno-setvar-warned*
+          (setf *errno-setvar-warned* t)
+          (format *error-output* "~&~A~%" message))))))
+
 (defvar *clautolisp-sysvar-warnings-seen* (make-hash-table :test 'equal)
   "Names of the clautolisp system variables already reported by
 EMIT-CLAUTOLISP-SYSVAR-WARNING in this run: the notice is once per variable,
