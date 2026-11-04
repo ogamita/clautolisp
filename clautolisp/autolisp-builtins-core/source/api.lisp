@@ -1955,8 +1955,12 @@ walks the support search below."
         value)))
 
 (defun directory-selector-kind (directories)
+  ;; An omitted / nil selector is 0, files AND directories: the Autodesk
+  ;; reference's default, and what AutoCAD 2022, BricsCAD V25 and V26 do
+  ;; (error-processing catalogue case 464;
+  ;; vl-directory-files-dot-entries-and-default-selector).
   (let ((selector (if (null directories)
-                      1
+                      0
                       (require-int32 directories "VL-DIRECTORY-FILES"))))
     (cond
       ((= selector -1) :directories)
@@ -1970,17 +1974,24 @@ walks the support search below."
         directories)))))
 
 (defun collect-directory-entries (directory selector pattern)
+  ;; "." and ".." are directory entries, listed first and filtered by the
+  ;; pattern like any other name ("*" and "*.*" match them, "*.lsp" does
+  ;; not), as on AutoCAD 2022, BricsCAD V25 and V26
+  ;; (vl-directory-files-dot-entries-and-default-selector). UIOP never
+  ;; returns them, so they are added here.
   (let ((results '()))
-    (flet ((maybe-add (pathname directoryp)
-             (let ((name (pathname-entry-name pathname directoryp)))
-               (when (wildcard-match-p pattern name)
-                 (push (make-autolisp-string name) results)))))
+    (flet ((maybe-add-name (name)
+             (when (wildcard-match-p pattern name)
+               (push (make-autolisp-string name) results))))
+      (when (member selector '(:directories :both))
+        (maybe-add-name ".")
+        (maybe-add-name ".."))
       (when (member selector '(:files :both))
         (dolist (pathname (uiop:directory-files directory))
-          (maybe-add pathname nil)))
+          (maybe-add-name (pathname-entry-name pathname nil))))
       (when (member selector '(:directories :both))
         (dolist (pathname (uiop:subdirectories directory))
-          (maybe-add pathname t))))
+          (maybe-add-name (pathname-entry-name pathname t)))))
     (nreverse results)))
 
 (defun split-filename-components (filename)

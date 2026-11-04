@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: vl-directory-files-dot-entries-and-default-selector -- "." and ".." are entries, and the default selector is 0
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: divergence
 #+DEPENDS: -
@@ -58,3 +58,17 @@ gives 0 as the default. No warning in any dialect.
 4. Spec: VL-DIRECTORY-FILES entry, the default and the dot entries, with
    the probe evidence. User manual: nothing to add (language surface).
 5. RELEASE_NOTES, DEVELOP bump.
+
+* Resolved (clautolisp 2.3.84 / alfe 2.3.84, 2026-11-04)
+
+- DIRECTORY-SELECTOR-KIND: nil / omitted is 0 (files and directories).
+- COLLECT-DIRECTORY-ENTRIES: "." and ".." are offered first, through the
+  same WILDCARD-MATCH-P as the other names, whenever directories are
+  selected; then the files, then the subdirectories.
+- Tests (builtin-tests.lisp): BUILTIN-VL-DIRECTORY-FILES-DOT-ENTRIES-FOLLOW-
+  PATTERN-AND-SELECTOR (new: nil / 0 / -1 / 1 selectors, "*", "*.*",
+  "*.lsp", ".."), and BUILTIN-VL-DIRECTORY-AND-FILENAME-HELPERS /
+  BUILTIN-VL-DIRECTORY-SELECTOR-IGNORES-TRAILING-SEPARATOR now expect the
+  vendor answer. Red before the fix, green after.
+- Spec 0.14.6: VL-DIRECTORY-FILES default, dot entries, Tested Behaviour
+  (case 464) and the clautolisp note. RELEASE_NOTES entry.

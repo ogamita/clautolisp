@@ -1386,12 +1386,15 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
            (dir-names (mapcar #'autolisp-string-value directory-results)))
       ;; Descriptions carry the actual values + the cwd so a macОС-only
       ;; regression is self-explanatory in the CI trace.
-      (is (equal '("README" "alpha.lsp") all-names)
+      ;; The selector defaults to 0 (files AND directories), and "." / ".."
+      ;; are entries, as on AutoCAD and BricsCAD
+      ;; (vl-directory-files-dot-entries-and-default-selector).
+      (is (equal '("." ".." "README" "alpha.lsp" "subdir") all-names)
           "vl-directory-files files = ~S (dir ~S, cwd ~S)"
           all-names directory (clautolisp.autolisp-runtime:autolisp-current-directory))
       (is (equal '("alpha.lsp") file-names)
           "vl-directory-files *.lsp = ~S" file-names)
-      (is (equal '("subdir") dir-names)
+      (is (equal '("." ".." "subdir") dir-names)
           "vl-directory-files dirs = ~S" dir-names))
     (is (string= "T"
                  (autolisp-symbol-name
@@ -1484,14 +1487,51 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
                   (call-autolisp-function
                    isdir (clautolisp.autolisp-runtime:make-autolisp-string path))))
            ;; `-1' selector: same subdir list with and without the trailing sep.
-           (is (equal '("bornage") (dirs directory)))
-           (is (equal '("bornage") (dirs dir-no-sep))
+           (is (equal '("." ".." "bornage") (dirs directory)))
+           (is (equal '("." ".." "bornage") (dirs dir-no-sep))
                "vl-directory-files -1 must list subdirs without a trailing separator; got ~S"
                (dirs dir-no-sep))
            ;; vl-file-directory-p: true for the subdir with and without the sep.
            (is (string= "T" (autolisp-symbol-name (dir-p subdirectory))))
            (is (string= "T" (autolisp-symbol-name (dir-p subdir-no-sep)))
                "vl-file-directory-p must recognise a directory without a trailing separator"))
+      (ignore-errors (uiop:delete-directory-tree directory :validate t)))))
+
+;;; vl-directory-files-dot-entries-and-default-selector: AutoCAD 2022, BricsCAD
+;;; V25 and V26 list "." and ".." first, as directory entries the pattern
+;;; filters like any other name, and an omitted / nil selector means 0.
+
+(test builtin-vl-directory-files-dot-entries-follow-pattern-and-selector
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((dirfiles (autolisp-symbol-function (find-autolisp-symbol "VL-DIRECTORY-FILES")))
+         (directory (namestring
+                     (uiop:ensure-directory-pathname
+                      (merge-pathnames
+                       (format nil "clautolisp-dotent-~D/" (random 1000000000))
+                       (uiop:temporary-directory))))))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))
+    (ensure-directories-exist (concatenate 'string directory "sub/"))
+    (with-open-file (stream (concatenate 'string directory "a.lsp")
+                            :direction :output :if-does-not-exist :create)
+      (write-line "a" stream))
+    (unwind-protect
+         (flet ((names (pattern &optional (selector nil selector-p))
+                  (mapcar #'autolisp-string-value
+                          (apply #'call-autolisp-function dirfiles
+                                 (clautolisp.autolisp-runtime:make-autolisp-string directory)
+                                 (and pattern
+                                      (clautolisp.autolisp-runtime:make-autolisp-string pattern))
+                                 (and selector-p (list selector))))))
+           ;; "." and ".." come first, then the other entries in any order.
+           (is (equal '("." "..") (subseq (names nil) 0 2)))
+           (is (equal '("." ".." "a.lsp" "sub") (sort (names nil) #'string<)))
+           (is (equal '("." ".." "a.lsp" "sub") (sort (names "*" 0) #'string<)))
+           (is (equal '("." ".." "a.lsp" "sub") (sort (names "*.*" nil) #'string<)))
+           (is (equal '("." ".." "sub") (sort (names "*.*" -1) #'string<)))
+           (is (equal '("a.lsp") (names "*.*" 1)))
+           (is (equal '("a.lsp") (names "*.lsp")))
+           (is (equal '("..") (names ".." -1))))
       (ignore-errors (uiop:delete-directory-tree directory :validate t)))))
 
 (test builtin-vl-file-mutation-and-size-helpers

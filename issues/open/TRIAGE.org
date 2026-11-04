@@ -945,7 +945,7 @@ Resolved notes) stay.
 
 | Priority | Status | Issue | Scope |
 |----------+--------+-------+-------|
-| P1 | TODO | [[file:vl-directory-files-dot-entries-and-default-selector.issue][vl-directory-files-dot-entries-and-default-selector]] | "." and ".." are entries ("*", "*.*" match them); default selector 0, as on the three products (catalogue case 464) |
+| P1 | DONE | vl-directory-files-dot-entries-and-default-selector | FERME 2026-11-04 (2.3.84, spec 0.14.6); issues/closed/. Etait : "." and ".." are entries ("*", "*.*" match them); default selector 0, as on the three products (catalogue case 464) |
 | P2 | TODO | [[file:errno-setvar-accepted-by-vendors.issue][errno-setvar-accepted-by-vendors]] | (setvar "ERRNO" 0) accepted by AutoCAD and BricsCAD; clautolisp refuses it |
 | P2 | TODO | [[file:clautolisp-issue-on-error.issue][clautolisp-issue-on-error]] | an error in a -l file before -i exits the program: --on-error ignore does not continue, the REPL never starts |
 | P1 | TODO | [[file:alfe-autocad-fixed-arity-output-shadows.issue][alfe-autocad-fixed-arity-output-shadows]] | alfe's fixed 2-arg princ/print/prin1 shadows break compiled and natively loaded code under AutoCAD |

@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.14.5
+#+VERSION: 0.14.6
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.14.5*.
+The current document version is *0.14.6*.
 
 Any modification of this document must increment its version number.
 
@@ -7998,16 +7998,31 @@ Visual LISP File Function
 - `pattern` --- optional wildcard pattern; defaults to `*.*`.
 - `directories` --- optional selector:
   - `-1` directories only
-  - `0` files and directories
+  - `0` files and directories (the default, when omitted or `nil`)
   - `1` files only
 
 *** Description
 Lists files in a directory, optionally filtered by pattern and directory/file selection.
 
+The entries `"."` and `".."` are directory entries like the others: they
+are listed (first) whenever directories are selected (`-1` or `0`), and
+the pattern filters them as it filters any other name, so `"*"` and
+`"*.*"` match them while `"*.lsp"` does not.
+
 *** Return Values
 List of strings or `nil`.
 
 Autodesk documents that only the matching names are returned, not full pathnames.
+
+The order of the entries other than `"."` and `".."` is not specified.
+
+*** Tested Behaviour
+- `(vl-directory-files nil nil)` lists files AND directories, `"."` and
+  `".."` first, on AutoCAD 2022 (accoreconsole), BricsCAD V25 (Windows)
+  and BricsCAD V26 (macOS): error-processing catalogue case 464,
+  `probes/error-processing/results/raw/`, 2026-11-03. The other entries
+  come in name order on AutoCAD, directories first on BricsCAD V25, and
+  in directory order on BricsCAD V26.
 
 *** Side Effects
 None.
@@ -8029,6 +8044,14 @@ Part of the Visual LISP extension layer, but documented as broadly available acr
 
 *** Notes
 - Autodesk documents a Unicode/LISPSYS behavior change in AutoCAD 2021.
+
+*** clautolisp
+clautolisp implementation note -- not part of the normative specification
+above. Up to clautolisp 2.3.83 the default selector was `1` (files only)
+and `"."` / `".."` were never returned; since 2.3.84 clautolisp follows the
+three products (divergence case 0, *Common*: no warning in any dialect).
+clautolisp lists `"."` and `".."`, then the files, then the
+subdirectories. (`vl-directory-files-dot-entries-and-default-selector`.)
 
 #+LATEX: \newpage
 

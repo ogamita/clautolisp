@@ -38,6 +38,11 @@ refactors with no user-visible effect do not require an entry.
 
 * clautolisp / read-autolisp (=clautolisp/documentation/clautolisp-user-manual.org=)
 
+- ~vl-directory-files~ lists ="."= and =".."= and, without a selector,
+  files AND directories, as AutoCAD and BricsCAD do (2.3.84). The pattern
+  filters the dot entries like any other name (="*"=, ="*.*"= match them).
+  See the AutoLISP Spec, /VL-DIRECTORY-FILES/.
+
 - LAP compilation preserves generated loop temporaries across save/load,
   including REPEAT/WHILE return values on SBCL and CCL (2.3.83).
   Recompile older LAPs; see the manual, /CLAL-COMPILE-FILE/ and /CLAL-COMPILE-SYSTEM/.
