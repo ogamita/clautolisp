@@ -527,6 +527,9 @@ resolved at START-ENGINE time."
   (terminal-in-encoding nil)
   (terminal-out-encoding nil)
   (log-encoding nil)
+  ;; The -Ereplacement family the user gave, as the child's argv fragment
+  ;; (encoding-replacement-character-option); NIL when none.
+  (encoding-replacement-arguments nil)
   ;; The user's --dribble / --dribble-interactors request, forwarded to
   ;; the spawned engine, which records its OWN REPL (alfe-dribble.issue).
   ;; T = the engine's default timestamped file, a string = that file.
@@ -740,6 +743,10 @@ SHUTDOWN."
                               :dcl (when cli-options
                                      (clautolisp.autolisp-cli:cli-options-dcl
                                       cli-options))
+                              :encoding-replacement-arguments
+                              (when cli-options
+                                (clautolisp.autolisp-cli:encoding-replacement-option-arguments
+                                 cli-options))
                               :front-end-bindings
                               (when cli-options
                                 (direct-transmit-bindings cli-options version-text))
@@ -797,6 +804,7 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
                                 log-encoding
                                 dribble dribble-interactors dwg dcl
                                 front-end-bindings
+                                encoding-replacement-arguments
                                 debugger-arguments debugger-session-p)
   ;; The Phase 1 subprocess variant defers the actual fork to
   ;; EVAL-PLAN so we can map every action to a clautolisp-sbcl CLI
@@ -838,6 +846,7 @@ engine: NIL when none was asked for, `--dribble' for the engine's default file,
                     :dwg dwg
                     :dcl dcl
                     :front-end-bindings front-end-bindings
+                    :encoding-replacement-arguments encoding-replacement-arguments
                     :debugger-arguments debugger-arguments
                     :debugger-session-p debugger-session-p)))
       (session-state-set session :ready)
@@ -1274,6 +1283,11 @@ write cp1252 into a pipe alfe read as UTF-8."
 (cador, cadtui, nihil); alfe hands the choice over unchanged."
   (let ((host (clautolisp-subprocess-session-host session)))
     (list "--host" (if host (string-downcase (symbol-name host)) "cador"))))
+
+(defun %forward-encoding-replacement (session)
+  "-Ereplacement / -Efile-write-replacement / -Eterminal-out-replacement for
+the child, those the user gave (encoding-replacement-character-option)."
+  (clautolisp-subprocess-session-encoding-replacement-arguments session))
 
 (defun %forward-dwg (session)
   "--dwg FILE for the child, when a drawing was asked for."

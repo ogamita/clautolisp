@@ -123,6 +123,12 @@
      :forward (%situation-cli-flags))
     ("--console-output-encoding" :engine "folded into --terminal-output-encoding"
      :forward (%situation-cli-flags))
+    ("--encoding-replacement" :engine "direct: *AUTOLISP-ENCODING-REPLACEMENT*; subprocess: -Ereplacement"
+     :forward (%forward-encoding-replacement))
+    ("--file-write-encoding-replacement" :engine "direct: *AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*; subprocess: -Efile-write-replacement"
+     :forward (%forward-encoding-replacement))
+    ("--terminal-output-encoding-replacement" :engine "direct: *AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*; subprocess: -Eterminal-out-replacement"
+     :forward (%forward-encoding-replacement))
     ;; the debugger (aldo) options, shared with the clautolisp program
     ;; (debugger-public-interface-and-on-error.issue, pjb 2026-10-06). The
     ;; direct variant resolves and applies them with the program's own

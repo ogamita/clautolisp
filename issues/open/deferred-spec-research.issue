@@ -268,6 +268,22 @@ strings under each LISPSYS/encoding combination, and establish whether
 vendor memory failures return nil or signal. No deliberate native OOM
 experiment is needed for the MAXSORT regression.
 
+* Encoding replacement: what each CAD writes for an unencodable character
+From encoding-replacement-character-option (clautolisp 2.3.89). The
+per-dialect defaults rest on catalogue cases 535-545 (2026-11-03): AutoCAD
+2022 accoreconsole, BricsCAD V25 Windows, BricsCAD V26 macOS. Still to probe
+(the SPEC-UNCERTAIN markers in DIALECT-ENCODING-REPLACEMENT-DEFAULT and
+ENCODING-REPLACEMENT-TEXT):
+- AutoCAD at LISPSYS 0, 1 and 2 recorded, and in the GUI acad.exe: is it
+  still the low byte?
+- BricsCAD V25 on macOS and V26 on Windows: is the best-fit / escape split
+  the platform's (as assumed) or the version's? BricsCAD on Linux.
+- Windows best fit on characters outside Latin-with-diacritic (the euro sign
+  in ISO-8859-1, ligatures, Cyrillic): clautolisp only strips a Latin
+  diacritic and otherwise writes "?".
+- BricsCAD V26 macOS default write encoding: é read back as 142, i.e.
+  Mac Roman? (not the replacement, but measured in the same cases).
+
 * PRINC / PRINT / PRIN1: explicit NIL file on AutoCAD 2026 and LISPSYS 1 / 2
 (opened 2.3.88, autocad-output-explicit-nil-file-rejected) AutoCAD 2022 at
 LISPSYS 0 rejects (princ "x" nil), (print "x" nil) and (prin1 "x" nil) with

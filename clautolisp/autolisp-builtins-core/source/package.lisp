@@ -21,6 +21,7 @@
                 #:autolisp-catch-all-error-call-stack
                 #:autolisp-string
                 #:autolisp-file-stream
+                #:autolisp-file-external-format
                 #:autolisp-function-list-definition
                 #:autolisp-current-directory
                 #:autolisp-load-file

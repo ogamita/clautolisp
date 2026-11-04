@@ -348,6 +348,15 @@ Dialect, host, encoding:
                          (long forms: --SITUATION-encoding /
                           --SITUATION-{input,output,read,write}-encoding;
                           ENC accepts a -mac/-dos/-unix/-lf/-cr/-crlf suffix.)
+  -Ereplacement R        What a clautolisp write puts in place of a character its
+                         encoding cannot hold: one character, or error, low-byte,
+                         best-fit, escape (\\U+XXXX); default: the dialect's.
+                         Long form --encoding-replacement. Per situation:
+                         -Efile-write-replacement / -Eterminal-out-replacement
+                         (--file-write-encoding-replacement,
+                          --terminal-output-encoding-replacement).
+                         Passed to the clautolisp engine; ignored, with a warning,
+                         under --autocad/--bricscad (each CAD has its own way).
 
 CAD-specific options:
   --dwg FILE             Drawing to open before running the script.
@@ -1731,6 +1740,7 @@ engine."
     ;; backend is NOT one of them: its flags were forwarded to the engine, which
     ;; records its own REPL, and a second alfe-side file would be a poorer copy
     ;; of the same session (alfe-dribble.issue; pjb's split).
+    (%warn-encoding-replacement-ignored options backend)
     (%start-dribble-if-asked options version-text)
     (unwind-protect
          (progn
@@ -1807,6 +1817,17 @@ engine."
                           :keep-p (or cleanup-error
                                       (cli-options-keep-workdir-p options))))
         (when cleanup-error (error cleanup-error))))))
+
+(defun %warn-encoding-replacement-ignored (options backend)
+  "-Ereplacement and its per-situation forms are clautolisp's: a CAD writes an
+unencodable character its own way (AutoCAD the low byte, BricsCAD a best-fit
+or \\U+XXXX; encoding-replacement-character-option), and nothing alfe can pass
+it changes that. Warned, never silently dropped."
+  (let ((given (clautolisp.autolisp-cli:encoding-replacement-option-arguments options)))
+    (when (and given (not (eq (alfe.backend:backend-name backend) :clautolisp)))
+      (log-warn "cli: ~{~A ~A~^ ~} ignored: the ~(~A~) backend writes a character ~
+its encoding cannot hold its own way; the option is clautolisp's."
+                given (alfe.backend:backend-name backend)))))
 
 (defun write-cad-log-if-asked (options backend workdir)
   "--cad-log FILE: write the CAD's own command-history log of this run

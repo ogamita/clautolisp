@@ -120,7 +120,12 @@
    #:external-format-available-p
    #:external-format-base
    #:host-external-format-supported-p
-   #:unencodable-character-error))
+   #:unencodable-character-error
+   ;; encoding-replacement-character-option: what to write for a character
+   ;; the target encoding cannot hold.
+   #:character-encodable-p
+   #:string-encodable-p
+   #:encoding-replacement-text))
 
 (defpackage #:clautolisp.autolisp-reader.internal
   (:use #:cl)
@@ -184,6 +189,9 @@
    #:host-external-format-supported-p
    #:single-octet-tables
    #:unencodable-character-error
+   #:character-encodable-p
+   #:string-encodable-p
+   #:encoding-replacement-text
    ;; OPEN under the AutoCAD dialects (autocad-open-encoding-lispsys).
    #:utf-8-valid-prefix-length
    #:autocad-open-read-encoding

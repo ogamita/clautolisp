@@ -311,7 +311,11 @@ clautolisp-secureload-trust-model spec.")
 (defstruct autolisp-file
   stream
   (path nil)
-  (mode nil))
+  (mode nil)
+  ;; The external format OPEN opened STREAM with, or NIL when unknown: the
+  ;; write builtins read it to apply the encoding replacement
+  ;; (encoding-replacement-character-option).
+  (external-format nil))
 
 (defstruct autolisp-ename
   value

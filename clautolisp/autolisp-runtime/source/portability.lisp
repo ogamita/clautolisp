@@ -414,6 +414,52 @@ notice only says that no vendor guarantees it."
    ("Bricsys: ERRNO system variable" . "https://help.bricsys.com/en-us/document/system-variable-reference/e/errno-system-variable")))
 
 (register-dialect-warning
+ :tag "encoding-replacement"
+ :title "Character the target encoding cannot hold"
+ :kind :portability
+ :message "~A: U+~4,'0X has no representation in ~A; ~S written in its place, and each CAD writes something different"
+ :arguments "WHO (the builtin, e.g. \"WRITE-LINE\"), the character's code, the encoding, the text written instead"
+ :example ": [encoding-replacement] in LOG-RESULT: WRITE-LINE: U+012C has no representation in CP1252; \",\" written in its place, and each CAD writes something different"
+ :dialects
+ "A character the target encoding cannot hold -- (chr 300) written through a
+windows-1252 file -- is never an error on the vendor engines, and each does
+something different with it (error-processing catalogue, cases 535-545,
+2026-11-03):
+
+- AutoCAD 2022 keeps the LOW BYTE of the code point: U+012C becomes \",\"
+  (44), U+4E2D becomes \"-\" (45). It does so already in CHR, so the file
+  only follows.
+- BricsCAD V25 on Windows best-fits to the code page, the Windows
+  WideCharToMultiByte default: U+012C becomes \"I\", U+4E2D becomes \"?\".
+- BricsCAD V26 on macOS writes the eight characters \\U+012C.
+
+The specification adopts none. Each dialect behaves as its product
+(pjb's rule, error-processing-per-dialect.issue section 7): --dialect autocad
+keeps the low byte; --dialect bricscad best-fits on Windows and escapes on
+macOS and Linux; --dialect clautolisp, --strict and --lax write the escape,
+as BricsCAD V26 does -- nothing is lost and it reads back unambiguously. The
+-Ereplacement / --encoding-replacement option, the
+*AUTOLISP-ENCODING-REPLACEMENT* global and the CLAUTOLISPENCODINGREPLACEMENT
+system / environment variable choose for every dialect, =error= included (an
+AutoLISP error vl-catch-all-apply catches, before anything is written).
+
+Every dialect but --lax warns, the first time a calling function makes a
+builtin substitute -- even when the user chose the policy: the text will not
+read back the same on another engine. Portable code wraps the write, or
+writes an explicit Unicode file."
+ :rationale
+ "Except for the escape, the substitution loses the character. A program that depends on writing
+characters outside its file's encoding behaves differently on every engine;
+write such files with an explicit Unicode encoding -- (open f \"w\" \"utf8\")
+on AutoCAD at LISPSYS 1 or 2, \"w,ccs=UTF-8\" on BricsCAD -- or keep to the
+code page's characters."
+ :references
+ '(("clautolisp: the ticket" . "issues/closed/encoding-replacement-character-option.issue")
+   ("clautolisp: the measurement" . "probes/error-processing/probe-error-catalogue.lsp")
+   ("clautolisp: the user manual" . "clautolisp-user-manual.org, \"Source-file and terminal encoding\"")
+   ("Microsoft: WideCharToMultiByte (best-fit)" . "https://learn.microsoft.com/en-us/windows/win32/api/stringapiset/nf-stringapiset-widechartomultibyte")))
+
+(register-dialect-warning
  :tag "printer-nil-file"
  :title "PRINC / PRINT / PRIN1 with an explicit NIL file"
  :kind :portability

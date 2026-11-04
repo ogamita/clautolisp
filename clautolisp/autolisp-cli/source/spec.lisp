@@ -228,6 +228,55 @@ family + the bare -E/--encoding (sets every situation)."
                                opts k (canonical-encoding-name value (or nm k))))))
                 specs))))))
 
+(defparameter *encoding-replacement-options*
+  '(("all"          "--encoding-replacement"                "-Ereplacement")
+    ("file/write"   "--file-write-encoding-replacement"     "-Efile-write-replacement")
+    ("terminal/out" "--terminal-output-encoding-replacement" "-Eterminal-out-replacement"))
+  "The encoding-replacement options (encoding-replacement-character-option):
+KEY in the cli-options table, long name, short name. The bare one reaches
+every output situation, a specific one wins over it whatever the order.")
+
+(defun %encoding-replacement-store (opts key value option)
+  "Record the replacement policy VALUE (validated, canonical spelling) under
+KEY, or signal a usage error naming OPTION."
+  (let ((policy (clautolisp.autolisp-runtime:parse-encoding-replacement (or value ""))))
+    (when (or (null policy) (eq policy :invalid))
+      (error 'cli-usage-error
+             :option option
+             :message (format nil "~A expects one character, or error, low-byte, ~
+best-fit or escape; got ~S" option value)))
+    (push (cons key (clautolisp.autolisp-runtime:encoding-replacement-policy-name policy))
+          (cli-options-encoding-replacements opts))))
+
+(defun cli-encoding-replacement (opts &optional situation)
+  "The replacement policy name requested for SITUATION (\"file/write\" or
+\"terminal/out\"), or for every situation when SITUATION is NIL: the specific
+option, else the bare -Ereplacement; NIL when none was given (the dialect
+default then applies)."
+  (let ((tbl (cli-options-encoding-replacements opts)))
+    (or (and situation (cdr (assoc situation tbl :test #'string=)))
+        (cdr (assoc "all" tbl :test #'string=)))))
+
+(defun cli-encoding-replacement-explicit (opts situation)
+  "Only the option naming SITUATION (\"all\" for the bare one), or NIL."
+  (cdr (assoc situation (cli-options-encoding-replacements opts) :test #'string=)))
+
+(defun encoding-replacement-option-arguments (opts)
+  "The argv fragment that gives a child clautolisp the replacement options of
+OPTS, short spellings, in the table's order: (\"-Ereplacement\" \"?\" ...)."
+  (loop for (key nil short) in *encoding-replacement-options*
+        for value = (cli-encoding-replacement-explicit opts key)
+        when value append (list short value)))
+
+(defun %encoding-replacement-option-specs ()
+  (loop for (key long short) in *encoding-replacement-options*
+        collect (make-option-spec
+                 :longs (list long) :shorts (list short) :takes-arg-p t
+                 :handler (let ((k key) (default-name short))
+                            (lambda (opts value name)
+                              (%encoding-replacement-store
+                               opts k value (or name default-name)))))))
+
 (defun %make-common-option-specs ()
   "Build the common-option-specs list once at load time. Returned as
 a fresh list so callers can DESTRUCTIVELY extend it with tool-specific
@@ -445,7 +494,8 @@ specs without mutating the shared template."
                (setf (cli-options-aldb-stdio-p opts) t)))))
 
 (defparameter *common-option-specs*
-  (append (%make-common-option-specs) (%encoding-option-specs))
+  (append (%make-common-option-specs) (%encoding-option-specs)
+          (%encoding-replacement-option-specs))
   "The intersection of CLI options accepted by both clautolisp and
 alfe. Each tool builds its full spec list by appending its
 tool-specific specs (alfe's --mode/--backend/--dwg/etc.;

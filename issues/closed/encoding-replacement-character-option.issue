@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: encoding-replacement-character-option -- an option to substitute unencodable characters instead of signalling
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: feature
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: feat-encoding-replacement-character-option
 #+DATE: 2026-11-03
 
 * Symptom
@@ -115,3 +115,54 @@ three, and choose to signal.
 2. Implement the option and the global; per-dialect defaults from 1.
 3. Tests, user manual (Source-file and terminal encoding), dialect warning
    entry, DEVELOP bump.
+
+* Resolved (clautolisp / alfe 2.3.89, spec 0.14.9, 2026-11-04)
+
+- Options =-Ereplacement R= / =--encoding-replacement R=, and per situation
+  =-Efile-write-replacement R= / =--file-write-encoding-replacement R= and
+  =-Eterminal-out-replacement R= / =--terminal-output-encoding-replacement R=
+  (the specific one wins). R is one character, or =error=, =low-byte=,
+  =best-fit=, =escape=; anything else is a usage error. Shared CLI spec
+  (autolisp-cli spec.lisp), so alfe accepts them too.
+- Globals =*AUTOLISP-ENCODING-REPLACEMENT*=,
+  =*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*=,
+  =*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*= (a string or a symbol, read at
+  each write), seeded by the options. Departure from the sketch above: =nil=
+  means "the next source decides", and the word =error= means "signal".
+- The clautolisp system variable =CLAUTOLISPENCODINGREPLACEMENT=, seeded
+  from the environment variable of the same name (pjb, 2026-11-04: "with a
+  clautolisp-specific sysvar / envvar"), after the globals (so the option
+  wins over the environment, as usual). Read internally without the
+  =[clautolisp-sysvar]= notice.
+- Defaults follow pjb's section 7 of error-processing-per-dialect.issue,
+  which REPLACES "Under --strict the default stays to signal" above: each
+  vendor dialect as its product (dialect feature =:encoding-replacement=:
+  autocad low-byte; bricscad best-fit on Windows, escape on macOS / Linux);
+  =--dialect clautolisp= as BricsCAD V26 macOS, the =\U+XXXX= escape;
+  =--strict= and =--lax= as clautolisp. =[encoding-replacement]= registered:
+  every dialect but lax warns, the first time a calling function makes a
+  builtin substitute (section 7's "the first time the caller called the
+  function"); annex regenerated.
+- The check is done before writing (RESOLVE-ENCODING-REPLACEMENT,
+  %ENCODABLE-OUTPUT-TEXT in builtins-core; CHARACTER-ENCODABLE-P and
+  ENCODING-REPLACEMENT-TEXT in the reader), for WRITE-LINE, WRITE-CHAR,
+  PRINC, PRIN1, PRINT, PROMPT, on files OPEN made and on the terminal. So
+  =error= is an ordinary AutoLISP error vl-catch-all-apply catches, raised
+  before anything is written, and SBCL and CCL behave the same (CCL used to
+  substitute silently). Host stream errors were already wrapped by
+  WRAP-BUILTIN-FUNCTION into AutoLISP errors; tested.
+- An explicit OPEN external format carrying =:replacement= keeps its
+  precedence; an explicit encoding without one gets the policy (it says
+  nothing about replacement).
+- alfe: forwarded to a subprocess clautolisp (option contract), installed
+  in-process through the transmit bindings; ignored with a warning under
+  =--autocad= / =--bricscad=.
+- Decoding (reading invalid bytes) left out, as asked; no
+  =-Efile-read-replacement=.
+- Tests: autolisp-builtins-core/tests/encoding-replacement-tests.lisp,
+  autolisp-cli/tests/cli-launch-tests.lisp. Docs: both --help, both man
+  pages, clautolisp user manual "Characters the encoding cannot hold", alfe
+  user manual, spec WRITE-LINE Tested Behaviour + =*** clautolisp=.
+- Open vendor questions (LISPSYS 1/2, AutoCAD GUI, BricsCAD platform vs
+  version, Linux, best-fit table) moved to deferred-spec-research.issue,
+  "Encoding replacement", with SPEC-UNCERTAIN markers in the source.

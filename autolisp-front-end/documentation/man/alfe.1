@@ -147,6 +147,22 @@ for the catalogue.
 .BR \-E " " \fIENC\fR
 Declared terminal-IO encoding. Accepted-and-ignored on the
 terminal side (line-buffered by default).
+.TP
+.BR \-Ereplacement " " \fIR\fR ", " \-\-encoding\-replacement " " \fIR\fR
+What a clautolisp write puts in place of a character its encoding cannot
+hold: one character, or
+.BR error ", " low\-byte ", " best\-fit ", " escape .
+Default: the dialect's. Per situation:
+.BR \-Efile\-write\-replacement " (" \-\-file\-write\-encoding\-replacement )
+and
+.BR \-Eterminal\-out\-replacement " (" \-\-terminal\-output\-encoding\-replacement ).
+Transmitted to the clautolisp engine (in-process: the
+.B *AUTOLISP-ENCODING-REPLACEMENT*
+globals; subprocess: the same options on its command line). Under
+.BR \-\-autocad " / " \-\-bricscad
+ignored, with a warning: each CAD writes such a character its own way.
+See
+.BR clautolisp (1).
 .SS CAD-specific options
 .TP
 .BR \-\-dwg " " \fIFILE\fR

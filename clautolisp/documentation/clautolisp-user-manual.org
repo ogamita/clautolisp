@@ -1996,6 +1996,87 @@ no probing:
                              situation wins over it, whatever the order.
                              An unknown ~-E<name>~ is an error listing
                              the situations (~--list-situations~).
+- ~-Ereplacement R~ / ~--encoding-replacement R~ :: What a write puts in
+                             place of a character its encoding cannot
+                             hold. See /Characters the encoding cannot
+                             hold/ below. Surfaced as
+                             ~*AUTOLISP-ENCODING-REPLACEMENT*~.
+- ~-Efile-write-replacement R~ / ~--file-write-encoding-replacement R~ :: The
+                             same for the files ~open~ makes only
+                             (~*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*~).
+- ~-Eterminal-out-replacement R~ / ~--terminal-output-encoding-replacement R~ :: The
+                             same for the terminal only
+                             (~*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*~).
+
+*** Characters the encoding cannot hold
+A file written in windows-1252 -- the vendors' default write -- cannot hold
+~(chr 300)~ (Ĭ) or U+4E2D (a CJK ideograph). No CAD signals; each writes something else in its
+place (measured 2026-11-03, catalogue cases 535-545):
+
+| engine                 | ~(write-line (chr 300) f)~ | ~(write-line (strcat "a" (chr 20013) "b") f)~ |
+|------------------------+----------------------------+-------------------------|
+| AutoCAD 2022           | ~,~ (the low byte, 44)     | ~a-b~                   |
+| BricsCAD V25 Windows   | ~I~ (best fit)             | ~a?b~                   |
+| BricsCAD V26 macOS     | ~\U+012C~                  | ~a\U+4E2Db~             |
+
+clautolisp decides with a /replacement policy/, the value R of
+~-Ereplacement~ and of the globals it seeds:
+
+| R           | written in place of the character                                    |
+|-------------+----------------------------------------------------------------------|
+| one char    | that character, e.g. ~?~                                             |
+| ~error~     | nothing: an AutoLISP error, before any of the text is written        |
+| ~low-byte~  | the character whose code is the low byte of the code point (AutoCAD) |
+| ~best-fit~  | the unaccented letter when the encoding has it, else ~?~ (BricsCAD on Windows) |
+| ~escape~    | the characters ~\U+XXXX~ (BricsCAD on macOS)                         |
+
+Without the option, the clautolisp system variable
+~CLAUTOLISPENCODINGREPLACEMENT~ decides -- its initial value is the
+environment variable of the same name, ~""~ (the default) leaving it to the
+dialect -- and then the dialect: each vendor dialect does what its CAD does
+(~--dialect autocad~ keeps the low byte, ~--dialect bricscad~ best-fits on
+Windows and escapes on macOS and Linux -- ~bricscad-mac~, ~bricscad-linux~),
+and ~--dialect clautolisp~ writes the escape, as BricsCAD V26 does: nothing is
+lost and it reads back unambiguously. ~--strict~ and ~--lax~ do as
+~--dialect clautolisp~.
+
+A substitution prints the ~[encoding-replacement]~ warning the first time a
+calling function makes a builtin substitute, under every dialect but ~--lax~
+-- the three CADs disagree, so the text will not read back the same elsewhere
+(the dialect-warnings annex, ~[encoding-replacement]~). Portable code wraps
+such writes, or opens its file in a Unicode encoding.
+
+With ~error~ the write signals an ordinary AutoLISP error: ~*error*~ sees
+it and ~vl-catch-all-apply~ catches it. It names the character and the
+encoding, and nothing of the text is written:
+
+#+BEGIN_SRC autolisp
+(setq *AUTOLISP-ENCODING-REPLACEMENT* "error")
+(setq f (open "log.txt" "w"))            ; windows-1252 under --dialect autocad
+(vl-catch-all-apply 'write-line (list (chr 300) f))
+;; => #<%catch-all-apply-error%>
+;;   "WRITE-LINE: the character U+012C cannot be encoded in CP1252."
+#+END_SRC
+
+The policy is read at each write, so a program may change it:
+~(setq *AUTOLISP-ENCODING-REPLACEMENT* "?")~, or ~'escape~ -- a string or
+a symbol; ~nil~ gives the decision back to the dialect, and a value that names
+no policy is an AutoLISP error at the next write that needs it. The
+per-situation globals ~*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*~ (files
+~open~ makes) and ~*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*~ (the terminal)
+come before ~*AUTOLISP-ENCODING-REPLACEMENT*~, and their options before
+~-Ereplacement~, whatever the order on the command line; all of them come
+before ~CLAUTOLISPENCODINGREPLACEMENT~, which a program may also ~setvar~
+(reading it for the write is not the program's use of it: no
+~[clautolisp-sysvar]~ notice).
+
+It applies to ~write-line~, ~write-char~, ~princ~, ~prin1~, ~print~ and
+~prompt~, on a file ~open~ made -- with or without an encoding argument --
+and on the terminal. An explicit external format that carries its own
+replacement keeps its precedence: ~(open f "w" "(:cp1252 :replacement
+#\\?)")~ writes ~?~ whatever the policy says. A UTF-8 file holds every
+character, so nothing is replaced there. Reading is not concerned: an invalid
+byte sequence in a file read is decoded as described above.
 
 *** Under the AutoCAD dialects, LISPSYS decides
 As on AutoCAD 2021 and later, the default encoding of the source files
@@ -2376,6 +2457,11 @@ correct a wrong guess — but it is not its purpose.
   documents opened later in the session. A drawing created from a template
   keeps its entities through a DWG round trip — see /The ActiveX / COM
   object model/ above for why.
+- ~$CLAUTOLISPENCODINGREPLACEMENT~ :: initial value of the system variable
+  of the same name: what a write puts in place of a character its encoding
+  cannot hold -- one character, ~error~, ~low-byte~, ~best-fit~ or ~escape~
+  (see /Characters the encoding cannot hold/). Empty, or a value naming no
+  policy, leaves it to the dialect.
 - ~$CLAUTOLISP_REGISTRY_FILE~ :: a file to use as the registry store
   instead of the platform's real one -- the Windows registry, the macOS
   defaults database, or ~$XDG_CONFIG_HOME/clautolisp/registry.sexp~ --

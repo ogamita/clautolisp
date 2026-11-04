@@ -514,3 +514,15 @@ PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
 
 (deftype unencodable-character-error ()
   'clautolisp.autolisp-reader.internal:unencodable-character-error)
+
+(defun character-encodable-p (character external-format)
+  (clautolisp.autolisp-reader.internal:character-encodable-p
+   character external-format))
+
+(defun string-encodable-p (string external-format)
+  (clautolisp.autolisp-reader.internal:string-encodable-p
+   string external-format))
+
+(defun encoding-replacement-text (character external-format policy)
+  (clautolisp.autolisp-reader.internal:encoding-replacement-text
+   character external-format policy))
