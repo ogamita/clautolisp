@@ -3463,6 +3463,64 @@ PORTABILITY-WARNING-MODE: `:error' signals instead of printing."
           (setf *errno-setvar-warned* t)
           (format *error-output* "~&~A~%" message))))))
 
+(defvar *printer-nil-file-warned* nil
+  "True once EMIT-PRINTER-NIL-FILE-WARNING has printed in this run: the
+`[printer-nil-file]' notice is once per run, not once per call.")
+
+(defun %resolved-printer-nil-file-policy (dialect-name)
+  "Classify DIALECT-NAME for (princ X nil) / (print X nil) / (prin1 X nil),
+which both references document (output to the command line) and AutoCAD
+2022 rejects (autocad-output-explicit-nil-file-rejected). Returns (values
+ACTION WARN-P): ACTION is :normative (print to the command line, as
+documented) or :deviant (signal AutoCAD's bad-argument error). autocad ->
+deviant + warn; strict -> normative + warn; bricscad / clautolisp / lax /
+unknown -> normative, silent."
+  ;; SPEC-UNCERTAIN: only AutoCAD 2022 at LISPSYS 0 was measured; AutoCAD
+  ;; 2026 and LISPSYS 1 / 2 are assumed to behave the same
+  ;; (issues/open/deferred-spec-research.issue, PRINC / PRINT / PRIN1).
+  (case (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect-name)
+    ((:autocad-2026) (values :deviant   t))
+    ((:strict)       (values :normative t))
+    (t               (values :normative nil))))
+
+(defun emit-printer-nil-file-warning (operator action)
+  "Emit the `[printer-nil-file]' notice for OPERATOR (\"PRINC\", \"PRINT\" or
+\"PRIN1\") called with an explicit NIL file, ACTION being what the dialect
+does (:normative or :deviant, see %RESOLVED-PRINTER-NIL-FILE-POLICY). Once
+per run. Honours the dialect's PORTABILITY-WARNING-MODE: `:error' signals
+instead of printing."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn))
+         (message (%portability-diagnostic
+                   "printer-nil-file" (%portability-warning-location nil)
+                   operator
+                   (if (eq action :deviant)
+                       "clautolisp rejects it, as AutoCAD does"
+                       "clautolisp prints to the command line, as documented"))))
+    (when (eq mode :error)
+      (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+    (unless *printer-nil-file-warned*
+      (setf *printer-nil-file-warned* t)
+      (format *error-output* "~&~A~%" message))))
+
+(defun printer-explicit-nil-file-action (operator)
+  "What OPERATOR (\"PRINC\" / \"PRINT\" / \"PRIN1\") does with an explicit NIL
+file under the active dialect: warns when the dialect asks for it, and
+returns :normative (print to the command line) or :deviant (reject, as
+AutoCAD 2022 does)."
+  (let ((dialect-name (ignore-errors
+                       (clautolisp.autolisp-reader:autolisp-dialect-name
+                        (current-evaluation-dialect)))))
+    (multiple-value-bind (action warn-p)
+        (%resolved-printer-nil-file-policy dialect-name)
+      (when warn-p
+        (emit-printer-nil-file-warning operator action))
+      action)))
+
 (defvar *clautolisp-sysvar-warnings-seen* (make-hash-table :test 'equal)
   "Names of the clautolisp system variables already reported by
 EMIT-CLAUTOLISP-SYSVAR-WARNING in this run: the notice is once per variable,

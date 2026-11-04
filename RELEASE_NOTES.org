@@ -38,6 +38,13 @@ refactors with no user-visible effect do not require an entry.
 
 * clautolisp / read-autolisp (=clautolisp/documentation/clautolisp-user-manual.org=)
 
+- *An explicit ~nil~ file to ~princ~ / ~print~ / ~prin1~* (2.3.88): an error
+  under ~--dialect autocad~, as on AutoCAD 2022, which rejects it although
+  Autodesk documents it; output to the console elsewhere, as documented.
+  Flagged by ~[printer-nil-file]~ under the AutoCAD dialects and ~--strict~.
+  In alfe on AutoCAD, such a call now reaches AutoCAD's own primitive. See
+  the user manual's per-dialect behaviours.
+
 - *An error in a ~-l~ / ~-x~ before ~-i~ no longer takes the REPL away*
   (2.3.86): it is reported (under ~--on-error debug~, the interactive
   default, it stops in the debugger first) and the next action, then the

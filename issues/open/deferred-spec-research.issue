@@ -267,3 +267,13 @@ Still probe the ordering of punctuation, case, accented and non-Latin
 strings under each LISPSYS/encoding combination, and establish whether
 vendor memory failures return nil or signal. No deliberate native OOM
 experiment is needed for the MAXSORT regression.
+
+* PRINC / PRINT / PRIN1: explicit NIL file on AutoCAD 2026 and LISPSYS 1 / 2
+(opened 2.3.88, autocad-output-explicit-nil-file-rejected) AutoCAD 2022 at
+LISPSYS 0 rejects (princ "x" nil), (print "x" nil) and (prin1 "x" nil) with
+"type d'argument incorrect: FILE nil"; BricsCAD V26 macOS accepts all three,
+and both references document NIL. clautolisp reproduces the error under every
+--dialect autocad version. Probe AutoCAD 2026 (Windows) and AutoCAD 2022 at
+LISPSYS 1 and 2: if one of them accepts NIL, gate the error on the dialect's
+version. Also probe write-line / write-char with a NIL file on AutoCAD (BricsCAD
+V26 accepts both; AutoCAD unmeasured -- pfenny went offline mid-probe).

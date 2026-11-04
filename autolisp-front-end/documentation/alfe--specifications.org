@@ -2364,7 +2364,11 @@ Constraints:
   (OBJ FILE), =autolisp-emit-prompt= and =autolisp-princ-newline=, and
   every other caller (VLX / FAS, native =load=, reactors) keeps the
   CAD's primitives. A fixed-arity shadow broke all of those callers
-  (alfe-autocad-fixed-arity-output-shadows, fixed in alfe 2.3.87). The
+  (alfe-autocad-fixed-arity-output-shadows, fixed in alfe 2.3.87). A call
+  written with its FILE argument goes to =autolisp-princ-to-file= & co.,
+  which hand a NIL file to the CAD's own primitive, so the CAD judges it
+  (AutoCAD 2022 rejects it; alfe 2.3.88,
+  autocad-output-explicit-nil-file-rejected). The
   zero-argument =quit= / =exit= shadows match the primitives' arity and
   stay.
 

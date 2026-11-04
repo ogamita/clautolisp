@@ -867,9 +867,9 @@ depends on the CAD's =defun=:
   | Call in your code           | Evaluated as                    |
   |-----------------------------+---------------------------------|
   | =(princ)=, =(terpri)=       | =(autolisp-princ-newline)=      |
-  | =(princ x)=, =(princ x f)=  | =(autolisp-princ-to x nil)=, =(autolisp-princ-to x f)= |
-  | =(print x)=, =(print x f)=  | =(autolisp-print-to x nil)=, ... |
-  | =(prin1 x)=, =(prin1 x f)=  | =(autolisp-prin1-to x nil)=, ... |
+  | =(princ x)=, =(princ x f)=  | =(autolisp-princ-to x nil)=, =(autolisp-princ-to-file x f)= |
+  | =(print x)=, =(print x f)=  | =(autolisp-print-to x nil)=, =(autolisp-print-to-file x f)= |
+  | =(prin1 x)=, =(prin1 x f)=  | =(autolisp-prin1-to x nil)=, =(autolisp-prin1-to-file x f)= |
   | =(prompt x)=                | =(autolisp-emit-prompt x)=      |
 
   The bytes printed are the same as on BricsCAD. Code alfe does *not*
@@ -884,10 +884,16 @@ depends on the CAD's =defun=:
   it with =--cad-log FILE= (see [[#cad-log][The CAD's log: =--cad-log=]]) or, in
   =--mode batch=, from =engine-console-stdout.txt= in a kept workdir.
 
-  One consequence: AutoCAD rejects an explicit =nil= file argument --
-  =(princ "x" nil)= is an error there ("bad argument type: FILE nil",
-  measured on AutoCAD 2022) -- while the rewritten call accepts it, so such
-  a call works in code alfe evaluates and fails in compiled code.
+  A file argument that is =nil= -- =(princ "x" nil)=, or =(princ "x" f)=
+  with =f= nil -- is handed to AutoCAD's own =princ=, which rejects it
+  ("bad argument type: FILE nil", measured on AutoCAD 2022, although
+  Autodesk documents the argument as "File or nil"): such a call fails in
+  code alfe evaluates exactly as it does in compiled code. Omit the
+  argument to print to the console: =(if f (princ x f) (princ x))=.
+
+/Changed in alfe 2.3.88./ A =nil= file argument used to be accepted
+under alfe on AutoCAD (output to alfe's stream), where AutoCAD itself
+rejects it; it now reaches AutoCAD's primitive.
 
 /Changed in alfe 2.3.87./ On AutoCAD alfe used to *redefine* =princ=,
 =print= and =prin1= with exactly two arguments (and =prompt=, =terpri=), and

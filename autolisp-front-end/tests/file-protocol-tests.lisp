@@ -2127,14 +2127,14 @@ clautolisp-sbcl is not on disk."
              (append
               (list +lossy-render-form+
                     ;; The stub is in force: PRINC-style rendering rounds.
-                    "(princ (strcat \"PLAIN \" (autolisp-render (read \"1.5707963267948966\")) \"\\n\") nil)")
+                    "(princ (strcat \"PLAIN \" (autolisp-render (read \"1.5707963267948966\")) \"\\n\"))")
               (mapcar (lambda (literal)
-                        (format nil "(princ (strcat \"SRC \" (autolisp-form-source-text (read ~S)) \"\\n\") nil)"
+                        (format nil "(princ (strcat \"SRC \" (autolisp-form-source-text (read ~S)) \"\\n\"))"
                                 literal))
                       literals)
               (list
-               "(princ (strcat \"FORM \" (autolisp-form-source-text (read \"(setq a 1.5707963267948966 s \\\"q\\\\\\\"x\\\" c (quote (k . 2.5)))\")) \"\\n\") nil)"
-               "(princ (strcat \"NORM \" (autolisp-real-text-normalize \".5\") \" \" (autolisp-real-text-normalize \"-.5\") \" \" (autolisp-real-text-normalize \"3\") \" \" (autolisp-real-text-normalize \"3.\") \" \" (autolisp-real-text-normalize \"1E+00\") \" \" (autolisp-real-text-normalize \"2.5E-07\") \"\\n\") nil)"))
+               "(princ (strcat \"FORM \" (autolisp-form-source-text (read \"(setq a 1.5707963267948966 s \\\"q\\\\\\\"x\\\" c (quote (k . 2.5)))\")) \"\\n\"))"
+               "(princ (strcat \"NORM \" (autolisp-real-text-normalize \".5\") \" \" (autolisp-real-text-normalize \"-.5\") \" \" (autolisp-real-text-normalize \"3\") \" \" (autolisp-real-text-normalize \"3.\") \" \" (autolisp-real-text-normalize \"1E+00\") \" \" (autolisp-real-text-normalize \"2.5E-07\") \"\\n\"))"))
              :assume-no-rest-p nil)
           (let ((plain (%prefixed-lines "PLAIN " stdout))
                 (printed (%prefixed-lines "SRC " stdout)))
@@ -2194,12 +2194,12 @@ literals, send real literals as protocol requests, and return
         ;; A protocol request (an -x form) with a literal of its own.
         "(setq rtx-d 1.5707963267948966)"
         ;; No re-print so far: every form above travelled as its text.
-        "(princ (strcat \"PRINTED \" (itoa *rtx-printed*) \"\\n\") nil)"
+        "(princ (strcat \"PRINTED \" (itoa *rtx-printed*) \"\\n\"))"
         ;; A form with a 1-arg princ: the AutoCAD normaliser rewrites it,
         ;; and the padding is made in its TEXT, so it is not re-printed
         ;; either (alfe-normalised-form-reals-autocad).
         "(progn (setq rtx-c 5.497787143782138 rtx-m -0.0) (princ \"\"))"
-        "(princ (strcat \"REPRINTED \" (if (> *rtx-printed* 0) \"yes\" \"no\") \"\\n\") nil)"
+        "(princ (strcat \"REPRINTED \" (if (> *rtx-printed* 0) \"yes\" \"no\") \"\\n\"))"
         (concatenate
          'string
          "(princ (strcat"
@@ -2209,10 +2209,10 @@ literals, send real literals as protocol requests, and return
          " \" C \" (if (= rtx-c (read \"5.497787143782138\")) \"EXACT\" \"ROUNDED\")"
          " \" N \" (if (minusp (atan rtx-n -1.0)) \"NEG\" \"POS\")"
          " \" M \" (if (minusp (atan rtx-m -1.0)) \"NEG\" \"POS\")"
-         " \"\\n\") nil)")
+         " \"\\n\"))")
         ;; (rtos x 2 16) of the loaded 1.2345678901234: all its digits.
         ;; Trailing zeros depend on DIMZIN, so they are not compared.
-        "(princ (strcat \"RTOS-E \" (rtos rtx-e 2 16) \"\\n\") nil)")))))
+        "(princ (strcat \"RTOS-E \" (rtos rtx-e 2 16) \"\\n\"))")))))
 
 (test protocol-real-literals-reach-the-engine-exactly
   "Acceptance with a real AutoLISP engine whose PRINC keeps 6 digits
@@ -2532,7 +2532,7 @@ stderr)."
                      " (efw-orig-open* args)))")
         ;; -l
         (format nil "(load ~S)" (namestring lfile))
-        "(princ (strcat \"PRINTED-L \" (itoa *efw-printed*) \"\\n\") nil)"
+        "(princ (strcat \"PRINTED-L \" (itoa *efw-printed*) \"\\n\"))"
         ;; --main
         "(efw-main)"
         ;; -x
@@ -2551,7 +2551,7 @@ stderr)."
          " \" X \" (if (= efw-x (read \"0.7853981633974483\")) \"EXACT\" \"ROUNDED\")"
          " \" Q \" (vl-symbol-name (car efw-q)) \" \" (vl-symbol-name (car efw-q2))"
          " \"\\nOPENSTAR \" (itoa *efw-openstar*)"
-         " \"\\n\") nil)"))))))
+         " \"\\n\"))"))))))
 
 (defun %efw-octets (outdir name)
   (let ((p (merge-pathnames name outdir)))
@@ -2808,7 +2808,7 @@ OPEN calls are all rewritten. Skipped when clautolisp-sbcl is not on disk."
              binary
              (loop for (in expected) in cases
                    for i from 1
-                   collect (format nil "(progn (setq txt (alfe-open-rewrite-text ~A)) (princ (strcat \"TXT~D \" (if (= txt ~A) \"SAME\" (vl-prin1-to-string txt)) \"\\n\") nil))"
+                   collect (format nil "(progn (setq txt (alfe-open-rewrite-text ~A)) (princ (strcat \"TXT~D \" (if (= txt ~A) \"SAME\" (vl-prin1-to-string txt)) \"\\n\")))"
                                    (%autolisp-string-literal in) i
                                    (%autolisp-string-literal expected))))
           (is (every (lambda (s) (search " OK" s)) statuses)
@@ -2852,14 +2852,14 @@ padded text only when it reads back EQUAL to the normalised form, and NIL
              "(progn (setq a 123456789012345678.0)  (autolisp-princ-newline) )")
             ("(print)" "(autolisp-print-to \"\" nil)")
             ("(prin1 'x)" "(autolisp-prin1-to 'x nil)")
-            ("(princ x f)" "(autolisp-princ-to x f)")
-            ("(PRINT x f)" "(autolisp-print-to x f)")
+            ("(princ x f)" "(autolisp-princ-to-file x f)")
+            ("(PRINT x f)" "(autolisp-print-to-file x f)")
             ("(princ x f g)" "(princ x f g)")
             ("(load \"a.lsp\")" "(load \"a.lsp\" nil)")
             ("(load \"a.lsp\" 1)" "(load \"a.lsp\" 1)")
             ("(princ (princ 1.0e300))"
              "(autolisp-princ-to (autolisp-princ-to 1.0e300 nil) nil)")
-            ("(prin1 (print 2) f)" "(autolisp-prin1-to (autolisp-print-to 2 nil) f)")
+            ("(prin1 (print 2) f)" "(autolisp-prin1-to-file (autolisp-print-to 2 nil) f)")
             ("(prompt \"p\")" "(autolisp-emit-prompt \"p\")")
             ("(prompt (princ 1))" "(autolisp-emit-prompt (autolisp-princ-to 1 nil))")
             ("(progn (TERPRI) (terpri f))" "(progn (autolisp-princ-newline) (terpri f))")
@@ -2878,7 +2878,7 @@ padded text only when it reads back EQUAL to the normalised form, and NIL
              (append
               (loop for (in expected) in cases
                     for i from 1
-                    collect (format nil "(progn (setq txt (alfe-normalize-princ-text ~A)) (princ (strcat \"TXT~D \" (if (= txt ~A) \"SAME\" (vl-prin1-to-string txt)) \"\\n\") nil))"
+                    collect (format nil "(progn (setq txt (alfe-normalize-princ-text ~A)) (princ (strcat \"TXT~D \" (if (= txt ~A) \"SAME\" (vl-prin1-to-string txt)) \"\\n\")))"
                                     (%autolisp-string-literal in) i
                                     (%autolisp-string-literal expected)))
               (list
@@ -2892,7 +2892,7 @@ padded text only when it reads back EQUAL to the normalised form, and NIL
                 " (vl-prin1-to-string (alfe-normalized-source-text f n \"(princ 1.5707963267948966)\"))"
                 " \" \" (vl-prin1-to-string (alfe-normalized-source-text f n \"(princ 2.5)\"))"
                 " \" \" (vl-prin1-to-string (alfe-normalized-source-text f n nil))"
-                " \"\\n\") nil))")))
+                " \"\\n\")))")))
              :assume-no-rest-p nil)
           (is (every (lambda (s) (search " OK" s)) statuses)
               "every request must succeed: ~S~%~A" statuses stderr)
@@ -2935,7 +2935,7 @@ literals arrived rounded. Skipped when clautolisp-sbcl is not on disk."
               "(setq *rtn-printed* 0)"
               +autocad-rtos-real-printer-form+
               ;; The stub really rounds (otherwise this test proves nothing).
-              "(princ (strcat \"STUB \" (autolisp-real-source-text (read \"1.5707963267948966\")) \"\\n\") nil)"
+              "(princ (strcat \"STUB \" (autolisp-real-source-text (read \"1.5707963267948966\")) \"\\n\"))"
               "(setq *rtn-printed* 0)"
               ;; Normalised: the inner 1-arg princ is padded on AutoCAD.
               "(setq rtn-p (princ 1.5707963267948966))"
@@ -2947,7 +2947,7 @@ literals arrived rounded. Skipped when clautolisp-sbcl is not on disk."
                " \" J \" (if (= rtn-j (read \"123456789012345678.0\")) \"EXACT\" \"ROUNDED\")"
                " \" E \" (if (= rtn-e (read \"1.2345678901234567\")) \"EXACT\" \"ROUNDED\")"
                " \" PRINTED \" (itoa *rtn-printed*)"
-               " \"\\n\") nil)"))
+               " \"\\n\"))"))
              :assume-no-rest-p t)
           (is (every (lambda (s) (search " OK" s)) statuses)
               "every request must succeed: ~S ~S" statuses stderr)
@@ -3299,7 +3299,7 @@ stdout stderr)."
         (format nil "(defun zz--check (zz--v zz--tag / zz--s zz--bad) ~
 (foreach zz--s '(~{~A~^ ~}) ~
 (if (not (equal (eval zz--s) zz--v)) (setq zz--bad (cons zz--s zz--bad)))) ~
-(princ (strcat zz--tag \"=\" (if zz--bad (vl-prin1-to-string (reverse zz--bad)) \"ALL\") \"\\n\") nil))"
+(princ (strcat zz--tag \"=\" (if zz--bad (vl-prin1-to-string (reverse zz--bad)) \"ALL\") \"\\n\")))"
                 names)
         (format nil "(load ~S)" (namestring lfile))
         "(zz--check 42 \"L\")"
@@ -3311,7 +3311,7 @@ stdout stderr)."
         "(zz--check 45 \"MAIN\")"
         (format nil "(alfe-load ~S)" (namestring afile))
         "(zz--check 46 \"ALFE-LOAD\")"
-        (format nil "(princ (if zz--l-end \"L-END\" \"L-STOPPED\") nil)"))))))
+        (format nil "(princ (if zz--l-end \"L-END\" \"L-STOPPED\"))"))))))
 
 (test protocol-user-setq-of-every-runtime-name-reaches-the-global
   "alfe-eval-request-locals-capture-user-setq, hosted, on the AutoCAD path
