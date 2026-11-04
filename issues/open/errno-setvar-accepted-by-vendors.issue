@@ -1,0 +1,73 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: errno-setvar-accepted-by-vendors -- (setvar "ERRNO" 0) works on AutoCAD and BricsCAD, clautolisp refuses it
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-11-03
+
+* Symptom
+
+Found while running the error-processing catalogue probe
+(error-processing-per-dialect.issue) under clautolisp 2.3.81:
+
+#+begin_example
+$ clautolisp --no-init --dialect autocad -x '(setvar "ERRNO" 0)'
+; error: Sysvar ERRNO is read-only.
+#+end_example
+
+The same under =--dialect bricscad=. The probe resets ERRNO before every
+case, with the usual idiom
+
+#+begin_src lisp
+(setvar "ERRNO" 0)
+(setq r (some-call ...))
+(if (/= 0 (getvar "ERRNO")) ...)
+#+end_src
+
+and clautolisp aborted it at the first case, while all three vendors ran it.
+
+* Vendor evidence (measured 2026-11-03)
+
+The catalogue probe runs =(setvar "ERRNO" 0)= OUTSIDE vl-catch-all-apply
+before each of its ~505 cases, so any refusal would have aborted it at
+case 0:
+
+| product                        | (setvar "ERRNO" 0)      | next (getvar "ERRNO")                         |
+|--------------------------------+-------------------------+-----------------------------------------------|
+| AutoCAD 2022 FR, accoreconsole | accepted                | 0, then set again by the next failing builtin |
+| BricsCAD V25 fr_FR, Windows    | accepted                | same                                          |
+| BricsCAD V26 fr_FR, macOS      | accepted                | same                                          |
+
+Whatever the vendor documentation says about ERRNO being read-only, it was
+not rechecked here; the measurement is what counts. The test
+=cador/tests/sysvar-catalogue-tests.lisp: host-setvar-on-errno-signals-read-only=
+asserts the opposite ("ERRNO is documented read-only on both vendors"),
+which the measurement contradicts.
+
+* To do
+
+1. =--dialect autocad-*= and =--dialect bricscad-*= (any spelling):
+   =(setvar "ERRNO" n)= writes the session errno, as
+   SET-AUTOLISP-ERRNO does, and returns =n=, as the vendors do.
+2. Under those dialects, emit a one-time portability warning (pjb,
+   2026-11-03: "with warning"), e.g.
+   : [errno-setvar] in <loc>: (setvar "ERRNO" 0) is accepted by AutoCAD and BricsCAD; clautolisp writes the session errno
+   Its wording and silencing follow the [vl-catch-all-apply-arity]
+   precedent (clautolisp-dialect-warnings.org): an UNDOCUMENTED tolerance
+   that every engine has.
+3. =--strict=: decide between keeping :sysvar-read-only and accepting with
+   the same warning. The vl-catch-all-apply-arity precedent suggests:
+   accept and warn.
+4. Rewrite =host-setvar-on-errno-signals-read-only= to follow the
+   dialect, add a test for the warning, and update the ERRNO entry of the
+   spec (chapter 16, "Normative ERRNO code table" notes) and
+   clautolisp-dialect-warnings.org.
+5. Bump DEVELOP (version.lisp).
+
+* Related
+
+- error-processing-per-dialect.issue: the probe that found this.
+- Spec SETVAR table (autolisp-visual-lisp-specification-draft.org:10072-10087):
+  setvar ERRNO codes on both vendors.

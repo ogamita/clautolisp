@@ -1,0 +1,317 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: error-processing-per-dialect -- how *error*, exit, catch-all and failing builtins differ between AutoCAD and BricsCAD
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: divergence-cat
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-11-03
+
+* Why
+
+A client application (SCHMS+, railway schematics) found that some errors
+were silent under BricsCAD and visible under AutoCAD. The question was
+whether the error MECHANISM differs (when and where *error* runs, what it
+sees), or whether some FUNCTIONS fail differently. This ticket collects the
+measurements made to answer it on 2026-11-03, and lists every divergence the
+probes found, so that clautolisp can model each one per dialect.
+
+Products measured:
+
+| label           | product                                    | how                                 |
+|-----------------+--------------------------------------------+-------------------------------------|
+| AutoCAD-2022    | AutoCAD 2022 FR, accoreconsole (no COM)    | /i empty.dwg /s run.scr, Windows 11 |
+| BricsCAD-V25    | BricsCAD V25.2.05 fr_FR, Windows           | /Automation /b run.scr              |
+| BricsCAD-V26    | BricsCAD V26.2.7 fr_FR, macOS (Rosetta)    | -B run.scr                          |
+| clautolisp-*    | clautolisp 2.3.81, --dialect autocad / bricscad | -x, same probe files           |
+
+AutoCAD GUI (acad.exe) was NOT measured. accoreconsole has no COM, so its
+vla-* rows say nothing about the GUI.
+
+* The probes
+
+All under =probes/error-processing/= (README.org there):
+
+- =probe-error-handler.lsp=: C:P1 .. C:P12. One command per situation, run
+  at TOP LEVEL from the script (NOT under vl-catch-all-apply, which is why
+  alfe cannot measure this, see local-error-handler-not-called.issue). Each
+  handler writes what it sees to probe-log.txt.
+- =probe-error-catalogue.lsp=: C:PCAT. 546 expressions held as STRINGS, READ
+  then EVAL under vl-catch-all-apply, one at a time. For each one the probe
+  logs VALUE or ERROR+message, and ERRNO. A BEGIN line before each case
+  names the case that killed the engine; the driver then restarts after it.
+- =run-bricscad-macos.sh=, =run-windows.sh=, =drive-catalogue.sh=: launch,
+  crash-resume. =summarize.py= builds the vendor tables below from the logs,
+  and =gaps.py= the clautolisp-against-vendor tables of 3.
+- =results/=: every raw log, plus catalogue-comparison.org (all 546 cases,
+  5 columns) and catalogue-divergences.org (vendor divergences, classified).
+
+Caveat on the catalogue: a case evaluated through READ + EVAL is not always
+the same as the form written in a loaded file. See 2.3 on LAMBDA.
+
+* 1. The *error* mechanism (probe-error-handler.lsp)
+
+| case | situation                                                                  | AutoCAD-2022                                                      | BricsCAD V25 = V26                                  |
+|------+----------------------------------------------------------------------------+-------------------------------------------------------------------+-----------------------------------------------------|
+| P1   | *error* setq'd inside a function, *push-error-using-stack*, (/ 1 0) in the thunk | called, "division par zéro"; sees the function's locals; restored | called, "divide by zero at [/]"; same              |
+| P2   | same without *push-error-using-stack*                                      | same: locals visible                                              | same                                                |
+| P3   | local *error* (defun f (/ *error*) ...) in a SUB-function                  | called, sees f's locals                                           | same                                                |
+| P4   | local *error* in the command, error 2 calls deeper                         | called, sees the DEEPER function's locals too                    | same                                                |
+| P5   | error under vl-catch-all-apply                                             | *error* not called                                                | same                                                |
+| P6   | error raised INSIDE *error*                                                | handler aborted; the 2nd error's message printed                  | IGNORED: the handler runs to its end                |
+| P8   | (c:inner) called from c:outer, error in inner                              | outer's local handler                                             | same                                                |
+| P9   | (exit)                                                                     | *error* "quitter / sortir abandon"                                | "quit / exit abort"                                 |
+| P10  | (vl-exit-with-error "x") in a command, no VLX                              | *error* NOT called, command ends silently                         | same                                                |
+| P11  | (command "_LINE" "pas-un-point" "")                                        | *error* "Fonction annulée" (the ESC message); the SCRIPT is cancelled too | no error; command returns nil; CMDACTIVE 4 (script only); execution goes on |
+| P12  | (error "x")                                                                | "no function definition: ERROR"                                   | *error* receives "error": the message is LOST       |
+| P1F  | thunk passed as (function (lambda ...)), called as (f)                     | "fonction incorrecte: (quote #<SUBR @… -lambda->)"                | works                                               |
+
+Conclusions:
+
+- *error* runs BEFORE unwinding on BOTH products: every dynamic binding of
+  the failing extent is still visible. The belief that BricsCAD unwinds first
+  came from its truncated vl-bt only. clautolisp's 2.3.28 fix
+  (local-error-handler-not-called.issue: HANDLER-BIND, handler at signal
+  time) matches both vendors. The "Vendor evidence: not measurable" note
+  there can now cite P3/P4.
+- To model per dialect: P6 (error inside *error*), P11 (command refusing
+  input: error vs nil, and script cancellation on AutoCAD), P12 (BricsCAD's
+  ERROR gives *error* the bare word "error"), P1F (calling a
+  (function (lambda)) value bound to a variable, AutoCAD interpreted code).
+- P10: vl-exit-with-error outside a VLX never reaches *error*, on either
+  product. This complements vl-exit-outside-vlx-caught-diverges.issue,
+  which measured only the vl-catch-all-apply side.
+
+* 2. Catalogue: where AutoCAD and BricsCAD differ
+
+summarize.py over the raw logs: 546 cases, 368 differ between AutoCAD-2022
+and BricsCAD-V26. 258 of these differ in the message only (both signal), 45
+return different values, and 65 differ in KIND (one signals, returns nil, a
+value, or dies). BricsCAD V25 Windows and V26 macOS give the same KIND of
+answer everywhere except the crash of 2.1. Their values differ for the
+encoding cases (2.7) and for textbox, and their messages differ for setvar
+and vla-* errors.
+Full tables: probes/error-processing/results/catalogue-divergences.org
+(classified) and catalogue-comparison.org (every case, five columns).
+
+** 2.1 Crashes (the engine dies; vl-catch-all-apply does not help)
+
+| # | expression | AutoCAD-2022 | BricsCAD-V25 | BricsCAD-V26 |
+|---+---+---+---+---|
+| 157 | =(reverse '(1 . 2))= | error "liste incorrecte: 2" | error, then lispex.dll ACCESS_VIOLATION a few evaluations later | SIGSEGV at once (EXC_BAD_ACCESS 0x40) |
+| 392 | =(command-s "_LINE" "pas-un-point" "")= | ACCESS_VIOLATION 0xC0000005 ("fonction unwind ignorée exception"); also at top level (P13: segfault) | nil | nil |
+| 397 | =(command-s "_LAYER" "_S" "PCAT_NOPE_LAYER" "")= | dies | nil | nil |
+| 399 | =(command-s "_CIRCLE" '(0 0) -5)= | dies | nil | nil |
+
+- 157 on V25: the run where it was skipped, and the 11 bisection runs
+  without it, never crashed. The two runs that contained it crashed in lispex.dll
+  at the same address (reportMemory+0x3CEC), during a LATER Lisp
+  evaluation. Crash reports: results/raw/crash-bricscad-*.
+- 392/397/399: each case alone reproduces it, so it does not depend on
+  case order. P13 (no catch-all, at top level) segfaults the process; P14
+  (vl-catch-all-apply 'command-s ...) ends in the access violation. Console:
+  results/raw/console-autocad-2022-command-s-refused-input-case-392.txt.
+  Measured on accoreconsole only; acad.exe not measured.
+
+** 2.2 One product signals, the other returns a value (26)
+
+Silent on the product that returns:
+
+| # | expression | AutoCAD-2022 | BricsCAD |
+|---+---+---+---|
+| 12-14 | =(expt 0 -1)=, =(expt -8.0 (/ 1.0 3))= | error | inf.0 / nan.0 |
+| 34 | =(gcd 0 0)= | error | 0 |
+| 63, 67 | =(rtos 1.0 2 -1)=, =(distof "1" 9)= | error | "1", 1.0 |
+| 104, 149 | =(chr 65.5)=, =(nth 1.5 '(1 2))= | error (fixnump) | "A", 2 (truncated) |
+| 111 | =(vl-string-subst nil "a" "b")= | error | "b" |
+| 121 | =(vl-list->string '(300))= | error | "\U+012C" (V26), "I" (V25) |
+| 152, 160, 172 | last / append / apply on =(1 . 2)= | error "liste incorrecte" | 1, (1 3), 1 |
+| 180 | =(subst 1 2 3)= | error | 3 |
+| 195, 196 | =(foreach x 1 x)=, =(foreach x '(1 . 2) x)= | error | 1 |
+| 241, 250 | a LAMBDA value called through a variable or MAPCAR, after READ + EVAL | error "fonction incorrecte: #<SUBR -lambda->" | works (see 2.8) |
+| 380 | =(vlax-curve-getEndParam erased-ename)= | error | 1.414 (answers for an ERASED entity) |
+| 523, 526, 527 | itoa / gcd / logand of 2147483648 | error (the literal is a REAL on AutoCAD) | value |
+| 79 | =(>= 'a nil)= | T | error |
+| 227 | =(function undefined-fn)= | the symbol | error |
+| 456 | =(load "missing" 'onfail)= | ONFAIL, the documented answer | ERROR "LOAD failed" |
+| 494 | =(arxload "missing" 'onfail)= | ONFAIL [errno 93] | ERROR "ARXLOAD failed" |
+
+** 2.3 One product signals, the other returns nil (16)
+
+| # | expression | AutoCAD-2022 | BricsCAD |
+|---+---+---+---|
+| 95 | =(strcat nil)= | error stringp nil | nil |
+| 109 | =(vl-string-search "a" "abc" 99)= | error | nil |
+| 217, 335 | =(vl-symbol-value nil)=, =(getvar nil)= | error | nil |
+| 312 | =(ssget "BOGUS")= | error [errno 98] | nil |
+| 389, 395 | =(command-s "_NOSUCHCMD")=, =(command-s "_LINE" '(0 0) nil)= | error "Erreur inconnue de (command-s)." | nil |
+| 415, 416, 427, 442 | vlax-property-available-p / vlax-method-applicable-p / vlax-erased-p / vla-getboundingbox, no COM object (accoreconsole) | error | nil |
+| 486, 488, 490, 491 | vl-registry-read bad root, startapp nil, vl-bb-ref nil, vl-doc-ref nil | error | nil |
+| 78 | =(> nil 1 "a")= | nil | error |
+
+** 2.4 nil on one product, a value on the other (19)
+
+| # | expression | AutoCAD-2022 | BricsCAD |
+|---+---+---+---|
+| 296, 297, 300 | entmakex LINE with layer "", color 999, TEXT with an undefined style | nil [errno 25/27] | ENAME (accepted) |
+| 304 | entmod with (62 . 999) | nil [errno 27] | the list (accepted) |
+| 354-356, 359-360 | vlax-curve-getParamAtPoint / getDistAtPoint, point OFF a LINE or a Z=0 LWPOLYLINE | nil | 0.0 |
+| 364 | vlax-curve-getParamAtDist of an LWPOLYLINE, dist past the end | nil | the end param (20.0) |
+| 408 | =(vlax-ename->vla-object erased-ename)= | nil | a VLA-OBJECT |
+| 279 | =(osnap '(0 0) "_bogus")= | nil | (0.0 0.0 0.0) |
+| 260, 498, 504 | vl-bt (return value), grtext -99, vl-get-resource of a missing name | nil | a value |
+| 276 | =(trans '(0 0 0) 0 99)= | (0 0 0) | nil |
+| 362, 363 | getParamAtPoint, 2D/3D point on an LWPOLYLINE at elevation 5 | 0.5 (Z ignored) | nil |
+| 369 | getDistAtParam of an ARC, param past the end | 30.0 (extrapolated) | nil |
+
+** 2.5 Both return, different values (45; integer and encoding rows in 2.6 / 2.7)
+
+| # | expression | AutoCAD-2022 | BricsCAD |
+|---+---+---+---|
+| 367 | getParamAtDist of an ARC, dist past the end | 9.9 (extrapolated) | 15.0 (the length) |
+| 371 | getParamAtDist of a CIRCLE, dist past 2πR | 0.950444 (wraps) | 19.8 (extrapolates) |
+| 228 | =(vl-acad-defun 'undefined-fn)= | 2095 | T |
+| 282 | =(textbox '((1 . "a")))= | ((0.126 -0.041) (1.794 1.852)) | V26 the same; V25 ((0.25 0.125) (1.341 1.716)) |
+| 305 | =(entmod (list (cons -1 erased) '(8 . "0")))= | the list (no error for an ERASED entity) | the same |
+
+The curve rows agree with, and extend, cador-curve-length-and-sampling.issue.
+
+** 2.6 32-bit integers
+
+| # | expression | AutoCAD-2022 | BricsCAD V25 = V26 | clautolisp (both dialects) |
+|---+---+---+---+---|
+| 21 | =(+ 2147483647 1)= | -2147483648 (wraps) | 2147483648 | error |
+| 22 | =(* 65536 65536)= | 0 (wraps) | 4294967296 | error |
+| 23 | =(- -2147483648 1)= | -2.14748e+09 REAL | -2147483649 | error |
+| 24 | =(abs -2147483648)= | 2.14748e+09 REAL | 2147483648 | an integer TYPE cannot name |
+| 505 | =(- 2147483648)= | -2.14748e+09 REAL | -2147483648 INT | -2.14748e+09 / -2147483648.0 |
+| 506, 507 | =2147483648=, its TYPE | REAL | INT | REAL |
+| 511 | =(type -2147483648)= | REAL (the reader overflows before negating) | INT | INT |
+| 517, 519 | =(fix 2147483648.0)=, =(fix -2147483649.0)= | REAL | REAL (2147483648.0) | error |
+| 522, 57 | =(atoi "2147483648")=, ="99999999999"= | 2147483647 (CLAMPED) | the 64-bit value | an integer TYPE cannot name |
+| 525 | =(rem 2147483648 7)= | 2.0 | 2 | 2.0 |
+| 528, 529 | =(lsh 1 31)=, =(lsh 1 32)= | -2147483648, 1 | same (32-bit) | error |
+| 530 | =(~ 2147483647)= | -2147483648 | same | same |
+
+BricsCAD integers are 64-bit, except lsh / ~ (32-bit) and fix (a REAL past
+2^31). This extends numeric-edges-vendor-divergences.issue.
+
+** 2.7 Characters outside the file encoding
+
+| # | expression | AutoCAD-2022 | BricsCAD-V25 Windows | BricsCAD-V26 macOS |
+|---+---+---+---+---|
+| 102, 542 | =(chr 300)=, printed | "," (code 44 = 300 mod 256) | "I" (best fit) | "\U+012C" (an escape) |
+| 544 | =(ascii (chr 300))= | 44 | 73 | 300 |
+| 545 | =(vl-string->list (chr 8364))= | (172) | (128) | (8364) |
+| 537 | write-line (chr 300), (open f "w"), read back | (44 10) | (73 10) | the 8 bytes \U+012C |
+| 538 | write-line "a中b" | "a-b" | "a?b" | "a\U+4E2Db" |
+| 540 | same with "w,ccs=UTF-8" | "," | C4 AC (UTF-8) | C4 AC (UTF-8) |
+
+So no product signals. AutoCAD keeps the low byte of the code point,
+BricsCAD V25 best-fits to the code page, and V26 writes an escape. clautolisp
+signals: WRITE-LINE "the character with code 300 cannot be encoded", under
+--dialect autocad. See encoding-replacement-character-option.issue.
+(Case 539, ="utf8"= as the MODE, is a probe mistake: WCMATCH read "w,*" as
+an alternation.)
+
+** 2.8 Caveat: READ + EVAL versus loaded code
+
+Cases 241 and 250 fail on AutoCAD only because the LAMBDA is created by EVAL
+of a READ form. P1F shows the same message in LOADED code, for a
+=(function (lambda ...))= value called as =(f)=. Plain =(lambda ...)= in a
+loaded file worked in P1/P2. This is an AutoCAD interpreted-code
+peculiarity, not yet characterised. Do not model it without a loaded-code
+probe.
+
+* 3. clautolisp against the vendors
+
+Generated by gaps.py: results/clautolisp-vs-vendors.org. Cases where the
+dialect's answer is not of the same KIND as its vendor's:
+
+- --dialect autocad vs AutoCAD 2022: 106 cases
+- --dialect bricscad vs BricsCAD V26: 115 cases
+
+The main groups, each worth its own fix ticket:
+
+1. Integer range (2.6): clautolisp signals where AutoCAD wraps / converts
+   to a real / clamps and BricsCAD widens. Some results cannot even be given
+   a TYPE (cases 24, 57, 522: "No AutoLISP runtime type designator is
+   defined for 2147483648").
+2. Silent nil / value answers modelled as errors: setvar out of range
+   (339-344, the other way round: clautolisp ACCEPTS what both vendors
+   refuse); DCL calls without an active dialog (473-483: nil on the
+   vendors, error in clautolisp); entmod of an incomplete list (301-302);
+   boundp of a non-symbol (213-214); strcat / getvar / vl-symbol-value nil
+   under bricscad (95, 335, 217).
+3. Values the vendors return and clautolisp refuses: (max) / (min) / (-) /
+   (/) with no argument = 0 (30, 31, 46, 47), (/ 0) = 0 (49), inf.0 from
+   exp / atof / read (17, 60, 133), (ascii "") = 0 (99).
+4. Wrong value: (distance '(0 0) '(1 1 1)) is 1.73205 in clautolisp; both
+   vendors take the 2D distance, 1.41421 (case 266).
+5. Errors the vendors raise and clautolisp does not: (append '(1) 2) (159),
+   (distance '(0 0) '(1)) (265), (entnext nil) (288), entmakex with a
+   malformed group (295), (textbox nil) (281), tblsearch / tblnext of a bad
+   table (322, 325), rtos / angtos mode 9 (62, 70).
+6. LOAD with onfailure (456): clautolisp CALLS the onfailure symbol
+   ("Undefined AutoLISP function PCAT-FAIL"). AutoCAD returns it; BricsCAD
+   signals.
+7. Encoding (2.7) and ERRNO (errno-setvar-accepted-by-vendors.issue).
+8. Crashes (2.1) are not to be modelled as crashes. Under --dialect
+   bricscad / autocad, signal a [vendor-crash] error with a message naming
+   the vendor behaviour, so that tests written against clautolisp do not
+   pass code that kills the CAD.
+
+* 4. Already recorded elsewhere in clautolisp
+
+A sweep on 2026-11-03 of the spec, the dialect-warnings document and the
+issues found these already-measured divergences relevant to error
+detection. They are not repeated in the catalogue:
+
+- integers: numeric-edges-vendor-divergences.issue;
+- comparison chains: comparison-operators-vendor-semantics.issue (= 78, 79 here);
+- vl-exit-with-error / -value outside a VLX: vl-exit-outside-vlx-caught-diverges.issue;
+- a nil catch-all message on AutoCAD: alfe-cad-nil-catch-all-message.issue;
+- ERROR present on BricsCAD only, message: clautolisp-error-silent-under-autocad.issue
+  (P12 and the catalogue both see the bare word "error" inside a command, on
+  V25 and V26. pjb's REPL measurement recorded there gave the message.
+  So it is context-dependent, or the records still disagree: re-measure
+  at the BricsCAD command line);
+- vl-catch-all-apply of an UNDEFINED function escapes on AutoCAD:
+  autocad-runtime-vlax-sleep-and-rest.issue;
+- curves: cador-curve-length-and-sampling.issue;
+- entmake / entmod / xdata vetting: vendor-probe-autocad-bricscad-divergences.issue,
+  drawing-data-structures-parity.issue (BricsCAD drops invalid xdata silently),
+  xdroom-xdsize-not-implemented.issue, entmake-subclass-group-order.issue;
+- setvar range and ERRNO: spec SETVAR table (BricsCAD wraps OSMODE to 16
+  bits; the catalogue's 99999 is refused by both, see 339);
+- open encoding argument: open-third-argument-dialect-divergence.issue,
+  open-ccs-bom-bricscad-windows-divergence.issue;
+- princ / prin1 without an argument, foreach without a body, setf,
+  vl-bb-ref: SPEC and dialect-warnings.
+
+* 5. To do
+
+1. Model per dialect, with tests: the P6, P11, P12 and P1F rows of 1;
+   2.2-2.4 (one ticket per family: lists, strings, curves, entities,
+   command); load / arxload onfailure (both bricscad and the clautolisp
+   bug of 3.6).
+2. Fix the clautolisp-own gaps of 3 that are not dialect questions:
+   integers that TYPE cannot name, LOAD onfailure called, setvar range
+   accepted.
+3. [vendor-crash] diagnostics for 2.1 (reverse of an improper list under
+   bricscad; command-s refusing input under autocad).
+4. Make probe-error-handler.lsp a regular probe suite, if a top-level
+   runner can be added to the harness (it needs a script line per command,
+   not a catch-all).
+5. Spec: a "Normative Rules: failure reporting" note per family, citing
+   these case numbers.
+
+* 6. Not measured
+
+- AutoCAD GUI (acad.exe): every row here is accoreconsole. vla-* there
+  failed for lack of COM, not for the reasons the rows show.
+- Errors inside DCL action_tile callbacks and inside reactor callbacks
+  (both need an interactive session).
+- The exact *error* message for ESC on BricsCAD V25 Windows.
+- AutoCAD LISPSYS 1 / 2: the encoding rows were taken at the profile's
+  default. Record its value on the next run.
