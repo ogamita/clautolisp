@@ -1,3 +1,12 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: optimization -- what DEBUG / SPACE / SPEED decide, and clal-compile-system
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: design
+#+DEPENDS: compiler
+#+BRANCH: -
+#+DATE: 2026-11-04
+
 "SPACE reads back but drives nothing on its own. Only DEBUG decides
 instrumentation; the matrix's SPACE x column confirms that's intended,
 so SPACE is currently a value you can store and retrieve."
@@ -80,3 +89,23 @@ IIRC), Let's add (clal-compile-system output-file source-file-list)
 Note: with-compilation-unit defers warning about undefined
 functions. So we may have forward definitions even across files.
 
+
+
+* Resolved (implemented by the compiler epic; closed 2026-11-04)
+
+Re-added to issues/open/ on 2026-11-04; every point is in the tree:
+
+- the levels: the non-instrumented fork is always present, compiled at
+  SPEED >= 1; the instrumented fork is present while DEBUG >= SPACE and
+  compiled at SPEED >= 2; SPEED 3 compiles eagerly at definition, a whole
+  file in one unit (clautolisp --help, -O; user manual, Optimization;
+  RELEASE_NOTES, "kept while DEBUG >= SPACE");
+- clal-compile, clal-compile-file, vlisp-compile and clal-compile-system
+  (one host compilation unit: literals coalesced across files, forward
+  references resolve) -- autolisp-compiler/source/compile-file.lisp,
+  tests in clal-extensions-tests.lisp, manual sections CLAL-COMPILE-FILE /
+  CLAL-COMPILE-SYSTEM;
+- the BricsCAD-style "bound local becomes lexical" optimization is the
+  lexical-locals fork (compile-function.lisp, with its whole-corpus CI
+  lane); a function whose lambda list names *ERROR* gets no lexical fork
+  (local-error-handler-not-called, 2.3.28).

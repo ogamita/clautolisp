@@ -934,3 +934,25 @@ opendcl-conformance. All =TODO=.
 
 | Priority | Status | Issue | Scope |
 | P1 | TODO | [[file:alfe-cad-crash-report-collection.issue][alfe-cad-crash-report-collection]] | Collecter rapports Autodesk/WER et dumps attribués au job dans le workdir avant nettoyage ; un crash post-JUnit reste un échec |
+
+* 2026-11-04 Batch triage (issues added in 4e95dd0a, 1615e2cc, b13999ae, e42da95b)
+
+The commit 4e95dd0a re-added older copies of four issues already closed
+(local-error-handler-not-called, lone-cr-in-string-literal,
+vl-exit-with-error-leaks-host-condition, while-repeat-return-nil): the
+copies under issues/open/ were removed, the closed ones (newer, with their
+Resolved notes) stay.
+
+| Priority | Status | Issue | Scope |
+|----------+--------+-------+-------|
+| P1 | TODO | [[file:vl-directory-files-dot-entries-and-default-selector.issue][vl-directory-files-dot-entries-and-default-selector]] | "." and ".." are entries ("*", "*.*" match them); default selector 0, as on the three products (catalogue case 464) |
+| P2 | TODO | [[file:errno-setvar-accepted-by-vendors.issue][errno-setvar-accepted-by-vendors]] | (setvar "ERRNO" 0) accepted by AutoCAD and BricsCAD; clautolisp refuses it |
+| P2 | TODO | [[file:clautolisp-issue-on-error.issue][clautolisp-issue-on-error]] | an error in a -l file before -i exits the program: --on-error ignore does not continue, the REPL never starts |
+| P1 | TODO | [[file:alfe-autocad-fixed-arity-output-shadows.issue][alfe-autocad-fixed-arity-output-shadows]] | alfe's fixed 2-arg princ/print/prin1 shadows break compiled and natively loaded code under AutoCAD |
+| P1 | TODO | [[file:error-processing-per-dialect.issue][error-processing-per-dialect]] | EPIC: *error* mechanism and 546-case catalogue, AutoCAD vs BricsCAD vs clautolisp; to split into per-family tickets |
+| P2 | TODO | [[file:encoding-replacement-character-option.issue][encoding-replacement-character-option]] | option + global for unencodable characters; per-dialect defaults measured (low byte / best fit / \U+XXXX) |
+| P3 | TODO | [[file:multidocument-notes.issue][multidocument-notes]] | pjb notes on the multidocument analysis (R18, R19) and the host-interface spec (cadtui) |
+| P2 | DONE | relational-operators-reject-strings | already fixed by comparison-operators-vendor-semantics (2.2.90); rechecked on 2.3.81. issues/closed/ |
+| P2 | DONE | windows-path | /c/... load under MSYS2: fixed in 2.2.4 (windows-msys-paths-in-autolisp-load); rechecked on PF5S26BT with 2.3.78. issues/closed/ |
+| P3 | DONE | optimization | DEBUG >= SPACE / SPEED levels, clal-compile-system and the lexical-locals fork all shipped with the compiler epic. issues/closed/ |
+| P3 | NOTE | referentiel-qualite-autolisp.md | research note (French, 2026-10-08) on an AutoLISP quality / security rule set; reference material, not an actionable issue |
