@@ -1308,6 +1308,8 @@
         nil)
        ((and (= (type alfe--head) 'SYM)
              (or (= alfe--s "PRINC") (= alfe--s "PRINT") (= alfe--s "PRIN1") (= alfe--s "LOAD")
+                 (and (= alfe--s "PROMPT") (= (length alfe--form) 2))
+                 (and (= alfe--s "TERPRI") (= (length alfe--form) 1))
                  (and (= alfe--s "OPEN") (alfe-open-rewrite-p))))
         T)
        (T
@@ -1340,6 +1342,13 @@
         (list 'alfe-prin1* (cons 'list (mapcar 'alfe-rewrite-form (cdr alfe--form)))))
        ((and (= (type alfe--head) 'SYM) (= alfe--s "LOAD"))
         (list 'alfe-load* (cons 'list (mapcar 'alfe-rewrite-form (cdr alfe--form)))))
+       ;; prompt / terpri: alfe leaves the primitives alone on a host
+       ;; without &rest (alfe-autocad-fixed-arity-output-shadows), so their
+       ;; output reaches alfe's stream only through these rewrites.
+       ((and (= (type alfe--head) 'SYM) (= alfe--s "PROMPT") (= (length alfe--form) 2))
+        (list 'autolisp-emit-prompt (alfe-rewrite-form (cadr alfe--form))))
+       ((and (= (type alfe--head) 'SYM) (= alfe--s "TERPRI") (= (length alfe--form) 1))
+        (list 'autolisp-princ-newline))
        ((and (= (type alfe--head) 'SYM) (= alfe--s "OPEN") (alfe-open-rewrite-p))
         (list 'alfe-open* (cons 'list (mapcar 'alfe-rewrite-form (cdr alfe--form)))))
        (T
@@ -1508,13 +1517,13 @@
 ;; --- the princ/load normaliser, applied to the TEXT --------------------
 ;;
 ;; alfe-normalised-form-reals-autocad. On a host without &rest (AutoCAD),
-;; autolisp-normalize-princ-call pads a 1-argument princ/print/prin1/load
-;; to 2 arguments (and turns an empty (princ) into
-;; (autolisp-princ-newline)). That rebuilt FORM used to be PRINTED back
+;; autolisp-normalize-princ-call rewrites the princ/print/prin1/prompt/
+;; terpri calls onto alfe-owned functions and pads a 1-argument load (see
+;; the table above autolisp-output-call-target). That rebuilt FORM used to be PRINTED back
 ;; for the CAD with autolisp-form-source-text, and AutoCAD's rtos cannot
 ;; render 17 significant digits nor a 3-digit exponent: pi/2 lost its
 ;; last digit. alfe-normalize-princ-text makes the same rewrite IN THE
-;; SOURCE TEXT -- "(princ X)" becomes "(princ X nil)" -- and leaves every
+;; SOURCE TEXT -- "(princ X)" becomes "(autolisp-princ-to X nil)" -- and leaves every
 ;; other character as written, real literals included. Its result is used
 ;; only when it reads back EQUAL to the normalised form
 ;; (alfe-normalized-source-text); otherwise the form is printed as before.
@@ -1535,6 +1544,15 @@
     (strcat alfe--out (substr alfe--text alfe--pos))
     alfe--out))
 
+;; EDITS with the edit E inserted where its position belongs. EDITS is most
+;; recent first, so positions never increase along it; an edit at the same
+;; position as an earlier one goes in front of it (applied after it).
+(defun alfe-text-edit-insert (alfe--e alfe--edits)
+  (cond
+    ((null alfe--edits) (list alfe--e))
+    ((>= (car alfe--e) (car (car alfe--edits))) (cons alfe--e alfe--edits))
+    (T (cons (car alfe--edits) (alfe-text-edit-insert alfe--e (cdr alfe--edits))))))
+
 ;; STACK with the element count of its top frame incremented. A frame is
 ;; (QUOTED KIND COUNT HEAD-POS HEAD-LEN); see alfe-normalize-princ-text.
 (defun alfe-normalize-text-count (alfe--stack / alfe--f)
@@ -1547,10 +1565,11 @@
     alfe--stack))
 
 ;; TEXT, the source of one form, with the rewrite of
-;; autolisp-normalize-princ-call-impl made textually:
-;;   (princ)            -> (autolisp-princ-newline)
-;;   (print) / (prin1)  -> (print "" nil) / (prin1 "" nil)
-;;   (princ X) / (print X) / (prin1 X) / (load X)  -> (... X nil)
+;; autolisp-normalize-princ-call-impl made textually (the table above
+;; autolisp-output-call-target): (princ X) -> (autolisp-princ-to X nil),
+;; (princ X F) -> (autolisp-princ-to X F), (princ) / (terpri) ->
+;; (autolisp-princ-newline), (prompt X) -> (autolisp-emit-prompt X),
+;; (load X) -> (load X nil); print / prin1 likewise.
 ;; Like the form walker, it leaves alone a list quoted by ' or headed by
 ;; QUOTE / FUNCTION, and a list in the HEAD position of another list (the
 ;; walker never descends into a head). Strings and comments (; and ;| |;)
@@ -1618,7 +1637,7 @@
              (progn
                (setq alfe--s (strcase (cdr alfe--head)))
                (cond
-                 ((member alfe--s '("PRINC" "PRINT" "PRIN1" "LOAD"))
+                 ((member alfe--s '("PRINC" "PRINT" "PRIN1" "LOAD" "PROMPT" "TERPRI"))
                   (setq alfe--kind alfe--s))
                  ((or (= alfe--s "QUOTE") (= alfe--s "FUNCTION"))
                   (setq alfe--child-quoted T)))))))
@@ -1634,18 +1653,36 @@
          (progn
            (setq alfe--f (car alfe--stack))
            (setq alfe--kind (nth 1 alfe--f))
+           ;; The element count includes the head. A head is replaced only
+           ;; here, at the closing parenthesis, after the edits of the
+           ;; calls nested in it: alfe-text-edit-insert keeps the edit list
+           ;; ordered by position.
            (cond
              ((null alfe--kind) nil)
-             ((and (= alfe--kind "PRINC") (= (nth 2 alfe--f) 1))
-              (setq alfe--edits (cons (list (nth 3 alfe--f) (nth 4 alfe--f) "autolisp-princ-newline")
-                                      alfe--edits)))
+             ((and (member alfe--kind '("PRINC" "TERPRI")) (= (nth 2 alfe--f) 1))
+              (setq alfe--edits (alfe-text-edit-insert
+                                  (list (nth 3 alfe--f) (nth 4 alfe--f) "autolisp-princ-newline")
+                                  alfe--edits)))
+             ((= alfe--kind "TERPRI") nil)
              ((and (= alfe--kind "LOAD") (= (nth 2 alfe--f) 2))
-              (setq alfe--edits (cons (list alfe--idx 0 " nil") alfe--edits)))
+              (setq alfe--edits (alfe-text-edit-insert (list alfe--idx 0 " nil") alfe--edits)))
              ((= alfe--kind "LOAD") nil)
-             ((= (nth 2 alfe--f) 1)
-              (setq alfe--edits (cons (list alfe--idx 0 " \"\" nil") alfe--edits)))
-             ((= (nth 2 alfe--f) 2)
-              (setq alfe--edits (cons (list alfe--idx 0 " nil") alfe--edits))))
+             ((and (= alfe--kind "PROMPT") (= (nth 2 alfe--f) 2))
+              (setq alfe--edits (alfe-text-edit-insert
+                                  (list (nth 3 alfe--f) (nth 4 alfe--f) "autolisp-emit-prompt")
+                                  alfe--edits)))
+             ((= alfe--kind "PROMPT") nil)
+             ((> (nth 2 alfe--f) 3) nil)
+             (T
+              (setq alfe--edits (alfe-text-edit-insert
+                                  (list (nth 3 alfe--f) (nth 4 alfe--f)
+                                        (strcase (vl-symbol-name (autolisp-output-call-target alfe--kind)) T))
+                                  alfe--edits))
+              (cond
+                ((= (nth 2 alfe--f) 1)
+                 (setq alfe--edits (alfe-text-edit-insert (list alfe--idx 0 " \"\" nil") alfe--edits)))
+                ((= (nth 2 alfe--f) 2)
+                 (setq alfe--edits (alfe-text-edit-insert (list alfe--idx 0 " nil") alfe--edits))))))
            (setq alfe--stack (cdr alfe--stack)))))
       ((member alfe--ch '(" " "\t" "\r" "\n"))
        (setq alfe--in-atom nil))
@@ -1718,17 +1755,40 @@
        (= (type (car alfe--form)) 'SYM)
        (= (strcase (vl-symbol-name (car alfe--form))) "LOAD")))
 
-;; Cheap-walk pre-check: T iff FORM contains a princ/print/prin1 call that the
-;; fixed-arity no-&rest shadows can't take as written -- i.e. UNDER-arity: an
-;; empty `(princ)' OR a 1-arg `(princ X)' / `(print X)' / `(prin1 X)'. On the
-;; no-&rest host the shadows require (obj file); an under-arity call raises
-;; "nombre d'arguments insuffisants" (the same trap that silently ate all probe
-;; output on AutoCAD -- see autocad-no-rest-output-capture.issue), so the
-;; rewriter below pads them. Walks the tree without consing. Stops at QUOTE /
-;; FUNCTION exactly like the rewriter, so quoted data doesn't false-positive.
+;; --- the output normaliser (hosts without &rest: AutoCAD) ---------------
+;;
+;; alfe-autocad-fixed-arity-output-shadows. On a host whose defun has no
+;; &rest, alfe leaves princ / print / prin1 / prompt / terpri ALONE -- a
+;; fixed-arity redefinition broke every caller alfe does not rewrite (VLX,
+;; FAS, natively loaded files, reactors: "too few arguments") -- and instead
+;; rewrites the calls of the code IT evaluates onto alfe-owned fixed-arity
+;; functions, whose output reaches alfe's stream:
+;;   (princ)                     -> (autolisp-princ-newline)
+;;   (princ X)    / (princ X F)  -> (autolisp-princ-to X nil) / (... X F)
+;;   (print)      / (prin1)      -> (autolisp-print-to "" nil) / (autolisp-prin1-to "" nil)
+;;   (print X ..) / (prin1 X ..) -> (autolisp-print-to X nil)  / (autolisp-prin1-to X nil), ...
+;;   (prompt X)                  -> (autolisp-emit-prompt X)
+;;   (terpri)                    -> (autolisp-princ-newline)
+;;   (load X)                    -> (load X nil)
+;; A call with more arguments than the primitive takes is left as written,
+;; so the CAD reports the arity error itself. load keeps its own head: a 1-arg
+;; (load X) is padded because a vertical application may shadow load with a
+;; fixed (file onfailure) arity -- a padded native load is the same call.
 ;; (On &rest hosts autolisp-normalize-princ-call is the identity, so none of
 ;; this runs -- BricsCAD is unaffected.)
-(defun autolisp-form-contains-empty-princ-p (alfe--form / alfe--head alfe--s)
+
+;; The alfe-owned function a call headed by S ("PRINC" / "PRINT" / "PRIN1")
+;; is rewritten onto.
+(defun autolisp-output-call-target (alfe--s)
+  (cond
+    ((= alfe--s "PRINC") 'autolisp-princ-to)
+    ((= alfe--s "PRINT") 'autolisp-print-to)
+    (T 'autolisp-prin1-to)))
+
+;; Cheap-walk pre-check: T iff FORM contains a call the normaliser rewrites
+;; (see the table above). Walks the tree without consing. Stops at QUOTE /
+;; FUNCTION exactly like the rewriter, so quoted data doesn't false-positive.
+(defun autolisp-form-has-output-call-p (alfe--form / alfe--head alfe--s)
   (cond
     ((atom alfe--form) nil)
     ((not (listp alfe--form)) nil)
@@ -1742,23 +1802,32 @@
           nil)
         ((and (= (type alfe--head) 'SYM)
               (or (= alfe--s "PRINC") (= alfe--s "PRINT") (= alfe--s "PRIN1"))
-              (< (length alfe--form) 3))          ; 0 or 1 args on a 2-arg shadow
+              (< (length alfe--form) 4))          ; 0, 1 or 2 arguments
+          T)
+        ((and (= (type alfe--head) 'SYM)
+              (= alfe--s "PROMPT")
+              (= (length alfe--form) 2))
+          T)
+        ((and (= (type alfe--head) 'SYM)
+              (= alfe--s "TERPRI")
+              (= (length alfe--form) 1))
           T)
         ((and (= (type alfe--head) 'SYM)
               (= alfe--s "LOAD")
-              (= (length alfe--form) 2))          ; 1-arg (load X) on a 2-arg shadow
+              (= (length alfe--form) 2))          ; 1-arg (load X)
           T)
         (T
           (cond
-            ((autolisp-form-contains-empty-princ-p (car alfe--form)) T)
-            ((autolisp-form-contains-empty-princ-p (cdr alfe--form)) T)
+            ((autolisp-form-has-output-call-p (car alfe--form)) T)
+            ((autolisp-form-has-output-call-p (cdr alfe--form)) T)
             (T nil)))))))
 
-;; The actual rewriter — only called from `autolisp-normalize-princ-call'
-;; when the pre-check confirmed there IS at least one empty `(princ)' to
-;; replace. Rebuilds cons cells (necessary to inject the rewrite); see
-;; the comment on autolisp-normalize-princ-call about why we don't want
-;; this to run otherwise.
+;; The actual rewriter -- only called from `autolisp-normalize-princ-call'
+;; when the pre-check confirmed there IS at least one call to rewrite.
+;; Rebuilds cons cells (necessary to inject the rewrite); see the comment on
+;; autolisp-normalize-princ-call about why we don't want this to run
+;; otherwise. The value contract is preserved: the alfe-owned functions
+;; return what the primitives return.
 (defun autolisp-normalize-princ-call-impl (alfe--form / alfe--head alfe--s)
   (cond
     ((atom alfe--form)
@@ -1770,28 +1839,31 @@
              (progn (setq alfe--s (strcase (vl-symbol-name alfe--head)))
                     (or (= alfe--s "QUOTE") (= alfe--s "FUNCTION"))))
         alfe--form)
-       ;; princ/print/prin1: the no-&rest shadows require (obj file), so pad
-       ;; under-arity calls. Empty (princ) keeps its newline alias; a 1-arg
-       ;; call gets the missing FILE = nil (the arg itself is walked too);
-       ;; 2-arg (and odd larger) calls just recurse into their args. This
-       ;; preserves the value contract -- princ returns its first arg.
        ((and (= (type alfe--head) 'SYM)
-             (or (= alfe--s "PRINC") (= alfe--s "PRINT") (= alfe--s "PRIN1")))
+             (or (= alfe--s "PRINC") (= alfe--s "PRINT") (= alfe--s "PRIN1"))
+             (< (length alfe--form) 4))
         (cond
           ((= (length alfe--form) 1)
            (if (= alfe--s "PRINC")
              (list 'autolisp-princ-newline)
-             (list alfe--head "" nil)))
+             (list (autolisp-output-call-target alfe--s) "" nil)))
           ((= (length alfe--form) 2)
-           (list alfe--head
+           (list (autolisp-output-call-target alfe--s)
                  (autolisp-normalize-princ-call-impl (cadr alfe--form))
                  nil))
           (T
-           (cons alfe--head (mapcar 'autolisp-normalize-princ-call-impl (cdr alfe--form))))))
-       ;; `load' is likewise shadowed with a fixed (file onfailure) arity on the
-       ;; no-&rest host (e.g. a vertical app's own load wrapper), so a 1-arg
-       ;; (load X) trips the same too-few-args trap. Pad the missing ONFAILURE
-       ;; with nil; 2-arg (load X F) passes through.
+           (list (autolisp-output-call-target alfe--s)
+                 (autolisp-normalize-princ-call-impl (cadr alfe--form))
+                 (autolisp-normalize-princ-call-impl (caddr alfe--form))))))
+       ((and (= (type alfe--head) 'SYM)
+             (= alfe--s "PROMPT")
+             (= (length alfe--form) 2))
+        (list 'autolisp-emit-prompt
+              (autolisp-normalize-princ-call-impl (cadr alfe--form))))
+       ((and (= (type alfe--head) 'SYM)
+             (= alfe--s "TERPRI")
+             (= (length alfe--form) 1))
+        (list 'autolisp-princ-newline))
        ((and (= (type alfe--head) 'SYM)
              (= alfe--s "LOAD")
              (= (length alfe--form) 2))
@@ -1803,27 +1875,22 @@
     (T
      alfe--form)))
 
-;; Rewrite bare `(princ)' calls (with no arguments) into
-;; `(autolisp-princ-newline)' so the bootstrap-shadowed 1-arg `princ'
-;; doesn't trip an arity error.
+;; Rewrite the output calls of FORM onto the alfe-owned functions (table
+;; above), on a host without &rest.
 ;;
-;; CONS-IDENTITY-PRESERVING: when the form contains no empty `(princ)',
-;; we return FORM untouched. The previous version recursively rebuilt
-;; every cons cell unconditionally; under BricsCAD V26 that destroyed
-;; the read-time per-cell metadata that the runtime's `mapcar' walker
-;; consults to recognise an embedded `(lambda …)' as a function
-;; literal — and so a form like
+;; CONS-IDENTITY-PRESERVING: when the form contains no such call, we return
+;; FORM untouched. The previous version recursively rebuilt every cons cell
+;; unconditionally; under BricsCAD V26 that destroyed the read-time per-cell
+;; metadata that the runtime's `mapcar' walker consults to recognise an
+;; embedded `(lambda ...)' as a function literal -- and so a form like
 ;;   (mapcar (lambda (x) (cons x x)) '(1 2 3))
-;; came out of `(eval form)' fine on the raw command line but failed
-;; with `bad argument type <1>; expected <CONS> at [car]' when sent
-;; through the alfe protocol bridge (which had wrapped the form in
-;; `(print …)' and re-cons'd it via normalize before eval'ing). The
-;; cheap pre-check avoids the rebuild entirely for the 99% common case
-;; — any user form that doesn't literally contain `(princ)' passes
-;; through with the reader's cons-cell identity intact, and BricsCAD's
-;; mapcar happily walks the lambda.
+;; came out of `(eval form)' fine on the raw command line but failed with
+;; `bad argument type <1>; expected <CONS> at [car]' when sent through the
+;; alfe protocol bridge (which had wrapped the form in `(print ...)' and
+;; re-cons'd it via normalize before eval'ing). The cheap pre-check avoids
+;; the rebuild entirely for every form that has no output call.
 (defun autolisp-normalize-princ-call (alfe--form)
-  (if (autolisp-form-contains-empty-princ-p alfe--form)
+  (if (autolisp-form-has-output-call-p alfe--form)
     (autolisp-normalize-princ-call-impl alfe--form)
     alfe--form))
 
@@ -2104,7 +2171,7 @@
 ;; Write TEXT verbatim to an already-open file descriptor FILE, one
 ;; character at a time. write-char is NOT shadowed by the bootstrap, so
 ;; this reaches the genuine file. Used by the file-bound branch of the
-;; print/princ/prin1 shadows below: when the user passes a descriptor
+;; output functions below (and of the &rest hosts' shadows): when the user passes a descriptor
 ;; opened with (open path "w"|"a"), the output must land in that file,
 ;; not in the captured-stdout / protocol slot. Going through
 ;; (ascii (substr ...)) avoids needing the original (now-shadowed)
@@ -2119,14 +2186,28 @@
     (setq alfe--idx (+ alfe--idx 1)))
   nil)
 
-;; Mirror interactive output to OUTFILE so results do not depend on CAD
-;; session logs. All three honour AutoLISP's optional file-descriptor
-;; argument: (princ obj f) / (print obj f) / (prin1 obj f) write to the
-;; open file F instead of the captured-stdout slot -- otherwise output
-;; destined for a user-opened file leaks onto stdout. See
-;; issues/closed/alfe-bricscad-open.issue. FILE is nil for the common
-;; no-descriptor call, which keeps the previous protocol behaviour.
-(defun print (alfe--obj alfe--file)
+;; alfe-autocad-fixed-arity-output-shadows: the bootstrap does NOT redefine
+;; princ / print / prin1 / prompt. On a host without &rest (AutoCAD) a
+;; redefinition can only be fixed-arity, and every caller alfe does not
+;; rewrite -- a VLX / FAS, a file loaded with the native LOAD, a reactor --
+;; then broke on it with "too few arguments". Instead the output goes through
+;; these alfe-owned FIXED-ARITY functions, and the normaliser
+;; (autolisp-normalize-princ-call / alfe-normalize-princ-text) rewrites the
+;; HEADS of the calls in the text alfe loads: (princ X) becomes
+;; (autolisp-princ-to X nil), (princ X F) (autolisp-princ-to X F), and so on.
+;; Code that bypasses the normaliser calls the native primitives, which take
+;; every documented arity: its output reaches the CAD's command line (and its
+;; log, --cad-log) instead of alfe's stream, but it never breaks. On a host
+;; WITH &rest, alfe's bridge (run-common.lsp) still installs variadic shadows
+;; of the primitives themselves, which accept every arity too.
+;;
+;; All three honour AutoLISP's optional file-descriptor argument: a non-nil
+;; FILE (a descriptor from (open path "w"|"a")) writes there instead of the
+;; captured-stdout slot -- otherwise output destined for a user-opened file
+;; leaks onto stdout. See issues/closed/alfe-bricscad-open.issue. FILE is nil
+;; for the common no-descriptor call. The bridge redefines the three to frame
+;; their output exactly as the variadic shadows do.
+(defun autolisp-print-to (alfe--obj alfe--file)
   (if alfe--file
     (progn
       (autolisp-write-string-to-file
@@ -2136,7 +2217,7 @@
       (autolisp-princ-newline)
       (autolisp-emit-user-out alfe--obj))))
 
-(defun princ (alfe--obj alfe--file)
+(defun autolisp-princ-to (alfe--obj alfe--file)
   (if alfe--file
     (progn
       (autolisp-write-string-to-file (autolisp-str alfe--obj) alfe--file)
@@ -2145,7 +2226,7 @@
       (autolisp-emit-user-line (autolisp-str alfe--obj))
       alfe--obj)))
 
-(defun prin1 (alfe--obj alfe--file)
+(defun autolisp-prin1-to (alfe--obj alfe--file)
   (if alfe--file
     (progn
       (autolisp-write-string-to-file (autolisp-stdout-text alfe--obj) alfe--file)
@@ -2158,7 +2239,10 @@
     (terpri))
   nil)
 
-(defun prompt (alfe--msg)
+;; (prompt MSG), rewritten by the normaliser like princ. prompt takes exactly
+;; one argument on every CAD, so this is not about arity but about leaving
+;; the primitive alone: native code keeps the CAD's own.
+(defun autolisp-emit-prompt (alfe--msg)
   (if alfe--msg
     (progn
       (autolisp-emit-user-line (autolisp-str alfe--msg))
