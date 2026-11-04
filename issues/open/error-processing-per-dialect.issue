@@ -315,3 +315,33 @@ detection. They are not repeated in the catalogue:
 - The exact *error* message for ESC on BricsCAD V25 Windows.
 - AutoCAD LISPSYS 1 / 2: the encoding rows were taken at the profile's
   default. Record its value on the next run.
+
+* 7. Reminder for dialect warning rules and clautolisp behavior
+
+In case of behavior difference in the different dialect,
+clautolisp aims at providing the behavior of the selected dialect,
+but when the parameters are in the set of dialect-specific behavior,
+a dialect warning must be issued the first time the caller called the
+function in question.
+
+--lax doesn't warn at all.  --strict warns, and aim to return the most
+common answer, (or the most practical answer, the same as --clautolisp
+dialect). 
+
+User programs are expected to use wrapper functions testing for these
+dialect-specific sets of parameters, and to provide a common answer,
+avoiding the dialect specific behavior, for their portable code.
+
+The data dialect warning should help them detect these cases.
+
+| section | clautolisp behavior                                                                       |
+| <l>     |                                                                                           |
+|---------+-------------------------------------------------------------------------------------------|
+| 2.1     | signal an error                                                                           |
+| 2.2     | signal an error or ONFAIL if we do it.                                                    |
+| 2.3     | signal an error                                                                           |
+| 2.4     | signal an error (better break early)                                                      |
+| 2.5     | specific behavior (compute a value, or signal an error, what's logical)                   |
+| 2.6     | no change (just ensure the value dialect warning as for the others)                       |
+| 2.7     | same as BricsCAD-V26 macOS, but we may have an option to generate a replacement character |
+
