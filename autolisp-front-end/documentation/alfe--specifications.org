@@ -111,9 +111,10 @@ explicit call.
 
 This rule is *backend-uniform*: it holds for =--clautolisp= (in-
 process and subprocess), =--bricscad=, and =--autocad=. On the CAD
-backends the user-visible printers (=print=/=princ=/=prin1=) are
-the bootstrap-installed shadows that route their output through
-=*AUTOLISP-PROTOCOL-STDOUTFILE*= so =alfe= picks it up *live*, as
+backends the user-visible printers (=print=/=princ=/=prin1=) route
+their output through =*AUTOLISP-PROTOCOL-STDOUTFILE*= -- as variadic
+shadows on BricsCAD, as calls rewritten onto alfe-owned functions on
+AutoCAD (see "Shadowed I/O functions") -- so =alfe= picks it up *live*, as
 each action completes (the protocol driver drains stdout.txt +
 stderr.txt after every counter-aware =DONE N= match — see "Protocol
 driver" below); on the clautolisp backend they go through the host's
@@ -2351,7 +2352,21 @@ Constraints:
 - shadowing applies only to the remote interactive streams;
 - explicit calls on a real file handle keep working as expected:
   =(read f)= must still read from =f=; =(read)= without an
-  argument may be redirected to the remote input.
+  argument may be redirected to the remote input;
+- a primitive is shadowed only by a definition that accepts *every*
+  arity the primitive accepts. A host whose =defun= has no =&rest=
+  (AutoCAD) cannot write one for a variable-arity primitive, so there
+  =princ= / =print= / =prin1= (and, for uniformity, =prompt= and
+  =terpri=) are NOT redefined: the normaliser
+  (=autolisp-normalize-princ-call= / =alfe-normalize-princ-text=)
+  rewrites the calls of the code alfe evaluates onto the fixed-arity
+  =autolisp-princ-to= / =autolisp-print-to= / =autolisp-prin1-to=
+  (OBJ FILE), =autolisp-emit-prompt= and =autolisp-princ-newline=, and
+  every other caller (VLX / FAS, native =load=, reactors) keeps the
+  CAD's primitives. A fixed-arity shadow broke all of those callers
+  (alfe-autocad-fixed-arity-output-shadows, fixed in alfe 2.3.87). The
+  zero-argument =quit= / =exit= shadows match the primitives' arity and
+  stay.
 
 ** Reading model
 

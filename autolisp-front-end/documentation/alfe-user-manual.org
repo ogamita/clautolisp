@@ -823,9 +823,9 @@ What that file holds is the form's own *text*, exactly as it was written:
 the CAD reads =(setq a 1.5707963267948966)= with its own reader, and
 =a= gets every digit. A form alfe has to rewrite is rewritten in that text
 too: on AutoCAD, whose =defun= has no =&rest=, a call such as =(princ x)=
-is padded to =(princ x nil)= by inserting = nil= before its closing
-parenthesis, and every other character -- every real literal included --
-stays as written. alfe checks the rewritten text by reading it back; only
+becomes =(autolisp-princ-to x nil)= -- its head replaced and = nil=
+inserted before its closing parenthesis (see [[#autocad-output][Output on AutoCAD]]) -- and
+every other character -- every real literal included -- stays as written. alfe checks the rewritten text by reading it back; only
 when it does not read as the rewritten form, or when there is no text (a
 form built in memory), is the form printed back from its value, each real
 then with as many digits as the CAD's =rtos= can give and its own reader
@@ -845,6 +845,56 @@ in a string, were never affected. =--clautolisp= was never affected.
 
 What a program *prints* is unchanged: =(print 1.5707963267948966)= on
 AutoCAD still shows =1.5708=, as AutoCAD's own =print= does.
+
+*** Output on AutoCAD: what alfe captures, and what it leaves alone
+:PROPERTIES:
+:CUSTOM_ID: autocad-output
+:END:
+
+alfe captures what a program prints so that it reaches alfe's standard
+output (through =protocol/stdout.txt= in the workdir). How it does so
+depends on the CAD's =defun=:
+
+- *BricsCAD* (its =defun= takes =&rest=): alfe replaces =princ=, =print=,
+  =prin1=, =prompt= and =terpri= by variadic versions that accept every
+  arity. What they print is captured, whatever code calls them.
+- *AutoCAD* (no =&rest=, no =&optional=): alfe leaves those five primitives
+  *as AutoCAD defines them*. Instead it rewrites the calls in the code it
+  evaluates itself -- the =-l= files, =-x= expressions, =--main=, the forms
+  typed at the REPL, and the files loaded by a top-level =(load ...)= form
+  of those or by =alfe-load= -- onto functions of its own:
+
+  | Call in your code           | Evaluated as                    |
+  |-----------------------------+---------------------------------|
+  | =(princ)=, =(terpri)=       | =(autolisp-princ-newline)=      |
+  | =(princ x)=, =(princ x f)=  | =(autolisp-princ-to x nil)=, =(autolisp-princ-to x f)= |
+  | =(print x)=, =(print x f)=  | =(autolisp-print-to x nil)=, ... |
+  | =(prin1 x)=, =(prin1 x f)=  | =(autolisp-prin1-to x nil)=, ... |
+  | =(prompt x)=                | =(autolisp-emit-prompt x)=      |
+
+  The bytes printed are the same as on BricsCAD. Code alfe does *not*
+  evaluate itself keeps AutoCAD's own primitives, and runs exactly as it
+  would without alfe: a compiled VLX / FAS / DES, a file loaded with the
+  native =load= by an application (EPURE loads its applications that way),
+  =acaddoc.lsp=, MNL and startup-suite files, a file loaded by a =load=
+  called from inside a function, reactor callbacks and command
+  definitions of all of these, and a call through a function value such as
+  =(mapcar 'princ lst)= or =(vl-catch-all-apply 'load (list f))=. What that
+  code prints goes to AutoCAD's command line, not to alfe's output; recover
+  it with =--cad-log FILE= (see [[#cad-log][The CAD's log: =--cad-log=]]) or, in
+  =--mode batch=, from =engine-console-stdout.txt= in a kept workdir.
+
+  One consequence: AutoCAD rejects an explicit =nil= file argument --
+  =(princ "x" nil)= is an error there ("bad argument type: FILE nil",
+  measured on AutoCAD 2022) -- while the rewritten call accepts it, so such
+  a call works in code alfe evaluates and fails in compiled code.
+
+/Changed in alfe 2.3.87./ On AutoCAD alfe used to *redefine* =princ=,
+=print= and =prin1= with exactly two arguments (and =prompt=, =terpri=), and
+only padded the calls of the code it evaluated itself. Every other caller
+-- a VLX, a natively loaded file, a reactor -- then failed with "too few
+arguments" on its first =(princ x)= or =(princ)=, often silently, inside a
+=vl-catch-all-apply=.
 
 The loader knows both AutoLISP comments: a semicolon comments out the rest
 of its line, and =;|= opens a block comment that runs, across lines if
@@ -1203,8 +1253,9 @@ any other name is yours, globally, exactly as in the CAD itself. In return:
 
 - names starting with =alfe--= are *reserved* to alfe — do not =setq= or
   bind them;
-- the functions alfe defines in the CAD (=alfe-*=, =autolisp-*=, the
-  =princ= / =print= / =prin1= / =prompt= / =terpri= shadows, =quit=, =exit=,
+- the functions alfe defines in the CAD (=alfe-*=, =autolisp-*=, on
+  BricsCAD the =princ= / =print= / =prin1= / =prompt= / =terpri= shadows,
+  =quit=, =exit=,
   =clear-input=, =clear-output=, =get_new_guid=) and its globals
   (=*AUTOLISP…*=, =*ALFE…*=) must not be redefined or assigned.
 
