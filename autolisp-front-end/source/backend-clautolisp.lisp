@@ -1048,6 +1048,9 @@ the engine's output, as in the subprocess variant."
          (status :success)
          (exit-code nil)
          (hook-failure nil)
+         ;; An action's error was reported and the run went on (--on-error
+         ;; ignore): the run still ends with the AutoLISP-error status.
+         (action-error-seen nil)
          ;; The action in progress, for the :post-action of one that does not
          ;; return (an error, (exit N)): (ACTION . INDEX).
          (current nil)
@@ -1112,12 +1115,31 @@ the engine's output, as in the subprocess variant."
                                 ;; previous one requested (NEW / OPEN ...) takes effect here.
                                 (when (member kind '(:load :eval :main))
                                   (clautolisp.autolisp-runtime:apply-pending-document-switch context))
-                                (let ((value (case kind
-                                               (:load        (direct-load session action))
-                                               (:eval        (direct-eval session action))
-                                               (:main        (direct-main session action))
-                                               (:interactive (direct-interactive-refused))
-                                               (:quit        nil))))
+                                (let ((value (flet ((run ()
+                                                      (case kind
+                                                        (:load        (direct-load session action))
+                                                        (:eval        (direct-eval session action))
+                                                        (:main        (direct-main session action))
+                                                        (:interactive (direct-interactive-refused))
+                                                        (:quit        nil))))
+                                               ;; --on-error ignore: report the
+                                               ;; action's error and go on with
+                                               ;; the next one, as the clautolisp
+                                               ;; program does
+                                               ;; (RUN-ACTIONS-CONTINUING-PAST-
+                                               ;; ERRORS; clautolisp-issue-on-error).
+                                               (if (and (member kind '(:load :eval :main))
+                                                        (eq clautolisp.autolisp-runtime:*clal-on-error*
+                                                            :ignore))
+                                                   (let ((value nil))
+                                                     (when (clautolisp.tools.clautolisp:run-actions-continuing-past-errors
+                                                            (list action)
+                                                            (lambda (action)
+                                                              (declare (ignore action))
+                                                              (setf value (run))))
+                                                       (setf action-error-seen t))
+                                                     value)
+                                                   (run)))))
                                   (when (member kind '(:load :eval :main))
                                     (setf final-value value))
                                   (setf current nil)
@@ -1145,7 +1167,9 @@ the engine's output, as in the subprocess variant."
               ;; (autolisp-set-status N), 0 when it never did.
               (unless (eq status :aborted)
                 (setf exit-code (clautolisp.autolisp-runtime:autolisp-exit-status
-                                 context))))
+                                 context))
+                (when (and action-error-seen (eql 0 exit-code))
+                  (setf exit-code clautolisp.sysexits:+exit-autolisp-error+))))
           ;; Every status comes from the table the clautolisp program uses
           ;; (CLAUTOLISP.AUTOLISP-CLI:ENGINE-EXIT-STATUS;
           ;; sysexits-exit-statuses.issue).

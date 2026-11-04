@@ -102,6 +102,8 @@
            #:sync-debugger-policy-mirrors
            #:call-with-interrupt-handler
            #:call-with-debug-session
+           #:continue-past-action-errors-p
+           #:run-actions-continuing-past-errors
            #:run-under-session-debugging
            #:repl-eval-turn
            #:install-interrupt-handler

@@ -425,6 +425,13 @@ side contributes only poll points and blocking round trips.
   value-only, which suffices for a table), materialised filters per document,
   rebuilt when a document opens and inherits the intent.
 
+  *Decision (pjb, 2026-11-04).* The user decides the scope of each
+  breakpoint: *global* -- the function in whatever document it is loaded,
+  whether shared (=vl-load-all=) or loaded separately in each -- or
+  *current document only*. The default is the current document; an
+  auxiliary word (=all=) on the breakpoint command applies it to every
+  occurrence of the function / poll point in every document.
+
 - *R19 — Concurrent debugger contexts.* Two documents can be parked in the
   debugger simultaneously.  The ~salve~ protocol and the ~aldb~ Emacs UI must
   therefore support N concurrent debugger sessions, not merely nested levels
@@ -432,6 +439,10 @@ side contributes only poll points and blocking round trips.
   single connection; here the contexts are siblings, each with its own level
   stack.  Buffer naming, keybindings and the ~*aldb*~ buffer list must reflect
   the document.
+
+  *Confirmed (pjb, 2026-11-04),* with one addition: each debugging context
+  may route to a *different user interface* (=dumb=, =ncurses=, =aldb=), so
+  the UI is a property of the context, not of the session.
 
 - *R20 — Cross-document evaluation goes through locking.* Re-evaluatable
   accessor S-expressions produced by the inspector must default to the owning

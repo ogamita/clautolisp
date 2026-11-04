@@ -395,7 +395,11 @@ stops in the aldo debugger at the error (the default of an interactive REPL),
 .B ignore
 uses no debugger (the AutoLISP
 .B *error*
-handler runs). Under every backend,
+handler runs, the error is reported and the next
+.B \-l
+/
+.B \-x
+runs; the run still exits 1). Under every backend,
 .B debug
 and
 .B ignore

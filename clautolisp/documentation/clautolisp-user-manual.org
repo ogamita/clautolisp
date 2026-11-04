@@ -1129,8 +1129,20 @@ backend in both variants -- see the alfe user manual):
 - ~--on-error POLICY~    :: ~quit~ (report and exit — the batch
                             default), ~debug~ (break into aldo — the
                             interactive-REPL default), or ~ignore~ (run
-                            the AutoLISP ~*error*~ handler). Sets
+                            the AutoLISP ~*error*~ handler, report the
+                            error, and go on with the next ~-l~ / ~-x~;
+                            the rest of a ~-l~ file that failed is not
+                            loaded, and the run still exits 1). Sets
                             ~*CLAL-ON-ERROR*~.
+
+                            Before an interactive REPL (~-l~ / ~-x~ ...
+                            ~-i~), an error in one of those actions never
+                            ends the program unless the policy is ~quit~:
+                            under ~debug~ it stops in the debugger, and
+                            once you abort (=q=) or continue, the next
+                            action runs, then the REPL. The option is
+                            not positional: its last occurrence decides
+                            for the whole run.
 - ~--on-interrupt POLICY~ :: What =C-c= (SIGINT) does: ~debug~ (break
                             into aldo at the interrupt point — the
                             default), ~ignore~ (execution resumes), or

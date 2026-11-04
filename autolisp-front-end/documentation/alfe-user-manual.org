@@ -691,7 +691,7 @@ parsed and meant exactly as there (the option specs are shared; the
 
 | Option                      | Under =--clautolisp=                                                                                         | Under =--autocad= / =--bricscad=                       |
 |-----------------------------+--------------------------------------------------------------------------------------------------------------+--------------------------------------------------------|
-| =--on-error POLICY=         | Uncaught AutoLISP error: =quit= reports it and exits 1 (batch default), =debug= stops in aldo at the error (default of an interactive REPL), =ignore= uses no debugger (the AutoLISP =*error*= handler runs). | Accepted: governs alfe's own reporting only (below). |
+| =--on-error POLICY=         | Uncaught AutoLISP error: =quit= reports it and exits 1 (batch default), =debug= stops in aldo at the error (default of an interactive REPL), =ignore= uses no debugger (the AutoLISP =*error*= handler runs, the error is reported and the next =-l= / =-x= runs; the run still exits 1). | Accepted: governs alfe's own reporting only (below). |
 | =--on-interrupt POLICY=     | Control-C: =debug= (break into aldo, the default), =ignore= (resume), =quit= (exit 130). A second Control-C while one is handled exits at once. | Usage error (EX_USAGE, 64).                            |
 | =--on-quit POLICY=          | =(quit)= / =(exit)=: =quit= (default) or =debug= (aldo before the stack unwinds).                            | Usage error (EX_USAGE, 64).                            |
 | =--debugger-ui UI=          | =dumb= (aliases =terminal=, =tui=), =ncurses=, =aldb= (alias =emacs=); selecting one debugs the run.        | Usage error (EX_USAGE, 64).                            |

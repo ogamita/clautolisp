@@ -1701,7 +1701,7 @@ program refuses the other refuses with the same message
 
 | Option                      | Values                                    | =--clautolisp= (both variants)                                           | =--autocad= / =--bricscad=       |
 |-----------------------------+-------------------------------------------+--------------------------------------------------------------------------+---------------------------------|
-| =--on-error POLICY=         | =quit= / =debug= / =ignore=               | uncaught AutoLISP error: report and exit 1 / stop in aldo / no debugger   | accepted (alfe's own reporting) |
+| =--on-error POLICY=         | =quit= / =debug= / =ignore=               | uncaught AutoLISP error: report and exit 1 / stop in aldo / no debugger, report, next action, exit 1 | accepted (alfe's own reporting) |
 | =--on-interrupt POLICY=     | =debug= / =ignore= / =quit=               | Control-C: break into aldo / resume / exit 130                           | usage error, EX_USAGE 64        |
 | =--on-quit POLICY=          | =quit= / =debug=                          | =(quit)= / =(exit)=: quit / aldo before unwinding                         | usage error, EX_USAGE 64        |
 | =--debugger-ui UI=          | =dumb= (=terminal=, =tui=) / =ncurses= / =aldb= (=emacs=) | the aldo front end; selecting one debugs the run          | usage error, EX_USAGE 64        |

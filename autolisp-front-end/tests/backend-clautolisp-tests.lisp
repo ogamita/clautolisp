@@ -1087,9 +1087,12 @@ names the native library candidates, which may legitimately differ."
       ("on-error quit"
        ("--on-error" "quit" "-x" "(princ \"a\")" "-x" "(/ 1 0)" "-x" "(princ \"after\")")
        :expect-stdout "a")
+      ;; ignore reports the error and goes on with the next action; the run
+      ;; still exits with the AutoLISP-error status (clautolisp-issue-on-error).
       ("on-error ignore"
        ("--on-error" "ignore" "-x" "(princ \"a\")" "-x" "(/ 1 0)" "-x" "(princ \"after\")")
-       :expect-stdout "a")
+       :expect-stdout "aafter"
+       :expect-exit 1)
       ("debugger policies"
        ("--on-error" "ignore" "--on-interrupt" "quit" "--on-quit" "quit"
         "-x" "(princ (list *clal-on-error* *clal-on-interrupt* *clal-on-quit*))")

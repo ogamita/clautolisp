@@ -429,7 +429,9 @@ Debugger (aldo; the clautolisp program's options, same spelling and meaning):
                          (report it and exit 1; the default of a batch run),
                          debug (stop in the aldo debugger at the error; the
                          default of an interactive REPL) or ignore (no
-                         debugger: the AutoLISP *error* handler runs). Under
+                         debugger: the AutoLISP *error* handler runs, the
+                         error is reported and the next -l / -x runs; the
+                         run still exits 1). Under
                          every backend, debug and ignore also make alfe dump
                          the CL backtrace of an unexpected condition in alfe
                          itself.

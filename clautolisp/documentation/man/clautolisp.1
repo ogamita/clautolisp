@@ -128,7 +128,23 @@ two actions of one run, as under alfe's in-process engine.
 What an uncaught AutoLISP error does:
 .BR quit " (report and exit — the batch default), " debug
 (break into the aldo debugger — the interactive-REPL default), or
-.BR ignore .
+.B ignore
+(run the AutoLISP
+.B *error*
+handler, report the error and go on with the next
+.B \-l
+/
+.BR \-x ;
+the run still exits 1).
+Before an interactive REPL, an error in a
+.B \-l
+/
+.B \-x
+never ends the program unless the policy is
+.BR quit :
+under
+.B debug
+it stops in the debugger, then the next action and the REPL run.
 Sets
 .BR *CLAL-ON-ERROR* .
 .TP

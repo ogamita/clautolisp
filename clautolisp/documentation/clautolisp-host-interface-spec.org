@@ -5,7 +5,7 @@
 #+DATE: 2026-08-06 (refreshed 2026-09-28)
 #+OPTIONS: toc:3 num:t ^:nil
 #+STARTUP: overview
-#+DOCUMENT_VERSION: 0.3.0 (VALIDATED by pjb 2026-10-03 — cador-3 / epic deliverables D1 + D5; §14/§15 and the command layer decided by pjb 2026-09-28, cadtui added to the hosts and the fidelity matrix, the wire host deferred — see §19)
+#+DOCUMENT_VERSION: 0.3.1 (0.3.1, 2026-11-04: cadtui named beside nihil and cador in §2.3 / §2.4, multidocument-notes; VALIDATED by pjb 2026-10-03 — cador-3 / epic deliverables D1 + D5; §14/§15 and the command layer decided by pjb 2026-09-28, cadtui added to the hosts and the fidelity matrix, the wire host deferred — see §19)
 
 * 0. Status, scope, and how to read this document
   :PROPERTIES:
@@ -184,7 +184,8 @@ Two unrelated wires exist. Conflating them corrupts both designs.
   and X11, not SLIME.
 
 =alfe= may use clautolisp as its backend, giving a terminal user access to
-=nihil=, =cador= and any future host. Those host operations reach the host
+=nihil=, =cador=, =cadtui= (which implements every CAD operation through an
+ncurses text UI) and any future host. Those host operations reach the host
 *through this interface (the HAL)*, not over W1. *The alfe protocol is not
 involved, and must not be assumed available, when a clautolisp host is in
 play.* This is a hard boundary for D1: nothing in this document may import a W1
@@ -195,7 +196,7 @@ assumption.
 The =aldo= debugger runs against three configurations that this interface must
 keep apart (epic §1.2):
 
-- *(a) Hosted.* Debuggee: clautolisp, in-image. Host: =nihil= or =cador=. The
+- *(a) Hosted.* Debuggee: clautolisp, in-image. Host: =nihil=, =cador= or =cadtui=. The
   same-image, two-thread design with signal/park handoff.
 - *(b) Wire-hosted.* Debuggee: still clautolisp, in-image; the host is a
   peripheral that may *block on W2*. Poll points remain in clautolisp. New

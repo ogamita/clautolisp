@@ -77,7 +77,12 @@
   (format t "                         level: quit (report and exit, the default for a batch run),~%")
   (format t "                         debug (break into the aldo debugger, the default for the~%")
   (format t "                         interactive REPL), or ignore (run the AutoLISP *error*~%")
-  (format t "                         handler). Sets *CLAL-ON-ERROR*, which code may rebind.~%")
+  (format t "                         handler, report the error and go on with the next -l / -x;~%")
+  (format t "                         the run still exits 1). Before an interactive REPL, an error~%")
+  (format t "                         in a -l / -x never ends the program unless the policy is~%")
+  (format t "                         quit: under debug it stops in the debugger, then the next~%")
+  (format t "                         action and the REPL run. Sets *CLAL-ON-ERROR*, which code~%")
+  (format t "                         may rebind.~%")
   (format t "  --on-interrupt POLICY  What Control-C (SIGINT) does: debug (break into the aldo~%")
   (format t "                         debugger at the interrupt point, the default), ignore~%")
   (format t "                         (execution resumes), or quit (exit with status 130). Sets~%")
@@ -2077,6 +2082,40 @@ turn of an interactive REPL. The UI is detached on the way out."
         (clautolisp.debug.ui:ui-detached
          (clautolisp.debug.ui:session-ui session))))))
 
+(defun continue-past-action-errors-p (on-error-policy interactive-p)
+  "True when an uncaught error in one of the program's actions (-l / -x, the
+init files) is to be reported and the run to go on with the next action,
+instead of ending the program (clautolisp-issue-on-error):
+
+  - --on-error ignore, batch or interactive: \"run the user's *error*, then
+    keep going to the next form / action\" (debugger-public-interface-and-
+    on-error B.1);
+  - before an interactive REPL, unless --on-error quit was asked for: the
+    actions are the preparation of the REPL the user asked for, and an
+    error in one of them must not take that REPL away. Under debug (the
+    interactive default) the error first stops in the debugger.
+
+A batch run under quit or debug keeps its meaning: report and exit, or stop
+in the debugger for the whole run."
+  (or (eq on-error-policy :ignore)
+      (and interactive-p (not (eq on-error-policy :quit)))))
+
+(defun run-actions-continuing-past-errors (actions run-action)
+  "Call RUN-ACTION on each of ACTIONS in turn. An AutoLISP error escaping one
+of them (no *error* took it, or the debugger was continued past it) and a
+file error (a -l file that cannot be opened) are reported the engine's way
+and the next action runs. Returns true when at least one error was reported
+(clautolisp-issue-on-error)."
+  (let ((error-seen nil))
+    (dolist (action actions error-seen)
+      (handler-case (funcall run-action action)
+        (autolisp-runtime-error (condition)
+          (setf error-seen t)
+          (report-runtime-error condition))
+        (file-error (condition)
+          (setf error-seen t)
+          (report-error condition))))))
+
 (defun run-with-input (dialect actions cli-options
                        &key quiet-p verbose-p debug-p
                             interactive-p host mock-input gui trace-p
@@ -2101,7 +2140,8 @@ machinery, not user intent)."
                    load-encoding io-encoding
                    no-init-p no-color-p))
   (handler-case
-      (let* ((context (build-context dialect host mock-input
+      (let* ((action-error-seen nil) ; an action's error reported, run went on
+             (context (build-context dialect host mock-input
                                      (clautolisp.autolisp-cli:cli-options-load-encoding
                                       cli-options)))
              ;; A driving front end (alfe --backend subprocess) hands over
@@ -2156,33 +2196,53 @@ machinery, not user intent)."
                         context))
         (let ((boundaries (clautolisp.autolisp-cli:cli-options-front-end-action-boundaries
                            cli-options))
-              (index 0))
-        (flet ((run-actions ()
-                 (dolist (action actions)
-                   (unless (eq :interactive (car action))
-                     (let ((start (get-internal-real-time)))
-                       ;; A driving front end's per-action hooks run at the
-                       ;; boundaries (--front-end-action-boundaries).
-                       (clautolisp.autolisp-cli:call-at-action-boundaries
-                        boundaries (incf index) (car action) context
-                        (lambda () (eval-action-in-context context action dialect)))
-                       (maybe-summarise-action (car action) (cdr action) start))))))
+              (index 0)
+              (continue-p (continue-past-action-errors-p on-error-policy
+                                                         interactive-p)))
+        (flet ((run-actions (&optional session break)
+                 (flet ((run-action (action)
+                          (let ((start (get-internal-real-time)))
+                            ;; A driving front end's per-action hooks run at the
+                            ;; boundaries (--front-end-action-boundaries).
+                            (clautolisp.autolisp-cli:call-at-action-boundaries
+                             boundaries (incf index) (car action) context
+                             (lambda () (eval-action-in-context context action dialect)))
+                            (maybe-summarise-action (car action) (cdr action) start))))
+                   (let ((batch (remove :interactive actions :key #'car)))
+                     (if continue-p
+                         ;; Report an action's error and go on with the next
+                         ;; one (clautolisp-issue-on-error). Before an
+                         ;; interactive REPL each action is its own debugging
+                         ;; extent, as a REPL turn is: an error stops in the
+                         ;; debugger, and aborting there moves on.
+                         (when (run-actions-continuing-past-errors
+                                batch
+                                (if session
+                                    (lambda (action)
+                                      (run-under-session-debugging
+                                       session (lambda () (run-action action)) break))
+                                    #'run-action))
+                           (setf action-error-seen t))
+                         (mapc #'run-action batch))))))
           ;; --on-error debug / --debugger-ui attach ONE debugger
           ;; session (debugger §10) for the whole program:
           ;;  • batch program (-l/-x, non-interactive): run the actions as one
           ;;    debugging extent so an uncaught error breaks into the UI;
-          ;;  • interactive REPL: run the batch actions PLAIN (init files are
-          ;;    machinery you don't debug) and hand the session to the REPL,
-          ;;    which debugs each turn (so `clautolisp` + (/ 0) breaks in).
+          ;;  • interactive REPL: each batch action is its own debugging
+          ;;    extent, as a REPL turn is -- an error stops in the debugger
+          ;;    and the run goes on with the next action, then the REPL
+          ;;    (clautolisp-issue-on-error) -- and the session is handed to
+          ;;    the REPL, which debugs each turn (so `clautolisp' + (/ 0)
+          ;;    breaks in).
           ;; *break-on-error* is off under --on-error ignore.
           (call-with-debug-session
            debug-ui on-error-policy context
            (lambda (session break)
              ;; The application/REPL work of the lisp environment (run on the
              ;; current thread; the aldo companion runs beside it).
-             (if (and session (not interactive-p))
+             (if (and session (not interactive-p) (not continue-p))
                  (run-under-session-debugging session #'run-actions break)
-                 (run-actions))
+                 (run-actions session break))
              (when interactive-p
                ;; The REPL is the last action, between its own boundaries.
                (clautolisp.autolisp-cli:call-at-action-boundaries
@@ -2204,7 +2264,13 @@ machinery, not user intent)."
                      nil)))))))))
         ;; Normal completion: exit with the status a script recorded via
         ;; (autolisp-set-status N) — 0 when it never touched the channel.
-        (autolisp-exit-status context))))
+        ;; A batch run that went on past an error under --on-error ignore
+        ;; still says it met one, so a script or CI does not take it for a
+        ;; clean run (clautolisp-issue-on-error).
+        (let ((status (autolisp-exit-status context)))
+          (if (and action-error-seen (not interactive-p) (eql 0 status))
+              clautolisp.sysexits:+exit-autolisp-error+
+              status)))))
     ;; The statuses are the shared table's (ENGINE-EXIT-STATUS, the same
     ;; one alfe's in-process engine uses; sysexits-exit-statuses.issue).
     (autolisp-runtime-error (condition)

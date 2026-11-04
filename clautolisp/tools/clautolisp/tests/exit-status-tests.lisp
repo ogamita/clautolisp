@@ -196,3 +196,52 @@ stream error EX_IOERR (74)."
   (is (= clautolisp.sysexits:+ex-ioerr+
          (clautolisp.autolisp-cli:engine-exit-status
           (make-condition 'stream-error :stream *standard-output*)))))
+
+;;; clautolisp-issue-on-error: an uncaught error in an action run before the
+;;; REPL (-l / -x ... -i) ended the program, so the REPL never started, and
+;;; --on-error ignore exited like quit instead of continuing past the error
+;;; (debugger-public-interface-and-on-error.issue B.1: "run the user's
+;;; *error*, then keep going to the next form / action").
+
+(test continue-past-action-errors-policy
+  (flet ((p (policy interactive-p)
+           (clautolisp.tools.clautolisp::continue-past-action-errors-p
+            policy interactive-p)))
+    ;; ignore continues, batch or interactive.
+    (is (p :ignore nil))
+    (is (p :ignore t))
+    ;; Before the REPL: debug (the interactive default) continues to the
+    ;; next action and to the REPL; an explicit quit still quits.
+    (is (p :debug t))
+    (is (not (p :quit t)))
+    ;; Batch: quit and debug keep their meaning (report and exit / stop in
+    ;; the debugger for the whole run).
+    (is (not (p :quit nil)))
+    (is (not (p :debug nil)))))
+
+(test guarded-actions-continue-past-an-error
+  (let* ((context (%exit-status-context))
+         (dialect (clautolisp.tools.clautolisp::keyword->dialect :strict))
+         (ran '())
+         error-seen
+         (report
+           (with-output-to-string (*error-output*)
+             (setf error-seen
+                   (clautolisp.tools.clautolisp::run-actions-continuing-past-errors
+                    (list '(:expression . "(load \"/nonexistent/clal-on-error.lsp\")")
+                          '(:file . "/nonexistent/clal-on-error-missing-l-file.lsp")
+                          '(:expression . "(setq clal-after-error 42)"))
+                    (lambda (action)
+                      (push (car action) ran)
+                      (clautolisp.tools.clautolisp::eval-action-in-context
+                       context action dialect)))))))
+    ;; Every action ran, the last one to completion.
+    (is (equal '(:expression :file :expression) (reverse ran)))
+    (is (eql 42 (clautolisp.autolisp-runtime:lookup-variable
+                 (clautolisp.autolisp-runtime:intern-autolisp-symbol
+                  "CLAL-AFTER-ERROR")
+                 context)))
+    ;; Both errors were reported, the way the engine reports them.
+    (is (eq t error-seen))
+    (is (search "LOAD-FILE-NOT-FOUND" report) "report ~S" report)
+    (is (search "cannot open" report) "report ~S" report)))

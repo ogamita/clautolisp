@@ -38,6 +38,13 @@ refactors with no user-visible effect do not require an entry.
 
 * clautolisp / read-autolisp (=clautolisp/documentation/clautolisp-user-manual.org=)
 
+- *An error in a ~-l~ / ~-x~ before ~-i~ no longer takes the REPL away*
+  (2.3.86): it is reported (under ~--on-error debug~, the interactive
+  default, it stops in the debugger first) and the next action, then the
+  REPL, run. ~--on-error ignore~ now does what it said: report the error
+  and go on with the next ~-l~ / ~-x~, the run exiting 1 -- in alfe's
+  ~--clautolisp~ too. See the user manual, /Debugger (aldo)/.
+
 - ~(setvar "ERRNO" 0)~ is accepted, as AutoCAD and BricsCAD accept it
   although both document ERRNO as read-only (2.3.85); it used to stop the
   program. Flagged once per run by ~[errno-setvar]~ under the vendor
