@@ -1,0 +1,17 @@
+#+TITLE: Preserve native session restoration failure details
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+BRANCH: codex/alfe-restore-error-detail
+
+* Symptom
+AutoCAD SCHME job 565739 passed all 23 tests but reported only FAILED session
+restoration. The caught error object was discarded by PREPARE-SHUTDOWN.
+
+* Resolution in 2.3.96
+Record the restoration step before each native SETVAR, preserve the caught
+message in protocol stderr and status, and include the last native status in
+the CLI shutdown error. A failed restoration still cannot acknowledge RESTORED
+or close the created application. Hosted-runtime failure injection and CLI
+error propagation tests cover the diagnostic and retained failure policy.
+Native qualification of the SCHME job remains separate from this diagnostic fix.

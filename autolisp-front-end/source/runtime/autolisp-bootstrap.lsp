@@ -1,4 +1,5 @@
 (setq *AUTOLISP_SRCHPATH_RESTORED* nil)
+(setq *AUTOLISP_RESTORE_PHASE* nil)
 
 (defun autolisp-bootstrap-append-line (alfe--path alfe--text / alfe--f)
   (if (and (= (type alfe--path) 'STR)
@@ -366,18 +367,23 @@
 (defun autolisp-restore-session ()
   ;; Restore while the protocol is still live; do not erase the test result.
   ;; Direct SETVAR calls are intentional: a failed restore must not be ACKed.
+  (setq *AUTOLISP_RESTORE_PHASE* "LOGFILEMODE disable")
   (if *AUTOLISP_LOG_STATE*
     (progn
       (setvar "LOGFILEMODE" 0)
+      (setq *AUTOLISP_RESTORE_PHASE* "LOGFILEPATH")
       (if (nth 1 *AUTOLISP_LOG_STATE*)
         (setvar "LOGFILEPATH" (nth 1 *AUTOLISP_LOG_STATE*)))
+      (setq *AUTOLISP_RESTORE_PHASE* "LOGFILEMODE restore")
       (if (nth 0 *AUTOLISP_LOG_STATE*)
         (setvar "LOGFILEMODE" (nth 0 *AUTOLISP_LOG_STATE*)))
       (setq *AUTOLISP_LOG_STATE* nil)))
+  (setq *AUTOLISP_RESTORE_PHASE* "SRCHPATH")
   (if (and _autolisp_old_srchpath (not *AUTOLISP_SRCHPATH_RESTORED*))
     (progn
       (setvar "SRCHPATH" _autolisp_old_srchpath)
       (setq *AUTOLISP_SRCHPATH_RESTORED* T)))
+  (setq *AUTOLISP_RESTORE_PHASE* nil)
   T)
 
 (defun autolisp-finish (alfe--code)

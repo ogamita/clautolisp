@@ -2883,7 +2883,9 @@ and prints only the action plan.
 
 PREPARE-SHUTDOWN is an out-of-band control command. The CAD restores the live
 session settings and leaves the server loop before publishing RESTORED. Failure
-publishes FAILED session restoration and does not authorize bridge closure.
+publishes FAILED session restoration with the failing step and native caught error,
+writes the same diagnostic to protocol stderr, and does not authorize bridge closure.
+The CLI shutdown error includes the last native status.
 The alfe side then publishes close-owned.request. The retained startup bridge
 uses its exact application reference; created instances close normally and are
 validated by PID plus creation time, attached instances only release the bridge.

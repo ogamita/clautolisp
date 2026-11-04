@@ -945,3 +945,6 @@ not yet proven; native qualification required.
 [[file:alfe-epure-profile-before-target-document.issue]] — Human-confirmed
 SCHME news dialogue before READY. New :after-document profile ordering and
 shared native ACK guard are awaiting qualification.
+
+* DONE Preserve session restoration error details
+[[file:../closed/alfe-session-restoration-error-detail.issue][alfe-session-restoration-error-detail]] (2.3.96).

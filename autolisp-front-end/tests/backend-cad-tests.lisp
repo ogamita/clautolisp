@@ -4095,6 +4095,45 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
       (is (search "RESTORE-OK" stdout)))))
 
 
+(test cad-restoration-failure-preserves-native-step-and-error
+  (let ((binary (clautolisp-engine-binary)))
+    (unless binary (error "Hosted engine required"))
+    (multiple-value-bind (statuses stdout stderr)
+        (drive-hosted-engine
+         binary
+         (list
+          (concatenate 'string
+           "(progn "
+           "(setq zz--inject T) "
+           "(defun autolisp-protocol-pop-control () (if zz--inject (progn (setq zz--inject nil) \"PREPARE-SHUTDOWN\") (autolisp-protocol-lines->text (autolisp-protocol-pop-file-lines *AUTOLISP_PROTOCOL_CONTROLFILE*)))) "
+           "(setq *AUTOLISP_LOG_STATE* '(1 \"old-log\") _autolisp_old_srchpath nil) "
+           "(defun setvar (name value) (if (= name \"LOGFILEPATH\") (error \"native path rejected\") value)) "
+           "(autolisp-protocol-handle-control) "
+           "(princ (autolisp-protocol-lines->text (autolisp-protocol-slurp-lines *AUTOLISP_PROTOCOL_STATUSFILE*)) nil) "
+           "(princ (if (and (not *AUTOLISP_PROTOCOL_PREPARED_CLOSE*) (not *AUTOLISP_PROTOCOL_STOP*) *AUTOLISP_LOG_STATE*) \" FAIL-CLOSED\" \" BAD-ACK\") nil) "
+           "(setq *AUTOLISP_LOG_STATE* nil) nil)")))
+      (is (search "DONE 1 OK" (first statuses)))
+      (is (search "FAILED session restoration [LOGFILEPATH]:" stdout))
+      (is (search "native path rejected" stdout))
+      (is (search "FAIL-CLOSED" stdout))
+      (is (not (search "BAD-ACK" stdout)))
+      (is (search "ERROR session restoration [LOGFILEPATH]:" stderr))
+      (is (search "native path rejected" stderr)))))
+
+(test protocol-shutdown-error-includes-last-native-status
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (session (alfe.protocol.file:init-session dir))
+           (status (alfe.protocol.file:protocol-session-status-path session)))
+      (with-open-file (out status :direction :output :if-exists :supersede)
+        (write-line "FAILED session restoration [SRCHPATH]: native rejected" out))
+      (handler-case
+          (progn (alfe.protocol.file::prepare-cad-shutdown session :timeout 0)
+                 (fail "A failed restoration must reject shutdown"))
+        (alfe.error:backend-protocol-error (e)
+          (is (search "SRCHPATH" (princ-to-string e)))
+          (is (search "native rejected" (princ-to-string e))))))))
+
 (test cad-com-quit-action-defers-transport-teardown
   (with-cad-test-directories
     (let* ((dir (%fresh-test-directory))

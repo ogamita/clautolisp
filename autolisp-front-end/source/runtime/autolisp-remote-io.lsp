@@ -127,16 +127,23 @@
   (autolisp-protocol-lines->text
     (autolisp-protocol-pop-file-lines *AUTOLISP_PROTOCOL_CONTROLFILE*)))
 
-(defun autolisp-protocol-handle-control (/ alfe--control)
+(defun autolisp-protocol-handle-control (/ alfe--control alfe--restore alfe--detail)
   (setq alfe--control (autolisp-protocol-pop-control))
   (cond
     ((= alfe--control "PING")
       (autolisp-protocol-pulse-heartbeat)
       nil)
     ((= alfe--control "PREPARE-SHUTDOWN")
-      (if (vl-catch-all-error-p
-            (vl-catch-all-apply 'autolisp-restore-session nil))
-        (autolisp-protocol-set-status "FAILED session restoration")
+      (setq alfe--restore (vl-catch-all-apply 'autolisp-restore-session nil))
+      (if (vl-catch-all-error-p alfe--restore)
+        (progn
+          (setq alfe--detail
+            (strcat "session restoration ["
+                    (if (= (type *AUTOLISP_RESTORE_PHASE*) 'STR)
+                      *AUTOLISP_RESTORE_PHASE* "unknown phase")
+                    "]: " (alfe-catch-all-message alfe--restore)))
+          (autolisp-protocol-write-stderr (strcat "ERROR " alfe--detail))
+          (autolisp-protocol-set-status (strcat "FAILED " alfe--detail)))
         (progn
           (setq *AUTOLISP_PROTOCOL_PREPARED_CLOSE* T)
           (setq *AUTOLISP_PROTOCOL_STOP* T)))

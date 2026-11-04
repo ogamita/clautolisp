@@ -1829,5 +1829,6 @@ exactly as-checked-in."
   (unless (wait-for-status session "RESTORED" :timeout timeout)
     (error 'backend-protocol-error :backend :file-protocol :phase :shutdown
            :code :restore-not-acknowledged
-           :message "CAD did not acknowledge session restoration before shutdown."))
+           :message (format nil "CAD did not acknowledge session restoration before shutdown. Last native status: ~A"
+                            (or (read-current-status session) "<absent>"))))
   t)

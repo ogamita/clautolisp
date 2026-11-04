@@ -2321,6 +2321,10 @@ blank drawing or a different instance. After the evaluation results have been co
 alfe asks the live runtime to restore LOGFILEMODE, LOGFILEPATH and SRCHPATH.
 The runtime closes the current command log first, restores the saved settings,
 and acknowledges =RESTORED= only after leaving its protocol loop.
+If restoration fails, =protocol/stderr.txt= and the failed status preserve the
+restoration step (LOGFILEMODE, LOGFILEPATH or SRCHPATH) and the native caught
+error message. The CLI shutdown error includes this last status; a missing
+native message is reported explicitly. Failure never acknowledges RESTORED.
 
 For an application created by this invocation, the retained bridge closes its
 documents without saving and calls Quit on that same application. Transient
