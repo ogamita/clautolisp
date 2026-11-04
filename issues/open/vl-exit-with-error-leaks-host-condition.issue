@@ -1,0 +1,47 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vl-exit-with-error-leaks-host-condition -- vl-exit-with-error outside a VLX crashes with an SBCL backtrace
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-21
+
+* Symptom
+
+Found while writing the functional-abstraction section of
+=clautolisp/documentation/tutorial.org=, on clautolisp 2.3.24:
+
+#+begin_example
+$ clautolisp --no-init -x '(vl-exit-with-error "boom")'
+Unhandled CLAUTOLISP.AUTOLISP-RUNTIME:AUTOLISP-NAMESPACE-EXIT in thread #<SB-THREAD:THREAD tid=259 "main thread" RUNNING ...>:
+  AutoLISP namespace exit ERROR: "boom"
+Backtrace for: #<SB-THREAD:THREAD ...>
+0: (SB-DEBUG::DEBUGGER-DISABLED-HOOK ...)
+...
+unhandled condition in --disable-debugger mode, quitting
+$ echo $?
+1
+#+end_example
+
+Same with a global =*error*= defined: it is not called. Inside
+=vl-catch-all-apply= it is caught correctly (=#<catch-all-error "boom">=).
+
+* Expected
+
+AGENTS.md: "Common Lisp conditions and errors must not leak directly into the
+AutoLISP environment." =AUTOLISP-NAMESPACE-EXIT= signalled from the document
+namespace (no separate VLX namespace to exit) escapes every handler of the
+toplevel driver and reaches SBCL's debugger-disabled hook. It must instead be
+handled like an AutoLISP error at the toplevel (message "boom", =*error*= /
+=--on-error= policy applied), or like whatever the vendors do when
+=vl-exit-with-error= is called outside a separate-namespace VLX -- to be
+probed (AutoCAD documents it only for separate-namespace VLX applications).
+
+* To do
+
+1. Probe AutoCAD / BricsCAD: =(vl-exit-with-error "boom")= at the command line
+   and from a plain =.lsp=; record the message and whether =*error*= runs.
+2. Failing test, then handle =AUTOLISP-NAMESPACE-EXIT= at the toplevel (REPL,
+   =-x=, =-l=) and in the debugger session.
+3. Same check for =vl-exit-with-value=.

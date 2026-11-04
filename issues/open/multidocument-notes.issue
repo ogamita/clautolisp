@@ -1,0 +1,28 @@
+
+* Notes about clautolisp-multidocument-analysis.org
+
+R18 - Breakpoint table placement
+
+    Actually the user must be able to decide whether a breakpoint is
+    global (applying to the function in whatever document it's loaded
+    (eg. with vl-load-all, or with separate load), or if it applies only
+    to the current document.
+
+
+    The default should be that the breakpoint command applies only to the
+    current document, but an auxliary word ('all') could indicate that the
+    command applies to all occurences of the function/break-point in all
+    documents.
+
+
+R19 — Concurrent debugger contexts
+
+    Indeed, and each debugging context may route to a different user
+    interface (dumb, ncurses, aldb).
+
+
+
+* Notes about clautolisp-host-interace-spec.org
+
+We could add mention of cadtui when nihil, cador, and <wire-host> are enumerated.
+cadtui implements all cad operations using a ncurses text UI.

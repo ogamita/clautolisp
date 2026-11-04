@@ -1,0 +1,37 @@
+00:35[COMMUN+PPBN02261@PF5S26BT  gitlab-runner 5,4G]$ rlwrap clautolisp
+DBG> clautolisp debugger attached (h for help)
+
+("*ROOTDIR*" "c:/msys64/") 
+("*HOMEDIR*" "C:/msys64/home/PPBN02261") 
+("HOME" "C:\\msys64\\home\\PPBN02261") 
+("WOME" "C:/users/PPBN02261") 
+("ROME" "C:/users/PPBN02261/AppData/Roaming/") 
+("MOME" "C:/msys64/home/PPBN02261") 
+("MOME" "MOME") 
+[sec-untrusted-load] LOAD: C:/msys64/opt/local/share/autolisp/site-lisp/autolisp-spec/alref.lsp is a gated file in an untrusted location (SECURELOAD=1); on a host with SECURELOAD=2 this would be blocked. Add its folder to TRUSTEDPATHS to trust it.
+[sec-untrusted-load] LOAD: C:/Users/PPBN02261/works/sncf-reseau/src/outils-autolisp/autolisp-misc/src/browser.lsp is a gated file in an untrusted location (SECURELOAD=1); on a host with SECURELOAD=2 this would be blocked. Add its folder to TRUSTEDPATHS to trust it.
+[sec-untrusted-load] LOAD: C:/Users/PPBN02261/works/sncf-reseau/src/outils-autolisp/autolisp-misc/src/format.lsp is a gated file in an untrusted location (SECURELOAD=1); on a host with SECURELOAD=2 this would be blocked. Add its folder to TRUSTEDPATHS to trust it.
+Welcome to clautolisp Version 1.8.39
+Copyright 2026-2026 Ogamita Ltd
+Licensed under AGPL; source codes available at:
+http://gitlab.com/ogamita/clautolisp/
+AUTOLISP REPL (STRICT dialect, cador host) — Ctrl-D to exit.
+_$ (load "/c/users/ppbn02261/works/sncf-reseau/lisp/fact.lsp")
+
+DBG> Error at <toplevel> line 1 col 1 — LOAD could not locate /c/users/ppbn02261/works/sncf-reseau/lisp/fact.lsp.
+DBG>   <stack: <toplevel> ← top>
+DBG>   (q abort, r <form> return a value, c continue/run *error*)
+(DEFUN
+  <toplevel>
+  NIL
+  【(LOAD "/c/users/ppbn02261/works/sncf-reseau/lisp/fact.lsp")】)
+NAV> q
+NAV> q from the debugger aborts the execution and returns to the toplevel
+NAV> (resume instead with: c continue, i into, n next, o out, a advance, r FORM return)
+NAV> really abort? (y/n) y
+
+_$ (load "c:/users/ppbn02261/works/sncf-reseau/lisp/fact.lsp")
+[sec-untrusted-load] LOAD: C:/Users/ppbn02261/works/sncf-reseau/lisp/fact.lsp is a gated file in an untrusted location (SECURELOAD=1); on a host with SECURELOAD=2 this would be blocked. Add its folder to TRUSTEDPATHS to trust it.
+*autolisp-load-pathname* = C:/Users/ppbn02261/works/sncf-reseau/lisp/fact.lsp
+nil
+_$ 

@@ -1,0 +1,46 @@
+relational-operators-reject-strings — < <= > >= must order strings, not return nil
+================================================================================
+
+See also:
+  - clautolisp/autolisp-builtins-core/source/api.lisp, `numeric-order-p`
+    (used by `builtin-<`, `builtin-<=`, `builtin->`, `builtin->=`).
+  - issues/closed/autolisp-spec-comparison-operators-chapter-placement.issue
+    (records that `<` `<=` `>` `>=` order strings lexicographically, per host).
+  - issues/closed/strict-dialect-autolisp-divergences.issue §2 (the nil-folding
+    of non-numeric arguments that `numeric-order-p` implements).
+
+Context
+-------
+
+Found 2026-09-24 while factoring the SCHMS+/SCHME+ test harness into
+outils-autolisp/autolisp-test/test-runner.lsp: `tu:load-all` must load files
+in lexicographic order, and `(vl-sort paths '<)` left the list unsorted under
+clautolisp 2.2.85. The harness now carries its own `tu:string<` as a
+workaround.
+
+AutoCAD and BricsCAD accept strings in the relational operators and compare
+them character by character: `(< "a" "b")` is T. clautolisp's
+`numeric-order-p` returns nil as soon as one argument is not a number, so
+every string comparison is nil. VL-SORT with `'<` or `'>` (a very common
+idiom to sort strings) then leaves the list unchanged.
+
+Minimal reproduction
+--------------------
+
+With clautolisp 2.2.85, any dialect (checked with bricscad-v26 and strict):
+
+    (< "a" "b")                      ; => nil     expected T
+    (> "b" "a")                      ; => nil     expected T
+    (vl-sort '("b" "a" "c") '<)      ; => ("b" "a" "c")  expected ("a" "b" "c")
+
+Expected behaviour
+------------------
+
+- When all arguments are strings, compare them pairwise by character codes
+  (the AutoCAD documentation: "the comparison is based on the numeric value
+  of the characters"), shorter prefix first.
+- Keep the current nil-folding for nil and other non-numeric, non-string
+  arguments (loop-guard idiom `(<= 48 (car chars) 57)`).
+- To verify on real hosts before fixing: mixed number/string arguments, and
+  whether the comparison is by code point or by host codepage byte for
+  non-ASCII characters.
