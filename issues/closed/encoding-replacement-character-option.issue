@@ -116,7 +116,7 @@ three, and choose to signal.
 3. Tests, user manual (Source-file and terminal encoding), dialect warning
    entry, DEVELOP bump.
 
-* Resolved (clautolisp / alfe 2.3.87, spec 0.14.8, 2026-11-04)
+* Resolved (clautolisp / alfe 2.3.88, spec 0.14.8, 2026-11-04)
 
 - Options =-Ereplacement R= / =--encoding-replacement R=, and per situation
   =-Efile-write-replacement R= / =--file-write-encoding-replacement R= and

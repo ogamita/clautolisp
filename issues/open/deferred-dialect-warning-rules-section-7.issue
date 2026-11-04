@@ -1,0 +1,155 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-dialect-warning-rules-section-7 -- what MR !509 left undone, and where section 7 disagrees with the existing rules
+#+STATUS: DRAFT
+#+PRIORITY: P2
+#+TYPE: design
+#+DEPENDS: error-processing-per-dialect
+#+BRANCH: -
+#+DATE: 2026-11-04
+
+DRAFT for pjb to revise. It was written while finishing
+encoding-replacement-character-option (MR !509, clautolisp / alfe 2.3.88). It
+collects (A) what that MR did not implement and (B) where pjb's section 7 of
+error-processing-per-dialect.issue ("Reminder for dialect warning rules and
+clautolisp behavior") disagrees with section 4 of the same issue, with
+AGENTS.md, or with the warnings clautolisp already emits. Section 7 is on
+pjb's local master only (commit 9cf7f953, not pushed at the time of writing).
+
+* A. Not implemented by MR !509
+
+** A.1 CHR / ASCII / VL-STRING->LIST under the vendor dialects (rows 102, 542, 544, 545)
+
+Section 7 says each dialect gives its product's behaviour. MR !509 covers
+only the WRITE side: what WRITE-LINE, WRITE-CHAR, PRINC, PRIN1, PRINT and
+PROMPT put in a file or on the terminal for a character the encoding cannot
+hold. The character values themselves are unchanged:
+
+| expression                     | AutoCAD-2022 | BricsCAD-V25 Windows | BricsCAD-V26 macOS | clautolisp, every dialect |
+|--------------------------------+--------------+----------------------+--------------------+---------------------------|
+| =(ascii (chr 300))=            | 44           | 73                   | 300                | 300                       |
+| =(vl-string->list (chr 8364))= | (172)        | (128)                | (8364)             | (8364)                    |
+
+Under --dialect autocad and --dialect bricscad (Windows platform) clautolisp
+therefore differs from the product. Doing it means deciding where the
+narrowing happens: in CHR (the string never holds the code point), or in
+every reader of a string (ASCII, VL-STRING->LIST, SUBSTR ...). The first is
+simpler and matches what the products appear to do, but it is a decision.
+It also needs its own warning tag, or a reuse of [encoding-replacement].
+
+** A.2 Decoding
+
+Out of scope by the parent's instruction. A byte the encoding cannot DECODE
+on READ-LINE / READ-CHAR / LOAD keeps its present behaviour. Not measured on
+the vendors.
+
+** A.3 SPEC-UNCERTAIN points (in deferred-spec-research.issue, "Encoding replacement")
+
+- the BricsCAD best-fit table: clautolisp derives it from Unicode character
+  names (LATIN ... LETTER X WITH ...). Windows' WideCharToMultiByte table is
+  larger (ligatures, typographic quotes, dashes);
+- what AutoCAD writes for a character above U+FFFF (two UTF-16 units, two low
+  bytes?);
+- what BricsCAD V26 on Windows writes (V26 was measured on macOS only);
+- whether PROMPT and the command line follow the file rule.
+
+** A.4 Terminal input and alfe's CAD backends
+
+-Ereplacement is forwarded to the clautolisp engine only. Under --autocad /
+--bricscad alfe ignores it with a warning: the CADs' own writes cannot be
+changed from outside.
+
+** A.5 Known limitation of the implementation
+
+The "first time per caller" record (=*encoding-replacement-warnings-seen*=) is
+a process-wide table. [vendor-operator] keeps its table in the runtime session.
+Two engines in one process (alfe :direct running several sessions) would
+share the first; a reset-default-evaluation-context does not clear it.
+Should move to the session when B.3 is settled.
+
+* B. Inconsistencies
+
+** B.1 --strict: signal, or answer like --clautolisp?
+
+- encoding-replacement-character-option.issue (as filed): "--strict keeps
+  signalling".
+- Section 7: "--strict warns, and aim to return the most common answer (or
+  the most practical answer, the same as --clautolisp dialect)".
+- MR !509 followed section 7: --strict writes \U+XXXX and warns.
+
+The section 7 table then says "signal an error" for 2.1-2.4, which is the
+clautolisp column. Is that also the --strict behaviour? "The most common
+answer" has no meaning when one product signals and the other returns a value
+(2.2, 2.3): there is no majority with two products. Proposal: say in section 7
+that --strict ALWAYS behaves as --clautolisp, plus the warning, and drop "the
+most common answer".
+
+** B.2 Who is silent: AGENTS.md versus section 7
+
+- AGENTS.md, Dialect Divergence and Warnings, case 2 (resolved divergence):
+  "The adopted-vendor dialect and clautolisp perform the normative behaviour
+  silently"; only --strict and the deviant vendor's dialect warn.
+- AGENTS.md, case 3 (unresolved): every dialect but --lax warns.
+- Section 7: every dialect but --lax warns, without distinguishing case 2
+  from case 3.
+
+So, by section 7, --dialect clautolisp warns even where the spec has adopted
+one vendor. MR !509 followed section 7 (clautolisp warns). Either AGENTS.md
+and autolisp-spec chapter 25 are updated to drop the "adopted vendor is
+silent" rule, or section 7 is read as applying to case 3 only. Encoding is a
+three-way divergence with no adopted vendor, so it is case 3 either way and
+MR !509 is right under both readings; the question matters for the other
+families.
+
+** B.3 "The first time the caller called the function" versus the existing emitters
+
+Section 7 asks for one warning per (caller, function). The existing emitters
+do something different each:
+
+| tag                    | silent under               | deduplication                         | honours *AUTOLISP-WARN-OUT-OF-DIALECT* |
+|------------------------+----------------------------+---------------------------------------+----------------------------------------|
+| [errno-setvar]         | --clautolisp, --lax        | once per run (a single flag)          | no                                     |
+| [vendor-operator]      | the owner's dialect, --lax | once per operator per session         | yes                                    |
+| [version-operator]     | (version gates)            | once per operator per session         | yes                                    |
+| [encoding-replacement] | --lax                      | once per (caller, operator) (MR !509) | no                                     |
+
+[errno-setvar] contradicts B.2 as well: silent under --clautolisp.
+
+Questions to settle:
+- what "the caller" is: the innermost user DEFUN, as
+  %portability-warning-function-name gives it, and what it is at top level
+  (MR !509 keys every top-level call under NIL, so all of a file's
+  top-level calls share one warning);
+- whether "first time" is per session, per run or per LOAD;
+- whether *AUTOLISP-WARN-OUT-OF-DIALECT* should silence every divergence
+  warning or only the out-of-dialect operator ones (it says "out of
+  dialect", which a divergence is not);
+- then align the 32 registered warnings on one helper, rather than each
+  emitter carrying its own policy.
+
+** B.4 "The behaviour of the selected dialect" cannot cover 2.1
+
+Section 7's introduction says clautolisp gives the selected dialect's
+behaviour. For 2.1 the products CRASH (reverse of an improper list on
+BricsCAD, command-s refusing input on AutoCAD). The table gives only the
+clautolisp column ("signal an error"). What do --dialect autocad / bricscad do
+there? Section 5 item 3 proposes a [vendor-crash] diagnostic: presumably
+signal plus that warning, but section 7 should say so.
+
+** B.5 Section 2.7 text is stale
+
+Section 2.7 still says "clautolisp signals: WRITE-LINE ... cannot be
+encoded". Since 2.3.88 it writes per the dialect (low byte / best fit /
+\U+XXXX) and warns. Left untouched by MR !509 because the section sits in
+pjb's unpushed commit 9cf7f953.
+
+** B.6 Section 4 items whose clautolisp behaviour predates section 7
+
+Section 4 lists divergences already handled elsewhere. Each was decided before
+section 7, and some contradict it:
+- clautolisp-error-silent-under-autocad.issue: a dialect that is silent where
+  section 7 wants the vendor's behaviour plus a warning;
+- vl-exit-outside-vlx-caught-diverges.issue,
+  comparison-operators-vendor-semantics.issue,
+  numeric-edges-vendor-divergences.issue: these were written under the AGENTS.md
+  case 2 / case 3 rules (B.2). Each needs re-reading once B.1 to B.3 are
+  decided.

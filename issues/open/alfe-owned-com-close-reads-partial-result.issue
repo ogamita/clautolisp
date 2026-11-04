@@ -1,0 +1,42 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-owned-com-close-reads-partial-result -- close-owned-com-bridge reads close-owned.result before it is written
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-alfe-owned-com-close-reads-partial-result
+#+DATE: 2026-11-04
+
+* Symptom
+
+test:alfe:ccl failed on MR !509 (pipeline 3027406641, job 17737727775), with
+2428/2429 checks passing:
+
+: OWNED-COM-CLOSE-REQUIRES-PROCESS-EXIT-RESULT in AUTOLISP-FRONT-END-SUITE []:
+:      Unexpected Error: #<ALFE.ERROR:BACKEND-PROTOCOL-ERROR>
+: alfe CAD backend error (phase SHUTDOWN): The owned CAD did not close normally. [OWNED-CAD-CLOSE-FAILED].
+
+The same test passed on master's pipeline for c3944cbe. The MR does not touch
+backend-cad-common.lisp: the failure is a race.
+
+* Cause
+
+=close-owned-com-bridge= (autolisp-front-end/source/backend-cad-common.lisp)
+loops on =(probe-file result)= and reads the file as soon as it EXISTS. The
+writer (the test's worker thread; on Windows, the VBS bridge) creates the file
+and then writes "0". A read between the two finds "" and treats it as a
+failed close (=:owned-cad-close-failed=) instead of "not yet". On a loaded CI
+runner the window is wide enough to hit.
+
+The bridge has the same hazard in production: a slow write of the result
+looks like a CAD that did not close.
+
+* Fix
+
+- Treat an empty (whitespace-only) result as "not written yet": keep polling
+  until the timeout.
+- And/or have the writers write a temporary file and rename it (atomic on
+  POSIX; on Windows the reader keeps the empty-means-wait rule, since rename
+  is not atomic there -- AGENTS.md, native lanes).
+- Regression test: a worker that creates the file, sleeps, then writes "0";
+  the close must succeed.
