@@ -423,6 +423,9 @@
    ;; a clautolisp-only system variable used under a vendor dialect.
    #:emit-clautolisp-sysvar-warning
    #:emit-errno-setvar-warning
+   #:emit-printer-nil-file-warning
+   #:printer-explicit-nil-file-action
+   #:*printer-nil-file-warned*
    #:*errno-setvar-warned*
    #:*clautolisp-sysvar-warnings-seen*
    ;; `/...' subfolder-recursion warning, platform-gated to Windows
