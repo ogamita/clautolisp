@@ -1,0 +1,53 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: autocad-output-explicit-nil-file-rejected -- AutoCAD 2022 rejects (princ X nil), the spec says nil means the command line
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: dialect-divergence
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-11-04
+
+* Observed
+
+Found while fixing alfe-autocad-fixed-arity-output-shadows (alfe 2.3.87), on
+pfenny (Windows), AutoCAD 2022 accoreconsole (ACADVER 24.1, LISPSYS 0), with
+the NATIVE primitives (alfe no longer redefines them there):
+
+#+begin_example
+alfe -norc --autocad --mode batch \
+  -x "(foreach f (quote (princ print prin1))
+        (setq r (vl-catch-all-apply f (list \"x\" nil)))
+        (princ (strcat \"\nNILFILE \" (vl-symbol-name f) \" \"
+                       (if (vl-catch-all-error-p r) (vl-catch-all-error-message r)
+                           (vl-prin1-to-string r)))))" --quit
+NILFILE PRINC type d'argument incorrect: FILE nil
+NILFILE PRINT type d'argument incorrect: FILE nil
+NILFILE PRIN1 type d'argument incorrect: FILE nil
+#+end_example
+
+So on AutoCAD 2022 an explicit NIL file argument is an error ("bad argument
+type: FILE nil"), for all three. The 1-argument and file-descriptor forms work.
+
+* The divergence
+
+The AutoLISP Spec's princ / print / prin1 entries say of =fileHandle=: "If
+omitted or =nil=, output goes to the command line." clautolisp follows that
+(an explicit nil is accepted in every dialect). AutoCAD 2022 does not.
+
+Open questions (record per AGENTS.md "Unverified Spec Behaviour" until
+probed):
+
+1. What do Autodesk's and Bricsys's reference pages say about an explicit
+   nil (is "or nil" in the spec ours, or theirs)?
+2. BricsCAD V25 / V26 behaviour (expected to accept it, untested).
+3. AutoCAD at LISPSYS 1 / 2, and AutoCAD 2026.
+4. Classification (AGENTS.md, Dialect Divergence): case 2 or 3, and what
+   =--autocad= must do (reproduce the error and warn?).
+
+* Also relevant to alfe
+
+Code alfe evaluates itself on AutoCAD has its output calls rewritten onto
+=autolisp-princ-to= & co., which accept a nil FILE. So =(princ "x" nil)= works
+in an =-l= file under alfe and fails in the same code compiled into a VLX.
+Documented in the alfe user manual (Output on AutoCAD); whether alfe should
+reproduce AutoCAD's error there follows from the classification above.

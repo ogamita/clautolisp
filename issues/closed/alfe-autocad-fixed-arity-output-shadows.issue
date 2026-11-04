@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-autocad-fixed-arity-output-shadows -- compiled/native code breaks on alfe's 2-arg princ under AutoCAD
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: alfe-backend
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: fix-alfe-autocad-fixed-arity-output-shadows
 #+DATE: 2026-11-04
 
 * Observed
@@ -135,3 +135,74 @@ primitives. Proposed:
 - issues/closed/autocad-no-rest-output-capture.issue (the gap was noted there)
 - issues/closed/alfe-autocad-shadow-path-spurious-newlines.issue
 - issues/closed/alfe-princ-prin1-spurious-newlines.issue
+
+* Resolved (alfe / clautolisp 2.3.87, 2026-11-04)
+
+Reproduced first, on pfenny (AutoCAD 2022 accoreconsole, =--mode batch=,
+installed alfe 2.3.78): both a natively loaded =(princ "hello")= and every
+0/1-argument call failed with "nombre d'arguments insuffisants", exactly as
+reported. =--mode automation= could not be run: acad.exe cannot start from
+an ssh session (no desktop; READY-TIMEOUT); the bootstrap and bridge are the
+same code in both modes.
+
+What shipped (fix directions 1, 3 and 4; 2 documented):
+
+1. On a host without =&rest= alfe no longer redefines =princ= / =print= /
+   =prin1= / =prompt= / =terpri=. The bootstrap defines alfe-owned
+   fixed-arity functions instead -- =autolisp-princ-to=, =autolisp-print-to=,
+   =autolisp-prin1-to= (OBJ FILE), =autolisp-emit-prompt= -- (the names
+   =alfe-princ= & co. were taken: they are alfe's documented one-argument
+   conveniences), and the normaliser (form walk
+   =autolisp-normalize-princ-call=, and its textual twin
+   =alfe-normalize-princ-text=, which now keeps its edits ordered by
+   position since a head is replaced after its nested calls) rewrites the
+   HEADS: =(princ X)= -> =(autolisp-princ-to X nil)=, =(princ X F)= ->
+   =(autolisp-princ-to X F)=, =(princ)= / =(terpri)= ->
+   =(autolisp-princ-newline)=, =(prompt X)= -> =(autolisp-emit-prompt X)=,
+   =(print)= / =(prin1)= -> =(autolisp-print-to "" nil)= / ... (same bytes as
+   before); a 1-argument =load= is still padded; a call with more arguments
+   than the primitive takes is left for the CAD to reject. The bridge
+   redefines the three =*-to= functions with the raw-emitter framing, so
+   alfe-loaded output keeps its bytes. =alfe-load='s own rewriter also takes
+   =prompt= / =terpri= now (they used to reach the stream through the
+   shadows).
+2. Native output is not lost: it goes to the CAD's command line, which
+   =--cad-log= already recovers (verified: "hello", "a", the print / prin1 /
+   prompt output of the native functions are in the copied log), as does
+   =engine-console-stdout.txt= in batch mode. Documented in the alfe user
+   manual, /Output on AutoCAD/. Merging it into alfe's stdout was not done:
+   the console also carries the CAD's command echo, which cannot be told
+   apart reliably.
+3. =&rest= hosts (BricsCAD, clautolisp) keep their variadic shadows,
+   unchanged; the =terpri= shadow is now installed on that path only.
+4. Audit of the other shadows: =prompt= and =terpri= are left alone like the
+   printers on AutoCAD (their arity was compatible, but alfe should not touch
+   the primitives there); =quit= / =exit= are zero-argument shadows matching
+   the primitives' arity and stay (alfe needs them to end the session);
+   =load= is not shadowed anywhere.
+
+Verified on AutoCAD 2022 with alfe 2.3.87 built on pfenny: the minimal
+reproduction returns DONE; a natively loaded function calling =(princ)=,
+=(princ X)=, =(print)=, =(print X)=, =(prin1)=, =(prin1 X)=, =(prompt X)=,
+=(terpri)=, =(mapcar 'princ ...)=, =(apply 'print ...)= and =(princ X F)= /
+=(print X F)= / =(prin1 X F)= on an open descriptor returns DONE-ALL and the
+file holds what was written; the alfe-loaded =(progn (princ "X") (princ "Y")
+(print 1) (prin1 "Z") (terpri) (princ))= gives the same bytes as 2.3.78
+(=XY\r\n1 "Z"\r\n\r\n=).
+
+Test: =protocol-native-code-keeps-the-output-primitives= drives both shadow
+paths (=:assume-no-rest-p= T and NIL) on a hosted clautolisp, loads a file
+with the native =load= and defines a function from a string at run time,
+and checks that they run, that the no-=&rest= path leaves the five primitives
+as SUBRs, and that alfe's own output is framed alike on both paths. It fails
+on 2.3.86 with "AutoLISP function PRINC expects 2 arguments, got 1" -- the
+AutoCAD symptom. =protocol-normalize-princ-text-pads-in-the-source= covers
+the new textual rewrites. alfe suite: 2445/2445 (SBCL).
+
+Found on the way, filed separately: AutoCAD 2022 rejects an explicit nil
+FILE argument (=(princ "x" nil)=: "type d'argument incorrect: FILE nil"),
+which the spec allows -- issues/open/autocad-output-explicit-nil-file-rejected.issue.
+
+SCHMS+: once 2.3.87 is installed, the =*schms-native-output*= trampoline
+(sncf-reseau/src/schms Makefile RUN_TESTS_WITH_ALFE,
+tests/initialiser-epure-natif.lsp) can be removed.

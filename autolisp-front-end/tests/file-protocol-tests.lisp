@@ -1627,6 +1627,131 @@ both paths. Skipped when clautolisp-sbcl is not on disk."
             (is (search "NO_SUCH_FUNCTION" rest-err))
             (is (search "NO_SUCH_FUNCTION" norest-err)))))))
 
+;;; --- code alfe does not rewrite must keep the native primitives --------
+;;;
+;;; alfe-autocad-fixed-arity-output-shadows. On AutoCAD (no &rest) alfe
+;;; used to REPLACE princ / print / prin1 with fixed 2-argument shadows and
+;;; made them usable by padding the calls in the text IT loads. Code that
+;;; does not go through that normaliser -- a VLX or FAS, a file loaded with
+;;; the native LOAD, a reactor -- then called (princ X) on the 2-argument
+;;; shadow and failed with "too few arguments" (SCHMS+ under EPURE on
+;;; AutoCAD 2022: the error was swallowed by a vl-catch-all-apply around a
+;;; reactor callback, and the work silently lost). The primitives are now
+;;; left alone on that path; the normaliser rewrites alfe's own calls onto
+;;; alfe-owned functions instead.
+
+(defparameter +native-output-source+
+  (format nil "~{~A~%~}"
+          '("(defun native-hello () (princ \"hello\") (princ) 'done)"
+            "(defun native-all ()"
+            "  (princ) (princ \"a\") (print) (print \"c\") (prin1) (prin1 \"d\")"
+            "  (prompt \"e\") (terpri)"
+            "  (mapcar 'princ '(1 2)) (apply 'print '(3))"
+            "  'done-all)"
+            ;; The FILE argument. A real descriptor: AutoCAD 2022 itself
+            ;; rejects an explicit NIL one (\"type d'argument incorrect: FILE
+            ;; nil\", measured), so native code never passes it.
+            "(defun native-file (/ p f l)"
+            "  (setq p (vl-filename-mktemp \"alfe\" nil \".txt\"))"
+            "  (setq f (open p \"w\"))"
+            "  (princ \"b\" f) (prin1 \"d\" f) (print 'c f)"
+            "  (close f)"
+            "  (setq f (open p \"r\")) (setq l (read-line f)) (close f)"
+            "  (vl-file-delete p)"
+            "  (if (= l (strcat \"b\" (chr 34) \"d\" (chr 34))) 'done-file l))"))
+  "A file that calls every documented arity of the output primitives, the
+way compiled or natively loaded code does: alfe loads it with the NATIVE
+load, so none of its calls is rewritten. Every call is one AutoCAD 2022
+accepts natively (run there on 2026-11-04).")
+
+(defun %native-output-run (binary assume-no-rest-p)
+  "Drive a hosted engine on the shadow path ASSUME-NO-REST-P selects: load
++NATIVE-OUTPUT-SOURCE+ with the native LOAD (vl-catch-all-apply 'load keeps
+the call opaque to alfe's normaliser, as a VLX's internal calls are), define
+another function from a string at run time, call both, and report. Returns
+(values statuses stdout stderr)."
+  (drive-hosted-engine
+   binary nil
+   :assume-no-rest-p assume-no-rest-p
+   :forms-fn
+   (lambda (workdir)
+     (let ((file (merge-pathnames "native-output.lsp" workdir)))
+       (with-open-file (out file :direction :output
+                                 :if-exists :supersede
+                                 :if-does-not-exist :create
+                                 :external-format :utf-8)
+         (write-string +native-output-source+ out))
+       (list
+        (format nil "(setq lr (vl-catch-all-apply (quote load) (list ~S)))"
+                (substitute #\/ #\\ (namestring file)))
+        ;; Defined from a string read at run time: the normaliser only ever
+        ;; sees the string.
+        "(eval (read \"(defun native-late () (princ \\\"x\\\") (print 'y) (prin1 \\\"z\\\") 'done-late)\"))"
+        (concatenate
+         'string
+         "(foreach f '(native-hello native-all native-file native-late)"
+         " (setq r (vl-catch-all-apply f nil))"
+         ;; A leading newline: on the &rest path the shadows capture the
+         ;; functions' own output, which does not end its line.
+         " (princ (strcat \"\\nNATIVE \" (vl-symbol-name f) \" \""
+         " (if (vl-catch-all-error-p r) (strcat \"ERROR \" (vl-catch-all-error-message r))"
+         " (vl-prin1-to-string r)) \"\\n\")))")
+        ;; Which functions the path left as the CAD's own.
+        (concatenate
+         'string
+         "(foreach f '(princ print prin1 prompt terpri)"
+         " (princ (strcat \"\\nTYPE \" (vl-symbol-name f) \" \""
+         " (vl-prin1-to-string (type (eval f))))))")
+        ;; alfe's own output still reaches its stream, framed as before.
+        "(progn (princ \"\\n\") (princ \"P\") (princ \"Q\") (print 1) (prin1 \"R\") (terpri) (prompt \"S\") (princ))")))))
+
+(test protocol-native-code-keeps-the-output-primitives
+  "Acceptance for alfe-autocad-fixed-arity-output-shadows: on the no-&rest
+path (*ALFE-ASSUME-NO-REST* T, the one AutoCAD takes), functions alfe did
+not rewrite -- loaded with the native LOAD, or defined from a string at run
+time -- call (princ), (princ X), (princ X F), (print), (print X),
+(print X F), (prin1), (prin1 X), (prin1 X F), (prompt X), (terpri),
+(mapcar 'princ ...) and (apply 'print ...) without error, the FILE ones
+writing to their file, because princ / print / prin1 / prompt / terpri are the
+CAD's own SUBRs there; and alfe's own output still reaches
+protocol/stdout.txt with the same bytes on both paths. The variadic path
+keeps its shadows (USUBRs) and runs the same code too. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; native-code output test skipped.")
+        (multiple-value-bind (norest-status norest-out norest-err)
+            (%native-output-run binary t)
+          (multiple-value-bind (rest-status rest-out rest-err)
+              (%native-output-run binary nil)
+            (dolist (run (list (list "no-&rest" norest-status norest-out norest-err)
+                               (list "&rest" rest-status rest-out rest-err)))
+              (destructuring-bind (name statuses out err) run
+                (is (and (= 5 (length statuses))
+                         (every (lambda (s) (search " OK" s)) statuses))
+                    "~A: every request must succeed: ~S~%~A" name statuses err)
+                (is (equal '("NATIVE-HELLO DONE" "NATIVE-ALL DONE-ALL"
+                             "NATIVE-FILE DONE-FILE" "NATIVE-LATE DONE-LATE")
+                           (%prefixed-lines "NATIVE " out))
+                    "~A: code alfe did not rewrite must run: ~S" name out)))
+            (is (equal '("PRINC SUBR" "PRINT SUBR" "PRIN1 SUBR"
+                         "PROMPT SUBR" "TERPRI SUBR")
+                       (%prefixed-lines "TYPE " norest-out))
+                "no-&rest: alfe must leave the primitives alone: ~S" norest-out)
+            (is (equal '("PRINC USUBR" "PRINT USUBR" "PRIN1 USUBR"
+                         "PROMPT USUBR" "TERPRI USUBR")
+                       (%prefixed-lines "TYPE " rest-out))
+                "&rest: the variadic shadows stay: ~S" rest-out)
+            ;; The last request: alfe's own output, framed alike on both
+            ;; paths -- "PQ", (print 1) = newline "1 ", "\"R\"", terpri,
+            ;; prompt's own line, (princ) = newline.
+            (let ((expected (format nil "PQ~%1 \"R\"~%S~%~%")))
+              (is (search expected (without-returns norest-out))
+                  "no-&rest framing: ~S" norest-out)
+              (is (search expected (without-returns rest-out))
+                  "&rest framing: ~S" rest-out)))))))
+
 ;;; --- the CAD-side runtime must be dialect-clean for its target -------
 ;;;
 ;;; pjb, 2026-09-25: the point of the dialect warnings is to CORRECT the
@@ -2707,33 +2832,43 @@ OPEN calls are all rewritten. Skipped when clautolisp-sbcl is not on disk."
 
 (test protocol-normalize-princ-text-pads-in-the-source
   "alfe-normalize-princ-text, the CAD-side textual twin of the AutoCAD
-princ/load normaliser: a 1-argument princ/print/prin1/load gets \" nil\"
-before its closing parenthesis, an empty (princ) becomes
-(autolisp-princ-newline), an empty print/prin1 gets \\\"\\\" nil, and
-everything else of the text is kept -- real literals, case, spacing,
-comments. Quoted lists (' and QUOTE / FUNCTION), lists in head position,
-strings and comments are never rewritten; 2-argument calls are left alone;
-nested calls are all padded. alfe-normalized-source-text returns the
+output normaliser: a princ/print/prin1 call with 0 to 2 arguments gets its
+head replaced by the alfe-owned autolisp-princ-to / -print-to / -prin1-to
+and, with 1 argument, \" nil\" before its closing parenthesis; an empty
+(princ) or (terpri) becomes (autolisp-princ-newline), an empty print/prin1
+gets \\\"\\\" nil, (prompt X) becomes (autolisp-emit-prompt X), a 1-argument
+load gets \" nil\", and everything else of the text is kept -- real
+literals, case, spacing, comments. Quoted lists (' and QUOTE / FUNCTION),
+lists in head position, strings and comments are never rewritten; a call
+with more arguments than the primitive takes is left alone; nested calls
+are all rewritten (alfe-autocad-fixed-arity-output-shadows). alfe-normalized-source-text returns the
 padded text only when it reads back EQUAL to the normalised form, and NIL
 (-> the printer) otherwise. Skipped when clautolisp-sbcl is not on disk."
   (let ((binary (clautolisp-engine-binary))
         (cases
           '(("(princ 1.5707963267948966)"
-             "(princ 1.5707963267948966 nil)")
+             "(autolisp-princ-to 1.5707963267948966 nil)")
             ("(progn (setq a 123456789012345678.0)  (PRINC) )"
              "(progn (setq a 123456789012345678.0)  (autolisp-princ-newline) )")
-            ("(print)" "(print \"\" nil)")
-            ("(prin1 'x)" "(prin1 'x nil)")
-            ("(princ x f)" "(princ x f)")
+            ("(print)" "(autolisp-print-to \"\" nil)")
+            ("(prin1 'x)" "(autolisp-prin1-to 'x nil)")
+            ("(princ x f)" "(autolisp-princ-to x f)")
+            ("(PRINT x f)" "(autolisp-print-to x f)")
+            ("(princ x f g)" "(princ x f g)")
             ("(load \"a.lsp\")" "(load \"a.lsp\" nil)")
             ("(load \"a.lsp\" 1)" "(load \"a.lsp\" 1)")
-            ("(princ (princ 1.0e300))" "(princ (princ 1.0e300 nil) nil)")
-            ("(princ \"a;b(princ c)\")" "(princ \"a;b(princ c)\" nil)")
+            ("(princ (princ 1.0e300))"
+             "(autolisp-princ-to (autolisp-princ-to 1.0e300 nil) nil)")
+            ("(prin1 (print 2) f)" "(autolisp-prin1-to (autolisp-print-to 2 nil) f)")
+            ("(prompt \"p\")" "(autolisp-emit-prompt \"p\")")
+            ("(prompt (princ 1))" "(autolisp-emit-prompt (autolisp-princ-to 1 nil))")
+            ("(progn (TERPRI) (terpri f))" "(progn (autolisp-princ-newline) (terpri f))")
+            ("(princ \"a;b(princ c)\")" "(autolisp-princ-to \"a;b(princ c)\" nil)")
             ("((princ a) b)" "((princ a) b)")
             ("(list '(princ a) (quote (princ b)) (function (lambda () (princ c))) (princ e))"
-             "(list '(princ a) (quote (princ b)) (function (lambda () (princ c))) (princ e nil))")
+             "(list '(princ a) (quote (princ b)) (function (lambda () (princ c))) (autolisp-princ-to e nil))")
             (#.(format nil "(progn ;| (princ x) |; (princ y) ; (princ z~% (princed 1))")
-             #.(format nil "(progn ;| (princ x) |; (princ y nil) ; (princ z~% (princed 1))")))))
+             #.(format nil "(progn ;| (princ x) |; (autolisp-princ-to y nil) ; (princ z~% (princed 1))")))))
     (if (not binary)
         (is (null (clautolisp-engine-binary))
             "clautolisp-sbcl not present; princ text normaliser test skipped.")
@@ -2767,7 +2902,7 @@ padded text only when it reads back EQUAL to the normalised form, and NIL
                                                       stdout))))
                      (is (equal "SAME" got)
                          "case ~D: ~S expected ~S, got ~A" i in expected got)))
-          (is (equal '("\"(princ 1.5707963267948966 nil)\" nil nil")
+          (is (equal '("\"(autolisp-princ-to 1.5707963267948966 nil)\" nil nil")
                      (%prefixed-lines "CHECK " stdout))
               "alfe-normalized-source-text: ~S" stdout)))))
 

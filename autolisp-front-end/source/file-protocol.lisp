@@ -1442,11 +1442,6 @@ Returns the path of the emitted file."
   (setq alfe--f (open *AUTOLISP_PROTOCOL_STDOUTFILE* \"a\"))~%~
   (if alfe--f (progn (autolisp-write-string-to-file alfe--text alfe--f) (close alfe--f)))~%~
   alfe--text)~%~
-;; With princ/prin1 no longer forcing a newline, a direct (terpri) must route~%~
-;; the line break to the protocol stdout (native terpri writes to the CAD~%~
-;; console, which alfe never drains) -- otherwise consecutive output runs~%~
-;; together. autolisp-princ-newline emits an empty line via emit-user-line.~%~
-(defun terpri () (autolisp-princ-newline))~%~
 (defun autolisp-log-err (alfe--text)~%~
   (autolisp-write-line *AUTOLISP_PROTOCOL_STDERRFILE* alfe--text))~%~
 (setq *AUTOLISP_CAPTURE_STDOUT* T)~%~
@@ -1593,10 +1588,10 @@ Returns the path of the emitted file."
                        (strcat \"[ALFE-CONTROL] VERBOSE=\" (if alfe--on \"1\" \"0\")))~%~
   alfe--on)~%~
 ;;; --- alfe: variadic shadows when the host supports `&rest' ---~%~
-;; The bootstrap installs 1-arg-only shadows for princ/print/prin1/~%~
-;; prompt and a walk-rewriting `autolisp-normalize-princ-call' that~%~
-;; rewrites empty `(princ)' to `(autolisp-princ-newline)' before~%~
-;; eval. The walk was made cons-identity-preserving in alfe 1.1.10~%~
+;; The bootstrap leaves princ/print/prin1/prompt alone and has a~%~
+;; walk-rewriting `autolisp-normalize-princ-call' that rewrites their~%~
+;; calls onto alfe-owned fixed-arity output functions before eval.~%~
+;; The walk was made cons-identity-preserving in alfe 1.1.10~%~
 ;; (see issues/closed/bricscad-rest-mapcar-lambda-bug.issue), but~%~
 ;; even the cheap pre-walk costs cycles per request.~%~
 ;;~%~
@@ -1689,6 +1684,13 @@ Returns the path of the emitted file."
               (autolisp-emit-user-line (autolisp-str (car alfe--args)))~%~
               (car alfe--args))~%~
             (car alfe--args)))))~%~
+    ;; With princ/prin1 no longer forcing a newline, a direct (terpri) must~%~
+    ;; route the line break to the protocol stdout (native terpri writes to~%~
+    ;; the CAD console, which alfe never drains) -- otherwise consecutive~%~
+    ;; output runs together. autolisp-princ-newline emits an empty line via~%~
+    ;; emit-user-line. (Without &rest, the normaliser rewrites (terpri)~%~
+    ;; onto autolisp-princ-newline instead, and terpri is left alone.)~%~
+    (defun terpri () (autolisp-princ-newline))~%~
     ;; With variadic shadows in place, every documented (princ)~%~
     ;; arity is honoured natively — no source-form rewrite is~%~
     ;; needed. Replace normalize with the identity function so~%~
@@ -1698,24 +1700,30 @@ Returns the path of the emitted file."
     (defun autolisp-normalize-princ-call (alfe--form) alfe--form))~%~
   (progn~%~
     (alfe-debug-log~%~
-      \"host lacks &rest; keeping bootstrap 1-arg shadows + walk-rewriting normalize\")~%~
-    ;; The shadows stay 2-arg (obj file) and normalize keeps~%~
-    ;; padding the user's 1-arg calls -- but their OUTPUT framing~%~
-    ;; must match the variadic branch above, and the bootstrap's~%~
-    ;; own bodies route through autolisp-emit-user-line /~%~
-    ;; -user-out, which TERMINATE the line. On this path (the one~%~
-    ;; AutoCAD takes, since its defun has no &rest) that made~%~
-    ;; (princ \"a\") (princ \"b\") come out as \"a<nl>b<nl>\" instead of~%~
-    ;; \"ab\", and (print x) end with a newline instead of the~%~
-    ;; documented trailing space. Same defect as~%~
-    ;; alfe-princ-prin1-spurious-newlines, which was fixed for the~%~
-    ;; &rest branch only. Re-point the three at the RAW emitter so~%~
-    ;; both hosts produce identical bytes.~%~
-    (defun princ (alfe--obj alfe--file)~%~
+      \"host lacks &rest; primitives left alone, normalize rewrites onto alfe-owned output functions\")~%~
+    ;; alfe-autocad-fixed-arity-output-shadows. AutoCAD's defun has no~%~
+    ;; &rest nor &optional, so a shadow of princ / print / prin1 could only~%~
+    ;; be FIXED-arity -- and every caller alfe does not rewrite (a VLX or~%~
+    ;; FAS, a file loaded with the native LOAD, a reactor) then failed with~%~
+    ;; \"too few arguments\". So the primitives are NOT redefined here: the~%~
+    ;; normaliser rewrites the calls of the code alfe evaluates onto the~%~
+    ;; alfe-owned autolisp-princ-to / -print-to / -prin1-to (OBJ FILE),~%~
+    ;; autolisp-emit-prompt and autolisp-princ-newline, and other code~%~
+    ;; keeps the CAD's own primitives (its output reaches the CAD's command~%~
+    ;; line and log -- --cad-log -- instead of alfe's stream).~%~
+    ;;~%~
+    ;; Their OUTPUT framing must match the variadic branch above, and the~%~
+    ;; bootstrap's own bodies route through autolisp-emit-user-line /~%~
+    ;; -user-out, which TERMINATE the line: that made (princ \"a\")~%~
+    ;; (princ \"b\") come out as \"a<nl>b<nl>\" instead of \"ab\", and~%~
+    ;; (print x) end with a newline instead of the documented trailing~%~
+    ;; space (alfe-autocad-shadow-path-spurious-newlines). Re-point the~%~
+    ;; three at the RAW emitter so both hosts produce identical bytes.~%~
+    (defun autolisp-princ-to (alfe--obj alfe--file)~%~
       (if alfe--file~%~
         (progn (autolisp-write-string-to-file (autolisp-str alfe--obj) alfe--file) alfe--obj)~%~
         (progn (autolisp-emit-user-str (autolisp-str alfe--obj)) alfe--obj)))~%~
-    (defun print (alfe--obj alfe--file)~%~
+    (defun autolisp-print-to (alfe--obj alfe--file)~%~
       (if alfe--file~%~
         (progn~%~
           (autolisp-write-string-to-file~%~
@@ -1725,7 +1733,7 @@ Returns the path of the emitted file."
           (autolisp-emit-user-str~%~
             (strcat \"\\n\" (autolisp-stdout-text alfe--obj) \" \"))~%~
           alfe--obj)))~%~
-    (defun prin1 (alfe--obj alfe--file)~%~
+    (defun autolisp-prin1-to (alfe--obj alfe--file)~%~
       (if alfe--file~%~
         (progn (autolisp-write-string-to-file (autolisp-stdout-text alfe--obj) alfe--file) alfe--obj)~%~
         (progn (autolisp-emit-user-str (autolisp-stdout-text alfe--obj)) alfe--obj)))))~%~

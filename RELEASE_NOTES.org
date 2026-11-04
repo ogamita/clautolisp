@@ -2427,6 +2427,14 @@ file or COM), and forwards the workload.
 
 ** Output line discipline (CAD backends)
 
+- *Compiled and natively loaded code no longer breaks on AutoCAD's
+  ~princ~* (2.3.87): alfe no longer redefines ~princ~ / ~print~ / ~prin1~ /
+  ~prompt~ / ~terpri~ there. It rewrites the calls of the code IT runs onto
+  its own functions instead, so a VLX / FAS, a file loaded with the native
+  ~load~ or a reactor callback keeps AutoCAD's primitives (it used to fail
+  with "too few arguments"); their output reaches AutoCAD's command line,
+  which ~--cad-log~ recovers. See the user manual, /How a form reaches a CAD/.
+
 - On the CAD backends, ~princ~ and ~prin1~ no longer terminate a line:
   consecutive output primitives in one form concatenate, and only
   ~terpri~, ~print~'s framing, or an explicit ~\n~ break the line — matching
