@@ -782,6 +782,53 @@ calls 'the hard-won piece'."
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
+(test autocad-bridge-launches-the-server-itself-beyond-dcom-timeout
+  "autocad-com-launch-bounded-by-dcom-timeout: CreateObject waits for AutoCAD to
+register its class object for DCOM's fixed 120 s, so on PF5S26BT (2026-11-05),
+where AutoCAD's start took 53 to more than 120 s, every --autocad --mode
+automation run failed with COM error 429 whatever --timeout said.
+
+With no acad.exe running, the bridge now starts the LocalServer32 command
+itself and polls GetObject for LAUNCH_SECS -- alfe's ready timeout -- giving up
+early if the launched process exits. CreateObject stays for the case where
+another AutoCAD runs, since GetObject could then return that one."
+  (let* ((text alfe.backend.autocad::*bridge-autocad-vbs-template*)
+         (launch (search "LaunchAndWait(serverCmd, launchSecs)" text))
+         (create (search "Set app = CreateObject(progId)" text)))
+    (is (search "launchSecs  = ${LAUNCH_SECS}" text)
+        "the launch deadline must be a placeholder alfe fills in")
+    (is (search "\\LocalServer32\\" text)
+        "the command must be the one COM itself would run: LocalServer32")
+    (is (search "GetObject(, progId)" text :start2 (or (search "Function LaunchAndWait" text) 0))
+        "the launched server must be reached by polling GetObject")
+    (is (search "proc.Status <> 0" text)
+        "a launched process that exits must end the wait, not run out the clock")
+    (is (and launch create)
+        "both paths must exist: our own launch, and CreateObject beside another AutoCAD")
+    (is (search "If pidsBefore = \",\" And serverCmd <> \"\" Then" text)
+        "our own launch only when no acad.exe runs and the command is known")
+    (is (search "Dim launchSecs, serverCmd, launchStage" text)
+        "the new globals must be Dim'd under Option Explicit"))
+  ;; And the emitter fills the deadline in.
+  (let ((workdir (uiop:ensure-directory-pathname
+                  (merge-pathnames
+                   (format nil "alfe-test-acad-launch-~D/" (random 999999))
+                   (uiop:temporary-directory)))))
+    (unwind-protect
+        (let ((vbs (merge-pathnames "bridge-autocad.vbs" workdir)))
+          (ensure-directories-exist workdir)
+          (alfe.backend.autocad:emit-bridge-vbs
+           vbs
+           :runtime-load-path (merge-pathnames "run-common.lsp" workdir)
+           :status-path (merge-pathnames "protocol/status.txt" workdir)
+           :error-path (merge-pathnames "protocol/stderr.txt" workdir)
+           :launch-secs 345)
+          (let ((content (read-back vbs)))
+            (is (search "launchSecs  = 345" content))
+            (is (not (search "${LAUNCH_SECS}" content)))))
+      (uiop:delete-directory-tree workdir :validate t
+                                          :if-does-not-exist :ignore))))
+
 (test autocad-emit-batch-scr-loads-runtime-and-quits
   "The accoreconsole SCR loads run-common.lsp, saves, and quits."
   (let ((workdir (uiop:ensure-directory-pathname
