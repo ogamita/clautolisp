@@ -1945,6 +1945,11 @@ separate binary for tool integrators.
   clautolisp engine, in-process and as a subprocess; under ~--autocad~ /
   ~--bricscad~ they are ignored with a warning. See the user manual,
   /Characters the encoding cannot hold: -Ereplacement/.
+- An AutoCAD that takes more than two minutes to start no longer fails
+  ~--mode automation~ / ~--epure~ with COM error 429 (alfe 2.3.101): with no
+  AutoCAD running, alfe starts it itself and waits for the ready timeout
+  (~--timeout~) instead of the fixed 120 s of ~CreateObject~. See the user
+  manual, /AutoCAD takes longer than two minutes to start/.
 
 ** alfe 2.3.78: ordered Windows CAD cleanup
 Restore native log/search settings before ending the protocol; quit the exact

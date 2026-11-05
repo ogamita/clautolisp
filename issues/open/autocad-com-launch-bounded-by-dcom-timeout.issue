@@ -1,0 +1,66 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: autocad-com-launch-bounded-by-dcom-timeout -- a slow AutoCAD start fails at DCOM's 120 s, whatever --timeout says
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-autocad-com-launch-beyond-dcom-timeout
+#+DATE: 2026-11-05
+
+* Symptom
+
+On PF5S26BT (AutoCAD 2022, 2026-11-05), every --autocad --mode automation
+and --autocad --epure run failed before READY:
+
+: ERROR COM bridge: could not launch AutoCAD.Application.24.1: Un composant ActiveX ne peut pas creer un objet
+: COM.STAGE=createobject
+: COM.ERROR.DECIMAL=429
+
+alfe exits 69 about 123 s after the launch, with --timeout 180 or 360. The
+System log has one DCOM event 10010 per run: "Le serveur
+{AA46BA8A-9825-40FD-8493-0BA3C4D5CEB5} ne s'est pas enregistre sur DCOM avant
+la fin du temps imparti". The same machine reached READY in 17-42 s on
+2026-11-03 (verify:epure-lifecycle:windows, jobs 17693490391, 17694882952);
+on 2026-11-05 a run that succeeded needed 53 s and 108 s.
+
+Seen in: verify:epure-lifecycle:windows (MR !512 / !513 and the pre-rebase
+!476 commit e85db5ab, so not a code change), probe:cad-session-state:windows
+(automation and epure rows FAIL, batch OK in 8 s).
+
+* Cause
+
+The bridge creates AutoCAD with CreateObject(progId). DCOM then starts the
+LocalServer32 (acad.exe /Automation) and waits for it to register its class
+object -- for 120 s, fixed by Windows, not configurable from the client.
+AutoCAD registers only at the END of its startup. When that takes longer than
+120 s, CreateObject returns 429 and the AutoCAD it started is abandoned.
+
+Measured on the stalled process (in-session watcher, 2026-11-05): acad.exe
+was up, responding, with its window "Autodesk AutoCAD 2022 - [Dessin1.dwg]"
+at 45 s, and CPU-bound (66-79 s of CPU by 90 s) -- a slow start, not a hang,
+no dialog. Not the cause: the licence server (reachable; the stall precedes
+the licensing SDK registration), a disconnected session (console, active),
+TRUSTEDPATHS growth (3 entries), IFEO / page heap, NGEN (every AutoCAD .NET
+assembly loads as .ni.dll). Why AutoCAD's own start became 3-5x slower on
+that machine is NOT established; it needs an in-session profile.
+
+So alfe's --timeout, which is the user's statement of how long a start may
+take, was silently capped at 120 s by a component alfe does not control.
+
+* Fix
+
+When no acad.exe is running, the bridge starts the server itself -- the
+LocalServer32 command of the ProgID's CLSID, the same command DCOM would run
+-- and polls GetObject(, progId) once a second until AutoCAD registers, for
+the ready timeout alfe was given. It stops early, with its own diagnosis, if
+the launched process exits. With another AutoCAD already running, GetObject
+could return THAT instance, so the bridge keeps CreateObject there (alfe
+launches a new instance by default: alfe-cad-launch-new-by-default).
+
+* Acceptance
+
+- The template launches the LocalServer32 command and polls GetObject for
+  ${LAUNCH_SECS} (the ready timeout); a regression test fails on the old
+  bridge.
+- probe:cad-session-state:windows on PF5S26BT: the autocad automation and
+  epure rows reach READY again.
