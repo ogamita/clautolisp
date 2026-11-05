@@ -595,7 +595,7 @@ The next job reads this file and can end what the last one left."
   ;; of ever moving one of these characters into code.
   "' AutoCAD COM bridge - emitted by alfe.backend.autocad
 ' Placeholders: ${RUNLSPFILE}, ${STATUSFILE}, ${ERRFILE},
-' ${COMMODE}, ${DEBUGFILE}, ${WAIT_SECS}, ${PROGID}.
+' ${COMMODE}, ${DEBUGFILE}, ${WAIT_SECS}, ${LAUNCH_SECS}, ${PROGID}.
 ' Mirrors the legacy bash wrapper's bridge-autocad.vbs; preserve
 ' the WaitQuiescent + GetAcadState handshake - it's the hard-won
 ' piece that keeps the bridge from racing AutoCAD's UI init.
@@ -604,6 +604,7 @@ Option Explicit
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile, waitSecs
 Dim attached, created, rc, statusReadyFlag, flagsFile, progId, createdFile
 Dim errNumber, errDescription, lastTouchError, pidsBefore
+Dim launchSecs, serverCmd, launchStage
 
 Set fso = CreateObject(\"Scripting.FileSystemObject\")
 runFile     = \"${RUNLSPFILE}\"
@@ -620,6 +621,10 @@ createdFile = \"${CREATEDFILE}\"
 ' it last (alfe-autocad-cad-selection-ignores-com-progid).
 progId      = \"${PROGID}\"
 waitSecs    = ${WAIT_SECS}
+' How long our OWN launch of AutoCAD may take to register: alfe's ready
+' timeout. CreateObject cannot be given one -- DCOM waits 120 s, fixed.
+launchSecs  = ${LAUNCH_SECS}
+launchStage = \"\"
 attached    = False
 created     = False
 statusReadyFlag = False
@@ -760,6 +765,81 @@ errNumber = 0
 errDescription = \"\"
 lastTouchError = \"\"
 
+' THE COMMAND COM ITSELF WOULD RUN for progId: the LocalServer32 of its
+' CLSID, normally \"...\\acad.exe\" /Automation. Empty when it cannot be
+' read, and the caller then falls back to CreateObject.
+Function ServerCommand(id)
+  Dim sh, clsid, cmd
+  ServerCommand = \"\"
+  On Error Resume Next
+  Set sh = CreateObject(\"WScript.Shell\")
+  clsid = sh.RegRead(\"HKCR\\\" & id & \"\\CLSID\\\")
+  If Err.Number = 0 Then cmd = sh.RegRead(\"HKCR\\CLSID\\\" & clsid & \"\\LocalServer32\\\")
+  If Err.Number <> 0 Then
+    VBSDebug \"LocalServer32 of \" & id & \" unreadable: \" & Err.Description
+    Err.Clear
+    On Error GoTo 0
+    Exit Function
+  End If
+  On Error GoTo 0
+  cmd = sh.ExpandEnvironmentStrings(cmd)
+  If InStr(1, cmd, \"/Automation\", 1) = 0 Then cmd = cmd & \" /Automation\"
+  ServerCommand = cmd
+End Function
+
+' START THE SERVER OURSELVES AND WAIT FOR IT, instead of CreateObject.
+' CreateObject has DCOM start the server and wait for it to register its
+' class object -- for 120 s, fixed by Windows. AutoCAD registers at the END
+' of its start, and on PF5S26BT (2026-11-05) that took 53 s to more than
+' 120 s: past 120 s CreateObject returned 429 and abandoned the AutoCAD it
+' had started, whatever --timeout said
+' (autocad-com-launch-bounded-by-dcom-timeout). Here the wait is
+' launchSecs, and a launched process that exits ends it at once. Returns
+' the application, or Nothing with launchStage, errNumber and
+' errDescription saying why.
+Function LaunchAndWait(cmd, secs)
+  Dim sh, proc, deadline, obj
+  Set LaunchAndWait = Nothing
+  Set obj = Nothing
+  Set sh = CreateObject(\"WScript.Shell\")
+  On Error Resume Next
+  Set proc = sh.Exec(cmd)
+  errNumber = Err.Number
+  errDescription = Err.Description
+  Err.Clear
+  On Error GoTo 0
+  If errNumber <> 0 Then
+    launchStage = \"launch\"
+    Exit Function
+  End If
+  VBSDebug \"launched \" & cmd & \" as pid \" & proc.ProcessID & \"; waiting up to \" & secs & \" s\"
+  deadline = DateAdd(\"s\", secs, Now)
+  Do While Now < deadline
+    On Error Resume Next
+    Set obj = GetObject(, progId)
+    errNumber = Err.Number
+    errDescription = Err.Description
+    Err.Clear
+    On Error GoTo 0
+    If errNumber = 0 And Not (obj Is Nothing) Then
+      VBSDebug \"pid \" & proc.ProcessID & \" registered \" & progId
+      Set LaunchAndWait = obj
+      Exit Function
+    End If
+    If proc.Status <> 0 Then
+      launchStage = \"launch-exited\"
+      errNumber = proc.ExitCode
+      errDescription = \"acad.exe (pid \" & proc.ProcessID & \") exited with code \" & _
+        proc.ExitCode & \" before registering \" & progId
+      Exit Function
+    End If
+    WScript.Sleep 1000
+  Loop
+  launchStage = \"launch-timeout\"
+  errDescription = \"acad.exe (pid \" & proc.ProcessID & \") did not register \" & _
+    progId & \" within \" & secs & \" s\"
+End Function
+
 ' RPC_E_CALL_REJECTED (&H80010001, \"L'appel a ete rejete par l'appele\")
 ' and RPC_E_SERVERCALL_RETRYLATER (&H8001010A) do not mean the server is
 ' broken: they mean it is BUSY -- a modal dialog, a load in progress, a
@@ -811,18 +891,32 @@ If app Is Nothing Then
   End If
   pidsBefore = AcadPidList()
   VBSDebug \"acad.exe before CreateObject: \" & pidsBefore
-  On Error Resume Next
-  Set app = CreateObject(progId)
-  errNumber = Err.Number
-  errDescription = Err.Description
-  If errNumber <> 0 Then
-    AppendLine errFile, \"ERROR COM bridge: could not launch \" & progId & \": \" & errDescription
-    RecordComError \"createobject\", errNumber, errDescription
-    EmitFlags False, False
-    WScript.Quit 4
+  serverCmd = ServerCommand(progId)
+  ' Our own launch needs GetObject to find OUR instance, so only when no
+  ' acad.exe runs: beside another one, GetObject could return that one, and
+  ' CreateObject (a new instance, alfe-cad-launch-new-by-default) is kept.
+  If pidsBefore = \",\" And serverCmd <> \"\" Then
+    Set app = LaunchAndWait(serverCmd, launchSecs)
+    If app Is Nothing Then
+      AppendLine errFile, \"ERROR COM bridge: could not launch \" & progId & \": \" & errDescription
+      RecordComError launchStage, errNumber, errDescription
+      EmitFlags False, False
+      WScript.Quit 4
+    End If
+  Else
+    On Error Resume Next
+    Set app = CreateObject(progId)
+    errNumber = Err.Number
+    errDescription = Err.Description
+    If errNumber <> 0 Then
+      AppendLine errFile, \"ERROR COM bridge: could not launch \" & progId & \": \" & errDescription
+      RecordComError \"createobject\", errNumber, errDescription
+      EmitFlags False, False
+      WScript.Quit 4
+    End If
+    Err.Clear
+    On Error GoTo 0
   End If
-  Err.Clear
-  On Error GoTo 0
   created = True
   RecordCreatedProcesses createdFile, pidsBefore
 End If
@@ -1025,7 +1119,8 @@ TASKLIST's CSV output; NIL when TASKLIST cannot be run."
                              progid
                              (created-registry (created-cad-registry-path))
                              (com-mode "launch")
-                             (wait-secs 60))
+                             (wait-secs 60)
+                             (launch-secs 300))
   (let ((text (alfe.plugin:run-hook
                :launcher-script
                ;; The plug-in slots are filled AFTER the placeholders: their
@@ -1044,7 +1139,8 @@ TASKLIST's CSV output; NIL when TASKLIST cannot be run."
                    ("CREATEDFILE" . ,(if created-registry
                                          (uiop:native-namestring created-registry)
                                          ""))
-                   ("WAIT_SECS"   . ,(format nil "~D" wait-secs))))
+                   ("WAIT_SECS"   . ,(format nil "~D" wait-secs))
+                   ("LAUNCH_SECS" . ,(format nil "~D" (max 1 (ceiling launch-secs))))))
                 :automation)
                :kind :vbs :variant :automation :path path)))
     (with-open-file (out path :direction :output
@@ -1467,7 +1563,8 @@ started is what ATTACHED/CREATED say.")
               :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
               :flags-path  (merge-pathnames "com-flags.txt" workdir)
               :progid      progid
-              :com-mode    (cad-com-mode cli-options "AUTOCAD_COM_MODE"))
+              :com-mode    (cad-com-mode cli-options "AUTOCAD_COM_MODE")
+              :launch-secs ready-timeout)
              (log-debug "backend AUTOCAD: wrote bridge-autocad.vbs -> ~A" vbs)))
           (:batch
            (let ((scr (merge-pathnames "run.scr" workdir)))

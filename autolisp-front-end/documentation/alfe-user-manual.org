@@ -2246,12 +2246,36 @@ uses =accoreconsole= and needs no COM registration at all.
 ** "AutoCAD COM bridge (cscript) exited before READY"
 
 The COM bridge failed to attach to or create an AutoCAD. The message
-carries the stage (=getobject= / =createobject=), the ProgID asked for,
+carries the stage (=getobject= / =createobject= / =launch-timeout= /
+=launch-exited=), the ProgID asked for,
 and the COM error in decimal and hexadecimal with its description —
 =429 (0x1AD) ActiveX component can't create object= is a registration
 that resolves to no runnable server; try the versioned ProgID as above.
 What exited is =cscript=, the bridge: whether =acad.exe= itself started
 is what the =ATTACHED= / =CREATED= flags report.
+
+The stages =launch-timeout= and =launch-exited= come from alfe's own start
+of AutoCAD (next entry): =acad.exe= did not make itself known in time, or
+exited before it did.
+
+** AutoCAD takes longer than two minutes to start under =--mode automation=
+
+/Changed in alfe 2.3.101./ When no AutoCAD is running, the COM bridge starts
+AutoCAD itself -- the command registered for its ProgID (=LocalServer32=,
+normally =acad.exe /Automation=) -- and waits for it to register, for as long
+as alfe's ready timeout (=--timeout=, or =$AUTOLISP_WAIT_SECS=). Before, it
+used =CreateObject=, which lets Windows (DCOM) start AutoCAD and wait for it
+for a fixed 120 seconds: an AutoCAD that took longer failed with COM error
+=429= after about two minutes, whatever =--timeout= said, and Windows logged
+DCOM event 10010 ("did not register with DCOM within the required timeout").
+If the launched =acad.exe= exits before it registers, alfe says so at once
+(stage =launch-exited=) instead of waiting out the timeout.
+
+When another AutoCAD is already running, the bridge still uses
+=CreateObject=, so that it cannot pick up that other instance: in that case
+the two-minute limit of Windows still applies. A slow start is the CAD's
+own (its profile, its add-ins, the machine); the fix lets alfe wait for it,
+it does not make it faster.
 
 ** "did not reach READY within N s ... the engine never moved past BOOTING"
 
