@@ -1869,13 +1869,18 @@ do {
 ")
 (defparameter *owned-com-capture-vbs*
   "' Keep this exact COM reference; never rediscover an arbitrary ROT instance.
-Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription
+Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription, lifeFailureStream
 Set lifeShell = CreateObject(\"WScript.Shell\")
 lifeRoot = fso.GetParentFolderName(runFile)
 lifeHelper = fso.BuildPath(lifeRoot, \"owned-cad-process.ps1\")
 lifeIdentity = fso.BuildPath(lifeRoot, \"owned-cad-process.json\")
 lifeRequest = fso.BuildPath(lifeRoot, \"close-owned.request\")
 lifeResult = fso.BuildPath(lifeRoot, \"close-owned.result\")
+' Both engines persist the ownership decision made by this exact bridge.
+Set lifeStream = fso.CreateTextFile(fso.BuildPath(lifeRoot, \"owned-com-flags.txt\"), True)
+If attached Then lifeStream.WriteLine \"ATTACHED=1\" Else lifeStream.WriteLine \"ATTACHED=0\"
+If created Then lifeStream.WriteLine \"CREATED=1\" Else lifeStream.WriteLine \"CREATED=0\"
+lifeStream.Close
 If created Then
   lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Capture -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34) & \" -WindowHandle \" & CStr(app.HWND), 0, True)
   If lifeCode <> 0 Then WScript.Quit 5
@@ -1887,6 +1892,17 @@ End If
   If fso.FileExists(lifeRequest) Then
     lifeCode = 0
     If created Then
+      ' RESTORED acknowledges variables, not the return from the native command.
+      ' Never close a document while that command is still unwinding.
+      If Not OwnedComIsReady(app, 30) Then
+        AppendLine errFile, \"OWNED-COM-CLOSE refused: application not quiescent after protocol shutdown\"
+        Set lifeFailureStream = fso.CreateTextFile(lifeResult & \".tmp\", True)
+        lifeFailureStream.WriteLine \"1\"
+        lifeFailureStream.Close
+        fso.MoveFile lifeResult & \".tmp\", lifeResult
+        WScript.Quit 1
+      End If
+      AppendLine errFile, \"OWNED-COM-CLOSE quiescent before document close\"
       ' The native command can still be unwinding after RESTORED.
       ' Bound retries on this exact application; never rediscover or kill one.
       For lifeAttempt = 1 To 40
@@ -2040,7 +2056,8 @@ Return a verifier and a release function. Attached instances are not closed."
   #-(or win32 windows mswindows)
   (values nil nil)
   #+(or win32 windows mswindows)
-  (let* ((flags-path (merge-pathnames "com-flags.txt" workdir))
+  (let* ((flags-path (or (probe-file (merge-pathnames "owned-com-flags.txt" workdir))
+                         (merge-pathnames "com-flags.txt" workdir)))
          (flags (when (probe-file flags-path)
                   (mapcar (lambda (line) (string-trim '(#\Space #\Tab #\Return #\Newline) line))
                           (uiop:read-file-lines flags-path)))))

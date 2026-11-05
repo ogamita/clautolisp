@@ -2984,3 +2984,15 @@ or test clautolisp — and is loaded explicitly:
 (asdf:load-asd #p"$PREFIX/share/common-lisp/source/clautolisp/autolisp-debug-ui-tui-charms/clautolisp-charms.asd")
 (asdf:load-system "clautolisp/autolisp-debug-ui-tui-charms")
 #+END_EXAMPLE
+
+* Private diagnostic 2.3.98
+Owned COM shutdown now waits at most 30 seconds for IsQuiescent before
+Close/Quit, after the native protocol returns. Failure records an explicit
+close error without closing the busy application. The retained native
+process handle must still report exit zero; no nonzero code is whitelisted.
+This lifecycle correction does not establish the cause of the observed
+AutoCAD native exits (0xC0000374 and 0xBABE).
+The common bridge also persists CREATED/ATTACHED decisions for both engines.
+The 2.3.97 native verifier wrongly depended on AutoCAD's legacy flags file,
+which BricsCAD did not emit. Identity, creation time, SID and session checks
+remain mandatory before acquiring the handle and requesting closure.

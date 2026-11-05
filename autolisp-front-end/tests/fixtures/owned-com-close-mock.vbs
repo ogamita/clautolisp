@@ -1,6 +1,6 @@
 Option Explicit
 Dim fso, app, doc, created, runFile, statusFile, errFile, scenario
-Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription
+Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription, lifeFailureStream
 Dim attempts, closed, quitCalled
 Set fso=CreateObject("Scripting.FileSystemObject")
 scenario=WScript.Arguments(1)
@@ -58,3 +58,7 @@ Class MockShell
   If quitCalled Then Run=0 Else Run=1
  End Function
 End Class
+
+Function OwnedComIsReady(a, seconds)
+ OwnedComIsReady=(scenario <> "not-ready")
+End Function

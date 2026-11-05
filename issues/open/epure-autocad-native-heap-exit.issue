@@ -19,3 +19,18 @@ an exit code alone. Relate to the independently documented EPURE clean-profile
 exit issue on the newer ALFE development line, but retain the distinct identity.
 Native exit zero remains mandatory for qualification. No whitelist or GEP
 assertion tolerance may accept this failure.
+
+* Follow-up: 2026-11-05, strict native gate
+SCHME job 571365, ALFE 2.3.97, passed 23 assertions and reached RESTORED.
+Both disposable profile and installation restoration manifests are true.
+The retained native handle reported 47806 (0xBABE), PID 8320, creation
+FILETIME 134383562765928623. This differs from the earlier 0xC0000374;
+no common cause or documented successful-exit contract is established.
+The job correctly failed. No nonzero native exit is accepted.
+A separate 2.3.98 experiment waits for bounded COM quiescence after the
+protocol returns and before closing any document. Its absence was a
+lifecycle gap; whether it explains either exit code remains unproven.
+BricsCAD job 571366 reached RESTORED and 23/23 but native close was refused
+because 2.3.97 read AutoCAD-only com-flags.txt. The shared bridge in 2.3.98
+writes its own ownership flags for both engines. This is an ALFE regression,
+not a BricsCAD native exit result, and is unrelated to AutoCAD 0xBABE.
