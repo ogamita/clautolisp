@@ -1899,6 +1899,10 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
+Owned Windows CAD cleanup now requires native exit zero on a retained kernel
+handle; an abnormal exit cannot be hidden by transport success or a vanished PID.
+See the user manual, session cleanup.
+
 Restoration failures now preserve the native error and failing step in protocol
 stderr, status and the CLI shutdown error. See the user manual, session cleanup.
 

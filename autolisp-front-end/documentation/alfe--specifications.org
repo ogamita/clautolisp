@@ -2890,6 +2890,11 @@ The alfe side then publishes close-owned.request. The retained startup bridge
 uses its exact application reference; created instances close normally and are
 validated by PID plus creation time, attached instances only release the bridge.
 The atomic close-owned.result contains zero only after successful cleanup.
+Before publishing close-owned.request, retain the validated owned incarnation's
+kernel handle. A signalled handle and native exit code zero are mandatory;
+transport success or PID disappearance alone SHALL NOT qualify cleanup.
+Persist the observed native code in native-exit-code.txt. Unknown, nonzero and
+timeout results SHALL fail. Attached applications are never closed.
 No final STOPPED from a process already exited is required. All acknowledgement
 and process-exit waits are bounded. Batch engines retain SHUTDOWN/STOPPED, with
 restoration preceding STOPPING.

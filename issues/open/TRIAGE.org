@@ -948,3 +948,8 @@ shared native ACK guard are awaiting qualification.
 
 * DONE Preserve session restoration error details
 [[file:../closed/alfe-session-restoration-error-detail.issue][alfe-session-restoration-error-detail]] (2.3.96).
+
+* DONE Reject abnormal owned CAD native exits
+[[file:../closed/alfe-owned-cad-abnormal-exit-accepted.issue][alfe-owned-cad-abnormal-exit-accepted]] (2.3.97).
+* NEXT AutoCAD heap failure after SCHME tests
+[[file:epure-autocad-native-heap-exit.issue][epure-autocad-native-heap-exit]] (P1, native cause unresolved).

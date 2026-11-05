@@ -1,0 +1,17 @@
+#+TITLE: Owned CAD disappearance incorrectly accepted an abnormal native exit
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+BRANCH: codex/alfe-restore-error-detail
+
+* Evidence
+SCHME job 571171 passed 23 tests and RESTORED/close-owned.result0 but its retained
+native process handle reported 3221226356 (C0000374), PID12788,
+creation ticks639294764853052918. The log path was valid and isolated.
+
+* Resolution in 2.3.97
+Validate SID/session/creation identity, retain a kernel handle before requesting
+Quit, wait for that incarnation to signal and require native exit zero. Persist
+the exact code; release the handle on every path. Tests inject zero, C0000374,
+C0000005 and STILL_ACTIVE and assert opener-before-close plus release-on-failure.
+This fixes false acceptance, not the originating native heap corruption.

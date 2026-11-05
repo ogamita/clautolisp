@@ -2334,7 +2334,12 @@ waiting for process exit. It does not
 look up a potentially different instance through GetObject. Successful cleanup
 requires disappearance of the captured window's process identity (PID plus UTC
 creation ticks), within 20 seconds. An absent final protocol SHUTDOWN/STOPPED
-message is normal after this owned process exits. A COM disconnection alone
+message is normal after this owned process exits. Before asking the bridge to
+close, alfe retains a kernel handle after checking the PID, owner SID, session
+and creation time. Cleanup requires that handle to signal and native exit code
+zero. =native-exit-code.txt= records the observed decimal code, PID and creation
+file time. A nonzero code (including a heap-corruption exit), an unknown code
+or a timeout fails cleanup even if the transport reported close result zero. A COM disconnection alone
 is not sufficient, and a timeout or failed restoration fails the invocation.
 Only the bridge subprocess is terminated on failure; the cleanup does not kill
 an unrelated CAD. Failure preserves the work directory for diagnosis.

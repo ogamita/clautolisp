@@ -1828,7 +1828,7 @@ that cannot be read is warned about and skipped."
 
 ;;; Owned COM lifecycle: keep the startup bridge and its exact APP reference.
 (defparameter *owned-cad-process-script*
-  "param([ValidateSet('Capture','Wait')][string]$Operation,[string]$IdentityFile,[Int64]$WindowHandle=0,[int]$TimeoutSeconds=20)
+  "param([ValidateSet('Capture','Identity','Wait')][string]$Operation,[string]$IdentityFile,[Int64]$WindowHandle=0,[int]$TimeoutSeconds=20)
 $ErrorActionPreference='Stop'
 if($Operation -eq 'Capture') {
  Add-Type -TypeDefinition @'
@@ -1847,10 +1847,19 @@ public static class OwnedCadWindow {
  exit 0
 }
 $identity=Get-Content -LiteralPath $IdentityFile -Raw | ConvertFrom-Json
+if($Operation -eq 'Identity') {
+ $cad=Get-Process -Id $identity.pid -ErrorAction Stop
+ if($cad.StartTime.ToUniversalTime().Ticks -ne [int64]$identity.startTicks){throw 'Owned CAD identity changed.'}
+ $row=Get-CimInstance Win32_Process -Filter ('ProcessId='+$identity.pid)
+ $owner=Invoke-CimMethod -InputObject $row -MethodName GetOwnerSid
+ if($owner.ReturnValue -ne 0 -or $owner.Sid -ne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -or $cad.SessionId -ne (Get-Process -Id $PID).SessionId){throw 'Owned CAD SID or session differs.'}
+ Write-Output ('{0} {1}' -f $identity.pid,$cad.StartTime.ToUniversalTime().ToFileTimeUtc())
+ exit 0
+}
 $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 do {
  $cad=Get-Process -Id $identity.pid -ErrorAction SilentlyContinue
- if(!$cad){exit 0}
+ if(!$cad -or $cad.HasExited){exit 0}
  try { $actualStart=$cad.StartTime.ToUniversalTime().Ticks }
  catch { if($cad.HasExited){exit 0}; throw }
  if($actualStart -ne [int64]$identity.startTicks){exit 0}
@@ -2013,12 +2022,100 @@ End If
                    (subseq text before end) wait
                    (subseq text (+ end (length "WScript.Quit 0")))))))
 
+#+(or win32 windows mswindows)
+(cffi:define-foreign-library owned-cad-kernel32 (t "kernel32.dll"))
+
+(defun require-owned-cad-native-zero (code)
+  (unless (and (integerp code) (zerop code))
+    (error 'backend-protocol-error :backend :cad :phase :shutdown
+           :code :owned-cad-native-exit-failed
+           :message (format nil "The owned CAD exited abnormally: ~D (0x~8,'0X)." code code)))
+  t)
+
+(defun open-owned-cad-native-exit-proof (workdir)
+  "Hold the validated incarnation's kernel handle BEFORE requesting Quit.
+Return a verifier and a release function. Attached instances are not closed."
+  #-(or win32 windows mswindows)
+  (declare (ignore workdir))
+  #-(or win32 windows mswindows)
+  (values nil nil)
+  #+(or win32 windows mswindows)
+  (let* ((flags-path (merge-pathnames "com-flags.txt" workdir))
+         (flags (when (probe-file flags-path)
+                  (mapcar (lambda (line) (string-trim '(#\Space #\Tab #\Return #\Newline) line))
+                          (uiop:read-file-lines flags-path)))))
+    (when (and (member "ATTACHED=1" flags :test #'string=)
+               (member "CREATED=0" flags :test #'string=))
+      (return-from open-owned-cad-native-exit-proof (values nil nil)))
+    (unless (and (member "CREATED=1" flags :test #'string=)
+                 (member "ATTACHED=0" flags :test #'string=))
+      (error "Owned CAD flags are absent or inconsistent; refusing an unverified close."))
+    (multiple-value-bind (output diagnostic status)
+        (uiop:run-program
+         (list "powershell.exe" "-NoProfile" "-NonInteractive" "-ExecutionPolicy" "Bypass"
+               "-File" (uiop:native-namestring (merge-pathnames "owned-cad-process.ps1" workdir))
+               "-Operation" "Identity" "-IdentityFile"
+               (uiop:native-namestring (merge-pathnames "owned-cad-process.json" workdir)))
+         :output :string :error-output :string :ignore-error-status t)
+      (unless (eql status 0)
+        (error "Cannot validate owned CAD identity before close: ~A" diagnostic))
+      (let* ((fields (remove "" (uiop:split-string output :separator '(#\Space #\Tab #\Return #\Newline)) :test #'string=))
+             (pid (and (= (length fields) 2) (parse-integer (first fields))))
+             (filetime (and pid (parse-integer (second fields)))))
+        (unless (and pid (plusp pid) filetime (plusp filetime))
+          (error "Invalid owned CAD identity response."))
+        (cffi:use-foreign-library owned-cad-kernel32)
+        (let ((handle (cffi:foreign-funcall-pointer
+                       (cffi:foreign-symbol-pointer "OpenProcess" :library 'owned-cad-kernel32)
+                       (:convention :stdcall) :uint32 #x101000 :int 0 :uint32 pid :pointer))
+              (retained nil))
+          (when (cffi:null-pointer-p handle)
+            (error "Cannot retain the owned CAD kernel handle before close."))
+          (flet ((release ()
+                   (cffi:foreign-funcall-pointer
+                    (cffi:foreign-symbol-pointer "CloseHandle" :library 'owned-cad-kernel32)
+                    (:convention :stdcall) :pointer handle :int)))
+            (unwind-protect
+                 (progn
+                   (cffi:with-foreign-objects ((created :int64) (ended :int64) (kernel :int64) (user :int64))
+                     (when (zerop (cffi:foreign-funcall-pointer
+                                   (cffi:foreign-symbol-pointer "GetProcessTimes" :library 'owned-cad-kernel32)
+                                   (:convention :stdcall) :pointer handle :pointer created :pointer ended
+                                   :pointer kernel :pointer user :int))
+                       (error "Cannot read the retained owned CAD creation time."))
+                     (unless (= filetime (cffi:mem-ref created :int64))
+                       (error "Owned CAD PID was reused before close; refusing the close.")))
+                   (setf retained t)
+                   (values
+                    (lambda (timeout)
+                      (unless (zerop (cffi:foreign-funcall-pointer
+                                      (cffi:foreign-symbol-pointer "WaitForSingleObject" :library 'owned-cad-kernel32)
+                                      (:convention :stdcall) :pointer handle :uint32 (ceiling (* 1000 timeout)) :uint32))
+                        (error "The retained owned CAD handle did not signal process exit."))
+                      (cffi:with-foreign-object (code :uint32)
+                        (when (zerop (cffi:foreign-funcall-pointer
+                                      (cffi:foreign-symbol-pointer "GetExitCodeProcess" :library 'owned-cad-kernel32)
+                                      (:convention :stdcall) :pointer handle :pointer code :int))
+                          (error "Cannot read the owned CAD native exit code."))
+                        (let ((value (cffi:mem-ref code :uint32)))
+                          (with-open-file (out (merge-pathnames "native-exit-code.txt" workdir)
+                                               :direction :output :if-exists :supersede)
+                            (format out "~D~%PID=~D~%FILETIME=~D~%" value pid filetime))
+                          (require-owned-cad-native-zero value))))
+                    #'release))
+              (unless retained (release)))))))))
+
+(defparameter *owned-cad-native-exit-opener* #'open-owned-cad-native-exit-proof)
+
 (defun close-owned-com-bridge (workdir &key (timeout 35))
   "Request Quit on the startup bridge's object, then require process-exit proof.
 The bridge never quits an attached object. No process is killed here."
-  (let ((request (merge-pathnames "close-owned.request" workdir))
-        (result (merge-pathnames "close-owned.result" workdir))
-        (start (get-internal-real-time)))
+  (multiple-value-bind (verify release)
+      (funcall *owned-cad-native-exit-opener* workdir)
+    (unwind-protect
+      (let ((request (merge-pathnames "close-owned.request" workdir))
+            (result (merge-pathnames "close-owned.result" workdir))
+            (start (get-internal-real-time)))
     (with-open-file (out request :direction :output :if-exists :supersede
                                  :if-does-not-exist :create)
       (write-line "CLOSE" out))
@@ -2029,9 +2126,11 @@ The bridge never quits an attached object. No process is killed here."
           (unless (string= code "0")
             (error 'backend-protocol-error :backend :cad :phase :shutdown :code :owned-cad-close-failed
                    :message "The owned CAD did not close normally."))
+          (when verify (funcall verify timeout))
           (return t)))
       (when (>= (/ (- (get-internal-real-time) start)
                    internal-time-units-per-second) timeout)
         (error 'backend-protocol-error :backend :cad :phase :shutdown :code :owned-cad-close-timeout
                :message "Timed out awaiting owned CAD process disappearance."))
-      (sleep 0.1))))
+      (sleep 0.1)))
+      (when release (funcall release)))))

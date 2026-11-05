@@ -1,0 +1,21 @@
+#+TITLE: AutoCAD heap corruption at exit after SCHME historical tests
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+
+* Reproduction evidence
+SCHME MR339 HEAD04bc0747 pipeline92968 job571171: 23/23, RESTORED,
+close-owned.result0, installation/profile restored. Independent read-only Win32
+observer retained PID12788/creation639294764853052918 before Quit and observed
+native exit3221226356 (C0000374). No process was killed.
+The disposable profile log path existed and was isolated to job571171.
+ALFE sourcea6636dca (private2.3.96) and shared harness5a502b6 are recorded.
+
+* Scope
+The restoration-log defect is independently fixed. The heap failure's originating
+writer/component is not identified; do not attribute it to a DLL or to ALFE from
+an exit code alone. Relate to the independently documented EPURE clean-profile
+exit issue on the newer ALFE development line, but retain the distinct identity.
+Native exit zero remains mandatory for qualification. No whitelist or GEP
+assertion tolerance may accept this failure.

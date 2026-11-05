@@ -4005,6 +4005,7 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
 
 
 (test owned-com-close-requires-process-exit-result
+  (let ((alfe.backend.cad-common::*owned-cad-native-exit-opener* (lambda (dir) (declare (ignore dir)) (values nil nil))))
   (with-cad-test-directories
     (let* ((dir (%fresh-test-directory))
            (request (merge-pathnames "close-owned.request" dir))
@@ -4020,7 +4021,31 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
         (bordeaux-threads:join-thread worker)))
     (signals alfe.error:backend-protocol-error
       (alfe.backend.cad-common::close-owned-com-bridge
-       (%fresh-test-directory) :timeout 0))))
+       (%fresh-test-directory) :timeout 0)))))
+
+(test owned-com-close-rejects-native-crash-after-transport-success
+  (with-cad-test-directories
+    (dolist (native '(0 #xc0000374 #xc0000005 259))
+      (let* ((dir (%fresh-test-directory))
+             (events nil)
+             (alfe.backend.cad-common::*owned-cad-native-exit-opener*
+               (lambda (directory)
+                 (is (not (probe-file (merge-pathnames "close-owned.request" directory))))
+                 (push :open events)
+                 (values (lambda (timeout)
+                           (declare (ignore timeout))
+                           (is (probe-file (merge-pathnames "close-owned.request" directory)))
+                           (push :verify events)
+                           (alfe.backend.cad-common::require-owned-cad-native-zero native))
+                         (lambda () (push :release events))))))
+        (with-open-file (out (merge-pathnames "close-owned.result" dir)
+                             :direction :output :if-exists :supersede)
+          (write-line "0" out))
+        (if (zerop native)
+            (is (alfe.backend.cad-common::close-owned-com-bridge dir :timeout 0))
+            (signals alfe.error:backend-protocol-error
+              (alfe.backend.cad-common::close-owned-com-bridge dir :timeout 0)))
+        (is (equal '(:release :verify :open) events))))))
 
 (test protocol-prepared-close-restores-before-loop-exit
   (let ((binary (clautolisp-engine-binary)))
@@ -4286,3 +4311,11 @@ WScript.Echo \"PASS \" & scenario
               (declare (ignore stderr))
               (is (= 0 code))
               (is (search (concatenate 'string "PASS " case) stdout))))))))
+
+(test owned-com-native-exit-kernel-fixtures
+  #+(or win32 windows mswindows)
+  (with-cad-test-directories
+    (load (asdf:system-relative-pathname "autolisp-front-end" "tests/fixtures/owned-exit-kernel.lisp"))
+    (is (= 4 (run-owned-exit-kernel-fixtures (%fresh-test-directory)))))
+  #-(or win32 windows mswindows)
+  (fiveam:skip "Native Windows kernel process fixtures require Windows; no CAD is involved."))
