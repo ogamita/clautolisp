@@ -1107,8 +1107,29 @@ version relation is a table (2019–2026), not a formula; an unknown
 release is resolved from the registered ProgIDs, matched against the
 release named in their =LocalServer32=.
 
+**** Creating the instance: our own launch, or =CreateObject=
+
+When the bridge must create an AutoCAD (no attach) and no =acad.exe= is
+running, it does not call =CreateObject=. It reads the command COM itself
+would run -- the =LocalServer32= of =HKCR\<progid>\CLSID=, environment
+variables expanded, =/Automation= appended when absent -- starts it with
+=WScript.Shell.Exec=, and polls =GetObject(, progid)= once a second until it
+answers, for =${LAUNCH_SECS}= seconds (alfe's ready timeout). It stops early
+when the launched process exits. Reason: =CreateObject= has DCOM wait for the
+server's class registration for a fixed 120 s, not settable by the client;
+AutoCAD registers at the end of its start, so a start longer than 120 s
+failed with =429= regardless of =--timeout=
+(=autocad-com-launch-bounded-by-dcom-timeout=).
+
+With an =acad.exe= already running, =GetObject= could return that instance,
+so the bridge calls =CreateObject= as before (a new instance:
+=alfe-cad-launch-new-by-default=), and so it does when =LocalServer32= cannot
+be read. Either way the created =acad.exe= is recorded the same way
+(=CREATEDPID=, the created-CAD registry).
+
 A failed activation records, in the bridge's error file,
-=COM.PROGID=, =COM.STAGE= (=getobject= / =createobject=),
+=COM.PROGID=, =COM.STAGE= (=getobject= / =createobject= / =launch= /
+=launch-exited= / =launch-timeout=),
 =COM.ERROR.DECIMAL=, =COM.ERROR.HEX= and =COM.ERROR.DESCRIPTION=; the
 bootstrap error reports them. =batch= mode uses =accoreconsole= and
 involves no COM registration.
