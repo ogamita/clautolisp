@@ -1930,6 +1930,14 @@ state:
 
 The specifications document the full set and their lifetimes.
 
+* Blocking dialogs and shutdown stalls
+
+The [[file:alfe-dialogues-bloquants.org][blocking-dialog inventory (French, 5 November 2026)]] separates
+AutoCAD, BricsCAD and EPURE startup and shutdown cases, distinguishing
+reported incidents, dialogs handled by the tooling and unconfirmed hypotheses.
+It also distinguishes a modal prompt from a crash or a surviving process;
+AutoCAD exit code =0xBABE= alone does not establish a crash.
+
 * Recording a session: =--dribble=
 
 =--dribble= keeps a transcript of a session. A CAD session is the hard kind to
