@@ -89,3 +89,11 @@ What shipped:
 - Docs: the AutoLISP Spec 0.14.8 (PRINC "Tested Behaviour (explicit NIL
   file)" and clautolisp notes on PRINC / PRINT / PRIN1); the regenerated
   dialect-warnings annex; the clautolisp and alfe user manuals; RELEASE_NOTES.
+
+Verified on AutoCAD 2022 (pfenny, accoreconsole, 2026-11-05) with alfe 2.3.89
+built from master: an alfe-evaluated (princ "x" nil) and (print "y" f) with f
+nil now fail with AutoCAD's own "type d'argument incorrect: FILE nil" (exit 1),
+as the same code compiled into a VLX does. (princ / prin1 / print X F) on an
+open descriptor still write the file ("file-ok\"q\"\r\n3 "). The natively
+loaded functions of alfe-autocad-fixed-arity-output-shadows still return DONE /
+DONE-ALL, and alfe's own output keeps its bytes (XY\r\n1 "Z"\r\n\r\n).
