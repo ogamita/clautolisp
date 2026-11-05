@@ -1363,8 +1363,12 @@ Returns the path of the emitted file."
     \"the engine supplied no message\"))~%~
 (alfe-debug-log \"run-common.lsp evaluated; about to bootstrap runtime\")~%")
             ;; Native callbacks can run after LOAD returns (e.g. AutoCAD MNL).
-            ;; Keep protocol printer shadows for the entire loop, then restore
-            ;; their original arities before returning to the CAD host.
+            ;; On an &rest host the protocol shadows princ / print / prin1
+            ;; with variadic definitions for the whole loop; the originals are
+            ;; put back before returning to the CAD host. On a no-&rest host
+            ;; (AutoCAD) the primitives are never redefined -- alfe-loaded
+            ;; code calls the alfe-owned autolisp-princ-to & co. instead -- so
+            ;; the restore below only re-assigns their own values there.
             (format out "~%(setq *ALFE-NATIVE-OUTPUT* (list princ print prin1))~%")
             ;; --- Plug-in text, before anything is bootstrapped ---
             ;; Hook :run-common-prelude — AutoLISP source a plug-in wants the

@@ -3019,7 +3019,7 @@ or test clautolisp — and is loaded explicitly:
 (asdf:load-system "clautolisp/autolisp-debug-ui-tui-charms")
 #+END_EXAMPLE
 
-* CAD qualification source 2.3.88
+* CAD qualification: Windows installed-prefix diagnostics
 Windows installed-prefix verification preserves full native diagnostic paths,
 including prefixes containing spaces; verified in Windows CI17671893337.
 
