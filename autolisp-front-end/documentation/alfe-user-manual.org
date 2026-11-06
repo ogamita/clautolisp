@@ -2535,8 +2535,10 @@ runtime loads the control script synchronously, then runs the installed
 already open document. Batch launchers retain their existing startup path.
 
 Native lifecycle qualification also modifies the private test drawing and
-checks its SHA256 remains unchanged after shutdown. A nonzero native exit,
-including an unclassified BABE value, fails qualification even if Lisp passed.
+checks its SHA256 remains unchanged after shutdown. Its verdict follows
+contract 2: alfe's exit status and the created CAD proved gone. A nonzero
+native exit (BABE included), a crash or a forced termination after the
+frontier is recorded in the receipt, not a qualification failure.
 
 ** Native Windows profile environment
 Before launching CAD on Windows, alfe resolves a missing =USERPROFILE= with

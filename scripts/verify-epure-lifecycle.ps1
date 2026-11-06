@@ -1,4 +1,9 @@
-# Strict native qualification; never sweep CAD processes from other invocations.
+# Native qualification; never sweep CAD processes from other invocations.
+# Contract 2 (alfe-owned-cad-termination-after-recorded-results): the verdict is
+# alfe's exit status, the functional checks, the drawing left unchanged, and
+# the created CAD proved gone (alfe's cleanup report, then this script's own
+# handle). The native exit code, crash events and dumps after alfe's frontier
+# are recorded in the receipt as diagnostics, not failures.
 [CmdletBinding()]
 param([string]$OutputDirectory, [switch]$IncludeControls,[switch]$RequireComDrawing,[switch]$IncludeBricsBatch,[int]$TimeoutSeconds=360,[ValidateRange(0,120)][int]$CrashObservationSeconds=30)
 $ErrorActionPreference='Stop'
@@ -41,12 +46,12 @@ foreach($case in $cases){
  $forms+=@('(princ "\nDIAG.ATOMS=") (prin1 (atoms-family 1 (quote ("com_way" "COM_WAY" "com_tl_continu" "COM_TL_CONTINU"))))', '(princ "\nDIAG.ENV=") (prin1 (list (getvar "VENDORNAME") (getvar "CPROFILE") (getvar "SECURELOAD") (findfile "com/lisp/sncf_startup.lsp") (findfile "on_start.lsp") (getenv "APPDATA")))')
  $forms+='(if (entmakex (quote ((0 . "LINE") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0)))) (princ "\nALFE.DIRTY.OK\n") (princ "\nALFE.DIRTY.FAIL\n"))'
  $forms | Set-Content -LiteralPath $probe -Encoding ASCII
- $arguments=@('--no-init','--debug','--plugin-path',(Join-Path $repo 'autolisp-front-end/plugins'),('--'+$case.Cad),'--epure','--mode',$case.Mode,'--timeout',([string]$TimeoutSeconds),'--workdir',$work,'--keep-workdir','-l',$probe)
+ $arguments=@('--no-init','--debug','--plugin-path',(Join-Path $repo 'autolisp-front-end/plugins'),('--'+$case.Cad),'--epure','--mode',$case.Mode,'--timeout',([string]$TimeoutSeconds),'--workdir',$work,'--keep-workdir','--cleanup-report',(Join-Path $work 'cleanup-report.txt'),'-l',$probe)
  if($case.Control){$arguments=@($arguments|Where-Object {$_ -ne '--epure'})+@('--no-plugins')}
  if($RequireComDrawing -or $case.Mode -eq 'batch'){$arguments+=@('--dwg',$drawing)}
  $before=@{}
  Get-CimInstance Win32_Process -Filter "Name='acad.exe' OR Name='bricscad.exe' OR Name='accoreconsole.exe'" | ForEach-Object {$before[[string]$_.ProcessId]=$_.CreationDate.ToUniversalTime().Ticks}
- $record=[ordered]@{Name=$name;Commit=(& git -C $repo rev-parse HEAD);ExecutableHash=(Get-FileHash -LiteralPath $alfe -Algorithm SHA256).Hash;EpurePluginHash=(Get-FileHash -LiteralPath (Join-Path $repo 'autolisp-front-end/plugins/epure/epure.lisp') -Algorithm SHA256).Hash;Arguments=$arguments;EpurePlugin=(-not [bool]$case.Control);DrawingBefore=(Get-FileHash -LiteralPath $drawing -Algorithm SHA256).Hash;DrawingUnchanged=$false;DirtyVerified=$false;Started=[DateTime]::UtcNow.ToString('o');CadPid=$null;CadStartTicks=$null;NativeTerminated=$false;NativeExit=$null;NativeExitHex=$null;CliExit=$null;CleanupRequested=$false;Forced=$false;CrashEvents=@();Dumps=@();ApiMatches=0;DrawingVerified=$false;Passed=$false;Error=$null}
+ $record=[ordered]@{Name=$name;Commit=(& git -C $repo rev-parse HEAD);ExecutableHash=(Get-FileHash -LiteralPath $alfe -Algorithm SHA256).Hash;EpurePluginHash=(Get-FileHash -LiteralPath (Join-Path $repo 'autolisp-front-end/plugins/epure/epure.lisp') -Algorithm SHA256).Hash;Arguments=$arguments;EpurePlugin=(-not [bool]$case.Control);DrawingBefore=(Get-FileHash -LiteralPath $drawing -Algorithm SHA256).Hash;DrawingUnchanged=$false;DirtyVerified=$false;Started=[DateTime]::UtcNow.ToString('o');CadPid=$null;CadStartTicks=$null;NativeTerminated=$false;NativeExit=$null;NativeExitHex=$null;CliExit=$null;Cleanup=$null;CleanupOutcome=$null;CleanupForced=$null;CleanupRequested=$false;Forced=$false;CrashEvents=@();Dumps=@();ApiMatches=0;DrawingVerified=$false;Passed=$false;Error=$null}
  $start=Get-Date
  $native=$null;$cli=$null
  try{
@@ -91,10 +96,15 @@ foreach($case in $cases){
   $record.DrawingVerified=($stdout -match '(?m)^ALFE.DWG.OK\r?$')
   $record.DirtyVerified=($stdout -match '(?m)^ALFE.DIRTY.OK\r?$')
   $record.DrawingUnchanged=((Get-FileHash -LiteralPath $drawing -Algorithm SHA256).Hash -eq $record.DrawingBefore)
-  # A natural native exit must be zero; neither SEH nor BABE variants are success.
-  $allowedExit=($record.NativeExit -eq 0)
+  $report=@{}
+  $reportFile=Join-Path $work 'cleanup-report.txt'
+  if(Test-Path -LiteralPath $reportFile){Get-Content -LiteralPath $reportFile|ForEach-Object {$at=$_.IndexOf('=');if($at -gt 0){$report[$_.Substring(0,$at)]=$_.Substring($at+1)}}}
+  if($report['end'] -eq '1'){$record.Cleanup=$report['cleanup'];$record.CleanupOutcome=$report['cleanup-outcome'];$record.CleanupForced=$report['cleanup-forced']}
+  # The disappearance is required, its manner is a diagnostic: an owned COM
+  # case needs cleanup=ok, a batch case (no owned COM instance) cleanup=none.
+  $cleanupOk=if($case.Mode -eq 'batch'){$record.Cleanup -in @('ok','none')}else{$record.Cleanup -eq 'ok'}
   $drawingOk=(-not($RequireComDrawing -or $case.Mode -eq 'batch') -or $record.DrawingVerified)
-  $record.Passed=($record.CliExit -eq 0 -and $allowedExit -and ($case.Control -or $record.ApiMatches -eq 2) -and $drawingOk -and $record.DirtyVerified -and $record.DrawingUnchanged -and $text -notmatch 'natural shutdown; terminating it|OWNED-CAD-CLOSE-FAILED')
+  $record.Passed=($record.CliExit -eq 0 -and $cleanupOk -and ($case.Control -or $record.ApiMatches -eq 2) -and $drawingOk -and $record.DirtyVerified -and $record.DrawingUnchanged -and $text -notmatch 'natural shutdown; terminating it')
  }catch{$record.Error=$_.Exception.Message;$record.Passed=$false}
  finally{
   if($cli -and -not $cli.WaitForExit(0)){$cli.Kill();$null=$cli.WaitForExit(5000);$record.Forced=$true;$record.Passed=$false}
@@ -109,7 +119,7 @@ foreach($case in $cases){
    try{$record.CrashEvents=@(Get-WinEvent -LogName Application -MaxEvents 500 -ErrorAction Stop|Where-Object {$_.Id -in 1000,1001,1002 -and $_.TimeCreated -ge $start -and $_.Message -match ('(?i)\b'+[regex]::Escape($hexPid)+'\b')}|ForEach-Object {[pscustomobject]@{At=$_.TimeCreated.ToUniversalTime().ToString('o');Id=$_.Id;Message=$_.Message;Xml=$_.ToXml()}})}catch{$record.Error='Crash event collection failed: '+$_.Exception.Message;$record.Passed=$false}
    $dumpRoot=Join-Path $localData 'CrashDumps'
    if(Test-Path -LiteralPath $dumpRoot){$record.Dumps=@(Get-ChildItem -LiteralPath $dumpRoot -File|Where-Object {$_.Name -match ('\.'+$native.Id+'\.') -and $_.LastWriteTime -ge $start}|Select-Object Name,Length,CreationTimeUtc,LastWriteTimeUtc)}
-   if($record.CrashEvents.Count -or $record.Dumps.Count){$record.Passed=$false}
+   # Past alfe's frontier a crash is a diagnostic (contract 2): recorded, not failed.
    $native.Dispose()
   }
   if($cli){$cli.Dispose()}

@@ -4572,8 +4572,10 @@ that wrote it exits 0; a run whose script failed keeps its own status."
                       (search "For lifeIndex = app.Documents.Count" text)))))))
       (uiop:delete-directory-tree work :validate t :if-does-not-exist :ignore))))
 
-(test owned-com-close-retries-and-releases-before-wait
-  "A busy COM application gets bounded retries; process exit is still mandatory."
+(test owned-com-close-retries-and-releases-before-answering
+  "A busy COM application gets bounded retries, then the bridge releases its
+references and answers contract 2; alfe, not the bridge, then proves the
+process gone (alfe-owned-cad-termination-after-recorded-results)."
   (with-cad-test-directories
     (let ((dir (%fresh-test-directory)))
     (dolist (emitter (list #'alfe.backend.autocad:emit-bridge-vbs
@@ -4585,9 +4587,11 @@ that wrote it exits 0; a run whose script failed keeps its own status."
                (retry (search "For lifeAttempt = 1 To 40" text))
                (quit (search "If Err.Number = 0 Then Call app.Quit" text))
                (release (search "Set app = Nothing" text :start2 (or quit 0)))
-               (wait (search " -Operation Wait -IdentityFile " text)))
+               (answer (search "lifeStream.WriteLine \"contract=2\"" text
+                               :start2 (or release 0))))
           (is (and retry quit (< retry quit)))
-          (is (and quit release wait (< quit release wait)))
+          (is (and quit release answer (< quit release answer)))
+          (is (not (search "-Operation Wait" text)))
           (is (search "OWNED-COM-CLOSE attempt=" text))
           (is (search "WScript.Sleep 250" text))))))))
 
@@ -4604,19 +4608,31 @@ that wrote it exits 0; a run whose script failed keeps its own status."
           (with-open-file (out path :direction :output :if-exists :supersede)
             (write-string prefix out)
             (write-string alfe.backend.cad-common::*owned-com-wait-vbs* out))
-          (dolist (case '("transient" "persistent" "attached"))
-            (let ((expected (if (string= case "persistent") 1 0)))
-              (multiple-value-bind (stdout stderr code)
-                  (uiop:run-program (list "cscript.exe" "//nologo" (namestring path)
-                                          (namestring dir) case)
-                                    :output :string :error-output :string
-                                    :ignore-error-status t)
-                (declare (ignore stdout stderr))
-                (is (= expected code)))
-              (is (string= (write-to-string expected)
-                           (string-trim '(#\Space #\Tab #\Return #\Newline)
-                                        (uiop:read-file-string
-                                         (merge-pathnames (concatenate 'string case ".result") dir)))))))))))
+          ;; Contract 2: the bridge always answers (exit 0) with the last
+          ;; Close/Quit error; the retries are counted in its error file.
+          (loop for (case owned quit-error failed-attempts)
+                  in '(("transient" "created" "0" 2)
+                       ("persistent" "created" "-2147418111" 40)
+                       ("attached" "attached" "0" 0))
+                do (multiple-value-bind (stdout stderr code)
+                       (uiop:run-program (list "cscript.exe" "//nologo" (namestring path)
+                                               (namestring dir) case)
+                                         :output :string :error-output :string
+                                         :ignore-error-status t)
+                     (declare (ignore stdout stderr))
+                     (is (= 0 code) "~A: the bridge exits 0 once it has answered" case))
+                   (let ((answer (alfe.backend:read-key-value-file
+                                  (merge-pathnames (concatenate 'string case ".result") dir)))
+                         (errors (merge-pathnames (concatenate 'string case ".errors") dir)))
+                     (is (equal "2" (alfe.backend:key-value answer "contract")))
+                     (is (equal owned (alfe.backend:key-value answer "owned")))
+                     (is (equal quit-error (alfe.backend:key-value answer "quit-error")))
+                     (is (= failed-attempts
+                            (if (probe-file errors)
+                                (count-if (lambda (line) (search "OWNED-COM-CLOSE attempt=" line))
+                                          (uiop:read-file-lines errors))
+                                0))
+                         "~A: ~D failed attempts expected" case failed-attempts)))))))
 
 (test owned-com-startup-is-quiescent-and-identified-before-open
   "Do not open a drawing in a starting application or lose its identity on a crash."
