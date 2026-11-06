@@ -71,6 +71,13 @@ that acad.exe when the deadline passes, since nothing else can reach an
 AutoCAD that never registered. Whether that row reached READY before hanging
 is unknown: the job log stops at the row's header.
 
+The first PF5S26BT run of 2.3.104 (probe job 17799009181) no longer hung,
+but failed at once: stage launch, 0x80070002. AutoCAD 2022 registers
+LocalServer32 UNQUOTED (=C:\Program Files\Autodesk\AutoCAD 2022\acad.exe
+/Automation=); CreateProcess (DCOM, Exec) copes with the spaces, Run does not
+and looked for =C:\Program=. 2.3.105 quotes the executable part when the
+value is not quoted.
+
 * Acceptance
 
 - The template launches the LocalServer32 command and polls GetObject for

@@ -807,6 +807,10 @@ another AutoCAD runs, since GetObject could then return that one."
         "acad.exe is started through Run, which passes no handles")
     (is (search "TerminatePid pid" text)
         "an AutoCAD this run launched and that never registered is terminated")
+    ;; AutoCAD 2022 registers LocalServer32 unquoted; Run then tried to start
+    ;; "C:\Program" (0x80070002, probe job 17799009181).
+    (is (search "If Left(cmd, 1) <> Chr(34) Then" text)
+        "an unquoted LocalServer32 path must be quoted before Run sees it")
     (is (and launch create)
         "both paths must exist: our own launch, and CreateObject beside another AutoCAD")
     (is (search "If pidsBefore = \",\" And serverCmd <> \"\" Then" text)

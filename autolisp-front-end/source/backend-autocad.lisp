@@ -769,7 +769,7 @@ lastTouchError = \"\"
 ' CLSID, normally \"...\\acad.exe\" /Automation. Empty when it cannot be
 ' read, and the caller then falls back to CreateObject.
 Function ServerCommand(id)
-  Dim sh, clsid, cmd
+  Dim sh, clsid, cmd, exeEnd
   ServerCommand = \"\"
   On Error Resume Next
   Set sh = CreateObject(\"WScript.Shell\")
@@ -783,6 +783,15 @@ Function ServerCommand(id)
   End If
   On Error GoTo 0
   cmd = sh.ExpandEnvironmentStrings(cmd)
+  ' AutoCAD registers the path UNQUOTED (PF5S26BT, AutoCAD 2022:
+  ' C:\\Program Files\\Autodesk\\AutoCAD 2022\\acad.exe /Automation). DCOM's
+  ' CreateProcess copes with the spaces; WScript.Shell.Run does not, and ran
+  ' \"C:\\Program\": file not found, 0x80070002 (probe job 17799009181). So
+  ' the executable part is quoted when it is not already.
+  If Left(cmd, 1) <> Chr(34) Then
+    exeEnd = InStr(1, cmd, \".exe\", 1)
+    If exeEnd > 0 Then cmd = Chr(34) & Left(cmd, exeEnd + 3) & Chr(34) & Mid(cmd, exeEnd + 4)
+  End If
   If InStr(1, cmd, \"/Automation\", 1) = 0 Then cmd = cmd & \" /Automation\"
   ServerCommand = cmd
 End Function
