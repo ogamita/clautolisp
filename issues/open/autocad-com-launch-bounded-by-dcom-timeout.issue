@@ -78,6 +78,14 @@ LocalServer32 UNQUOTED (=C:\Program Files\Autodesk\AutoCAD 2022\acad.exe
 and looked for =C:\Program=. 2.3.105 quotes the executable part when the
 value is not quoted.
 
+2.3.105 launched AutoCAD, but both rows timed out at 180 s, at BOOTING
+(probe job 17799201423). pjb saw the cause on the desktop: AutoCAD's startup
+dialog (units, new drawing or open one). COM appends -Embedding to the
+LocalServer32 command when it starts a server, and that is how AutoCAD knows
+not to show it; the bridge's own launch lacked it. 2.3.106 appends
+-Embedding, and gives the bridge a deadline 15 s shorter than alfe's
+(min 30 s), so the bridge reports and ends its AutoCAD before alfe kills it.
+
 * Acceptance
 
 - The template launches the LocalServer32 command and polls GetObject for

@@ -1954,7 +1954,8 @@ separate binary for tool integrators.
   starting could keep alfe's output open, so ~--mode automation~ did not
   return; alfe now starts it without handing it its handles, and ends it when
   the timeout runs out (alfe 2.3.105: also when AutoCAD's registered command
-  has an unquoted path, as AutoCAD 2022's does).
+  has an unquoted path, as AutoCAD 2022's does; 2.3.106: with -Embedding, as
+  COM adds it, so AutoCAD does not stop at its startup dialog).
 
 ** alfe 2.3.78: ordered Windows CAD cleanup
 Restore native log/search settings before ending the protocol; quit the exact

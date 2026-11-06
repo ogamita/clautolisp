@@ -811,6 +811,10 @@ another AutoCAD runs, since GetObject could then return that one."
     ;; "C:\Program" (0x80070002, probe job 17799009181).
     (is (search "If Left(cmd, 1) <> Chr(34) Then" text)
         "an unquoted LocalServer32 path must be quoted before Run sees it")
+    ;; Without -Embedding AutoCAD did not know it was a COM launch and sat in
+    ;; its startup dialog (units, new or open drawing), never registering.
+    (is (search "cmd = cmd & \" -Embedding\"" text)
+        "the launch must carry -Embedding, as COM's own launch does")
     (is (and launch create)
         "both paths must exist: our own launch, and CreateObject beside another AutoCAD")
     (is (search "If pidsBefore = \",\" And serverCmd <> \"\" Then" text)

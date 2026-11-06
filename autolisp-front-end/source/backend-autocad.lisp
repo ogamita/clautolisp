@@ -793,6 +793,12 @@ Function ServerCommand(id)
     If exeEnd > 0 Then cmd = Chr(34) & Left(cmd, exeEnd + 3) & Chr(34) & Mid(cmd, exeEnd + 4)
   End If
   If InStr(1, cmd, \"/Automation\", 1) = 0 Then cmd = cmd & \" /Automation\"
+  ' AND -Embedding, which COM itself appends when it starts a LocalServer32.
+  ' It is what tells AutoCAD it was started BY COM: without it AutoCAD shows
+  ' its startup dialog (units, new drawing or open one; STARTUP=1, the
+  ' profile's UseStartUpDialog) and waits there, invisible to the bridge,
+  ' never registering (PF5S26BT, 2026-11-06, alfe 2.3.105).
+  If InStr(1, cmd, \"Embedding\", 1) = 0 Then cmd = cmd & \" -Embedding\"
   ServerCommand = cmd
 End Function
 
@@ -1645,7 +1651,10 @@ started is what ATTACHED/CREATED say.")
               :flags-path  (merge-pathnames "com-flags.txt" workdir)
               :progid      progid
               :com-mode    (cad-com-mode cli-options "AUTOCAD_COM_MODE")
-              :launch-secs ready-timeout)
+              ;; SHORTER than alfe's own wait: alfe kills the bridge at
+              ;; READY-TIMEOUT, and a bridge killed while still waiting
+              ;; can neither report why nor end the AutoCAD it launched.
+              :launch-secs (max 30 (- ready-timeout 15)))
              (log-debug "backend AUTOCAD: wrote bridge-autocad.vbs -> ~A" vbs)))
           (:batch
            (let ((scr (merge-pathnames "run.scr" workdir)))
