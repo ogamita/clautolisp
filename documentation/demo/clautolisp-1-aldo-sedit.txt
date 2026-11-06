@@ -1,5 +1,9 @@
 DBG> clautolisp debugger attached (h for help)
-clautolisp 1.4.48 — REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+Welcome to clautolisp Version 1.7.9
+Copyright 2026-2026 Ogamita Ltd
+Licensed under AGPL; source codes available at:
+http://gitlab.com/ogamita/clautolisp/
+AUTOLISP REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
 _$ (load "~/src/public/autolisp/fact.lsp")
 FACT
 _$ (fact 3)

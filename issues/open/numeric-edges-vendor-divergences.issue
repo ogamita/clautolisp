@@ -1,0 +1,66 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: numeric-edges-vendor-divergences -- integer overflow and atof hex-float, as AutoCAD / BricsCAD do
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: divergence
+#+DEPENDS: windows-runner-sunset-probe-campaign
+#+BRANCH: -
+#+DATE: 2026-10-29
+
+Measured by the sunset campaign's B1 probe (probes/sources/probe-numeric-edges.lsp)
+on real hardware 2026-10-24: AutoCAD 2022 + BricsCAD V26, committed under
+probe-results/{autocad/ms-windows/20261024T201442Z,bricscad/macos/20261024T201604Z}/.
+Two numeric divergences where clautolisp matches NEITHER vendor; one is a plain
+bug (both vendors agree), one is a genuine AutoCAD-vs-BricsCAD split.
+
+* 1. Integer overflow -- a real 3-way divergence  (dialect-resolved)
+
+At/above 2^31, clautolisp SIGNALS "outside the AutoLISP 32-bit integer range",
+AutoCAD keeps a 32-bit int and WRAPS (two's complement), and BricsCAD WIDENS to
+a >=64-bit integer. Measured:
+
+| expression            | AutoCAD           | BricsCAD        | clautolisp   |
+|-----------------------+-------------------+-----------------+--------------|
+| (+ 2147483640 100)    | -2147483556 (INT) | 2147483740 INT  | error        |
+| (* 2000000000 2)      | -294967296  INT   | 4000000000  INT | error        |
+| (1+ 2147483647)       | -2147483648 INT   | 2147483648  INT | error        |
+| (* 46341 46341)       | -2147479015 INT   | 2147488281  INT | error        |
+| (* 100000 100000)     | 1410065408  INT   | 10000000000 INT | error        |
+| (- -2147483648 1)     | -2.14748e+09 REAL | -2147483649 INT | error        |
+
+Note AutoCAD's asymmetry: overflow WRAPS, but the one underflow case
+(=(- -2147483648 1)=) PROMOTES TO REAL. BricsCAD widens throughout.
+
+Resolution (dialect-resolved, the project pattern): the arithmetic layer must,
+when an integer result leaves the signed-32 range,
+  - autocad / strict  -> wrap mod 2^32 to signed-32 (and, for the INT_MIN-1
+    underflow, promote to a double), matching AutoCAD 2022;
+  - bricscad / lax     -> widen (keep the exact integer), matching BricsCAD V26;
+  - clautolisp         -> pjb's call: today it SIGNALS (safe, catches real
+    overflow bugs), which is neither vendor. Keep-signal, or adopt one vendor?
+This is NOT a small change -- it touches every +/-/*/1+/1- path -- so it is
+scoped as its own work item, not folded into the quick fixes below.
+
+* 2. atof C99 hex-float  (plain bug, both vendors agree)
+
+=(atof "0x1p4")= is 16.0 on BOTH AutoCAD and BricsCAD (strtod accepts C99
+hexadecimal-floating syntax); clautolisp returns 0.0. Decimal-comma is rejected
+on all three (=(atof "3,5")= -> 3.0), and every other atof/atoi edge probed
+agrees across the three (017->17, 0xbabe->0, 17x->17, " 17"->17, .5, 1., 1e3,
+1.5e-3). So the ONLY atof divergence is hex-float, and clautolisp is simply
+wrong against both vendors.
+
+Fix: atof must parse like C strtod, which accepts =0x<hex>p<exp>=. Today
+builtin-atof delegates to parse-autolisp-real (the Lisp real reader), which does
+not do hex-float -- and the reader should NOT start accepting hex-float literals,
+so atof needs its own strtod-compatible front (hex-float, then fall back to the
+decimal path). All dialects (both vendors agree). Deferred here only because it
+wants a small dedicated parser, not a one-liner.
+
+* Status
+
+TODO. Divergence 2 (atof hex-float) and Divergence 1 (integer overflow) are both
+specified above with measured tables. Neither is in the "quick adopt" set of the
+B2 vle fixes; both want their own focused change (atof: a strtod-style parser;
+overflow: dialect-resolved arithmetic). Fold the measured values into the spec's
+atof / number-tower "Tested Behaviour" when implemented.

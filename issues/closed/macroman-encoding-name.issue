@@ -1,0 +1,160 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: macroman-encoding-name — Mac Roman encoding names resolve to :MACROMAN, which SBCL does not register
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-macroman-encoding-name
+
+* Context
+
+=cp1252-codec-host-independent.issue= established the rule this issue
+applies: the codec set a Common Lisp implementation ships is its own
+business, and it must not leak into the language. There it was a
+missing CODEC (CCL has no CP-125x), repaired with a single-octet
+fallback whose tables are built from babel. Here it is a missing
+SPELLING, and the same repair is not available.
+
+Reported by pjb 2026-08-16, loading BricsCAD V26's =vle-extension.lsp=
+through ALPM on macOS:
+
+#+begin_example
+_$ (alpm-load-system "bricscad-v26-mac-api" nil)
+DBG> Error at ALPM-ERROR line 69 col 3 — ALPM: loading
+  bricscad-v26-mac-vle:vle-extension
+  (/Applications/BricsCAD V26.app/Contents/MacOS/vle-extension.lsp) failed:
+  AutoLISP builtin LOAD signaled an error:
+  Undefined external-format: :MACROMAN
+#+end_example
+
+* Problem
+
+Measured on this machine (SBCL 2.6.3, CCL 1.13, babel 20260101):
+
+| spelling    | SBCL | CCL | babel |
+|-------------+------+-----+-------|
+| =MAC-ROMAN= | yes  | yes | no    |
+| =MACINTOSH= | yes  | yes | no    |
+| =MACROMAN=  | *no* | yes | no    |
+| =MAC_ROMAN= | no   | no  | no    |
+
+babel ships no Mac Roman table at all (its set is ASCII, CP-125x,
+CP-437, CP-932, EBCDIC, GBK, EUC-JP, ISO-2022-JP, ISO-8859-*, KOI8-*,
+KSC-5601, Unicode). So the single-octet fallback in
+=autolisp-reader/source/external-format.lisp= — which asks babel for
+its 256-entry table — has nothing to build from, and cannot cover a
+host that lacks the codec. Normalising the NAME is the only repair.
+
+Both name-resolution paths landed on the one keyword SBCL lacks:
+
+- =NORMALIZE-ENCODING-NAME= (=autolisp-builtins-core/source/api.lisp=),
+  behind OPEN's third argument, squeezes dashes / underscores / spaces
+  out of the name before interning it — so =mac-roman=, =MAC_ROMAN= and
+  =macroman= ALL became =:MACROMAN=. The squeezing is what created the
+  bug: every spelling a user might type collapsed onto the single
+  spelling SBCL does not register.
+- =PARSE-LOCALE-ENCODING-STRING= (=autolisp-runtime/source/api.lisp=),
+  behind LOAD's positional =[encoding]= argument, knew only
+  utf-8 / latin-1 / cp1252 / ascii and interned everything else
+  upper-cased — same destination.
+
+Observed before the fix, with no ALPM involved:
+
+#+begin_example
+_$ (open "f" "r" "mac-roman")   ; [enc-unsupported-target], nil
+_$ (open "f" "r" "MAC_ROMAN")   ; idem
+_$ (open "f" "r" "macroman")    ; idem
+_$ (open "f" "r" "macintosh")   ; works — the only spelling that did
+#+end_example
+
+The same AutoLISP program therefore worked on a CCL build of clautolisp
+and failed on an SBCL build: a host artefact leaking into the language.
+
+This is not a niche spelling. BricsCAD on macOS reports
+=(getvar "SYSCODEPAGE")= as ="MAC_ROMAN"= (read-only, see
+=issues/closed/cad-chr-vs-loaded-encoding.issue=), so
+
+#+begin_src lisp
+(setq *AUTOLISP-FILE-ENCODING* (getvar "SYSCODEPAGE"))
+#+end_src
+
+— the obvious portable idiom — was broken on macOS for SBCL builds.
+
+* Proposal
+
+One alias table for encodings whose spelling differs across hosts, in
+=autolisp-runtime/source/api.lisp=:
+
+#+begin_src lisp
+(defparameter *encoding-spelling-aliases*
+  '(("MAC-ROMAN" :mac-roman "MACROMAN" "MACINTOSH" "XMACROMAN" "CP10000")))
+#+end_src
+
+with =SQUEEZE-ENCODING-NAME= (upcase; drop =-=, =_=, space) and
+=RESOLVE-ENCODING-SPELLING-ALIAS= (returns canonical name + keyword),
+consulted by all three paths that turn a user-supplied encoding name
+into a keyword — the same three-site lesson as
+=cp1252-codec-host-independent=, where fixing OPEN alone would have
+left the CLI and LOAD broken:
+
+1. =PARSE-LOCALE-ENCODING-STRING= — LOAD's positional argument;
+2. =NORMALIZE-ENCODING-NAME= — OPEN's third argument, checked BEFORE
+   the CP-NNNN branch so =CP-10000= lands on Mac Roman instead of the
+   unknown =:CP10000=;
+3. =RESOLVE-ENCODING-NAME= — the CLI's =-e= / =-E=, so =-e macroman=
+   stops being a usage error on SBCL while working on CCL.
+
+The table is deliberately NOT the general alias registry
+(=autolisp-cli:*ENCODING-ALIASES*=, the mandatory four): Mac Roman is
+neither mandatory nor backfillable. A host shipping no spelling at all
+must still get the existing =enc-unsupported-target= diagnostic rather
+than a substitute codec we cannot honestly provide.
+
+* Acceptance criteria
+
+1. [X] =(open path mode ENC)= accepts =mac-roman=, =MAC-ROMAN=,
+   =macroman=, =MACROMAN=, =mac_roman=, =MAC_ROMAN=, =macintosh=,
+   =x-mac-roman=, =CP-10000= and =r,ccs=MAC_ROMAN=, all → =:MAC-ROMAN=.
+2. [X] =(load path ENC)= accepts the same set — the ALPM report's path.
+3. [X] =-e= / =-E= accept the same set and publish canonical
+   ="MAC-ROMAN"= in =*AUTOLISP-{FILE,TERMINAL}-ENCODING*=; the
+   line-terminator suffix still composes (=-e macroman-mac= →
+   =(:mac-roman :newline :cr)=); a typo (=mac-romain=) is still a
+   usage error.
+4. [X] Each of the three suites asserts that the emitted keyword is one
+   =EXTERNAL-FORMAT-AVAILABLE-P= accepts on the running host, so a host
+   that drops the spelling fails the suite instead of a user's LOAD.
+5. [X] User manual documents the accepted spellings and the
+   SYSCODEPAGE idiom (=clautolisp-user-manual.org=, "Encoding names the
+   hosts spell differently"); RELEASE_NOTES entry added.
+6. [ ] ALPM stops emitting ="macroman"= — see below. (Outside this
+   repository; tracked here because this issue is where the diagnosis
+   lives.)
+
+* Resolution
+
+Fixed in 1.8.44. Tests: =autolisp-runtime/tests/model-tests.lisp=,
+=autolisp-builtins-core/tests/builtin-tests.lisp=,
+=autolisp-cli/tests/cli-launch-tests.lisp=.
+
+** Outside this repository
+
+The name that triggered the report came from ALPM, which canonicalised
+=mac-roman= / =macintosh= to ="macroman"= — a name no Common Lisp
+registers — and passed it as LOAD's encoding argument:
+
+- =alpm/sources/alpm.lsp= — =*alpm--encoding-aliases*= /
+  =*alpm--known-encodings*=: canonical name changed to ="mac-roman"=.
+- =alpm-systems/scripts/generate-cad-vendor-systems-macos.py= — emitted
+  Python's codec name (=mac_roman= → ="macroman"=); now ="mac-roman"=.
+- The generated =alpm-systems/bricscad-v26-mac/*.alpm= files.
+
+clautolisp accepts every spelling either way now; the ALPM change is so
+that the FILE FORMAT carries a name that means something outside Python.
+
+** Deferred
+
+Should =*ENCODING-SPELLING-ALIASES*= grow the other Mac code pages
+(=mac-cyrillic=, =mac-greek=, =mac-iceland=, all of which SBCL ships)?
+Nothing has asked for them, and a row is worth adding only once a host
+divergence is MEASURED rather than assumed. Left out on purpose.

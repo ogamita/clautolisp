@@ -1,0 +1,111 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: optimization -- what DEBUG / SPACE / SPEED decide, and clal-compile-system
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: design
+#+DEPENDS: compiler
+#+BRANCH: -
+#+DATE: 2026-11-04
+
+"SPACE reads back but drives nothing on its own. Only DEBUG decides
+instrumentation; the matrix's SPACE x column confirms that's intended,
+so SPACE is currently a value you can store and retrieve."
+
+==> actually, it should be the relative value of the optimization
+levels that determines the effect:
+
+
+| example levels                | non-instrumented fork          | instrumented fork                                         |
+|-------------------------------+--------------------------------+-----------------------------------------------------------|
+| (DEBUG 3) (SPACE x) (SPEED 0) | present, SPEED<1:  interpreted | DEBUG>=SPACE: present instrumented, SPEED<2:  interpreted |
+| (DEBUG 3) (SPACE x) (SPEED 3) | present, SPEED>=1: compiled    | DEBUG>=SPACE: present instrumented, SPEED>=2: compiled    |
+| (DEBUG 0) (SPACE 3) (SPEED 0) | present, SPEED<1:  interpreted | DEBUG<SPACE:  absent                                      |
+| (DEBUG 0) (SPACE 3) (SPEED 3) | present, SPEED>=1: compiled    | DEBUG<SPACE:  absent                                      |
+
+So: 
+
+interpreted = SPEED<1
+compiled    = SPEED>=1
+instrumented fork present = DEBUG>=SPACE
+instrumented fork absent  = DEBUG<SPACE
+
+non-instrumented fork present = always true
+
+And this leaves some space for different (intermediary) levels of optimization, such as, indeed:
+SPEED level is the threshold — 0 means never, 1 and 2 keep the hotness threshold, 3 means compile eagerly at definition.
+This means that with SPEED 1 and 2, we get compilation on demand (and therefore optimization can only occur per function, like with CLAL-COMPILE).
+While with SPEED 3, we compile the whole file at once during LOAD, and therefore we can perform file-wide optimizations.
+
+Note, in Common Lisp implementations this can be archived by the use of:
+
+#+begin_src lisp
+(with-compilation-unit (:override t) #|for each transformed defun in the file:|# (compile name lambda) …)
+#+end_src
+
+For system-wide (global) optimizations, we could compile several files in one unit with:
+#+begin_src lisp
+(with-compilation-unit (:override nil) (compile-file path) …)
+#+end_src
+
+For now, we don't provide an "application" or "system" compilation
+function like bricscad when we generate a .des or autocad with a .vlx,
+but we could with:
+
+#+begin_src lisp
+(clal-compile-system list-of-files)
+#+end_src
+that would be implemented as:
+#+begin_src lisp
+(with-compilation-unit (:override nil) (dolist (file list-of-files) (clal-compile-file file) …))
+#+end_src
+
+But if we had (DEBUG 3) (SPEED 0) (SPACE 0) while calling clal-compile-system
+we would have to do just:
+#+begin_src lisp
+(dolist (file list-of-files) (clal-compile-file file) …)
+#+end_src
+
+and clal-compile-file similarly would do just:
+#+begin_src lisp
+  #|for each transformed defun in the file:|# (compile name lambda)
+#+end_src
+
+to avoid the global optimizations (eg. coalesing of common literal
+data structures, direct linking of functions (instead of going thru
+the symbol binding), etc.
+
+One optimization Briscad does, with high level optimization, is to
+detect whether a local variable is a free variable or a bound variable
+in the function, and when bound, transform it into essentially a
+lexical binding instead of a dynamic binding. (Unfortunately the test
+is imperfect, so this can be detected when we call functions using
+dynamically these variables! In that case we must disable this
+failling optimization in bricscad).
+
+So now we may implement clal-compile, clal-compile-file,
+vlisp-compile-file (same as clal-compile-file with a different API
+IIRC), Let's add (clal-compile-system output-file source-file-list)
+
+Note: with-compilation-unit defers warning about undefined
+functions. So we may have forward definitions even across files.
+
+
+
+* Resolved (implemented by the compiler epic; closed 2026-11-04)
+
+Re-added to issues/open/ on 2026-11-04; every point is in the tree:
+
+- the levels: the non-instrumented fork is always present, compiled at
+  SPEED >= 1; the instrumented fork is present while DEBUG >= SPACE and
+  compiled at SPEED >= 2; SPEED 3 compiles eagerly at definition, a whole
+  file in one unit (clautolisp --help, -O; user manual, Optimization;
+  RELEASE_NOTES, "kept while DEBUG >= SPACE");
+- clal-compile, clal-compile-file, vlisp-compile and clal-compile-system
+  (one host compilation unit: literals coalesced across files, forward
+  references resolve) -- autolisp-compiler/source/compile-file.lisp,
+  tests in clal-extensions-tests.lisp, manual sections CLAL-COMPILE-FILE /
+  CLAL-COMPILE-SYSTEM;
+- the BricsCAD-style "bound local becomes lexical" optimization is the
+  lexical-locals fork (compile-function.lisp, with its whole-corpus CI
+  lane); a function whose lambda list names *ERROR* gets no lexical fork
+  (local-error-handler-not-called, 2.3.28).

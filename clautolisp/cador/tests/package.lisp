@@ -1,0 +1,163 @@
+(defpackage #:clautolisp.cador.tests
+  (:use #:cl)
+  (:import-from #:fiveam
+                #:def-suite
+                #:in-suite
+                #:test
+                #:is
+                #:run
+                #:explain!
+                #:results-status)
+  (:import-from #:clautolisp.autolisp-runtime
+                #:autolisp-runtime-error
+                #:autolisp-runtime-error-code
+                ;; cador-2 slice 2b: runtime<->host document lock-step
+                #:make-runtime-session
+                #:set-runtime-session-current-document
+                #:make-document-namespace
+                #:document-namespace-host-document-key
+                #:runtime-session-host
+                #:set-runtime-session-host
+                #:autolisp-ename
+                #:autolisp-ename-value
+                #:make-autolisp-ename
+                #:autolisp-string
+                #:autolisp-string-value
+                #:make-autolisp-string
+                ;; cador-2 slice 3f: interactive-input parking end-to-end
+                #:make-evaluation-context
+                #:evaluation-context-session
+                #:current-evaluation-context
+                #:make-document-scheduler
+                #:session-scheduler
+                #:scheduler-register-context
+                #:scheduler-current-context
+                #:make-scheduled-context
+                #:scheduled-context-thread
+                #:scheduled-context-mailbox
+                #:scheduler-spawn-context
+                #:scheduler-start
+                #:scheduler-await-park
+                #:scheduler-serve-park
+                #:make-park-mailbox
+                #:park-mailbox-push
+                #:park-mailbox-pop)
+  (:import-from #:clautolisp.autolisp-host
+                #:host
+                #:host-name
+                #:host-open-document
+                #:host-close-document
+                #:host-activate-document
+                #:host-current-document
+                #:host-document-list
+                #:host-entget
+                #:host-entmod
+                #:host-entmake
+                #:host-entmakex
+                #:host-entdel
+                #:host-entupd
+                #:host-entlast
+                #:host-entnext
+                #:host-handent
+                #:host-ssget
+                #:host-ssadd
+                #:host-ssdel
+                #:host-ssname
+                #:host-sslength
+                #:host-ssmemb
+                #:host-ssgetfirst
+                #:host-sssetfirst
+                #:host-tblsearch
+                #:host-tblnext
+                #:host-tblobjname
+                #:host-namedobjdict
+                #:host-dictsearch
+                #:host-dictnext
+                #:host-dictadd
+                #:host-dictremove
+                #:host-dictrename
+                #:host-dictobjname
+                #:host-regapp
+                #:host-getvar
+                #:host-setvar
+                #:host-set-derived-sysvar
+                #:host-grdraw
+                #:host-prompt
+                #:host-vlax-create-object
+                #:host-vlax-get-object
+                #:host-vlax-release-object
+                #:host-vlax-get-property
+                #:host-vlax-put-property
+                #:host-vlax-invoke-method
+                #:host-vlax-property-available-p
+                #:host-vlax-method-applicable-p
+                #:host-vlax-get-acad-object
+                #:host-vlax-collection-items
+                #:host-vlax-ename->vla-object
+                #:host-vlax-vla-object->ename
+                #:host-vlax-erased-p)
+  (:import-from #:clautolisp.cador
+                #:cador
+                #:make-cador
+                #:entity-handle
+                #:make-entity-handle
+                #:pickset
+                #:make-pickset
+                #:symbol-table-record
+                #:make-symbol-table-record
+                #:symbol-table-record-name
+                #:symbol-table-record-kind
+                #:symbol-table-record-data
+                #:dictionary
+                #:make-dictionary
+                #:dictionary-entries
+                #:sysvar-cell
+                #:sysvar-cell-name
+                #:sysvar-cell-kind
+                #:sysvar-cell-value
+                #:sysvar-cell-read-only-p
+                #:sysvar-cell-host-derived-p
+                #:*full-sysvar-catalogue*
+                #:cador-entities
+                #:cador-active-drawing
+                #:cador-documents
+                #:cador-active-document-key
+                #:cador-picksets
+                #:cador-tables
+                #:cador-named-object-dictionary
+                #:cador-sysvars
+                #:cador-prompt-output
+                #:cador-prompt-stream
+                #:cador-pending-initget
+                #:cador-com-objects
+                #:cador-find-com-object
+                #:cador-com-object
+                #:cador-com-object-id
+                #:cador-com-object-progid
+                #:cador-com-object-properties
+                #:cador-com-object-released-p
+                #:register-com-progid
+                #:cador-display-log
+                #:cador-pickfirst
+                #:populate-default-tables
+                #:populate-default-sysvars
+                #:cador-snapshot
+                #:cador-restore
+                #:cador-table
+                #:cador-find-table-record
+                #:cador-add-table-record
+                #:cador-sysvar
+                #:cador-set-sysvar)
+  (:export #:cador-suite
+           #:run-all-tests))
+
+;;; The registry sandbox: a suite run outside the Makefiles (which set it)
+;;; must not write the developer's real registry either -- SETVAR of LISPSYS
+;;; persists (lispsys persistence, 2026-10-04).
+(let ((value (uiop:getenv "CLAUTOLISP_REGISTRY_FILE")))
+  (unless (and value (plusp (length value)))
+    (setf (uiop:getenv "CLAUTOLISP_REGISTRY_FILE")
+          (namestring (merge-pathnames
+                       (format nil "clautolisp-test-registry-~36R.sexp"
+                               (random (expt 36 8) (make-random-state t)))
+                       (uiop:temporary-directory))))))

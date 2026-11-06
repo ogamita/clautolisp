@@ -108,6 +108,109 @@
       (let ((hit (message-of messages :breakpoint-hit)))
         (is (= 2 (length (getf (second hit) :frames))))))))
 
+(test wire-is-escape-free-even-with-colour-output-armed
+  ;; aldb renders faces itself; the runtime colour policy's in-band ANSI must
+  ;; never reach the wire (aldb-faces-not-escape-sequences). Even with
+  ;; *COLOR-OUTPUT* armed as on a tty, no ESC appears in what the shim writes.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3))
+         (clautolisp.autolisp-runtime:*color-output* :yellow))
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:eval "'A") (:continue)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result messages))
+      (is (not (find #\Escape text))))))
+
+(test inspect-component-previews-are-sexps-not-double-quoted-strings
+  ;; A component preview is the value's own sexp representation, sent verbatim —
+  ;; NOT prin1'd again into a quoted string. The string element of ("hello")
+  ;; prints as "hello", never the double-escaped "\"hello\""
+  ;; (aldb-inspect-values-not-strings).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3)))
+    (clautolisp.autolisp-runtime:set-variable
+     (rt-sym "L")
+     (first (clautolisp.autolisp-runtime:read-runtime-from-string "(\"hello\")"))
+     context)
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:inspect "L") (:continue)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result text))
+      (let* ((page (second (message-of messages :inspect-page)))
+             (car-comp (find "car" (getf page :components) :key #'second :test #'string=)))
+        (is (consp car-comp))
+        (is (string= "\"hello\"" (third car-comp)))))))
+
+(test source-breakpoint-set-toggle-remove-over-the-wire
+  ;; aldb-minor-mode's source-buffer breakpoint commands: set a breakpoint at a
+  ;; line, disable it (:breakpoint-enabled nil), then remove it
+  ;; (:breakpoint-removed), all resolved in the stopped function.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3)))
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:set-breakpoint-line 4)
+                     (:toggle-breakpoint-line 4)
+                     (:remove-breakpoint-line 4)
+                     (:continue))
+                   :context context :thread-info ti :thunk (lambda () (call-two context)))
+      (declare (ignore result text))
+      (is (message-of messages :breakpoint-set))
+      (let ((toggled (message-of messages :breakpoint-enabled)))
+        (is (consp toggled))
+        ;; disabled: the wire flag is falsy (the harness reads wire nil/t in the
+        ;; keyword package as :nil/:t; the elisp client reads them as nil/t)
+        (is (not (eq :t (nth 2 toggled)))))
+      (is (message-of messages :breakpoint-removed)))))
+
+(test frame-wire-carries-its-locals
+  ;; each (:frame INDEX NAME POSITION LOCALS) now carries the frame's own locals
+  ;; as (NAME PREVIEW) pairs (aldb-toggle-details, aldb-commands.issue).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3)))
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:continue)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result text))
+      (let* ((hit (message-of messages :breakpoint-hit))
+             (frame0 (first (getf (second hit) :frames)))
+             (locals (nth 4 frame0)))       ; (:frame 0 NAME POSITION LOCALS)
+        (is (member "X" locals :key #'first :test #'string=))))))
+
+(test eval-in-frame-command-uses-that-frames-context
+  ;; :eval-in-frame selects the frame then evaluates in it: at ID's entry, X is
+  ;; visible in the outer TWO frame (index 1) with value 7.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (id (second metas))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti (fid-of id) 0 :when :before)
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:eval-in-frame 1 "X") (:abort)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result text))
+      (let ((reply (message-of messages :eval-result)))
+        (is (consp reply))
+        (is (string= "7" (second reply)))))))
+
+(test restart-frame-command-resumes-by-jumping-to-the-frames-function
+  ;; :restart-frame maps the frame index to its fid and issues aldo's jump to
+  ;; that function's start (aldb-restart-frame): the session resumes (a :resumed
+  ;; is written) and no restart-frame error is signalled (the fid was found).
+  ;; The exact runtime effect of the jump is aldo's own semantics.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3)))
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:restart-frame 0)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result text))
+      (is (member :resumed (message-tags messages)))
+      (is (not (member :error (message-tags messages)))))))
+
 (test inspector-descend-and-path-over-the-wire
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
@@ -147,3 +250,44 @@
                    :thunk (lambda () (call-two context)))
       (declare (ignore text messages))
       (is (eql 7 result)))))
+
+;;; --- the wire is ELISP-readable, not CL-readable (§20.1) -----------
+;;; Elisp has no packages and is case-sensitive: a CL prin1 emits
+;;; COMMON-LISP:NIL / :ATTACHED, which Emacs `read' turns into symbols that do
+;;; NOT match the nil/t and lower-case :attached aldb.el pcase / plist-get on.
+
+(test elisp-form-serializer-shapes-atoms
+  (flet ((s (x) (with-output-to-string (o)
+                  (clautolisp.ui.emacs::write-elisp-form x o))))
+    (is (string= "nil" (s nil)))
+    (is (string= "t" (s t)))
+    (is (string= ":pos" (s :pos)))                    ; keywords lower-cased
+    (is (string= "42" (s 42)))
+    (is (string= "\"hi\"" (s "hi")))
+    (is (string= "\"a\\\"b\"" (s "a\"b")))            ; \ and " escaped
+    (is (string= "(:frame 0 \"TWO\" nil)" (s '(:frame 0 "TWO" nil))))
+    (is (string= "(:a 1 (:b t) nil)" (s '(:a 1 (:b t) nil))))))
+
+(test write-message-emits-one-elisp-line
+  (let ((line (string-right-trim
+               '(#\Newline)
+               (with-output-to-string (o)
+                 (let ((ui (clautolisp.ui.emacs:make-emacs-ui
+                            :input (make-string-input-stream "") :output o)))
+                   (clautolisp.ui.emacs::write-message
+                    ui :attached :protocol-version '(1 0) :empty nil :flag t))))))
+    (is (string= "(:attached :protocol-version (1 0) :empty nil :flag t)" line))))
+
+(test hit-snapshot-on-the-wire-has-no-cl-package-atoms
+  ;; a real :breakpoint-hit line — the exact text Emacs reads — must carry no
+  ;; COMMON-LISP: / uppercase :FOO atoms (a live regression guard on the shim).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (ti (break-at metas 3)))
+    (multiple-value-bind (result text messages)
+        (run-emacs '((:continue)) :context context :thread-info ti
+                   :thunk (lambda () (call-two context)))
+      (declare (ignore result messages))
+      (is (not (search "COMMON-LISP" (string-upcase text))))
+      (is (search "(:breakpoint-hit" text))          ; lower-case tag, verbatim
+      (is (search ":function" text)))))

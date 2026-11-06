@@ -1,0 +1,140 @@
+;;;; optkw-probe.lsp -- harvest the localised OPTION KEYWORDS of CAD commands
+;;;; (the second, and hardest, CAD locale dictionary) for cadtui
+;;;; (issues/open/cadtui-locale-option-keywords).
+;;;;
+;;;; There is no getcname-equivalent for option keywords: the only way to read a
+;;;; command's offered options is to ENTER the command and let it print its
+;;;; prompt, which on a localised install lists the localised keywords in
+;;;; brackets, e.g. OFFSET -> "... ou [Par/Effacer/Calque] <...>:".
+;;;;
+;;;; WHERE THE PROMPT IS READ (2026-10-06): from the CAD's own command-history
+;;;; LOG, not from stdout. The first version bracketed stdout and got EMPTY
+;;;; blocks on BricsCAD V25 Windows and V26 macOS (jobs 16979749963 /
+;;;; 16979749962): a prompt never reaches the output alfe collects. The log
+;;;; does carry it (probe-logfile, MR !428: AutoCAD logs the whole command line,
+;;;; BricsCAD the command channel, e.g. "Depart de la ligne ou [Reprendre]").
+;;;; So, per command: point LOGFILEPATH at a fresh directory (a new log file
+;;;; there, measured), LOGFILEMODE 1, enter the command, cancel it, LOGFILEMODE
+;;;; 0, read that log; then RESTORE the original LOGFILEPATH / LOGFILEMODE
+;;;; BEFORE printing anything (alfe drains AutoCAD's output through that log).
+;;;; BricsCAD on macOS writes no log in batch mode (measured): empty there.
+;;;;
+;;;; PROMPTOPTIONTRANSLATEKEYWORDS is set only when the variable exists: on
+;;;; AutoCAD 2022's console a setvar of it aborts the whole run, even under
+;;;; VL-CATCH-ALL-APPLY (job 16979749961, "parametre ... rejete").
+;;;;
+;;;; SCOPE: a NARROW set of common commands whose options appear at the first
+;;;; prompt (the issue: scope narrowly, expand later).
+;;;;
+;;;; Output (stdout; the payload is the log lines between the markers):
+;;;;   OPTKW-ENGINE  <PROGRAM>  <ACADVER>  <PLATFORM>  <LOCALE>
+;;;;   OPTKW-TRY     _<COMMAND>          (before entering it)
+;;;;   OPTKW-BEGIN   _<COMMAND>
+;;;;   OPTKW-LOG     <a line of the command's log>
+;;;;   OPTKW-END     _<COMMAND>
+;;;;   OPTKW-DONE
+
+;; A narrow set of command-line commands whose options show at the first prompt.
+;; Dialog-prone commands (HATCH, ARRAY) are deliberately excluded: they can open
+;; a modal dialog that a plain cancel will not clear, wedging the CAD runner.
+;; ORDER (2026-10-08): AutoCAD 2022's accoreconsole run ends after the 8th
+;; command, SCALE, whatever comes 9th: ZOOM in job 16981155886, RECTANG in job
+;; 16998925798 once ZOOM was moved last (the eight logs are written within a
+;; second, then nothing until alfe's 300 s timeout). So the commands it never
+;; reached go FIRST and the already-harvested ones after them: a run that still
+;; stops at the 9th command (now MIRROR) says the limit is positional, one that
+;; stops at RECTANG says RECTANG wedges the console. OPTKW-TRY names each
+;; command before it is entered, so the transcript shows where it stopped.
+;; 2026-10-08, job 17026576122 with this order: NINE commands completed and
+;; it hung at ROTATE -- neither "the 9th command" nor a particular command
+;; (MIRROR -> ROTATE passed in the two earlier runs). See the ticket: the
+;; leading hypothesis is alfe not draining accoreconsole's console pipe, so
+;; the Windows wrapper now runs accoreconsole ONE COMMAND PER SESSION, handing
+;; the command in OPTKW_COMMANDS (comma-separated; unset = the whole list).
+;; REDRAW LAST, a flush: BricsCAD writes a command's prompt into the NEXT
+;; command's log, so the last command's prompt is lost (ZOOM, job 17026576124);
+;; REDRAW has no option of its own.
+(setq *optkw-cmds*
+  (list "PLINE" "BREAK" "LENGTHEN"
+        "OFFSET" "TRIM" "EXTEND" "FILLET" "CHAMFER" "MIRROR"
+        "ROTATE" "SCALE" "RECTANG" "ZOOM" "REDRAW"))
+
+(defun optkw--split (s / i acc)
+  ;; "A,B" -> ("A" "B"), blanks dropped.
+  (while (setq i (vl-string-search "," s))
+    (setq acc (cons (substr s 1 i) acc)
+          s (substr s (+ i 2))))
+  (setq acc (cons s acc))
+  (vl-remove-if (function (lambda (x) (= x ""))) (reverse acc)))
+
+(if (and (getenv "OPTKW_COMMANDS") (/= (getenv "OPTKW_COMMANDS") ""))
+  (setq *optkw-cmds* (optkw--split (getenv "OPTKW_COMMANDS"))))
+
+(defun optkw--getvar (name / v)
+  (setq v (vl-catch-all-apply 'getvar (list name)))
+  (if (vl-catch-all-error-p v) nil v))
+
+(vl-catch-all-apply 'setvar (list "CMDECHO" 1))
+(if (optkw--getvar "PROMPTOPTIONTRANSLATEKEYWORDS")
+  (vl-catch-all-apply 'setvar (list "PROMPTOPTIONTRANSLATEKEYWORDS" 1)))
+
+(defun optkw--cancel ( / n)
+  ;; Cancel until no command is active, bounded so a stuck prompt cannot hang.
+  (setq n 0)
+  (while (and (< n 6) (< 0 (cond ((numberp (optkw--getvar "CMDACTIVE"))
+                                  (optkw--getvar "CMDACTIVE"))
+                                 (t 0))))
+    (vl-catch-all-apply (function (lambda () (command))))
+    (setq n (1+ n))))
+
+(defun optkw--read-lines (path / f line acc)
+  (if (and path (/= path "") (findfile path))
+    (progn
+      (setq f (open path "r"))
+      (while (setq line (read-line f)) (setq acc (cons line acc)))
+      (close f)
+      (reverse acc))))
+
+(defun optkw--log-file (name / file)
+  ;; LOGFILENAME is a full path on AutoCAD and BricsCAD Windows, a bare name
+  ;; on BricsCAD macOS (in LOGFILEPATH).
+  (setq file (optkw--getvar "LOGFILENAME"))
+  (cond ((null file) nil)
+        ((findfile file) file)
+        (t (strcat (optkw--getvar "LOGFILEPATH") file))))
+
+(defun probe-cmd (name / old-path old-mode dir lines)
+  ;; before the log is redirected: the transcript then names the command
+  ;; a run died in, even when its block never comes
+  (princ (strcat "\nOPTKW-TRY\t_" name "\n"))
+  (setq old-path (optkw--getvar "LOGFILEPATH")
+        old-mode (optkw--getvar "LOGFILEMODE")
+        dir (strcat (optkw--getvar "TEMPPREFIX") "optkw-" name))
+  (vl-catch-all-apply 'vl-mkdir (list dir))
+  (vl-catch-all-apply 'setvar (list "LOGFILEMODE" 0))
+  (vl-catch-all-apply 'setvar (list "LOGFILEPATH" dir))
+  (vl-catch-all-apply 'setvar (list "LOGFILEMODE" 1))
+  (vl-catch-all-apply (function (lambda () (command (strcat "_" name)))))
+  (optkw--cancel)
+  (vl-catch-all-apply 'setvar (list "LOGFILEMODE" 0))
+  (setq lines (optkw--read-lines (optkw--log-file name)))
+  ;; restore BEFORE printing: alfe drains AutoCAD's output through the log
+  (if old-path (vl-catch-all-apply 'setvar (list "LOGFILEPATH" old-path)))
+  (if old-mode (vl-catch-all-apply 'setvar (list "LOGFILEMODE" old-mode)))
+  (princ (strcat "\nOPTKW-BEGIN\t_" name "\n"))
+  (foreach l lines (princ (strcat "OPTKW-LOG\t" l "\n")))
+  (princ (strcat "OPTKW-END\t_" name "\n"))
+  nil)
+
+(princ (strcat "OPTKW-ENGINE\t"
+               (vl-princ-to-string (optkw--getvar "PROGRAM"))
+               "\t"
+               (vl-princ-to-string (optkw--getvar "ACADVER"))
+               "\t"
+               (vl-princ-to-string (optkw--getvar "PLATFORM"))
+               "\t"
+               (vl-princ-to-string (optkw--getvar "LOCALE"))
+               "\n"))
+(foreach c *optkw-cmds* (probe-cmd c))
+(princ "\nOPTKW-DONE\n")
+(princ)

@@ -1,0 +1,204 @@
+# foreach-binding-vs-assignment — does FOREACH bind its variable, or assign to it?
+
+STATUS: OPEN — needs a VENDOR PROBE. Raised by pjb (2026-08-30) on
+reading slice 20: "foreach — are we sure that's how foreach behaves in
+bricscad and autolisp? (did we run probes? or is it clearly specified
+so?)".
+
+Answer to the question as asked: NO on both counts. We did not probe it,
+and the specification says the OPPOSITE of what the engine does.
+
+## What clautolisp does
+
+    (if (find-dynamic-binding name (current dynamic frame))
+        (set-variable name element context)      ; ASSIGN
+        (bind-dynamic-variable name element context))  ; BIND
+
+i.e. it ASSIGNS when the name already has a dynamic binding ANYWHERE in
+the chain, and only binds afresh otherwise. Measured, in this engine:
+
+  1. loop variable is a /-local of the same function   => 3      (clobbered)
+  2. loop variable is a /-local of the CALLER          => 3      (clobbered)
+  3. loop variable is a global                         => OUTER  (preserved)
+  4. name bound nowhere before                         => nil    (scoped)
+
+Case 2 is the sharp one: a FOREACH inside a callee overwrites a LOCAL OF
+ITS CALLER, reachable only because AutoLISP is dynamically scoped.
+
+Case 3 disagrees with cases 1 and 2 for no reason a user could predict: a
+global survives only because it lives in the NAMESPACE rather than in a
+dynamic frame, so FIND-DYNAMIC-BINDING misses it. That asymmetry is an
+artefact of the implementation, not a rule anyone chose.
+
+## What the specification says
+
+autolisp-spec, Special Form Entry: FOREACH —
+
+  Evaluation Rules: "for each element of the resulting list, BIND it to
+  name"
+  Side Effects: "REBINDING name for each iteration"
+
+and chapter 7 on documentation scoping is explicit that a "foreach
+iteration variable that rebinds the name carries its own documentation
+slot THAT IS RESTORED WHEN THE REBINDING FRAME IS POPPED".
+
+Under those words, case 1 must yield BEFORE, not 3.
+
+## What is verified
+
+Nothing. The spec entry's own Availability section says: "AutoCAD 2026:
+documented (per Autodesk reference page). BricsCAD V26: presumed
+compatible (no contradicting page found). Status: AutoCAD documented;
+BricsCAD presumed-both pending Phase 4 verification." And the Autodesk
+page it cites documents FOREACH's purpose, not its scoping.
+
+So the engine's behaviour rests on neither a probe nor a normative
+sentence.
+
+## Not caused by the compiler work
+
+Slice 20 (2.0.21) open-coded FOREACH and preserved this exactly --
+deliberately, by calling the same BIND-FOREACH-VARIABLE the interpreter
+calls, which is the rule that keeps compiled and interpreted evaluation
+in step. Compiling it did not change it and could not have revealed it;
+pjb asking did.
+
+## Next step
+
+probes/sources/probe-foreach-scope.lsp is written and registered in the
+manifest. It reports the four cases above plus an empty list, an empty
+body and the return value, and is phrased so the ANSWER says which
+semantics the engine has without the reader needing to know the engine.
+It needs a machine with AutoCAD and BricsCAD -- `make probe`.
+
+## What to do with the answer
+
+  - If the vendors BIND: clautolisp is wrong in cases 1 and 2, and the
+    fix is one line in BIND-FOREACH-VARIABLE (always bind in the frame
+    FOREACH pushes). The compiler needs no change at all, because it
+    calls that function. The equivalence corpus already contains both
+    cases, so they will simply start reporting the other answer.
+  - If the vendors ASSIGN: the spec's wording is wrong and should be
+    corrected, and case 3 is still an inconsistency to settle -- a global
+    ought to behave like any other prior binding.
+  - If they DISAGREE with each other: it is a dialect divergence, which
+    is what the dialect machinery exists for.
+
+The one outcome that should not stand is the present one: an
+implementation nobody checked, contradicting a specification nobody
+checked it against.
+
+## ANSWER FROM AUTOCAD (2026-08-30) — clautolisp is wrong
+
+probe:suite:autocad:windows, AutoCAD on the Windows runner:
+
+    case                                  AutoCAD    clautolisp
+    /-local of the same function          BEFORE     3
+    /-local of the CALLER                 BEFORE     3
+    global                                OUTER      OUTER
+    bound nowhere before                  nil        nil
+    empty list                            BEFORE     BEFORE
+    return value                          (30 nil nil) (30 nil nil)
+
+AUTOCAD BINDS. The prior value is restored when the loop ends, in both
+the same-function and the caller's-local cases -- exactly as the
+specification says ("bind it to name", "rebinding name for each
+iteration", "restored when the rebinding frame is popped").
+
+clautolisp ASSIGNS, and so clobbers a local of the function AND of its
+caller. It matches neither AutoCAD nor our own spec. The spec was right
+and the implementation was wrong.
+
+The two engines agree on everything else: the empty list, the unbound
+name, and the return value in all three shapes.
+
+BricsCAD has not answered yet (see
+issues/open/probes-suite-crashes-bricscad.issue) but its answer cannot
+make clautolisp's current behaviour correct for --strict or --autocad,
+which are the dialects AutoCAD defines.
+
+## The fix, when taken
+
+One line in BIND-FOREACH-VARIABLE: always bind in the frame FOREACH
+pushed, instead of assigning to whatever the chain already has.
+
+    (defun bind-foreach-variable (name element context)
+      (bind-dynamic-variable name element context))
+
+THE COMPILER NEEDS NO CHANGE. Slice 20 open-coded FOREACH by CALLING
+this function rather than restating the rule, so compiled and interpreted
+loops move together by construction. The equivalence corpus already
+contains both affected cases and asserts that the two agree, not what
+they agree ON, so it keeps passing and starts describing the new
+behaviour.
+
+What does need changing is any test that PINS the old values, and the
+chapter-7 documentation-scoping text should be re-read to confirm it now
+matches the code rather than contradicting it.
+
+If BricsCAD turns out to ASSIGN, this becomes a dialect divergence rather
+than a plain fix, which is what the dialect machinery is for.
+
+## FIXED in 2.0.22, on AutoCAD's evidence (pjb: "You may take already the
+## one-line foreach fix on AutoCAD's evidence")
+
+BIND-FOREACH-VARIABLE now binds, unconditionally, in the frame FOREACH
+pushed. clautolisp matches AutoCAD on every probed case:
+
+    case                            AutoCAD   clautolisp now   was
+    /-local of the same function    BEFORE    BEFORE           3
+    /-local of the CALLER           BEFORE    BEFORE           3
+    global                          OUTER     OUTER            OUTER
+    bound nowhere before            nil       nil              nil
+
+THE COMPILER NEEDED NO CHANGE, as predicted: slice 20 open-coded FOREACH
+by CALLING this function rather than restating the rule, so the compiled
+fork moved the moment the interpreter did.
+
+WHAT THIS EXPOSED. All 31 suites passed BOTH BEFORE AND AFTER the change.
+The equivalence corpus asserts that compiled and interpreted evaluation
+AGREE -- true either way -- and nothing asserted WHAT they agreed on. So
+nothing would have noticed a silent revert, and nothing had noticed the
+original defect. Four tests now pin the values against AutoCAD's measured
+answers, including the global case, which used to pass FOR THE WRONG
+REASON: the old assignment path missed a global only because
+FIND-DYNAMIC-BINDING does not look in the namespace, an accident rather
+than a rule.
+
+BRICSCAD IS STILL UNMEASURED (probes-suite-crashes-bricscad.issue). If it
+turns out to ASSIGN, that is a dialect divergence to encode rather than a
+reason to revert: AutoCAD defines --strict and --autocad, and the
+specification says bind.
+
+
+CONFIRMED AGAINST BRICSCAD TOO -- 2026-08-31, both platforms
+------------------------------------------------------------
+
+This was closed on AUTOCAD's evidence alone; BricsCAD had never
+answered, because the probe suite would not LOAD there (see
+probes-suite-crashes-bricscad.issue, and the two wrong guesses it
+took). With the offending syntax moved into strings read at run time,
+BricsCAD ran the whole suite on macOS and on Windows, and agrees with
+AutoCAD on every scope case:
+
+  case                                AutoCAD  BricsCAD  clautolisp
+  loop variable is a /-local          BEFORE   BEFORE    BEFORE
+  loop variable is the CALLER's       BEFORE   BEFORE    BEFORE
+  loop variable is a global           OUTER    OUTER     OUTER
+  bound nowhere before the loop       nil      nil       nil
+  empty list -- no iteration          BEFORE   BEFORE    BEFORE
+
+BOTH VENDORS BIND. The 2.0.22 fix was right, and is now right against
+two engines rather than one. The behaviour clautolisp had before it --
+ASSIGN when the name was already bound anywhere in the chain, which
+wrote a caller's local and left the last element in it -- matched
+neither vendor and neither reading of the specification.
+
+Raw evidence in the repository:
+  probe-results/autocad/ms-windows/20260831T130043Z/
+  probe-results/bricscad/ms-windows/20260831T130116Z/
+  probe-results/bricscad/macos/20260831T140019Z/
+
+ONE DIVERGENCE DID TURN UP, and it is not about binding: a FOREACH with
+NO BODY returns THE LIST in BricsCAD and NIL in AutoCAD. New ticket:
+issues/open/foreach-empty-body-return-diverges.issue.

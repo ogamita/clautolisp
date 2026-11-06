@@ -1,4 +1,11 @@
--*- coding:utf-8 -*-
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vendor-probe-autocad-bricscad-divergences — real AutoCAD-vs-BricsCAD differences surfaced by the vendor probes
+#+STATUS: DEFERRED
+#+PRIORITY: P1
+#+TYPE: divergence-cat
+#+DEPENDS: -
+#+BRANCH: -
+
 
 vendor-probe-autocad-bricscad-divergences — real AutoCAD-vs-BricsCAD differences surfaced by the vendor probes
 =============================================================================================================
@@ -137,7 +144,7 @@ Confirmed divergences to process (spec + dialect + cadaptor each):
   D1 entmake subclass markers for R13+ entities   (autocad reject / bricscad
      synthesise / clautolisp lenient+WARN / strict require).   *** DONE ***
   D2 regapp  -- NOT a divergence: CONTAMINATION. See below.
-  D3 entmod on non-graphical XRECORD: autocad no-op, bricscad updates.  OPEN.
+  D3 entmod on non-graphical XRECORD: autocad no-op, bricscad updates.  *** DONE ***
 
 D1 IMPLEMENTED (clautolisp 1.6.16). entity-family gains a since-r13-p flag;
 clautolisp.drawing:entity-dxf-missing-markers (pure) reports the absent
@@ -147,6 +154,27 @@ clautolisp.drawing:entity-dxf-missing-markers (pure) reports the absent
 marker note in the ENTMAKE + ENTMAKEX *** clautolisp sections. Tests: drawing
 unit + builtins-core per-dialect e2e (all green). STILL TODO for D1: fork the
 cadaptor issue.
+
+D3 IMPLEMENTED (clautolisp 1.6.17; renamed mock-host -> cador in 1.7.27).
+Mirrors D1 exactly, sharing the same per-dialect resolver. The cador host
+gates host-entmod (clautolisp/cador/source/entity-api.lisp): the pure
+predicate %entmod-target-nongraphical-p flags a non-graphical target (the
+drawing layer's XRECORD/DICTIONARY families carry :graphical-p nil), and
+%resolved-divergence-policy (shared with D1) maps the ambient dialect
+(clautolisp.autolisp-runtime:current-evaluation-dialect-name) to an action:
+autocad-2026 / clautolisp / strict -> :normative NO-OP (entmod returns nil,
+the mutation does not take, matching AutoCAD); bricscad-v26 / lax -> :deviant
+apply (matching BricsCAD). strict + bricscad-v26 additionally emit the
+[entmod-nongraphical] warning; lax is silent. Spec: ENTMOD page ****
+"Non-graphical objects (resolved divergence — chapter 25 case 2)" in the
+autolisp-visual-lisp-specification-draft. Tests (all green, verified
+2026-08-06, builtins-core suite 1712 checks 0 fail): builtins-core e2e
+dd-d3-normative-dialects-noop-entmod-on-xrecord /
+dd-d3-deviant-dialects-apply-entmod-on-xrecord /
+dd-d3-warns-under-bricscad-and-strict-only /
+dd-d3-graphical-entmod-unaffected-by-object-gate, plus the cador host unit
+dictsearch-object-feeds-entmod-and-entget. STILL TODO for D3: fork the
+cadaptor issue (same external follow-on as D1).
 
 D2 RESOLVED as contamination, NOT a divergence. regapp of an ALREADY-registered
 app returns nil on BOTH AutoCAD and BricsCAD (that is the spec) -- the probe's
@@ -166,7 +194,142 @@ real ssget "X" divergence underneath.
 Status
 ------
 
-OPEN. D1 IMPLEMENTED (clautolisp 1.6.16; cadaptor fork still TODO). D2 closed
-as contamination (not a divergence). D3 (entmod on XRECORD) remains: spec +
-dialect + cadaptor. Selection blocked on a clean empty.dwg (runner).
-Next: D3, then the D1/D3 cadaptor forks.
+OPEN. All three divergences are now RESOLVED in clautolisp itself:
+D1 IMPLEMENTED (1.6.16), D2 closed as contamination (not a divergence),
+D3 IMPLEMENTED (1.6.17, verified green 2026-08-06). What remains is NOT
+clautolisp code:
+  - the D1/D3 cadaptor forks (file the two divergences into the cadaptor
+    consumer — external follow-on, another repo); and
+  - the selection re-verify, blocked on regenerating a truly-empty
+    c:/gitlab-runner/dwg/empty.dwg on the Windows runner (drawing hygiene,
+    not a language divergence — see the MEASURED note above).
+This issue stays OPEN as the tracker for those two residual items.
+Next: the cadaptor forks; the empty.dwg regen is a one-shot runner task.
+
+* MEASURED 2026-08-14 — empty.dwg is NOT the blocker
+
+The CAD-tagged jobs ran for the first time on 2026-08-14 (they had been
+queued against =bricscad= / =autocad= tags that no runner carries; one
+=cad= tag on the concurrency=1 runner fixed that). What they show
+contradicts the "empty.dwg regen" line above, so it is corrected here
+rather than acted on.
+
+The file exists, is wired, and WORKS. =PROBE_DWG= is
+=c:/gitlab-runner/dwg/empty.dwg= in =.gitlab/native.yml=, and in the same
+pipeline (2761360851) three jobs consumed it successfully:
+
+| encoding:experiment:autocad:windows  | SUCCESS |
+| pathname:probe:autocad:windows       | SUCCESS |
+| pathname:probe:bricscad:windows      | SUCCESS |
+
+And the two vendor-probe jobs that FAILED opened it without complaint:
+
+: autocad  — protocol: matched "READY" after 0.78 s
+: bricscad — protocol: matched "READY" after 9.40 s
+
+Both then ran their server loop to a normal return and produced:
+
+:   observations: 0 conforms, 0 known-divergence, 0 unexpected, N missing
+:   (no OBSERVE lines — backend unreachable or probe crashed)
+
+So the drawing opens, the runtime bootstraps, the loop runs — and NO
+OBSERVE line is emitted. On BOTH vendors. Regenerating empty.dwg cannot
+change that.
+
+** What it is not
+
+Not the =&rest= gap either, tempting as it looks. The AutoCAD trace does
+log =[CAD] host lacks &rest; keeping bootstrap 1-arg shadows +
+walk-rewriting normalize= — and the vendor harvest in the same job
+confirms AutoCAD rejects it (=EXTPROBE REST-BINDS=ERROR:nombre
+d'arguments trop important=). But BricsCAD HAS =&rest=, takes no such
+fallback, and loses its OBSERVE lines identically. A cause common to both
+is upstream of that.
+
+** FOUND 2026-08-14 — the log was UTF-16 and the comparator read UTF-8
+
+The observation channel it was. Diagnosed entirely from the archived
+artifacts of the failed run, without re-running anything.
+
+The chain is: probe =princ='s =OBSERVE <name> <token>=, alfe bridges the
+CAD's output into =protocol/stdout.txt= and relays it to its own stdout,
+the PowerShell harness tees that into =<scenario>.log=, and
+=scripts/compare-observations.py= parses the log. Every link worked. The
+last one silently did not:
+
+: $ python3 -c "b=open('entity-lifecycle.log','rb').read(); ..."
+: BOM b'\xff\xfe'
+: ascii  OBSERVE occurrences: 0
+: utf16  OBSERVE occurrences: 101
+: NUL bytes: 7596
+
+Windows PowerShell's =Tee-Object -FilePath= writes UTF-16LE with a BOM.
+The comparator opened the log with =encoding="utf-8", errors="replace"=,
+which does NOT raise — it yields a wall of replacement characters. Every
+OBSERVE line vanished, the table came out empty, and the script printed
+"(no OBSERVE lines — backend unreachable or probe crashed)", accusing a
+CAD that had just emitted 101 perfectly good observations.
+
+A warning for whoever reads this next: =grep= misled the first pass.
+=ugrep=, the grep in use here, transparently decodes UTF-16, so grepping
+the log found all 101 OBSERVE lines and made it look like the harness was
+being handed good data. Only =od= / a byte count settled it. When a text
+tool disagrees with a program about a file, check the bytes.
+
+** The result: every vendor probe PASSES, on both engines
+
+Re-running the comparator over the SAME archived logs, with the decode
+fixed (1.8.36):
+
+| probe            | AutoCAD                  | BricsCAD                              |
+|------------------+--------------------------+---------------------------------------|
+| entity-lifecycle | 101 conforms, 0 missing  | 97 conforms + 4 known-divergence      |
+| drawing-data     | 27 conforms, 0 missing   | 26 conforms + 1 known-divergence      |
+| selection        | 21 conforms, 0 missing   | 21 conforms, 0 missing                |
+
+Exit 0 on all six. And the divergences are not noise — they are exactly
+the two this register documents, now confirmed against real hardware
+rather than inferred:
+
+- D1: =d1.markerless-{ellipse,lwpolyline,ray,xline}: created (normative
+  rejected)= — BricsCAD accepts ENTMAKE data with the R13+ subclass
+  markers omitted, where the spec (per AutoCAD) requires them. Precisely
+  the =[entmake-subclass-marker]= entry.
+- D3: =dict.entmod-xrecord-entry: payload2 (normative payload)= —
+  BricsCAD applies ENTMOD to a non-graphical object where AutoCAD makes
+  it a no-op. Precisely the =[entmod-nongraphical]= entry.
+
+The AutoCAD side also harvested, in the same run, direct confirmation of
+what the portability register had only inferred: =EXTPROBE
+SETF-STRING=ERROR:no function definition: SETF=, =LET-SUM=ERROR:no
+function definition: Y=, =REST-BINDS=ERROR:nombre d'arguments trop
+important=. AutoCAD has no SETF, no LET, and rejects &REST.
+
+So the "selection re-verify" this ticket lists as residual is DONE —
+21/21 on both vendors — and it never needed a new empty.dwg.
+
+** On sourcing a blank drawing, when one IS needed
+
+Recorded because the question was asked (pjb) and the answer is not
+obvious:
+
+- Do NOT commit a .dwg. It is a vendor binary bound to a format version,
+  and this project already decided against shipping one (see
+  libredwg-empty-dwg-write-invalid: "the vendor probes use the runner's
+  CAD-made empty.dwg + clean-slate, no generated DWG shipped").
+- Do NOT generate it with libredwg: its writer emits files real CADs
+  reject (AcDbDictionary where AcDbLayerTable is expected; AutoCAD
+  ErrorStatus=53). That is the whole subject of that ticket.
+- PREFER the templates the products ship, which is what pjb suggested and
+  what the code already does: =discover-bricscad-template= and
+  =discover-autocad-template= (the latter looking for
+  =Template/acadiso.dwt=) exist in the two backends today.
+- A provisioning job that opens a shipped template under accoreconsole
+  and SAVEAS to .dwg is the right fallback IF a real =.dwg= is required
+  rather than a =.dwt=. It is a one-shot runner task, not per-pipeline
+  work.
+
+Note 2026-10-06 (triage refresh): all three divergences are resolved in
+clautolisp; what remains -- the cadaptor forks (an external repository) and the
+selection re-verify, blocked on regenerating a clean empty.dwg on the Windows
+runner -- is not clautolisp work. DEFERRED until one of those moves.

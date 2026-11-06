@@ -1,0 +1,90 @@
+ename-eq-identity — two ENAMEs for the same entity are not EQ / EQUAL
+====================================================================
+
+Found: schms-parity 1.6.6, while smoke-testing the entity lifecycle.
+
+Symptom
+-------
+
+In AutoCAD / BricsCAD two entity names that denote the SAME entity are
+EQ (and EQUAL). In clautolisp each call that yields an ename mints a
+FRESH wrapper, so neither EQ nor EQUAL holds:
+
+  $ clautolisp --host mock -x '(progn
+      (setq e (entmakex (list (cons 0 "LINE")
+                              (cons 10 (list 0 0 0)) (cons 11 (list 1 1 0)))))
+      (princ (if (eq e (entlast)) "EQ" "NOTEQ")))'
+  NOTEQ            ; AutoCAD/BricsCAD print EQ
+
+This breaks the common portable idioms
+  (if (eq ename (car sel)) ...)
+  (if (eq (ssname ss i) target) ...)
+  (member ename list-of-enames)      ; EQ-based
+
+Cause
+-----
+
+clautolisp.autolisp-mock-host::handle->ename (entity-api.lisp) does
+  (make-autolisp-ename :value handle)
+on every call — entget, entlast, entnext, handent, ssname, entmakex all
+build a new struct for the same handle. autolisp-ename equality is
+struct identity, so same-entity enames differ.
+
+Fix sketch
+----------
+
+Intern enames per handle so the same handle yields the same (EQ) ename
+object within a session/drawing: a handle->ename cache on the drawing
+(or the host), populated by handle->ename and invalidated with the
+drawing. Alternatively, give autolisp-ename value-based EQL/EQUAL
+semantics in the runtime's equality builtins (EQ must stay identity, so
+the interning approach is the faithful one — vendor EQ is true).
+
+Scope / risk
+------------
+
+Cross-cuts every ename producer. Out of scope for the schms-parity
+entity-CRUD pass (which is about entity data, not ename identity), so
+deferred and filed here. Add a portable probe assertion
+(eq (entlast) (entlast)) once fixed. Listed in the Deferred section of
+entity-mutation-parity.issue.
+
+===========================================================================
+RESOLUTION (2026-07-30) — clautolisp 1.7.3, interning approach.
+===========================================================================
+
+Fixed by interning enames per handle on the MockHost, so every producer
+yields the same (EQ / EQUAL) ename object for a given handle within a
+drawing — matching vendor AutoLISP, where EQ is true for two enames of
+the same entity.
+
+  - mock-host gained an ENAME-CACHE (handle-string -> autolisp-ename)
+    plus ENAME-CACHE-DRAWING (the drawing the cache is valid for).
+  - handle->ename now takes HOST, drains the cache when the active
+    drawing identity changes (future multi-drawing sessions), and
+    interns: same handle -> same object.
+  - Every producer routes through it: the entget (-1 . ename) head
+    (entity->al-view), entlast, entnext, entmakex/%host-add-entity,
+    entmod, handent, ssname (selection-api), tblobjname
+    (table-record->ename), namedobjdict / dictsearch / dictnext /
+    dictremove / dictobjname (dictionary-api). The two remaining direct
+    make-autolisp-ename call sites (ssname, table-record->ename) were
+    rerouted through handle->ename.
+
+Verified (clautolisp --host mock):
+  (eq (entlast) (entlast))          => T
+  (eq e (entlast))                  => T   ; e from entmakex
+  (eq e (entnext))                  => T
+  (eq e (handent (cdr (assoc 5 (entget e))))) => T
+  (eq e (ssname (ssget "X") 0))     => T
+  (member e (list (entlast)))       => non-nil
+  (equal e (entlast))               => T
+  distinct entities: (eq a b)       => nil   ; interning does not conflate
+
+Regression pins added to autolisp-mock-host/tests/entity-api-tests.lisp
+(6 tests: entlast-eq-across-calls, entmakex-eq-to-entlast/entnext,
+entget-head-eq, handent-eq, ssname-eq+member, distinct-not-eq). Mock-host
+FiveAM suite 727 -> 737 checks, 100% pass; conformance corpus unchanged
+(3666 pass / 218 fail); EQ stays struct identity (only interning changed).
+
+CLOSED.

@@ -1,0 +1,125 @@
+#+TITLE: CAD vendor-probe campaign (drive the real-CAD-gated CAD-runtime issues)
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: ci-campaign
+#+DEPENDS: -
+#+BRANCH: cad-vendor-probe-campaign
+
+* Why
+
+The macOS (BricsCAD) and Windows (AutoCAD + BricsCAD) runners are available
+again (pjb, 2026-09-26), so the CAD-hardware-gated CAD-runtime issues can be
+driven to closure through the native child pipeline (.gitlab/native.yml). This
+issue tracks that campaign; each target issue is closed on its own evidence.
+
+* Targets and the job that informs each
+
+- autocad-runtime-vlax-sleep-and-rest — code complete (1.6.4/1.6.6), open only
+  pending a confirming run. Job: =vendor:probes:autocad= (protocol loop holds
+  at READY, real verdicts, no unbound-vlax-sleep crash). Close if green.
+
+- autocad-no-rest-output-capture — the -x / native-load eval-request path loses
+  CAD output. First PROBE whether accoreconsole honours LOGFILEMODE /
+  LOGFILEPATH under /isolate (a small probe form via
+  =probe:suite:autocad:windows= or a dedicated run), then implement the capture
+  (route -x through source-load, or tee the command-line log), then re-verify.
+
+- accoreconsole-deported-load-highbyte — a source file with a high byte (é=0xE9)
+  fails LOAD under accoreconsole (LISPSYS 0, ANSI_1252). Job:
+  =encoding:experiment:autocad:windows= (scripts/run-encoding-experiment.ps1
+  -Backend autocad) to reproduce; then bring autolisp-source-load to the
+  encoding-honouring reference loader and re-run (LISPSYS 0 vs 1/2, no /isolate).
+
+* Also validates (residual of the now-closed vla-* issues)
+
+- =probe:suite:autocad:windows= / =vendor:probes:bricscad:macos= exercise the
+  SPEC-UNCERTAIN vendor behaviours the two closed vla-* issues left to confirm
+  (EffectiveName on dynamic blocks, entmakex-on-BLOCK, ENDBLK-terminated entnext
+  walk, glyph-metric bounding boxes). Findings feed deferred-spec-research.issue
+  and the autolisp-spec divergence notes; no code is blocked on them.
+
+* Log
+
+- 2026-09-26: campaign opened; MR spawns the native child; playing the AutoCAD
+  and BricsCAD probe jobs. (Results appended as they return.)
+
+** 2026-09-26 — first probe round + bridge fix
+
+detect:runners: MACOS_RUNNER=online, WINDOWS_RUNNER=online. Native child
+2885655529 ran the AutoCAD/BricsCAD probes. Findings:
+
+- BLOCKER FOUND (alfe 2.2.107): vendor:probes:autocad failed before READY with
+  bridge-autocad.vbs(138,1) "Variable non definie: 'lastTouchError'" — every
+  AutoCAD probe then reported "backend unreachable" (3 probes failed). The
+  bridge's Option Explicit script assigns lastTouchError (the hung-instance
+  retry, alfe-autocad-hung-instance-blocks-com-bootstrap) but never Dim'd it.
+  FIX: added lastTouchError to the Dim in backend-autocad.lisp; added a headless
+  regression test (autocad-bridge-template-declares-every-global-under-option-
+  explicit) that lints the emitted template for any Option-Explicit global
+  assigned-but-not-Dim'd. alfe suite 1202/1202. Relates to
+  alfe-autocad-vbscript-comments. This unblocks #4 verification and the AutoCAD
+  vla SPEC-UNCERTAIN probes on the next run.
+
+- #5 accoreconsole-deported-load-highbyte REPRODUCED: encoding:experiment:
+  autocad:windows shows source.{default,utf8,utf16le}.load = LOAD-ERR for a file
+  containing (setq ENCSRC "A<e9>Z") across chcp 1252/437, UTF-8, C — while plain
+  open+read-char reads the bytes fine (file.default.hex = 41 e9 ac 42). So the
+  deported source-load chokes on the high byte specifically; the probe masks the
+  real error as LOAD-ERR. NEXT: surface the actual error message, then bring
+  autolisp-source-load to the encoding-honouring reference loader.
+
+** 2026-09-26 — AutoCAD probes ran (untouched MR !292); three results
+
+The untouched-MR strategy worked: MR !292's native child 2885828771 survived
+master churn and its Windows AutoCAD jobs ran to completion once the runner
+freed (all macOS probes were green much earlier). Three findings:
+
+- #4 autocad-runtime-vlax-sleep-and-rest — RESOLVED/CLOSED. vendor:probes:autocad
+  reaches READY (18.65/16.61/18.15 s, "READY 0"), no "backend unreachable", no
+  VLAX-SLEEP/COMMAND apply-escape. PASS entity-lifecycle (101 conforms), PASS
+  selection (21), DIVERGED drawing-data (7 unexpected, recorded/not gated). The
+  1.6.x runtime fix is confirmed on the real backend; unblocked by the
+  lastTouchError bridge fix (alfe 2.2.119, MR !287).
+
+- drawing-data DIVERGED (NEW, tracked): AutoCAD is not surfacing xdata through
+  the probe — xdata.surfaced-with-applist no/expected yes, pair-count 0/8, the
+  1000-string / 1040-real / 1070-int16 / 1071-int32 / 1005-handle types all
+  absent. Belongs to drawing-data-structures-parity (fidelity), not a runtime
+  crash. Append the concrete observation there.
+
+- #5 accoreconsole-deported-load-highbyte — REAL ERROR CAPTURED. Across chcp
+  1252/437/65001, UTF-8 and C locale, and all three source-write encodings, the
+  load of a byte-0xE9 file fails identically with AutoCAD's NATIVE message:
+  "LOAD-ERR: La commande CHARGER n'a pas abouti: \"encp-src-default.lsp\"".
+  On-disk bytes confirmed (...22 41 e9 5a 22 29 = (setq ENCSRC "A<e9>Z")). Two
+  sub-findings: (a) "w,ccs=UTF-8" write mode did NOT produce UTF-8 — all three
+  variants yielded identical single-e9-byte files (accoreconsole ignores ccs on
+  write too); (b) the message is AutoCAD's NATIVE (load) error, which raises the
+  question whether the probe's nested (load) even routes through alfe's deported
+  autolisp-source-load shadow or hits native accoreconsole load — resolving that
+  before implementing, since it decides whether an autolisp-source-open-encoded
+  fix is testable by this probe. See #5 issue for the design note.
+
+- #3 autocad-no-rest-output-capture — probe:suite:autocad PASSED; its full-run
+  output IS captured (LogFilePath -> results.sexp, 1670 artifact files, princ
+  output visible in accoreconsole stdout). The gap #3 targets is the REST / -x
+  eval path specifically, a different code path needing headless investigation.
+
+** 2026-10-03 -- the SPEC-UNCERTAIN probes ran; campaign CLOSED
+
+The three targets are closed on their own evidence
+(autocad-runtime-vlax-sleep-and-rest, autocad-no-rest-output-capture,
+accoreconsole-deported-load-highbyte: issues/closed/). The residual --
+the four SPEC-UNCERTAIN block/COM behaviours -- had never actually been
+probed; probes/sources/probe-block-walk.lsp (MR !374) now asks them on
+AutoCAD and BricsCAD. Answers recorded in deferred-spec-research.issue.
+
+They revealed two clautolisp bugs, fixed before closing (pjb: "fix what's
+wrong before closing the campaign"), clautolisp 2.2.154 / MR !376:
+entmakex refused BLOCK/ENDBLK, and TEXTBOX / TEXT GetBoundingBox used a
+0.6 ratio (zero width for the box). Re-verified by running the same
+probe on clautolisp against the committed vendor runs.
+
+Left open, in deferred-spec-research: EffectiveName of a DYNAMIC block
+reference (needs a drawing carrying one; low value -- clautolisp has no
+dynamic blocks).

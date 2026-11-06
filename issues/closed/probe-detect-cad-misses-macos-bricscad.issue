@@ -1,0 +1,58 @@
+# probe-detect-cad-misses-macos-bricscad — `make probe` never found BricsCAD on macOS
+
+STATUS: DONE in this branch. Found 2026-08-30 the first time the probes/
+suite was pointed at a real macOS runner.
+
+## Symptom
+
+    $ make probe-bricscad
+    detect-cad: BricsCAD not found (set BRICSCAD_EXE or BRICSCAD_RUNNER)
+    run-probes: could not locate a runner for 'bricscad'.
+
+on a macOS machine with BricsCAD installed and working -- the alfe-based
+BricsCAD macOS jobs in the same pipeline succeeded.
+
+## Cause
+
+probes/scripts/detect-cad.sh looked for
+
+    /Applications/BricsCAD.app/Contents/MacOS/bricscad
+    /Applications/Bricsys/BricsCAD*.app/Contents/MacOS/bricscad
+
+and the real installation is
+
+    /Applications/BricsCAD V26.app/Contents/MacOS/bricscad
+
+-- VERSIONED, with a space, and not under a Bricsys/ subdirectory. Neither
+glob matches.
+
+The file's own header says "Auto-detection mirrors alfe's backend
+discovery (autolisp-front-end/source/backend-*.lisp)", and alfe walks
+"/Applications/BricsCAD*.app/" (backend-bricscad.lisp), which does match.
+So the comment was true of the intent and false of the code.
+
+## Why it was never noticed
+
+`make probe` FALLS BACK: with no CAD detected it runs the clautolisp
+baseline and says so. On a macOS workstation that produces a successful
+run and a results file -- just not the one you asked for. The README even
+documents the fallback as a feature, which it is, right up until the
+thing it silently substitutes is the thing you were trying to compare
+against.
+
+And there was no CI job for this suite on BricsCAD at all (only AutoCAD),
+so nothing else would have reported it.
+
+## Fix
+
+Add the versioned glob, first, so the newest bundle wins:
+
+    /Applications/BricsCAD*.app/Contents/MacOS/bricscad
+
+## Worth remembering
+
+A detector whose failure mode is "quietly measure something else" needs
+its success asserted, not just its exit status. The probe jobs record
+which product they ran (probe-results/<product>/...), so a run that
+substituted the baseline is visible after the fact -- but only to someone
+who looks.

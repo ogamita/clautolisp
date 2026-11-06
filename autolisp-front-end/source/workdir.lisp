@@ -35,14 +35,33 @@ created. Honors $TMPDIR / %TEMP% if set; otherwise falls back to
     (uiop:ensure-directory-pathname
      (or env "/tmp"))))
 
+(defvar *tag-random-state* nil
+  "A per-process random state used solely by RANDOM-TAG, seeded once
+from a high-entropy source (MAKE-RANDOM-STATE T) on first use. Kept
+separate from the global *RANDOM-STATE* so seeding the tag generator
+never perturbs any other consumer of CL:RANDOM. NIL until initialised
+by ENSURE-TAG-RANDOM-STATE.")
+
+(defun ensure-tag-random-state ()
+  "Return *TAG-RANDOM-STATE*, initialising it once per process from a
+high-entropy seed. Without this the tag generator would start from the
+implementation's fixed default state every process, so two runs (SBCL
+or CCL) produced the SAME 6-char tag — see
+issues/closed/workdir-random-tag-unseeded.issue."
+  (or *tag-random-state*
+      (setf *tag-random-state* (make-random-state t))))
+
 (defun random-tag (&optional (length 6))
   "Six lowercase alphanumerics — enough to make collisions in a
 single second statistically improbable for interactive use, short
-enough to keep workdir names readable in logs."
-  (let ((alphabet "abcdefghijklmnopqrstuvwxyz0123456789"))
+enough to keep workdir names readable in logs. Drawn from a
+process-seeded random state (ENSURE-TAG-RANDOM-STATE) so the tag
+actually varies from run to run."
+  (let ((alphabet "abcdefghijklmnopqrstuvwxyz0123456789")
+        (state (ensure-tag-random-state)))
     (with-output-to-string (out)
       (dotimes (_ length)
-        (write-char (char alphabet (random (length alphabet))) out)))))
+        (write-char (char alphabet (random (length alphabet) state)) out)))))
 
 (defun current-pid ()
   "Return the host process PID via the platform-specific helper.

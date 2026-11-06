@@ -1,0 +1,16 @@
+# Accepted exceptions of `make check-versions' (scripts/check-versions.sh).
+#
+# One per line:   <glob matched against the check's message>  # why
+#
+# The reason is required, and an exception that matches nothing FAILS the
+# audit as `stale' — so this list shrinks when a situation is resolved and
+# never becomes a blanket. Only an IMMUTABLE PUBLISHED REF belongs here; a
+# violation that can still be fixed must be fixed, not declared.
+#
+# Full account: AGENTS.org / AGENTS.md § "Release tags and branches",
+# "Known audit exception — release-1.8.103 (the shakedown tag)", and
+# issues/closed/version-invariants-broken-by-shakedown-release.issue.
+
+I3: release-1.8.49 is not an ancestor of release-1.8.103* # release-1.8.103 is a release-pipeline SHAKEDOWN tag ("shakedown 5 — confirm all.zip + publish:release"), cut on a throwaway branch that forked before release-1.8.41..49 and never merged back: its high DEVELOP number is the CI counter, not newer content. The real 1.8 trunk work is at release-1.8.49. The tag is a published immutable ref, so it is kept (and kept reachable by dev-1.8-shakedown) rather than deleted.
+
+I5: version-1.8 is at 8159c49a, expected release-1.8.103 * # version-1.8 deliberately stays at release-1.8.49 — the real 1.8 tip a "1.8" user should get. Repointing it onto the higher-numbered shakedown tag would hand 1.8 users a throwaway branch that lacks the 1.8 trunk work. The sha is pinned here on purpose: any OTHER placement of version-1.8 is a genuine violation and still fails.

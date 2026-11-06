@@ -1,0 +1,140 @@
+Title: AutoCAD orphaned when alfe is killed or the job is cancelled (runner-side sweep)
+Status: DONE (alfe 2.2.87, 2026-09-25; deferred 2026-09-16, taken up on pjb's go-ahead)
+Split from: issues/open/alfe-autocad-automation-never-quits-acad.issue
+            (its FIX part B; part A shipped in alfe 2.2.71)
+
+WHAT REMAINS
+
+alfe 2.2.71 makes a run quit the AutoCAD it CREATED, at shutdown. That
+closes the path that was leaving one behind every time -- including
+after successful runs -- but it can only act when shutdown is REACHED.
+
+Two endings never reach it:
+
+  - alfe is killed (the runner kills the job's process on cancel);
+  - the job is cancelled or times out while alfe is mid-run.
+
+And nothing the job can do reaches the process anyway. In automation
+mode alfe runs CSCRIPT, which asks Windows' COM service for an
+AutoCAD.Application; the acad.exe that answers is a child of THAT
+SERVICE. It is not in the job's process tree, so even a tree kill from
+the runner would not touch it. Only something that goes looking for it
+by name can.
+
+WHY IT IS DEFERRED AND NOT DROPPED
+
+  - INCIDENCE IS LOW. Over 2026-09-05..09-15, 1,758 jobs on PF5S26B:
+    exactly ONE GUI-mode AutoCAD job was cancelled mid-script
+    (16463865287, 09-12), and NO job ended in job_execution_timeout.
+    The one 1800 s AutoCAD job hung in `git fetch` before any CAD ran.
+    So this is the rare path; the common one is fixed.
+  - THE SCOPE IS A JUDGEMENT ABOUT SOMEONE ELSE'S MACHINE. The Windows
+    runner is pjb's laptop, which he also uses. A sweep is the first
+    thing here that would kill a process alfe did not start, and
+    getting its scope wrong closes his AutoCAD. That is worth deciding
+    deliberately rather than shipping alongside a bug fix.
+
+WHAT IT WOULD LOOK LIKE, WHEN TAKEN UP
+
+The distinguishing mark is the command line: an AutoCAD started by COM
+carries /Automation; one a person launched does not.
+
+    Get-CimInstance Win32_Process -Filter "Name='acad.exe'" |
+      Where-Object CommandLine -match '/Automation'
+
+Open questions, all of them decisions rather than facts:
+
+  - BEFORE or AFTER each job, or both? Before is safer (it cleans up
+    after the PREVIOUS job's bad ending, and cannot kill an AutoCAD the
+    current job is using). After is tidier but must not race the
+    session that just ended.
+  - Which jobs carry it -- only the four automation ones
+    (vendor:probes:autocad, path-sysvars / getcname / pgp:probe:
+    autocad:windows), or every Windows CAD job?
+  - Is /Automation enough of a guarantee on that laptop? If pjb ever
+    drives AutoCAD from a script of his own, it would carry the same
+    mark.
+  - An `after_script` does NOT run when a job is cancelled hard, which
+    is precisely the case this exists for -- so a before-job sweep is
+    probably the only one that covers the motivating case.
+
+HOW TO TELL WHETHER THIS STILL MATTERS
+
+After 2.2.71 is on the runner, an orphaned AutoCAD means ONE of two
+things, and they are distinguishable:
+
+  - the preceding job ended in cancel/kill  -> this ticket's path, and
+    evidence that the sweep is worth building;
+  - the preceding job ended NORMALLY        -> 2.2.71 did not do what
+    it claims, and THAT is the bug to chase, not this one.
+
+Check the last job on PF5S26B before the orphan appeared. Do not assume
+the first; the whole of the parent ticket was spent on mistaking one
+explanation for another.
+
+ALSO WORTH KNOWING: 2.2.71 quits only an instance alfe CREATED. While a
+stale AutoCAD is still running on the laptop, every new run ATTACHES to
+it and so will never quit it. The existing leftover has to be closed by
+hand ONCE; after that each job creates and quits its own.
+
+RESOLUTION -- alfe 2.2.87 (2026-09-25)
+
+Taken up on pjb's go-ahead. The open questions above were decisions
+about someone else's machine; here is what each was decided to be, and
+why.
+
+WHAT IS SWEPT: ONLY WHAT ALFE WROTE DOWN
+
+Not "an acad.exe that looks like CI's". The bridge now records every
+instance it CREATES -- PID and creation time, via WMI, since the
+acad.exe COM starts is a child of the COM service and is in no process
+tree alfe could walk -- into <temp>/alfe-created-cad.txt. The sweep ends
+those, and only while BOTH the PID and the creation time still match.
+
+That answers the question the issue was deferred over. "/Automation in
+the command line" was the obvious mark, and it is not good enough: pjb
+driving AutoCAD from a script of his own would carry the same mark on
+the same laptop. A recorded identity cannot be mistaken; a resemblance
+can. The creation time is not decoration either -- Windows reuses PIDs,
+and a stale entry naming a recycled PID would otherwise name whatever
+now holds it.
+
+The file lives outside the workdir on purpose: the workdir dies with the
+run, and the run this serves is the one that cleaned nothing up.
+
+WHEN: BEFORE EACH CAD JOB
+
+before_script on .gate-windows-cad-{hard,soft}, so every Windows CAD job
+gets it, including ones added later. A hard cancel never runs an
+after_script -- which is precisely the ending this exists for -- so
+after-job could not cover the motivating case. Before is also the safe
+moment: nothing the current job started can be caught by it.
+
+The sweep reports what it finds and exits 0 whatever happens: a cleanup
+must not fail the job it precedes.
+
+WHICH JOBS: ALL THE CAD-TAGGED ONES
+
+Not only the four automation probes. The `cad' tag is what routes a job
+to the CAD-capable runner, so it is exactly the set that can inherit an
+orphan, and the set that will keep matching as jobs are added.
+
+TESTS (alfe SBCL and CCL, 1096 checks, 0 failures)
+
+- the bridge template records PID and creation time, through WMI, and
+  does so only on the CREATE path -- an ATTACHED instance is somebody
+  else's and must never be swept (seen red: removing the call fails the
+  test);
+- the registry path is in the temp directory, not the workdir;
+- EMIT-BRIDGE-VBS substitutes it, and an explicit NIL empties the
+  placeholder rather than leaving it unexpanded.
+
+The sweep script itself is PowerShell and is not exercised by the Lisp
+suite; it runs on the Windows runner from the next CAD job onwards.
+
+NOT DONE HERE
+
+Killing a BricsCAD left behind the same way. BricsCAD's automation path
+differs per platform (cscript on Windows, AppleScript on macOS) and no
+orphan has been observed from it; the registry is named for CAD rather
+than AutoCAD so the same mechanism can carry it when one is.

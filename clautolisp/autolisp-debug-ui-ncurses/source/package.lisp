@@ -25,6 +25,9 @@ markers (top-right), interactor (bottom-left), repl (bottom-right).")
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-symbol-name #:read-runtime-from-string
                 #:intern-autolisp-symbol)
+  ;; ,<line> minibuffer commands are routed through the shared ALDO vocabulary
+  ;; using a dumb-ui whose output is captured into a pane (ui-run-command).
+  (:import-from #:clautolisp.ui.dumb #:make-dumb-ui)
   (:import-from #:clautolisp.inspect
                 #:session-page #:session-origin
                 #:inspect-page-type-name #:inspect-page-header #:inspect-page-components
@@ -33,4 +36,9 @@ markers (top-right), interactor (bottom-left), repl (bottom-right).")
   (:export #:ncurses-ui #:make-ncurses-ui
            ;; render entry points (also used by tests)
            #:render-debugger #:render-inspector
-           #:ncurses-ui-repl-lines #:ncurses-ui-message #:ncurses-ui-selected-frame))
+           #:ncurses-ui-repl-lines #:ncurses-ui-message #:ncurses-ui-why-message
+           #:ncurses-ui-message-history #:ncurses-ui-selected-frame
+           #:ncurses-ui-open-frames #:ncurses-ui-stack-cursor #:ncurses-ui-source-cursor
+           ;; unified config persistence (windows-and-interactor-templates.issue)
+           #:save-all-configurations #:load-all-configurations
+           #:load-cascade-only-configurations))

@@ -23,6 +23,11 @@ endif
 # (uiop:getcwd), which is always spelled natively (c:/… on Windows).
 ASD_FILE := $(ROOT_DIR)/clautolisp.asd
 XDG_CACHE_HOME ?= $(ROOT_DIR)/.cache
+# The test suites never write a real registry / defaults database: SETVAR
+# of LISPSYS persists, and CLAUTOLISP_REGISTRY_FILE makes the host use this
+# sexp store instead, on every platform (lispsys persistence, 2026-10-04).
+TEST_REGISTRY_FILE ?= $(XDG_CACHE_HOME)/test-registry.sexp
+test test-sbcl test-ccl test-compiler-equivalence test-lexical-locals test-debug-compiled check-docstrings test-shipped-compiler test-shipped-compiler-ccl test-shipped-debug-flag test-shipped-debug-flag-ccl test-shipped-interrupt test-shipped-interrupt-ccl: export CLAUTOLISP_REGISTRY_FILE = $(TEST_REGISTRY_FILE)
 
 # Install destination. Override on the command line:
 #   make install PREFIX=/usr/local DESTDIR=/staging
@@ -45,8 +50,8 @@ SUBPROJECT_NAME := clautolisp
 # binary into HAVE_<IMPL>, append a token to
 # AVAILABLE_IMPLEMENTATIONS, define a build-<impl> alias, and add
 # the matching file-target rules.
-HAVE_SBCL := $(shell command -v $(SBCL) >/dev/null 2>&1 && echo yes)
-HAVE_CCL  := $(shell command -v $(CCL)  >/dev/null 2>&1 && echo yes)
+HAVE_SBCL := $(shell command -v "$(SBCL)" >/dev/null 2>&1 && echo yes)
+HAVE_CCL  := $(shell command -v "$(CCL)"  >/dev/null 2>&1 && echo yes)
 AVAILABLE_IMPLEMENTATIONS :=
 ifeq ($(HAVE_SBCL),yes)
   AVAILABLE_IMPLEMENTATIONS += sbcl
@@ -92,16 +97,31 @@ case "$(HOST_OS)" in MINGW*|MSYS*|CYGWIN*) :;; *) \
 esac
 endef
 
+# Executable suffix, applied AT BUILD TIME (pjb, 2026-08-16: "On
+# MS-Windows, we should generate all the executables with .exe
+# extension"). Empty on POSIX.
+#
+# It used to be applied only when INSTALLING, so `make build-*' left
+# extensionless files in tools/*/bin/ on Windows. The MSYS2 shell runs
+# those happily, which is why it went unnoticed -- but PowerShell does
+# not, and the CI jobs run under PowerShell. Anything using a built
+# binary in place (a CI step, a test target, the release packaging) had
+# to know the name might lack its extension.
+#
+# Defined here rather than beside the install rules because the build
+# variables below need it.
+EXE := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),.exe,)
+
 TEST_SYSTEM ?= clautolisp
 EXECUTABLE ?= bin/clautolisp
 READ_AUTOLISP_TOOL_DIR := autolisp-reader/tools/read-autolisp
 READ_AUTOLISP_BIN_DIR := $(READ_AUTOLISP_TOOL_DIR)/bin
-READ_AUTOLISP_SBCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-sbcl
-READ_AUTOLISP_CCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-ccl
+READ_AUTOLISP_SBCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-sbcl$(EXE)
+READ_AUTOLISP_CCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-ccl$(EXE)
 CLAUTOLISP_TOOL_DIR := tools/clautolisp
 CLAUTOLISP_BIN_DIR := $(CLAUTOLISP_TOOL_DIR)/bin
-CLAUTOLISP_SBCL := $(CLAUTOLISP_BIN_DIR)/clautolisp-sbcl
-CLAUTOLISP_CCL := $(CLAUTOLISP_BIN_DIR)/clautolisp-ccl
+CLAUTOLISP_SBCL := $(CLAUTOLISP_BIN_DIR)/clautolisp-sbcl$(EXE)
+CLAUTOLISP_CCL := $(CLAUTOLISP_BIN_DIR)/clautolisp-ccl$(EXE)
 RUN_FILE_COMPAT := autolisp-file-compat/tools/run-file-compat/run-file-compat
 FILE_COMPAT_SCENARIOS ?= autolisp-file-compat/scenarios
 FILE_COMPAT_ARGS ?=
@@ -127,14 +147,19 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard autolisp-*/documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
-.PHONY: all test test-sbcl test-ccl build build-sbcl build-ccl probe-check \
-        build-libredwg test-libredwg-compiler-path \
+.PHONY: text-metrics
+.PHONY: all test test-sbcl test-ccl test-compiler-equivalence \
+        test-debug-compiled test-shipped-compiler test-shipped-compiler-ccl \
+        test-shipped-interrupt test-shipped-interrupt-ccl \
+        check-docstrings spec-symbols operator-availability check-operator-availability \
+        build build-sbcl build-ccl probe-check \
+        submodules build-libredwg test-libredwg-compiler-path \
         build-read-autolisp-sbcl build-read-autolisp-ccl \
         build-clautolisp-sbcl build-clautolisp-ccl \
         run-file-compat run-file-compat-sbcl run-file-compat-ccl \
         run-file-compat-autocad run-file-compat-bricscad \
         audit-file-compat-autocad audit-file-compat-bricscad \
-        documentation user-manual clean-pdf specifications builtins-coverage \
+        documentation user-manual tutorial clean-pdf specifications builtins-coverage \
         run-file-compat-bricscad-macos run-file-compat-bricscad-windows \
         run-file-compat-autocad-windows
 ifneq ($(HAVE_QT6_GUI),yes)
@@ -184,18 +209,31 @@ build-sbcl:  ## Strictly build the SBCL clautolisp + read-autolisp images (error
 	  echo "Error: sbcl not found in PATH (looked for '$(SBCL)')"; \
 	  exit 2; \
 	fi
-	$(MAKE) build-read-autolisp-sbcl
-	$(MAKE) build-clautolisp-sbcl
+	"$(MAKE)" build-read-autolisp-sbcl
+	"$(MAKE)" build-clautolisp-sbcl
 
 build-ccl:  ## Strictly build the CCL clautolisp + read-autolisp images (errors if ccl is missing).
 	@if [ "$(HAVE_CCL)" != "yes" ]; then \
 	  echo "Error: ccl not found in PATH (looked for '$(CCL)')"; \
 	  exit 2; \
 	fi
-	$(MAKE) build-read-autolisp-ccl
-	$(MAKE) build-clautolisp-ccl
+	"$(MAKE)" build-read-autolisp-ccl
+	"$(MAKE)" build-clautolisp-ccl
 
-build-libredwg:  ## Build the vendored libredwg submodule + the CFFI shim for the optional DWG codec (Phase 17e). Requires cmake + a C compiler.
+submodules:  ## Check out the git submodules (the vendored libredwg) if they are not already present. Run automatically by build-libredwg so `make build-libraries` works straight after a clone. No-op when already checked out or when building from a source tarball (no .git).
+	@if [ -z "$$(ls -A third-party/libredwg 2>/dev/null)" ]; then \
+	  top=$$(git rev-parse --show-toplevel 2>/dev/null) || true; \
+	  if [ -n "$$top" ]; then \
+	    echo "==> git submodule update --init --recursive (vendored libredwg)"; \
+	    ( cd "$$top" && git submodule update --init --recursive ); \
+	  else \
+	    echo "error: third-party/libredwg is empty and this is not a git checkout;" >&2; \
+	    echo "       cannot fetch the libredwg submodule for the DWG codec." >&2; \
+	    exit 1; \
+	  fi; \
+	fi
+
+build-libredwg: submodules  ## Build the vendored libredwg submodule + the CFFI shim for the optional DWG codec (Phase 17e). Requires cmake + a C compiler. Checks out the submodule first if needed.
 	drawing-dwg/build-libredwg.sh
 
 test-libredwg-compiler-path:
@@ -205,26 +243,77 @@ test: test-sbcl
 
 test-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)'
 
+test-compiler-equivalence:  ## Run the whole test corpus with every AutoLISP function body compiled.
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
+		--load autolisp-compiler/tests/whole-suite-compiled.lisp
+
+test-lexical-locals:  ## Run the whole test corpus with LEXICAL forks forced on every DEFUN ((speed 3) (debug 0)).
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
+		--load autolisp-compiler/tests/whole-suite-lexical.lisp
+
+test-debug-compiled:  ## Run the whole test corpus with every INSTRUMENTED body compiled.
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
+		--load autolisp-compiler/tests/debug-suite-compiled.lisp
+
+check-docstrings:  ## Fail if any definition body holds dead forms — the signature of a docstring closed early by an unescaped quote (2.0.9 broke CCL, 2.0.13 shipped).
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
+		--load tools/check-docstrings.lisp
+
+test-shipped-compiler: build-clautolisp-sbcl  ## Assert the BUILT executable has a compiler in it: .lap round-trip + -O. Nothing else in the corpus runs the program that ships.
+	tools/clautolisp/tests/shipped-compiler-test.sh
+	"$(MAKE)" test-shipped-debug-flag
+	"$(MAKE)" test-shipped-interrupt
+
+test-shipped-compiler-ccl: build-clautolisp-ccl  ## Same, against the CCL executable. A .lap is a native host FASL, so each host ships its own compiler and each has to be asked.
+	tools/clautolisp/tests/shipped-compiler-test.sh tools/clautolisp/bin/clautolisp-ccl
+	"$(MAKE)" test-shipped-debug-flag-ccl
+	"$(MAKE)" test-shipped-interrupt-ccl
+
+test-shipped-debug-flag: build-clautolisp-sbcl  ## Assert the BUILT executable receives -d/--debug.
+	tools/clautolisp/tests/shipped-debug-flag-test.sh tools/clautolisp/bin/clautolisp-sbcl -x '(/ 1 0)'
+
+test-shipped-debug-flag-ccl: build-clautolisp-ccl  ## Same for CCL, whose kernel removes -d/--debug from argv (alfe-ccl-executable-drops-log-output).
+	tools/clautolisp/tests/shipped-debug-flag-test.sh tools/clautolisp/bin/clautolisp-ccl -x '(/ 1 0)'
+
+test-shipped-interrupt: build-clautolisp-sbcl  ## Assert the BUILT executable applies --on-interrupt quit/ignore/debug to a real SIGINT (no host break loop).
+	tools/clautolisp/tests/shipped-interrupt-test.sh tools/clautolisp/bin/clautolisp-sbcl
+
+test-shipped-interrupt-ccl: build-clautolisp-ccl  ## Same for CCL, which had no SIGINT handler before 2.2.218 (Control-C fell into CCL's break loop).
+	tools/clautolisp/tests/shipped-interrupt-test.sh tools/clautolisp/bin/clautolisp-ccl
+
+# CCL EXIT STATUS (issues/open/ccl-test-lanes-cannot-fail.issue).
+# Without --batch, CCL does not exit on an unhandled error in an --eval:
+# it carries on, and a trailing (ccl:quit) then exits 0 -- so a failing
+# test, a failing load, or a failing build all looked GREEN. Measured:
+# that invocation exits 0 on an error; with --batch it exits 255.
+#   - every CCL invocation below takes --batch, so an error ANYWHERE
+#     fails the step;
+#   - the test lanes also quit with an explicit status (pjb), which
+#     turns a signalled test failure into exit 1 rather than relying on
+#     the error path alone.
 test-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	ccl --no-init --quiet \
+	ccl --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))' \
-		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)' \
-		--eval '(ccl:quit)'
+		--eval '(ccl:quit (handler-case (progn (asdf:test-system "$(TEST_SYSTEM)" :verbose t) 0) (error (e) (format *error-output* "~&~A~%" e) 1)))'
 
 build-read-autolisp-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(READ_AUTOLISP_TOOL_DIR)/generate-read-autolisp.lisp" \
@@ -232,7 +321,7 @@ build-read-autolisp-sbcl:
 
 build-read-autolisp-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	ccl --no-init --quiet \
+	ccl --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(READ_AUTOLISP_TOOL_DIR)/generate-read-autolisp.lisp" \
@@ -240,7 +329,7 @@ build-read-autolisp-ccl:
 
 build-clautolisp-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(CLAUTOLISP_TOOL_DIR)/generate-clautolisp.lisp" \
@@ -248,7 +337,7 @@ build-clautolisp-sbcl:
 
 build-clautolisp-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	ccl --no-init --quiet \
+	ccl --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(CLAUTOLISP_TOOL_DIR)/generate-clautolisp.lisp" \
@@ -259,36 +348,36 @@ build-clautolisp-ccl:
 # back to the strict per-impl entry points so probe-check fires
 # when the implementation is missing.
 $(CLAUTOLISP_SBCL):
-	$(MAKE) build-clautolisp-sbcl
+	"$(MAKE)" build-clautolisp-sbcl
 
 $(CLAUTOLISP_CCL):
-	$(MAKE) build-clautolisp-ccl
+	"$(MAKE)" build-clautolisp-ccl
 
 $(READ_AUTOLISP_SBCL):
-	$(MAKE) build-read-autolisp-sbcl
+	"$(MAKE)" build-read-autolisp-sbcl
 
 $(READ_AUTOLISP_CCL):
-	$(MAKE) build-read-autolisp-ccl
+	"$(MAKE)" build-read-autolisp-ccl
 
 run-file-compat: run-file-compat-sbcl
 
 run-file-compat-sbcl:
-	$(RUN_FILE_COMPAT) --sbcl $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --sbcl $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 run-file-compat-ccl:
-	$(RUN_FILE_COMPAT) --ccl $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --ccl $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 run-file-compat-autocad:
-	$(RUN_FILE_COMPAT) --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 run-file-compat-bricscad:
-	$(RUN_FILE_COMPAT) --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 audit-file-compat-autocad:
-	$(RUN_FILE_COMPAT) --autocad --report-format json $(FILE_COMPAT_ARGS) $(FILE_COMPAT_PRODUCT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --autocad --report-format json $(FILE_COMPAT_ARGS) $(FILE_COMPAT_PRODUCT_SCENARIOS)
 
 audit-file-compat-bricscad:
-	$(RUN_FILE_COMPAT) --bricscad --report-format json $(FILE_COMPAT_ARGS) $(FILE_COMPAT_PRODUCT_SCENARIOS)
+	"$(RUN_FILE_COMPAT)" --bricscad --report-format json $(FILE_COMPAT_ARGS) $(FILE_COMPAT_PRODUCT_SCENARIOS)
 
 # ---------------------------------------------------------------------
 # Per-platform run-file-compat targets.
@@ -302,21 +391,68 @@ audit-file-compat-bricscad:
 
 run-file-compat-bricscad-macos:
 	@$(call require-os-darwin,$@); \
-	 $(RUN_FILE_COMPAT) --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	 "$(RUN_FILE_COMPAT)" --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 run-file-compat-bricscad-windows:
 	@$(call require-os-windows,$@); \
-	 $(RUN_FILE_COMPAT) --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	 "$(RUN_FILE_COMPAT)" --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 run-file-compat-autocad-windows:
 	@$(call require-os-windows,$@); \
-	 $(RUN_FILE_COMPAT) --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+	 "$(RUN_FILE_COMPAT)" --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 
 documentation: $(PDF_FILES) $(INFO_FILES) $(BUILD_DIR)/documentation/RELEASE_NOTES.pdf
 
 user-manual: $(BUILD_DIR)/documentation/clautolisp-user-manual.pdf $(BUILD_DIR)/documentation/clautolisp-user-manual.info
 specifications: $(BUILD_DIR)/documentation/clautolisp-specifications.pdf $(BUILD_DIR)/documentation/clautolisp-specifications.info
+tutorial: $(BUILD_DIR)/documentation/tutorial.pdf $(BUILD_DIR)/documentation/tutorial-fr.pdf
+
+# The dialect-warnings annex is GENERATED from the register in
+# autolisp-runtime/source/portability.lisp, so a warning's wording,
+# its per-dialect detail and its references exist in exactly one place
+# (pjb's 2026-08-14 ruling on clautolisp-dialect-portability-warnings).
+# The generated .org is tracked, because it ships in the manual and is
+# built to PDF/Info like every other doc.
+DIALECT_WARNINGS_ANNEX := documentation/clautolisp-dialect-warnings.org
+
+# The vendor-only operator table (deferred-clautolisp-out-of-dialect-warnings)
+# is GENERATED from the spec's Availability sections, via the flags the paged
+# spec build writes into symbols.txt. Needs emacs (the spec build).
+SPEC_SYMBOLS := ../autolisp-spec/build/pages/symbols.txt
+OPERATOR_AVAILABILITY := autolisp-runtime/source/operator-availability.lisp
+
+spec-symbols:
+	$(MAKE) -C ../autolisp-spec pages
+
+operator-availability: spec-symbols  ## Regenerate the vendor-only operator table from the spec.
+	python3 tools/generate-operator-availability.py "$(SPEC_SYMBOLS)" "$(OPERATOR_AVAILABILITY)"
+
+check-operator-availability: spec-symbols  ## Fail if the vendor-only operator table is stale w.r.t. the spec.
+	python3 tools/generate-operator-availability.py --check "$(SPEC_SYMBOLS)" "$(OPERATOR_AVAILABILITY)"
+
+TEXT_METRICS_BRICSCAD ?= ../probe-results/bricscad/macos/20261003T130100Z/results.sexp
+TEXT_METRICS_AUTOCAD  ?= ../probe-results/autocad/ms-windows/20261003T130228Z/results.sexp
+text-metrics:  ## Regenerate the Standard-font glyph metrics (TEXTBOX, TEXT bounding box) from the vendors' text-metrics probe runs.
+	python3 tools/generate-text-metrics.py "$(TEXT_METRICS_BRICSCAD)" "$(TEXT_METRICS_AUTOCAD)" autolisp-runtime/source/text-metrics.lisp
+
+dialect-warnings-annex:  ## Regenerate the manual's dialect-warnings annex from the register.
+	"$(SBCL)" --non-interactive --disable-debugger \
+	        --load tools/generate-dialect-warnings-annex.lisp
+
+check-dialect-warnings-annex:  ## Fail if the tracked annex is stale w.r.t. the register.
+	@tmp=$$(mktemp -t dialect-warnings-XXXXXX.org); \
+	 "$(SBCL)" --non-interactive --disable-debugger \
+	         --load tools/generate-dialect-warnings-annex.lisp "$$tmp" >/dev/null; \
+	 if diff -u "$(DIALECT_WARNINGS_ANNEX)" "$$tmp"; then \
+	   rm -f "$$tmp"; \
+	   echo "dialect-warnings annex is up to date"; \
+	 else \
+	   rm -f "$$tmp"; \
+	   echo "ERROR: $(DIALECT_WARNINGS_ANNEX) is stale."; \
+	   echo "       Run: make -C clautolisp dialect-warnings-annex"; \
+	   exit 1; \
+	 fi
 
 # RELEASE_NOTES.org lives at the repo root (single source of truth)
 # but ships to $PREFIX/share/doc/clautolisp/ alongside the other
@@ -327,7 +463,7 @@ specifications: $(BUILD_DIR)/documentation/clautolisp-specifications.pdf $(BUILD
 # both the mirrored .org and the resulting .pdf out of the repo.
 documentation/RELEASE_NOTES.org: ../RELEASE_NOTES.org
 	@mkdir -p documentation
-	cp $< $@
+	cp "$<" "$@"
 
 # Large org documents (notably the ~4600-page visual-lisp spec in autolisp-spec)
 # exceed TeX's default main_memory and abort with "TeX capacity exceeded". We
@@ -352,7 +488,7 @@ export TEXMFVAR := $(TEXFMT_CACHE)
 ifeq ($(LATEX_COMPILER),xelatex)
 TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
 $(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
-	@mkdir -p $(TEXFMT_CACHE)
+	@mkdir -p "$(TEXFMT_CACHE)"
 	fmtutil -user --byfmt xelatex
 else
 TEX_FMT_DEP :=
@@ -369,8 +505,8 @@ endif
 # the source tree stays clean. $(@D) is build/<dir>; $(patsubst …) recovers the
 # in-place output org-export produced from the source.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
-	@mkdir -p $(@D)
-	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
+	@mkdir -p "$(@D)"
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
@@ -385,18 +521,18 @@ $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 # directives; the stub generator (documentation-synchronisation.issue)
 # emits them in the standard place at the top.
 $(BUILD_DIR)/%.texi: %.org
-	@mkdir -p $(@D)
-	$(EMACS) --batch \
+	@mkdir -p "$(@D)"
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-texinfo)) (setq org-export-with-broken-links t))' \
 		--visit "$<" \
 		--funcall org-texinfo-export-to-texinfo
 	@mv -f "$(<:.org=.texi)" "$@"
 
 $(BUILD_DIR)/%.info: $(BUILD_DIR)/%.texi
-	$(MAKEINFO) --no-split -o $@ $<
+	"$(MAKEINFO)" --no-split -o "$@" "$<"
 
 clean-pdf:
-	rm -rf $(BUILD_DIR)
+	rm -rf "$(BUILD_DIR)"
 	rm -f documentation/RELEASE_NOTES.org
 
 builtins-coverage:
@@ -432,6 +568,8 @@ clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt:
 #   $(PREFIX)/lib/clautolisp/<os>/<arch>/           native DWG codec libraries
 #   $(PREFIX)/include/clautolisp/                   libredwg public header
 #                                                   (dwg.h)
+#   $(PREFIX)/share/emacs/site-lisp/clautolisp/     the aldb.el Emacs client
+#                                                   (install-emacs)
 #
 # The libraries phase (install-libraries) installs exactly what the
 # release-libraries artefact packages — same files, same paths — so
@@ -451,6 +589,11 @@ clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt:
 
 BIN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/bin
 LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
+# EXE (the .exe suffix on Windows) is defined near the build variables
+# above, since those need it too: the extension is applied when the
+# binary is BUILT, not only when it is installed. The install rules below
+# still guard with `case "$dest" in *.exe) ;;' so a name that already
+# carries it is not given a second one.
 DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 MAN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/man/man1
@@ -499,40 +642,73 @@ CL_CONFD_INSTALL_DIR := $(DESTDIR)$(PREFIX)/etc/common-lisp/source-registry.conf
 CL_CONFD_FILE        := tools/packaging/source-registry.conf
 CL_CONFD_NAME        := 50-$(SUBPROJECT_NAME).conf
 
+# The Emacs client (aldb.el) installs under the standard site-lisp tree so
+# Emacs finds it on its load-path and the connect prompt can cite its path
+# (aldb-el-path derives the same location). Its own subdirectory keeps it
+# ours to uninstall cleanly.
+EMACS_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/emacs/site-lisp/$(SUBPROJECT_NAME)
+ALDB_EL           := autolisp-debug-ui-emacs/emacs/aldb.el
+
 CLAUTOLISP_GUI_QT_BIN := tools/clautolisp-gui-qt/build/clautolisp-gui-qt
 RUN_FILE_COMPAT_BIN   := $(RUN_FILE_COMPAT)
 
 INSTALL_BINARIES_sbcl := $(CLAUTOLISP_SBCL) $(READ_AUTOLISP_SBCL)
 INSTALL_BINARIES_ccl  := $(CLAUTOLISP_CCL)  $(READ_AUTOLISP_CCL)
-INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARIES_$(impl)))
+# INSTALL_LISPS narrows that to the Lisps actually BUILT: the root
+# stage-programs builds only $(RELEASE_LISPS) and passes it here, so a
+# stale image of a Lisp it did not build (an old *-ccl left in bin/) is
+# not shipped -- nor used to compile the plug-ins against current source.
+INSTALL_LISPS ?= $(AVAILABLE_IMPLEMENTATIONS)
+INSTALL_BINARIES := $(foreach impl,$(INSTALL_LISPS),$(INSTALL_BINARIES_$(impl)))
 
 .PHONY: install install-programs install-documentation install-libraries \
-        install-lisp-systems uninstall
+        install-lisp-systems install-emacs uninstall
 
-install: build  ## Install built executables + docs into $$PREFIX (build first; sudo-friendly). Native libraries are a separate `install-libraries' phase.
-	$(MAKE) install-programs
-	$(MAKE) install-documentation
+# Whether a missing native DWG codec (LibreDWG) is fatal to
+# `install-libraries'. Default 0: a plain `make install' from a checkout
+# without the libredwg submodule still installs the Lisp sources, the
+# ASDF systems and the programs, warning about the codec it skipped --
+# only the `clautolisp/drawing-dwg' system needs it, and nothing else
+# in the tree depends on that system. Set to 1 where an incomplete tree
+# would be a defect rather than a degraded install: the release
+# packaging does exactly that (see release-libraries in the root
+# Makefile), so a published libraries tarball can never silently ship
+# without its codec.
+REQUIRE_NATIVE_LIBRARIES ?= 0
+
+install: build  ## Install built executables + docs + Lisp sources/systems (+ native libraries when built) into $$PREFIX; build first, sudo-friendly.
+	"$(MAKE)" install-programs
+	"$(MAKE)" install-libraries
+	"$(MAKE)" install-documentation
+
+install-emacs:  ## Install the aldb.el Emacs client into $$PREFIX/share/emacs/site-lisp/clautolisp/.
+	install -d "$(EMACS_INSTALL_DIR)"
+	install -m 0644 "$(ALDB_EL)" "$(EMACS_INSTALL_DIR)/aldb.el"
+	@echo "installed: $(ALDB_EL) -> $(EMACS_INSTALL_DIR)/aldb.el"
 
 install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-compat executables (no docs) -- the CI-friendly fast path.
-	install -d $(BIN_INSTALL_DIR)
-	install -d $(LIBEXEC_INSTALL_DIR)
+	install -d "$(BIN_INSTALL_DIR)"
+	install -d "$(LIBEXEC_INSTALL_DIR)"
 	@for exe in $(INSTALL_BINARIES); do \
 	  if [ -x "$$exe" ]; then \
-	    install -m 0755 "$$exe" $(BIN_INSTALL_DIR)/ ; \
-	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/" ; \
+	    dest="$$(basename "$$exe")" ; case "$$dest" in *.exe) ;; *) dest="$$dest$(EXE)" ;; esac ; \
+	    install -m 0755 "$$exe" "$(BIN_INSTALL_DIR)/$$dest" ; \
+	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/$$dest" ; \
 	  else \
 	    echo "[skip]     $$exe (not built — run build-programs first)" ; \
 	  fi ; \
 	done
 	@if [ -x "$(CLAUTOLISP_GUI_QT_BIN)" ]; then \
-	  install -m 0755 "$(CLAUTOLISP_GUI_QT_BIN)" $(BIN_INSTALL_DIR)/ ; \
-	  echo "installed: $(CLAUTOLISP_GUI_QT_BIN) -> $(BIN_INSTALL_DIR)/" ; \
+	  dest="$$(basename "$(CLAUTOLISP_GUI_QT_BIN)")" ; case "$$dest" in *.exe) ;; *) dest="$$dest$(EXE)" ;; esac ; \
+	  install -m 0755 "$(CLAUTOLISP_GUI_QT_BIN)" "$(BIN_INSTALL_DIR)/$$dest" ; \
+	  echo "installed: $(CLAUTOLISP_GUI_QT_BIN) -> $(BIN_INSTALL_DIR)/$$dest" ; \
 	else \
 	  echo "[skip] $(CLAUTOLISP_GUI_QT_BIN) not built (run 'cmake -B tools/clautolisp-gui-qt/build && cmake --build tools/clautolisp-gui-qt/build' first)" ; \
 	fi
 	@if [ -x "$(RUN_FILE_COMPAT_BIN)" ]; then \
-	  install -m 0755 "$(RUN_FILE_COMPAT_BIN)" $(LIBEXEC_INSTALL_DIR)/ ; \
-	  echo "installed: $(RUN_FILE_COMPAT_BIN) -> $(LIBEXEC_INSTALL_DIR)/" ; \
+	  dest="$$(basename "$(RUN_FILE_COMPAT_BIN)")" ; case "$$dest" in *.exe) ;; *) dest="$$dest$(EXE)" ;; esac ; \
+	  install -m 0755 "$(RUN_FILE_COMPAT_BIN)" "$(LIBEXEC_INSTALL_DIR)/$$dest" ; \
+	  echo "installed: $(RUN_FILE_COMPAT_BIN) -> $(LIBEXEC_INSTALL_DIR)/$$dest" ; \
 	fi
 	@# Bare-name symlinks pointing at the user's preferred CL impl.
 	@# Relative targets so the install tree stays relocatable
@@ -540,69 +716,92 @@ install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-com
 	@# the link keeps pointing at the sibling binary).
 	@if [ -n "$(DEFAULT_LISP)" ]; then \
 	  for stem in clautolisp read-autolisp; do \
-	    target="$$stem-$(DEFAULT_LISP)" ; \
+	    target="$$stem-$(DEFAULT_LISP)$(EXE)" ; \
 	    if [ -x "$(BIN_INSTALL_DIR)/$$target" ]; then \
-	      ln -sf "$$target" "$(BIN_INSTALL_DIR)/$$stem" ; \
-	      echo "linked:    $(BIN_INSTALL_DIR)/$$stem -> $$target" ; \
+	      if [ -n "$(EXE)" ]; then \
+	        cp -f "$(BIN_INSTALL_DIR)/$$target" "$(BIN_INSTALL_DIR)/$$stem$(EXE)" ; \
+	        echo "copied:    $(BIN_INSTALL_DIR)/$$stem$(EXE) <- $$target (Windows: PowerShell can't exec an MSYS symlink)" ; \
+	      else \
+	        ln -sf "$$target" "$(BIN_INSTALL_DIR)/$$stem" ; \
+	        echo "linked:    $(BIN_INSTALL_DIR)/$$stem -> $$target" ; \
+	      fi ; \
 	    else \
-	      echo "[skip]     $(BIN_INSTALL_DIR)/$$stem (target $$target not installed)" ; \
+	      echo "[skip]     $(BIN_INSTALL_DIR)/$$stem$(EXE) (target $$target not installed)" ; \
 	    fi ; \
 	  done ; \
 	else \
 	  echo "[skip]     bare symlinks (DEFAULT_LISP is empty)" ; \
 	fi
+	@# the aldb Emacs client is a program-support file, so it ships with the
+	@# programs — `make install-programs' alone installs a usable aldb.
+	"$(MAKE)" install-emacs
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-documentation:  ## Install just the clautolisp documentation (org/pdf/info/man). PDFs/Info come from build/.
-	install -d $(DOC_INSTALL_DIR)
+	install -d "$(DOC_INSTALL_DIR)"
 	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
-	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" "$(DOC_INSTALL_DIR)/" ; fi ; \
 	done
 	@# .info files install under share/info per the FHS convention.
 	@# install-info wires each into the top-level dir node so
 	@# `info <doc>` finds them. The directory itself is created
 	@# lazily — distros routinely pre-create it.
-	install -d $(INFO_INSTALL_DIR)
+	install -d "$(INFO_INSTALL_DIR)"
 	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
+	    install -m 0644 "$$f" "$(INFO_INSTALL_DIR)/" ; \
 	    echo "installed: $$f -> $(INFO_INSTALL_DIR)/" ; \
-	    installed="$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
-	    $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
+	    installed="$(INFO_INSTALL_DIR)/$$(basename "$$f")" ; \
+	    "$(INSTALL_INFO)" --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
 	      || echo "[skip] install-info dir update for $$installed" ; \
 	  fi ; \
 	done
 	@# Man pages under share/man/man1.
-	install -d $(MAN_INSTALL_DIR)
+	install -d "$(MAN_INSTALL_DIR)"
 	@for f in documentation/man/*.1; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0644 "$$f" $(MAN_INSTALL_DIR)/ ; \
+	    install -m 0644 "$$f" "$(MAN_INSTALL_DIR)/" ; \
 	    echo "installed: $$f -> $(MAN_INSTALL_DIR)/" ; \
 	  fi ; \
 	done
 	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-libraries: install-lisp-systems  ## Install everything the release-libraries artefact ships: the ASDF systems (share/common-lisp), the native DWG codec libraries (lib/), the libredwg header (include/), and the drawing spec + libredwg licence (share/doc).
-	install -d $(LIB_INSTALL_DIR)
+	install -d "$(LIB_INSTALL_DIR)"
 	@runtime_manifest=third-party/libredwg/build/clautolisp-runtime-library; \
-	[ -s "$$runtime_manifest" ] || { echo "error: missing LibreDWG runtime manifest; run make build-libredwg" >&2; exit 1; }; \
-	runtime=$$(cat "$$runtime_manifest"); \
-	[ -f "$$runtime" ] || { echo "error: recorded LibreDWG runtime does not exist: $$runtime" >&2; exit 1; }; \
-	install -m 0755 "$$runtime" $(LIB_INSTALL_DIR)/; \
-	echo "installed: $$runtime -> $(LIB_INSTALL_DIR)/"; \
+	runtime=; \
+	if [ -s "$$runtime_manifest" ]; then runtime=$$(cat "$$runtime_manifest"); fi; \
+	if [ -n "$$runtime" ] && [ -f "$$runtime" ]; then \
+	  install -m 0755 "$$runtime" "$(LIB_INSTALL_DIR)/"; \
+	  echo "installed: $$runtime -> $(LIB_INSTALL_DIR)/"; \
+	elif [ "$(REQUIRE_NATIVE_LIBRARIES)" = "1" ]; then \
+	  if [ -z "$$runtime" ]; then \
+	    echo "error: missing LibreDWG runtime manifest; run make build-libredwg" >&2; \
+	  else \
+	    echo "error: recorded LibreDWG runtime does not exist: $$runtime" >&2; \
+	  fi; \
+	  exit 1; \
+	else \
+	  echo "[skip]     LibreDWG runtime not built -- installing without the native DWG codec." >&2; \
+	  echo "           Only the clautolisp/drawing-dwg system needs it; every other" >&2; \
+	  echo "           ASDF system, and the Lisp sources, are installed regardless." >&2; \
+	  echo "           To add it later:  git submodule update --init clautolisp/third-party/libredwg" >&2; \
+	  echo "                             make -C clautolisp build-libredwg install-libraries" >&2; \
+	  echo "           It would be installed into $(LIB_INSTALL_DIR)/." >&2; \
+	fi; \
 	for f in drawing-dwg/source/clal_dwg.so \
 	          drawing-dwg/source/clal_dwg.dylib \
 	          drawing-dwg/source/clal_dwg.dll; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0755 "$$f" $(LIB_INSTALL_DIR)/ ; \
+	    install -m 0755 "$$f" "$(LIB_INSTALL_DIR)/" ; \
 	    echo "installed: $$f -> $(LIB_INSTALL_DIR)/" ; \
 	  fi ; \
 	done
 	@# The libredwg public header, for consumers that link the codec
 	@# directly rather than through the Lisp shim.
-	install -d $(INCLUDE_INSTALL_DIR)
+	install -d "$(INCLUDE_INSTALL_DIR)"
 	@if [ -f "$(LIBREDWG_HEADER)" ]; then \
-	  install -m 0644 "$(LIBREDWG_HEADER)" $(INCLUDE_INSTALL_DIR)/ ; \
+	  install -m 0644 "$(LIBREDWG_HEADER)" "$(INCLUDE_INSTALL_DIR)/" ; \
 	  echo "installed: $(LIBREDWG_HEADER) -> $(INCLUDE_INSTALL_DIR)/" ; \
 	else \
 	  echo "[skip]     $(LIBREDWG_HEADER) (libredwg not checked out)" ; \
@@ -611,20 +810,20 @@ install-libraries: install-lisp-systems  ## Install everything the release-libra
 	@# install-documentation: the drawing-subsystem specification (it
 	@# lives outside the documentation/ trees that phase globs) and
 	@# libredwg's licence, which ships with the binaries linking it.
-	install -d $(DOC_INSTALL_DIR)
+	install -d "$(DOC_INSTALL_DIR)"
 	@if [ -f "$(DRAWING_SPEC_ORG)" ]; then \
-	  install -m 0644 "$(DRAWING_SPEC_ORG)" $(DOC_INSTALL_DIR)/ ; \
+	  install -m 0644 "$(DRAWING_SPEC_ORG)" "$(DOC_INSTALL_DIR)/" ; \
 	  echo "installed: $(DRAWING_SPEC_ORG) -> $(DOC_INSTALL_DIR)/" ; \
 	fi
 	@if [ -f "$(LIBREDWG_COPYING)" ]; then \
-	  install -m 0644 "$(LIBREDWG_COPYING)" $(DOC_INSTALL_DIR)/libredwg-COPYING ; \
+	  install -m 0644 "$(LIBREDWG_COPYING)" "$(DOC_INSTALL_DIR)/libredwg-COPYING" ; \
 	  echo "installed: $(LIBREDWG_COPYING) -> $(DOC_INSTALL_DIR)/libredwg-COPYING" ; \
 	fi
 	@echo "libraries installed: $(LIB_INSTALL_DIR)"
 
 install-lisp-systems:  ## Install just the ASDF systems (every .lisp + .asd, in tree layout) under $$PREFIX/share/common-lisp/{source,systems}.
-	install -d $(CL_SOURCE_INSTALL_DIR)
-	install -d $(CL_SYSTEMS_INSTALL_DIR)
+	install -d "$(CL_SOURCE_INSTALL_DIR)"
+	install -d "$(CL_SYSTEMS_INSTALL_DIR)"
 	@# Copied file-by-file (not `tar -T -') so the mode is normalised
 	@# to 0644 whatever the checkout's umask, and so directories are
 	@# created by install(1) — `install -D' is GNU-only, hence the
@@ -641,38 +840,39 @@ install-lisp-systems:  ## Install just the ASDF systems (every .lisp + .asd, in 
 	@# source-registry scans share/common-lisp/systems/ for .asd files,
 	@# which is what makes (asdf:load-system "clautolisp") work with no
 	@# per-user configuration.
-	ln -sf ../source/$(SUBPROJECT_NAME)/$(SUBPROJECT_NAME).asd \
-	       $(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd
+	ln -sf "../source/$(SUBPROJECT_NAME)/$(SUBPROJECT_NAME).asd" \
+	       "$(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd"
 	@echo "linked:    $(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd"
 	@# The conf.d fragment reaches Lisp images whose source-registry
 	@# does not already cover $(PREFIX) — see the file's own header for
 	@# the XDG_CONFIG_DIRS it needs, and for the user configurations
 	@# that (deliberately) shadow it.
-	install -d $(CL_CONFD_INSTALL_DIR)
-	install -m 0644 $(CL_CONFD_FILE) $(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)
+	install -d "$(CL_CONFD_INSTALL_DIR)"
+	install -m 0644 "$(CL_CONFD_FILE)" "$(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)"
 	@echo "installed: $(CL_CONFD_FILE) -> $(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)"
 
 uninstall:  ## Remove the clautolisp install from $$PREFIX.
-	rm -rf $(CL_SOURCE_INSTALL_DIR)
-	rm -f $(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd
-	rm -f $(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)
-	rm -f $(BIN_INSTALL_DIR)/clautolisp $(BIN_INSTALL_DIR)/read-autolisp \
-	      $(BIN_INSTALL_DIR)/clautolisp-sbcl $(BIN_INSTALL_DIR)/clautolisp-ccl \
-	      $(BIN_INSTALL_DIR)/read-autolisp-sbcl $(BIN_INSTALL_DIR)/read-autolisp-ccl \
-	      $(BIN_INSTALL_DIR)/clautolisp-gui-qt
+	rm -rf "$(CL_SOURCE_INSTALL_DIR)"
+	rm -f "$(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd"
+	rm -f "$(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)"
+	rm -f "$(BIN_INSTALL_DIR)/clautolisp" "$(BIN_INSTALL_DIR)/read-autolisp" \
+	      "$(BIN_INSTALL_DIR)/clautolisp-sbcl" "$(BIN_INSTALL_DIR)/clautolisp-ccl" \
+	      "$(BIN_INSTALL_DIR)/read-autolisp-sbcl" "$(BIN_INSTALL_DIR)/read-autolisp-ccl" \
+	      "$(BIN_INSTALL_DIR)/clautolisp-gui-qt"
 	@# Remove .info entries from the dir node before deleting the files.
 	@# Derived from the source .org list (the generated .info live under build/).
 	@for f in $(INFO_FILES); do \
-	  base="$$(basename $$f)" ; \
-	  $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$base" 2>/dev/null \
+	  base="$$(basename "$$f")" ; \
+	  "$(INSTALL_INFO)" --remove --info-dir="$(INFO_INSTALL_DIR)" "$$base" 2>/dev/null \
 	    || true ; \
 	  rm -f "$(INFO_INSTALL_DIR)/$$base" ; \
 	done
 	@for f in documentation/man/*.1; do \
-	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename $$f)" ; fi ; \
+	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename "$$f")" ; fi ; \
 	done
 	@# The rest of install-libraries: the native codec libs and the
 	@# header both live in directories that are ours alone. (The two
 	@# documents it installs go with $(DOC_INSTALL_DIR) below.)
-	rm -rf $(LIB_INSTALL_DIR) $(INCLUDE_INSTALL_DIR)
-	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
+	rm -rf "$(LIB_INSTALL_DIR)" "$(INCLUDE_INSTALL_DIR)"
+	rm -rf "$(LIBEXEC_INSTALL_DIR)" "$(DOC_INSTALL_DIR)"
+	rm -rf "$(EMACS_INSTALL_DIR)"

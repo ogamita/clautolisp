@@ -28,3 +28,17 @@
   '((operator . "CDATE") (area . "sysvar") (profile . strict))
   '(list (fix (getvar "DATE")) (fix (getvar "CDATE")))
   '(and (< 2400000 (car *result*)) (> (cadr *result*) 19000000)))
+
+;;; TDCREATE / TDUPDATE are stored drawing-time reals (the DIESEL
+;;; edtime formatter that consumes them is not implemented headlessly).
+;;; Assert they read as reals.
+
+(deftest-pred "sysvar-tdcreate-is-a-real"
+  '((operator . "TDCREATE") (area . "sysvar") (profile . strict))
+  '(getvar "TDCREATE")
+  '(eq (type *result*) 'real))
+
+(deftest-pred "sysvar-tdupdate-is-a-real"
+  '((operator . "TDUPDATE") (area . "sysvar") (profile . strict))
+  '(getvar "TDUPDATE")
+  '(eq (type *result*) 'real))

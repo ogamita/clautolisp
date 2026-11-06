@@ -28,7 +28,16 @@ $alfe = if ($env:ALFE_BIN) { $env:ALFE_BIN } else { Join-Path $root "autolisp-fr
 # an existing .exe, else copy the extension-less PE to one. (Mirrors
 # run-vendor-probes.ps1; make-driven targets run the bare name fine because
 # they go through sh/cmd, not PowerShell.)
-if (Test-Path "$alfe.exe") {
+# Since 2026-08-16 the build produces alfe-sbcl.exe, so the first branch
+# takes it and the copy below no longer fires. The -like guard is for an
+# ALFE_BIN that already names the .exe: without it this looks for
+# alfe-sbcl.exe.exe, misses, and copies a large image onto that name.
+if ($alfe -like '*.exe') {
+  if (-not (Test-Path $alfe)) {
+    Write-Host "alfe binary not found at $alfe (build it: make -C autolisp-front-end build-alfe-sbcl)"
+    exit 2
+  }
+} elseif (Test-Path "$alfe.exe") {
   $alfe = "$alfe.exe"
 } elseif (Test-Path $alfe) {
   Copy-Item -Force $alfe "$alfe.exe"
@@ -43,15 +52,23 @@ if (-not $env:ALFE_RUNTIME_LSP)   { $env:ALFE_RUNTIME_LSP   = (Join-Path $root "
 if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-bootstrap.lsp") -replace '\\','/' }
 
 $outDir = Join-Path $root "dist/encoding"
+# Start from an empty dist/encoding/: the Windows runner reuses its build
+# directory, so this job's artefact also carried older files of OTHER jobs
+# (encoding-probe-artifacts-and-macos-forward).
+if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $report = Join-Path $outDir "$Backend-Windows.txt"
+# Every write is Add-Content -Encoding utf8: Tee-Object -Append writes UTF-16
+# under Windows PowerShell 5, which left the 2026-10-08 reports mixed
+# (UTF-8 BOM + UTF-16LE body) and hid the DONE line from Select-String
+# (probe-ps1-done-check-misreads-utf16-report).
 Set-Content -Encoding utf8 $report ""
 
 $bargs = @("--no-init")
 switch ($Backend) {
   "bricscad"   { $bargs += @("--bricscad","--mode","batch","--timeout","180") }
   "autocad"    { $bargs += @("--autocad","--mode","batch"); if ($Dwg) { $bargs += @("--dwg",$Dwg) } }
-  "clautolisp" { $bargs += @("--clautolisp","--host","mock") }
+  "clautolisp" { $bargs += @("--clautolisp") }
 }
 $bargs += @("-l",$probe)
 
@@ -59,18 +76,22 @@ $bargs += @("-l",$probe)
 # EnvName/EnvValue optionally sets an env var. Output ENC lines are prefixed.
 function Run-Knob {
   param([string]$Label,[int]$CodePage = 0,[string]$EnvName = "",[string]$EnvValue = "")
-  ("########## KNOB: {0} ##########" -f $Label) | Tee-Object -FilePath $report -Append
+  ("########## KNOB: {0} ##########" -f $Label) | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
   $saved = $null
   if ($EnvName) { $saved = [Environment]::GetEnvironmentVariable($EnvName); Set-Item -Path "Env:$EnvName" -Value $EnvValue }
-  if ($CodePage -gt 0) { cmd /c "chcp $CodePage" | Out-Null }
+  # Invoke the real Windows cmd.exe by its absolute path ($env:ComSpec): a bare
+  # `cmd' resolves against PATH, and on an MSYS2 runner that finds
+  # C:\msys64\usr\bin\cmd (a symlink/document, not the console interpreter),
+  # which PowerShell refuses mid-pipeline ("CantActivateDocumentInPipeline").
+  if ($CodePage -gt 0) { & "$env:ComSpec" /c "chcp $CodePage" | Out-Null }
   try {
     (& $alfe @bargs 2>&1) |
       Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|BOOTSTRAP-FAILED|FAILED' } |
       ForEach-Object { "[$Label] $_" } |
-      Tee-Object -FilePath $report -Append
-  } catch { "[$Label] LAUNCH-ERROR: $_" | Tee-Object -FilePath $report -Append }
+      ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  } catch { "[$Label] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
   if ($EnvName) { if ($null -ne $saved) { Set-Item -Path "Env:$EnvName" -Value $saved } else { Remove-Item -Path "Env:$EnvName" -ErrorAction SilentlyContinue } }
-  "" | Tee-Object -FilePath $report -Append
+  "" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
 }
 
 # --- the Windows code-page / env knob matrix -------------------------------
@@ -80,5 +101,146 @@ Run-Knob -Label "chcp-1252-ansi"   -CodePage 1252
 Run-Knob -Label "chcp-437-oem"     -CodePage 437
 Run-Knob -Label "LANG=en_US.UTF-8" -EnvName "LANG" -EnvValue "en_US.UTF-8"
 Run-Knob -Label "LC_ALL=C"         -EnvName "LC_ALL" -EnvValue "C"
+
+# --- E3: the raw bytes of the batch drain (cadstdio) -------------------------
+# In batch mode the runtime's princ appends to protocol/stdout.txt with
+# (open path "a") + write-line (autolisp-remote-io.lsp), and alfe's drain
+# hands back DECODED text -- so the ENC lines above cannot show the bytes.
+# The probe writes its own file with that very call, the characters built
+# with CHR (nothing crosses another codec on the way in), and the file is
+# dumped here byte by byte (encoding-situations-cli-options, E3).
+if ($Backend -ne "clautolisp") {
+  $raw = (Join-Path $outDir "e3-raw-$Backend.txt") -replace '\\','/'
+  if (Test-Path $raw) { Remove-Item -Force $raw }
+  $e3 = '(progn (setq e3f (open "' + $raw + '" "a")) ' +
+        '(write-line (strcat "E3-233:" (chr 233)) e3f) ' +
+        '(write-line (strcat "E3-128:" (chr 128)) e3f) ' +
+        '(write-line (strcat "E3-8364:" (chr 8364)) e3f) ' +
+        '(close e3f) (princ "\nE3 WRITTEN\n") (princ))'
+  # A file, not -x: Windows PowerShell 5.1 passes the inner double quotes of
+  # a native argument unescaped, which would mangle the form.
+  $e3lsp = Join-Path $outDir "e3-probe.lsp"
+  Set-Content -Encoding ascii $e3lsp $e3
+  $e3args = @($bargs | Where-Object { $_ -ne "-l" -and $_ -ne $probe }) + @("-l",($e3lsp -replace '\\','/'))
+  "########## E3: raw drain bytes ##########" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  try {
+    (& $alfe @e3args 2>&1) |
+      Where-Object { "$_" -match 'E3 |BOOTSTRAP-FAILED|FAILED' } |
+      ForEach-Object { "[E3] $_" } |
+      ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  } catch { "[E3] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
+  if (Test-Path $raw) {
+    $bytes = [System.IO.File]::ReadAllBytes($raw)
+    ("[E3] {0} bytes: {1}" -f $bytes.Length, (($bytes | ForEach-Object { '{0:X2}' -f $_ }) -join ' ')) |
+      ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  } else {
+    "[E3] NO FILE: $raw" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  }
+}
+
+# --- LOG: the CAD's own command-history log, read back by alfe --cad-log ------
+# (encoding-situations-cli-options, the `log' situation). The CAD logs a
+# native PRINC of e-acute + euro (AutoCAD logs it; BricsCAD V25 logs only the
+# command channel) and a LINE command (its prompts are accented on a French
+# install). Reported: what --cad-log decoded (the code points of every line
+# holding a character above 127) and the RAW bytes of the log file alfe read
+# -- its size, its first 16 bytes (a BOM?), and 8 bytes around its first byte
+# above 127. MEASURED 2026-10-08 (job 16998925784): BricsCAD V25 writes
+# windows-1252 without a BOM. The AutoCAD run of that day logged neither the
+# marker nor the LINE (no "LOG WRITTEN" either): the form failed in the CAD,
+# and ERROR lines are now kept in the report so the next run says why.
+if ($Backend -ne "clautolisp") {
+  $logLsp = Join-Path $outDir "log-probe.lsp"
+  $logForm = '(progn (apply (quote princ) (list (strcat "\nLOG-MARKER caf" (chr 233) " eur" (chr 8364) "\n"))) ' +
+             '(vl-catch-all-apply (function (lambda () (command "_.LINE" "0,0" "1,1" ""))) nil) ' +
+             '(princ "\nLOG WRITTEN\n") (princ))'
+  # A file, not -x (see E3 above).
+  Set-Content -Encoding ascii $logLsp $logForm
+  $cadLog = Join-Path $outDir "cad-log-$Backend.txt"
+  $wdFile = Join-Path $outDir "cad-log-workdir.txt"
+  foreach ($f in @($cadLog, $wdFile)) { if (Test-Path $f) { Remove-Item -Force $f } }
+  $logArgs = @($bargs | Where-Object { $_ -ne "-l" -and $_ -ne $probe }) +
+             @("--keep-workdir", "--write-workdir-path", $wdFile,
+               "--cad-log", $cadLog, "-l", ($logLsp -replace '\\','/'))
+  "########## LOG: --cad-log ##########" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  try {
+    (& $alfe @logArgs 2>&1) |
+      Where-Object { "$_" -match 'LOG |cad-log|ERROR|BOOTSTRAP-FAILED|FAILED' } |
+      ForEach-Object { "[LOG] $_" } |
+      ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  } catch { "[LOG] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
+  if (Test-Path $cadLog) {
+    $lines = [System.IO.File]::ReadAllLines($cadLog, [System.Text.Encoding]::UTF8)
+    ("[LOG] decoded: {0} lines" -f $lines.Count) | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+    $lines | Where-Object { $_ -match '[^\x00-\x7F]' } | Select-Object -First 8 | ForEach-Object {
+      $chars = $_.ToCharArray()
+      $high = ($chars | Where-Object { [int]$_ -gt 127 } | ForEach-Object { [int]$_ }) -join ' '
+      $ascii = ($chars | ForEach-Object { if ([int]$_ -lt 128) { $_ } else { '?' } }) -join ''
+      ("[LOG] decoded line: {0} | high code points: {1}" -f $ascii, $high) | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+    }
+  } else {
+    "[LOG] NO --cad-log FILE: $cadLog" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  }
+  if (Test-Path $wdFile) {
+    $wd = (Get-Content $wdFile -TotalCount 1).Trim()
+    $logsDir = Join-Path $wd "logs"
+    if (Test-Path $logsDir) {
+      Get-ChildItem -File $logsDir | Where-Object { $_.Name -ne "debug.log" } | ForEach-Object {
+        $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+        $head = ($bytes | Select-Object -First 16 | ForEach-Object { '{0:X2}' -f $_ }) -join ' '
+        $i = 0
+        while ($i -lt $bytes.Length -and $bytes[$i] -lt 0x80) { $i++ }
+        $around = "none"
+        if ($i -lt $bytes.Length) {
+          $from = [Math]::Max(0, $i - 3)
+          $to = [Math]::Min($bytes.Length - 1, $from + 7)
+          $around = ($bytes[$from..$to] | ForEach-Object { '{0:X2}' -f $_ }) -join ' '
+        }
+        ("[LOG] raw {0}: {1} bytes; first 16: {2}; first byte above 7F at offset {3}: {4}" -f $_.Name, $bytes.Length, $head, $i, $around) |
+          ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+      }
+    } else {
+      "[LOG] NO logs/ in $wd" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+    }
+    Remove-Item -Recurse -Force $wd -ErrorAction SilentlyContinue
+  }
+}
+
+# --- FORWARD: -Efile-write utf-8 reaching the CAD's OPEN on every action -----
+# (alfe-efile-write-not-applied-to-l-file, alfe 2.3.14). lispsys-forward-probe
+# run three ways -- alfe-loaded from an entry file, given to -l, and with its
+# OPEN calls in an -x form (E1F_MODE=x) -- each one alfe run. Expected for EACH
+# way: BricsCAD/Windows (",ccs=UTF-8") "w SIZE 7" (BOM + UTF-8; 3 would be the
+# unforwarded cp1252) and "a SIZE" 2 or 5 (UTF-8 on a fresh file, with or
+# without a BOM -- not measured yet; 1 is unforwarded), no WARN. AutoCAD: see
+# run-lispsys-bom-probe.ps1 (4 / 2 at LISPSYS 1/2, 3 / 1 and one WARN at 0).
+if ($Backend -ne "clautolisp") {
+  $forward = Join-Path $root "autolisp-front-end/tests/scenarios/entities/lispsys-forward-probe.lsp"
+  $e1fDir = Join-Path $outDir "e1f"
+  New-Item -ItemType Directory -Force $e1fDir | Out-Null
+  $savedE1 = $env:E1_DIR
+  $env:E1_DIR = $e1fDir -replace '\\','/'
+  $forwardEntry = Join-Path $e1fDir "e1f-entry.lsp"
+  Set-Content -Encoding ascii $forwardEntry ('(alfe-load "{0}")' -f ($forward -replace '\\','/'))
+  # No double quote in the -x form (see E3 above), hence the probe's helpers.
+  $forwardX = "(e1f-x (open (e1f-xp 'w) (e1f-xm 'w)) (open (e1f-xp 'a) (e1f-xm 'a)))"
+  $baseArgs = @($bargs | Where-Object { $_ -ne "-l" -and $_ -ne $probe }) + @("-Efile-write","utf-8")
+  foreach ($way in @(
+      @{ Label = "FORWARD alfe-load"; Mode = "";  Args = @("-l", $forwardEntry) },
+      @{ Label = "FORWARD -l";        Mode = "";  Args = @("-l", $forward) },
+      @{ Label = "FORWARD -x";        Mode = "x"; Args = @("-l", $forward, "-x", $forwardX) })) {
+    ("########## {0} ##########" -f $way.Label) | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+    $env:E1F_MODE = $way.Mode
+    try {
+      $fargs = $baseArgs + $way.Args
+      (& $alfe @fargs 2>&1) |
+        Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|WARN|ERROR|BOOTSTRAP-FAILED|FAILED' } |
+        ForEach-Object { "[$($way.Label)] $_" } |
+        ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+    } catch { "[$($way.Label)] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
+    Remove-Item -Path Env:E1F_MODE -ErrorAction SilentlyContinue
+  }
+  if ($null -ne $savedE1) { $env:E1_DIR = $savedE1 } else { Remove-Item -Path Env:E1_DIR -ErrorAction SilentlyContinue }
+}
 
 Write-Host "encoding experiment ($Backend) -> $report"

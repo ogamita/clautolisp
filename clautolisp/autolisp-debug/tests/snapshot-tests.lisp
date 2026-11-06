@@ -106,3 +106,28 @@
       (clautolisp.debug:call-with-debugging
        (lambda () (eval-call context "FROB" 7)) :thread-info ti))
     (is (eql 7 x-value))))
+
+(test eval-in-frame-reconstructs-an-outer-frames-context
+  ;; Both FROB and its callee ID bind a local V. Break at ID's entry (reached
+  ;; via FROB), where FROB has already set its V to 1 and ID's V is still its
+  ;; fresh entry value (nil). Evaluating V in the OUTER frame (index 1, FROB)
+  ;; reconstructs FROB's context and sees 1; in the innermost frame (0, ID) it
+  ;; sees ID's V — the two frames' contexts are distinct (§9.3 with-frame-bindings).
+  (let* ((context (fresh-context))
+         (source (format nil "(defun id (a / v) a)~
+                             ~%(defun frob (x / v) (setq v 1) (id x))"))
+         (metas (define-and-instrument context source "FROB" "ID"))
+         (id-meta (second metas))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (outer :unset) (inner :unset))
+    (clautolisp.debug:add-breakpoint ti (fid-of id-meta) 0 :when :before)
+    (let ((clautolisp.debug:*debug-hit-handler*
+            (lambda (hit)
+              (let ((snap (clautolisp.debug:hit-snapshot hit)))
+                (setf outer (clautolisp.debug:eval-in-frame snap (rt-sym "V") :frame-index 1)
+                      inner (clautolisp.debug:eval-in-frame snap (rt-sym "V") :frame-index 0)))
+              :continue)))
+      (clautolisp.debug:call-with-debugging
+       (lambda () (eval-call context "FROB" 7)) :thread-info ti))
+    (is (eql 1 outer))          ; FROB's V, reconstructed for the outer frame
+    (is (null inner))))         ; ID's fresh local V at its entry

@@ -1,0 +1,56 @@
+#+TITLE: Cador rejects ssget crossing mode _C required by SCHMS occupancy tests
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: compatibility
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-29
+
+* Reproduction and scope
+
+SCHMS+ branch =fix-pb-lisp-warnings= adds three native ActiveX regression
+scenarios for =src-vlx/encombrement.lsp=,
+=schms_chevauchement_encombrement_sauf=. They select actual drawing entities
+with =ssget "_C"=, check exclusion of VLA objects and preservation of the
+caller's =ename= binding. No CAD primitive is mocked.
+
+The tests cannot execute this operation under clautolisp SBCL 2.3.73,
+=--host cador --dialect bricscad-v26=. The installed Windows release 2.3.75
+has the same selection dispatcher; current master 7411ff07 still rejects
+all modes except X/_X/_I in =clautolisp/cador/source/selection-api.lisp=.
+This is a missing host capability, not a regression attributed to a release.
+
+Run the adjacent =ssget-crossing-selection-unsupported-repro.lsp= with:
+
+#+begin_src sh
+clautolisp --no-init --host cador --dialect bricscad-v26 \
+  -l issues/open/ssget-crossing-selection-unsupported-repro.lsp
+#+end_src
+
+Observed error:
+
+#+begin_example
+cador does not yet support ssget mode "_C"; accepted modes are "X", "_X" and "_I".
+#+end_example
+
+The fixture contains exactly two lines inside the crossing rectangle. A
+supported implementation must return a selection containing both entities;
+this reproducer prints PASS only after testing length and membership. It
+cleans its own two entities on success and on the caught unsupported-mode
+error. It needs no SCHMS installation or external DWG.
+
+* Expected implementation and checks
+
+Implement crossing selection with geometric intersection, including entities
+crossing a boundary with neither endpoint inside; do not approximate it by
+selecting all drawing entities. Test fully inside, crossing, outside, boundary,
+empty selection, filters, and supported dialect/coordinate conventions.
+Compare these semantics against native AutoCAD and BricsCAD before claiming
+parity, especially view-dependent behaviour and UCS/WCS conversion.
+
+SCHMS currently activates these three scenarios only in the actual native
+CAD launchers, including the optimized DES/VLX qualification. Its existing
+11 ActiveX tests still run in Cador; the output explicitly states the three
+additional cases are outside that backend's current coverage. Once _C is
+implemented, enable the same cases in the Cador lane and keep this minimal
+reproducer in the implementation regression suite.

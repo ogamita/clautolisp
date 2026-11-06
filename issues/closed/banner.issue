@@ -1,0 +1,47 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: banner — print a startup welcome banner unless -q/--quiet
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: cli-feature
+#+DEPENDS: -
+#+BRANCH: feature-banner
+
+* Resolution (2026-08-03, clautolisp 1.7.9)
+
+Implemented in =emit-repl-banner= (tools/clautolisp/source/main.lisp). The
+plumbing already existed — =-q/--quiet= maps to verbosity :warn, =repl-loop=
+gates the banner with =(unless quiet-p ...)= where =quiet-p = (eq verbosity
+:warn)= — so only the banner *content* changed: the former one-liner is now
+the full welcome:
+
+    Welcome to clautolisp Version 1.7.9
+    Copyright 2026-2026 Ogamita Ltd
+    Licensed under AGPL; source codes available at:
+    http://gitlab.com/ogamita/clautolisp/
+    AUTOLISP REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+
+Details:
+- Version from =*version*=; dialect/host from the live session
+  (=autolisp-dialect-name= / =host-name=) so =--clautolisp= shows
+  "CLAUTOLISP dialect", =--host null= shows "null-host", etc.
+- Copyright end-year is the current year (=(nth-value 5 (get-decoded-time))=)
+  against =*copyright-start-year*= = 2026, so a new year needs no source edit.
+- =-q/--quiet= suppresses the whole banner; =-v/--verbose= still appends the
+  non-default-knobs line (mock-input/gui/trace/debug) after it.
+- Updated the demo transcript documentation/demo/clautolisp-1-aldo-sedit.txt.
+
+Verified by running the built image: default prints the 5-line banner + =_$=
+prompt, =-q= prints only =_$=, =--clautolisp -v= shows the CLAUTOLISP dialect.
+Full SBCL suite green.
+
+* Original request
+
+Unless -q|--quiet is given, print a banner formatted as such:
+
+    Welcome to clautolisp Version 9.9.9
+    Copyright 2026-2026 Ogamita Ltd
+    Licensed under AGPL; source codes available at:
+    http://gitlab.com/ogamita/clautolisp/
+    AUTOLISP REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+
+    _$

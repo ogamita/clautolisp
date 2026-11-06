@@ -540,33 +540,40 @@ références de bloc attribuées portant des XData.
 
 ### ActiveX object model `vla-*` (graphical/session — needs COM or emulation)
 
-- [ ] `vla-put-textstring` — 188
-- [ ] `vla-get-layer` — 170
-- [ ] `vla-get-insertionpoint` — 169
-- [ ] `vla-get-rotation` — 154
-- [ ] `vla-put-height` — 126
-- [ ] `vla-put-textalignmentpoint` — 126
-- [ ] `vla-put-alignment` — 125
-- [ ] `vla-rotate` — 87
-- [ ] `vla-item` — 18
-- [ ] `vla-get-blocks` — 14
-- [ ] `vla-delete` — 9
-- [ ] `vla-get-handle` — 8
-- [ ] `vla-get-effectivename` — 7
-- [ ] `vla-copy` — 6
-- [ ] `vla-get-name` — 6
-- [ ] `vla-get-objectname` — 6
+> **Façade générique livrée** (`vla-accessor-family.issue`, P1) : après
+> `(vl-load-com)`, tout `vla-get-<prop>` / `vla-put-<prop>` / `vla-<method>`
+> est résolu dynamiquement vers `vlax-get-property` / `vlax-put-property` /
+> `vlax-invoke-method` (plus de `:undefined-function`). Ce qui est *coché*
+> ci-dessous est validé de bout en bout sur le mock ; les autres se résolvent
+> mais dépendent encore de la couverture du graphe d'objets mock (P2).
+
+- [x] `vla-put-textstring` — 188 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-layer` — 170 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-insertionpoint` — 169 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-rotation` — 154 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-height` — 126 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-textalignmentpoint` — 126 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-alignment` — 125 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-rotate` — 87 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
+- [x] `vla-item` — 18 (1.8.10: generic collection Item, 0-based index or case-insensitive name, missing item catchable via vl-catch-all-apply; end-to-end on mock)
+- [x] `vla-get-blocks` — 14 (1.8.10: live drawing-backed Blocks collection; end-to-end on mock)
+- [x] `vla-delete` — 9 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
+- [x] `vla-get-handle` — 8 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-effectivename` — 7 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-copy` — 6 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
+- [x] `vla-get-name` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-objectname` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-getbulge` — 6
-- [ ] `vla-put-insertionpoint` — 6
-- [ ] `vla-put-layer` — 6
-- [ ] `vla-getboundingbox` — 5
-- [ ] `vla-put-color` — 5
-- [ ] `vla-put-explodable` — 5
+- [x] `vla-put-insertionpoint` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-layer` — 6 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-getboundingbox` — 5 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
+- [x] `vla-put-color` — 5 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-explodable` — 5 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-add` — 4
-- [ ] `vla-get-layers` — 4
-- [ ] `vla-get-modelspace` — 4
-- [ ] `vla-move` — 4
-- [ ] `vla-put-lineweight` — 4
+- [x] `vla-get-layers` — 4 (1.8.10: live Layers collection + Layers.Add; end-to-end on mock)
+- [x] `vla-get-modelspace` — 4 (1.8.10: live *Model_Space entity collection, was a placeholder string; end-to-end on mock)
+- [x] `vla-move` — 4 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
+- [x] `vla-put-lineweight` — 4 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-documents` — 3
 - [ ] `vla-get-fullname` — 3
 - [ ] `vla-get-ownerid` — 3
@@ -575,18 +582,18 @@ références de bloc attribuées portant des XData.
 - [ ] `vla-saveas` — 3
 - [ ] `vla-activate` — 2
 - [ ] `vla-endundomark` — 2
-- [ ] `vla-get-activedocument` — 2
-- [ ] `vla-get-alignment` — 2
-- [ ] `vla-get-elevation` — 2
+- [x] `vla-get-activedocument` — 2 (façade + vlax-get-acad-object; end-to-end on mock)
+- [x] `vla-get-alignment` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-elevation` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-propertyname` — 2
-- [ ] `vla-get-textalignmentpoint` — 2
-- [ ] `vla-get-textstring` — 2
+- [x] `vla-get-textalignmentpoint` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-textstring` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-value` — 2
 - [ ] `vla-getwidth` — 2
 - [ ] `vla-intersectwith` — 2
 - [ ] `vla-object` — 2
-- [ ] `vla-put-name` — 2
-- [ ] `vla-put-stylename` — 2
+- [x] `vla-put-name` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-put-stylename` — 2 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-regen` — 2
 - [ ] `vla-save` — 2
 - [ ] `vla-setbulge` — 2
@@ -599,27 +606,27 @@ références de bloc attribuées portant des XData.
 - [ ] `vla-addobject` — 1
 - [ ] `vla-addvertex` — 1
 - [ ] `vla-appendouterloop` — 1
-- [ ] `vla-erase` — 1
+- [x] `vla-erase` — 1 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vla-evaluate` — 1
-- [ ] `vla-get-count` — 1
-- [ ] `vla-get-height` — 1
-- [ ] `vla-get-isdynamicblock` — 1
+- [x] `vla-get-count` — 1 (1.8.10: live Count on every collection; end-to-end on mock)
+- [x] `vla-get-height` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
+- [x] `vla-get-isdynamicblock` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-mtextattribute` — 1
 - [ ] `vla-get-readonly` — 1
-- [ ] `vla-get-tagstring` — 1
+- [x] `vla-get-tagstring` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-get-truecolor` — 1
 - [ ] `vla-getextensiondictionary` — 1
-- [ ] `vla-insertblock` — 1
+- [x] `vla-insertblock` — 1 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vla-movebelow` — 1
 - [ ] `vla-open` — 1
 - [ ] `vla-put-closed` — 1
 - [ ] `vla-put-layeron` — 1
-- [ ] `vla-put-mode` — 1
+- [x] `vla-put-mode` — 1 (1.8.11: pont propriétés DXF⇄COM sur entités / blocs; e2e mock)
 - [ ] `vla-put-mtextattribute` — 1
 - [ ] `vla-put-truecolor` — 1
 - [ ] `vla-put-value` — 1
 - [ ] `vla-startundomark` — 1
-- [ ] `vla-update` — 1
+- [x] `vla-update` — 1 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vla-updatemtextattribute` — 1
 
 ### ActiveX support `vlax-*` (safearray/variant/curve/object — curve fns are geometry, rest is COM)
@@ -632,14 +639,14 @@ références de bloc attribuées portant des XData.
 - [ ] `vlax-curve-getpointatparam` — 19
 - [ ] `vlax-curve-getendpoint` — 15
 - [ ] `vlax-vla-object->ename` — 14
-- [ ] `vlax-invoke` — 13
+- [x] `vlax-invoke` — 13 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vlax-curve-getparamatpoint` — 12
 - [ ] `vlax-get-acad-object` — 12
 - [ ] `vlax-curve-getclosestpointto` — 11
 - [ ] `vlax-property-available-p` — 8
 - [ ] `vlax-curve-getendparam` — 7
 - [ ] `vlax-for` — 7
-- [ ] `vlax-get` — 6
+- [x] `vlax-get` — 6 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vlax-make-safearray` — 6
 - [ ] `vlax-erased-p` — 5
 - [ ] `vlax-object-released-p` — 5
@@ -650,7 +657,7 @@ références de bloc attribuées portant des XData.
 - [ ] `vlax-safearray-put-element` — 4
 - [ ] `vlax-curve-getfirstderiv` — 3
 - [ ] `vlax-invoke-method` — 3
-- [ ] `vlax-put` — 3
+- [x] `vlax-put` — 3 (1.8.12: méthodes d’entités / InsertBlock / plain-data vlax; e2e mock)
 - [ ] `vlax-curve-getdistatparam` — 2
 - [ ] `vlax-curve-getstartparam` — 2
 - [ ] `vlax-method-applicable-p` — 2
@@ -675,4 +682,62 @@ références de bloc attribuées portant des XData.
 - [ ] `minusp` — 3
 - [ ] `acad_helpdlg` — 1
 - [ ] `acet-ui-pickdir` — 1
+
+---
+
+## 9. Commandes CAD pilotées par `command` — couverture spec (vérifié 2026-09-15)
+
+Les commandes CAD que SCHMS+ pilote via `(command …)` sont désormais TOUTES
+*spécifiées* dans le chapitre « Commands » de l'autolisp-spec (v0.11.0,
+`commands-inventory.sexp`, cœur des 561 commandes communes AutoCAD∩BricsCAD).
+Distinguer **spécifiée** (page de référence dans la spec) de **implémentée**
+(exécutée par le host cador contre le modèle de dessin) — cf.
+`autolisp-spec/documentation/commands-coverage.md`.
+
+**Ensemble complet piloté par SCHMS** (§7/§8) — 21 commandes fournisseur :
+`._`-préfixées : ARC, BREAK, BROWSER, CIRCLE, DONUT, ERASE, INSERT, LAYER,
+LINE, LINETYPE, MIRROR, MOVE, MTEXT, PLINE, SOLID, TEXT, WIPEOUT ; nues :
+ZOOM, PEDIT, SHELL, SCU (= UCS localisé français).
+
+Statut d'implémentation cador mis à jour le 2026-09-15 (clautolisp 2.2.66) :
+les 14 manquantes sont désormais gérées par le moteur de commandes
+(`cador/source/command-api.lisp` `%execute-command-tokens`) — soit avec un
+effet modèle réel (géométrie / tables), soit comme *no-op reconnu* qui
+consomme sa ligne d'entrée pour que la séquence pilotée continue (correctif du
+bug « le dispatch s'arrête à la première commande inconnue »).
+
+| Commande | Spécifiée | cador | Effet |
+|---|:--:|:--:|---|
+| LINE | ✓ | ✓ | entité LINE |
+| CIRCLE | ✓ | ✓ | entité CIRCLE |
+| TEXT | ✓ | ✓ | entité TEXT |
+| DONUT | ✓ | ✓ | LWPOLYLINE (2 arcs) |
+| SOLID | ✓ | ✓ | entité SOLID |
+| ERASE | ✓ | ✓ | efface la sélection |
+| MOVE | ✓ | ✓ | translate la sélection |
+| ARC | ✓ | ✓ | entité ARC (3 points → centre/rayon/angles CCW) |
+| PLINE | ✓ | ✓ | LWPOLYLINE (sommets ; Close ; largeur/arc consommés) |
+| MTEXT | ✓ | ✓ | entité MTEXT (point + texte ; largeur en 41) |
+| MIRROR | ✓ | ✓ | clone réfléchi ; efface la source si Oui |
+| WIPEOUT | ✓ | ✓ | entité WIPEOUT (sommets de contour) |
+| INSERT / -INSERT | ✓ | ✓ | réf. de bloc (2/10/41/42/50) ; valeurs d'attribut consommées (tags non modélisés, différé) |
+| LAYER / -LAYER | ✓ | ✓ | crée/active des calques (New/Make/Set), listes à virgules |
+| LINETYPE / -LINETYPE | ✓ | ✓ | Load crée un enreg. LTYPE ; Set règle CELTYPE |
+| ZOOM | ✓ | ◐ | no-op reconnu (viewport ; cador model-only) |
+| UCS (SCU) | ✓ | ◐ | no-op reconnu (contexte SCU/WCS) |
+| PEDIT | ✓ | ◐ | no-op reconnu (édition différée) |
+| BREAK | ✓ | ◐ | no-op reconnu (édition différée) |
+| BROWSER | ✓ | ◐ | no-op reconnu (lance un navigateur) |
+| SHELL | ✓ | ◐ | no-op reconnu (lance un shell) |
+
+**Bilan** : 21/21 spécifiées ; **21/21 gérées** par le dispatch cador — 15 avec
+effet modèle (✓), 6 no-op reconnus (◐) corrects/différés pour un moteur
+model-only (ZOOM/UCS = viewport/repère, BROWSER/SHELL = processus externes,
+PEDIT/BREAK = édition différée). Le point clé : une commande reconnue (même
+no-op) consomme ses arguments, donc une séquence `(command "._zoom" "_e"
+"._line" …)` n'est plus interrompue. Restes différés : les attributs d'INSERT
+(nécessitent les attdefs du bloc), la géométrie d'arc de PLINE (bulge), et
+l'édition PEDIT/BREAK. Les commandes maison `C:RESOL`, `C:SAUVEGRD` sont
+définies par l'application (hors périmètre spec). Aucune commande fournisseur
+pilotée par SCHMS n'est absente de l'inventaire.
 

@@ -1,4 +1,4 @@
-.TH CLAUTOLISP 1 "May 2026" "clautolisp 1.0.52" "User Commands"
+.TH CLAUTOLISP 1 "October 2026" "clautolisp 2.3.0" "User Commands"
 .SH NAME
 clautolisp \- standalone AutoLISP evaluator and interactive REPL.
 .SH SYNOPSIS
@@ -55,10 +55,33 @@ One of:
 .BR \-\-strict ", " \-\-autocad ", " \-\-bricscad ", " \-\-clautolisp
 Shorthands for the matching
 .BR \-\-dialect .
+.TP
+.B \-\-lax
+Shorthand for
+.BR "\-\-dialect lax" :
+every extension available, no out-of-dialect diagnostic.
 .SS Host (HAL backend)
 .TP
 .BR \-\-host " " \fIBACKEND\fR
-.BR mock " (default) or " null .
+.BR cador " (default), " cadtui ", or " nihil .
+.B cador
+is the headless in-process CAD core;
+.B cadtui
+is the full textual UI-tree host on that core (menus, drawings, CAD view,
+DCL dialogs mirrored into an inspectable tree \(em cador is its degenerate
+.I /application/console
+configuration);
+.B nihil
+is the trivial backend.
+.B mock
+is a deprecated alias of cador;
+.BR null " / " none
+are deprecated aliases of nihil. See
+.BR \-\-list-hosts .
+.TP
+.BR \-\-dwg " " \fIFILE\fR
+Start on the drawing FILE (DXF or DWG): the first open drawing, current, in
+place of the untitled Drawing1.dwg.
 .TP
 .BR \-\-mock-input " " \fIPATH\fR
 Feed the file at PATH to the MockHost as its prompt-stream.
@@ -66,15 +89,62 @@ Feed the file at PATH to the MockHost as its prompt-stream.
 .BR \-\-gui " " \fICMD\fR
 Subprocess command speaking the DCL sexp wire protocol.
 .TP
+.BR \-\-dcl " " \fI{tui,gui,auto}\fR
+DCL renderer selection.
+.B tui
+forces the terminal form,
+.B gui
+uses the
+.B \-\-gui
+subprocess driver, and
+.B auto
+(the default) picks the GUI when a driver is configured and stdout is a
+TTY, so every headless or piped run gets the terminal form.
+.TP
 .B \-\-trace
 Print every AutoLISP call (entry args + exit value) on stderr.
+.TP
+.BR \-\-front-end-bindings " " \fIFILE\fR
+Install the
+.B *AUTOLISP\-...*
+values a driving front end resolved (FILE, written by it) instead of
+deriving them from this command line.
+.B "alfe \-\-clautolisp \-\-backend subprocess"
+passes it, so a program sees the same values as under alfe's in-process
+engine.
+.TP
+.BR \-\-front-end-action-boundaries " " \fIDIR\fR
+Stop before and after each action (each
+.BR \-l ,
+.BR \-x ,
+and the REPL) and wait for the driving front end, which talks to the
+program through files in DIR.
+.B "alfe \-\-clautolisp \-\-backend subprocess"
+passes it when a plug-in has per-action hooks, so the hooks run between
+two actions of one run, as under alfe's in-process engine.
 .SS Debugger (aldo)
 .TP
 .BR \-\-on-error " " \fIPOLICY\fR
 What an uncaught AutoLISP error does:
 .BR quit " (report and exit — the batch default), " debug
 (break into the aldo debugger — the interactive-REPL default), or
-.BR ignore .
+.B ignore
+(run the AutoLISP
+.B *error*
+handler, report the error and go on with the next
+.B \-l
+/
+.BR \-x ;
+the run still exits 1).
+Before an interactive REPL, an error in a
+.B \-l
+/
+.B \-x
+never ends the program unless the policy is
+.BR quit :
+under
+.B debug
+it stops in the debugger, then the next action and the REPL run.
 Sets
 .BR *CLAL-ON-ERROR* .
 .TP
@@ -85,7 +155,12 @@ What Control-C (SIGINT) does:
 Sets
 .BR *CLAL-ON-INTERRUPT* ,
 re-read live at each interrupt. A second Control-C while one is being
-handled exits immediately.
+handled exits immediately. Applies to the SBCL and the CCL builds alike
+(not to the Windows SBCL build, which keeps the console behaviour).
+.BR alfe (1)
+accepts the same debugger options for its
+.B \-\-clautolisp
+backend.
 .TP
 .BR \-\-on-quit " " \fIPOLICY\fR
 What
@@ -146,13 +221,61 @@ Declared terminal-IO encoding. Surfaced as
 .B *AUTOLISP-TERMINAL-ENCODING*
 to user code. The CL streams are not rebound at runtime — terminal
 IO is line-buffered.
+.TP
+.BR \-Ereplacement " " \fIR\fR ", " \-\-encoding\-replacement " " \fIR\fR
+What a write puts in place of a character its encoding cannot hold
+(a file
+.B open
+makes, or the terminal): one character (e.g.
+.BR ? ),
+or
+.B error
+(an AutoLISP error, nothing written),
+.B low\-byte
+(AutoCAD's way),
+.B best\-fit
+(the unaccented letter, else
+.BR ? ;
+BricsCAD on Windows) or
+.B escape
+(\fB\eU+XXXX\fR; BricsCAD on macOS). Without it, the system variable
+.B CLAUTOLISPENCODINGREPLACEMENT
+(seeded from the environment variable of the same name), then the
+dialect:
+.BR autocad :
+.BR low\-byte ;
+.BR bricscad :
+.B best\-fit
+on Windows,
+.B escape
+elsewhere;
+.BR clautolisp ", " strict " and " lax :
+.BR escape .
+A substitution prints the
+.B [encoding\-replacement]
+warning the first time a calling function makes a builtin substitute
+(not under
+.BR lax ).
+Surfaced as
+.BR *AUTOLISP-ENCODING-REPLACEMENT* .
+.TP
+.BR \-Efile\-write\-replacement " " \fIR\fR ", " \-\-file\-write\-encoding\-replacement " " \fIR\fR
+The same, for the files
+.B open
+makes only
+.RB ( *AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT* ).
+.TP
+.BR \-Eterminal\-out\-replacement " " \fIR\fR ", " \-\-terminal\-output\-encoding\-replacement " " \fIR\fR
+The same, for the terminal only
+.RB ( *AUTOLISP-TERMINAL-ENCODING-REPLACEMENT* ).
 .SS Init files
 .TP
 .BR \-norc ", " \-\-no-init
-Skip user init files
-.RB ( ~/.clautolisp{,rc} ", " ~/.autolisp{,rc} ", "
-.IR ~/.config/clautolisp/init ", "
-.IR ~/.config/autolisp/init ).
+Skip the user init files
+.RB ( ~/.autolisp ", " ~/.config/autolisp/init.lsp ", "
+.BR ~/.clautolisp ", " ~/.config/clautolisp/init.lsp ;
+see
+.BR FILES ).
 Honoured equivalently via
 .BR $AUTOLISP_NO_INIT " / " $CLAUTOLISP_NO_INIT .
 .SS Informational
@@ -170,6 +293,22 @@ Print every encoding name accepted by
 .BR \-e " / " \-E
 (mandatory four + every encoding the running CL implementation
 exposes) and exit.
+.TP
+.B \-\-list-dialects
+Print every
+.B \-\-dialect
+name, strict first and lax last, and exit.
+.TP
+.B \-\-list-hosts
+Print the
+.B \-\-host
+backends, one per line with a short summary, and exit.
+.TP
+.B \-\-list-situations
+Print the encoding situations settable with
+.BR \-E\fIsituation\fR [ \-\fIdir\fR ]
+and their defaults, then exit. Under a backend flag, show that
+backend's defaults and where each comes from.
 .SH "*AUTOLISP-…* GLOBALS"
 clautolisp publishes a set of
 .B *AUTOLISP-…*
@@ -194,24 +333,146 @@ Disable ANSI colour output (https://no-color.org).
 .B AUTOLISP_NO_INIT\fR, \fBCLAUTOLISP_NO_INIT
 Equivalent to
 .BR \-norc .
+.TP
+.B CLAUTOLISP_GUI
+DCL GUI driver command, used when
+.B \-\-gui
+is omitted.
+.TP
+.B CLAUTOLISP_DCL_DEBUG
+When set and non-empty, trace the DCL subprocess renderer on standard
+error, each line prefixed
+.BR [dcl-debug] .
+.TP
+.B CLAUTOLISP_BACKGROUND
+.BR dark " or " light :
+override the detected terminal background.
+.B COLORFGBG
+and
+.B TMUX
+are consulted next when it is unset.
+.TP
+.B CLAUTOLISP_DWG_LIBDIR
+Directory holding the DWG codec shared library, searched before the
+development tree and the installed layout.
+.TP
+.B CLAUTOLISPENCODINGREPLACEMENT
+Initial value of the system variable of the same name: what a write puts
+in place of a character its encoding cannot hold (see
+.BR \-Ereplacement ).
+An unknown value is ignored.
+.TP
+.B CLAUTOLISP_PREFIX
+.B $PREFIX
+used to build the trusted search path; omitted when unset.
+.TP
+.B XDG_CONFIG_HOME\fR, \fBXDG_CONFIG_DIRS
+Where
+.IR lisp.conf " and " aldo.conf
+are read and written.
+.TP
+.B XDG_DATA_HOME
+Contributes
+.I $XDG_DATA_HOME/autolisp/
+to the trusted search path.
+.TP
+.B XDG_STATE_HOME
+Where the default dribble log is written.
+.TP
+.B CLAUTOLISP_DEBUG_PATHMAP
+When set to any value, dump the recorded build frame and the detected
+run frame of the path-mapping layer to standard error at startup.
+Diagnostic aid on Windows, where MSYS2, Cygwin, WSL and native
+programs spell the same file differently; a no-op elsewhere, where the
+mapping is the identity.
 .SH FILES
 .TP
-.B ~/.clautolisp\fR, \fB~/.clautolisprc\fR, \fB~/.autolisp\fR, \fB~/.autolisprc
-User init files, loaded before any
-.BR \-l " / " \-x .
-.TP
-.B ~/.config/clautolisp/init\fR, \fB~/.config/autolisp/init
-XDG variant of the init files.
+.B ~/.autolisp\fR, \fB~/.config/autolisp/init.lsp\fR, \fB~/.clautolisp\fR, \fB~/.config/clautolisp/init.lsp
+User init files, loaded in this order before any
+.BR \-l " / " \-x
+and the REPL; every one that exists is loaded. The first two are
+shared with
+.BR alfe (1).
+Each may also be spelt with the extension
+.BR .lsp " (" ~/.autolisp.lsp ),
+or be compiled
+.RB ( .fas ", " .des ", " .vlx ),
+a compiled form being used only when it is newer than the
+.BR .lsp .
+In
+.I ~/.config/
+the extension is required.
 .SH "EXIT STATUS"
+Apart from 1 and 130, the codes of
+.BR sysexits.h ,
+with the same values on every system, MS-Windows included:
 .TP
-.B 0
+.BR 0 " (EX_OK)"
 Success.
 .TP
 .B 1
-Runtime error or unhandled condition.
+The AutoLISP program failed: a runtime error escaped it.
 .TP
-.B 2
-File error (cannot open / read).
+.BR 64 " (EX_USAGE)"
+Command-line usage error: unknown option, missing argument, invalid
+value;
+.B \-\-dwg
+on a host without drawings.
+.TP
+.BR 65 " (EX_DATAERR)"
+A
+.B \-l
+file or
+.B \-x
+expression the reader refuses (unbalanced parenthesis, bytes not valid
+in the source encoding); a
+.B \-\-dwg
+file that is not a drawing.
+.TP
+.BR 66 " (EX_NOINPUT)"
+An input file does not exist or is not readable: the
+.B \-l
+file, the
+.B \-\-dwg
+drawing, the
+.B \-\-mock\-input
+file.
+.TP
+.BR 69 " (EX_UNAVAILABLE)"
+The DWG native library a
+.B \-\-dwg
+drawing needs is absent.
+.TP
+.BR 70 " (EX_SOFTWARE)"
+Internal error.
+.TP
+.BR 73 " (EX_CANTCREAT)"
+The
+.B \-\-dribble
+transcript cannot be created.
+.TP
+.BR 74 " (EX_IOERR)"
+Input/output error.
+.TP
+.B 130
+Interrupted (Control-C under the
+.B quit
+interrupt policy; 128 + SIGINT).
+.PP
+Before clautolisp 2.2.215 a file that could not be opened exited 2 and
+every other failure 1; a script testing for 2 must test for 66.
+.PP
+These are the codes
+.B clautolisp
+itself produces. An AutoLISP program may choose its own status with the
+clautolisp extensions
+.BR "(autolisp-set-status " N ")"
+and
+.BR "(quit " [ N ])
+\(em
+.B (quit)
+with no argument exits with the status recorded earlier, 0 by default.
+A caller cannot distinguish such a status from the ones above.
 .SH "SEE ALSO"
 .BR alfe (1),
 .BR read-autolisp (1).

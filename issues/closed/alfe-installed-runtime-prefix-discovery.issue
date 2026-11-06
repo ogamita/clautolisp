@@ -1,0 +1,247 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-installed-runtime-prefix-discovery — installed Windows alfe cannot find its CAD runtime assets
+#+STATUS: DONE (alfe 2.2.74; validated on the Windows runner 2026-09-25)
+#+PRIORITY: P1
+#+TYPE: alfe-backend
+#+DEPENDS: -
+#+BRANCH: process-installed-runtime-prefix
+#+DATE: 2026-09-16
+
+* Observed failure
+
+SCHMS CI job [[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/506371][506371]], =test-unitaire:bricscad:windows=, runs:
+
+: make test-unitaire-alfe CAD=bricscad
+
+The runner selects its locally installed =bin/alfe.cmd= and reports
+=alfe 2.2.72=. Both installed support files EXIST under the runner's
+installation prefix; their presence was confirmed by the user:
+
+: <PREFIX>/share/alfe/runtime/autolisp-bootstrap.lsp
+: <PREFIX>/share/alfe/runtime/autolisp-remote-io.lsp
+
+Nevertheless, alfe reports:
+
+#+begin_example
+alfe[warn]: backend BRICSCAD: no bootstrap LSP found; set $ALFE_BOOTSTRAP_LSP or install autolisp-bootstrap.lsp
+alfe[warn]: backend BRICSCAD: no runtime LSP found; set $ALFE_RUNTIME_LSP or install autolisp-remote-io.lsp
+alfe[warn]: backend BRICSCAD: READY timeout after 120.10 s; last status = "BOOTING"
+alfe: alfe BRICSCAD backend error (phase BOOTSTRAP): BricsCAD did not reach READY within 120 s (last status: "BOOTING"; launcher still running). [READY-TIMEOUT]
+#+end_example
+
+The test harness remains at status 99; no test executes. This failure is
+asset discovery, independent of the earlier direct BricsCAD startup
+failures investigated in SCHMS. Shared discovery code also serves the
+AutoCAD backend.
+
+* Cause
+
+=autolisp-front-end/source/backend-cad-common.lisp= implements
+=discover-bootstrap-lsp= and =discover-runtime-lsp= through
+=%resolve-asset=. Its candidates are:
+
+1. An explicit =ALFE_BOOTSTRAP_LSP= / =ALFE_RUNTIME_LSP= override.
+2. The vendored source asset located through ASDF's source-tree registry.
+3. Fixed fallback paths under =/opt/local=, =/usr/local=, and =/usr=;
+   the runtime additionally has a historical developer-checkout fallback.
+
+There is no discovery relative to the running executable's actual
+installation prefix. A dumped executable's ASDF source location may no
+longer exist on its destination machine, and the fixed fallback prefixes
+do not name an arbitrary Windows installation.
+
+The installer in =autolisp-front-end/Makefile= copies both files to
+=$(PREFIX)/share/alfe/runtime/=. Its comment claims discovery searches
+that location, but the resolver implements only fixed prefixes.
+
+=alfe.cmd= itself is relocatable: it derives its prefix from its own
+location and launches the corresponding binary. The missing relocation
+logic is inside the executable's runtime-asset resolver, not a hardcoded
+path in the launcher.
+
+Local success is insufficient evidence of relocation: an accessible
+source tree can conceal this bug.
+
+* Reproduction
+
+1. Install or unpack alfe under a nonstandard Windows prefix, including
+   both =share/alfe/runtime/*.lsp= files and the matching executable.
+2. Run on a machine where the ASDF build/source location is unavailable.
+   Unset both =ALFE_*_LSP= overrides; make the fixed fallback locations
+   unavailable as well.
+3. From an unrelated working directory, invoke installed alfe with
+   =--bricscad --mode batch= and a trivial evaluation action.
+4. Observe the missing-asset warnings and =BOOTING= timeout despite the
+   installed assets being present.
+
+Use =--print-command --keep-workdir= to inspect staging without launching
+CAD: both support files must appear in the prepared runtime directory.
+
+* Proposed fix
+
+The binary should derive its installation prefix from its actual
+executable location, resolving symlinks and accounting for the supported
+layout:
+
+: <PREFIX>/libexec/clautolisp/binaries/<os>/<arch>/alfe-<lisp>[.exe]
+
+Search order:
+
+1. Explicit valid environment override, retaining documented semantics.
+2. =<derived-prefix>/share/alfe/runtime/<asset>=.
+3. Vendored source-tree asset for development builds.
+4. Existing hardcoded fallbacks for compatibility.
+
+Keep executable-location logic portable across supported systems, with
+implementation-specific SBCL/CCL discovery isolated behind a narrow
+interface. Do not infer the prefix from the current working directory
+or the original build location. Setting overrides in the launcher or CI
+can work around the failure but should not be required for installation.
+
+If either required asset is unavailable, fail before launching CAD and
+report the asset and searched candidate paths. Do not spend the READY
+timeout waiting for a runtime that was never staged.
+
+* Acceptance and regression checks
+
+- An installed executable finds both assets without overrides when the
+  build tree and fallback prefixes are unavailable.
+- Moving the complete installation to another prefix still works, from
+  an unrelated working directory; include prefixes containing spaces.
+- Exercise the real installed entry points, including Windows =alfe.cmd=
+  and supported Unix symlinks, for SBCL and CCL.
+- Explicit overrides still take precedence over the installed copies.
+- Development/source-tree use and legacy fallback discovery still work.
+- Staging tests assert both files are copied into the engine runtime
+  directory. Discovery tests should not require a licensed CAD engine.
+- A missing required asset produces a useful immediate failure; assert
+  that no CAD process is launched and no READY timeout is entered.
+- Confirm the deployed Windows install reaches READY with BricsCAD;
+  cover the shared AutoCAD discovery/staging path too.
+
+* Resolution — alfe 2.2.74 (2026-09-16)
+
+** What changed (=backend-cad-common.lisp=)
+
+- =executable-pathname= returns the truename of the running binary.
+  SBCL gives it as =sb-ext:*runtime-pathname*=, CCL as
+  =ccl::kernel-path=. Taking the truename resolves symlinks.
+- =installation-prefixes= works out the prefix from the binary's
+  location at run time, since that is the only point at which it is
+  known. It handles two layouts:
+  - below a =libexec= directory, at any depth; the prefix is the parent
+    of =libexec= (=libexec/clautolisp/binaries/<os>/<arch>/= today, the
+    trampoline case);
+  - directly in =bin/=; the prefix is the parent of =bin=.
+
+  Directory names compare case-insensitively. Only a binary named
+  =alfe=, =alfe-<lisp>= (optionally =.exe=) counts. A development
+  =sbcl=/=ccl= must not make =/usr/local/share/...= shadow the source
+  tree.
+- =asset-search-candidates= is the one place the search order is
+  written down:
+  1. =$ALFE_*_LSP=;
+  2. =<prefix>/share/alfe/runtime/=;
+  3. the source tree, through ASDF;
+  4. the fixed fallbacks.
+- =require-runtime-assets= resolves both files. If either is missing it
+  signals =backend-bootstrap-error= with code =:runtime-asset-missing=
+  (exit status 4). The message names each missing file and its override
+  variable, lists every path searched, and names the running
+  executable. The BricsCAD and AutoCAD =start-engine= call it first,
+  before any launch, so the READY timeout is no longer spent waiting.
+  =--print-command= fails the same way.
+- Both backends now log each file's source path under =--debug=.
+
+** Checks (poseidon, Linux x86-64)
+
+- alfe SBCL and CCL suites: 712 checks, 0 failures. The new tests are
+  in =tests/backend-cad-tests.lisp=:
+  - prefixes for both layouts, upper-case =LIBEXEC=, =.exe=, a space in
+    the prefix, and non-alfe images;
+  - both files found without overrides in both layouts, with the source
+    tree and the fallbacks made unavailable;
+  - the installed copy wins over the source tree, and an override wins
+    over both;
+  - a missing file fails at once, through both the BricsCAD and AutoCAD
+    =start-engine=, and the launcher is never called.
+- The real executables =alfe-sbcl= and =alfe-ccl=, installed as an
+  unpacked release under a prefix containing a space and run from an
+  unrelated directory with no overrides. Each installed file carried a
+  marker comment, and the kept workdir was checked for it. Both
+  installed copies were staged via:
+  - the =bin/alfe= launcher (=dispatch.sh=) into =libexec/=;
+  - a symbolic link to the =libexec/= binary;
+  - the =bin/= layout;
+  - the whole prefix after renaming it.
+
+  With the installed =autolisp-remote-io.lsp= deleted, the search fell
+  through to the next candidate.
+
+** Not verified here
+
+- =alfe.cmd= and a real Windows install reaching READY with BricsCAD
+  and AutoCAD. That needs the Windows runner: the SCHMS job, or an
+  unpacked release run without =$ALFE_*_LSP=.
+- The dumped =alfe-ccl= prints no =alfe[...]= log lines at all. This is
+  a separate existing bug, filed as
+  =alfe-ccl-executable-drops-log-output.issue=. The CCL check above
+  therefore relied on the staged files rather than the log.
+- The =:subprocess= clautolisp variant (=--backend subprocess=, not the
+  default) still looks for =clautolisp-sbcl= through
+  =$ALFE_CLAUTOLISP_BIN=, the build checkout, =PATH= and =/usr/local/bin=,
+  but not under the prefix. The discovered prefix is used only for
+  =share/alfe/runtime/= so far.
+
+* Validated on the Windows runner — 2026-09-25
+
+=verify:installed-prefix:windows=, job 16733270761 and its follow-up
+(MR !273), on the runner where the original failure was reported. The
+job installs with =make install-programs= into a prefix CONTAINING A
+SPACE, runs from an unrelated working directory with =$ALFE_RUNTIME_LSP=
+and =$ALFE_BOOTSTRAP_LSP= unset, and checks the run each time.
+
+#+begin_example
+=== install into 'C:\msys64\tmp\alfe prefix check\install one'
+ok   installed: bin\alfe-sbcl.exe
+ok   installed: bin\alfe.exe
+ok   installed: share\alfe\runtime\autolisp-bootstrap.lsp
+ok   installed: share\alfe\runtime\autolisp-remote-io.lsp
+ok   installed alfe-sbcl.exe          : exit 0
+ok   installed alfe-sbcl.exe          : bootstrap resolved under the prefix
+ok   installed alfe-sbcl.exe          : runtime resolved under the prefix
+ok   installed alfe-sbcl.exe          : staged autolisp-bootstrap.lsp
+ok   installed alfe-sbcl.exe          : staged autolisp-remote-io.lsp
+ok   installed alfe.exe (bare launcher) : (the same five)
+=== move the whole installation to '...\install moved'
+ok   moved installation               : (the same five)
+ok   override: the named file is the runtime source
+=== 0 failure(s)
+#+end_example
+
+So, on Windows: both assets are found from the executable's own
+location, through =alfe-sbcl.exe= and through the bare =alfe.exe=,
+before and after MOVING the whole prefix, from a directory unrelated to
+either -- and the resolved paths lie UNDER THE PREFIX, which is the
+assertion that means something here, since the CI checkout sits on the
+same disk and would otherwise satisfy a weaker check. An explicit
+override still wins.
+
+Two failures on the way there, neither in this feature:
+
+- the first run used a binary built before
+  fix-autocad-progid-registry-probe merged, so it exited 3 on the COM
+  registration before reaching the marker. The prefix assertions passed
+  even then;
+- the override check compared a Windows path with backslashes against
+  the forward-slash namestring alfe prints, and swallowed alfe's output
+  so nothing could be diagnosed. That was the check, not the code.
+
+** Criteria not covered by this job
+
+- CCL: only the SBCL image is installed and run here.
+- "Reaches READY with BricsCAD": this job starts no CAD. The AutoCAD
+  half of that question was answered separately by
+  =verify:autocad-activex:windows= (issues/closed/alfe-autocad-cad-
+  selection-ignores-com-progid.issue), where an installed-layout alfe
+  reached READY and ran ActiveX inside AutoCAD 2022.

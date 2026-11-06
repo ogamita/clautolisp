@@ -5,6 +5,7 @@
                 #:autolisp-catch-all-error-message
                 #:blackboard-ref
                 #:blackboard-set
+                #:callable-value-p
                 #:current-document-namespace-ref
                 #:current-document-namespace-set
                 #:export-function-to-current-document
@@ -20,6 +21,7 @@
                 #:autolisp-catch-all-error-call-stack
                 #:autolisp-string
                 #:autolisp-file-stream
+                #:autolisp-file-external-format
                 #:autolisp-function-list-definition
                 #:autolisp-current-directory
                 #:autolisp-load-file
@@ -59,12 +61,15 @@
                 #:autolisp-vl-symbol-value
                 #:close-autolisp-file
                 #:intern-autolisp-symbol
+                #:autolisp-true-symbol
                 #:lookup-variable
                 #:make-autolisp-subr
                 #:propagate-variable
                 #:set-autolisp-function-list-definition
                 #:set-autolisp-symbol-function
                 #:current-evaluation-dialect
+                #:emit-dotdot-path-portability-warning
+                #:emit-forward-slash-ellipsis-portability-warning
                 #:current-evaluation-host
                 #:dispatch-autolisp-command
                 #:autolisp-ename
@@ -98,7 +103,9 @@
                 #:all-document-reactors
                 #:all-application-reactors
                 #:all-session-reactors
-                #:document-namespace-persistent-reactor-index)
+                #:document-namespace-persistent-reactor-index
+                #:reactor-type-name
+                #:document-reactor-registry)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-safearray
                 #:autolisp-safearray-value
@@ -141,6 +148,7 @@
                 #:host-entnext
                 #:host-handent
                 #:host-ssget
+                #:host-entsel
                 #:host-ssadd
                 #:host-ssdel
                 #:host-ssname
@@ -159,8 +167,11 @@
                 #:host-dictrename
                 #:host-dictobjname
                 #:host-regapp
+                #:host-getcname
                 #:host-getvar
                 #:host-setvar
+                #:host-snapshot-sysvars
+                #:host-restore-sysvars
                 #:host-sysvar-names
                 #:host-command-log
                 #:host-registry-read #:host-registry-write
@@ -169,6 +180,7 @@
                 #:host-initget
                 #:host-getstring
                 #:host-getint
+                #:host-grread
                 #:host-getreal
                 #:host-getpoint
                 #:host-getcorner
@@ -183,12 +195,34 @@
                 #:host-vlax-put-property
                 #:host-vlax-invoke-method
                 #:host-vlax-property-available-p
-                #:host-vlax-method-applicable-p)
+                #:host-vlax-method-applicable-p
+                #:host-vlax-get-acad-object
+                #:host-vlax-ename->vla-object
+                #:host-vlax-vla-object->ename
+                #:host-vlax-erased-p
+                #:host-vlax-describe-object
+                #:host-vlax-ldata-put
+                #:host-vlax-ldata-get
+                #:host-vlax-ldata-delete
+                #:host-vlax-ldata-list
+                #:host-vlax-add-cmd
+                #:host-vlax-remove-cmd
+                #:host-vlax-queueexpr
+                #:host-vlax-collection-items)
   (:export
+   #:run-session-startup-chain
+   #:run-document-startup-chain
    #:*core-builtin-names*
    #:core-builtins
    #:find-core-builtin
    #:install-core-builtins
+   #:activex-enumeration-constants
+   #:install-activex-enumeration-constants
+   #:set-clal-optimization-levels
    #:autolisp-value->string
    #:live-event-policy
-   #:apply-dialect-trust-sysvar-defaults))
+   #:clal-optimization-level
+   #:apply-dialect-trust-sysvar-defaults
+   #:install-sysvar-dialect-controller
+   #:forget-sysvar-dialect-controller
+   #:ensure-sysvar-table-matches-dialect))

@@ -4,7 +4,7 @@
 ;;;; whatever target runs it (clautolisp / BricsCAD / accoreconsole, on
 ;;;; macOS / Windows / Linux) and REPORTS the exhibited bytes, so the
 ;;;; encoding-situations §7 defaults table can be filled from real runs
-;;;; (see issues/open/encoding-situations-cli-options.issue and
+;;;; (see issues/closed/encoding-situations-cli-options.issue and
 ;;;; encoding-consolidation.issue). The vendor harness archives its output.
 ;;;;
 ;;;; The SOURCE is pure ASCII: every non-ASCII test character is built with
@@ -14,7 +14,7 @@
 ;;;; console encoding on the way back.
 ;;;;
 ;;;; Run it:
-;;;;   alfe --clautolisp --host mock -l encoding-probe.lsp
+;;;;   alfe --clautolisp --host cador -l encoding-probe.lsp
 ;;;;   alfe --bricscad --mode batch      -l encoding-probe.lsp
 ;;;;   alfe --autocad  --mode batch      -l encoding-probe.lsp
 
@@ -101,9 +101,21 @@
       (progn
         (m (strcat "source." tag ".bytes") (dumpbytes path))
         (setq ENCSRC "unset")
-        (setq r (vl-catch-all-apply 'load (list path)))
+        ;; Deport through alfe-load (the alfe-* interface loader): it reads the
+        ;; file honouring its encoding and evaluates the forms directly, so a
+        ;; high byte survives on accoreconsole -- where native (load) chokes.
+        ;; accoreconsole-deported-load-highbyte. A genuine failure still
+        ;; surfaces below with the LOAD-ERR prefix existing readers key on.
+        (setq r (vl-catch-all-apply 'alfe-load (list path)))
         (if (vl-catch-all-error-p r)
-            (m (strcat "source." tag ".load") "LOAD-ERR")
+            ;; The runtime raises via (/ 1 0) (portable, AutoCAD has no error);
+            ;; the host text is then "division par zero", masking the real
+            ;; cause. autolisp-effective-error-message recovers the diagnostic
+            ;; the source loader stashed in *AUTOLISP_LAST_ERROR_CONTEXT*.
+            (m (strcat "source." tag ".load")
+               (strcat "LOAD-ERR: "
+                       (autolisp-effective-error-message
+                         (vl-catch-all-error-message r))))
             (m (strcat "source." tag ".cp") (codepoints ENCSRC))))))
 
 (defun run-encoding-probe ( / S)
@@ -170,6 +182,51 @@
   (m "read.utf8file-default.cp"   (readcp "encp-ccs-utf8.txt"    "r"))
   (m "read.utf16file-unicode.cp"  (readcp "encp-ccs-utf16le.txt" "r,ccs=UNICODE"))
   (m "read.utf16file-utf16le.cp"  (readcp "encp-ccs-utf16le.txt" "r,ccs=UTF-16LE"))
+
+  ;; --- 6b. localize the AutoCAD alfe-load failure. srcprobe below deports
+  ;; through alfe-load and, on accoreconsole, reported "division par zero".
+  ;; Load an ASCII-ONLY file through the same alfe-load first: if this
+  ;; succeeds and the high-byte cases below fail, the non-ASCII byte is the
+  ;; trigger; if this ALSO fails, alfe-load is failing on AutoCAD regardless
+  ;; of content. accoreconsole-deported-load-highbyte. ---
+  (setq ASCIISRC nil)
+  (if (trywrite "encp-ascii.lsp" "w" "(setq ASCIISRC 7)")
+      (progn
+        (setq AR (vl-catch-all-apply 'alfe-load (list "encp-ascii.lsp")))
+        (m "alfe-load.ascii"
+           (if (vl-catch-all-error-p AR)
+               (strcat "ERR " (autolisp-effective-error-message
+                                 (vl-catch-all-error-message AR)))
+               (strcat "OK ASCIISRC=" (if ASCIISRC (itoa ASCIISRC) "nil"))))
+        ;; Does accoreconsole actually support (error MSG)? The runtime says
+        ;; no (it fell back to (/ 1 0)); settle it empirically. Probe binding
+        ;; via atoms-family FIRST -- calling an undefined ERROR would signal
+        ;; while resolving the symbol and ESCAPE vl-catch-all-apply (the
+        ;; vlax-sleep hazard). Only call it when it is actually bound.
+        (m "error-primitive.bound"
+           (if (autolisp-host-has-fn "ERROR") "yes" "no"))
+        (if (autolisp-host-has-fn "ERROR")
+            (progn
+              (setq ER (vl-catch-all-apply 'error (list "alfe-error-probe-marker")))
+              (m "error-primitive.call"
+                 (if (vl-catch-all-error-p ER)
+                     (strcat "raised: " (vl-catch-all-error-message ER))
+                     (strcat "returned: " (vl-princ-to-string ER))))))))
+
+  ;; --- 6c. alfe-autocad-error-primitive-masks-load-failure, criterion 2/4 on
+  ;; the REAL host: a nested loaded form that SIGNALS must surface ITS OWN
+  ;; message + inner location, NOT "no function definition: ERROR" (the removed
+  ;; rethrow primitive) nor a bare "division par zero" (the raise mechanism).
+  ;; Outer alfe-loads inner; inner errors on a bad rtos argument. ---
+  (setq LOADFAILMARK nil)
+  (if (and (trywrite "encp-inner.lsp" "w" "(setq LOADFAILMARK (rtos \"nan\"))")
+           (trywrite "encp-outer.lsp" "w" "(alfe-load \"encp-inner.lsp\")"))
+      (progn
+        (setq LR (vl-catch-all-apply 'alfe-load (list "encp-outer.lsp")))
+        (m "loader.nested-fail"
+           (if (vl-catch-all-error-p LR)
+               (autolisp-effective-error-message (vl-catch-all-error-message LR))
+               "UNEXPECTED-OK"))))
 
   ;; --- 7. source situation: native (load) decode vs known on-disk bytes,
   ;; across the write encodings (default / UTF-8 / UTF-16LE). Each line pair

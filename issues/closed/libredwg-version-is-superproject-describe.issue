@@ -1,0 +1,146 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: libredwg-version-is-superproject-describe -- the vendored LibreDWG is stamped with CLAUTOLISP's git describe, so its build can never be cached
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: build
+#+DEPENDS: -
+#+BRANCH: fix-libredwg-version-is-superproject-describe
+
+* Symptom
+
+The LibreDWG we build and ship does not carry LibreDWG's version. Its
+generated =build/src/config.h= reads, in the CI image on 2026-10-06 (libredwg
+submodule at d9468ae9):
+
+#+begin_example
+#define PACKAGE_STRING "LibreDWG release-2.2.1-751-g1d02a95d"
+#define PACKAGE_VERSION "release-2.2.1-751-g1d02a95d"
+#+end_example
+
+=release-2.2.1= is a CLAUTOLISP tag and =1d02a95d= a clautolisp commit.
+
+Found while measuring ci-cache-tool-builds: a content-keyed cache of
+=clautolisp/third-party/libredwg/build/= (same submodule commit, same
+compiler, same flags -- a true key HIT, products touched newer than the
+checkout) still recompiled all 27 C objects (197 s, against 187 s cold),
+because cmake regenerated =config.h= with the new superproject commit id and
+every object includes it.
+
+* Cause
+
+LibreDWG's CMakeLists.txt:
+
+#+begin_src cmake
+if (EXISTS ".version")
+  file(READ .version NL_PACKAGE_VERSION)
+else()
+  find_package(Git)
+  execute_process(COMMAND ${GIT_EXECUTABLE} describe --long --tags --always
+                  OUTPUT_VARIABLE NL_PACKAGE_VERSION)
+endif()
+#+end_src
+
+Both the =.version= test and =git describe= run in CMAKE'S WORKING DIRECTORY,
+not in the source directory. =clautolisp/drawing-dwg/build-libredwg.sh= calls
+=cmake -S "$lr" -B "$build"= from wherever make runs it (=clautolisp/=, via
+=make -C clautolisp build-libredwg=), which is inside the SUPERPROJECT's
+checkout -- so =git describe= describes clautolisp.
+
+* Consequences
+
+1. The version string of a shipped =libredwg= is wrong (clautolisp's
+   describe at build time). To check: whether LibreDWG writes
+   PACKAGE_VERSION into the files it produces (a DXF 999 comment, a DWG
+   header field) -- if so, clautolisp-written drawings carry it too, and
+   any golden-file test comparing them would see it change on every commit.
+2. =config.h= changes on EVERY clautolisp commit, so every object is
+   rebuilt every time: no build cache, and no incremental build across
+   commits on the Windows runner's surviving tree, can ever help. This is
+   what keeps the =libredwg= kind of =scripts/ci-build-cache.sh= unwired
+   (ci-cache-tool-builds).
+
+* Fix (proposed, not applied)
+
+Run cmake from inside the submodule (=cd "$lr" && cmake -S . -B build ...=),
+or give it =WORKING_DIRECTORY= semantics by writing a =.version= file there.
+Either changes the version string of the library we ship -- from wrong to
+right, but a change in a release artefact, so it is pjb's call. Then wire the
+=libredwg= cache kind (see the header of =scripts/ci-build-cache.sh=) and
+re-measure a hit.
+
+* Acceptance
+
+- =config.h= of a build of submodule commit X is byte-identical whatever the
+  clautolisp commit (two commits, compare).
+- A =ci-build-cache.sh restore libredwg= HIT followed by
+  =make build-libraries= compiles 0 objects.
+
+* Resolution (clautolisp 2.2.230, 2026-10-07) -- DONE
+
+pjb's decision (2026-10-07): "we should track the new releases of libredwg
+and follow 'stable' releases, so update the submodule reference and commit
+(change the shipped libredwg version string)."
+
+** Stable release: no submodule move needed
+
+Upstream's latest STABLE release is =0.14= (GitHub release, prerelease=false,
+2026-06-27; before it =0.13.4=, 2026-03-18). Every newer GitHub release
+(=0.14.8590= ... =0.14.8601=) is a prerelease per-commit snapshot. The
+submodule already sits at d9468ae948b8f07a08efa756c19f8916052358c0, which is
+tag =0.14= (also =0.14.8363=), so the pointer is unchanged.
+
+** What shipped
+
+- =clautolisp/third-party/libredwg.release= records the followed release
+  (=version 0.14=) and its commit.
+- =clautolisp/drawing-dwg/build-libredwg.sh= writes that version to the
+  submodule's =.version= (gitignored upstream, no trailing newline) and runs
+  cmake from inside the submodule, so both of upstream's branches see
+  LibreDWG. It FAILS when the submodule is not at the recorded commit, or
+  when that commit's tags (if fetched) do not include the recorded version;
+  without tags (CI's shallow submodule) or without git metadata (source
+  tarball) it trusts the file. Failing, not warning: a mislabelled shipped
+  library is the bug being fixed, and the message names the one-line fix.
+  After configuring it checks that config.h carries the version.
+  =git describe= is deliberately not the source: in a shallow clone it gives
+  a bare commit id, i.e. a version that depends on how the checkout was made.
+- =scripts/check-libredwg-stable-release.py=: =make check-libredwg-release=
+  (offline: the recorded commit is HEAD's gitlink; part of =make
+  check-release=, so of the check:release lane) and =make
+  check-libredwg-stable-release= (network, manual/periodic, in no lane: is
+  there a newer stable release, and at which commit). AGENTS.md "CI --
+  following LibreDWG stable releases" has the procedure.
+- The libredwg kind of =scripts/ci-build-cache.sh= is wired on
+  =verify:packaged-dwg:linux= (now GIT_SUBMODULE_STRATEGY recursive, so the
+  submodule exists when the restore runs).
+
+** Before / after
+
+: before  #define PACKAGE_STRING "LibreDWG release-2.2.1-781-g9fae492b"
+: after   #define PACKAGE_STRING "LibreDWG 0.14"   (PACKAGE_VERSION "0.14")
+
+** Consequence 1: do drawings carry the version?
+
+- DWG: NO. libredwg's DWG writer adds only a constant APPID "LibreDWG"; a
+  DWG written from clautolisp's empty-drawing.dxf by the old
+  (release-2.2.1-...) and the new (0.14) build is byte-identical.
+- DXF: YES -- out_dxf.c writes =999 / LibreDWG <PACKAGE_STRING>= as the
+  first pair (JSON/GeoJSON output carry it too). clautolisp uses libredwg's
+  DXF writer only for the temporary DXF of a DWG READ (clal_dwg_to_dxf),
+  and its DXF reader drops 999 comments. No golden-file test in the tree
+  compares libredwg-written files; the DWG suite
+  (clautolisp/drawing-dwg/tests) passes 57/57.
+
+** Acceptance
+
+1. config.h byte-identical across clautolisp commits: built at 9fae492b
+   (+ this change), then at a dummy commit on top (describe
+   release-2.2.1-783-ga9fb23a8): same sha256 484646fa..., and the rebuild
+   compiled 0 objects. In the CI image, two fresh clones at two clautolisp
+   commits (the second with a changed version.lisp): same config.h
+   (sha256 2e0b4077...).
+2. =ci-build-cache.sh restore libredwg= HIT then =make build-libraries=: 0
+   objects, 1 s, against 164 s / 27 objects cold (CI image, fresh clone,
+   cache restored with its saved times; the whole job, incl.
+   build-programs and verify-packaged-dwg.sh, left the checkout clean and
+   saved the cache both times).

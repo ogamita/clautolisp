@@ -1,0 +1,190 @@
+* DONE ALDO commands accessible from the lisp REPL.
+
+** CLOSED 2026-09-05 — all three parts implemented (MR !145, 1.9.90–1.9.98)
+
+- Part 1 (breakpoint commands + list source), on the parallel aldo-companion
+  thread: ,break FUNC|FUNC.N|FILE:LINE[:COL]|LINE, ,lb, ,eb, ,db, ,rb
+  (remove — renamed from delete to dodge the eb/db/xb §0 key clash), ,cb,
+  ,ib, ,ls / ,ls FILE / ,ls FUNC. FILE:LINE breakpoints are persistent and
+  re-resolved on every load (first poll-point at/after the line); a
+  top-level form breakpoint breaks DURING the load; a reload that moves a
+  breakpoint warns. The "sleeping-aldo" interactor (make-interactor, not
+  registered) sits below *AUTOLISP*.
+- Part 2: ,settings (cascade view, keyless — the command short key is now
+  optional in the interactor framework) and ,i / ,inspect (interactive
+  inspector at the REPL, reusing the dumb UI's inspector-loop).
+- Part 3: PAGER accepts on / off / an external-pager namestring, and
+  PAGER / PAGER-HEIGHT cascade parallel to the interactor stack (lisp.conf
+  in the REPL, aldo.conf over lisp in the debugger).
+
+Follow-up filed: instrumenter-no-pollpoints-on-atoms.issue (a debugger
+should be able to break before a variable reference).
+
+The original specification follows.
+
+
+They are defined in a thin interactor pushed below the lisp interactor
+in the lisp REPL only; the same commands are accessible from the usual
+aldo interactor when aldo is active.
+
+This implies that if commands with the same name are defined in the
+lisp interactor, the command defined in the lisp interactor shadows
+the debugging commands. As always, we can access the interactor below
+by prefixing the command with the interactor name or nickname, ALDO or
+DEBUG.
+
+                                              
+| short | command              | argument   | description                                            |
+|-------+----------------------+------------+--------------------------------------------------------|
+| b     | break                | file:linum |                                                        |
+| b     | break                | linum      | (assuming we have a current file)                      |
+| b     | break                | func-name  | breaks on function entry                               |
+| lb    | list breakpoints     | ∅          | list break points                                      |
+| eb    | enable breakpoint    | ppN        | enable a breakpoint                                    |
+| eb    | enable breakpoint    | ALL        | enable all breakpoints                                 |
+| db    | disable breakpoint   | ppN        | disable a breakpoint                                   |
+| db    | disable breakpoint   | ALL        | disable all breakpoints                                |
+| xb    | delete breakpoint    | ppN        | delete a breakpoint                                    |
+| xb    | delete breakpoint    | ALL        | delete all breakpoints (ask confirmation).             |
+| cb    | condition breakpoint | ppN sexp   | add a condition to the breakpoint                      |
+| ib    | ignore breakpoint    | ppN count  | ignore the next count executions of the breakpoint     |
+|-------+----------------------+------------+--------------------------------------------------------|
+| ls    | list source          | func-name  | pretty print the function source                       |
+| ls    | list source          | file       | list the file source thru configured pager.            |
+|       |                      |            | In both case: prints with breakpoint, etc, indicators, |
+|       |                      |            | and set the current file.                              |
+|-------+----------------------+------------+--------------------------------------------------------|
+
+* New LISP REPL Command
+
+We have SET and WRITE-SETTING commands in the Lisp REPL command set,
+We are missing a SETTINGS command to print out the current settings.
+
+
+We'll also add an inspect command that does the same as
+=(inspector form)= or =(clal-inspect form)=.
+
+| short | command  | argument | description                                  |
+|-------+----------+----------+----------------------------------------------|
+|       | settings | ∅        | Prints the current settings (hierarchically, |
+|       |          |          | showing the various cascading levels         |
+|-------+----------+----------+----------------------------------------------|
+| i     | inspect  | form     | inspect the result of evaluating form.       |
+|-------+----------+----------+----------------------------------------------|
+
+* PAGER option
+
+The lisp configuration can contain a pager settings as does the aldo configuration
+In the lisp repl, the lisp configuration takes over.
+In the aldo debugger, the aldo configuration takes over.
+(Just the normal cascading configuration paralleling the interactor stack).
+
+There are two pager options:
+
+- (PAGER . ON)
+- (PAGER-HEIGHT . 24)
+
+However the PAGER setting can be ON, OFF, or also a namestring, ie. a
+string containing the path to a pager filter like =more(1)=,
+=less(1)=, etc.
+
+* FILE:LINE breakpoints — refined design (pjb, 2026-09-05)
+
+Status of the command set: the breakpoint *management* commands are
+implemented (=,break FUNC= / =,break FUNC.N=, =,lb=, =,eb=, =,db=, =,rb=,
+=,ib=, =,cb=; 1.9.90–1.9.93 on branch =debugger-ui-ncurses-aldb=). The
+=FILE:LINE= / bare-=LINE= break forms and =,ls= remain, and pjb refined
+their design as below.
+
+** Function-relative addressing (settled)
+
+Keep =FUNC.N= with =.0= = the function ENTRY, =.N= = the instrumenter's
+Nth poll-point (compound evaluable form, pre-order; see
+=instrumenter-no-pollpoints-on-atoms.issue=). A function-relative
+breakpoint survives edits ABOVE the function; it is invalidated only when
+the function itself is edited so that forms are inserted/removed before it.
+
+** =,break FILE:LINE[:COL]= is ALWAYS a virtual (persistent) breakpoint
+
+Whether or not the file is loaded, the request is recorded as a persistent
+=FILE:LINE= breakpoint, because the file may be edited and reloaded before
+the breakpoint is reached, so it must be (re)resolved on each load.
+
+Resolution algorithm — the SAME whether setting it while the file is
+already loaded or materialising it when the file is (re)loaded:
+
+  find the first poll-point at or after FILE:LINE:1 (line LINE, column 1),
+  and record/report its exact file position, and in which function and
+  subform index (=FUNC.N=) — or that it is a top-level form — the
+  breakpoint is set.
+
+So a =FILE:LINE= record differs from today's virtual breakpoint (which is
+keyed by the enclosing =(defun NAME …)= and an anchor line): the
+=FILE:LINE= record is keyed by the raw file position and re-resolved by
+the "first poll-point at/after LINE:1" search over the file's current
+poll-points on each load.
+
+** Top-level (non-=defun=) breakpoints break DURING LOAD
+
+A breakpoint may fall on a top-level form that is not a =defun= — then it
+must break into the debugger WHILE LOADING the file (source or the
+compiled alternative). Example:
+
+: example.lsp
+: 1: ;; example
+: 2: (defun foo (x)
+: 3:    (* 2 x))
+: 4: (setq voo (foo 21))
+:
+: _$ ,break example.lsp:3
+: _$ ,break example.lsp:4
+: _$ (clal-compile-file "example.lsp")
+: _$ (load "example")          ; loads example.fasl
+: ALDO is activated on line 4:
+: 4: ^(setq voo (foo 21))
+: DBG^ continue
+: 3:    ^(* 2 x)
+: DBG^ lv
+:   x = 21
+: DBG^ continue
+: _$
+
+This requires the load path to instrument (and poll) top-level forms, not
+only =defun= bodies, so a breakpoint on a top-level form fires during the
+load itself.
+
+** Reload after edits: re-resolve + warn
+
+When a file is (re)loaded, re-resolve every =FILE:LINE= breakpoint for
+that file against the new content; when a breakpoint's resolved position
+changed, print a warning listing the changed =FILE:LINE= refs (often only
+breakpoints from some point in the file on change, since a prefix usually
+does not — so the list is not necessarily all of the file's breakpoints):
+
+: _$ (load "example")     ; example.lsp is newer than example.fasl
+: ;; Warning: breakpoints changed example.lsp:3, example.lsp:4
+: _$ ,ls example.lsp
+: 1: (defun foo (x)
+: 3:    ^(princ "=======")
+: 4:    ^(print  (* 2 x))
+: 5:    (princ "\n"))
+: 6: (setq voo (foo 21))
+
+=,ls= shows where the breakpoints landed (=^= markers), and sets the
+current file. Bare =,break LINE= and =,ls= (no arg) use the current file
+(set by =,ls= or =,break FILE:LINE=), erroring clearly when none is set.
+
+** Implementation scope (engine + REPL), landed as its own reviewed step
+
+1. A persistent =FILE:LINE= breakpoint record (file + line + col + ti),
+   distinct from / generalising the defun-anchored virtual breakpoint.
+2. The shared "first poll-point at/after LINE:1" resolver over a file's
+   current poll-points (across its functions AND top-level forms).
+3. Instrument + poll TOP-LEVEL forms at load so a top-level breakpoint
+   breaks during the load.
+4. Reload re-resolution with a "breakpoints changed" warning.
+5. The REPL commands: =,break FILE:LINE[:COL]=, =,break LINE= (current
+   file), and =,ls= (list source through the pager, with =^= breakpoint
+   markers; reuses the existing aldo pager — external pager is an internal
+   pager option, not a client concern).
+

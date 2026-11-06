@@ -21,7 +21,11 @@
                 #:string-object
                 #:string-object-value
                 #:symbol-object
-                #:symbol-object-canonical-name)
+                #:symbol-object-canonical-name
+                #:symbol-object-span
+                #:string-object-span
+                #:integer-object-span
+                #:real-object-span)
   (:export
    #:autolisp-string
    #:make-autolisp-string
@@ -72,14 +76,74 @@
    #:find-runtime-session-vlx-namespace
    #:register-runtime-session-vlx-namespace
    #:set-runtime-session-current-document
+   ;; cador-2 slice 2a: cooperative single-runner document scheduler
+   #:*document-activation-hook*
+   #:session-scheduler
+   #:document-namespace-host-document-key
+   #:runtime-session-document-for-host-key
+   #:link-runtime-session-current-document
+   #:request-runtime-document-switch
+   #:forget-runtime-session-document-for-host-key
+   #:runtime-session-pending-document-key
+   #:apply-pending-document-switch
+   #:*document-namespace-created-hook*
+   #:runtime-session-pending-loads
+   #:add-runtime-session-pending-load
+   #:make-document-scheduler
+   #:document-scheduler-p
+   #:document-scheduler-contexts
+   #:document-scheduler-running
+   #:make-scheduled-context
+   #:scheduled-context-p
+   #:scheduled-context-context
+   #:scheduled-context-document-key
+   #:scheduled-context-status
+   #:scheduled-context-saved-env
+   #:scheduled-context-pending-break
+   ;; slice 3e: the thunk SCHEDULER-ACTIVATE dispatches on (nil => synchronous)
+   #:scheduled-context-thunk
+   #:scheduler-register-context
+   #:scheduler-context-list
+   #:scheduler-current-context
+   #:scheduler-activate
+   #:scheduler-request-break
+   #:scheduler-pending-break-p
+   #:scheduler-observe-break
+   ;; slice 3d: continuations-as-threads parked on a condition variable
+   #:scheduled-context-thread
+   #:scheduled-context-mailbox
+   #:scheduler-spawn-context
+   #:scheduler-start
+   #:scheduler-resume
+   #:scheduler-switch
+   #:make-park-mailbox
+   #:park-mailbox-push
+   #:park-mailbox-pop
+   ;; slice 3f: interactive-input parking (park-to-runner via the driver mailbox)
+   #:document-scheduler-driver-mailbox
+   #:scheduler-on-context-thread-p
+   #:scheduler-park
+   #:scheduler-await-park
+   #:scheduler-serve-park
+   ;; slice 3g: per-document correlation forest (§13.4)
+   #:scheduled-context-correlation-stack
+   #:scheduler-push-correlation
+   #:scheduler-pop-correlation
+   #:scheduler-correlation-depth
+   #:with-host-request
    #:autolisp-file
    #:make-autolisp-file
+   #:autolisp-file-external-format
+   #:autolisp-format-real
+   #:autolisp-format-real-as
+   #:autolisp-print-real
    #:autolisp-file-stream
    #:autolisp-file-path
    #:autolisp-file-mode
    #:autolisp-ename
    #:autolisp-ename-value
    #:make-autolisp-ename
+   #:autolisp-ename-document
    #:autolisp-pickset
    #:autolisp-pickset-value
    #:make-autolisp-pickset
@@ -87,6 +151,38 @@
    #:make-autolisp-subr
    #:autolisp-subr-name
    #:autolisp-subr-function
+   #:autolisp-open-code-tag
+   #:lexically-safe-callee-p
+   #:autolisp-subr-lexically-safe
+   #:autolisp-usubr-lexical-body
+   #:*autolisp-lexical-locals-enabled*
+   #:check-usubr-arity
+   #:autolisp-true-symbol
+   #:check-repeat-count
+   #:check-foreach-sequence
+   #:bind-foreach-variable
+   #:foreach-empty-body-result
+   #:eval-lambda-form
+   #:eval-let-form
+   #:check-vlax-collection-support
+   #:vlax-collection-items
+   #:set-autolisp-place
+   #:*usubr-compilation-count*
+   #:*usubr-compilation-warning-threshold*
+   #:*usubr-compilation-warned-p*
+   #:count-usubr-compilation
+   #:usubr-site
+   #:make-usubr-site
+   #:autolisp-usubr-site
+   #:usubr-site-call-count
+   #:usubr-site-compiled-body
+   #:usubr-site-instrumented-body
+   #:usubr-site-debug-metadata
+   #:usubr-site-compiled-instrumented-body
+   #:parse-let-binding
+   #:emit-bricscad-undocumented-warning
+   #:eval-function-form
+   #:lambda-form-p
    #:autolisp-usubr
    #:make-autolisp-usubr
    #:autolisp-usubr-name
@@ -95,13 +191,53 @@
    #:autolisp-usubr-environment
    #:autolisp-usubr-instrumented-body
    #:autolisp-usubr-debug-metadata
+   #:autolisp-usubr-instrumentation-failed
+   #:autolisp-usubr-compiled-body
+   #:autolisp-usubr-compiled-instrumented-body
+   #:autolisp-usubr-call-count
+   #:*compile-usubr-hook*
+   #:*compile-instrumented-usubr-hook*
+   #:+poll-operator-name+
+   #:*compiled-poll-hook*
+   #:call-with-compiled-poll-point
+   #:*emit-host-compiler-diagnostics*
+   #:with-muffled-host-compiler
+   #:call-with-muffled-host-compiler
+   #:*autolisp-compilation-enabled*
+   #:*autolisp-compilation-threshold*
+   #:*autolisp-speed-level*
+   #:autolisp-compile-plain-fork-p
+   #:autolisp-compile-instrumented-fork-p
+   #:autolisp-compile-eagerly-p
+   #:call-in-file-compilation-unit
+   #:+lap-file-type+
+   #:*compile-files-to-artefact-hook*
+   #:default-lap-pathname
+   #:lap-pathname-p
    #:autolisp-catch-all-error
    #:make-autolisp-catch-all-error
    #:autolisp-catch-all-error-message
    #:autolisp-catch-all-error-condition
    #:autolisp-catch-all-error-call-stack
+   #:autolisp-subr-owner
+   #:autolisp-subr-version-gate
+   #:version-gated-operator-gates
+   #:vendor-only-operator-owner
+   #:clautolisp-adopted-operator-p
+   #:*clautolisp-adopted-operators*
+   #:*vendor-only-operators*
+   #:emit-vendor-operator-warning
    #:autolisp-runtime-error
    #:autolisp-runtime-error-code
+   #:text-ink-box
+   #:autolisp-runtime-error-class-for-code
+   ;; the host condition taxonomy (D1 §15)
+   #:host-error
+   #:operation-not-supported-by-this-host
+   #:unavailable-in-headless-context
+   #:operation-not-yet-implemented
+   #:backend-error
+   #:parse-autolisp-distance
    #:autolisp-runtime-error-call-stack
    #:current-autolisp-call-stack
    #:autolisp-runtime-error-message
@@ -121,6 +257,13 @@
    #:autolisp-vla-object
    #:autolisp-vla-object-value
    #:make-autolisp-vla-object
+   #:autolisp-lisp-object
+   #:autolisp-lisp-object-value
+   #:autolisp-lisp-object-type-name
+   #:wrap-lisp-object
+   #:unwrap-lisp-object
+   #:lisp-object-p
+   #:reset-lisp-object-wrappers
    #:intern-autolisp-symbol
    #:find-autolisp-symbol
    #:reset-autolisp-symbol-table
@@ -133,6 +276,12 @@
    #:autolisp-errno
    #:autolisp-runtime-error-errno
    #:signal-autolisp-runtime-error
+   #:*resolve-unbound-function-hook*
+   #:*vlax-collection-items-hook*
+   #:*com-point-wrap-hook*
+   #:*com-point-unwrap-hook*
+   #:*com-objects-wrap-hook*
+   #:without-builtin-layer-hooks
    #:set-autolisp-errno
    #:autolisp-exit-status
    #:set-autolisp-exit-status
@@ -153,6 +302,7 @@
    #:propagate-variable
    #:lookup-variable
    #:set-variable
+   #:callable-value-p
    #:lookup-function
    #:set-function
    #:lookup-documentation
@@ -175,7 +325,13 @@
    ;; Debugger integration (clautolisp-debugger).
    #:*debugging*
    #:*instrument-usubr-hook*
+   #:*before-load-file-hook*
+   #:*after-load-file-hook*
    #:*debug-instrumentation-enabled*
+   #:*debug-error-snapshot-hook*
+   #:autolisp-runtime-error-debug-snapshot
+   #:instrument-usubr-if-possible
+   #:maybe-instrument-usubr
    #:*clal-on-error*
    #:*clal-on-interrupt*
    #:*clal-on-quit*
@@ -184,6 +340,7 @@
    #:register-special-operator
    #:unregister-special-operator
    #:known-special-operator-p
+   #:self-evaluating-runtime-value-p
    #:split-usubr-lambda-list
    #:catch-frame
    #:make-catch-frame
@@ -195,6 +352,8 @@
    #:*debug-define-command-hook*
    #:*define-interactor-command-hook*
    #:*list-interactor-names-hook*
+   #:*ui-binding-hook*
+   #:*ui-object-hook*
    #:*debug-nav-hook*
    #:*debug-select-file-hook*
    #:*debug-command-hook*
@@ -203,6 +362,9 @@
    #:set-autolisp-current-directory
    #:autolisp-support-paths
    #:set-autolisp-support-paths
+   #:autolisp-support-path-string
+   #:set-autolisp-support-path-string
+   #:synchronize-process-environment
    #:autolisp-trusted-paths
    #:set-autolisp-trusted-paths
    #:autolisp-trusted-init-files
@@ -217,6 +379,7 @@
    #:autolisp-type
    #:autolisp-vl-symbolp
    #:autolisp-vl-symbol-name
+   #:autolisp-symbol-print-name
    #:autolisp-vl-symbol-value
    #:autolisp-function-list-definition
    #:set-autolisp-function-list-definition
@@ -253,6 +416,78 @@
    #:dispatch-autolisp-command
    #:current-evaluation-dialect
    #:current-evaluation-dialect-name
+   ;; `..'-path portability warning (cad-path-dotdot-resolution): the
+   ;; path builtins call the emitter, which is silent only in --lax.
+   #:emit-dotdot-path-portability-warning
+   #:autolisp-path-has-dotdot-component-p
+   ;; `[clautolisp-sysvar]' notice (clal-drawing-sysvars-silent-out-of-dialect):
+   ;; a clautolisp-only system variable used under a vendor dialect.
+   #:emit-clautolisp-sysvar-warning
+   #:emit-errno-setvar-warning
+   #:emit-printer-nil-file-warning
+   #:printer-explicit-nil-file-action
+   #:*printer-nil-file-warned*
+   #:*errno-setvar-warned*
+   ;; encoding-replacement-character-option: the replacement policy and its
+   ;; `[encoding-replacement]' notice.
+   #:parse-encoding-replacement
+   #:encoding-replacement-policy-name
+   #:dialect-encoding-replacement-default
+   #:resolve-encoding-replacement
+   #:emit-encoding-replacement-warning
+   #:*encoding-replacement-warnings-seen*
+   #:+encoding-replacement-sysvar+
+   #:*internal-sysvar-read*
+   #:*clautolisp-sysvar-warnings-seen*
+   ;; `/...' subfolder-recursion warning, platform-gated to Windows
+   ;; (dialect-platform-version-axis): AutoCAD-Windows accepts only the
+   ;; back-slash `\...' spelling of the `...' wildcard.
+   #:emit-forward-slash-ellipsis-portability-warning
+   #:autolisp-path-has-forward-slash-ellipsis-p
+   ;; `[path-case]' (case-insensitive-pathname-resolution): emitted by the
+   ;; case-folding resolver when a path was found only under a different
+   ;; case, so the run proceeds AND the wrong spelling is named.
+   #:emit-path-case-portability-warning
+   ;; The dialect-portability knowledge base (autolisp-spec ch.25 "one
+   ;; knowledge base"): the catalogue the run-time emitters consult, and
+   ;; the query surface a static linter consumes without a runtime.
+   #:portability-construct
+   #:portability-construct-p
+   #:portability-construct-label
+   #:portability-construct-kind
+   #:portability-construct-tag
+   #:portability-construct-native-in
+   #:portability-construct-silent-in
+   #:portability-construct-summary
+   #:portability-construct-evidence
+   #:register-portability-construct
+   #:find-portability-construct
+   #:map-portability-constructs
+   #:portability-construct-supported-p
+   #:portability-construct-silent-p
+   ;; The register of dialect warnings, keyed by [tag]: the message
+   ;; templates the emitters format from, the per-dialect divergence
+   ;; detail, and the references. The manual's annex is generated from
+   ;; it (pjb's 2026-08-14 ruling; see portability.lisp).
+   #:dialect-warning
+   #:dialect-warning-p
+   #:dialect-warning-tag
+   #:dialect-warning-title
+   #:dialect-warning-message
+   #:dialect-warning-arguments
+   #:dialect-warning-example
+   #:dialect-warning-dialects
+   #:dialect-warning-rationale
+   #:dialect-warning-references
+   #:register-dialect-warning
+   #:find-dialect-warning
+   #:dialect-warning-tags
+   #:map-dialect-warnings
+   #:dialect-warning-kind
+   #:unregistered-construct-tags
+   #:unregistered-diagnostic-codes
+   #:render-dialect-warnings-annex
+   #:emit-declined-construct-note
    #:derive-reader-options-for-dialect
    #:read-current-source
    #:make-default-runtime-context
@@ -302,7 +537,12 @@
    #:locale-default-source-encoding
    #:parse-posix-locale
    #:parse-locale-encoding-string
+   ;; Encoding spellings the hosts disagree on (macroman-encoding-name.issue).
+   #:*encoding-spelling-aliases*
+   #:squeeze-encoding-name
+   #:resolve-encoding-spelling-alias
    #:lookup-autolisp-file-encoding
+   #:lookup-autolisp-encoding-variable
    ;; Encoding-dispatch diagnostics (encoding-dispatch.issue Phase 4).
    #:*enc-diagnostic-stream*
    #:*enc-diagnostic-suppress-p*
@@ -349,6 +589,7 @@
    #:autolisp-variant
    #:autolisp-vla-object
    #:make-autolisp-ename
+   #:autolisp-ename-document
    #:make-autolisp-file
    #:make-autolisp-pickset
    #:make-autolisp-safearray

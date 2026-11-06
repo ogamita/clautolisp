@@ -5,7 +5,7 @@
 ;;;; launched CAD with a new drawing so the values are the dialect /
 ;;;; product defaults, not values a session has mutated.
 ;;;;
-;;;; Drives the system-variables work (issues/open/system-variables.issue)
+;;;; Drives the system-variables work (issues/closed/system-variables.issue)
 ;;;; and the SECURELOAD trust model
 ;;;; (documentation/clautolisp-secureload-trust-model-spec.org).
 

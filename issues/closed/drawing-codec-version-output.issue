@@ -1,0 +1,70 @@
+#+TITLE: DXF/DWG writers ignore the requested version
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: enhancement
+#+DEPENDS:
+#+BRANCH: feat-drawing-codec-version-output
+
+DXF/DWG writers ignore the requested version
+
+== Symptom ==
+
+write-drawing accepts a :version (a DXF $ACADVER keyword such as :ac1032 for
+DWG 2018, :ac1027 for 2013) and the default-format machinery
+(SAVEFORMAT / CLAUTOLISPDEFAULTDRAWINGFORMAT, 2.2.83–2.2.84) selects one, but
+the codecs do not honour it:
+
+- clautolisp/drawing/source/dxf.lisp: dxf-write-drawing /
+  dxf-write-binary-drawing `(declare (ignore version))`.
+- clautolisp/drawing-dwg/source/codec.lisp: dwg-write-drawing
+  `(declare (ignore version))` — "the DWG version is taken from the
+  DXF/libredwg defaults for now".
+
+So the container axis (DXF-ascii / DXF-binary / DWG) is honoured but the
+version is only RECORDED (on the drawing and, for DXF, the $ACADVER header):
+choosing DWG 2013 vs DWG 2018 does not change the emitted geometry.
+
+Greppable: `grep -rnE "STUB:" clautolisp/drawing*/source/`.
+
+== Upgrade path (lightest → heaviest) ==
+
+1. DXF ASCII: emit the version-appropriate $ACADVER and gate the
+   version-specific header variables / class records; drop entity groups a
+   target version predates. Mostly header + validation work.
+2. Binary DXF: same, over the binary sentinel writer.
+3. DWG: pass the target version to libredwg's writer (dwg_write_file takes a
+   version); verify which versions the vendored libredwg build supports.
+
+== Notes ==
+
+When resolved, delete the STUB markers in the two codec files and replace
+them with a normal note, and move this entry to the issue's Resolved tail.
+Split out from issues/closed/saveformat-default-drawing-format.issue.
+
+== Resolved ==
+
+DONE — clautolisp 2.2.120 (2026-09-26; re-landed after MR !278 merged only the
+issue rename and dropped the implementation).
+
+- clautolisp.drawing (dxf.lisp): a bound special *dxf-output-version* threads
+  the requested version into dxf-write-header, which emits it as $ACADVER via
+  the new %dxf-acadver-string (validated against +dxf-acadver-versions+,
+  R9..R2018). dxf-write-drawing / dxf-write-binary-drawing bind it from their
+  :version argument (falling back to the drawing's own version). The STUBs are
+  gone.
+- clautolisp.drawing.dwg (codec.lisp): dwg-write-drawing stamps :version into
+  the temp DXF's $ACADVER; libredwg's DXF importer reads it and its DWG writer
+  emits that version — no shim-signature change (clal_dxf_to_dwg takes only
+  paths). If a libredwg build ignores $ACADVER on conversion, the DWG version
+  falls back to libredwg's default; the requested version is still recorded.
+
+Tests (drawing suite 326/326): dxf-write-honors-requested-version (ASCII
+round-trip + $ACADVER string present), dxf-binary-write-honors-requested-version
+(binary round-trip), dxf-acadver-string-validates-version. Docs: autolisp-spec
+§§ SAVEFORMAT and CLAUTOLISPDEFAULTDRAWINGFORMAT (doc 0.14.0 -> 0.14.1),
+clautolisp user manual, RELEASE_NOTES.org.
+
+Scope note: the version sets $ACADVER (the field readers key on) and, for our
+supported entity subset, that is the version-carrying difference; full
+per-version *feature gating* (dropping header vars / objects a target version
+predates) is not required for that subset and is not attempted here.

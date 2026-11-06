@@ -1,0 +1,9 @@
+{
+  "product": "clautolisp",
+  "platform": "linux",
+  "timestamp_utc": "20260831T111208Z",
+  "status": "completed",
+  "exit_code": 0,
+  "runner_template": "\"/home/claude/clautolisp/.claude/worktrees/sedit-nav-interactors/clautolisp/tools/clautolisp/bin/clautolisp-sbcl\" --no-init --clautolisp -q -l __PROBE_FILE__",
+  "result_file": "probe-results/clautolisp/linux/20260831T111208Z/results.sexp"
+}

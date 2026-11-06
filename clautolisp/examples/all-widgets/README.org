@@ -1,0 +1,111 @@
+#+TITLE: all-widgets — one of every standard DCL tile, four environments
+#+AUTHOR: clautolisp
+
+* What this is
+
+=all-widgets.dcl= instantiates *every* standard DCL widget/tile type exactly
+once:
+
+- =button= and =image_button=
+- =edit_box=, =text=
+- =toggle=
+- =radio_button= inside a =radio_column=
+- =popup_list=, =list_box=
+- =slider=
+- =image=
+- =spacer=
+- =boxed_row= / =boxed_column= containers
+- the =ok_cancel= predefined cluster (→ real OK / Cancel buttons)
+
+=all-widgets.lsp= loads the dialog, wires a =$value=-recording action on every
+interactive tile, and on *accept* prints ONE labelled report of every tile's
+final value (read back with =get_tile=). The report format is identical in
+every environment, so you can run it in four places and diff the output.
+
+Standard DCL / AutoLISP only — no clautolisp extensions — so the same two
+files run unchanged in AutoCAD and BricsCAD.
+
+The =.dcl= is loaded by a *relative* name (=load_dialog "all-widgets.dcl"=), so
+run each command from this directory (or put the directory on the CAD's
+support-file search path). No absolute paths are committed.
+
+* How to run it in each environment
+
+** clautolisp — terminal / TUI (headless)
+
+The TUI renderer drives the dialog as a line-oriented prompt. Feed the tile
+commands then =accept= on stdin:
+
+#+begin_src sh
+cd examples/all-widgets
+printf 'name=Hello\nshout=1\ncolour=Green\nmedium\nfruit=2\nvolume=7\nlogo\naccept\n' \
+  | clautolisp --dcl tui -l all-widgets.lsp
+#+end_src
+
+The TUI command grammar (see the user manual, "DCL dialogs — renderer
+selection"):
+
+| input          | effect                                            | $reason |
+|----------------+---------------------------------------------------+---------|
+| =KEY=          | activate: press a button, flip a toggle, select   |       1 |
+| =KEY=VALUE=    | set an edit_box/slider value (list/popup: select) |   2 / 1 |
+| =KEY==VALUE=   | double-click select                               |       4 |
+| =KEY!=         | the tile loses focus after the edit               |       3 |
+
+=--dcl tui= forces the command-line form; with no flag, =--dcl auto= already
+selects the TUI whenever stdout is not a terminal (piped / redirected / CI).
+
+** clautolisp — GUI (Qt subprocess renderer)
+
+Point clautolisp at a GUI driver that speaks the sexp wire protocol
+(=tools/clautolisp-gui-qt=), then run interactively:
+
+#+begin_src sh
+cd examples/all-widgets
+clautolisp --dcl gui --gui /path/to/clautolisp-gui-qt -l all-widgets.lsp
+# or:  CLAUTOLISP_GUI=/path/to/clautolisp-gui-qt clautolisp -l all-widgets.lsp
+#+end_src
+
+Status: the Lisp-side subprocess renderer is complete — it announces the tile
+tree (=tile->sexp=), forwards set_tile / mode_tile / focus / populate_list /
+image_paint, and consumes =:action= / =:done= events. What still needs work
+is on the *C++ Qt app* side (build it with Qt + CMake; it is not exercised in
+CI here). See =tools/clautolisp-gui-qt/README.org= and the opendcl-epic issues
+for the widget coverage the driver must implement to match this report.
+
+** AutoCAD
+
+Load the driver and call the command (AutoCAD shows the real dialog; pick
+values with the mouse/keyboard and press OK):
+
+#+begin_src text
+(load "all-widgets.lsp")   ; auto-runs, or:  ALL-WIDGETS  at the command line
+#+end_src
+
+Put this directory on the support-file search path (OPTIONS → Files), or set
+the working directory here, so =load_dialog "all-widgets.dcl"= resolves.
+
+** BricsCAD
+
+Identical to AutoCAD:
+
+#+begin_src text
+(load "all-widgets.lsp")   ; or the ALL-WIDGETS command
+#+end_src
+
+* What to compare
+
+The =##### all-widgets report #####= block. Each line is =tile : "value"=:
+
+- =name= — the edit_box text.
+- =shout= — the toggle, ="0"= or ="1"=.
+- =colour= — the popup_list *index* (0-based).
+- =size= — the selected radio_button's *key* (e.g. ="medium"=), matching how
+  AutoCAD/BricsCAD return a radio group via the column key.
+- =fruit= — the list_box selection *index*.
+- =volume= — the slider value (clamped to 0..10).
+
+If the four environments agree on these values for the same choices, the DCL
+implementations are behaving compatibly. =image= / =image_button= carry no
+readable value (they are painted / clicked), so they are noted but not
+compared.

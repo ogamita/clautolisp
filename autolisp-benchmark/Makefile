@@ -44,8 +44,30 @@ ROOT_DIR_NATIVE := $(shell cygpath -m "$(ROOT_DIR)" 2>/dev/null || echo "$(ROOT_
 endif
 
 ALFE_ROOT := $(ROOT_DIR)/../autolisp-front-end
-ALFE_SBCL := $(ALFE_ROOT)/tools/alfe/bin/alfe-sbcl
-ALFE_CCL  := $(ALFE_ROOT)/tools/alfe/bin/alfe-ccl
+# .exe ON WINDOWS, and this is not cosmetic.
+#
+# alfe used to produce an extensionless tools/alfe/bin/alfe-sbcl even on
+# Windows; since alfe-sbcl-windows-build-missing-exe-suffix.issue it asks
+# save-lisp-and-die for the suffix explicitly, so the file there is named
+# alfe-sbcl.exe. This Makefile still spelled the extensionless name, and
+# a name with no extension is not executable on Windows -- which is how
+# the release-1.9.0 tag pipeline had both Windows CAD benchmarks die on
+#
+#   /bin/sh: .../tools/alfe/bin/alfe-sbcl: cannot execute binary file:
+#   Exec format error
+#
+# The producer was fixed and its CALLERS were not swept, which is the
+# shape of defect that only shows up on the one platform nobody runs
+# locally. autolisp-front-end/Makefile already carries this exact
+# mechanism; it is copied rather than invented, so the two agree.
+#
+# HOST_UNAME is a `?=' so the Windows branch can be exercised from a
+# POSIX host -- make -n HOST_UNAME=MINGW64_NT-10.0 -- which is the only
+# way to check it without the machine.
+HOST_UNAME ?= $(shell uname -s)
+EXE := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_UNAME)),.exe,)
+ALFE_SBCL := $(ALFE_ROOT)/tools/alfe/bin/alfe-sbcl$(EXE)
+ALFE_CCL  := $(ALFE_ROOT)/tools/alfe/bin/alfe-ccl$(EXE)
 CLAUTOLISP_ROOT := $(ROOT_DIR)/../clautolisp
 CLAUTOLISP_SBCL := $(CLAUTOLISP_ROOT)/tools/clautolisp/bin/clautolisp-sbcl
 CLAUTOLISP_CCL  := $(CLAUTOLISP_ROOT)/tools/clautolisp/bin/clautolisp-ccl
@@ -129,10 +151,10 @@ run-smoke: $(CLAUTOLISP_SBCL)
 # --- The standalone clautolisp executable --------------------------
 
 $(CLAUTOLISP_SBCL): $(CLAUTOLISP_SOURCES)
-	$(MAKE) -C $(CLAUTOLISP_ROOT) build-clautolisp-sbcl
+	"$(MAKE)" -C "$(CLAUTOLISP_ROOT)" build-clautolisp-sbcl
 
 $(CLAUTOLISP_CCL): $(CLAUTOLISP_SOURCES)
-	$(MAKE) -C $(CLAUTOLISP_ROOT) build-clautolisp-ccl
+	"$(MAKE)" -C "$(CLAUTOLISP_ROOT)" build-clautolisp-ccl
 
 build-clautolisp-sbcl: $(CLAUTOLISP_SBCL)
 build-clautolisp-ccl:  $(CLAUTOLISP_CCL)
@@ -211,9 +233,22 @@ run-bricscad-windows:
 # picks the broken automation/VBScript path). BENCH_DWG defaults to the runner's
 # CAD-made drawing; override as needed.
 BENCH_DWG ?= c:/gitlab-runner/dwg/empty.dwg
+# On AutoCAD the suite is loaded through ALFE-LOAD, not -l. AutoCAD has no
+# variadic user functions, so alfe's bootstrap replaces princ/print/prin1 with
+# fixed (obj file) versions and pads the calls it SEES -- the forms of the file
+# -l loads. run.lsp then loads its harness through its own function, with a
+# NATIVE (load ...) inside it: AutoCAD's loader evaluates version.lsp's bare
+# (princ) against the two-argument replacement, and the benchmark died at
+# once with "nombre d'arguments insuffisants" (job 16774988547, 2026-09-28).
+# ALFE-LOAD rewrites every princ/print/prin1/load call in what it loads,
+# function bodies included, so the nested loads are covered too. This is the
+# accoreconsole-deported-load-highbyte decision applied here: code alfe owns
+# calls alfe-load, ordinary user code keeps the native operators.
+ALFE_LOAD_AUTOCAD    := -x "(alfe-load \"$(ROOT_DIR_NATIVE)/harness/run.lsp\")"
+ALFE_ACTIONS_AUTOCAD  = $(ALFE_DEBUG_FLAGS) $(ALFE_SET_ROOT) $(ALFE_SET_SECONDS) $(ALFE_LOAD_AUTOCAD) $(ALFE_RUN)
 run-autocad-windows:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --no-init $(ALFE_TIMEOUT_FLAG) --autocad --mode batch --dwg "$(BENCH_DWG)" $(ALFE_ACTIONS)
+	 "$(ALFE_SBCL)" --no-init $(ALFE_TIMEOUT_FLAG) --autocad --mode batch --dwg "$(BENCH_DWG)" $(ALFE_ACTIONS_AUTOCAD)
 
 # Very large org docs can exceed TeX's default main_memory and abort with "TeX
 # capacity exceeded". A repo-local web2c/texmf.cnf raises the memory parameters;
@@ -236,7 +271,7 @@ export TEXMFVAR := $(TEXFMT_CACHE)
 ifeq ($(LATEX_COMPILER),xelatex)
 TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
 $(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
-	@mkdir -p $(TEXFMT_CACHE)
+	@mkdir -p "$(TEXFMT_CACHE)"
 	fmtutil -user --byfmt xelatex
 else
 TEX_FMT_DEP :=
@@ -248,8 +283,8 @@ endif
 # org export writes next to the .org; we move the result under build/ (mirroring
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
-	@mkdir -p $(@D)
-	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
+	@mkdir -p "$(@D)"
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
@@ -257,7 +292,7 @@ $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@rm -f "$(<:.org=.tex)"
 
 clean-pdf:
-	rm -rf $(BUILD_DIR)
+	rm -rf "$(BUILD_DIR)"
 
 # --- Install / uninstall -------------------------------------------
 # Layout follows the repo-wide convention: the AutoLISP source the
@@ -270,46 +305,46 @@ INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 INSTALL_INFO        ?= install-info
 
 install: build  ## Install harness + benchmarks + docs into $$PREFIX (build first; sudo-friendly).
-	$(MAKE) install-programs
-	$(MAKE) install-documentation
+	"$(MAKE)" install-programs
+	"$(MAKE)" install-documentation
 
 install-programs:  ## Install just the autolisp-benchmark harness + benchmarks (no docs).
-	install -d $(LIBEXEC_INSTALL_DIR)/harness
-	install -d $(LIBEXEC_INSTALL_DIR)/benchmarks
+	install -d "$(LIBEXEC_INSTALL_DIR)/harness"
+	install -d "$(LIBEXEC_INSTALL_DIR)/benchmarks"
 	@if [ -d harness ]; then \
 	  for f in harness/*.lsp; do \
-	    [ -f "$$f" ] && install -m 0644 "$$f" $(LIBEXEC_INSTALL_DIR)/harness/ ; \
+	    [ -f "$$f" ] && install -m 0644 "$$f" "$(LIBEXEC_INSTALL_DIR)/harness/" ; \
 	  done ; \
 	fi
 	@if [ -d benchmarks ]; then \
 	  for f in benchmarks/*.lsp; do \
-	    [ -f "$$f" ] && install -m 0644 "$$f" $(LIBEXEC_INSTALL_DIR)/benchmarks/ ; \
+	    [ -f "$$f" ] && install -m 0644 "$$f" "$(LIBEXEC_INSTALL_DIR)/benchmarks/" ; \
 	  done ; \
 	fi
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-documentation:  ## Install just the autolisp-benchmark documentation.
-	install -d $(DOC_INSTALL_DIR)
+	install -d "$(DOC_INSTALL_DIR)"
 	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
-	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" "$(DOC_INSTALL_DIR)/" ; fi ; \
 	done
-	install -d $(INFO_INSTALL_DIR)
+	install -d "$(INFO_INSTALL_DIR)"
 	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
-	    installed="$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
-	    $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
+	    install -m 0644 "$$f" "$(INFO_INSTALL_DIR)/" ; \
+	    installed="$(INFO_INSTALL_DIR)/$$(basename "$$f")" ; \
+	    "$(INSTALL_INFO)" --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
 	      || echo "[skip] install-info dir update for $$installed" ; \
 	  fi ; \
 	done
 	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the autolisp-benchmark install from $$PREFIX.
-	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
+	rm -rf "$(LIBEXEC_INSTALL_DIR)" "$(DOC_INSTALL_DIR)"
 	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
-	    $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
+	    "$(INSTALL_INFO)" --remove --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
 	      || true ; \
-	    rm -f "$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
+	    rm -f "$(INFO_INSTALL_DIR)/$$(basename "$$f")" ; \
 	  fi ; \
 	done

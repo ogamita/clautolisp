@@ -1,0 +1,61 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: error-processing probes -- *error*, catch-all and failing builtins, per product
+
+Standalone probes behind =issues/open/error-processing-per-dialect.issue=.
+They are NOT run by =make probe=, and they do not use =probe-core.lsp=. The
+handler probe must raise errors at TOP LEVEL, outside any
+vl-catch-all-apply, so it cannot run through alfe or the probe harness: both
+evaluate every request inside a catch-all.
+
+* Files
+
+| file                       | what                                                                 |
+|----------------------------+----------------------------------------------------------------------|
+| probe-error-handler.lsp    | C:P1 .. C:P14: one command per *error* situation; log in probe-log.txt |
+| probe-error-catalogue.lsp  | C:PCAT: 546 expressions, READ + EVAL under vl-catch-all-apply; log in catalogue-log.txt |
+| run-bricscad-macos.sh      | OUTDIR START CMD...: write run.scr, run =bricscad -B=, stop at scr-done.txt or timeout |
+| run-windows.sh             | same for BricsCAD (/Automation /b) and accoreconsole (/i /s), from MSYS2 bash |
+| drive-catalogue.sh         | RUNNER RESULT: rerun the catalogue after each engine death, from the case after the last BEGIN |
+| compare.py, summarize.py   | merge the logs of several engines into org tables                    |
+| results/                   | the 2026-11-03 measurements (raw logs + generated tables)            |
+
+Catalogue options, set by a script line before PCAT:
+=(setq *probe-start* N)=, =(setq *probe-skip* (list ...))=,
+=(setq *probe-only* (list ...))=. New cases must be APPENDED to
+=*pcat-cases*=, so that case numbers stay comparable across runs and
+products.
+
+* Running
+
+#+begin_src sh
+# BricsCAD on macOS: one run of the handler probe, one catalogue run with crash resume
+./run-bricscad-macos.sh out-handler 0 P1 P1B P1F P2 P2B P3 P4 P5 P6 P8 P9 P10 P11 P12 P13 P14
+PROBE_TIMEOUT=120 ./drive-catalogue.sh ./run-bricscad-macos.sh catalogue-bricscad.txt
+# Windows host, MSYS2 bash (copy an empty drawing to OUTDIR/empty.dwg for accoreconsole)
+./run-windows.sh accoreconsole out-acc 0 P1 P2 P3
+#+end_src
+
+Only P1-P12 can run in a single script on AutoCAD. P11 cancels the script
+there, and P13/P14 kill accoreconsole. Run them one per launch.
+
+* Pitfalls met while measuring (2026-11-03)
+
+- BricsCAD -B on macOS sometimes does not start its script after a
+  previous crash. Rerun when scr-started.txt is missing (the runners'
+  callers do).
+- BricsCAD hangs at LOAD of a UTF-8 source containing a non-ASCII
+  character (observed once, not isolated). The probes are pure ASCII.
+- Through an ssh session to Windows, the user's environment is missing
+  (USERPROFILE, TEMP, APPDATA, the FlexLM licence variables): accoreconsole
+  fails with "Can't redirect stdout" or segfaults. run-windows.sh imports
+  the registry Environment keys. *That generic version is untested*: the
+  measured runs used an equivalent script with the values written in.
+- MSYS2 rewrites =/i /s /b /Automation= into paths: =MSYS2_ARG_CONV_EXCL='*'=.
+- A probe must call =(vl-load-com)=: without it AutoCAD has no vlax-curve-*
+  and no vlax-* at all. (The first catalogue run forgot it; cases 340-450 were
+  rerun with it, see results/raw.)
+- CMDACTIVE has bit 4 (script) set during a script: test bit 1 only.
+- A =(command ...)= that leaves a command pending (case 394,
+  =(command "_LINE" nil)=) makes the command eat the next script lines,
+  including the end marker. That is a stall, not a crash: look for a crash
+  report before calling it one.

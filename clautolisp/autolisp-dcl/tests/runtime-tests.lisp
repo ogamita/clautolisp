@@ -25,6 +25,24 @@ it; loading a non-existent file returns nil."
       (ignore-errors (delete-file path))))
   (is (null (dcl-runtime-load-dialog "/no/such/file.dcl"))))
 
+(test runtime-load-dialog-handles-are-positive-from-the-first
+  "Autodesk: load_dialog returns \"a positive integer value (dcl_id) if
+successful\". The handle counter starts at 1, so even the first file of a
+fresh process passes (> dcl_id 0) (clautolisp-load-dialog-first-id-is-zero).
+The counter is rebound to its initial value here because other tests (and
+FiveAM's second run) advance the global one; the fresh-process check is the
+alfe parity table's DCL rows, which test (> id 0)."
+  (let ((path (write-temp-dcl "g" "")))
+    (unwind-protect
+         (let ((clautolisp.autolisp-dcl::*next-dcl-id* 1))
+           (let ((first (dcl-runtime-load-dialog path))
+                 (second (dcl-runtime-load-dialog path)))
+             (is (eql 1 first))
+             (is (< 0 first second))
+             (dcl-runtime-unload-dialog first)
+             (dcl-runtime-unload-dialog second)))
+      (ignore-errors (delete-file path)))))
+
 (test runtime-new-dialog-creates-instance
   "new_dialog returns an integer dialog handle whose tile tree
 mirrors the loaded source."
@@ -49,8 +67,10 @@ mirrors the loaded source."
       (ignore-errors (delete-file path)))))
 
 (test runtime-action-callback-binding-symbols
-  "Firing an action sets *$KEY$* / *$VALUE$* / *$REASON$* in the
-default evaluation context."
+  "Firing an action binds the AutoLISP DCL reserved variables $key /
+$value / $reason (NO trailing $ — the reader upcases the source $value to
+the symbol $VALUE) in the default evaluation context. $reason is the integer
+reason code (1 = selected)."
   (reset-default-evaluation-context)
   (let ((path (write-temp-dcl "g" "x : edit_box { key = \"x\"; }")))
     (unwind-protect
@@ -70,11 +90,14 @@ default evaluation context."
                                             (make-autolisp-string ""))
                   (dcl-runtime-fire-action dialog "x" "hello" :reason-selected)
                   (let ((kv (autolisp-symbol-value
-                             (intern-autolisp-symbol "$KEY$")))
+                             (intern-autolisp-symbol "$KEY")))
                         (vv (autolisp-symbol-value
-                             (intern-autolisp-symbol "$VALUE$"))))
+                             (intern-autolisp-symbol "$VALUE")))
+                        (rv (autolisp-symbol-value
+                             (intern-autolisp-symbol "$REASON"))))
                     (is (string= "x" (autolisp-string-value kv)))
-                    (is (string= "hello" (autolisp-string-value vv))))
+                    (is (string= "hello" (autolisp-string-value vv)))
+                    (is (eql 1 rv)))
                   (dcl-runtime-done-dialog dialog-id 1))
              (install-default-renderer saved-renderer))
            (dcl-runtime-unload-dialog source-id))
@@ -139,6 +162,162 @@ them in source order to the renderer's populate-list-fn."
            (clautolisp.autolisp-dcl:dcl-runtime-unload-dialog source-id))
       (ignore-errors (delete-file path)))))
 
+;;;; ---------------------------------------------------------------------
+;;;; Terminal (TUI) renderer — interactive tile types + cluster expansion
+;;;; + $reason breadth (dcl-tui-completion items 1, 2, 4).
+;;;;
+;;;; These drive the terminal renderer's input-line handler directly
+;;;; (terminal-handle-line), with values round-tripping through
+;;;; dcl-runtime-get-tile — the pure-renderer counterpart to the
+;;;; builtins-core stdin-driven integration test.
+
+(defun %tui-active-dialog (id)
+  (gethash id (symbol-value (find-symbol "*ACTIVE-DIALOGS*"
+                                         :clautolisp.autolisp-dcl))))
+
+(defmacro with-tui-dialog ((id-var dialog-var body-dcl) &body body)
+  "Load a one-dialog source whose body is BODY-DCL, instantiate it under
+the noop renderer, and bind ID-VAR / DIALOG-VAR. Cleans up afterwards."
+  (let ((path (gensym "PATH")) (source (gensym "SRC")) (saved (gensym "SAVED")))
+    `(let ((,path (write-temp-dcl "d" ,body-dcl)))
+       (unwind-protect
+            (let* ((,source (dcl-runtime-load-dialog ,path))
+                   (,saved (current-dcl-renderer)))
+              (install-default-renderer (make-noop-renderer))
+              (unwind-protect
+                   (let* ((,id-var (dcl-runtime-new-dialog ,source "d"))
+                          (,dialog-var (%tui-active-dialog ,id-var)))
+                     (declare (ignorable ,id-var ,dialog-var))
+                     ,@body
+                     (dcl-runtime-done-dialog ,id-var 0))
+                (install-default-renderer ,saved))
+              (dcl-runtime-unload-dialog ,source))
+         (ignore-errors (delete-file ,path))))))
+
+(defun %tui-feed (dialog line)
+  "Feed one input LINE to DIALOG's terminal handler, discarding the
+handler's echo. Returns the handler result."
+  (let ((interactive (clautolisp.autolisp-dcl::terminal-collect-interactive-keys
+                      (dcl-dialog-tile dialog)))
+        (*standard-output* (make-string-output-stream)))
+    (clautolisp.autolisp-dcl::terminal-handle-line dialog interactive line)))
+
+(test tui-cluster-expands-into-real-buttons
+  "A predefined cluster (ok_cancel) expands at load into real accept /
+cancel :button tiles that the renderer walks — no <ok-cancel> placeholder
+survives (dcl-tui-completion item 1)."
+  (with-tui-dialog (id dialog ": ok_cancel;")
+    (let ((accept (dcl-runtime-find-tile dialog "accept"))
+          (cancel (dcl-runtime-find-tile dialog "cancel")))
+      (is (and accept (eq :button (dcl-tile-type accept))))
+      (is (and cancel (eq :button (dcl-tile-type cancel))))
+      ;; No tile of the unexpanded cluster keyword remains anywhere.
+      (labels ((has-cluster (tile)
+                 (or (member (dcl-tile-type tile)
+                             '(:ok-cancel :ok-only :ok-cancel-help
+                               :ok-cancel-help-errtile))
+                     (some #'has-cluster (dcl-tile-children tile)))))
+        (is (not (has-cluster (dcl-dialog-tile dialog))))))))
+
+(test tui-toggle-roundtrips
+  "toggle: key=1 stores \"1\"; a bare key flips the state
+(dcl-tui-completion item 2 — the greet `shout' toggle)."
+  (with-tui-dialog (id dialog ": toggle { key = \"shout\"; label = \"Shout?\"; }")
+    (%tui-feed dialog "shout=1")
+    (is (string= "1" (dcl-runtime-get-tile id "shout")))
+    (%tui-feed dialog "shout")
+    (is (string= "0" (dcl-runtime-get-tile id "shout")))
+    (%tui-feed dialog "shout")
+    (is (string= "1" (dcl-runtime-get-tile id "shout")))))
+
+(test tui-radio-column-is-mutually-exclusive
+  "Selecting one radio_button in a radio_column sets it to \"1\" and clears
+its siblings to \"0\" (dcl-tui-completion item 2)."
+  (with-tui-dialog (id dialog
+                    ": radio_column { key = \"grp\";
+                        : radio_button { key = \"r1\"; label = \"One\"; }
+                        : radio_button { key = \"r2\"; label = \"Two\"; }
+                        : radio_button { key = \"r3\"; label = \"Three\"; } }")
+    (%tui-feed dialog "r2")
+    (is (string= "1" (dcl-runtime-get-tile id "r2")))
+    (is (string= "0" (dcl-runtime-get-tile id "r1")))
+    (is (string= "0" (dcl-runtime-get-tile id "r3")))
+    ;; get_tile on the cluster key returns the selected button's key
+    ;; (AutoCAD/BricsCAD radio-group semantics).
+    (is (string= "r2" (dcl-runtime-get-tile id "grp")))
+    (%tui-feed dialog "r1")
+    (is (string= "1" (dcl-runtime-get-tile id "r1")))
+    (is (string= "0" (dcl-runtime-get-tile id "r2")))
+    (is (string= "r1" (dcl-runtime-get-tile id "grp")))))
+
+(test tui-list-and-popup-select-by-index-and-name
+  "list_box / popup_list store the selected item's index string; a numeric
+index is taken verbatim, a name is resolved to its index
+(dcl-tui-completion item 2)."
+  (with-tui-dialog (id dialog
+                    ": list_box { key = \"lst\"; }
+                     : popup_list { key = \"pop\"; }")
+    (dcl-runtime-start-list "lst")
+    (dcl-runtime-add-list "Red") (dcl-runtime-add-list "Green")
+    (dcl-runtime-add-list "Blue")
+    (dcl-runtime-end-list)
+    (dcl-runtime-start-list "pop")
+    (dcl-runtime-add-list "Alpha") (dcl-runtime-add-list "Beta")
+    (dcl-runtime-end-list)
+    (%tui-feed dialog "lst=2")
+    (is (string= "2" (dcl-runtime-get-tile id "lst")))
+    (%tui-feed dialog "lst=Green")
+    (is (string= "1" (dcl-runtime-get-tile id "lst")))
+    (%tui-feed dialog "pop=Beta")
+    (is (string= "1" (dcl-runtime-get-tile id "pop")))))
+
+(test tui-slider-clamps-to-range
+  "slider clamps the entered value to [min_value, max_value]
+(dcl-tui-completion item 2)."
+  (with-tui-dialog (id dialog
+                    ": slider { key = \"s\"; min_value = 0; max_value = 10; }")
+    (%tui-feed dialog "s=5")
+    (is (string= "5" (dcl-runtime-get-tile id "s")))
+    (%tui-feed dialog "s=99")
+    (is (string= "10" (dcl-runtime-get-tile id "s")))
+    (%tui-feed dialog "s=-3")
+    (is (string= "0" (dcl-runtime-get-tile id "s")))))
+
+(test tui-image-button-is-activatable
+  "image_button is collected as an interactive tile and activating it via
+the terminal handler runs the button path without error
+(dcl-tui-completion item 2)."
+  (with-tui-dialog (id dialog ": image_button { key = \"pick\"; }")
+    (let ((interactive (clautolisp.autolisp-dcl::terminal-collect-interactive-keys
+                        (dcl-dialog-tile dialog))))
+      (is (assoc "pick" interactive :test #'string=)))
+    ;; No registered action: the button path fires a nil callback (a no-op)
+    ;; and returns :continue rather than an exit status.
+    (is (eq :continue (%tui-feed dialog "pick")))))
+
+(test tui-reason-codes-cover-the-four-cases
+  "The terminal renderer emits the four $reason codes per input-line
+modifier: key=value changed (2), key! lost-focus (3), key==value
+double-click (4), bare key selected (1) — dcl-tui-completion item 4."
+  (reset-default-evaluation-context)
+  (with-tui-dialog (id dialog
+                    ": edit_box { key = \"e\"; }
+                     : list_box { key = \"lst\"; }
+                     : toggle { key = \"t\"; }")
+    (dcl-runtime-start-list "lst")
+    (dcl-runtime-add-list "a") (dcl-runtime-add-list "b")
+    (dcl-runtime-end-list)
+    ;; Register empty string actions so fire-action binds the $ variables.
+    (dcl-runtime-action-tile id "e" (make-autolisp-string ""))
+    (dcl-runtime-action-tile id "lst" (make-autolisp-string ""))
+    (dcl-runtime-action-tile id "t" (make-autolisp-string ""))
+    (flet ((reason ()
+             (autolisp-symbol-value (intern-autolisp-symbol "$REASON"))))
+      (%tui-feed dialog "e=hi")     (is (eql 2 (reason)))  ; changed
+      (%tui-feed dialog "e!")       (is (eql 3 (reason)))  ; lost focus
+      (%tui-feed dialog "lst==1")   (is (eql 4 (reason)))  ; double-click
+      (%tui-feed dialog "t")        (is (eql 1 (reason)))))) ; selected
+
 (test runtime-image-batch-flushes-via-image-paint-fn
   "start_image, vector_image, fill_image, slide_image, end_image
 deliver primitives to the renderer's image-paint-fn in source
@@ -169,3 +348,123 @@ order."
              (install-default-renderer saved))
            (clautolisp.autolisp-dcl:dcl-runtime-unload-dialog source-id))
       (ignore-errors (delete-file path)))))
+
+;;;; --- ncurses DCL renderer (dcl-ncurses-renderer.issue, slice 1) ----------
+;;;; Headless, via a tui-core mock screen fed a scripted key list; the renderer
+;;;; draws into the mock's cell grid (assertable) and the modal loop ends on
+;;;; done_dialog or key-stream EOF.
+
+(test ncurses-accept-button-activates-and-returns-1
+  "A default button, focused and pressed (Enter), fires and exits with status 1;
+its tile renders as [ label ]."
+  (with-tui-dialog (id dialog ": button { key = \"accept\"; label = \"OK\"; is_default = true; }")
+    (declare (ignorable id))
+    (let* ((screen (clautolisp.ui.tui:make-mock-screen :rows 24 :cols 40
+                                                       :keys (list :enter)))
+           (status (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)))
+      (is (eql 1 status))
+      (is (clautolisp.ui.tui:mock-find-line screen "[ OK ]")))))
+
+(test ncurses-escape-cancels-with-status-0
+  "Esc cancels the dialog: status 0, loop terminates."
+  (with-tui-dialog (id dialog ": button { key = \"accept\"; label = \"OK\"; is_default = true; }")
+    (declare (ignorable id))
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys (list :escape))))
+      (is (eql 0 (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen))))))
+
+(test ncurses-focus-moves-down-then-activates
+  "Down moves focus to the second button (drawn with the :selection face) and
+Enter activates it (is_default -> status 1); both buttons are rendered."
+  (with-tui-dialog (id dialog ": column { : button { key = \"a\"; label = \"A\"; }
+                                           : button { key = \"b\"; label = \"B\"; is_default = true; } }")
+    (declare (ignorable id))
+    (let* ((screen (clautolisp.ui.tui:make-mock-screen :rows 24 :cols 40
+                                                       :keys (list :down :enter)))
+           (status (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)))
+      (is (eql 1 status))
+      (is (clautolisp.ui.tui:mock-find-line screen "[ A ]"))
+      (is (clautolisp.ui.tui:mock-find-line screen "[ B ]")))))
+
+(test ncurses-key-stream-eof-cancels
+  "Running out of scripted keys before done_dialog cancels (status 0) rather
+than looping forever."
+  (with-tui-dialog (id dialog ": button { key = \"accept\"; label = \"OK\"; }")
+    (declare (ignorable id))
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys '())))
+      (is (eql 0 (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen))))))
+
+;;;; --- ncurses DCL renderer value widgets (slice 2) ------------------------
+
+(test ncurses-toggle-flips-with-space
+  "Space on a focused toggle flips its state; the value round-trips through
+get_tile (parity with the line renderer)."
+  (with-tui-dialog (id dialog ": toggle { key = \"shout\"; label = \"Shout?\"; }")
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys (list #\Space))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "1" (dcl-runtime-get-tile id "shout"))))))
+
+(test ncurses-radio-column-is-mutually-exclusive
+  "Selecting the second radio button sets it to 1 and its sibling to 0."
+  (with-tui-dialog (id dialog ": radio_column { key = \"grp\";
+                                 : radio_button { key = \"r1\"; label = \"One\"; }
+                                 : radio_button { key = \"r2\"; label = \"Two\"; } }")
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys (list :down :enter))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "1" (dcl-runtime-get-tile id "r2")))
+      (is (string= "0" (dcl-runtime-get-tile id "r1"))))))
+
+(test ncurses-edit-box-types-and-backspaces
+  "Printable keys type into a focused edit_box; Backspace deletes the last char."
+  (with-tui-dialog (id dialog ": edit_box { key = \"name\"; label = \"Name\"; }")
+    (let ((screen (clautolisp.ui.tui:make-mock-screen
+                   :keys (list #\a #\b #\c :backspace))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "ab" (dcl-runtime-get-tile id "name"))))))
+
+(test ncurses-slider-steps-and-clamps
+  "Left/Right step the focused slider, clamped to min_value/max_value."
+  (with-tui-dialog (id dialog ": slider { key = \"s\"; min_value = 0; max_value = 3; }")
+    (let ((screen (clautolisp.ui.tui:make-mock-screen
+                   ;; four rights from 0 clamp at the max of 3.
+                   :keys (list :right :right :right :right))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "3" (dcl-runtime-get-tile id "s")))))
+  (with-tui-dialog (id dialog ": slider { key = \"s\"; min_value = 0; max_value = 3; }")
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys (list :left))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "0" (dcl-runtime-get-tile id "s"))))))
+
+;;;; --- ncurses DCL renderer lists + images (slice 3) -----------------------
+
+(test ncurses-list-box-down-moves-selection
+  "Down moves a focused list_box's selection (index stored, > marker redrawn);
+the stored value is the selected item's index (line-renderer parity)."
+  (with-tui-dialog (id dialog ": list_box { key = \"lst\"; label = \"Pick\"; }")
+    ;; populate the list the way start_list/end_list would (state key KEY:items).
+    (setf (gethash "lst:items" (clautolisp.autolisp-dcl::dcl-dialog-state dialog))
+          (list "Alpha" "Beta" "Gamma"))
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :rows 24 :cols 40
+                                                      :keys (list :down :down))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "2" (dcl-runtime-get-tile id "lst")))
+      (is (clautolisp.ui.tui:mock-find-line screen "> Gamma")))))
+
+(test ncurses-popup-list-down-cycles-and-shows-item
+  "Down cycles a focused popup_list; the collapsed line shows the selected
+item's text (not its index)."
+  (with-tui-dialog (id dialog ": popup_list { key = \"p\"; label = \"Choose\"; }")
+    (setf (gethash "p:items" (clautolisp.autolisp-dcl::dcl-dialog-state dialog))
+          (list "x" "y"))
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :rows 24 :cols 40
+                                                      :keys (list :down))))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (string= "1" (dcl-runtime-get-tile id "p")))
+      (is (clautolisp.ui.tui:mock-find-line screen "[y]")))))
+
+(test ncurses-image-tile-renders
+  "An image tile renders a placeholder; running with no keys cancels cleanly."
+  (with-tui-dialog (id dialog ": image { key = \"img\"; }")
+    (declare (ignorable id))
+    (let ((screen (clautolisp.ui.tui:make-mock-screen :keys '())))
+      (clautolisp.autolisp-dcl::ncurses-run-dialog dialog screen)
+      (is (clautolisp.ui.tui:mock-find-line screen "[image img]")))))

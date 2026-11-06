@@ -45,6 +45,7 @@
         "tests/special-forms/function.lsp"
         "tests/special-forms/defun.lsp"
         "tests/special-forms/defun-q.lsp"
+        "tests/special-forms/dynamic-scope.lsp"
         ;; equality and predicate
         "tests/equality/eq.lsp"
         "tests/equality/equal.lsp"
@@ -137,6 +138,10 @@
         "tests/sysvar/coupling-angle.lsp"
         "tests/sysvar/coupling-units.lsp"
         "tests/sysvar/coupling-date.lsp"
+        "tests/sysvar/coupling-sort.lsp"
+        "tests/sysvar/coupling-viewport.lsp"
+        "tests/sysvar/coupling-command.lsp"
+        "tests/sysvar/coupling-path.lsp"
         "tests/sysvar/inventory-coverage.lsp"
         ;; documentation (clautolisp source-aware ;| |; doc extension)
         "tests/documentation/preceding-doc.lsp"
@@ -144,6 +149,7 @@
         "tests/divergent/atof-hex-float.lsp"
         "tests/divergent/print-framing.lsp"
         "tests/divergent/and-or-return-value.lsp"
+        "tests/divergent/printer-no-argument.lsp"
         ;; --- Phase E: deferred families (mock-host pending) ----------
         "tests/deferred/dcl.lsp"
         "tests/deferred/com-vlax.lsp"

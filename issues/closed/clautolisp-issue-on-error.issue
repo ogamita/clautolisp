@@ -1,0 +1,69 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: clautolisp-issue-on-error -- an error in a -l file before -i ends the program; --on-error ignore does not continue
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-11-03
+
+* Report (pjb, cecil, 2026-11-03)
+
+#+begin_example
+18:06[pjb@cecil :1 clautolisp 3.4T]$ clautolisp -norc --on-error ignore -l ~/.autolisp --on-error debug -i
+DBG> clautolisp debugger attached (h for help)
+DBG> detached
+clautolisp: runtime error: LOAD-FILE-NOT-FOUND: LOAD could not locate /Users/pjb/works/sncf-reseau/src/outils-autolisp/autolisp-misc/src/browser.lsp.
+AutoLISP backtrace (most recent call first, 4 frames):
+  in SUBR LOAD: ("/Users/pjb/works/sncf-reseau/src/outils-autolisp/autolisp-misc/src/browser.lsp")
+  in EVAL: (LOAD "/Users/pjb/works/sncf-reseau/src/outils-autolisp/autolisp-misc/src/browser.lsp")
+  in USUBR LL-MISC: ()
+  in EVAL: (LL-MISC)
+master
+#+end_example
+
+* Analysis
+
+Reproduced with 2.3.81 on macOS (=rc.lsp= calling =(load "/nonexistent/...")=):
+whatever the =--on-error= policy, the error in the =-l= file ended the
+program with status 1 before the REPL asked for by =-i= started
+("DBG> detached" is the debugger session being torn down on the way out).
+
+- RUN-WITH-INPUT ran the actions before the REPL PLAIN ("init files are
+  machinery you don't debug"), so an uncaught error there escaped to the
+  program's outer handler, which reports and exits.
+- =--on-error ignore= was documented as "continue past the error ... keep
+  going to the next form / action" (debugger-public-interface-and-on-error
+  B.1) but had never been implemented: in a batch run it exited like quit
+  (noted, "observed, not changed", in that issue).
+- =--on-error= is not positional: the last occurrence (here =debug=)
+  decides for the whole run, so the =ignore= before =-l= had no effect.
+
+* Resolved (clautolisp 2.3.86 / alfe 2.3.86, 2026-11-04)
+
+- =CONTINUE-PAST-ACTION-ERRORS-P= (main.lisp): the run goes on past an
+  action's error under =ignore=, and before an interactive REPL under any
+  policy but =quit=. =RUN-ACTIONS-CONTINUING-PAST-ERRORS= reports the error
+  the engine's way (AutoLISP error, or a =-l= file that cannot be opened)
+  and runs the next action.
+- Before the REPL, each action is its own debugging extent, as a REPL turn
+  is: under =debug= the error stops in the debugger; after =q= (or =c=)
+  the next action runs, then the REPL.
+- A batch run that went on past an error still exits with the AutoLISP-
+  error status (1), so CI does not take it for a clean run; a user
+  =*error*= that takes the error leaves the status at 0, as before.
+- alfe's direct variant does the same under =--on-error ignore=
+  (backend-clautolisp.lisp); its parity row "on-error ignore" now expects
+  "aafter", status 1, in both variants.
+- Tests: CONTINUE-PAST-ACTION-ERRORS-POLICY and GUARDED-ACTIONS-CONTINUE-
+  PAST-AN-ERROR (tools/clautolisp/tests/exit-status-tests.lisp); the alfe
+  parity table. Checked end to end with the built clautolisp-sbcl:
+  =--on-error ignore -l rc.lsp -i= reaches the REPL;
+  =--on-error ignore -l rc.lsp --on-error debug -i= stops in the debugger,
+  =q= =y=, then the REPL; =--on-error ignore -l rc.lsp -x ...= runs the
+  =-x=, exit 1; the default batch run still exits 1 at the error.
+- Docs: --help, man pages, clautolisp and alfe user manuals, alfe spec.
+
+Not done: making =--on-error= POSITIONAL (one policy for the =-l= before
+it, another for the REPL after it), which is what the report's command
+line suggests. Left to pjb's decision.

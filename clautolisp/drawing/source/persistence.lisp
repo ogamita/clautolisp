@@ -19,6 +19,23 @@
 (defvar *drawing-codecs* (make-hash-table)
   "Format keyword -> plist (:reader fn :writer fn).")
 
+(defvar *default-drawing-format* nil
+  "The format WRITE-DRAWING falls back to when neither an explicit FORMAT,
+the drawing's own FORMAT, nor the destination's file type determines one — a
+codec keyword (e.g. :dxf-ascii or :dwg), or NIL for no policy (the default in
+this layer, which stays host-agnostic). A host binds it from its own default
+drawing-format policy: clautolisp sets it from the CLAUTOLISPDEFAULTDRAWINGFORMAT
+system variable (see cador). It is the LAST resort, so a recognised extension
+or a drawing that already knows its format still wins.")
+
+(defvar *default-drawing-version* nil
+  "The version WRITE-DRAWING falls back to when neither an explicit VERSION nor
+the drawing's own VERSION is given — a DXF $ACADVER keyword (e.g. :ac1032 for
+DWG 2018, :ac1027 for 2013), or NIL for the codec's newest. The companion of
+*DEFAULT-DRAWING-FORMAT*: clautolisp binds it from SAVEFORMAT /
+CLAUTOLISPDEFAULTDRAWINGFORMAT (see cador). NOTE: the current DXF/DWG writers
+record this version but still emit a fixed one — see the STUB in the codecs.")
+
 (defun register-drawing-codec (format &key reader writer)
   "Register READER and/or WRITER for FORMAT (a keyword). Either may be
 NIL. Returns FORMAT."
@@ -44,6 +61,49 @@ arrives with the DXF codec (Phase 17c); for now .dxf maps to
              :dwg)
             (t nil)))))
 
+(defun drawing-template-path ()
+  "The DXF template a NEW drawing is built from: the structure every real
+drawing has -- the standard symbol tables, the model / paper space block
+records AND their block definitions, and a plausible header. It is DXF,
+not DWG, so reading it needs no native library.
+
+dwg-round-trip-loses-entities: a drawing assembled from nothing keeps its
+entities in memory but loses them through a DWG round trip, because
+libredwg needs an entity's owner record to resolve AND a properly formed
+BLOCKS section. Both come from a real drawing's structure, which is what
+this template carries (it was produced from the bundled empty drawing).
+Hand-building a skeleton was tried first and is a maintenance trap: it
+must then track what libredwg and AutoCAD expect."
+  (asdf:system-relative-pathname :clautolisp/drawing
+                                 "drawing/template/empty-drawing.dxf"))
+
+(defun make-drawing-from-template (&key (name "Drawing.dwg") path format version
+                                        (template (drawing-template-path)))
+  "A new drawing with a REAL drawing's structure, read from TEMPLATE (the
+bundled empty drawing by default -- a caller that honours a user setting passes
+its own, e.g. cador's CLAUTOLISPNEWDRAWINGTEMPLATE). NAME, PATH, FORMAT and
+VERSION override what the template carried. Falls back to MAKE-DRAWING -- an
+empty shell -- when the template cannot be read, so a program still runs (it
+will lose entities through a DWG round trip, which is the state before this
+existed).
+
+The template's own format is SNIFFED rather than assumed: the bundled one is
+DXF, but a user's is as likely to be a .dwg or a .dwt.
+
+MAKE-DRAWING remains the right thing for a LOADER, which is about to fill
+the drawing from a file; this is for a program that BUILDS one."
+  (if (not (and template (probe-file template)))
+      (make-drawing :name name :path path :format format :version version)
+      (handler-case
+          (let ((drawing (read-drawing template)))
+            (setf (drawing-name drawing) name
+                  (drawing-path drawing) path
+                  (drawing-format drawing) format)
+            (when version (setf (drawing-version drawing) version))
+            drawing)
+        (error () (make-drawing :name name :path path
+                                :format format :version version)))))
+
 (defun read-drawing (source &key format)
   "Read SOURCE (a pathname / namestring) into a fresh DRAWING. FORMAT
 overrides the sniffed format. Sets the drawing's PATH (absolute) and
@@ -68,6 +128,11 @@ reader, DRAWING-READ-ERROR on a codec parse failure."
           ;; file's sentinel); only fall back to the dispatched FMT.
           (unless (drawing-format drawing)
             (setf (drawing-format drawing) fmt))
+          ;; Loading is not modifying (DBMOD); the drawing is named after its
+          ;; file (DWGNAME) unless the codec named it.
+          (setf (drawing-dbmod drawing) 0)
+          (when (member (drawing-name drawing) '("" "Drawing.dwg") :test #'string=)
+            (setf (drawing-name drawing) (file-namestring (drawing-path drawing))))
           drawing)
       (drawing-error (c) (error c))
       (error (c)
@@ -77,10 +142,14 @@ reader, DRAWING-READ-ERROR on a codec parse failure."
 
 (defun write-drawing (drawing destination &key format version)
   "Write DRAWING to DESTINATION. FORMAT defaults to the drawing's
-format then DESTINATION's type; VERSION defaults to the drawing's
-version then the codec's newest. Updates the drawing's PATH / FORMAT /
-VERSION and returns it. Signals DRAWING-FORMAT-ERROR / DRAWING-WRITE-ERROR."
-  (let* ((fmt (or format (drawing-format drawing) (probe-drawing-format destination)))
+format, then DESTINATION's type, then *DEFAULT-DRAWING-FORMAT* (a host's
+last-resort policy); VERSION defaults to the drawing's version, then
+*DEFAULT-DRAWING-VERSION*, then the codec's newest. Updates the drawing's
+PATH / FORMAT / VERSION and returns it.
+Signals DRAWING-FORMAT-ERROR / DRAWING-WRITE-ERROR."
+  (let* ((fmt (or format (drawing-format drawing) (probe-drawing-format destination)
+                  *default-drawing-format*))
+         (ver (or version (drawing-version drawing) *default-drawing-version*))
          (codec (and fmt (find-drawing-codec fmt))))
     (unless fmt
       (error 'drawing-format-error :location destination :drawing drawing
@@ -92,10 +161,11 @@ VERSION and returns it. Signals DRAWING-FORMAT-ERROR / DRAWING-WRITE-ERROR."
              :format-arguments (list fmt)))
     (handler-case
         (progn
-          (funcall (getf codec :writer) drawing destination :version version)
+          (funcall (getf codec :writer) drawing destination :version ver)
           (setf (drawing-path drawing) (pathname destination)
-                (drawing-format drawing) fmt)
-          (when version (setf (drawing-version drawing) version))
+                (drawing-format drawing) fmt
+                (drawing-dbmod drawing) 0)
+          (when ver (setf (drawing-version drawing) ver))
           drawing)
       (drawing-error (c) (error c))
       (error (c)

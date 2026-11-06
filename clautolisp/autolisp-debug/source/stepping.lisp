@@ -43,12 +43,34 @@
 
 (defun request-step (ti kind)
   "Arm a step of KIND (:into | :over | :out | :finish) from the current
-stopping point. :finish is an alias for :out."
-  (let ((kind (if (eq kind :finish) :out kind)))
+stopping point. :finish is an alias for :out.
+
+A :over (`next') armed at a function-ENTRY poll point (form-id 0) records
+form-depth ONE DEEPER than the entry marker. The entry poll point wraps
+the whole body (INSTRUMENT-USUBR), so the body forms poll one level
+deeper than it; without the bump every body form is `too deep' to match
+the `<= form-depth' test and step-over degenerates into step-out, landing
+on the caller instead of the first body form
+(step-over-from-entry-steps-out)."
+  (let* ((kind (if (eq kind :finish) :out kind))
+         ;; WHERE EXECUTION IS, read from the three CURRENT-PP slots.
+         ;; This asked for (thread-debug-info-current-pp ti) and took its
+         ;; CDR, back when the poll point was recorded as a CONS. It is
+         ;; two fixnums and a validity flag now -- a cons there cost two
+         ;; allocations per form of any program merely RUN under a
+         ;; session. The flag is not decoration: (0 . 0) was a real poll
+         ;; point, function 0's entry, so NIL could mean `none yet' where
+         ;; zeros cannot.
+         (at-entry (and (thread-debug-info-current-pp-valid-p ti)
+                        (eql 0 (thread-debug-info-current-pp-form-id ti))))
+         (poll-depth (thread-debug-info-poll-depth ti)))
     (setf (thread-debug-info-step-request ti)
-          (make-step-request :kind kind
-                             :form-depth (thread-debug-info-poll-depth ti)
-                             :call-depth (call-depth-of ti)))))
+          (make-step-request
+           :kind kind
+           :form-depth (if (and (eq kind :over) at-entry)
+                           (1+ poll-depth)
+                           poll-depth)
+           :call-depth (call-depth-of ti)))))
 
 (defun clear-step-request (ti)
   (setf (thread-debug-info-step-request ti) nil))
@@ -66,10 +88,24 @@ function entry (form-id 0), and record the current form-id on the top
 frame."
   (incf (thread-debug-info-poll-depth ti))
   (when (zerop form-id)
-    (push (make-debug-frame
-           :fid fid :current-form-id 0
-           :dynamic-frame (evaluation-context-dynamic-frame context))
-          (thread-debug-info-call-stack ti)))
+    ;; Take a spent frame and its cons from the pool when there is one, so
+    ;; a debugged call allocates nothing here after the first few. The
+    ;; slots are all overwritten below, so a reused frame carries nothing
+    ;; from its previous activation.
+    (let ((cell (thread-debug-info-frame-pool ti)))
+      (if cell
+          (let ((frame (car cell)))
+            (setf (thread-debug-info-frame-pool ti) (cdr cell))
+            (setf (debug-frame-fid frame) fid
+                  (debug-frame-current-form-id frame) 0
+                  (debug-frame-dynamic-frame frame)
+                  (evaluation-context-dynamic-frame context))
+            (setf (cdr cell) (thread-debug-info-call-stack ti))
+            (setf (thread-debug-info-call-stack ti) cell))
+          (push (make-debug-frame
+                 :fid fid :current-form-id 0
+                 :dynamic-frame (evaluation-context-dynamic-frame context))
+                (thread-debug-info-call-stack ti)))))
   (let ((top (car (thread-debug-info-call-stack ti))))
     (when (and top (= (debug-frame-fid top) fid))
       (setf (debug-frame-current-form-id top) form-id))))
@@ -79,7 +115,17 @@ frame."
 (form-id 0) and drop the form-depth. Always runs (unwind-protect), so a
 non-local exit through the form keeps the depths balanced."
   (when (zerop form-id)
-    (pop (thread-debug-info-call-stack ti)))
+    (let ((cell (thread-debug-info-call-stack ti)))
+      (when cell
+        (setf (thread-debug-info-call-stack ti) (cdr cell))
+        ;; The frame is spent: a snapshot that wanted it copied it at the
+        ;; stopping point. Drop its reference to the runtime dynamic-frame
+        ;; before pooling, so a pooled frame does not hold a whole binding
+        ;; chain alive, then hand the cons ITSELF to the pool -- reusing
+        ;; the cons is half the saving.
+        (setf (debug-frame-dynamic-frame (car cell)) nil)
+        (setf (cdr cell) (thread-debug-info-frame-pool ti))
+        (setf (thread-debug-info-frame-pool ti) cell))))
   (decf (thread-debug-info-poll-depth ti)))
 
 ;;; --- map a source position to a poll point (spec §17.3) ------------

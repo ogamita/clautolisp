@@ -1,0 +1,331 @@
+(in-package #:clautolisp.autolisp-host)
+
+;;;; NullHost — the trivial backend.
+;;;;
+;;;; Every operation signals :host-not-supported. This is the
+;;;; default backend installed in a fresh runtime-session: programs
+;;;; that exercise only the language-level surface (numeric, list,
+;;;; string, control flow, error handling) keep working, while
+;;;; programs that touch the CAD host fail loudly with a structured
+;;;; runtime error pointing at the operation by name.
+
+(defclass nihil (host)
+  ()
+  (:default-initargs :name "nihil")
+  (:documentation "Default trivial host backend. Every CAD-facing
+operation signals :host-not-supported."))
+
+(defun make-nihil (&key (name "nihil"))
+  (make-instance 'nihil :name name))
+
+(defparameter *nihil* (make-nihil)
+  "Process-wide singleton NullHost. Sessions that do not specify a
+backend share this instance.")
+
+;;; --- Method definitions ------------------------------------------
+;;;
+;;; Every method body just delegates to signal-host-not-supported.
+;;; Spelling each one out (rather than via a macro) keeps eldoc /
+;;; xref readable and makes future per-method overrides cheap.
+
+;; Entity API
+(defmethod host-entget ((host nihil) ename &optional applist)
+  (declare (ignore ename applist))
+  (signal-host-not-supported host 'entget))
+
+(defmethod host-entmod ((host nihil) group-code-list)
+  (declare (ignore group-code-list))
+  (signal-host-not-supported host 'entmod))
+
+(defmethod host-entmake ((host nihil) group-code-list)
+  (declare (ignore group-code-list))
+  (signal-host-not-supported host 'entmake))
+
+(defmethod host-entmakex ((host nihil) group-code-list)
+  (declare (ignore group-code-list))
+  (signal-host-not-supported host 'entmakex))
+
+(defmethod host-entdel ((host nihil) ename)
+  (declare (ignore ename))
+  (signal-host-not-supported host 'entdel))
+
+(defmethod host-entupd ((host nihil) ename)
+  (declare (ignore ename))
+  (signal-host-not-supported host 'entupd))
+
+(defmethod host-entlast ((host nihil))
+  (signal-host-not-supported host 'entlast))
+
+(defmethod host-entnext ((host nihil) ename)
+  (declare (ignore ename))
+  (signal-host-not-supported host 'entnext))
+
+(defmethod host-handent ((host nihil) handle-string)
+  (declare (ignore handle-string))
+  (signal-host-not-supported host 'handent))
+
+;; Selection-set API
+(defmethod host-ssget ((host nihil) filter &key mode)
+  (declare (ignore filter mode))
+  (signal-host-not-supported host 'ssget))
+
+(defmethod host-ssadd ((host nihil) pickset ename)
+  (declare (ignore pickset ename))
+  (signal-host-not-supported host 'ssadd))
+
+(defmethod host-ssdel ((host nihil) pickset ename)
+  (declare (ignore pickset ename))
+  (signal-host-not-supported host 'ssdel))
+
+(defmethod host-ssname ((host nihil) pickset index)
+  (declare (ignore pickset index))
+  (signal-host-not-supported host 'ssname))
+
+(defmethod host-sslength ((host nihil) pickset)
+  (declare (ignore pickset))
+  (signal-host-not-supported host 'sslength))
+
+(defmethod host-ssmemb ((host nihil) pickset ename)
+  (declare (ignore pickset ename))
+  (signal-host-not-supported host 'ssmemb))
+
+(defmethod host-ssgetfirst ((host nihil))
+  (signal-host-not-supported host 'ssgetfirst))
+
+(defmethod host-sssetfirst ((host nihil) pickset)
+  (declare (ignore pickset))
+  (signal-host-not-supported host 'sssetfirst))
+
+;; Symbol tables
+(defmethod host-tblsearch ((host nihil) kind name)
+  (declare (ignore kind name))
+  (signal-host-not-supported host 'tblsearch))
+
+(defmethod host-tblnext ((host nihil) kind &key rewind)
+  (declare (ignore kind rewind))
+  (signal-host-not-supported host 'tblnext))
+
+(defmethod host-tblobjname ((host nihil) kind name)
+  (declare (ignore kind name))
+  (signal-host-not-supported host 'tblobjname))
+
+;; Dictionaries
+(defmethod host-namedobjdict ((host nihil))
+  (signal-host-not-supported host 'namedobjdict))
+
+(defmethod host-dictsearch ((host nihil) dict name &key next-after)
+  (declare (ignore dict name next-after))
+  (signal-host-not-supported host 'dictsearch))
+
+(defmethod host-dictobjname ((host nihil) dict name)
+  (declare (ignore dict name))
+  (signal-host-not-supported host 'dictobjname))
+
+(defmethod host-dictnext ((host nihil) dict &key rewind)
+  (declare (ignore dict rewind))
+  (signal-host-not-supported host 'dictnext))
+
+(defmethod host-dictadd ((host nihil) dict name object-ename)
+  (declare (ignore dict name object-ename))
+  (signal-host-not-supported host 'dictadd))
+
+(defmethod host-dictremove ((host nihil) dict name)
+  (declare (ignore dict name))
+  (signal-host-not-supported host 'dictremove))
+
+(defmethod host-dictrename ((host nihil) dict old new)
+  (declare (ignore dict old new))
+  (signal-host-not-supported host 'dictrename))
+
+;; Sysvars
+(defmethod host-getvar ((host nihil) name)
+  (declare (ignore name))
+  (signal-host-not-supported host 'getvar))
+
+(defmethod host-setvar ((host nihil) name value)
+  (declare (ignore name value))
+  (signal-host-not-supported host 'setvar))
+
+(defmethod host-set-derived-sysvar ((host nihil) name value)
+  ;; Silent no-op rather than signalling: the launch-time wiring
+  ;; calls this unconditionally; nihil has no sysvar table
+  ;; to update and that's fine.
+  (declare (ignore name value))
+  nil)
+
+(defmethod host-define-sysvar ((host nihil) name kind value read-only-p)
+  ;; Silent no-op for the same reason as host-set-derived-sysvar: the
+  ;; dialect-trust-default launch wiring calls this unconditionally and
+  ;; nihil has no sysvar table to populate.
+  (declare (ignore name kind value read-only-p))
+  nil)
+
+(defmethod host-undefine-sysvar ((host nihil) name)
+  ;; Silent no-op for the same reason as host-define-sysvar: the
+  ;; dialect sysvar-overlay launch wiring calls this unconditionally and
+  ;; nihil has no sysvar table to drop entries from.
+  (declare (ignore name))
+  nil)
+
+(defmethod host-sysvar-names ((host nihil))
+  (signal-host-not-supported host 'sysvar-names))
+
+;; Command dispatch
+(defmethod host-command ((host nihil) arguments)
+  (declare (ignore arguments))
+  (signal-host-not-supported host 'command))
+
+(defmethod host-command-log ((host nihil))
+  (signal-host-not-supported host 'command-log))
+
+;; Interactive prompts
+(defmethod host-prompt ((host nihil) string)
+  (declare (ignore string))
+  (signal-host-not-supported host 'prompt))
+
+(defmethod host-initget ((host nihil) bits keywords)
+  (declare (ignore bits keywords))
+  (signal-host-not-supported host 'initget))
+
+(defmethod host-getstring ((host nihil) prompt &key controls)
+  (declare (ignore prompt controls))
+  (signal-host-not-supported host 'getstring))
+
+(defmethod host-getint ((host nihil) prompt &key controls)
+  (declare (ignore prompt controls))
+  (signal-host-not-supported host 'getint))
+
+(defmethod host-getreal ((host nihil) prompt &key controls)
+  (declare (ignore prompt controls))
+  (signal-host-not-supported host 'getreal))
+
+(defmethod host-getpoint ((host nihil) prompt &key base controls)
+  (declare (ignore prompt base controls))
+  (signal-host-not-supported host 'getpoint))
+
+(defmethod host-getcorner ((host nihil) prompt &key base controls)
+  (declare (ignore prompt base controls))
+  (signal-host-not-supported host 'getcorner))
+
+(defmethod host-getdist ((host nihil) prompt &key base controls)
+  (declare (ignore prompt base controls))
+  (signal-host-not-supported host 'getdist))
+
+(defmethod host-getangle ((host nihil) prompt &key base controls)
+  (declare (ignore prompt base controls))
+  (signal-host-not-supported host 'getangle))
+
+(defmethod host-getorient ((host nihil) prompt &key base controls)
+  (declare (ignore prompt base controls))
+  (signal-host-not-supported host 'getorient))
+
+(defmethod host-getkword ((host nihil) prompt &key controls)
+  (declare (ignore prompt controls))
+  (signal-host-not-supported host 'getkword))
+
+;; Graphics
+(defmethod host-grdraw ((host nihil) from to colour highlight)
+  (declare (ignore from to colour highlight))
+  (signal-host-not-supported host 'grdraw))
+
+(defmethod host-grtext ((host nihil) kind text colour highlight)
+  (declare (ignore kind text colour highlight))
+  (signal-host-not-supported host 'grtext))
+
+(defmethod host-grvecs ((host nihil) vectors transform)
+  (declare (ignore vectors transform))
+  (signal-host-not-supported host 'grvecs))
+
+(defmethod host-grclear ((host nihil))
+  (signal-host-not-supported host 'grclear))
+
+(defmethod host-grread ((host nihil) track key-press cursor)
+  (declare (ignore track key-press cursor))
+  (signal-host-not-supported host 'grread))
+
+(defmethod host-redraw ((host nihil) ename mode)
+  (declare (ignore ename mode))
+  (signal-host-not-supported host 'redraw))
+
+;;; Install the NullHost singleton as the runtime's default backend
+;;; on load. Downstream code may rebind *default-runtime-host* to
+;;; switch — this is just the universal fallback.
+(setf clautolisp.autolisp-runtime:*default-runtime-host* *nihil*)
+
+;;; Wire the runtime's COMMAND special form to the HAL command
+;;; channel. The runtime cannot name HOST-COMMAND itself (it sits
+;;; below this system in the dependency order), so it routes through
+;;; this hook — installed once here, alongside the default-backend
+;;; install above.
+(setf clautolisp.autolisp-runtime:*host-command-function* #'host-command)
+
+;;; cador-2 slice 2b: the runtime->host current-document lock-step. The
+;;; runtime flips its current document (SET-RUNTIME-SESSION-CURRENT-DOCUMENT)
+;;; and then calls *DOCUMENT-ACTIVATION-HOOK*; this host-agnostic hook makes
+;;; the host follow, so the active drawing tracks the current document. It is
+;;; a no-op for single-document / host-less sessions (a document with no
+;;; HOST-DOCUMENT-KEY), so installing it globally is safe; the runtime already
+;;; wraps the call in IGNORE-ERRORS. Uses only the generic HOST-ACTIVATE-DOCUMENT,
+;;; so it works for any host that implements it (cador today), not just nihil.
+(defun activate-host-document-for-namespace (session document)
+  "Activate the host document DOCUMENT is linked to, keeping the host's active
+document in step with the runtime's current document. No-op unless DOCUMENT
+carries a HOST-DOCUMENT-KEY and SESSION carries a host."
+  (let ((key (clautolisp.autolisp-runtime:document-namespace-host-document-key
+              document))
+        (host (clautolisp.autolisp-runtime:runtime-session-host session)))
+    (when (and key host)
+      (host-activate-document host key))))
+
+(setf clautolisp.autolisp-runtime:*document-activation-hook*
+      #'activate-host-document-for-namespace)
+
+;;; Multi-document slice 1 (cador-multidocument-host, 2026-10-05): the other
+;;; direction. A host-side document change -- NEW / OPEN / Documents.Add --
+;;; does not switch the host directly: it asks the runtime, which switches at
+;;; the next top-level read (option A of deferred-document-lifecycle-command-
+;;; semantics) and then makes the host follow through the hook above. With no
+;;; evaluation session driving HOST (host-level tests), it activates at once.
+
+(defun link-runtime-session-to-host (session host)
+  "Link SESSION's startup document namespace to HOST's current document, so
+the startup drawing has its namespace like every later one."
+  (let ((key (ignore-errors (host-current-document host))))
+    (when key
+      (clautolisp.autolisp-runtime:link-runtime-session-current-document session key))))
+
+(defun note-host-document-closed (host key)
+  "HOST closed document KEY: drop its LISP namespace and, if the session was
+in it, move to HOST's (new) current document at the next top-level read."
+  (let* ((context (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime:evaluation-context-session context))))
+    (when (and session (eq host (clautolisp.autolisp-runtime:runtime-session-host session)))
+      (clautolisp.autolisp-runtime:forget-runtime-session-document-for-host-key session key)
+      (let ((current (ignore-errors (host-current-document host))))
+        (when current
+          (clautolisp.autolisp-runtime:request-runtime-document-switch session current))))
+    key))
+
+(defun request-host-document-activation (host key)
+  "Make host document KEY current: deferred to the next top-level read when
+an evaluation session drives HOST, immediate otherwise. Returns KEY."
+  (let* ((context (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime:evaluation-context-session context))))
+    (if (and session (eq host (clautolisp.autolisp-runtime:runtime-session-host session)))
+        (progn
+          (link-runtime-session-to-host session host)
+          ;; BricsCAD switches the DRAWING at once (the running routine's
+          ;; getvar / entmake already address the new one); AutoCAD -- and
+          ;; the other dialects -- at the next top-level read. The LISP
+          ;; namespace changes at the next top-level read on both.
+          (when (eq :drawing-immediate
+                    (ignore-errors
+                     (clautolisp.autolisp-reader:dialect-feature-for
+                      (clautolisp.autolisp-runtime:current-evaluation-dialect context)
+                      :document-switch)))
+            (host-activate-document host key))
+          (clautolisp.autolisp-runtime:request-runtime-document-switch session key))
+        (host-activate-document host key))
+    key))

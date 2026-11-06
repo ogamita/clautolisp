@@ -1,0 +1,135 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: type-symbols-print-lowercase-on-autocad — AutoCAD prints (type v) of a VARIANT / SAFEARRAY in lower case
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: divergence
+#+DEPENDS: a CAD run of probes/sources/probe-type-symbols.lsp on AutoCAD and BricsCAD
+#+BRANCH: fix-type-symbols-print-lowercase-on-autocad
+#+DATE: 2026-10-08
+
+* Observation
+
+intersectwith-probe.lsp prints =(vl-princ-to-string (type v))=:
+
+| target                         | variant   | its safearray |
+|--------------------------------+-----------+---------------|
+| AutoCAD 2022 (job 17029587295) | variant   | safearray     |
+| BricsCAD V25 / V26             | VARIANT   | SAFEARRAY     |
+| clautolisp (any dialect)       | VARIANT   | SAFEARRAY     |
+
+=(eq (type v) 'VARIANT)= is true on AutoCAD all the same (the probe takes
+that branch), so the symbol is the same and only its printed name differs.
+VLA-OBJECT prints in upper case on AutoCAD too.
+
+* Proposal
+
+Measure which TYPE results AutoCAD prints in lower case (variant,
+safearray, maybe others) with vl-princ-to-string, prin1, princ and
+vl-symbol-name; if confirmed, print them that way under the AutoCAD
+dialects (a divergence to classify per AGENTS.md).
+
+* Status (2026-10-22)
+
+Not implemented: the measured evidence is not enough to decide WHAT to
+change. The only AutoCAD datum is one row of intersectwith-probe.lsp
+(job 17029587295): =(vl-princ-to-string (type v))= is "variant" /
+"safearray". probe-results/autocad/ holds no transcript of that run, and
+nothing measures:
+
+- =vl-prin1-to-string= and =vl-symbol-name= of those TYPE results, i.e.
+  whether the symbol's NAME is lower case (then =vl-symbol-name=, =strcat=
+  of it and =read= round trips all change) or only its printed form;
+- whether the literal symbol (='VARIANT=, =(read "VARIANT")=) prints in
+  lower case too on AutoCAD, i.e. whether the symbol is interned with a
+  lower-case name everywhere, independently of TYPE;
+- the other TYPE results (PICKSET, FILE, SUBR, USUBR, EXRXSUBR, INT, REAL,
+  STR, SYM, LIST). VLA-OBJECT and ENAME are known upper case on AutoCAD
+  (the observation above; block-walk probe, run 20261003T130228Z).
+
+The BricsCAD side is likewise vl-princ-to-string only.
+
+New probe suite: probes/sources/probe-type-symbols.lsp, registered in
+probes/sources/manifest.txt (=make probe=, or =PROBE_SUITES=type-symbols=).
+For every kind of value it records vl-princ-to-string, vl-prin1-to-string
+and vl-symbol-name of =(type v)=, and whether it is EQ to the upper-case
+symbol read back; for each type name, how the literal symbol prints (upper
+and lower case spellings, quoted in source) and atoms-family of VARIANT /
+SAFEARRAY. Checked under clautolisp (--dialect autocad-2022): every row
+runs, all upper case.
+
+Next: run it on AutoCAD 2022 and BricsCAD V26, commit the results under
+probe-results/, then implement exactly what they show under the AutoCAD
+dialects (printer only vs symbol name), with the --strict portability
+handling used for comparable divergences and a "*** clautolisp" note on
+the TYPE page of the specification.
+
+* Measured (2026-10-23)
+
+probe-type-symbols.lsp on AutoCAD 2022 Windows (run 20261023T074943Z),
+BricsCAD V25 Windows (20261023T075150Z), BricsCAD V26 macOS
+(20261023T031215Z). Both BricsCAD builds agree on every row.
+
+(type v) of each kind of value:
+
+| value          | AutoCAD vl-symbol-name / princ / prin1 | eq read upcase | BricsCAD V25 / V26 |
+|----------------+----------------------------------------+----------------+--------------------|
+| variant        | variant                                | T              | VARIANT            |
+| variant of SA  | variant                                | T              | VARIANT            |
+| safearray      | safearray                              | T              | SAFEARRAY          |
+| vla-object     | (type gave nil: no acad object there)  | -              | VLA-OBJECT         |
+| ename          | ENAME                                  | T              | ENAME              |
+| pickset        | PICKSET                                | T              | PICKSET            |
+| file           | FILE                                   | T              | FILE               |
+| subr car       | SUBR                                   | T              | SUBR               |
+| usubr (defun)  | SUBR                                   | T              | SUBR               |
+| exrxsubr       | EXRXSUBR                               | T              | EXRXSUBR           |
+| int real str   | INT REAL STR                           | T              | INT REAL STR       |
+| sym list       | SYM LIST                               | T              | SYM LIST           |
+
+The literal symbols, independently of TYPE (vl-princ-to-string and
+vl-symbol-name of (read "NAME"), vl-princ-to-string of (read "name")):
+
+| literal                      | AutoCAD   | BricsCAD  |
+|------------------------------+-----------+-----------|
+| VARIANT / variant            | variant   | VARIANT   |
+| SAFEARRAY / safearray        | safearray | SAFEARRAY |
+| 'VARIANT quoted in source    | variant   | VARIANT   |
+| 'safearray quoted in source  | safearray | SAFEARRAY |
+| VLA-OBJECT ENAME PICKSET FILE SUBR USUBR EXRXSUBR INT REAL STR SYM LIST | upper | upper |
+| (atoms-family 1 '("VARIANT" "SAFEARRAY")) | ("VARIANT" "SAFEARRAY") | same |
+
+Conclusion: on AutoCAD it is the symbol's NAME that is lower case -- for the
+two symbols VARIANT and SAFEARRAY only, whatever produced them (TYPE, a
+quoted literal, READ of any spelling) -- not a TYPE or printer quirk. The
+reader stays case-insensitive: every spelling reads as the same symbol,
+(eq (type v) 'VARIANT) and (eq (type v) (read (strcase (vl-symbol-name
+(type v))))) are T. (Same mechanism as the mixed-case vl-symbol-name of
+'vlax-vbEmpty in the activex-constants inventory: AutoCAD keeps the case
+its own code interned a symbol with.) BricsCAD: all upper case.
+
+Implemented (2026-10-23): safe, since identity and reading do not change,
+only the name the symbol shows.
+
+- clautolisp/autolisp-runtime/source/api.lisp: AUTOLISP-SYMBOL-PRINT-NAME
+  (exported) -- the canonical name, except "variant" / "safearray" for
+  VARIANT / SAFEARRAY under every dialect whose product is not BricsCAD
+  (*AUTOCAD-LOWER-CASE-SYMBOL-NAMES*); AUTOLISP-VL-SYMBOL-NAME uses it. The
+  symbol is still interned under "VARIANT", and every internal name
+  comparison (AUTOLISP-SYMBOL-NAME) is unchanged.
+- clautolisp/autolisp-builtins-core/source/api.lisp: AUTOLISP-VALUE->STRING
+  (princ, prin1, print, vl-princ-to-string, vl-prin1-to-string, the REPL
+  echo) prints symbols with it.
+- Spec: "*** clautolisp" note on the TYPE function page.
+- Tests (autolisp-builtins-core):
+  type-symbols-variant-safearray-names-lower-case-except-bricscad
+  (autocad-2022, autocad-2026, clautolisp, strict, lax lower case;
+  bricscad-v25, bricscad-v26 upper case; the other TYPE results upper
+  case everywhere), type-symbols-lower-case-name-is-still-the-same-symbol
+  (EQ / READ round trips per dialect, canonical name unchanged).
+
+Side observations, not acted on here:
+- (type f) of a DEFUNed function is SUBR on both vendors in this run (the
+  probe file may have been loaded compiled); clautolisp's AUTOLISP-TYPE
+  returns USUBR for an interpreted DEFUN. Worth a follow-up check.
+- AutoCAD's (vlax-get-acad-object) gave nil in this run, so the vla-object
+  row has no AutoCAD datum (VLA-OBJECT is upper case as a literal there).

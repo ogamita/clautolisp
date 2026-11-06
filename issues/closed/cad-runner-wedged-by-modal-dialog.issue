@@ -1,0 +1,175 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cad-runner-wedged-by-modal-dialog — a CAD job that waits on an invisible dialog blocks every other CAD job
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-cad-runner-wedge
+
+* Symptom
+
+On 2026-08-14, with the Windows runner online for a limited window (laptop
+on battery), NOT ONE CAD job ran in an hour. All of them sat =pending=.
+
+The runner was online and idle-looking. What was actually happening:
+
+: running: 1
+:   verify:bricscad-hidden-ui:windows | pipeline 2761439584
+:   started 21:12:16Z, duration 1937 s, status running
+
+One job, running for 32 minutes, holding the =cad=-tagged runner — which is
+configured =concurrency = 1= precisely so CAD jobs serialise. Everything
+else queued behind it: 70 CAD jobs across nine pipelines by the time it was
+noticed.
+
+* Cause, in two layers
+
+*The job hung* because it launched BricsCAD with neither a drawing nor a
+profile. pjb: "sans dessins et sans profile, bricscad met des dialogues pour
+demander a l'utilisateur quoi utiliser." Under =/Automation= the main frame
+is hidden, so the dialog is invisible as well as unanswerable. Fixed
+separately (=scripts/verify-bricscad-hidden-ui.ps1= now passes both).
+
+*The job did not END*, and that is the part this ticket is about. alfe's own
+=--timeout 180= fired — the READY wait gave up — but the CAD process alfe had
+spawned stayed alive, so the job kept running. alfe's timeout protects the
+PROTOCOL wait; it does not guarantee the engine is gone.
+
+With no =timeout:= on the job, the ceiling was the project default (an
+hour). One wedged job could therefore deny the shared CAD runner for an
+hour, and did.
+
+* Fixed here (partially)
+
+=timeout: 30m= on the four CAD gate templates in =.gitlab/native.yml=. The
+value is measured, not guessed: the longest legitimate CAD job observed is
+=encoding:experiment:bricscad:windows= at 1158 s (19 min); every other CAD
+job runs in under 223 s. 30m leaves ~55% headroom over the real outlier and
+halves the worst case.
+
+That caps the DAMAGE. It does not stop the wedge.
+
+* Still open — the engine outliving its job
+
+Two things worth doing, neither urgent now that the ceiling exists:
+
+1. *alfe should reap the engine it spawned when the protocol wait times
+   out.* It already does this on abnormal exit for BricsCAD (the .ps1
+   drivers have a "safety net" that kills the exact PID alfe reported), which
+   is evidence the problem was known but handled at the DRIVER level rather
+   than in alfe. A READY timeout should terminate the launched process
+   before returning, not leave it to whoever called alfe.
+2. *A dialog-shaped hang deserves a distinct diagnosis.* "READY-TIMEOUT,
+   last status BOOTING, launcher still running" is what BOTH a slow start
+   and a modal prompt look like. If the engine is still alive and has
+   produced no status transition at all, saying so — "the engine is running
+   but has not moved past BOOTING; on Windows this is usually a startup
+   dialog waiting for input" — would have pointed at the real cause in one
+   read instead of three wrong hypotheses.
+
+* Notes
+
+The three wrong hypotheses are worth recording, since each looked plausible:
+the default profile auto-loading the EPURE vertical application (refuted: the
+launched argv carries no =/p= at all, and per pjb EPURE needs explicit
+options); a missing document leaving =/b= no command context (plausible but
+not the mechanism); and the =/Automation= switch itself being at fault
+(refuted by the argv — the run never got far enough to exercise it).
+
+Reading the command line the script already logs settled it in one look. It
+is worth checking that first, before theorising about what a CAD does.
+
+* PARTLY RESOLVED 2026-08-15 (clautolisp 1.8.39) — and the premise was wrong
+
+The remaining item read "alfe should reap the engine it spawned when the
+protocol wait times out". Reading the code first showed that BricsCAD
+ALREADY DOES: START-ENGINE wraps the READY wait in an UNWIND-PROTECT that
+terminates the engine unless the start completed. So the premise of this
+half of the ticket was wrong, and stating it plainly matters more than
+the code that follows.
+
+What was actually missing, found by comparing the two backends:
+
+1. *AutoCAD's START-ENGINE had no such guard at all.* On a READY timeout
+   it signalled and left the spawned engine running. That is the exact
+   shape of the incident, on the other backend.
+2. *AutoCAD's SHUTDOWN used* =(uiop:terminate-process info)= *followed by
+   an UNBOUNDED* =(uiop:wait-process info)=. That is precisely the call
+   BricsCAD's own killer exists to avoid — its docstring says so: "can
+   hang on Windows when the engine (a GUI BricsCAD) is slow to die or a
+   child shares its handles -- that would freeze alfe in shutdown and
+   hang the whole job."
+3. *The careful killer was private to one backend.* %KILL-ENGINE-PROCESS
+   lived in backend-bricscad.lisp, which is exactly how the other backend
+   kept the dangerous call. Having one backend own the lesson is the
+   structural defect behind both symptoms.
+
+Fixed: KILL-ENGINE-PROCESS moves to backend-cad-common (it is not
+BricsCAD-specific — AutoCAD spawns a GUI process the same way), AutoCAD's
+shutdown uses it instead of the unbounded wait, and AutoCAD's START-ENGINE
+gains the unwind-protect reaping, mirroring BricsCAD.
+
+** Tests
+
+Four, none needing a CAD:
+
+- a live child is terminated;
+- a child that TRAPS SIGTERM is still killed, and the call RETURNS
+  promptly — the bounded-ness is the whole point, and a test that only
+  killed a cooperative process would prove nothing;
+- NIL and already-dead processes are tolerated, since the call runs from
+  an unwind-protect on a failed start where the engine may never have
+  been spawned;
+- both backends use the bounded killer and neither issues
+  =(uiop:wait-process info)= on the engine handle. Asserted on CODE with
+  comments stripped: the comment explaining why that call was removed
+  contains the call, and a check that its own rationale can fail is worse
+  than no check. (It fired on exactly that during development.)
+
+** RESOLVED 2026-09-27 (clautolisp 2.2.129) — the diagnosis half
+
+"READY-TIMEOUT, last status BOOTING, launcher still running" now reads
+differently in the case that matters.
+
+=ENGINE-NEVER-STARTED-P= is the discriminator the message was missing:
+=BOOTING= is what alfe ITSELF writes to status.txt before the launch, so
+seeing it still there means the engine published nothing at all — it never
+got as far as loading run-common.lsp. That is a different fact from a CAD
+which reached =RUNNING= and stalled, and the two used to print the same
+phrase.
+
+=READY-TIMEOUT-DIAGNOSIS= turns it into three cases:
+
+| launcher | engine moved? | phrase                                                    |
+|----------+---------------+-----------------------------------------------------------|
+| exited   | —             | =launcher exited with code N= (its output is quoted too)   |
+| alive    | yes           | =launcher still running= — it started and stalled LATER    |
+| alive    | no            | =never moved past BOOTING ... usually a startup dialog=    |
+
+The third names the likely cause: BricsCAD asks which drawing and which
+profile when given neither, and under a hidden main frame (=/Automation=)
+that dialog is invisible as well as unanswerable — which is exactly the
+2026-08-14 incident. On macOS the same shape is the Accessibility prompt
+blocking the first =osascript= keystroke.
+
+*AutoCAD's message had no launcher state at all* — found while wiring this,
+and the same structural defect the earlier half of this ticket recorded: one
+backend owning a lesson. Both now pass the last status and print the phrase.
+
+Tests (=backend-cad-tests.lisp=), pure, no CAD needed:
+
+- =ready-timeout-diagnosis-tells-a-dialog-from-a-slow-start= — the
+  discriminating pair is the point: the SAME live launcher, one engine that
+  never moved and one that did, must not produce the same phrase. Also that
+  an exited launcher is NOT diagnosed as a dialog.
+- =engine-never-started-p-is-exactly-the-no-transition-case= — nil, empty,
+  =BOOTING=, lowercase, trailing newline and CRLF (what Windows writes) are
+  all "never started"; =READY=, =RUNNING= and =FAILED= are all transitions.
+
+alfe suite: *1316 checks, 0 failures, SBCL and CCL.* Documented in the alfe
+user manual § Troubleshooting (with what to do about it, and the warning that
+a cold start legitimately takes minutes) and in RELEASE_NOTES.org.
+
+Nothing named in this ticket remains: the ceiling exists (=timeout: 30m=), the
+engine is reaped by both backends through one bounded killer, and the
+diagnosis now distinguishes the two shapes. Moved to =issues/closed/=.

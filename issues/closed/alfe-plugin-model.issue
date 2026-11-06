@@ -1,0 +1,142 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-plugin-model — the alfe plug-in system (epic); EPURE and EPUREE are the first two plug-ins
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: epic
+#+DEPENDS: -
+#+BRANCH: master (pjb's standing delegation: direct commits, no MR)
+
+See also: =alfe.plan= (Phase 5), =issues/closed/alfe-cli.issue= (the
+parsed-but-inert =--epure= flag), =issues/closed/alfe-backend-bricscad.issue=
+§7 and =issues/closed/alfe-backend-autocad.issue= §4 (the EPURE bullets
+that were deferred to this ticket), =issues/closed/transmit-options.issue=
+(=*AUTOLISP-PLUGIN-OPTIONS*=, whose plug-in activation function was "To
+Be Defined").
+
+* Context
+
+State on 2026-09-21, verified in the tree (not from memory):
+
+- =--epure= / =$AUTOLISP_EPURE= is parsed into =cli-options-epure-p=
+  (=source/cli.lisp=, =clautolisp/autolisp-cli/source/options.lisp=),
+  echoed as =*AUTOLISP-PLUGIN-OPTIONS*= = =(EPURE)=, and surfaces in
+  =--help= as "Enable the EPURE plugin hook". *No backend reads the
+  slot*: it does nothing. The manual and the spec's EPURE section
+  describe the behaviour of the legacy bash wrapper
+  (=outils-autolisp/autolisp-script/autolisp-deprecated=) as if alfe had it.
+- The only EPURE-related code in alfe runs the other way:
+  =discover-bricscad-profile= + =build-launch-argv= launch BricsCAD with a
+  /clean/ profile so the default profile does not auto-load EPURE/SCHMS+
+  and stall the =/b= script.
+- Every EPURE-style customisation so far was a special case in the
+  wrapper; the first sentence of the spec's EPURE section already says
+  "this option is specific to a single user. A way of defining such
+  options as modular plug-ins should be found".
+
+The original ticket (2026-05-24) listed three open design decisions
+(discovery, lifecycle hooks, per-backend gating). They are settled below.
+
+* Decisions
+
+** Taken by pjb, 2026-09-21
+
+1. alfe gets a *plug-in system*. The first plug-in is *EPURE*, the second
+   *EPUREE* (=--epuree=).
+2. A plug-in can *define CLI options, with arguments*.
+3. A plug-in can *intervene, modify or complete* alfe's behaviour *at
+   every stage* of the process.
+4. Plug-ins are *installed* under
+   =${PREFIX}/share/clautolisp/plug-in/${name}/${name}.lisp= (source) or
+   =${name}.${alfe-version}-${impl}.plugin= (compiled), or *locally in the
+   right XDG directory*. They are written in *Common Lisp*.
+5. EPURE follows what the legacy tools did
+   (=~/works/sncf-reseau/scripts/{autocad,bricscad}-epure= and the old
+   =autolisp= wrapper): the plug-in defines =--epure=; when alfe launches
+   AutoCAD or BricsCAD the launch options are modified as
+   =scripts/${cad}-epure= does; because EPURE is started by *running a
+   script*, the script alfe generates calls it at the right moment (or
+   replaces it). =--mode batch= may not be usable, in which case COM
+   (automation) starts the EPURE script and the run-time. If the run-time
+   is what is started, the GUI stays blocked for the duration — a problem
+   or not depending on the use.
+6. EPUREE (=--epuree=) is simpler: it loads =epuree= (a future ALPM package,
+   =~/works/sncf-reseau/src/epuree/=) at the right moment.
+
+** Design choices taken here (to be reviewed; each is one line to change)
+
+The normative text is the spec chapter "Plug-ins"
+(=documentation/alfe--specifications.org=). Summary:
+
+- *Load all, activate by flag.* Every installed plug-in is loaded at
+  start-up so its options exist for the parser; only an *active* plug-in
+  (its activation flag, =--plugin NAME=, or =$ALFE_PLUGINS=) has its hooks
+  called. A plug-in option without its plug-in active is a usage error.
+- *Namespaced options.* A plug-in named =NAME= may only define long
+  options =--NAME= or =--NAME-…=; no short options. Collisions are
+  registration errors, never silent shadowing.
+- *One hook mechanism, three kinds* (event / filter / collect), one
+  catalogue of named hook points covering parse → backend selection →
+  plan → workdir → run-common.lsp → launcher script → launch argv →
+  engine started → each action → shutdown → exit code → error.
+- *Zero plug-ins active = zero behaviour change.* Every hook call site is
+  a no-op that returns its input unchanged when no active plug-in
+  registered that hook.
+- *A plug-in that fails to load is a warning*, never fatal: =--help=,
+  =--version= and every plug-in-free run keep working.
+- *Compiled plug-ins are named for the alfe version and the CL
+  implementation* because a fasl is valid for exactly one of each; the
+  compiled file is preferred when it is at least as new as the source.
+
+* Decomposition
+
+| Issue                        | Deliverable                                                        | Depends on                  |
+|------------------------------+--------------------------------------------------------------------+-----------------------------|
+| alfe-plugin-spec-and-manual  | Design in the spec + user manual + man page + release notes        | -                           |
+| alfe-plugin-loader           | Discovery, search path, source/compiled loading, =--plugin*= options, install layout | spec-and-manual |
+| alfe-plugin-options          | Plug-in-defined CLI options with arguments, activation, help, =cli-options= slots | loader        |
+| alfe-plugin-hooks            | =alfe.plugin= API, hook catalogue, instrumentation of cli/backends | options                     |
+| alfe-plugin-epure            | EPURE plug-in (BricsCAD + AutoCAD launch under EPURE)              | hooks                       |
+| alfe-plugin-epuree           | EPUREE plug-in + =epuree.alpm=                                     | hooks                       |
+| alfe-plugin-epure-windows-validation | Real-CAD validation of EPURE on the Windows runner         | epure, =windows-access=     |
+
+* Acceptance criteria (epic)
+
+- All sub-issues closed (the last one, the Windows validation, may stay
+  open as its own issue: it needs hardware this session does not have).
+- =alfe --epure --bricscad …= and =alfe --epure --autocad …= produce the
+  launch command, launcher script and run-common.lsp the legacy wrapper
+  produced (asserted with the mock CAD, =--print-command= and
+  =*host-os-override*=).
+- =alfe --epuree …= puts the ALPM load of =epuree= in front of the user's
+  actions, on every backend.
+- The old =cli-options-epure-p= slot and the built-in =--epure= spec are
+  gone (no silent legacy alias: the option now comes from the plug-in).
+- =make -C autolisp-front-end test-sbcl test-ccl check-spec-coverage
+  check-user-visible-documentation= green; spec, user manual, man page,
+  =--help= and =RELEASE_NOTES.org= in step.
+
+* Migration note
+
+When each sub-issue closes, update the "Deferred items" notes of
+=issues/closed/alfe-backend-bricscad.issue= and
+=issues/closed/alfe-backend-autocad.issue= to name the closing commit.
+
+* Resolved (alfe 2.2.76, clautolisp 2.2.76)
+
+Shipped: the plug-in system (=source/plugin.lisp=), the =epure= and =epuree=
+plug-ins (=plugins/=), 18 hook points, plug-in-defined options with
+arguments, discovery / source / compiled =.plugin= / =--compile-plugin= /
+=make install-plugins=, spec + user manual + man page + release notes.
+Removed: =cli-options-epure-p= and the built-in =--epure= (no legacy alias).
+
+Left open, as their own issues:
+- =alfe-plugin-epure-windows-validation= (BLOCKED, windows-access): the
+  nested-._SCRIPT and COM-SendCommand-order assumptions, and dropping
+  =/Automation=.
+- =deferred-alfe-plugin-followups=: a compile cache for source plug-ins,
+  hook-timing subtleties, the installed EPUREE bundle, API versioning.
+- =ccl-protocol-write-atomic-file-contention-hangs= (found on the way,
+  unrelated).
+
+Test counts: alfe suite 716 -> 1017 checks (SBCL); the 110 plug-in / CLI /
+conformance tests also pass under CCL; conformance 49 pass / 7 skipped.

@@ -1,0 +1,199 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html401/strict.dtd">
+<html>
+  <head>
+    <title>Demonstration alref</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  </head>
+  <body>
+    <h1>Demonstration alref</h1>
+    
+    <p><code>alref</code> defini quelques fonctions pour obtenir la documentation des
+      fonctions et variables (system variables) d'<em>autocad</em> et de <em>bricscad</em>.</p>
+
+    <p>On charge le source <code>alref.lsp</code>, puis on défini la racine
+      de la documentation <code>autolisp-spec</code>. Ceci peut être fait
+      avec cette fonction <code>load-alref</code>:
+      
+    <pre>
+(defun load-alref ( / root)
+  (load "/opt/local/share/autolisp/site-lisp/autolisp-spec/alref.lsp")
+  (setq root "/opt/local/share/autolisp-spec/")
+  (if *AUTOLISP-VERBOSE*
+      (progn
+        (princ "alref root set to ")
+        (princ root)
+        (princ "\n")))
+  (alref-set-root root)
+  'load-alref)
+    </pre>
+
+
+    <p>Voici un exemple montrant l'usage quelques fonctions de <code>alref</code>
+      (dans cet exemple <code>alref</code> est chargé automatiquement dans
+      <code>~/.autolisp</code>).</p>
+    
+    <pre>
+~/works/sncf-reseau/src/run-forest-run
+master
+11:07[pjb@thalassa org.xquartz:0 …un-forest-run 29Gi]$ <b style="color:red;border-bottom-style:solid;">clautolisp</b>
+DBG> clautolisp debugger attached (h for help)
+Welcome to clautolisp Version 1.7.18
+Copyright 2026-2026 Ogamita Ltd
+Licensed under AGPL; source codes available at:
+http://gitlab.com/ogamita/clautolisp/
+AUTOLISP REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+_$ <b style="color:red;border-bottom-style:solid;">(alref-apropos "LOG")</b>
+LOG	Function
+LOGAND	Function
+LOGIOR	Function
+CLAL-COMMAND-LOG	Function
+LOAD_DIALOG	Function
+NEW_DIALOG	Function
+START_DIALOG	Function
+DONE_DIALOG	Function
+UNLOAD_DIALOG	Function
+TERM_DIALOG	Function
+INIT_DIALOG	Function
+LOG10	Function
+REDRAW_DIALOG	Function
+ACET-FILE-READDIALOG	Function
+ACET-FILE-WRITEDIALOG	Function
+LOGXOR	Function
+ACTIVITYINSIGHTSVIEWEDLOGGING	Sysvar	1
+CLOUDLOG	Sysvar	0
+CLOUDLOGVERBOSE	Sysvar	0
+CMDLINEFADINGLOGBGCOLOR	Sysvar	"RGB: 50 54 56 (Settings dialog) #323638 (Command line)"
+CMDLINEFADINGLOGFADEDELAY	Sysvar	2.0
+CMDLINEFADINGLOGFGCOLOR	Sysvar	"White"
+CMDLINEFADINGLOGTRANSPARENCY	Sysvar	30
+CMPLOG	Sysvar	0
+DATACOLLECTIONLOGINTYPE	Sysvar	0
+HALOGAP	Sysvar	0
+LOGFILEMODE	Sysvar	0
+LOGFILENAME	Sysvar	""
+LOGFILEPATH	Sysvar	""
+LOGGEDINSTATUS	Sysvar	0
+LOGINNAME	Sysvar	""
+USESTANDARDOPENFILEDIALOG	Sysvar	0
+VSHALOGAP	Sysvar	0
+33
+_$ <b style="color:red;border-bottom-style:solid;">(alref-describe "LOGFILEPATH")</b>
+=== System Variable Entry: LOGFILEPATH ===
+Chapter 16.
+
+,*** Name
+LOGFILEPATH
+
+,*** Type
+string
+
+,*** Default
+varies by host
+
+,*** Read-Only
+no
+
+,*** Scope
+registry; saved in registry
+
+,*** Description
+Specifies the path for the command history log files for all drawings in a session.
+
+,*** Compatibility
+AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
+
+,*** Source Notes
+- AutoCAD: https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0E2D4DF2-4C26-48AC-ACBC-819E3C46CE59
+- BricsCAD: https://help.bricsys.com/en-us/document/system-variable-reference/l/logfilepath-system-variable
+"16-system-variable-entry-logfilepath"
+_$ <b style="color:red;border-bottom-style:solid;">(alref-describe "NEW_DIALOG")</b>
+=== Function Entry: NEW_DIALOG ===
+Chapter 18.
+Function entry: NEW_DIALOG.
+
+,*** Name
+`new_dialog`
+
+,*** Class
+DCL Function
+
+,*** Syntax
+(new_dialog dialog-name dcl-id [action [screen-pt]])
+
+,*** Description
+Creates or activates a dialog from a previously loaded DCL resource.
+
+,*** Return Values
+Success indicator under host semantics.
+
+,*** Side Effects
+Initializes the active dialog state and dialog tiles.
+
+,*** Availability
+- AutoCAD 2026: documented (per Autodesk reference page).
+- BricsCAD V26: presumed compatible (no contradicting page found).
+- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+
+,*** Source Notes
+- [Function Sequence to Display and Work with a Dialog](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-FD32ADB3-F16E-42AA-BD37-53259B824AAB.htm)
+- [Displaying Nested Dialog Boxes](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-DA0D5D75-C954-408A-AC43-FFD09E6D2517.htm)
+- Status: documented in the DCL workflow documentation.
+"18-function-entry-new-dialog"
+_$ <b style="color:red;border-bottom-style:solid;">(alref-apropos-list "CAR")</b>
+("CAR" "MAPCAR" "ACET-STR-ESC-WILDCARDS")
+_$ <b style="color:red;border-bottom-style:solid;">(alref-documentation "MAPCAR")</b>
+"=== Function Entry: MAPCAR ===
+Chapter 10.
+Function entry: MAPCAR.
+
+,*** Name
+`mapcar`
+
+,*** Class
+Function
+
+,*** Syntax
+(mapcar function list [list ...])
+
+,*** Arguments and Values
+- `function`: function designator
+- one or more lists
+
+,*** Description
+Applies `function` element-wise across the supplied lists and returns a list of results.
+
+,*** Return Values
+List of mapped results.
+
+,*** Side Effects
+Side effects are those of applying the supplied function to the elements.
+
+,*** Exceptional Situations
+Autodesk documents that the function must accept as many arguments as there are list arguments to `mapcar`.
+
+,*** Examples
+- `(mapcar '1+ (list a b c)) => (11 21 31)` in Autodesk's documented example context
+- `(mapcar '(lambda (x) (+ x 3)) '(10 20 30)) => (13 23 33)`
+
+,*** Compatibility
+Closely tied to the semantics of `function`, `lambda`, and function-valued designators.
+
+,*** Availability
+- AutoCAD 2026: documented (per Autodesk reference page).
+- BricsCAD V26: presumed compatible (no contradicting page found).
+- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+
+,*** Source Notes
+- [mapcar (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-8802AE73-1A05-457E-8A51-09677C23E26E.htm)
+- Status: documented."
+_$ <b style="color:red;border-bottom-style:solid;">(quit)</b>
+clautolisp: terminated by QUIT
+
+DBG> detached
+
+~/works/sncf-reseau/src/run-forest-run
+master
+11:23[pjb@thalassa org.xquartz:0 …un-forest-run 29Gi]$ 
+    </pre>
+  </body>
+</html>

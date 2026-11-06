@@ -1,0 +1,170 @@
+Title: BricsCAD macOS automation: CAD-side protocol loop reaches STOPPED before any request is served
+Status: RESOLVED 2026-09-12, statistically confirmed. 8 runs of
+  verify:bricscad-automation:macos phase 1 (3 genuinely cold starts, 5
+  warm reuses of an already-running session), all AFTER the parent
+  ticket's full fix set landed: 7 PASS, 1 FAIL. Zero occurrences of the
+  STOPPED/status-99 signature across all 8 — grepped for directly, not
+  just eyeballed. The one failure showed a completely different, already
+  -understood signature (status stuck at BOOTING, a focus-deviation error
+  from the injection layer's own documented ~1-in-10 flakiness, exit code
+  6) and PASSED immediately on an unmodified retry. This ticket's own
+  cause is confirmed to have been the shared-template lock bug fixed in
+  alfe-bricscad-automation-macos-reopens-welcome-page — with that fixed,
+  the STOPPED symptom this ticket describes has not recurred once in 8
+  tries under mixed cold/warm conditions.
+Priority: P3
+Type: bug / investigation
+Depends: issues/closed/alfe-bricscad-automation-macos-osascript.issue
+
+* What
+
+Discovered while verifying alfe-bricscad-automation-macos-osascript's
+hardened AppleScript injection live (2026-09-11, real BricsCAD V26 on
+macOS). The injection itself now works reliably (see that issue's Round
+6: `(load "<run-common.lsp>")` typed correctly and evaluated, three
+separate times across three separate live runs). But
+scripts/verify-bricscad-automation.sh phase 1 (`--mode automation`)
+still does not reach the READY -> request -> DONE protocol cycle:
+
+  - protocol/status.txt ends at "STOPPED", never READY/BOOTING/RUNNING.
+  - top-level status.txt (the legacy *AUTOLISP-STATUSFILE* channel) ends
+    at "99" — a value the runtime source's own comments already call
+    "the mystery status 99" (autolisp-remote-io.lsp, two occurrences,
+    in autolisp-protocol-server-loop and -selftest-loop).
+  - protocol/stdout.txt and protocol/stderr.txt are both empty.
+  - marker-present=0: the probe's expected echo never arrives.
+  - Reproduced twice, with ALFE_PROBE_TIMEOUT=60 and at the script's real
+    240s default — same result both times, so it is NOT a timeout-budget
+    problem (ruling out "just needs longer to boot").
+  - Phase 2 (--mode batch, the control) PASSES every time: BricsCAD, the
+    template, and the file-IPC protocol mechanism itself are healthy.
+    Only the automation-launched variant fails to complete the cycle.
+
+* What IS proven to work (ruling things out)
+
+  - The CAD-side runtime genuinely starts: protocol/heartbeat.txt,
+    protocol/runtime-flags.txt (DEBUG=0 VERBOSE=0) and
+    protocol/runtime-info.txt ("BricsCAD" / "26.0 BricsCAD" / "BRICSCAD")
+    are all populated after a failing run — these are only written once
+    AUTOLISP-PROTOCOL-SERVER-LOOP is well underway (past its own
+    ALFE-PUBLISH-RUNTIME-FLAGS call and past run-common.lsp's bootstrap
+    + runtime LOAD calls, both of which report success).
+  - The live console shows `(load ".../run-common.lsp")` -> nil with NO
+    CAD-side Lisp error — so run-common.lsp ran to completion.
+  - AUTOLISP-PROTOCOL-REMOTE-READ-LINE
+    (source/runtime/autolisp-remote-io.lsp:148) is purely file-poll
+    based — it reads *AUTOLISP_PROTOCOL_STDINFILE* via
+    AUTOLISP-PROTOCOL-POP-FILE-LINES and yields via
+    AUTOLISP-PROTOCOL-YIELD (vlax-sleep/sleep/grread/delay) — it does
+    NOT touch the process's real stdin at all. So "a detached, no-piped-
+    stdin `open -a`-launched BricsCAD sees immediate EOF" (my first
+    hypothesis on discovering this) is FALSE — checking the source
+    disproved it before spending machine time on it.
+
+* Leading hypothesis (NOT yet confirmed)
+
+AUTOLISP-PROTOCOL-SERVER-LOOP's `while (not *AUTOLISP_PROTOCOL_STOP*)`
+only exits via its normal fall-through — i.e. something sets
+*AUTOLISP_PROTOCOL_STOP*. The two ways that happens:
+  1. A read error (vl-catch-all-error-p on autolisp-protocol-remote-read)
+     — ruled out: that path also writes "ERROR protocol read: ..." to
+     protocol/stderr.txt via AUTOLISP-PROTOCOL-WRITE-STDERR, and stderr
+     is empty.
+  2. AUTOLISP-PROTOCOL-HANDLE-CONTROL sees "SHUTDOWN" in
+     protocol/control.txt (source/runtime/autolisp-remote-io.lsp:136),
+     sets *AUTOLISP_PROTOCOL_STOP* T, and the loop's next read-line
+     synthesizes the `__AUTOLISP_PROTOCOL_STOP__` sentinel that ends it
+     cleanly (matching the empty-output, no-error symptom exactly).
+
+So: something on ALFE'S OWN side most likely writes SHUTDOWN into
+protocol/control.txt for the automation variant, on a path that batch
+mode does not take. Next steps to confirm/deny:
+
+  - grep the alfe source for what writes protocol/control.txt / a
+    "SHUTDOWN" string (session shutdown, unwind-protect cleanup in
+    START-ENGINE, or SESSION-STATE-SET machinery) and check whether it
+    fires on a condition that is specific to the :automation variant
+    (e.g. a stray PING/SHUTDOWN sent during the wait-for-READY polling
+    loop, or session teardown racing the CAD's own READY publish).
+  - Add a debug trace (the CAD side already has *AUTOLISP_DEBUG*-gated
+    ALFE-DEBUG-LOG plumbing — turn it on via --debug and inspect
+    logs/debug.log from a failing run) to see exactly which control
+    message arrives and when, relative to READY being published.
+  - Time the window between "READY 0" being set and "STOPPED" being set
+    (both visible in this codebase's own log lines) to see if it's near-
+    instant (supports the SHUTDOWN-race hypothesis) or after a
+    meaningful delay (would point elsewhere).
+
+* Notes / constraints
+
+  - Machine-only, like its parent ticket: needs a live macOS + BricsCAD
+    session, Accessibility granted, ALFE_ENABLE_MACOS_AUTOMATION=1.
+  - Kept failing workdirs from the two live repro runs were NOT preserved
+    beyond this session (they live under $TMPDIR and were not copied
+    anywhere durable) — re-run scripts/verify-bricscad-automation.sh with
+    the opt-in set to reproduce; it keeps the workdir on failure and
+    reports its path.
+  - This is downstream of and independent from the injection layer,
+    which is now fixed and verified — see the parent issue's Round 6.
+    Do not re-litigate the AppleScript/keystroke mechanism here; the
+    console-window-focus fix stands on its own evidence.
+
+* References
+
+  - issues/closed/alfe-bricscad-automation-macos-osascript.issue (Round 6:
+    the injection fix + how this was discovered)
+  - autolisp-front-end/source/runtime/autolisp-remote-io.lsp
+    - AUTOLISP-PROTOCOL-SERVER-LOOP (~line 239)
+    - AUTOLISP-PROTOCOL-REMOTE-READ-LINE (~line 148)
+    - AUTOLISP-PROTOCOL-HANDLE-CONTROL (~line 130) — the SHUTDOWN path
+  - autolisp-front-end/source/backend-bricscad.lisp START-ENGINE
+    (~line 1113) — the alfe-side READY wait / session teardown
+  - scripts/verify-bricscad-automation.sh (the harness that reproduces it)
+
+* RESOLVED 2026-09-12 — 8-run statistical confirmation
+
+pjb: "Verify and try to confirm ... You may make a few runs to validate
+statistically the behavior of bricscad."
+
+8 runs of `ALFE_ENABLE_MACOS_AUTOMATION=1
+scripts/verify-bricscad-automation.sh`, back to back, checking BricsCAD's
+process health between each (never let a hung/degraded instance carry
+into the next run) and deliberately mixing conditions for coverage:
+
+  run  start   result   status.txt        notes
+  ---  -----   ------   ----------        -----
+  1    cold    PASS     (READY->DONE)     the confirmation run from the
+                                           prior turn, included for the
+                                           full count
+  2    warm    PASS     (READY->DONE)
+  3    warm    PASS     (READY->DONE)
+  4    cold    PASS     (READY->DONE)     force-quit before this run
+  5    warm    PASS     (READY->DONE)
+  6    cold    FAIL     BOOTING           force-quit before this run;
+                                           "console kept losing keyboard
+                                           focus; gave up after 3
+                                           attempts" (exit 6) — the
+                                           injection layer's own
+                                           documented ~1-in-10 System
+                                           Events flakiness (see the
+                                           parent ticket's Round 8), NOT
+                                           this ticket's signature
+  7    warm    PASS     (READY->DONE)     immediate unmodified retry
+                                           after run 6 — passed cleanly
+  8    warm    PASS     (READY->DONE)
+
+7/8 PASS. The one failure was grepped for specifically (not just
+eyeballed): no "STOPPED", no "status 99", no "mystery" anywhere in
+its log — protocol/status.txt read "BOOTING", meaning the CAD-side
+protocol loop never even got far enough to be the thing that failed; the
+injection itself did not land that run, a categorically different and
+already-understood failure mode. BricsCAD's process was checked healthy
+(low CPU, responsive to Accessibility queries) after every single run,
+including the failing one — no hang recurred either, across this batch.
+
+Conclusion: this ticket's own STOPPED/"mystery status 99" signature did
+not occur ONCE in 8 tries spanning both cold and warm starts, after the
+shared-template-lock fix
+(alfe-bricscad-automation-macos-reopens-welcome-page) landed. That fix is
+confirmed to be this ticket's actual root cause, not merely a plausible
+guess. Closing.

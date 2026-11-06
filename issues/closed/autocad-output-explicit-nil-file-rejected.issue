@@ -1,0 +1,99 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: autocad-output-explicit-nil-file-rejected -- AutoCAD 2022 rejects (princ X nil), the spec says nil means the command line
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: dialect-divergence
+#+DEPENDS: -
+#+BRANCH: fix-printer-explicit-nil-file
+#+DATE: 2026-11-04
+
+* Observed
+
+Found while fixing alfe-autocad-fixed-arity-output-shadows (alfe 2.3.87), on
+pfenny (Windows), AutoCAD 2022 accoreconsole (ACADVER 24.1, LISPSYS 0), with
+the NATIVE primitives (alfe no longer redefines them there):
+
+#+begin_example
+alfe -norc --autocad --mode batch \
+  -x "(foreach f (quote (princ print prin1))
+        (setq r (vl-catch-all-apply f (list \"x\" nil)))
+        (princ (strcat \"\nNILFILE \" (vl-symbol-name f) \" \"
+                       (if (vl-catch-all-error-p r) (vl-catch-all-error-message r)
+                           (vl-prin1-to-string r)))))" --quit
+NILFILE PRINC type d'argument incorrect: FILE nil
+NILFILE PRINT type d'argument incorrect: FILE nil
+NILFILE PRIN1 type d'argument incorrect: FILE nil
+#+end_example
+
+So on AutoCAD 2022 an explicit NIL file argument is an error ("bad argument
+type: FILE nil"), for all three. The 1-argument and file-descriptor forms work.
+
+* The divergence
+
+The AutoLISP Spec's princ / print / prin1 entries say of =fileHandle=: "If
+omitted or =nil=, output goes to the command line." clautolisp follows that
+(an explicit nil is accepted in every dialect). AutoCAD 2022 does not.
+
+Open questions (record per AGENTS.md "Unverified Spec Behaviour" until
+probed):
+
+1. What do Autodesk's and Bricsys's reference pages say about an explicit
+   nil (is "or nil" in the spec ours, or theirs)?
+2. BricsCAD V25 / V26 behaviour (expected to accept it, untested).
+3. AutoCAD at LISPSYS 1 / 2, and AutoCAD 2026.
+4. Classification (AGENTS.md, Dialect Divergence): case 2 or 3, and what
+   =--autocad= must do (reproduce the error and warn?).
+
+* Also relevant to alfe
+
+Code alfe evaluates itself on AutoCAD has its output calls rewritten onto
+=autolisp-princ-to= & co., which accept a nil FILE. So =(princ "x" nil)= works
+in an =-l= file under alfe and fails in the same code compiled into a VLX.
+Documented in the alfe user manual (Output on AutoCAD); whether alfe should
+reproduce AutoCAD's error there follows from the classification above.
+
+* Resolved (clautolisp / alfe 2.3.88, 2026-11-04)
+
+Answers to the open questions:
+
+1. Both references document an explicit NIL. Autodesk's princ page types
+   =file-desc= "File or nil"; Bricsys's says "if omitted or NIL is used,
+   output goes to command line". So the spec's "or nil" is the vendors'.
+2. BricsCAD V26 (macOS, launched directly with =-B= so alfe's variadic
+   shadows were not in the way) accepts it: =(princ "x" nil)=,
+   =(print "x" nil)= and =(prin1 "x" nil)= return ="x"=; so do
+   =(write-line "x" nil)= and =(write-char 65 nil)= (LISPSYS 0).
+3. Not measured: AutoCAD 2026, and AutoCAD 2022 at LISPSYS 1 / 2. pfenny went
+   offline mid-probe, and AutoCAD for Mac's accoreconsole has a known headless
+   blocker. Recorded as SPEC-UNCERTAIN in %resolved-printer-nil-file-policy and
+   under deferred-spec-research.issue; probes/sources/probe-printer.lsp now
+   carries the cases.
+4. Classification: case 2 (resolved). The references agree and AutoCAD 2022's
+   product contradicts its own reference, so the documented behaviour (output
+   to the command line) is normative.
+
+What shipped:
+
+- clautolisp: princ / print / prin1 with an explicit NIL file signal the
+  bad-argument error under every =--dialect autocad= version (as AutoCAD 2022
+  does), print to the command line elsewhere. The =[printer-nil-file]= warning
+  fires once per run under the AutoCAD dialects and =--strict=. The
+  one-argument call is unchanged everywhere. Test:
+  =builtin-printers-explicit-nil-file-per-dialect=.
+- alfe: on AutoCAD, a call written with its FILE argument is rewritten onto
+  =autolisp-princ-to-file= / =-print-to-file= / =-prin1-to-file=. These hand a
+  NIL file to the CAD's own primitive, so alfe-evaluated code fails exactly
+  like the same code compiled into a VLX (in 2.3.87 it was silently accepted).
+  The alfe tests that passed NIL only to dodge the old 2-argument shadows now
+  use the 1-argument form.
+- Docs: the AutoLISP Spec 0.14.8 (PRINC "Tested Behaviour (explicit NIL
+  file)" and clautolisp notes on PRINC / PRINT / PRIN1); the regenerated
+  dialect-warnings annex; the clautolisp and alfe user manuals; RELEASE_NOTES.
+
+Verified on AutoCAD 2022 (pfenny, accoreconsole, 2026-11-05) with alfe 2.3.89
+built from master: an alfe-evaluated (princ "x" nil) and (print "y" f) with f
+nil now fail with AutoCAD's own "type d'argument incorrect: FILE nil" (exit 1),
+as the same code compiled into a VLX does. (princ / prin1 / print X F) on an
+open descriptor still write the file ("file-ok\"q\"\r\n3 "). The natively
+loaded functions of alfe-autocad-fixed-arity-output-shadows still return DONE /
+DONE-ALL, and alfe's own output keeps its bytes (XY\r\n1 "Z"\r\n\r\n).

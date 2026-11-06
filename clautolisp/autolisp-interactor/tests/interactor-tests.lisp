@@ -36,6 +36,23 @@
     (is (input-command-p cmd))
     (is (equal '("date") (input-command-invocation cmd)))))
 
+(test crlf-lines-read-like-lf-lines
+  ;; A CRLF line (a Windows console, an Emacs shell buffer on MS-Windows)
+  ;; must not leave its CR in the command: `,help<CR>' used to look up the
+  ;; command "help<CR>" and answer `? unknown command', which a terminal
+  ;; honouring the CR displayed as a lone `"'.
+  (let ((crlf (format nil "~C~C" #\Return #\Newline)))
+    (destructuring-bind (cmd sexp)
+        (read-all #'comma-command-read
+                  (concatenate 'string ",help" crlf "(setq x 1)" crlf))
+      (is (input-command-p cmd))
+      (is (equal '("help") (input-command-invocation cmd)))
+      (is (equal "help" (input-command-raw cmd)))
+      (is (equal '(setq x 1) sexp)))
+    (destructuring-bind (cmd)
+        (read-all #'command-read (concatenate 'string "break 42" crlf))
+      (is (equal "break 42" (input-command-raw cmd))))))
+
 (test multi-line-forms-read-across-lines
   ;; the sexp reader consumes the unread line plus the following ones
   (destructuring-bind (form) (read-all #'command-read (format nil "(+ 1~%   2)~%"))

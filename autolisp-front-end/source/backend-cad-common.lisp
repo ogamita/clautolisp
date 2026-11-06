@@ -14,12 +14,17 @@
                 #:backend-protocol-error
                 #:backend-eval-error)
   (:import-from #:alfe.backend
-                #:make-eval-result)
+                #:make-eval-result
+                #:write-key-value-file
+                #:read-key-value-file
+                #:key-value)
   (:import-from #:alfe.logging
                 #:log-debug
-                #:log-verbose)
+                #:log-verbose
+                #:log-warn)
   (:export ;; OS detection
            #:host-os
+           #:*host-os-override*
            #:macos-p
            #:linux-p
            #:windows-p
@@ -30,11 +35,43 @@
            #:windows-glob-existing-files
            #:vbs-escape
            #:applescript-escape
+           #:cad-com-mode
+           #:check-com-attach-pid
            ;; runtime LSP discovery
            #:discover-runtime-lsp
            #:discover-bootstrap-lsp
+           #:require-runtime-assets
+           #:installation-prefixes
+           #:alfe-executable-p
+           #:asset-search-candidates
+           #:*executable-pathname-function*
+           #:*vendored-asset-system*
+           #:*runtime-lsp-fallback-paths*
+           #:*bootstrap-lsp-fallback-paths*
            ;; protocol-driven eval-plan
            #:drive-protocol-actions
+           ;; launcher liveness during the READY wait
+           #:launcher-exit-code
+           #:launcher-alive-or-clean-p
+           #:launcher-state-description
+           #:engine-never-started-p
+           #:ready-timeout-diagnosis
+           #:launcher-failure-details
+           #:kill-engine-process
+           #:cad-argument-path
+           ;; the engine's console, captured to files (never an undrained pipe)
+           #:console-capture
+           #:console-capture-p
+           #:make-console-capture
+           #:console-capture-stdout-path
+           #:console-capture-stderr-path
+           #:console-capture-launch-keys
+           #:console-capture-text
+           #:process-console-text
+           ;; plug-in support: launcher script slots, launch options
+           #:expand-plugin-slots
+           #:launcher-lines
+           #:call-launcher
            ;; CAD program discovery + denotation (backend selection)
            #:cad-program
            #:cad-program-kind
@@ -43,24 +80,41 @@
            #:cad-program-path
            #:cad-program-denotation
            #:discover-cad-programs
+           #:autocad-release-in-path
            #:print-cad-programs
-           #:resolve-cad-denotation))
+           #:resolve-cad-denotation
+           ;; -Efile forwarded to the CAD's own OPEN
+           #:cad-file-encoding-plan
+           #:cad-open-write-ccs
+           ;; the CAD's own command-history log (--cad-log, -Elog)
+           #:cad-log-files
+           #:cad-log-decode-encoding
+           #:decode-cad-log-octets
+           #:collect-cad-log))
 
 (in-package #:alfe.backend.cad-common)
 
 ;;; --- OS detection -------------------------------------------------
 
+(defvar *host-os-override* nil
+  "When non-NIL, forces HOST-OS to return this keyword (:macos / :linux /
+:windows) instead of the compile-time detection. Its only purpose is to
+let tests exercise a platform-specific launch path — e.g. the Windows
+`/Automation' batch argv (alfe-bricscad-batch-hidden-ui) — from a host of
+a different OS. NIL in production; never bound outside the test suite.")
+
 (defun host-os ()
   "Return one of :macos :linux :windows :unknown. The detection only
 looks at compile-time *features*; UIOP exposes a similar helper but
 its name differs across versions, and we don't need uiop's full
-matrix here."
-  (cond
-    #+darwin                   ((or :macos))
-    #+(and unix (not darwin))  ((or :linux))
-    #+(or win32 windows mswindows)
-                               ((or :windows))
-    (t                          :unknown)))
+matrix here. *HOST-OS-OVERRIDE*, when set, wins (tests only)."
+  (or *host-os-override*
+      (cond
+        #+darwin                   ((or :macos))
+        #+(and unix (not darwin))  ((or :linux))
+        #+(or win32 windows mswindows)
+                                   ((or :windows))
+        (t                          :unknown))))
 
 (defun macos-p ()   (eq (host-os) :macos))
 (defun linux-p ()   (eq (host-os) :linux))
@@ -140,6 +194,93 @@ leave backslashes alone (Windows paths embed them verbatim)."
                (#\" (write-string "\"\"" out))
                (t   (write-char ch out))))))
 
+;;; --- launch a new CAD, or attach to a running one ---------------------
+
+(defun cad-com-mode (cli-options env-var)
+  "The COM mode of a Windows automation bridge: \"launch\" (CreateObject: a
+NEW instance), \"attach\" (GetObject: the running one, or fail) or \"auto\"
+(attach when one runs, else launch).
+
+LAUNCHING IS THE DEFAULT (alfe-cad-launch-new-by-default, pjb 2026-10-23).
+It used to be \"auto\", and a batch run then worked inside whatever CAD was
+open -- somebody's session, or a leftover of an earlier CI job stuck on a
+dialog. --backend launch / attach decide; without either, ENV-VAR
+($AUTOCAD_COM_MODE / $BRICSCAD_COM_MODE) may still name one of the three
+modes, and anything else means \"launch\"."
+  (case (and cli-options
+             (clautolisp.autolisp-cli:cli-options-backend-variant cli-options))
+    (:attach "attach")
+    (:launch "launch")
+    (t (let ((env (string-downcase (or (uiop:getenv env-var) ""))))
+         (if (member env '("launch" "attach" "auto") :test #'string=)
+             env
+             "launch")))))
+
+(defparameter +com-active-pid-ps1+
+  "# Which process is the COM-registered instance of a ProgID? Emitted by alfe.
+param([string] $ProgId)
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AlfeComPid {
+    [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+}
+'@
+try {
+    $app = [System.Runtime.InteropServices.Marshal]::GetActiveObject($ProgId)
+    $p = [uint32] 0
+    [void] [AlfeComPid]::GetWindowThreadProcessId([IntPtr] [long] $app.HWND, [ref] $p)
+    \"PID=$p\"
+} catch { \"NONE\" }
+"
+  "PowerShell printing PID=<n> for the instance GetActiveObject(ProgID)
+returns, or NONE. In PowerShell, not in the VBScript bridge: the
+application's HWND is a LONG_PTR, a type VBScript cannot hold on x64.")
+
+(defun com-registered-instance-pid (progid workdir &key (runner #'uiop:run-program))
+  "The PID of the instance COM hands out for PROGID (GetActiveObject, which is
+what the bridge's GetObject(, ProgID) gets), or NIL when none is registered or
+PowerShell cannot say."
+  (let ((ps1 (merge-pathnames "com-active-pid.ps1" workdir)))
+    (with-open-file (out ps1 :direction :output :if-exists :supersede
+                             :if-does-not-exist :create :external-format :utf-8)
+      (write-string +com-active-pid-ps1+ out))
+    (let ((text (ignore-errors
+                 (funcall runner
+                          (list "powershell" "-NoProfile" "-NonInteractive"
+                                "-ExecutionPolicy" "Bypass"
+                                "-File" (uiop:native-namestring ps1)
+                                "-ProgId" progid)
+                          :output :string :error-output nil
+                          :ignore-error-status t))))
+      (let ((at (and text (search "PID=" text))))
+        (and at (parse-integer text :start (+ at 4) :junk-allowed t))))))
+
+(defun check-com-attach-pid (backend-name progid pid workdir
+                             &key (runner #'uiop:run-program))
+  "--attach-pid PID through COM: signal BACKEND-BOOTSTRAP-ERROR unless PID is
+the instance COM hands out for PROGID.
+
+COM CANNOT REACH THE OTHER INSTANCES (probe cad-instances, BricsCAD V25,
+2026-10-23): with two running, GetActiveObject keeps returning the FIRST,
+the Running Object Table holds the class moniker once per instance but every
+entry binds to that first one, and a saved drawing is not registered at all.
+So an attach to a given PID is possible exactly when that PID is the
+registered instance -- anything else is said, not silently replaced by the
+wrong CAD."
+  (let ((registered (com-registered-instance-pid progid workdir :runner runner)))
+    (unless (eql registered pid)
+      (error 'backend-bootstrap-error
+             :backend backend-name
+             :code :attach-pid-not-reachable
+             :message
+             (if registered
+                 (format nil "--attach-pid ~D: COM reaches only the instance registered first for ~A, which is process ~D; process ~D cannot be attached to through COM (end the other instance, or use --attach-pid ~D)"
+                         pid progid registered pid registered)
+                 (format nil "--attach-pid ~D: no running instance is registered with COM for ~A"
+                         pid progid))))
+    registered))
+
 (defun applescript-escape (string)
   "Escape STRING for inclusion in an AppleScript double-quoted
 literal. AppleScript uses backslash escapes — backslash and double
@@ -163,25 +304,11 @@ quote both have to be escaped."
 ;;;   2. autolisp-remote-io.lsp  — the file-IPC server loop, which
 ;;;                                 calls into the helpers from (1).
 ;;;
-;;; Both files are shared by every CAD backend, both ship vendored
-;;; under source/runtime/, and users can override their location via
-;;; $ALFE_BOOTSTRAP_LSP / $ALFE_RUNTIME_LSP for advanced setups (e.g.
-;;; a system-wide /opt/local/share/alfe/runtime/ install).
-
-(defun %vendored-asset-pathname (basename)
-  "Resolve a vendored runtime asset by BASENAME (e.g.
-\"autolisp-remote-io.lsp\", \"autolisp-bootstrap.lsp\") under
-source/runtime/ next to this code. Returns NIL if the asset isn't on
-disk. ASDF's system registry is the source of truth so the answer
-survives fasl caching and frozen executable builds — *load-pathname*
-alone would point at the cached .fasl, not the source tree."
-  (let ((candidate
-          (ignore-errors
-           (asdf:system-relative-pathname
-            "autolisp-front-end/backend-cad-common"
-            (concatenate 'string "source/runtime/" basename)))))
-    (when (and candidate (probe-file candidate))
-      (namestring (truename candidate)))))
+;;; Both files are shared by every CAD backend. They ship vendored under
+;;; source/runtime/, `make install' copies them to
+;;; <PREFIX>/share/alfe/runtime/, and $ALFE_BOOTSTRAP_LSP /
+;;; $ALFE_RUNTIME_LSP override both. ASSET-SEARCH-CANDIDATES below is the
+;;; one statement of the search order.
 
 (defparameter *runtime-lsp-fallback-paths*
   '("/opt/local/share/alfe/runtime/autolisp-remote-io.lsp"
@@ -203,54 +330,192 @@ NOT ship this file standalone — the bash wrapper inlines its content
 into the generated run-common.lsp at run time — so there is no
 SNCF-tree fallback here (only the vendored copy + install prefixes).")
 
-(defun %resolve-asset (env-name vendored-fn fallback-paths)
-  "Return the first asset path found by: env var ENV-NAME, the
-vendored copy via VENDORED-FN, then the FALLBACK-PATHS list. Each
-candidate is PROBE-FILE-checked; the empty-string env value is
-treated as unset. Returns NIL when no candidate exists."
+;;; --- the installation prefix of the RUNNING executable ------------
+;;;
+;;; An installed alfe is a dumped image: the ASDF source location it was
+;;; built from need not exist on the machine it runs on, and the fixed
+;;; prefixes above do not name an arbitrary Windows install. The copies
+;;; `make install' puts under <PREFIX>/share/alfe/runtime/ are found from
+;;; where the executable itself lives (alfe-installed-runtime-prefix-
+;;; discovery.issue) -- never from the current directory, and never from
+;;; the build location.
+
+(defun executable-pathname ()
+  "The truename of the running executable, or NIL when it cannot be
+determined. Symlinks are resolved, so a bin/alfe link finds the tree it
+points into. The implementation-specific part is this one form."
+  (ignore-errors
+   (let ((path #+sbcl sb-ext:*runtime-pathname*
+               #+ccl (ccl::kernel-path)
+               #-(or sbcl ccl) nil))
+     (when path
+       (truename path)))))
+
+(defvar *executable-pathname-function* 'executable-pathname
+  "Function of no argument returning the running executable's pathname.
+A variable so the tests can place a pretend executable in a pretend
+installation; production never rebinds it.")
+
+(defun alfe-executable-p (exe)
+  "True when EXE is an alfe program: alfe, alfe-sbcl, alfe-ccl, with or
+without .exe. A development image runs as `sbcl' or `ccl', whose own
+prefix (/usr, /usr/local) says nothing about where alfe's assets are --
+and must not shadow the source tree's copies; the fixed fallbacks still
+cover a system-wide install."
+  (let ((name (and exe (pathname-name exe))))
+    (and (stringp name)
+         (or (string-equal name "alfe")
+             (and (> (length name) 5)
+                  (string-equal "alfe-" name :end2 5))))))
+
+(defun %components-equal (a b)
+  (and (= (length a) (length b))
+       (every (lambda (x y) (and (stringp x) (stringp y) (string-equal x y)))
+              a b)))
+
+(defun installation-prefixes (&optional
+                                (exe (funcall *executable-pathname-function*)))
+  "The installation prefixes EXE can belong to, most specific first, as
+directory pathnames. The prefix is only known at run time -- a release
+is staged, zipped, and unpacked under any path -- and alfe's binary sits
+in one of two places in it:
+
+  <PREFIX>/libexec/.../alfe-<lisp>[.exe]
+      below libexec, per platform and processor
+      (libexec/clautolisp/binaries/<os>/<arch>/ today), reached through
+      the bin/alfe[.cmd] trampoline, which does not pass the prefix on
+  <PREFIX>/bin/alfe-<lisp>[.exe]
+      the autolisp-front-end `make install' layout
+
+Components compare case-insensitively: on Windows LIBEXEC and libexec
+are the same directory. NIL when EXE is not an alfe executable."
+  (when (alfe-executable-p exe)
+    (let* ((dir (pathname-directory exe))
+           (n (length dir))
+           (prefixes '()))
+      (flet ((prefix (drop)
+               (make-pathname :directory (subseq dir 0 (- n drop))
+                              :name nil :type nil :version nil
+                              :defaults exe)))
+        ;; Anywhere below a libexec directory: the prefix is its parent.
+        ;; The deepest libexec wins, so a prefix that itself contains a
+        ;; libexec component (/opt/libexec/x/libexec/...) still resolves.
+        (let ((pos (position-if (lambda (c)
+                                  (and (stringp c) (string-equal c "libexec")))
+                                dir :from-end t)))
+          (when (and pos (> pos 0) (< pos (1- n)))
+            (push (prefix (- n pos)) prefixes)))
+        (when (and (> n 1)
+                   (stringp (car (last dir)))
+                   (string-equal (car (last dir)) "bin"))
+          (push (prefix 1) prefixes)))
+      (nreverse prefixes))))
+
+(defun installed-asset-paths (basename)
+  "<PREFIX>/share/alfe/runtime/BASENAME for every prefix the running
+executable can belong to."
+  (mapcar (lambda (prefix)
+            (merge-pathnames
+             (make-pathname :directory '(:relative "share" "alfe" "runtime")
+                            :name (pathname-name basename)
+                            :type (pathname-type basename))
+             prefix))
+          (installation-prefixes)))
+
+(defvar *vendored-asset-system* "autolisp-front-end/backend-cad-common"
+  "The ASDF system whose source tree holds source/runtime/. A variable so
+the tests can make the source tree unavailable, as it is to an
+installed executable on another machine.")
+
+(defun asset-search-candidates (env-name basename fallback-paths)
+  "Every place an asset is looked for, in precedence order, as a list of
+(ORIGIN PATH), PATH a namestring:
+
+  1. :environment  $ENV-NAME, when set and non-empty
+  2. :installed    <PREFIX>/share/alfe/runtime/, from the executable
+  3. :vendored     source/runtime/ in the ASDF source tree
+  4. :fallback     the fixed FALLBACK-PATHS
+
+This is also what a missing-asset error reports, so it lists candidates
+that do not exist."
   (let ((env (uiop:getenv env-name))
-        (vendored (funcall vendored-fn)))
-    (cond
-      ((and env (plusp (length env)) (probe-file env))
-       (namestring (truename env)))
-      (vendored vendored)
-      (t
-       (first-existing
-        (mapcar (lambda (p) (uiop:native-namestring p))
-                fallback-paths))))))
+        (vendored (ignore-errors
+                   (asdf:system-relative-pathname
+                    *vendored-asset-system*
+                    (concatenate 'string "source/runtime/" basename)))))
+    (append
+     (when (and env (plusp (length env)))
+       (list (list :environment env)))
+     (mapcar (lambda (p) (list :installed (uiop:native-namestring p)))
+             (installed-asset-paths basename))
+     (when vendored
+       (list (list :vendored (uiop:native-namestring vendored))))
+     (mapcar (lambda (p) (list :fallback (uiop:native-namestring p)))
+             fallback-paths))))
+
+(defun %resolve-asset (env-name basename fallback-paths)
+  "The first existing file among ASSET-SEARCH-CANDIDATES, as an absolute
+namestring, or NIL. An $ENV-NAME naming no file is passed over, as it
+always was."
+  (loop for (nil path) in (asset-search-candidates env-name basename
+                                                   fallback-paths)
+        for found = (ignore-errors (probe-file path))
+        when (and found (pathname-name found))
+          do (return (namestring found))))
 
 (defun discover-runtime-lsp ()
-  "Resolve the CAD-side runtime LSP path. Order of precedence:
-
-  1. $ALFE_RUNTIME_LSP (when the file exists)
-  2. The vendored copy under source/runtime/ next to this code
-  3. Built-in fallback search list (/opt/local/share/alfe/runtime/, …)
-
-Returns an absolute namestring, or NIL when no copy is found — in
-which case the caller leaves the runtime unstaged and run-common.lsp
-will not LOAD it (the historical broken behavior)."
-  (%resolve-asset "ALFE_RUNTIME_LSP"
-                  (lambda () (%vendored-asset-pathname
-                              "autolisp-remote-io.lsp"))
+  "Resolve the CAD-side runtime LSP path (autolisp-remote-io.lsp):
+$ALFE_RUNTIME_LSP, then the running alfe's installation prefix, then the
+vendored source/runtime/ copy, then the fixed fallbacks -- see
+ASSET-SEARCH-CANDIDATES. Returns an absolute namestring, or NIL."
+  (%resolve-asset "ALFE_RUNTIME_LSP" "autolisp-remote-io.lsp"
                   *runtime-lsp-fallback-paths*))
 
 (defun discover-bootstrap-lsp ()
   "Resolve the CAD-side bootstrap LSP path (autolisp-bootstrap.lsp),
-which defines the autolisp-* helpers that the runtime's server loop
-calls. Order of precedence matches DISCOVER-RUNTIME-LSP:
-
-  1. $ALFE_BOOTSTRAP_LSP (when the file exists)
-  2. The vendored copy under source/runtime/ next to this code
-  3. Built-in fallback search list (/opt/local/share/alfe/runtime/, …)
-
-Returns an absolute namestring, or NIL when no copy is found. When NIL
-the caller leaves the bootstrap unstaged and the runtime's server loop
-will fail at the first eval (autolisp-eval-request-form undefined) —
-the deferred-autolisp-runtime-helpers symptom this asset closes."
-  (%resolve-asset "ALFE_BOOTSTRAP_LSP"
-                  (lambda () (%vendored-asset-pathname
-                              "autolisp-bootstrap.lsp"))
+which defines the autolisp-* helpers the runtime's server loop calls.
+Same order as DISCOVER-RUNTIME-LSP. Returns an absolute namestring, or
+NIL."
+  (%resolve-asset "ALFE_BOOTSTRAP_LSP" "autolisp-bootstrap.lsp"
                   *bootstrap-lsp-fallback-paths*))
+
+(defun require-runtime-assets (backend)
+  "Resolve both CAD-side assets, or signal BACKEND-BOOTSTRAP-ERROR (code
+:RUNTIME-ASSET-MISSING) naming each missing one and every path searched
+for it. Returns (values RUNTIME-PATH BOOTSTRAP-PATH).
+
+Called BEFORE anything is launched. A CAD started without them boots and
+never reaches READY; the whole READY timeout (120 s on the Windows
+runner) used to be spent waiting for a runtime that was never staged."
+  (let ((runtime (discover-runtime-lsp))
+        (bootstrap (discover-bootstrap-lsp))
+        (missing '()))
+    (unless bootstrap
+      (push (list "autolisp-bootstrap.lsp" "ALFE_BOOTSTRAP_LSP"
+                  (asset-search-candidates "ALFE_BOOTSTRAP_LSP"
+                                           "autolisp-bootstrap.lsp"
+                                           *bootstrap-lsp-fallback-paths*))
+            missing))
+    (unless runtime
+      (push (list "autolisp-remote-io.lsp" "ALFE_RUNTIME_LSP"
+                  (asset-search-candidates "ALFE_RUNTIME_LSP"
+                                           "autolisp-remote-io.lsp"
+                                           *runtime-lsp-fallback-paths*))
+            missing))
+    (when missing
+      (setf missing (nreverse missing))
+      (error 'backend-bootstrap-error
+             :backend backend
+             :code :runtime-asset-missing
+             :message
+             (format nil "~A not launched: required CAD runtime file~P not found.~
+~:{~%  ~A (set $~A to override); searched:~:{~%    ~(~11A~) ~A~}~}~
+~%  running executable: ~A"
+                     backend (length missing)
+                     missing
+                     (or (funcall *executable-pathname-function*) "unknown"))
+             :details (list :missing missing)))
+    (values runtime bootstrap)))
 
 ;;; --- protocol-driven eval-plan ------------------------------------
 
@@ -273,15 +538,437 @@ list is just a UX convenience so users can type the familiar tokens
 and have the loop terminate cleanly without waiting for the runtime
 round-trip.")
 
+;;; --- G3b: transcode a codepage -l source to UTF-8+BOM for the CAD --------
+;;;
+;;; A CAD host cannot load a raw single-byte-codepage source portably: (load)
+;;; has NO encoding argument -- it detects a UTF-8/UTF-16 BOM, else decodes with
+;;; the READ-ONLY SYSCODEPAGE (macOS = MAC_ROMAN, Windows = its ANSI cp). So a
+;;; cp1252 é (0xE9) native-loaded on macOS BricsCAD becomes È, and (chr 233) is
+;;; no longer = the file char (cad-chr-vs-loaded-encoding). When -Esource names
+;;; a codepage, alfe decodes the file with it and stages a UTF-8-WITH-BOM copy,
+;;; which every platform's (load) detects (via the BOM) and decodes correctly.
+;;; Unicode / unset encodings pass through unchanged. (A refinement, not needed
+;;; for correctness: skip the copy when -Esource already equals the host
+;;; SYSCODEPAGE -- the raw file would then load right too.)
+
+(defun %source-encoding->babel (encoding)
+  "Map a -Esource ENCODING designator to a BABEL encoding keyword, or NIL when it
+is nil / :auto / a Unicode codec the CAD reads via its own BOM (no transcode
+needed). babel gives the SAME codec set on SBCL and CCL, so every named codepage
+is handled, not just the built-in cp1252 cascade."
+  (let ((kw (ignore-errors (clautolisp.autolisp-cli:encoding-keyword encoding))))
+    (case kw
+      ((nil :auto :utf-8 :utf8 :utf-16 :utf-16le :utf-16be :utf16le :utf16be) nil)
+      ;; babel spells the Windows codepages :cp125X, not :windows-125X.
+      (:windows-1250 :cp1250) (:windows-1251 :cp1251) (:windows-1252 :cp1252)
+      (:windows-1253 :cp1253) (:windows-1254 :cp1254) (:windows-1255 :cp1255)
+      (:windows-1256 :cp1256) (:windows-1257 :cp1257) (:windows-1258 :cp1258)
+      (t kw))))                          ; :iso-8859-*, :koi8-*, :cp125X, … pass through
+
+(defun %read-file-octets (path)
+  (with-open-file (in path :direction :input :element-type '(unsigned-byte 8))
+    (let ((v (make-array (file-length in) :element-type '(unsigned-byte 8))))
+      (read-sequence v in)
+      v)))
+
+(defun stage-source-as-utf8-bom (protocol-session path encoding &optional product)
+  "Resolve PATH against alfe's invocation directory.  If ENCODING is a
+non-Unicode codepage, decode that absolute source with babel and write a
+copy into the workdir the CAD's native load reads right, returning the copy's
+path for the CAD to (load); otherwise return the absolute source path itself.
+
+The copy is UTF-8 with a BOM -- except for PRODUCT :AUTOCAD, where it is
+windows-1252 without a BOM whenever the text fits: AutoCAD 2022 at LISPSYS 0
+IGNORES a BOM and reads the UTF-8 bytes as cp1252 (two characters for each
+accented one), and at LISPSYS 1 / 2 it reads a file that is not valid UTF-8 as
+cp1252 -- so cp1252 reads right at every level (E1, job 16931781178,
+encoding-situations-cli-options). Text cp1252 cannot hold keeps UTF-8 + BOM
+(right at LISPSYS 1 / 2 only).
+
+The absolutisation is required even without transcoding: CAD batch processes
+run from the generated workdir, not necessarily from alfe's current directory,
+so forwarding a relative -l pathname verbatim makes the CAD look in the wrong
+directory."
+  (let* ((absolute-path (namestring
+                         (uiop:ensure-absolute-pathname path (uiop:getcwd))))
+         (babel-enc (%source-encoding->babel encoding)))
+    (if (null babel-enc)
+      absolute-path
+      (let* ((text (babel:octets-to-string (%read-file-octets absolute-path)
+                                           :encoding babel-enc :errorp nil))
+             (staged (merge-pathnames
+                      (format nil "esrc-~A" (file-namestring (pathname path)))
+                      (uiop:ensure-directory-pathname
+                       (alfe.protocol.file:protocol-session-workdir
+                        protocol-session)))))
+        (let ((cp1252 (and (eq product :autocad)
+                           (ignore-errors (babel:string-to-octets text :encoding :cp1252
+                                                                       :errorp t)))))
+          (if cp1252
+              (with-open-file (out staged :direction :output :element-type '(unsigned-byte 8)
+                                          :if-exists :supersede :if-does-not-exist :create)
+                (write-sequence cp1252 out))
+              (with-open-file (out staged :direction :output :external-format :utf-8
+                                          :if-exists :supersede :if-does-not-exist :create)
+                (write-char (code-char #xFEFF) out)   ; UTF-8 BOM -> EF BB BF
+                (write-string text out)))
+          (log-debug "cad-common: staged ~A ~A -> ~A (from ~A source)"
+                     (if cp1252 "cp1252" "UTF-8+BOM")
+                     (file-namestring (pathname absolute-path))
+                     (file-namestring staged) encoding))
+        (namestring (truename staged))))))
+
+;;; --- launcher liveness during the READY wait -------------------------
+;;;
+;;; alfe-bricscad-automation-macos: a launcher that dies before the engine
+;;; publishes READY used to be invisible — the READY wait simply ran out its
+;;; whole timeout (240 s on the macOS probe) and reported a bare READY-TIMEOUT
+;;; with an empty status.txt, which says nothing about WHY. The launcher's own
+;;; exit code and stderr held the answer and were discarded.
+;;;
+;;; The subtlety is that a launcher exiting is NOT itself a failure. In
+;;; automation mode the launcher is a driver, not the engine: osascript
+;;; returns as soon as it has typed its keystrokes, and cscript returns once it
+;;; has dispatched the COM SendCommand — both long before the CAD has loaded
+;;; run-common.lsp and published READY. Only a NON-ZERO exit proves the launch
+;;; failed. So we abort early on a non-zero exit and keep waiting on a clean
+;;; one, which leaves the batch path (where the process IS the CAD) unchanged
+;;; in every case that used to work.
+
+(defun launcher-exit-code (process-info)
+  "The exit code of PROCESS-INFO if it has terminated, else NIL. Never
+blocks: UIOP:WAIT-PROCESS returns immediately (and caches) once the
+process is gone."
+  (when (and process-info
+             (not (ignore-errors (uiop:process-alive-p process-info))))
+    (ignore-errors (uiop:wait-process process-info))))
+
+(defun launcher-alive-or-clean-p (process-info)
+  "Predicate for WAIT-FOR-STATUS-PREFIX's :ALIVE-P. True while the
+launcher is running, and true after it exits 0 (a driver that has done
+its job); false only once it has exited NON-ZERO, which aborts the wait
+immediately instead of burning the rest of the timeout."
+  (let ((code (launcher-exit-code process-info)))
+    (or (null code) (eql code 0))))
+
+(defun engine-never-started-p (last-status)
+  "True when the engine has published no transition at all: LAST-STATUS is
+empty or still the BOOTING that INIT-SESSION wrote before the CAD was launched.
+
+This is the discriminator the READY-timeout message was missing. `Timed out,
+launcher still running' reads identically for a CAD that is merely slow and for
+one sitting on a modal dialog nobody can answer, and telling those apart took
+three wrong hypotheses once (cad-runner-wedged-by-modal-dialog). A CAD that has
+moved to RUNNING and stopped is a different problem from one that never loaded
+run-common.lsp at all."
+  (let ((status (string-trim '(#\Space #\Tab #\Newline #\Return)
+                             (or last-status ""))))
+    (or (zerop (length status))
+        (and (>= (length status) 7)
+             (string-equal "BOOTING" status :end2 7)))))
+
+(defun ready-timeout-diagnosis (exit-code last-status)
+  "The phrase appended to a READY-timeout message, from the launcher's EXIT-CODE
+\(NIL while it is alive) and the LAST-STATUS the protocol saw.
+
+Pure, so the wording is testable without launching anything. Three cases, and
+the third is the one this exists for:
+
+- the launcher EXITED -- its code is the fact that matters, and
+  LAUNCHER-FAILURE-DETAILS already reports a non-zero one with its output;
+- it is alive and the engine HAS moved (RUNNING, DONE, ...) -- then it started
+  fine and stalled later, which is not a launch problem at all;
+- it is alive and the engine NEVER MOVED off BOOTING -- it was started and has
+  produced nothing. On Windows that is usually a startup dialog waiting for
+  input, and under a hidden main frame (/Automation) the dialog is invisible as
+  well as unanswerable: BricsCAD asks which drawing and which profile to use
+  when given neither. On macOS the same shape comes from the Accessibility
+  prompt that blocks the first `keystroke' from an un-permitted osascript.
+  Naming the likely cause here is the whole point -- it is what would have
+  pointed at the real one in a single read."
+  (cond
+    (exit-code (format nil "launcher exited with code ~A" exit-code))
+    ((engine-never-started-p last-status)
+     "launcher still running but the engine never moved past BOOTING -- it was \
+started and has produced nothing; on Windows this is usually a startup dialog \
+waiting for input (BricsCAD asks which drawing and which profile when given \
+neither, and under a hidden main frame the dialog is invisible as well as \
+unanswerable), on macOS an Accessibility prompt blocking osascript")
+    (t "launcher still running")))
+
+(defun launcher-state-description (process-info &optional last-status)
+  "A short phrase describing the launcher's state, for the READY-timeout
+message. A launcher that finished cleanly and a launcher that is STUCK
+produce identical protocol symptoms — status.txt frozen at BOOTING,
+empty channels — and the one thing that tells them apart is whether the
+process is still there. On macOS the stuck case is real and common: the
+first `keystroke' from an un-permitted process raises a system
+Accessibility prompt, and osascript blocks on that modal until someone
+answers it.
+
+LAST-STATUS, when given, sharpens it further — see READY-TIMEOUT-DIAGNOSIS."
+  (when process-info
+    (ready-timeout-diagnosis (launcher-exit-code process-info) last-status)))
+
+(defun launcher-failure-details (process-info &key (limit 4000) capture)
+  "When PROCESS-INFO exited non-zero, return a string with its exit code
+and whatever it wrote to stderr/stdout (truncated to LIMIT characters);
+NIL while it is alive or when it exited 0.
+
+The text comes from CAPTURE, the CONSOLE-CAPTURE the launch redirected the
+process's output into (see MAKE-CONSOLE-CAPTURE), and from the process's own
+pipes only when a launcher returned some anyway (PROCESS-CONSOLE-TEXT). It is
+read only once the process is known to be dead."
+  (let ((code (launcher-exit-code process-info)))
+    (when (and code (not (eql code 0)))
+      (flet ((tail (which)
+               (let ((text (string-right-trim
+                            '(#\Newline #\Return)
+                            (or (ignore-errors
+                                 (process-console-text process-info which
+                                                       :capture capture
+                                                       :strip-nul nil))
+                                ""))))
+                 (if (> (length text) limit)
+                     (subseq text (- (length text) limit))
+                     text))))
+        (let ((err (tail :stderr))
+              (out (tail :stdout)))
+          (format nil "launcher exited with code ~A~@[; stderr: ~A~]~@[; stdout: ~A~]"
+                  code
+                  (when (plusp (length err)) (string-trim '(#\Newline #\Space) err))
+                  (when (plusp (length out)) (string-trim '(#\Newline #\Space) out))))))))
+
+(defun cad-argument-path (path)
+  "The text to hand an EXTERNAL CAD process for PATH.
+
+A STRING is passed through UNTOUCHED. It already names a file under the
+CAD's rules -- a --dwg argument, $AUTOLISP_BRICSCAD_TEMPLATE -- and this
+Lisp has no business reinterpreting it. Calling NAMESTRING on it did
+exactly that: NAMESTRING of a string first PARSES it as a pathname of
+the Lisp alfe happens to be running on, and the two implementations
+disagree. On a Unix host SBCL renders \"C:/t.dwt\" back unchanged; CCL
+escapes the colon and produced \"C\\\\:/t.dwt\", which then went to
+BricsCAD (alfe-bricscad-template-path-escaped-on-ccl.issue).
+
+A PATHNAME object -- the per-run workdir's run.scr, a bridge script --
+belongs to THIS host, so it IS rendered here, but with
+UIOP:NATIVE-NAMESTRING: the operating system's spelling, with none of
+the Lisp's namestring escapes, because the reader is a separate program
+and not this Lisp. On SBCL that is the same string NAMESTRING gives for
+an ordinary path."
+  (etypecase path
+    (string path)
+    (pathname (uiop:native-namestring path))))
+
+(defun kill-engine-process (info &key (timeout 6))
+  "Best-effort terminate the launched engine within TIMEOUT seconds, NEVER
+blocking indefinitely.
+
+`uiop:wait-process' can hang on Windows when the engine (a GUI CAD) is
+slow to die, or when a child of it shares the handles — that would freeze
+alfe in shutdown and hang the whole job. So this terminates, then POLLS
+`process-alive-p' up to TIMEOUT, force-killing (:urgent) if it outlives
+that, and never issues an unbounded wait. On exit the OS reaps it.
+
+This lived in the BricsCAD backend, which is where the hazard was first
+paid for. It is not BricsCAD-specific — AutoCAD spawns a GUI process the
+same way — and having only one backend own the careful version is exactly
+how the other one kept the unbounded `wait-process' that this docstring
+warns about. Shared here so both use it."
+  (when info
+    (ignore-errors
+     (when (uiop:process-alive-p info) (uiop:terminate-process info)))
+    (let ((start (get-internal-real-time)))
+      (loop while (and (ignore-errors (uiop:process-alive-p info))
+                       (< (/ (float (- (get-internal-real-time) start))
+                             internal-time-units-per-second)
+                          timeout))
+            do (sleep 0.2)))
+    (ignore-errors
+     (when (uiop:process-alive-p info)
+       (uiop:terminate-process info :urgent t)
+       ;; :urgent is SIGKILL, which the kernel delivers ASYNCHRONOUSLY: the
+       ;; process is doomed but not necessarily REAPED the instant
+       ;; terminate-process returns, so process-alive-p can still read true
+       ;; for a short window — wider on a loaded machine. A caller that
+       ;; checks liveness right after we return (and our own contract —
+       ;; "the process is gone when this returns") then sees a survivor
+       ;; that is already dying. Poll briefly for the death we just caused,
+       ;; still BOUNDED (SIGKILL cannot be trapped, so this resolves in
+       ;; milliseconds; the cap only guards a pathological D-state child)
+       ;; and never an unbounded wait-process
+       ;; (timing-flakes-in-process-and-socket-tests).
+       (let ((kstart (get-internal-real-time)))
+         (loop while (and (ignore-errors (uiop:process-alive-p info))
+                          (< (/ (float (- (get-internal-real-time) kstart))
+                                internal-time-units-per-second)
+                             2))
+               do (sleep 0.02))))))
+  nil)
+
+;;; --- the engine's console: captured to files, never an undrained pipe ---
+;;;
+;;; alfe used to start the CAD (accoreconsole, bricscad, and the cscript /
+;;; osascript launchers) with :OUTPUT :STREAM :ERROR-OUTPUT :STREAM and read
+;;; those pipes only once the process had EXITED, for the diagnostics. Nothing
+;;; read them while it ran -- the payload travels through the file protocol --
+;;; so once the operating system's pipe buffer was full (a few KB to 64 KB)
+;;; the engine's next console write blocked for ever. accoreconsole echoes its
+;;; whole command line to that console, in UTF-16LE, so a long chatty --mode
+;;; batch run hung part-way, at no particular command, until --timeout
+;;; (alfe-accoreconsole-console-pipe-not-drained.issue).
+;;;
+;;; The console now goes to two files in the run's workdir. A file never fills,
+;;; so the engine can never block on it; reading it cannot block either, even
+;;; when a grandchild (the bricscad.exe a launcher started) still holds the
+;;; handle, which reading a pipe to its end-of-file would; it needs no thread,
+;;; so it is the same on SBCL and CCL, Windows and POSIX; and --keep leaves the
+;;; console in the workdir for a post-mortem. It is the shape the clautolisp
+;;; child already had (%RUN-ENGINE-CHILD in backend-clautolisp.lisp).
+
+(defstruct (console-capture (:constructor %make-console-capture))
+  "Where a launched engine's standard output and error output go, and the
+external format to read them back with."
+  (stdout-path nil)
+  (stderr-path nil)
+  (external-format :iso-8859-1))
+
+(defun make-console-capture (workdir &key (name "engine-console")
+                                          (external-format :iso-8859-1))
+  "A CONSOLE-CAPTURE into WORKDIR/NAME-stdout.txt and WORKDIR/NAME-stderr.txt.
+EXTERNAL-FORMAT is how CONSOLE-CAPTURE-TEXT decodes them (the default is a
+total decoder that never signals)."
+  (let ((dir (uiop:ensure-directory-pathname workdir)))
+    (%make-console-capture
+     :stdout-path (merge-pathnames (format nil "~A-stdout.txt" name) dir)
+     :stderr-path (merge-pathnames (format nil "~A-stderr.txt" name) dir)
+     :external-format (or external-format :iso-8859-1))))
+
+(defun console-capture-launch-keys (capture)
+  "The UIOP:LAUNCH-PROGRAM keywords that send the process's standard output
+and error output to CAPTURE's files (each truncated first)."
+  (list :output (console-capture-stdout-path capture)
+        :if-output-exists :supersede
+        :error-output (console-capture-stderr-path capture)
+        :if-error-output-exists :supersede))
+
+(defun %read-stream-text (stream strip-nul)
+  (with-output-to-string (out)
+    (loop for ch = (read-char stream nil nil)
+          while ch
+          unless (and strip-nul (char= ch (code-char 0)))
+            do (write-char ch out))))
+
+(defun console-capture-text (capture which &key (strip-nul t))
+  "What the engine wrote to WHICH (:STDOUT or :STDERR) of CAPTURE, as a string;
+\"\" when there is nothing. Decoded with CAPTURE's external format, falling
+back to ISO-8859-1 (which never signals) when that fails. STRIP-NUL removes
+the NULs of a UTF-16LE console read byte-wise (accoreconsole). Never blocks:
+it reads a file, never a pipe."
+  (let ((path (and capture
+                   (ecase which
+                     (:stdout (console-capture-stdout-path capture))
+                     (:stderr (console-capture-stderr-path capture))))))
+    (flet ((read-as (format)
+             (with-open-file (in path :direction :input
+                                      :if-does-not-exist nil
+                                      :external-format format)
+               (if in (%read-stream-text in strip-nul) ""))))
+      (or (and path
+               (or (ignore-errors (read-as (console-capture-external-format capture)))
+                   (ignore-errors (read-as :iso-8859-1))))
+          ""))))
+
+(defun process-console-text (process-info which &key capture (strip-nul t))
+  "Everything PROCESS-INFO wrote to WHICH (:STDOUT or :STDERR): the text of
+CAPTURE's file, then whatever its pipe still holds when the launcher returned
+one (a test launcher may). Call it only once the process is dead -- reading a
+live pipe to its end would wait for the process."
+  (let ((stream (and process-info
+                     (ignore-errors
+                      (ecase which
+                        (:stdout (uiop:process-info-output process-info))
+                        (:stderr (uiop:process-info-error-output process-info)))))))
+    (concatenate 'string
+                 (console-capture-text capture which :strip-nul strip-nul)
+                 (or (and (streamp stream)
+                          (open-stream-p stream)
+                          (input-stream-p stream)
+                          (ignore-errors (%read-stream-text stream strip-nul)))
+                     ""))))
+
+;;; --- plug-in support ---------------------------------------------------
+;;;
+;;; The launcher scripts alfe writes for the CAD (run.scr, the VBScript
+;;; bridges) have named slots that plug-ins fill through the hook
+;;; :launcher-lines (see the spec chapter "Plug-ins"), and the spawn takes
+;;; the working directory and environment a plug-in asks for through the
+;;; hook :launch-options. With no active plug-in every function here is the
+;;; identity on what it is given.
+
+(defun launcher-lines (slot kind variant)
+  "The lines the active plug-ins put in SLOT of a launcher script of KIND
+(:scr or :vbs) for VARIANT (:batch or :automation)."
+  (alfe.plugin:run-hook :launcher-lines slot :kind kind :variant variant))
+
+(defun expand-plugin-slots (template variant)
+  "TEMPLATE with each of its two VBScript plug-in slot lines,
+${PLUGIN_AFTER_APP} and ${PLUGIN_BEFORE_LOAD}, replaced by the lines the
+active plug-ins provide for it, or removed with its newline when there are
+none — so a run with no plug-in emits the template byte for byte."
+  (let ((out template))
+    (loop for (placeholder slot) in '(("${PLUGIN_AFTER_APP}"   :after-app)
+                                      ("${PLUGIN_BEFORE_LOAD}" :before-load))
+          do (let ((lines (launcher-lines slot :vbs variant)))
+               ;; A string replaces the placeholder; NIL removes it, and with
+               ;; it the newline of the line it stood alone on.
+               (setf out (uiop:frob-substrings
+                          out
+                          (list (if lines
+                                    placeholder
+                                    (format nil "~A~%" placeholder)))
+                          (and lines (format nil "~{~A~^~%~}" lines))))))
+    out))
+
+(defun %call-with-environment (environment thunk)
+  "Call THUNK with the (NAME . VALUE) pairs of ENVIRONMENT set in the
+process environment, restoring the previous values afterwards. A NIL VALUE
+sets the variable to the empty string (the portable form of \"unset\")."
+  (let ((previous (mapcar (lambda (pair) (cons (car pair) (uiop:getenv (car pair))))
+                          environment)))
+    (unwind-protect
+         (progn
+           (dolist (pair environment)
+             (setf (uiop:getenv (car pair)) (or (cdr pair) "")))
+           (funcall thunk))
+      (dolist (pair previous)
+        (setf (uiop:getenv (car pair)) (or (cdr pair) ""))))))
+
+(defun call-launcher (launcher argv launch-options &rest keys)
+  "Call LAUNCHER as (LAUNCHER ARGV . KEYS), adding :DIRECTORY and applying
+the :ENVIRONMENT that LAUNCH-OPTIONS, the result of the :launch-options
+hook, carries. The mock launchers of the test suite ignore extra keys."
+  (let ((directory (getf launch-options :directory))
+        (environment (getf launch-options :environment)))
+    (flet ((launch ()
+             (apply launcher argv
+                    (append (when directory (list :directory directory)) keys))))
+      (if environment
+          (%call-with-environment environment #'launch)
+          (launch)))))
+
 (defun drive-protocol-actions (protocol-session plan
                                &key
                                  (request-timeout 30)
                                  (keep-alive-while-running t)
                                  (process-info nil)
                                  (shutdown-timeout 10)
+                                 (defer-shutdown-p nil)
                                  (input-stream  *standard-input*)
                                  (output-stream *standard-output*)
-                                 (error-stream  *error-output*))
+                                 (error-stream  *error-output*)
+                                 (staging-product nil))
   "Drive a PLAN of actions through a connected PROTOCOL-SESSION,
 waiting for each transition to land. The CAD-side runtime is
 expected to walk READY N → RUNNING N → DONE N {OK,FAIL,QUIT} per
@@ -420,11 +1107,16 @@ through verbatim."
                  ;; the unfiltered trace. The live stream only sees
                  ;; the filtered text.
                  (write-string out captured-stdout)
+                 ;; The dribble records what the USER would have seen, so the
+                 ;; FILTERED text: an [ALFE-CONTROL] line is alfe's own
+                 ;; signalling, never engine output (alfe-dribble.issue).
                  (when (plusp (length visible))
+                   (alfe.dribble:record-output visible)
                    (write-string visible output-stream)
                    (finish-output output-stream))))
              (when (plusp (length err))
                (write-string err captured-stderr)
+               (alfe.dribble:record-error-output err)
                (write-string err error-stream)
                (finish-output error-stream))))
          (sync-verbosity-from-runtime ()
@@ -493,6 +1185,12 @@ trace line."
          (send-action (form-text)
            "Atomically publish FORM-TEXT into stdin.txt, then wait
 for the runtime to acknowledge `DONE <next-counter>'."
+           ;; The form is this session's INPUT -- the nearest thing a
+           ;; file-protocol conversation has to what a user typed -- and it is
+           ;; recorded raw and unprefixed, as the format wants
+           ;; (alfe-dribble.issue). Before sending, so the transcript reads in
+           ;; the order it happened even when the engine answers instantly.
+           (alfe.dribble:record-input form-text)
            (alfe.protocol.file:send-stdin protocol-session form-text)
            (wait-done))
          (interactive-loop ()
@@ -549,8 +1247,12 @@ shows the error on stderr and the prompt comes back."
                    (alfe.backend:action-payload action))
         (case (alfe.backend:action-kind action)
           (:load
-           (let ((path (getf (alfe.backend:action-payload action) :path)))
-             (send-action (format nil "(load ~S)" path))))
+           (let* ((payload (alfe.backend:action-payload action))
+                  (path (getf payload :path))
+                  (load-path (stage-source-as-utf8-bom
+                              protocol-session path (getf payload :encoding)
+                              staging-product)))
+             (send-action (format nil "(load ~S)" load-path))))
           (:eval
            (send-action (alfe.backend:action-payload action)))
           (:main
@@ -568,6 +1270,7 @@ shows the error on stderr and the prompt comes back."
            (finish-output output-stream)
            (interactive-loop))
           (:quit
+           (unless defer-shutdown-p
            (alfe.protocol.file:send-control protocol-session :shutdown)
            (multiple-value-bind (matched elapsed last)
                (alfe.protocol.file:wait-for-status
@@ -577,7 +1280,7 @@ shows the error on stderr and the prompt comes back."
              (declare (ignore elapsed last))
              (drain-live)
              (unless matched
-               (setf status :aborted)))))))
+               (setf status :aborted))))))))
     ;; Final drain — catches anything published between the last
     ;; wait-done's drain-live and now (e.g. a buffered newline).
     (let ((out (alfe.protocol.file:drain-stdout protocol-session))
@@ -635,6 +1338,14 @@ digit on either side, so \"AutoCAD 2026\" yields \"2026\"."
                   (or (>= (+ i 4) (length path)) (not (digit-char-p (char path (+ i 4))))))
           return (subseq path i (+ i 4))))
 
+(defun autocad-release-in-path (path)
+  "The AutoCAD product year named by PATH (\"2022\"), or NIL. The
+install directory is where the release is written down, and the COM
+ProgID resolution reads it from there
+(alfe-autocad-cad-selection-ignores-com-progid)."
+  (when path
+    (%find-autocad-year (namestring path))))
+
 (defun %find-bricscad-version (path)
   "The BricsCAD version token in PATH — \"V\" then digits (e.g. \"V26\"),
 upper-cased; \"V26x64\" keeps only \"V26\". NIL when absent."
@@ -659,11 +1370,23 @@ upper-cased; \"V26x64\" keeps only \"V26\". NIL when absent."
                   (or (>= (+ i 5) (length path)) (not (alphanumericp (char path (+ i 5))))))
           return (subseq path i (+ i 5))))
 
-(defun %cad-denotation (kind version locale)
-  "Build the canonical denotation string from KIND + VERSION + LOCALE."
+(defun %dwg-trueview-path-p (path)
+  "True when PATH lies in a DWG TrueView install. The free, read-only DWG
+TrueView viewer also ships accoreconsole.exe, but it is not AutoCAD: it
+cannot create or modify entities, and its configuration file lives in
+Program Files, so for a normal user it aborts on launch (\"configuration
+file may be locked\"). It therefore gets its own denotation
+(dwgtrueview-YYYY) so that accoreconsole / autocad never select it."
+  (search "trueview" (string-downcase (namestring path))))
+
+(defun %cad-denotation (kind version locale &key path)
+  "Build the canonical denotation string from KIND + VERSION + LOCALE.
+PATH is used to tell DWG TrueView's accoreconsole apart from AutoCAD's."
   (let ((base (ecase kind
                 (:acad          (format nil "acad~@[-~A~]" version))
-                (:accoreconsole (format nil "accoreconsole~@[-~A~]" version))
+                (:accoreconsole (format nil "~:[accoreconsole~;dwgtrueview~]~@[-~A~]"
+                                        (and path (%dwg-trueview-path-p path))
+                                        version))
                 (:bricscad      (format nil "bricscad~@[-~(~A~)~]" version))
                 (:clautolisp    "clautolisp"))))
     (if (and (eq kind :bricscad) locale)
@@ -678,7 +1401,7 @@ upper-cased; \"V26x64\" keeps only \"V26\". NIL when absent."
                     (:bricscad              (%find-bricscad-version ns))))
          (locale (when (eq kind :bricscad) (%find-locale ns))))
     (%make-cad-program :kind kind :version version :locale locale :path ns
-                       :denotation (%cad-denotation kind version locale))))
+                       :denotation (%cad-denotation kind version locale :path ns))))
 
 ;; -- per-kind, per-OS enumeration -------------------------------------
 
@@ -839,3 +1562,680 @@ version pick the right one. The virtual =autocad[-VER]= maps to =acad= or
              (top (remove-if-not (lambda (p) (= (%cad-version-key p) top-version)) matches)))
         (first (stable-sort (copy-list top) #'<
                             :key (lambda (p) (%locale-rank p preferred-locales))))))))
+
+;;; --- -Efile forwarded to the CAD's own OPEN ------------------------
+;;;
+;;; encoding-situations-cli-options section 6 point 5. What the CADs' OPEN
+;;; does with an encoding was MEASURED (probes/sources/probe-open-encoding.lsp,
+;;; writing "A" e-acute "B"):
+;;;
+;;;   AutoCAD 2022 (LISPSYS 0)  write cp1252; ANY third argument is "too many
+;;;                             arguments"; ",ccs=" accepted and ignored.
+;;;                             Read decodes cp1252.
+;;;   AutoCAD 2022 (LISPSYS 1/2) write cp1252 by default; (open f "w" "utf8")
+;;;                             writes UTF-8 without a BOM, "utf8-bom" with
+;;;                             one. Read decodes UTF-8, falling back to
+;;;                             cp1252 (E1, job 16980926802). An append
+;;;                             (open f "a" "utf8") adds UTF-8, and "utf8-bom"
+;;;                             on a file that has its BOM adds no second one
+;;;                             (sizes 4 -> 6 and 7 -> 9, job 16998925786).
+;;;   BricsCAD V25 Windows      write cp1252; third argument accepted, no
+;;;                             effect; "w,ccs=UTF-8" writes UTF-8 WITH a BOM,
+;;;                             "w,ccs=UTF-16LE" UTF-16LE with a BOM. Read
+;;;                             never decodes (raw octets, BOM skipped). An
+;;;                             append "a,ccs=" adds no second BOM (UTF-8
+;;;                             7 -> 9, UTF-16LE 8 -> 10), while a plain "a"
+;;;                             on such a file appends cp1252 (7 -> 8): so
+;;;                             ",ccs=" is forwarded on "a" too (job
+;;;                             17027935338).
+;;;   BricsCAD V26 macOS        writes UTF-8 without a BOM whatever the mode;
+;;;                             read returns raw octets.
+;;;
+;;; So alfe can honour the WRITE direction in two cases: BricsCAD on Windows,
+;;; UTF-8 or UTF-16LE, by appending ",ccs=" to the user's "w"/"a" mode; and
+;;; AutoCAD, UTF-8, by passing "utf8" as OPEN's third argument to a plain "w"
+;;; or "a" -- in the CAD, only when LISPSYS is 1 or 2 (it is read at start-up,
+;;; alfe cannot know it beforehand). Both are done by alfe-open* in the
+;;; bootstrap, on every action: in code loaded with alfe-load, and in every
+;;; protocol request -- the -l file, -x, --main, the REPL -- whose OPEN calls
+;;; the emitted autolisp-eval-request-source rewrites in the source text
+;;; (alfe-efile-write-not-applied-to-l-file).
+;;; Everything else is warned about, never silently dropped -- except a
+;;; request for what the CAD does anyway.
+
+(defun %squashed-encoding-name (name)
+  "NAME (an encoding spelling) canonicalised through the CLI's alias table,
+upcased, with every - and _ removed: utf-8 / UTF8 / utf_8 -> \"UTF8\",
+cp1252 / windows-1252 -> \"WINDOWS1252\". A name the table rejects is squashed
+as typed."
+  (let ((canonical (or (ignore-errors
+                        (clautolisp.autolisp-cli:canonical-encoding-name name))
+                       name)))
+    (remove-if (lambda (ch) (member ch '(#\- #\_)))
+               (string-upcase canonical))))
+
+(defun %file-encoding-kind (name)
+  "Classify an encoding NAME as :UTF-8, :UTF-16LE, :CP1252, or :OTHER."
+  (let ((squashed (%squashed-encoding-name name)))
+    (cond ((string= squashed "UTF8") :utf-8)
+          ((string= squashed "UTF16LE") :utf-16le)
+          ((member squashed '("WINDOWS1252" "CP1252") :test #'string=) :cp1252)
+          (t :other))))
+
+(defun cad-file-encoding-plan (backend-name platform write-encoding read-encoding)
+  "How the -Efile-write / -Efile-read encodings reach a CAD's own OPEN.
+BACKEND-NAME is :BRICSCAD or :AUTOCAD, PLATFORM :WINDOWS / :MACOS (the CAD runs
+on alfe's host), WRITE-ENCODING / READ-ENCODING the resolved situation values
+(strings, or NIL when none was given).
+
+Returns (values CCS WARNINGS ARG). CCS is the string alfe-open* appends as
+\",ccs=CCS\" to a plain \"w\"/\"a\" OPEN mode -- \"UTF-8\" or \"UTF-16LE\",
+only for BricsCAD on Windows -- or NIL. ARG is the third argument alfe-open*
+passes to a plain \"w\" / \"a\" OPEN -- \"utf8\", only for AutoCAD, and applied
+in the CAD only at LISPSYS 1 / 2 -- or NIL. WARNINGS is the list of texts to log: one
+per request the CAD cannot honour, with the measured reason. A request for
+what the CAD does anyway (cp1252 on Windows, UTF-8 on BricsCAD macOS, a cp1252
+read on AutoCAD) is no warning."
+  (let ((prefix (format nil "backend ~A: " (symbol-name backend-name)))
+        (ccs nil)
+        (arg nil)
+        (warnings '()))
+    (when write-encoding
+      (let ((kind (%file-encoding-kind write-encoding)))
+        (flet ((refuse (reason)
+                 (push (format nil "~A-Efile-write ~A is not forwarded to the CAD's ~
+OPEN: ~A." prefix write-encoding reason)
+                       warnings)))
+          (case backend-name
+            (:bricscad
+             (case platform
+               (:windows
+                (case kind
+                  (:utf-8 (setf ccs "UTF-8"))
+                  (:utf-16le (setf ccs "UTF-16LE"))
+                  (:cp1252)
+                  (t (refuse "BricsCAD on Windows honours only ,ccs=UTF-8 and ~
+,ccs=UTF-16LE (measured, V25); files are written in cp1252"))))
+               (:macos
+                (unless (eq kind :utf-8)
+                  (refuse "BricsCAD on macOS writes UTF-8 whatever the mode (measured, V26)")))
+               (t (refuse (format nil "OPEN's encoding is unmeasured on ~(~A~)" platform)))))
+            (:autocad
+             (case kind
+               ;; forwarded as "utf8"; the CAD side checks LISPSYS and warns
+               ;; there when it is 0 (alfe-open* in the bootstrap)
+               (:utf-8 (setf arg "utf8"))
+               (:cp1252)
+               (t (refuse "AutoCAD's OPEN takes only \"utf8\" / \"utf8-bom\" (at LISPSYS ~
+1/2; none at 0, measured, AutoCAD 2022); files are written in cp1252"))))
+            (t (refuse "this backend has no OPEN encoding forwarding"))))))
+    (when (and read-encoding
+               (not (and (eq backend-name :autocad)
+                         (eq (%file-encoding-kind read-encoding) :cp1252))))
+      (push (format nil "~A-Efile-read ~A is not forwarded: the CAD's OPEN reads ~
+in its own default whatever it is asked (measured: AutoCAD 2022 reads cp1252 at ~
+LISPSYS 0, UTF-8 falling back to cp1252 at LISPSYS 1/2; BricsCAD returns octets)."
+                    prefix read-encoding)
+            warnings))
+    (values ccs (nreverse warnings) arg)))
+
+(defvar *cad-file-encoding-warnings-given* '()
+  "The CAD-FILE-ENCODING-PLAN warning texts already logged this run.")
+
+(defun cad-open-write-ccs (backend-name cli-options &key (platform (host-os)))
+  "Run CAD-FILE-ENCODING-PLAN on CLI-OPTIONS' -Efile-write / -Efile-read
+(bare -E included, as the transmitted *AUTOLISP-FILE-*-ENCODING* are), log each
+warning once per run, and return (values CCS ARG): the ccs string for
+*ALFE-OPEN-WRITE-CCS* and the third argument for *ALFE-OPEN-WRITE-ARG* (each
+or NIL)."
+  (if (null cli-options)
+      (values nil nil)
+      (multiple-value-bind (ccs warnings arg)
+          (cad-file-encoding-plan
+           backend-name platform
+           (clautolisp.autolisp-cli:cli-situation-encoding cli-options "file" "write")
+           (clautolisp.autolisp-cli:cli-situation-encoding cli-options "file" "read"))
+        (dolist (text warnings)
+          (unless (member text *cad-file-encoding-warnings-given* :test #'string=)
+            (push text *cad-file-encoding-warnings-given*)
+            (log-warn "~A" text)))
+        (when ccs
+          (log-debug "backend ~A: OPEN \"w\"/\"a\" get ,ccs=~A" backend-name ccs))
+        (when arg
+          (log-debug "backend ~A: OPEN \"w\"/\"a\" get the third argument ~S at LISPSYS 1/2"
+                     backend-name arg))
+        (values ccs arg))))
+
+;;; --- the CAD's own command-history log (--cad-log, -Elog) ------------
+;;;
+;;; encoding-situations-cli-options, the `log' situation. In the log and full
+;;; bootstrap phases the CAD-side bootstrap points LOGFILEPATH at the workdir's
+;;; logs/ directory and sets LOGFILEMODE to 1 (autolisp-log-setup), so the CAD
+;;; writes its command-history log there, next to alfe's own debug.log; it is
+;;; closed when the engine quits. --cad-log FILE has alfe read it once the
+;;; engine is down and copy it, decoded, to FILE.
+;;;
+;;; How it is decoded, MEASURED:
+;;;   AutoCAD 2022              windows-1252 (probe-logfile, MR !428: a PRINCed
+;;;                             e-acute reads back 233);
+;;;   BricsCAD V25 Windows      windows-1252, no BOM (2026-10-08, job
+;;;                             16998925784: the raw log starts 0D 0A 2D, and
+;;;                             "Depart" with e-acute is 44 E9 70 61 72 74);
+;;;   BricsCAD V26 macOS        writes no log in batch mode (job 16998925783).
+;;; So the default is: a BOM names the encoding (UTF-8, UTF-16LE); without one,
+;;; windows-1252 on Windows -- both Windows CADs -- and the auto-detect cascade
+;;; elsewhere (nothing measured there). An explicit -Elog
+;;; overrides it; the bare -E does not reach the log, which the CAD writes in
+;;; its own encoding whatever alfe is told.
+
+(defun cad-log-files (workdir)
+  "The CAD log files in WORKDIR's logs/ directory, oldest first (by write date,
+then name), excluding alfe's own debug.log. NIL when there is none."
+  (let* ((dir (merge-pathnames (make-pathname :directory '(:relative "logs"))
+                               (uiop:ensure-directory-pathname workdir)))
+         (files (remove-if (lambda (p)
+                             (string-equal (file-namestring p) "debug.log"))
+                           (and (probe-file dir) (uiop:directory-files dir)))))
+    (stable-sort (sort (copy-list files) #'string< :key #'file-namestring)
+                 #'< :key (lambda (p) (or (ignore-errors (file-write-date p)) 0)))))
+
+(defun %strip-line-terminator-suffix (name)
+  "NAME without a trailing line-ending variant (-dos, -unix, -mac, -crlf, -lf,
+-cr): the log is decoded first and its line ends normalised afterwards."
+  (let ((up (string-upcase name)))
+    (dolist (suffix '("-CRLF" "-DOS" "-UNIX" "-MAC" "-LF" "-CR") name)
+      (let ((n (length suffix)))
+        (when (and (> (length up) n)
+                   (string= suffix up :start2 (- (length up) n)))
+          (return (subseq name 0 (- (length name) n))))))))
+
+(defun cad-log-decode-encoding (bytes &key explicit (platform (host-os)))
+  "The decoder keyword (as ALFE.PROTOCOL.FILE:DECODE-CONSOLE-OCTETS takes it) for
+a CAD log whose content is BYTES: the EXPLICIT -Elog encoding when one was given
+(a line-ending suffix ignored); else a BOM's (:UTF-8 / :UTF-16LE); else
+:CP1252 on Windows and :AUTO elsewhere. A second value, when EXPLICIT names an
+encoding the log decoder does not have, is the warning text (the log is then
+decoded with :AUTO)."
+  (flet ((starts-with (&rest octets)
+           (and (>= (length bytes) (length octets))
+                (every #'= octets (subseq bytes 0 (length octets))))))
+    (cond
+      (explicit
+       (let ((kw (alfe.protocol.file::%canonical-console-encoding
+                  (%strip-line-terminator-suffix explicit))))
+         (if (and (eq kw :auto)
+                  (not (string-equal (%strip-line-terminator-suffix explicit) "auto")))
+             (values :auto
+                     (format nil "-Elog ~A: the CAD log is decoded only as UTF-8, ~
+UTF-16LE, ISO-8859-1, WINDOWS-1252 or US-ASCII; auto-detected instead." explicit))
+             kw)))
+      ((starts-with #xEF #xBB #xBF) :utf-8)
+      ((starts-with #xFF #xFE) :utf-16le)
+      ((eq platform :windows) :cp1252)
+      (t :auto))))
+
+(defun %lf-line-ends (text)
+  "TEXT with every CR LF (and a lone CR) turned into LF."
+  (with-output-to-string (out)
+    (let ((n (length text)))
+      (loop for i from 0 below n
+            for ch = (char text i)
+            do (cond ((char= ch #\Return)
+                      (write-char #\Newline out)
+                      (when (and (< (1+ i) n) (char= (char text (1+ i)) #\Newline))
+                        (incf i)))
+                     (t (write-char ch out)))))))
+
+(defun decode-cad-log-octets (bytes &key explicit (platform (host-os)))
+  "Decode a CAD log's BYTES (see CAD-LOG-DECODE-ENCODING) and normalise its line
+ends to LF. A leading UTF-8 or UTF-16LE BOM is not part of the text. Returns
+(values TEXT WARNING)."
+  (multiple-value-bind (encoding warning)
+      (cad-log-decode-encoding bytes :explicit explicit :platform platform)
+    (let ((text (alfe.protocol.file:decode-console-octets bytes encoding)))
+      (values (%lf-line-ends (string-left-trim (string (code-char #xFEFF)) text))
+              warning))))
+
+(defun %file-octet-vector (path)
+  (with-open-file (in path :element-type '(unsigned-byte 8))
+    (let* ((buf (make-array (file-length in) :element-type '(unsigned-byte 8)))
+           (got (read-sequence buf in)))
+      (if (= got (length buf)) buf (subseq buf 0 got)))))
+
+(defun collect-cad-log (backend-name workdir cli-options &key (platform (host-os)))
+  "Read the CAD log files of WORKDIR (CAD-LOG-FILES) and decode each with the
+explicit -Elog of CLI-OPTIONS, else the measured default
+(CAD-LOG-DECODE-ENCODING). Returns (values ENTRIES STATUS): ENTRIES a list of
+(NAME . TEXT); STATUS :COLLECTED, or :NONE when the CAD wrote no log. A file
+that cannot be read is warned about and skipped."
+  (let ((explicit (and cli-options
+                       (clautolisp.autolisp-cli:cli-situation-encoding-explicit
+                        cli-options "log")))
+        (entries '())
+        (warned nil))
+    (dolist (path (cad-log-files workdir))
+      (handler-case
+          (multiple-value-bind (text warning)
+              (decode-cad-log-octets (%file-octet-vector path)
+                                     :explicit explicit :platform platform)
+            (when (and warning (not warned))
+              (setf warned t)
+              (log-warn "backend ~A: ~A" backend-name warning))
+            (push (cons (file-namestring path) text) entries))
+        (error (e)
+          (log-warn "backend ~A: the CAD log ~A cannot be read: ~A"
+                    backend-name (file-namestring path) e))))
+    (values (nreverse entries) (if entries :collected :none))))
+
+
+;;; Owned COM lifecycle: keep the startup bridge and its exact APP reference.
+;;;
+;;; Contract 2 (alfe-owned-cad-termination-after-recorded-results, pjb
+;;; 2026-11-06). Once the run's results are recorded and the live CAD has
+;;; acknowledged RESTORED, alfe writes the FRONTIER, owned-close-frontier.txt.
+;;; Past it, what the CAD does while it goes away is a diagnostic, not the
+;;; run's result. The retained startup bridge closes the documents without
+;;; saving, calls Quit on its exact object and says so (close-owned.result).
+;;; alfe then has the helper wait a bounded time for THAT process --
+;;; revalidated by PID, creation ticks, image name, session and owner SID --
+;;; and terminate it if it outlives the grace. The process must be gone: a
+;;; survivor, or an identity alfe cannot confirm, fails the run. Its exit code
+;;; (0, 0xBABE, 0xC0000005...) and whether it was forced go to the cleanup
+;;; report. A Quit that blocks (a dialog) cannot block alfe: past QUIT-TIMEOUT
+;;; the bridge is stopped and the helper runs with no grace.
+;;;
+;;; Every file of the handshake is written to a .tmp and renamed, and read only
+;;; once complete -- its last line end=1 -- so a half-written file is never
+;;; taken for an answer (alfe-owned-com-close-reads-partial-result).
+
+(defparameter *owned-cad-close-contract* 2
+  "Version of the owned-CAD close contract the handshake files carry.")
+
+(defun %elapsed-seconds (start)
+  (/ (float (- (get-internal-real-time) start)) internal-time-units-per-second))
+
+(defun %utc-timestamp (&optional (time (get-universal-time)))
+  (multiple-value-bind (s mi h d mo y) (decode-universal-time time 0)
+    (format nil "~4,'0D-~2,'0D-~2,'0DT~2,'0D:~2,'0D:~2,'0DZ" y mo d h mi s)))
+
+(defparameter *owned-cad-process-script*
+  "param([ValidateSet('Capture','Finish')][string]$Operation,[string]$IdentityFile,[Int64]$WindowHandle=0,[int]$ProcessId=0,[string]$Invocation='',[string]$ReportFile='',[int]$GraceSeconds=20,[int]$KillSeconds=10)
+$ErrorActionPreference='Stop'
+function Write-Atomic([string]$Path,[string[]]$Lines) {
+ $tmp=$Path+'.tmp'
+ Set-Content -LiteralPath $tmp -Value $Lines -Encoding ASCII
+ Move-Item -LiteralPath $tmp -Destination $Path -Force
+}
+function Get-OwnerSid([int]$Id) {
+ try {
+  $w=Get-CimInstance Win32_Process -Filter ('ProcessId='+$Id)
+  if(!$w){return ''}
+  $o=Invoke-CimMethod -InputObject $w -MethodName GetOwnerSid
+  if($o.ReturnValue -ne 0){return ''}
+  return [string]$o.Sid
+ } catch { return '' }
+}
+if($Operation -eq 'Capture') {
+ [uint32]$cadId=$ProcessId
+ if(!$cadId) {
+  Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class OwnedCadWindow {
+ [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+}
+'@
+  [void][OwnedCadWindow]::GetWindowThreadProcessId([IntPtr]$WindowHandle,[ref]$cadId)
+ }
+ if(!$cadId){throw 'Cannot identify the COM application window process.'}
+ $cad=Get-Process -Id $cadId -ErrorAction Stop
+ $identity=[ordered]@{pid=[int]$cadId;startTicks=$cad.StartTime.ToUniversalTime().Ticks.ToString();name=$cad.ProcessName;session=[int]$cad.SessionId;sid=(Get-OwnerSid ([int]$cadId));invocation=$Invocation;capturedUtc=[DateTime]::UtcNow.ToString('o')}
+ Write-Atomic $IdentityFile @(($identity | ConvertTo-Json))
+ exit 0
+}
+# Finish: the process captured above must be gone. Wait for it, terminate it
+# past the grace -- through the handle whose identity was just revalidated,
+# never by name -- and report what happened. Exit 0 only when it is gone.
+$r=[ordered]@{contract='2';pid='';'start-ticks'='';name='';session='';sid='';invocation='';'grace-seconds'=[string]$GraceSeconds;'kill-seconds'=[string]$KillSeconds;outcome='';forced='0';disappeared='0';'exit-code'='';'exit-code-hex'='';'waited-ms'='0';'kill-waited-ms'='0';detail='';'finished-utc'=''}
+try {
+ $id=Get-Content -LiteralPath $IdentityFile -Raw | ConvertFrom-Json
+ $r.pid=[string]$id.pid; $r.'start-ticks'=[string]$id.startTicks; $r.name=[string]$id.name
+ $r.session=[string]$id.session; $r.sid=[string]$id.sid; $r.invocation=[string]$id.invocation
+ $p=$null
+ try { $p=Get-Process -Id ([int]$id.pid) -ErrorAction Stop; $null=$p.Handle } catch { $p=$null }
+ if(!$p) { $r.outcome='already-gone'; $r.disappeared='1' }
+ else {
+  $start=$null
+  try { $start=$p.StartTime.ToUniversalTime().Ticks } catch { $start=$null }
+  if($null -eq $start) {
+   if($p.HasExited) { $r.outcome='already-gone'; $r.disappeared='1'; $r.detail='exited before its creation time could be read' }
+   else { $r.outcome='identity-uncertain'; $r.detail='creation time unreadable; left untouched' }
+  }
+  elseif($start -ne [int64]$id.startTicks) { $r.outcome='pid-reused'; $r.disappeared='1'; $r.detail='the PID names another process now; left untouched' }
+  else {
+   $sid=Get-OwnerSid $p.Id
+   if(!$p.HasExited -and ($p.ProcessName -ne $id.name -or [int]$p.SessionId -ne [int]$id.session -or ($id.sid -and $sid -ne $id.sid))) {
+    $r.outcome='identity-mismatch'
+    $r.detail=('name {0} session {1} sid {2}; left untouched' -f $p.ProcessName,$p.SessionId,$sid)
+   }
+   else {
+    $sw=[Diagnostics.Stopwatch]::StartNew()
+    $done=$p.WaitForExit([Math]::Max(0,$GraceSeconds)*1000)
+    $r.'waited-ms'=[string]$sw.ElapsedMilliseconds
+    if($done) { $r.outcome='exited' }
+    else {
+     $r.forced='1'
+     try { $p.Kill() } catch { $r.detail='Kill: '+$_.Exception.Message }
+     $sw=[Diagnostics.Stopwatch]::StartNew()
+     $gone=$p.WaitForExit([Math]::Max(1,$KillSeconds)*1000)
+     $r.'kill-waited-ms'=[string]$sw.ElapsedMilliseconds
+     if($gone) { $r.outcome='forced' } else { $r.outcome='survived' }
+    }
+    if($p.HasExited) {
+     $u=[BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$p.ExitCode),0)
+     $r.'exit-code'=[string]$u; $r.'exit-code-hex'=('0x{0:X8}' -f $u); $r.disappeared='1'
+    }
+   }
+  }
+ }
+} catch { $r.outcome='error'; $r.detail=$_.Exception.Message }
+$r.'finished-utc'=[DateTime]::UtcNow.ToString('o')
+$lines=@(); foreach($k in $r.Keys){ $lines+=($k+'='+(([string]$r[$k]) -replace '[\\r\\n]',' ')) }
+$lines+='end=1'
+Write-Atomic $ReportFile $lines
+if($r.disappeared -eq '1'){exit 0}
+exit 1
+")
+(defparameter *owned-com-capture-vbs*
+  "' Keep this exact COM reference; never rediscover an arbitrary ROT instance.
+Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream
+Set lifeShell = CreateObject(\"WScript.Shell\")
+lifeRoot = fso.GetParentFolderName(runFile)
+lifeHelper = fso.BuildPath(lifeRoot, \"owned-cad-process.ps1\")
+lifeIdentity = fso.BuildPath(lifeRoot, \"owned-cad-process.json\")
+lifeRequest = fso.BuildPath(lifeRoot, \"close-owned.request\")
+lifeResult = fso.BuildPath(lifeRoot, \"close-owned.result\")
+If created Then
+  lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Capture -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34) & \" -Invocation \" & Chr(34) & lifeRoot & Chr(34) & \" -WindowHandle \" & CStr(app.HWND), 0, True)
+  If lifeCode <> 0 Then WScript.Quit 5
+End If
+' The load below enters the file protocol loop; retain APP while it runs.
+")
+(defparameter *owned-com-wait-vbs*
+  "Do
+  If fso.FileExists(lifeRequest) Then
+    lifeCode = 0
+    If created Then
+      On Error Resume Next
+      For lifeIndex = app.Documents.Count - 1 To 0 Step -1
+        Set lifeDoc = app.Documents.Item(lifeIndex)
+        lifeDoc.Close False
+        If Err.Number <> 0 Then Exit For
+      Next
+      If Err.Number = 0 Then Call app.Quit
+      lifeCode = Err.Number
+      Err.Clear
+      Set lifeDoc = Nothing
+      Set app = Nothing
+      Err.Clear
+      On Error GoTo 0
+      ' A disconnected COM call can mean Quit succeeded. alfe, not this
+      ' bridge, then proves the created process gone (or ends it).
+    End If
+    Set lifeStream = fso.CreateTextFile(lifeResult & \".tmp\", True)
+    lifeStream.WriteLine \"contract=2\"
+    If created Then
+      lifeStream.WriteLine \"owned=created\"
+    Else
+      lifeStream.WriteLine \"owned=attached\"
+    End If
+    lifeStream.WriteLine \"quit-error=\" & CStr(lifeCode)
+    lifeStream.WriteLine \"end=1\"
+    lifeStream.Close
+    fso.MoveFile lifeResult & \".tmp\", lifeResult
+    WScript.Quit 0
+  End If
+  If fso.FileExists(statusFile) Then
+    Set lifeStream = fso.OpenTextFile(statusFile, 1)
+    lifeCode = Trim(lifeStream.ReadAll)
+    lifeStream.Close
+    If lifeCode = \"STOPPED\" And Not created Then
+      Set lifeStream = fso.CreateTextFile(lifeResult & \".tmp\", True)
+      lifeStream.WriteLine \"contract=2\"
+      lifeStream.WriteLine \"owned=attached\"
+      lifeStream.WriteLine \"quit-error=0\"
+      lifeStream.WriteLine \"end=1\"
+      lifeStream.Close
+      fso.MoveFile lifeResult & \".tmp\", lifeResult
+      WScript.Quit 0
+    End If
+  End If
+  WScript.Sleep 100
+Loop
+")
+
+(defun instrument-owned-com-bridge (text path)
+  "Retain the exact COM object and validate its PID plus creation time on exit."
+  (let* ((marker "${PLUGIN_BEFORE_LOAD}")
+         (before (search marker text))
+         (end (search "WScript.Quit 0" text :from-end t))
+         (helper (merge-pathnames "owned-cad-process.ps1" path)))
+    (unless (and before end (< before end))
+      (error "Cannot locate the COM bridge lifecycle boundaries."))
+    (with-open-file (out helper :direction :output :if-exists :supersede
+                                :if-does-not-exist :create :external-format :utf-8)
+      (write-string *owned-cad-process-script* out))
+    (concatenate 'string (subseq text 0 before) *owned-com-capture-vbs*
+                 (subseq text before end) *owned-com-wait-vbs*
+                 (subseq text (+ end (length "WScript.Quit 0"))))))
+
+(defun run-owned-cad-helper (workdir &key (grace 20) (kill-timeout 10)
+                                          (launcher #'uiop:launch-program))
+  "Run the helper's Finish on the identity the bridge captured: wait GRACE
+seconds for that process to exit, terminate it if it has not, wait up to
+KILL-TIMEOUT seconds for it to be gone, and write owned-cad-cleanup.txt.
+The helper bounds itself; it is still polled, and stopped past its bound
+plus a margin, so a PowerShell that hangs cannot hang alfe. Returns its
+exit code, or NIL when it had to be stopped."
+  (let* ((info (funcall launcher
+                        (list "powershell" "-NoProfile" "-NonInteractive"
+                              "-ExecutionPolicy" "Bypass"
+                              "-File" (uiop:native-namestring
+                                       (merge-pathnames "owned-cad-process.ps1" workdir))
+                              "-Operation" "Finish"
+                              "-IdentityFile" (uiop:native-namestring
+                                               (merge-pathnames "owned-cad-process.json" workdir))
+                              "-ReportFile" (uiop:native-namestring
+                                             (merge-pathnames "owned-cad-cleanup.txt" workdir))
+                              "-GraceSeconds" (princ-to-string grace)
+                              "-KillSeconds" (princ-to-string kill-timeout))
+                        :output nil :error-output nil))
+         (bound (+ grace kill-timeout 30))
+         (start (get-internal-real-time)))
+    (loop while (and (ignore-errors (uiop:process-alive-p info))
+                     (< (%elapsed-seconds start) bound))
+          do (sleep 0.2))
+    (prog1 (launcher-exit-code info)
+      (kill-engine-process info))))
+
+(defun %parse-quit-error (answer)
+  (let ((text (key-value answer "quit-error")))
+    (or (and text (ignore-errors (parse-integer text))) text)))
+
+(defun close-owned-com-bridge (workdir &key (quit-timeout 30) (grace 20) (kill-timeout 10)
+                                            bridge-process-info
+                                            (helper #'run-owned-cad-helper))
+  "Ask the retained startup bridge to close what it owns, then make sure the
+process it created is gone. Returns a plist:
+  :OWNED        :CREATED, or :ATTACHED (an attached CAD is released, never
+                closed, and the helper does not run);
+  :QUIT-ERROR   the bridge's Err.Number for Close/Quit, or :NO-ANSWER when
+                it did not answer within QUIT-TIMEOUT (a Quit blocked on a
+                dialog, a dead bridge): the bridge is then stopped and the
+                helper runs with no grace;
+  :CLEANUP      the helper's report, an alist (NIL when it wrote none);
+  :DISAPPEARED  true only when that report proves the created process gone;
+  :FAILURE      NIL, or the code of a failed cleanup.
+Signals :OWNED-CAD-CLOSE-TIMEOUT only when the bridge neither answered nor
+recorded a created CAD: nothing then says what it owns, so nothing is ended.
+HELPER is RUN-OWNED-CAD-HELPER's stand-in for the tests."
+  (let ((request (merge-pathnames "close-owned.request" workdir))
+        (result (merge-pathnames "close-owned.result" workdir))
+        (identity (merge-pathnames "owned-cad-process.json" workdir))
+        (report (merge-pathnames "owned-cad-cleanup.txt" workdir))
+        (start (get-internal-real-time))
+        (answer nil))
+    (with-open-file (out request :direction :output :if-exists :supersede
+                                 :if-does-not-exist :create)
+      (write-line "CLOSE" out))
+    (loop
+      (setf answer (read-key-value-file result))
+      (when (or answer (>= (%elapsed-seconds start) quit-timeout))
+        (return))
+      (when (and bridge-process-info
+                 (not (ignore-errors (uiop:process-alive-p bridge-process-info))))
+        ;; The bridge is gone: one last look, it may have answered as it went.
+        (setf answer (read-key-value-file result))
+        (return))
+      (sleep 0.1))
+    (let ((owned (cond (answer (if (equal (key-value answer "owned") "attached")
+                                   :attached :created))
+                       ((probe-file identity) :created))))
+      (unless owned
+        (error 'backend-protocol-error :backend :cad :phase :shutdown
+               :code :owned-cad-close-timeout
+               :message "The CAD bridge did not answer the close request and recorded no CAD it created."))
+      (when (eq owned :attached)
+        (return-from close-owned-com-bridge
+          (list :owned :attached :quit-error (%parse-quit-error answer)
+                :cleanup nil :disappeared nil :failure nil)))
+      (unless answer
+        ;; Stop the bridge before ending its CAD: a Quit that returns once the
+        ;; process is gone must not have it write an answer nobody awaits.
+        (kill-engine-process bridge-process-info))
+      (funcall helper workdir :grace (if answer grace 0) :kill-timeout kill-timeout)
+      (let* ((cleanup (read-key-value-file report))
+             (outcome (key-value cleanup "outcome"))
+             (gone (equal (key-value cleanup "disappeared") "1")))
+        (list :owned :created
+              :quit-error (if answer (%parse-quit-error answer) :no-answer)
+              :cleanup cleanup
+              :disappeared gone
+              :failure (cond ((null cleanup) :owned-cad-cleanup-unreported)
+                             (gone nil)
+                             ((member outcome '("identity-mismatch" "identity-uncertain")
+                                      :test #'equal)
+                              :owned-cad-identity-uncertain)
+                             ((equal outcome "error") :owned-cad-cleanup-error)
+                             (t :owned-cad-survived)))))))
+
+;;; --- the frontier and the cleanup report ----------------------------
+
+(defun %results-word (outcome)
+  (cond ((null outcome) "unknown")
+        ((null (getf outcome :result-files)) "unchecked")
+        ((getf outcome :results-ok) "ok")
+        (t "incomplete")))
+
+(defun owned-close-frontier-pairs (backend workdir outcome)
+  "The KEY=VALUE pairs of the frontier: what was recorded before the CAD that
+this run created was asked to go. OUTCOME is ALFE.BACKEND:*RECORDED-OUTCOME*;
+NIL (frontier=absent) when the run ended before deciding one."
+  (append
+   `(("contract" . ,*owned-cad-close-contract*)
+     ("backend" . ,(string-downcase (princ-to-string backend)))
+     ("invocation" . ,(and workdir (uiop:native-namestring workdir)))
+     ("recorded-utc" . ,(%utc-timestamp))
+     ("restored" . "acknowledged")
+     ("frontier" . ,(if outcome "recorded" "absent"))
+     ("script-status" . ,(if outcome
+                             (string-downcase (princ-to-string (getf outcome :status)))
+                             "unknown"))
+     ("script-exit-code" . ,(and outcome (getf outcome :exit-code)))
+     ("results" . ,(%results-word outcome)))
+   (loop for file in (and outcome (getf outcome :result-files))
+         for i from 1
+         collect (cons (format nil "result-file-~D" i)
+                       (format nil "~(~A~) ~D ~A" (getf file :status)
+                               (or (getf file :size) 0) (getf file :path))))))
+
+(defun %owned-cleanup-word (close)
+  (cond ((eq (getf close :owned) :attached) "released")
+        ((getf close :failure) (string-downcase (princ-to-string (getf close :failure))))
+        (t "ok")))
+
+(defun owned-cleanup-report-pairs (frontier close)
+  "The cleanup report: the FRONTIER pairs, then what the close did -- the
+bridge's answer, and the helper's report prefixed cleanup- -- then the
+verdict, cleanup=ok|released|<failure>."
+  (append frontier
+          `(("owned" . ,(string-downcase (princ-to-string (getf close :owned))))
+            ("quit-error" . ,(let ((q (getf close :quit-error)))
+                               (if (eq q :no-answer) "no-answer" q))))
+          (loop for (key . value) in (getf close :cleanup)
+                collect (cons (concatenate 'string "cleanup-" key) value))
+          `(("cleanup" . ,(%owned-cleanup-word close)))))
+
+(defun %abnormal-exit-code-p (cleanup)
+  "True when the exit code in CLEANUP is an NTSTATUS error (0x8xxxxxxx and
+up): a crash, as far as a code can say. Only the log level depends on it."
+  (let ((code (ignore-errors (parse-integer (or (key-value cleanup "exit-code") "")))))
+    (and code (>= code #x80000000))))
+
+(defun %log-owned-cleanup (backend close)
+  (let* ((cleanup (getf close :cleanup))
+         (pid (key-value cleanup "pid"))
+         (outcome (key-value cleanup "outcome"))
+         (hex (let ((h (key-value cleanup "exit-code-hex"))) (and h (plusp (length h)) h))))
+    (cond ((eq (getf close :owned) :attached)
+           (log-verbose "backend ~(~A~): released the attached CAD (not closed)" backend))
+          ((getf close :failure) nil)   ; the error says it
+          ((or (equal outcome "forced") (%abnormal-exit-code-p cleanup))
+           (log-warn "backend ~(~A~): the CAD this run created (pid ~A) ~:[exited~;was terminated~]~@[ ~
+with code ~A~] after the results were recorded and the session restored; ~
+diagnostic only, the run's result stands"
+                     backend pid (equal outcome "forced") hex))
+          (t
+           (log-verbose "backend ~(~A~): the CAD this run created (pid ~A) is gone (~A~@[, code ~A~])"
+                        backend pid outcome hex)))))
+
+(defun %owned-failure-message (failure cleanup)
+  (let ((pid (key-value cleanup "pid"))
+        (detail (key-value cleanup "detail")))
+    (format nil "~A~@[ (pid ~A)~]~@[: ~A~]"
+            (ecase failure
+              (:owned-cad-survived "The CAD this run created is still running after its termination.")
+              (:owned-cad-identity-uncertain "The CAD this run created cannot be identified with certainty; it was not terminated.")
+              (:owned-cad-cleanup-error "The owned CAD cleanup helper failed.")
+              (:owned-cad-cleanup-unreported "The owned CAD cleanup helper wrote no report."))
+            pid (and detail (plusp (length detail)) detail))))
+
+(defun finish-owned-com-session (protocol workdir &key (backend :cad) bridge-process-info
+                                                       (close #'close-owned-com-bridge))
+  "The Windows COM-automation shutdown, contract 2, in its order:
+1. the live CAD restores the session and acknowledges RESTORED (otherwise
+   this signals, and nothing is closed: an unacknowledged restoration does
+   not authorize the close);
+2. the FRONTIER is written, owned-close-frontier.txt;
+3. the bridge closes what it owns, and the CAD this run created is proved
+   gone -- ended by its revalidated handle if it outlives the grace;
+4. the cleanup report, ALFE.BACKEND:*CLEANUP-REPORT-FILE-NAME*, is written,
+   and only then a failed cleanup signals.
+A non-zero exit or a forced end past the frontier is logged, not signalled:
+it does not replace the run's result. Returns CLOSE's plist."
+  (alfe.protocol.file::prepare-cad-shutdown protocol)
+  (let* ((frontier (owned-close-frontier-pairs backend workdir
+                                               alfe.backend:*recorded-outcome*)))
+    (when workdir
+      (write-key-value-file (merge-pathnames "owned-close-frontier.txt" workdir) frontier))
+    (let ((result (funcall close workdir :bridge-process-info bridge-process-info)))
+      (when workdir
+        (write-key-value-file (merge-pathnames alfe.backend:*cleanup-report-file-name* workdir)
+                              (owned-cleanup-report-pairs frontier result)))
+      (%log-owned-cleanup backend result)
+      (let ((failure (getf result :failure)))
+        (when failure
+          (error 'backend-protocol-error :backend backend :phase :shutdown :code failure
+                 :message (%owned-failure-message failure (getf result :cleanup))
+                 :details (list :workdir workdir :cleanup (getf result :cleanup)))))
+      result)))

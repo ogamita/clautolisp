@@ -13,12 +13,16 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       bzip2 \
       ca-certificates \
+      cmake \
       curl \
       emacs-nox \
+      gcc \
       git \
       graphviz \
+      libc6-dev \
       make \
       m4 \
+      python3-yaml \
       sbcl \
       tar \
       texinfo \
@@ -51,11 +55,11 @@ RUN curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30
       --eval '(sb-ext:quit)' \
  && sbcl --noinform --no-userinit --non-interactive \
       --eval '(load #P"/root/quicklisp/setup.lisp")' \
-      --eval '(ql:quickload "fiveam" :silent t)' \
+      --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "cffi" "usocket") :silent t)' \
       --eval '(sb-ext:quit)' \
  && ccl --no-init --quiet \
       --eval '(load #P"/root/quicklisp/setup.lisp")' \
-      --eval '(ql:quickload "fiveam" :silent t)' \
+      --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "cffi" "usocket") :silent t)' \
       --eval '(ccl:quit)' \
  && rm -f /tmp/quicklisp.lisp
 

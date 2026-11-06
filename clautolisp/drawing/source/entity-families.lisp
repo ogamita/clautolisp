@@ -185,14 +185,49 @@ or NIL when the type is not in the registry."
     :required '(10 11 12 13)
     :subclasses '("AcDbTrace"))
   ;; --- Non-graphical objects reachable by ENTMAKE / ENTMAKEX ---
+  ;; SINCE-R13-P: MEASURED 2026-10-08 (probe-entget-pointers.lsp, jobs
+  ;; 17026569911 / 12 / 13): AutoCAD 2022 refuses an XRECORD whose ENTMAKEX
+  ;; data lacks (100 . "AcDbXrecord") (returns nil); BricsCAD V25 / V26
+  ;; synthesise the marker -- divergence D1, like the R13+ entities.
   (register-entity-family "XRECORD"
     :required '()
     :subclasses '("AcDbXrecord")
-    :graphical-p nil)
+    :graphical-p nil
+    :since-r13-p t)
   (register-entity-family "DICTIONARY"
     :required '()
     :subclasses '("AcDbDictionary")
-    :graphical-p nil))
+    :graphical-p nil)
+  ;; The objects a fresh drawing's named-object dictionary holds
+  ;; (entget-pointers section 11, BricsCAD V26 job 17439813492): registered
+  ;; so the selection scan and the entnext walk leave them out.
+  (register-entity-family "ACDBDICTIONARYWDFLT"
+    :required '()
+    :subclasses '("AcDbDictionary" "AcDbDictionaryWithDefault")
+    :graphical-p nil)
+  (register-entity-family "ACDBPLACEHOLDER"
+    :required '()
+    :subclasses '()
+    :graphical-p nil)
+  (register-entity-family "MATERIAL"
+    :required '()
+    :subclasses '("AcDbMaterial")
+    :graphical-p nil)
+  (register-entity-family "RASTERVARIABLES"
+    :required '()
+    :subclasses '("AcDbRasterVariables")
+    :graphical-p nil)
+  (register-entity-family "MENTALRAYRENDERSETTINGS"
+    :required '()
+    :subclasses '("AcDbRenderSettings" "AcDbMentalRayRenderSettings")
+    :graphical-p nil)
+  ;; ... and what its dictionaries hold (section 12, cador's
+  ;; default-objects.lisp). No subclass list: nothing is synthesized or
+  ;; required when one is entmade.
+  (dolist (type '("ACDBDETAILVIEWSTYLE" "ACDBSECTIONVIEWSTYLE" "DICTIONARYVAR"
+                  "LAYOUT" "MLEADERSTYLE" "MLINESTYLE" "SCALE" "TABLESTYLE"
+                  "VISUALSTYLE"))
+    (register-entity-family type :required '() :subclasses '() :graphical-p nil)))
 
 (%install-entity-families)
 
@@ -222,6 +257,85 @@ absent."
           (loop for (code . value) in defaults
                 unless (%has-code-p data code)
                   collect (cons code value))))
+
+;;; --- The default groups the vendors list for polylines -------------
+;;;
+;;; Measured (probes/sources/probe-commands.lsp, AutoCAD 2022 and BricsCAD
+;;; V26, identical): ENTGET of an LWPOLYLINE lists 43 38 39 after 70 and,
+;;; for EVERY vertex, 10 40 41 42 91 -- a constant-width polyline (DONUT,
+;;; 43 0.5) repeats the width in each vertex's 40 / 41; a POLYLINE header
+;;; lists 40 41 71 72 73 74 75 after 70; a VERTEX lists 10 40 41 42 70 50
+;;; 71 72 73 74. Values the data supplies are kept; the rest default to 0.
+
+(defun %group-value (data code default)
+  (let ((cell (assoc code data)))
+    (if cell (cdr cell) default)))
+
+(defun %complete-lwpolyline (data)
+  (let* ((first-vertex (position 10 data :key #'car))
+         (header (subseq data 0 (or first-vertex (length data))))
+         (body (if first-vertex (subseq data first-vertex) '()))
+         (width (%group-value header 43 0.0d0))
+         (head (loop for g in header
+                     unless (member (car g) '(43 38 39)) collect g
+                     when (eql (car g) 70)
+                       append (list (cons 43 width)
+                                    (cons 38 (%group-value header 38 0.0d0))
+                                    (cons 39 (%group-value header 39 0.0d0)))))
+         (vertices '()) (trailer '()))
+    ;; Split the body into per-vertex group runs and whatever follows them.
+    (let ((current nil))
+      (dolist (g body)
+        (cond ((eql (car g) 10)
+               (when current (push (nreverse current) vertices))
+               (setf current (list g)))
+              ((member (car g) '(40 41 42 91)) (push g current))
+              (t (push g trailer))))
+      (when current (push (nreverse current) vertices)))
+    (append head
+            (loop for v in (nreverse vertices)
+                  append (list (first v)
+                               (cons 40 (%group-value (rest v) 40 width))
+                               (cons 41 (%group-value (rest v) 41 width))
+                               (cons 42 (%group-value (rest v) 42 0.0d0))
+                               (cons 91 (%group-value (rest v) 91 0))))
+            (nreverse trailer))))
+
+(defun %complete-in-order (data anchor defaults)
+  "DATA with the (CODE . DEFAULT) DEFAULTS it lacks inserted right after
+the ANCHOR group (or at the end), in the order given."
+  (let ((missing (remove-if (lambda (d) (assoc (car d) data)) defaults)))
+    (if (null missing)
+        data
+        (let ((pos (position anchor data :key #'car)))
+          (if pos
+              (append (subseq data 0 (1+ pos)) missing (subseq data (1+ pos)))
+              (append data missing))))))
+
+(defun %complete-vertex (data)
+  ;; 71-74 are a polyface mesh face's vertex indices (70 bit 128): a 2D
+  ;; vertex has none, on AutoCAD 2022 and BricsCAD V25 alike (probe
+  ;; entity-defaults, 2026-10-27).
+  (let* ((face-p (logtest 128 (or (cdr (assoc 70 data)) 0)))
+         (ordered (if face-p '(10 40 41 42 70 50 71 72 73 74) '(10 40 41 42 70 50)))
+         (filled (loop for code in ordered
+                       collect (or (assoc code data)
+                                   (cons code (if (member code '(40 41 42 50)) 0.0d0 0)))))
+         (pos (or (position-if (lambda (g) (member (car g) ordered)) data)
+                  (length data)))
+         (before (remove-if (lambda (g) (member (car g) ordered)) (subseq data 0 pos)))
+         (after (remove-if (lambda (g) (member (car g) ordered)) (subseq data pos))))
+    ;; The ordered block takes the place of the first of its codes; every
+    ;; other group keeps its relative position.
+    (append before filled after)))
+
+(defun %complete-polyline-groups (type data)
+  (cond ((string-equal type "LWPOLYLINE") (%complete-lwpolyline data))
+        ((string-equal type "POLYLINE")
+         (%complete-in-order data 70 '((40 . 0.0d0) (41 . 0.0d0)
+                                       (71 . 0) (72 . 0) (73 . 0) (74 . 0) (75 . 0))))
+        ((string-equal type "VERTEX") (%complete-vertex data))
+        (t data)))
 
 (defun validate-entity-dxf (data)
   "Validate + normalise the pure-CL DXF group-code list DATA against the
@@ -263,18 +377,86 @@ note on ENTMAKE in the spec."
                      (%inject-defaults data '((8 . "0")))
                      data))
                (with-defaults
-                 (%inject-defaults with-layer (entity-family-defaults family)))
+                 (%complete-polyline-groups
+                  type
+                  (%inject-defaults with-layer (entity-family-defaults family))))
                ;; Every DXF entity carries the AcDbEntity base subclass
                ;; marker (AcDbObject for a non-graphical object) ahead of
-               ;; its per-class markers.
-               (base-marker
-                 (if (entity-family-graphical-p family) "AcDbEntity" "AcDbObject"))
+               ;; its per-class markers. Only the ABSENT ones are added: data
+               ;; that already has them (every command-made LWPOLYLINE) got
+               ;; them twice (entmake-duplicates-subclass-markers).
+               ;;
+               ;; A non-graphical OBJECT (XRECORD, DICTIONARY) shows no
+               ;; AcDbObject marker in ENTGET -- the DXF reference lists
+               ;; only its own subclass marker -- and an XRECORD's marker
+               ;; must PRECEDE its data groups, not trail them; that case
+               ;; is %COMPLETE-XRECORD-HEADER's.
+               (graphical (entity-family-graphical-p family))
+               (present (loop for pair in with-defaults
+                              when (and (consp pair) (eql (car pair) 100)
+                                        (stringp (cdr pair)))
+                                collect (cdr pair)))
                (with-subclasses
-                 (append with-defaults
-                         (mapcar (lambda (m) (cons 100 m))
-                                 (cons base-marker
-                                       (entity-family-subclasses family))))))
+                 (cond
+                   ((string-equal type "XRECORD")
+                    (%complete-xrecord-header with-defaults))
+                   (t
+                    (append with-defaults
+                            (loop for m in (if graphical
+                                               (cons "AcDbEntity"
+                                                     (entity-family-subclasses family))
+                                               (entity-family-subclasses family))
+                                  unless (member m present :test #'string=)
+                                    collect (cons 100 m)))))))
           (values with-subclasses nil))))))
+
+;;; --- XRECORD header ------------------------------------------------
+;;;
+;;; ENTGET of an XRECORD on AutoCAD reads
+;;;   (-1 . e) (0 . "XRECORD") (5 . h) [(102 . "{ACAD_REACTORS") ... (102 . "}")]
+;;;   (330 . owner) (100 . "AcDbXrecord") (280 . 1) <the data groups ...>
+;;; The (280 . 1) -- the DXF "duplicate record cloning flag", 1 = keep
+;;; existing -- is supplied by the database when the ENTMAKE data omits it,
+;;; and code that reads an xrecord back skips it positionally: SCHMS's
+;;; xrecord decoder takes (cddr (member '(100 . "AcDbXrecord") data)), so
+;;; without it the first data group was eaten ("Nom de classe attendu",
+;;; issues/closed/cador-entget-pointer-codes-are-handle-strings.issue).
+;;; MEASURED 2026-10-08 (probes/sources/probe-entget-pointers.lsp, jobs
+;;; 17026569911 AutoCAD 2022, 17026569912 / 17026569913 BricsCAD V25 / V26):
+;;; both vendors read back (100 . "AcDbXrecord") (280 . 1) <data>. A 280
+;;; supplied right after the marker is the flag: AutoCAD lists it as given;
+;;; BricsCAD lists no 280 at all then (applied per product in cador,
+;;; %BRICSCAD-XRECORD-DROP-EXPLICIT-280). Without the marker AutoCAD refuses
+;;; the create and BricsCAD synthesises marker + 280 (divergence D1, so
+;;; XRECORD is SINCE-R13-P).
+
+(defun %complete-xrecord-header (data)
+  "DATA (an XRECORD create list) with (100 . \"AcDbXrecord\") (280 . 1)
+ahead of the data groups: the 280 is inserted right after an existing
+marker unless a 280 already follows it; a missing marker (lenient
+dialects only -- the strict ones reject it upstream) is inserted with the
+280 after the leading header groups (0 5 102 330 360)."
+  (let ((marker (position-if (lambda (pair)
+                               (and (consp pair) (%group-code= (car pair) 100)
+                                    (stringp (cdr pair))
+                                    (string-equal (cdr pair) "AcDbXrecord")))
+                             data)))
+    (if marker
+        (let ((next (nth (1+ marker) data)))
+          (if (and (consp next) (%group-code= (car next) 280))
+              data
+              (append (subseq data 0 (1+ marker))
+                      (list (cons 280 1))
+                      (nthcdr (1+ marker) data))))
+        (let ((pos (or (position-if-not
+                        (lambda (pair)
+                          (and (consp pair) (realp (car pair))
+                               (member (round (car pair)) '(-1 0 5 102 330 360))))
+                        data)
+                       (length data))))
+          (append (subseq data 0 pos)
+                  (list (cons 100 "AcDbXrecord") (cons 280 1))
+                  (nthcdr pos data))))))
 
 ;;; --- Divergence D1: R13+ subclass-marker contract ---------------
 ;;;
@@ -293,10 +475,13 @@ note on ENTMAKE in the spec."
 (defun entity-family-expected-markers (family)
   "The ordered subclass-marker strings a marker-strict host (AutoCAD)
 requires in the ENTMAKE data for a FAMILY create: the base AcDbEntity
-(AcDbObject for a non-graphical object) marker followed by the
-per-class SUBCLASSES."
-  (cons (if (entity-family-graphical-p family) "AcDbEntity" "AcDbObject")
-        (entity-family-subclasses family)))
+marker (none for a non-graphical object) followed by the per-class
+SUBCLASSES."
+  (if (entity-family-graphical-p family)
+      (cons "AcDbEntity" (entity-family-subclasses family))
+      ;; An OBJECT carries no AcDbObject marker in DXF / ENTGET; AutoCAD
+      ;; accepts an XRECORD with only (100 . "AcDbXrecord") (measured).
+      (entity-family-subclasses family)))
 
 (defun %marker-present-p (data marker)
   "True iff DATA carries a (100 . MARKER) subclass-marker pair

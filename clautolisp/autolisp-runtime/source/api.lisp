@@ -49,6 +49,9 @@
 (deftype autolisp-usubr ()
   'clautolisp.autolisp-runtime.internal::autolisp-usubr)
 
+(deftype usubr-site ()
+  'clautolisp.autolisp-runtime.internal::usubr-site)
+
 (deftype autolisp-catch-all-error ()
   'clautolisp.autolisp-runtime.internal::autolisp-catch-all-error)
 
@@ -60,6 +63,9 @@
 
 (deftype autolisp-vla-object ()
   'clautolisp.autolisp-runtime.internal::autolisp-vla-object)
+
+(deftype autolisp-lisp-object ()
+  'clautolisp.autolisp-runtime.internal::autolisp-lisp-object)
 
 ;;; --- AutoLISP call-stack tracking ---------------------------------
 ;;;
@@ -119,6 +125,16 @@ and EVAL-SETQ-FORM (and only by them) at the moment they update
 the binding-cell doc slot."
   (and *current-form* (gethash *current-form* *preceding-docs*)))
 
+(defparameter *debug-error-snapshot-hook* nil
+  "When non-nil (installed by the aldo debugger while a session is active), a
+function of no arguments called from the AUTOLISP-RUNTIME-ERROR DEBUG-SNAPSHOT
+slot's :INITFORM as each such condition is CREATED — at the error point, before
+any unwinding — returning an opaque debugger snapshot of the live call stack
+there. Lets the debugger show the real backtrace even when an inner HANDLER-CASE
+(a builtin wrapper, LOAD's *error* handler, …) unwinds the shadow stack before
+the session handler runs. NIL (the default) ⇒ no capture, no cost — the
+dependency-inversion pattern of *INSTRUMENT-USUBR-HOOK* / *DEBUG-BREAK-HOOK*.")
+
 (define-condition autolisp-runtime-error (error)
   ((code
     :initarg :code
@@ -133,7 +149,23 @@ the binding-cell doc slot."
    (call-stack
     :initarg :call-stack
     :initform nil
-    :reader autolisp-runtime-error-call-stack))
+    :reader autolisp-runtime-error-call-stack)
+   ;; Debugger snapshot captured at SIGNAL time (the deepest, error point),
+   ;; before any handler-case between the error and the debugger's session
+   ;; handler unwinds the poll-point shadow stack. The slot's :INITFORM calls
+   ;; *DEBUG-ERROR-SNAPSHOT-HOOK* — evaluated by MAKE-CONDITION at creation, in
+   ;; the erroring dynamic context (an INITIALIZE-INSTANCE method on a condition
+   ;; is undefined and SBCL does not run it, so the initform is the portable
+   ;; capture point). NIL when no debug session installed the hook, so ordinary
+   ;; runs and tests carry no cost. The debugger prefers this over the
+   ;; live-but-unwound stack, so a function reached through APPLY / MAPCAR / LOAD /
+   ;; vl-catch-all still shows a full backtrace
+   ;; (aldo-no-frames-through-higher-order-builtins).
+   (debug-snapshot
+    :initarg :debug-snapshot
+    :initform (and *debug-error-snapshot-hook*
+                   (ignore-errors (funcall *debug-error-snapshot-hook*)))
+    :accessor autolisp-runtime-error-debug-snapshot))
   (:report (lambda (condition stream)
              (format stream "~A" (autolisp-runtime-error-message condition)))))
 
@@ -165,15 +197,82 @@ the binding-cell doc slot."
                      (autolisp-namespace-exit-kind condition)
                      (autolisp-namespace-exit-value condition)))))
 
+;;; --- The host condition taxonomy (D1 §15; pjb, 2026-09-28) --------------
+;;;
+;;; ONE superclass, FOUR subclasses, so a handler can catch every host failure
+;;; (HOST-ERROR) or one reason for it. Each subclass keeps the CODE keyword the
+;;; runtime error already carries: every existing handler that tests
+;;; (autolisp-runtime-error-code c) against :host-not-supported keeps working.
+;;; The class is chosen FROM the code, in AUTOLISP-RUNTIME-ERROR-CLASS-FOR-CODE,
+;;; so every raiser that already passes one of these codes -- and there are well
+;;; over a hundred -- signals the right class without being touched.
+
+(define-condition host-error (autolisp-runtime-error) ()
+  (:documentation "Any failure of a host operation. Never signalled itself:
+only its four subclasses are. Catch it to handle every host failure at once."))
+
+(define-condition operation-not-supported-by-this-host (host-error) ()
+  (:documentation "Code :HOST-NOT-SUPPORTED. The host implements nothing of
+the kind -- a DESIGN BOUNDARY (nihil asked for an entity)."))
+
+(define-condition unavailable-in-headless-context (host-error) ()
+  (:documentation "Code :HOST-UNAVAILABLE-HEADLESS. The host has the
+subsystem, but the operation needs a display or a pointer this configuration
+lacks -- a DESIGN BOUNDARY (cador asked for an interactive pick)."))
+
+(define-condition operation-not-yet-implemented (host-error) ()
+  (:documentation "Code :HOST-NOT-YET-IMPLEMENTED. A real GAP the host
+intends to fill; a probe marks it pending, not failing."))
+
+(define-condition backend-error (host-error) ()
+  (:documentation "Code :HOST-BACKEND-ERROR. The backend was asked correctly
+and refused or failed -- the remote CAD said no, a DWG failed to parse."))
+
+(defun autolisp-runtime-error-class-for-code (code)
+  "The condition class a runtime error with CODE is signalled as."
+  (case code
+    (:host-not-supported        'operation-not-supported-by-this-host)
+    (:host-unavailable-headless 'unavailable-in-headless-context)
+    (:host-not-yet-implemented  'operation-not-yet-implemented)
+    (:host-backend-error        'backend-error)
+    (t                          'autolisp-runtime-error)))
+
 (defun signal-autolisp-runtime-error (code control-string &rest arguments)
-  (error 'autolisp-runtime-error
+  (error (autolisp-runtime-error-class-for-code code)
          :code code
          :message (apply #'format nil control-string arguments)
          :details arguments
          :call-stack (current-autolisp-call-stack)))
 
+(defvar *autolisp-true-symbol* nil
+  "The interned T symbol, remembered.
+
+AutoLISP truth is a SYMBOL, so every predicate, every relational operator
+and every AND / OR has to produce it -- and producing it meant hashing the
+string \"T\" in the symbol table, on every one of those. It showed up in a
+profile of compiled arithmetic as FIND-AUTOLISP-SYMBOL plus STRING=*,
+about 4%, for a value that never changes.
+
+It CAN change, exactly once and in exactly one way: RESET-AUTOLISP-SYMBOL-
+TABLE clears the table, after which the old T is no longer the table\'s T
+and anything comparing with EQ would quietly stop matching. That function
+clears this too, which is the whole invalidation story -- nothing else
+removes an entry from the symbol table, interning only ever adds.")
+
+(declaim (inline autolisp-true-symbol))
+(defun autolisp-true-symbol ()
+  "The interned T symbol: AutoLISP truth. Cached; see *AUTOLISP-TRUE-SYMBOL*."
+  (or *autolisp-true-symbol*
+      ;; The one place that must NOT go through this function.
+      (setf *autolisp-true-symbol* (intern-autolisp-symbol "T"))))
+
 (defun reset-autolisp-symbol-table ()
   (clrhash clautolisp.autolisp-runtime.internal::*autolisp-symbol-table*)
+  ;; The cached T belonged to the table just cleared. Keeping it would
+  ;; hand out a symbol that is no longer the one INTERN-AUTOLISP-SYMBOL
+  ;; returns, and every EQ against truth would start failing -- in tests
+  ;; only, which is the worst place for it to be subtle.
+  (setf *autolisp-true-symbol* nil)
   (reset-default-evaluation-context))
 
 (defun default-evaluation-context ()
@@ -217,6 +316,28 @@ the binding-cell doc slot."
 (defun set-autolisp-support-paths (paths)
   (setf clautolisp.autolisp-runtime.internal::*autolisp-support-paths*
         (mapcar #'normalize-directory-path paths)))
+
+(defun autolisp-support-path-string ()
+  "The support path as the vendors show it -- Preferences.Files.SupportPath
+and (getenv \"ACAD\") -- the directories joined with \";\", without their
+trailing separator."
+  (format nil "~{~A~^;~}"
+          (mapcar (lambda (directory)
+                    (let ((end (length directory)))
+                      (if (and (> end 1) (find (char directory (1- end)) "/\\"))
+                          (subseq directory 0 (1- end))
+                          directory)))
+                  (autolisp-support-paths))))
+
+(defun set-autolisp-support-path-string (string)
+  "Set the support path from the vendors' \";\"-separated STRING (empty
+entries ignored)."
+  (set-autolisp-support-paths
+   (loop for start = 0 then (1+ end)
+         for end = (or (position #\; string :start start) (length string))
+         for entry = (string-trim " " (subseq string start end))
+         unless (string= entry "") collect entry
+         while (< end (length string)))))
 
 (defun autolisp-trusted-paths ()
   (copy-list clautolisp.autolisp-runtime.internal::*autolisp-trusted-paths*))
@@ -271,7 +392,7 @@ launch wiring after resolving the user init files (empty under
 (defparameter *default-runtime-host* nil
   "Process-wide fallback host backend for fresh runtime sessions.
 The autolisp-host module installs the NullHost singleton here when
-loaded; downstream callers (the CLI, MockHost-aware tests, etc.)
+loaded; downstream callers (the CLI, cador-aware tests, etc.)
 may rebind it to switch the default backend. Sessions whose `:host`
 keyword argument is not supplied inherit this value.")
 
@@ -304,7 +425,7 @@ keyword argument is not supplied inherit this value.")
 
 (defun set-runtime-session-host (session host)
   "Replace SESSION's HAL backend. Used by tools that swap the
-backend mid-session (e.g. switching from MockHost to LiveHost
+backend mid-session (e.g. switching from cador to LiveHost
 within a single run)."
   (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
         host))
@@ -364,6 +485,69 @@ ENCODING on the context's underlying session."
 ;;; messages or honours decimal separators via locale, *those*
 ;;; features will consult their own LC_MESSAGES / LC_NUMERIC.
 
+;;; --- host-divergent encoding spellings ------------------------------
+;;;
+;;; An encoding whose two hosts register it under different names is a
+;;; host artefact leaking into the language, exactly like the missing
+;;; CP-1252 codec that motivated the reader's single-octet fallback —
+;;; except that this one cannot be fixed by supplying a codec, because
+;;; the name never reaches a codec at all.
+;;;
+;;; Mac Roman is the case in point (macroman-encoding-name.issue):
+;;;
+;;;   spelling      SBCL 2.6   CCL 1.13   babel
+;;;   MAC-ROMAN       yes        yes        NO
+;;;   MACINTOSH       yes        yes        NO
+;;;   MACROMAN        NO         yes        NO
+;;;
+;;; and babel ships no Mac Roman table at all, so the single-octet
+;;; fallback in autolisp-reader has nothing to build from — the only
+;;; repair available is to hand the host a spelling it knows. Both
+;;; hosts know MAC-ROMAN, so that is the keyword every spelling
+;;; resolves to.
+;;;
+;;; This matters beyond typo tolerance: BricsCAD/macOS reports
+;;; (getvar "SYSCODEPAGE") as "MAC_ROMAN", so `(setq
+;;; *AUTOLISP-FILE-ENCODING* (getvar "SYSCODEPAGE"))' — the obvious
+;;; thing for user code to write — used to resolve to :MACROMAN and
+;;; fail on an SBCL build while working on a CCL one.
+
+(defparameter *encoding-spelling-aliases*
+  '(("MAC-ROMAN" :mac-roman "MACROMAN" "MACINTOSH" "XMACROMAN" "CP10000"))
+  "Encodings whose spelling differs across the hosts clautolisp supports.
+
+Each row is (CANONICAL-NAME KEYWORD SQUEEZED-SPELLING …): CANONICAL-NAME
+is what the CLI publishes in *AUTOLISP-{FILE,TERMINAL}-ENCODING*, KEYWORD
+is the external-format designator both SBCL and CCL accept, and the
+trailing strings are the accepted spellings in SQUEEZE-ENCODING-NAME form
+\(upper-cased, with dashes / underscores / spaces removed), so
+\"mac_roman\", \"Mac-Roman\" and \"MACROMAN\" all match one entry.
+
+This table is deliberately NOT the general encoding-alias registry — the
+mandatory four live in CLAUTOLISP.AUTOLISP-CLI:*ENCODING-ALIASES*. It
+holds only the names where the hosts disagree with each other, and it is
+consulted by every path that turns a user-supplied encoding name into a
+keyword: LOAD's positional argument, OPEN's third argument, and the
+CLI's -e / -E options.")
+
+(defun squeeze-encoding-name (name)
+  "Fold NAME to the comparison form used by *ENCODING-SPELLING-ALIASES*:
+upper case, with dashes, underscores and spaces removed."
+  (remove-if (lambda (character)
+               (member character '(#\- #\_ #\Space) :test #'char=))
+             (string-upcase name)))
+
+(defun resolve-encoding-spelling-alias (name)
+  "When NAME is one of the host-divergent spellings, return (values
+CANONICAL-NAME KEYWORD); otherwise (values NIL NIL). NAME is matched
+case-insensitively and independently of dashes / underscores / spaces."
+  (when (and name (plusp (length name)))
+    (let ((squeezed (squeeze-encoding-name name)))
+      (loop for (canonical keyword . spellings) in *encoding-spelling-aliases*
+            when (member squeezed spellings :test #'string=)
+              return (values canonical keyword)
+            finally (return (values nil nil))))))
+
 (defun parse-locale-encoding-string (s)
   "Map an encoding suffix (\"UTF-8\", \"utf8\", \"ISO-8859-1\",
 \"latin1\", \"cp1252\", …) to a Lisp external-format keyword, or
@@ -380,10 +564,12 @@ LOCALE-DEFAULT-SOURCE-ENCODING."
                                                                 :windows-1252)
     ((or (string-equal s "ascii") (string-equal s "us-ascii"))  :ascii)
     (t
-     ;; Unknown encodings pass through as upper-cased keywords —
-     ;; the underlying Lisp's OPEN will surface a clear error if
-     ;; it can't honour them.
-     (intern (string-upcase s) :keyword))))
+     ;; A name the hosts spell differently resolves to the spelling
+     ;; they both accept; anything else passes through as an
+     ;; upper-cased keyword — the underlying Lisp's OPEN will surface
+     ;; a clear error if it can't honour it.
+     (or (nth-value 1 (resolve-encoding-spelling-alias s))
+         (intern (string-upcase s) :keyword)))))
 
 (defun parse-posix-locale (value)
   "Extract the encoding suffix of a POSIX locale string such as
@@ -538,6 +724,18 @@ divergence-D1 R13+ marker policy) need not reach into the reader."
         namespace)
   namespace)
 
+(defparameter *document-activation-hook* nil
+  "NIL, or a function (SESSION DOCUMENT) called by
+SET-RUNTIME-SESSION-CURRENT-DOCUMENT after it flips the runtime's current
+document, so a host layer can activate the matching host document in
+lock-step (cador-2). Dependency inversion — the runtime must not name
+clautolisp.cador — mirroring *DEFAULT-RUNTIME-HOST* / the debug hooks: the
+cador/driver layer installs it. NIL (the default) is a no-op, so
+single-document and host-less sessions are unaffected. Called through
+IGNORE-ERRORS so a host that refuses activation cannot break the runtime
+document switch (current == active in cador; the host follows, it does not
+veto).")
+
 (defun set-runtime-session-current-document (session document)
   (unless (typep document 'document-namespace)
     (signal-autolisp-runtime-error
@@ -546,7 +744,136 @@ divergence-D1 R13+ marker policy) need not reach into the reader."
      document))
   (register-runtime-session-document session document :copy-propagated-p t)
   (setf (clautolisp.autolisp-runtime.internal::runtime-session-current-document session)
-        document))
+        document)
+  (when *document-activation-hook*
+    (ignore-errors (funcall *document-activation-hook* session document)))
+  document)
+
+(defun runtime-session-document-for-host-key (session key)
+  "SESSION's document namespace linked to host document KEY -- one per open
+host document, as each AutoCAD drawing has its own LISP namespace -- created
+(and registered, the vl-propagate'd values copied in) on first need."
+  (or (loop for namespace being the hash-values
+              of (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
+                  session)
+            when (equal key (clautolisp.autolisp-runtime.internal::document-namespace-host-document-key
+                             namespace))
+              return namespace)
+      (let ((namespace (make-document-namespace :name key)))
+        (setf (clautolisp.autolisp-runtime.internal::document-namespace-host-document-key
+               namespace)
+              key)
+        (%seed-document-namespace session namespace)
+        (register-runtime-session-document session namespace :copy-propagated-p t)
+        (values namespace t))))
+
+(defparameter *document-namespace-created-hook* nil
+  "NIL, or a function (CONTEXT) called when APPLY-PENDING-DOCUMENT-SWITCH has
+just switched CONTEXT into a NEW document namespace: the builtins install the
+per-document startup chain here (acaddoc.lsp / on_doc_load.lsp, the
+VL-LOAD-ALL files, S::STARTUP), as AutoCAD runs it for each drawing opened.")
+
+(defun runtime-session-pending-loads (session)
+  (clautolisp.autolisp-runtime.internal::runtime-session-pending-loads session))
+
+(defun add-runtime-session-pending-load (session path)
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-pending-loads session)
+        (append (clautolisp.autolisp-runtime.internal::runtime-session-pending-loads session)
+                (list path))))
+
+(defun %application-setting-symbol-p (symbol)
+  (let ((name (ignore-errors (autolisp-symbol-name symbol))))
+    (and (stringp name)
+         (or (and (> (length name) 10) (string-equal "*AUTOLISP-" name :end2 10))
+             (and (> (length name) 12) (string-equal "*CLAUTOLISP-" name :end2 12))))))
+
+(defun %seed-document-namespace (session namespace)
+  "Give a new document NAMESPACE what every drawing starts with: the
+session's system symbols' bindings (builtins and predefined variables),
+copied from the current document; or, with no snapshot taken, every
+builtin (SUBR) binding of the current document."
+  (let* ((source (runtime-session-current-document session))
+         (table (and source (namespace-bindings-table source)))
+         (system (clautolisp.autolisp-runtime.internal::runtime-session-system-symbols session)))
+    (when table
+      (maphash (lambda (symbol cell)
+                 (when (and (binding-cell-bound-p cell)
+                            (or (if system
+                                    (gethash symbol system)
+                                    (typep (binding-cell-value cell)
+                                           'clautolisp.autolisp-runtime.internal::autolisp-subr))
+                                ;; clautolisp's own application settings --
+                                ;; *AUTOLISP-DIALECT*, the encodings ... --
+                                ;; whatever their current value.
+                                (%application-setting-symbol-p symbol)))
+                   (copy-value-cell-between-namespaces source namespace symbol)))
+               table))))
+
+(defun link-runtime-session-current-document (session key)
+  "Link SESSION's current document namespace to host document KEY (the
+startup drawing), unless it is already linked to a document."
+  (let ((namespace (runtime-session-current-document session)))
+    (when (and namespace
+               (null (clautolisp.autolisp-runtime.internal::document-namespace-host-document-key
+                      namespace)))
+      (setf (clautolisp.autolisp-runtime.internal::document-namespace-host-document-key
+             namespace)
+            key)
+      ;; Registered, so RUNTIME-SESSION-DOCUMENT-FOR-HOST-KEY finds it again
+      ;; when the session comes back to the startup drawing.
+      (register-runtime-session-document session namespace :copy-propagated-p nil)
+      ;; Linking happens at setup, before user code: what is bound now is
+      ;; the system's, which every later document starts with.
+      (unless (clautolisp.autolisp-runtime.internal::runtime-session-system-symbols session)
+        (let ((system (make-hash-table :test #'eq)))
+          (maphash (lambda (symbol cell)
+                     (when (binding-cell-bound-p cell)
+                       (setf (gethash symbol system) t)))
+                   (namespace-bindings-table namespace))
+          (setf (clautolisp.autolisp-runtime.internal::runtime-session-system-symbols session)
+                system))))
+    namespace))
+
+(defun forget-runtime-session-document-for-host-key (session key)
+  "Drop SESSION's namespace of the closed host document KEY (its variables and
+functions go with it). Returns T when one was dropped."
+  (let ((table (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
+                session)))
+    (loop for name being the hash-keys of table using (hash-value namespace)
+          when (equal key (clautolisp.autolisp-runtime.internal::document-namespace-host-document-key
+                           namespace))
+            do (remhash name table)
+               (return t))))
+
+(defun request-runtime-document-switch (session key)
+  "Ask SESSION to make host document KEY current at the next top-level read
+(APPLY-PENDING-DOCUMENT-SWITCH): the form running now completes in its own
+document, as in AutoCAD."
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-pending-document-key session)
+        key))
+
+(defun runtime-session-pending-document-key (session)
+  (clautolisp.autolisp-runtime.internal::runtime-session-pending-document-key session))
+
+(defun apply-pending-document-switch (&optional (context (current-evaluation-context)))
+  "At a top-level read: if a document switch is pending, make that document
+the session's current document (the host's active drawing follows through
+*DOCUMENT-ACTIVATION-HOOK*) and CONTEXT's namespace. Returns the namespace
+switched to, or NIL."
+  (let* ((session (and context (evaluation-context-session context)))
+         (key (and session (runtime-session-pending-document-key session))))
+    (when key
+      (setf (clautolisp.autolisp-runtime.internal::runtime-session-pending-document-key session)
+            nil)
+      (multiple-value-bind (namespace new-p) (runtime-session-document-for-host-key session key)
+        (set-runtime-session-current-document session namespace)
+        (setf (clautolisp.autolisp-runtime.internal::evaluation-context-current-document context)
+              namespace
+              (clautolisp.autolisp-runtime.internal::evaluation-context-current-namespace context)
+              namespace)
+        (when (and new-p *document-namespace-created-hook*)
+          (funcall *document-namespace-created-hook* context))
+        namespace))))
 
 (defun autolisp-errno (&optional (context (current-evaluation-context)))
   (runtime-session-errno (evaluation-context-session context)))
@@ -592,6 +919,13 @@ CONTEXT's session. Returns VALUE."
            (eq code :subr-call-host-error)
            (eq code :builtin-error))
        6)
+      ;; XDSIZE's documented failures (Error Codes Reference 48-50).
+      ((eq code :xdata-unrecognized-type)
+       48)
+      ((eq code :xdata-improper-nesting)
+       49)
+      ((eq code :xdata-improper-appid)
+       50)
       ((or (eq code :wrong-number-of-arguments)
            (eq code :unsupported-special-operator)
            (eq code :invalid-form)
@@ -647,9 +981,19 @@ CONTEXT's session. Returns VALUE."
 (defun evaluation-context-current-document (context)
   (clautolisp.autolisp-runtime.internal::evaluation-context-current-document context))
 
+;;; INLINE, all of them. Every one below is either a one-line re-export of
+;;; a struct accessor -- it exists so the internal slot reader has a public
+;;; name -- or a two-line predicate. Out of line, each is a full function
+;;; call on the hottest paths there are: every variable read, every
+;;; function resolution, every call. They showed up in a profile of
+;;; compiled arithmetic at 3-6% EACH, which is call overhead and nothing
+;;; else. Inlining changes no behaviour: an accessor is the slot, and these
+;;; are not functions anyone redefines.
+(declaim (inline evaluation-context-current-namespace))
 (defun evaluation-context-current-namespace (context)
   (clautolisp.autolisp-runtime.internal::evaluation-context-current-namespace context))
 
+(declaim (inline evaluation-context-dynamic-frame))
 (defun evaluation-context-dynamic-frame (context)
   (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context))
 
@@ -661,9 +1005,11 @@ CONTEXT's session. Returns VALUE."
    :current-namespace (or namespace document)
    :dynamic-frame nil))
 
+(declaim (inline binding-cell-value))
 (defun binding-cell-value (cell)
   (clautolisp.autolisp-runtime.internal::binding-cell-value cell))
 
+(declaim (inline binding-cell-bound-p))
 (defun binding-cell-bound-p (cell)
   (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell))
 
@@ -705,10 +1051,31 @@ CONTEXT's session. Returns VALUE."
 (defun namespace-function-table (namespace) (namespace-bindings-table namespace))
 
 (defun namespace-binding-cell (namespace symbol &key (createp t))
-  (or (gethash symbol (namespace-bindings-table namespace))
-      (when createp
-        (setf (gethash symbol (namespace-bindings-table namespace))
-              (clautolisp.autolisp-runtime.internal::make-binding-cell)))))
+  ;; The one-entry cache on the symbol (see AUTOLISP-SYMBOL's
+  ;; BINDING-CACHE slot) turns the common case into a slot read and an
+  ;; EQ test, in place of a TYPECASE on the namespace plus an EQ hash
+  ;; lookup. It is sound because a binding cell, once created, is never
+  ;; removed from its namespace, and no namespace's bindings table is
+  ;; ever cleared or replaced — so the symbol-to-cell mapping only ever
+  ;; grows. A redefinition changes the cell's VALUE, which is read
+  ;; through the cell in both paths, so nothing here caches a definition.
+  (let ((cache (and (typep symbol 'autolisp-symbol)
+                    (clautolisp.autolisp-runtime.internal::autolisp-symbol-binding-cache
+                     symbol))))
+    (if (eq namespace (car cache))
+        (cdr cache)
+        (let ((cell (or (gethash symbol (namespace-bindings-table namespace))
+                        (when createp
+                          (setf (gethash symbol (namespace-bindings-table namespace))
+                                (clautolisp.autolisp-runtime.internal::make-binding-cell))))))
+          ;; Only a cell that exists is remembered: a :CREATEP NIL miss
+          ;; must stay a miss, or the next :CREATEP T call would be
+          ;; answered with NIL from the cache instead of creating a cell.
+          (when (and cell (typep symbol 'autolisp-symbol))
+            (setf (clautolisp.autolisp-runtime.internal::autolisp-symbol-binding-cache
+                   symbol)
+                  (cons namespace cell)))
+          cell))))
 
 (defun namespace-value-cell (namespace symbol &key (createp t))
   (namespace-binding-cell namespace symbol :createp createp))
@@ -844,7 +1211,13 @@ CONTEXT's session. Returns VALUE."
                  (set-function symbol function context)
                  (push symbol imported))
                application-table)
-      (nreverse imported))))
+      ;; Return in a deterministic name-sorted order. The source is a
+      ;; hash-table whose MAPHASH order is implementation-dependent — SBCL
+      ;; and CCL enumerate it differently — and callers/tests compare the
+      ;; returned list, so a stable order makes the contract host-independent
+      ;; (ccl-suite-failures.issue). All functions are imported regardless of
+      ;; order; only the reported list is sorted.
+      (sort imported #'string< :key #'autolisp-symbol-name))))
 
 (defun blackboard-ref (symbol &optional (context (current-evaluation-context)))
   (let* ((namespace (runtime-session-blackboard-namespace
@@ -854,10 +1227,14 @@ CONTEXT's session. Returns VALUE."
             (and cell (binding-cell-bound-p cell)))))
 
 (defun blackboard-set (symbol value &optional (context (current-evaluation-context)))
+  ;; E2, measured (probe-conformance, AutoCAD 2022 job 16959485595, BricsCAD
+  ;; V25 16959485805, V26 16942576104): the blackboard stores a COPY of a list
+  ;; -- (eq l (vl-bb-ref 'x)) is nil, equal is T -- on both products. D2
+  ;; assumption A2 (share) was wrong; its stated remedy is this copy-tree.
   (let* ((namespace (runtime-session-blackboard-namespace
                      (evaluation-context-session context)))
          (cell (namespace-binding-cell namespace symbol)))
-    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) value
+    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) (copy-tree value)
           (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell) t
           (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition
            cell)
@@ -891,29 +1268,193 @@ CONTEXT's session. Returns VALUE."
           frame)
     frame))
 
+(defun %release-frame-binding-counts (frame)
+  "Decrement DYNAMIC-BINDING-COUNT for every symbol FRAME binds.
+
+Deliberately does NOT go through FRAME-BOUND-SYMBOLS, which MAPCARs a
+fresh list of the keys: this runs on every function return, and a list
+per return is exactly the kind of garbage the frames themselves were
+changed from hash tables to alists to avoid."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
+    (if (hash-table-p bindings)
+        (maphash (lambda (symbol binding)
+                   (declare (ignore binding))
+                   (when (typep symbol 'autolisp-symbol)
+                     (decf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+                            symbol))))
+                 bindings)
+        (loop for binding = bindings
+                then (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+              while binding
+              do (let ((symbol (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                                binding)))
+                   (when (typep symbol 'autolisp-symbol)
+                     (decf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+                            symbol))))))))
+
 (defun pop-dynamic-frame (&optional (context (current-evaluation-context)))
   (let ((frame (evaluation-context-dynamic-frame context)))
     (when frame
+      ;; The other of the two places DYNAMIC-BINDING-COUNT moves. Popping
+      ;; is the ONLY way a frame stops being live -- nothing else writes
+      ;; the context's frame slot, and every PUSH-DYNAMIC-FRAME is paired
+      ;; with a POP under UNWIND-PROTECT -- so this is where the bindings
+      ;; it held stop counting.
+      (%release-frame-binding-counts frame)
       (setf (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context)
             (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)))
     frame))
 
+(defparameter *dynamic-frame-alist-limit* 12
+  "How many bindings a dynamic frame keeps in an alist before switching to
+a hash table.
+
+A frame holds one function call's parameters and `/'-locals, which is a
+handful — searching a short alist with EQ is cheaper than hashing, and
+costs no allocation at all, where a hash table costs one per call. The
+limit exists only so a pathological function with a hundred locals does
+not degrade lookup along the whole frame chain: past it, the frame
+promotes itself and behaves as before.")
+
+;;; The three operations every reader of a frame's bindings needs. They
+;;; exist so that the alist/hash-table duality is decided in ONE place:
+;;; before them, six call sites did GETHASH on the slot directly, and
+;;; changing the representation would have meant changing all six
+;;; identically — which is how two representations start disagreeing.
+
+(declaim (inline frame-binding))
+(defun frame-binding (frame symbol)
+  "SYMBOL's binding in FRAME itself, or NIL."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
+    (if (hash-table-p bindings)
+        (gethash symbol bindings)
+        (loop for binding = bindings
+                then (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+              while binding
+              when (eq (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol binding)
+                       symbol)
+                do (return binding)))))
+
+(defun (setf frame-binding) (binding frame symbol)
+  "Install BINDING for SYMBOL in FRAME, replacing any binding FRAME
+already had for it — a frame holds at most one binding per symbol, which
+is what makes DYNAMIC-FRAME-SYMBOLS a set.
+
+One of the two places a symbol's DYNAMIC-BINDING-COUNT moves. A NEW entry
+increments it; REPLACING the binding of a symbol this frame already binds
+does not, because the frame still binds that symbol exactly once. Getting
+that distinction wrong in the generous direction only costs the walk this
+count exists to skip; getting it wrong the other way would skip a walk
+that was needed."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))
+        (newp t))
+    (if (hash-table-p bindings)
+        (progn
+          (setf newp (not (nth-value 1 (gethash symbol bindings))))
+          (setf (gethash symbol bindings) binding))
+        ;; The chain. One walk finds the existing entry (with its
+        ;; predecessor, so it can be spliced out) and counts the entries
+        ;; for the promotion test -- the count is only used when no
+        ;; existing entry was found, which is exactly when the walk ran to
+        ;; the end.
+        (let ((previous nil)
+              (existing nil)
+              (count 0))
+          (loop for current = bindings
+                  then (clautolisp.autolisp-runtime.internal::dynamic-binding-next current)
+                while current
+                do (when (eq (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                              current)
+                             symbol)
+                     (setf existing current)
+                     (return))
+                   (incf count)
+                   (setf previous current))
+          (cond
+            (existing
+             ;; Replace: splice the new binding in where the old one was,
+             ;; leaving the old one orphaned -- which is what replacing the
+             ;; CDR of an alist entry did. NEXT is cleared on the way out so
+             ;; a discarded binding does not hold the rest of the chain
+             ;; alive.
+             (setf newp nil)
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+                   (clautolisp.autolisp-runtime.internal::dynamic-binding-next existing))
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next existing) nil)
+             (if previous
+                 (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next previous)
+                       binding)
+                 (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+                       binding)))
+            ((< count *dynamic-frame-alist-limit*)
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+                   bindings)
+             (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+                   binding))
+            (t
+             ;; Promote: this frame has outgrown a linear search.
+             (let ((table (make-hash-table :test #'eq
+                                           :size (* 2 *dynamic-frame-alist-limit*))))
+               (loop for current = bindings
+                       then (clautolisp.autolisp-runtime.internal::dynamic-binding-next current)
+                     while current
+                     do (setf (gethash
+                               (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                                current)
+                               table)
+                              current))
+               (setf (gethash symbol table) binding)
+               (setf (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+                     table))))))
+    (when (and newp (typep symbol 'autolisp-symbol))
+      (incf (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+             symbol)))
+    binding))
+
+(defun frame-bound-symbols (frame)
+  "The symbols FRAME binds directly, in no particular order."
+  (let ((bindings (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)))
+    (if (hash-table-p bindings)
+        (loop for symbol being the hash-keys of bindings collect symbol)
+        (loop for binding = bindings
+                then (clautolisp.autolisp-runtime.internal::dynamic-binding-next binding)
+              while binding
+              collect (clautolisp.autolisp-runtime.internal::dynamic-binding-symbol
+                       binding)))))
+
 (defun bind-dynamic-variable (symbol value &optional (context (current-evaluation-context)))
   (let ((frame (or (evaluation-context-dynamic-frame context)
                    (push-dynamic-frame context))))
-    (setf (gethash symbol (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))
+    (setf (frame-binding frame symbol)
           (clautolisp.autolisp-runtime.internal::make-dynamic-binding
            :symbol symbol
            :value value
            :bound-p t))
     value))
 
+(declaim (inline symbol-has-no-dynamic-binding-p))
+(defun symbol-has-no-dynamic-binding-p (symbol)
+  "True when NO live dynamic frame binds SYMBOL, so a walk of the frame
+chain looking for one is guaranteed to fail.
+
+The count is exact and moves only in (SETF FRAME-BINDING) and
+POP-DYNAMIC-FRAME. A non-AUTOLISP-SYMBOL has nowhere to keep a count, so
+it answers NIL and walks -- the old behaviour, which is always correct."
+  (and (typep symbol 'autolisp-symbol)
+       (zerop (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+               symbol))))
+
 (defun find-dynamic-binding (symbol frame)
-  (loop for current = frame then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent current)
-        while current
-        for binding = (gethash symbol (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings current))
-        when binding
-          do (return binding)))
+  ;; The early exit is the whole point: without it this walks the entire
+  ;; frame chain and fails in every frame, on every global read and every
+  ;; assignment to a global, making both O(call-stack depth).
+  (if (symbol-has-no-dynamic-binding-p symbol)
+      nil
+      (loop for current = frame then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent current)
+            while current
+            for binding = (frame-binding current symbol)
+            when binding
+              do (return binding))))
 
 ;;; --- Dynamic-frame introspection for the debugger (spec §9) --------
 ;;
@@ -930,15 +1471,12 @@ CONTEXT's session. Returns VALUE."
 (defun dynamic-frame-symbols (frame)
   "List of AutoLISP symbols bound *directly* in FRAME (not its parents),
 i.e. the shadowings this frame introduced."
-  (loop for symbol being the hash-keys
-          of (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
-        collect symbol))
+  (frame-bound-symbols frame))
 
 (defun dynamic-frame-binding-value (frame symbol)
   "Read SYMBOL's binding in FRAME only. Returns (values value bound-p);
 bound-p is NIL when FRAME has no binding for SYMBOL."
-  (let ((binding (gethash symbol
-                          (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))))
+  (let ((binding (frame-binding frame symbol)))
     (if binding
         (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
                 (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding))
@@ -948,8 +1486,7 @@ bound-p is NIL when FRAME has no binding for SYMBOL."
   "Write SYMBOL's binding in FRAME only (the debugger's shadowed-binding
 write, §9.4). Signals if FRAME has no binding for SYMBOL — the debugger
 must not create a new frame-local binding mid-execution (§16.1)."
-  (let ((binding (gethash symbol
-                          (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))))
+  (let ((binding (frame-binding frame symbol)))
     (unless binding
       (signal-autolisp-runtime-error
        :no-such-frame-binding
@@ -1040,6 +1577,7 @@ happen in the documented call sites)."
            (setf (clautolisp.autolisp-runtime.internal::binding-cell-doc cell) new-doc))))))
   new-doc)
 
+(declaim (inline callable-value-p))
 (defun callable-value-p (value)
   "True iff VALUE is something AutoLISP can call in operator
 position: a built-in SUBR, a user-defined USUBR, or a literal
@@ -1078,20 +1616,28 @@ when it actually invokes the binding."
   ;; coercion happens lazily in CALL-AUTOLISP-FUNCTION-IN-CONTEXT
   ;; so the dynamic context at the call site is the one EVAL-LAMBDA-
   ;; FORM captures (matching the late-resolution rule above).
-  (loop for frame = (evaluation-context-dynamic-frame context)
-                then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)
-        while frame
-        for binding = (gethash symbol
-                               (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings
-                                frame))
-        when (and binding
-                  (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding)
-                  (callable-value-p
-                   (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)))
-          do (return-from lookup-function
-               (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
-                       t
-                       :dynamic)))
+  ;;
+  ;; The walk below is skipped entirely when no live frame binds SYMBOL,
+  ;; which for a function name is the overwhelming case -- `+' is not a
+  ;; parameter of anything. Without the skip, resolving the operator of
+  ;; every call walked the whole frame chain and failed in every frame,
+  ;; so a call cost O(call-stack depth): the same loop measured 3.7x
+  ;; slower forty frames down than at the top level. The shadowing rules
+  ;; documented above are unchanged -- when a frame DOES bind the name,
+  ;; the count is non-zero and the walk runs exactly as before.
+  (unless (symbol-has-no-dynamic-binding-p symbol)
+    (loop for frame = (evaluation-context-dynamic-frame context)
+                  then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)
+          while frame
+          for binding = (frame-binding frame symbol)
+          when (and binding
+                    (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding)
+                    (callable-value-p
+                     (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)))
+            do (return-from lookup-function
+                 (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
+                         t
+                         :dynamic))))
   (let* ((cell (namespace-binding-cell (evaluation-context-current-namespace context)
                                        symbol
                                        :createp nil))
@@ -1202,11 +1748,16 @@ binding. A no-op when SYMBOL has no namespace cell yet."
 (defun autolisp-file-stream (object)
   (clautolisp.autolisp-runtime.internal::autolisp-file-stream object))
 
-(defun make-autolisp-file (stream path mode)
+(defun make-autolisp-file (stream path mode &optional external-format)
   (clautolisp.autolisp-runtime.internal::make-autolisp-file
    :stream stream
    :path path
-   :mode mode))
+   :mode mode
+   :external-format external-format))
+
+(defun autolisp-file-external-format (object)
+  "The external format OPEN opened OBJECT's stream with, or NIL."
+  (clautolisp.autolisp-runtime.internal::autolisp-file-external-format object))
 
 (defun autolisp-file-path (object)
   (clautolisp.autolisp-runtime.internal::autolisp-file-path object))
@@ -1224,8 +1775,11 @@ binding. A no-op when SYMBOL has no namespace cell yet."
 (defun autolisp-ename-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-ename-value object))
 
-(defun make-autolisp-ename (&key value)
-  (clautolisp.autolisp-runtime.internal::make-autolisp-ename :value value))
+(defun make-autolisp-ename (&key value document)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-ename :value value :document document))
+
+(defun autolisp-ename-document (ename)
+  (clautolisp.autolisp-runtime.internal::autolisp-ename-document ename))
 
 (defun autolisp-pickset-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-pickset-value object))
@@ -1241,18 +1795,151 @@ binding. A no-op when SYMBOL has no namespace cell yet."
    :name name
    :function function))
 
+(declaim (inline autolisp-subr-function))
 (defun autolisp-subr-function (object)
   (clautolisp.autolisp-runtime.internal::autolisp-subr-function object))
+
+(declaim (inline autolisp-open-code-tag))
+(defun autolisp-open-code-tag (object)
+  "The open-coding tag of OBJECT, or NIL when OBJECT is not a tagged
+builtin subr.
+
+The one question a compiled call site asks before taking an inline fast
+path: `is the thing this name resolves to RIGHT NOW still the exact
+builtin whose semantics I open-coded?'. Everything that is not that --
+a user DEFUN, a SETQ of a lambda, a `/'-local shadow, a host override, a
+usubr, a lambda form, NIL -- answers NIL here and gets an ordinary call.
+
+Written as a function taking ANY object, rather than a slot reader, so
+the call site never has to know what it is holding before it asks."
+  (and (typep object 'autolisp-subr)
+       (clautolisp.autolisp-runtime.internal::autolisp-subr-open-code object)))
+
+(defun (setf autolisp-open-code-tag) (tag object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-open-code object) tag))
+
+(declaim (inline lexically-safe-callee-p))
+(defun lexically-safe-callee-p (object)
+  "True when OBJECT is a builtin audited LEXICALLY SAFE: it cannot call back
+into AutoLISP and cannot read or write a variable by name, so a lexical fork
+may call it without materialising its locals (lexical-locals-escape-analysis).
+
+The question every call site of a lexical fork asks about the function its
+operator resolved to RIGHT NOW. A user DEFUN, a SETQ of a lambda, a shadow, an
+unaudited builtin -- all answer NIL and are called with the locals in a real
+frame, where they can see them exactly as they would in the dynamic fork."
+  (and (typep object 'autolisp-subr)
+       (clautolisp.autolisp-runtime.internal::autolisp-subr-lexically-safe object)))
+
+(defun (setf autolisp-subr-lexically-safe) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-lexically-safe object)
+        value))
+
+(declaim (inline autolisp-subr-owner))
+(defun autolisp-subr-owner (object)
+  "The vendor that alone provides this builtin's operator -- :AUTOCAD or
+:BRICSCAD -- or NIL for a portable one."
+  (clautolisp.autolisp-runtime.internal::autolisp-subr-owner object))
+
+(defun (setf autolisp-subr-owner) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-owner object) value))
+
+(declaim (inline autolisp-subr-version-gate))
+(defun autolisp-subr-version-gate (object)
+  "The (PRODUCT SINCE UNTIL) gates of a version-gated operator, or NIL."
+  (clautolisp.autolisp-runtime.internal::autolisp-subr-version-gate object))
+
+(defun (setf autolisp-subr-version-gate) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-subr-version-gate object) value))
+
+(defvar *vendor-only-operator-table*
+  (let ((table (make-hash-table :test 'equalp)))
+    (loop for (name . owner) in *vendor-only-operators*
+          do (setf (gethash name table) owner))
+    table)
+  "*VENDOR-ONLY-OPERATORS* (operator-availability.lisp, generated from the
+spec) as a case-insensitive table: operator name -> :AUTOCAD / :BRICSCAD.")
+
+(defun vendor-only-operator-owner (name)
+  "The vendor that alone provides the operator NAME, per the spec's
+Availability: :AUTOCAD, :BRICSCAD, or NIL for a portable operator (or one
+the spec does not describe)."
+  (values (gethash name *vendor-only-operator-table*)))
+
+;;; Vendor-only operators clautolisp ADOPTS as its own extension as well: they
+;;; keep their vendor owner (from the spec, operator-availability.lisp) and
+;;; warn wherever neither that vendor nor clautolisp provides them, but are
+;;; silent under --clautolisp too. ERROR: undocumented by both vendors,
+;;; present in BricsCAD (pjb, V26 macOS, 2026-10-15), absent from AutoCAD
+;;; 2022; clautolisp signals with it and alfe's CAD runtime raises with it
+;;; (issues/closed/clautolisp-error-silent-under-autocad.issue).
+(defparameter *clautolisp-adopted-operators* '("ERROR")
+  "Vendor-only operators that clautolisp also provides as its own extension:
+silent under --clautolisp as well as under the owner's dialects.")
+
+(defun clautolisp-adopted-operator-p (name)
+  "True when NAME is in *CLAUTOLISP-ADOPTED-OPERATORS*."
+  (and (member name *clautolisp-adopted-operators* :test #'string-equal) t))
+
+(defun autolisp-usubr-lexical-body (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-lexical-body object))
+
+(defun (setf autolisp-usubr-lexical-body) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-lexical-body object)
+        value))
 
 (defun autolisp-usubr-name (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-name object))
 
-(defun make-autolisp-usubr (name lambda-list body environment)
+(defun make-autolisp-usubr (name lambda-list body environment &optional site)
   (clautolisp.autolisp-runtime.internal::make-autolisp-usubr
    :name name
    :lambda-list lambda-list
    :body body
-   :environment environment))
+   :environment environment
+   :site site))
+
+(defun autolisp-usubr-site (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-site object))
+
+(defun make-usubr-site ()
+  "A fresh sharing point for the closures one LAMBDA form will build.
+
+Called once per compiled LAMBDA site, from a LOAD-TIME-VALUE the
+transpiler emits, so the identity is the CODE rather than any one
+closure -- which is the whole point (see the SITE slot's comment)."
+  (clautolisp.autolisp-runtime.internal::make-usubr-site))
+
+(defun usubr-site-call-count (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-call-count site))
+
+(defun (setf usubr-site-call-count) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-call-count site) value))
+
+(defun usubr-site-compiled-body (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-compiled-body site))
+
+(defun usubr-site-instrumented-body (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-instrumented-body site))
+
+(defun (setf usubr-site-instrumented-body) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-instrumented-body site) value))
+
+(defun usubr-site-debug-metadata (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-debug-metadata site))
+
+(defun (setf usubr-site-debug-metadata) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-debug-metadata site) value))
+
+(defun usubr-site-compiled-instrumented-body (site)
+  (clautolisp.autolisp-runtime.internal::usubr-site-compiled-instrumented-body site))
+
+(defun (setf usubr-site-compiled-instrumented-body) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-compiled-instrumented-body site)
+        value))
+
+(defun (setf usubr-site-compiled-body) (value site)
+  (setf (clautolisp.autolisp-runtime.internal::usubr-site-compiled-body site) value))
 
 (defun autolisp-usubr-lambda-list (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-lambda-list object))
@@ -1270,11 +1957,41 @@ binding. A no-op when SYMBOL has no namespace cell yet."
   (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-instrumented-body object)
         value))
 
+(defun autolisp-usubr-compiled-body (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-body object))
+
+(defun (setf autolisp-usubr-compiled-body) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-body object)
+        value))
+
+(defun autolisp-usubr-compiled-instrumented-body (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-instrumented-body
+   object))
+
+(defun (setf autolisp-usubr-compiled-instrumented-body) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-compiled-instrumented-body
+         object)
+        value))
+
+(defun autolisp-usubr-call-count (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-call-count object))
+
+(defun (setf autolisp-usubr-call-count) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-call-count object)
+        value))
+
 (defun autolisp-usubr-debug-metadata (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-debug-metadata object))
 
 (defun (setf autolisp-usubr-debug-metadata) (value object)
   (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-debug-metadata object)
+        value))
+
+(defun autolisp-usubr-instrumentation-failed (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-instrumentation-failed object))
+
+(defun (setf autolisp-usubr-instrumentation-failed) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-instrumentation-failed object)
         value))
 
 (defun make-autolisp-catch-all-error (message condition)
@@ -1309,6 +2026,56 @@ error wraps a non-autolisp-runtime condition."
 (defun make-autolisp-vla-object (&key value)
   (clautolisp.autolisp-runtime.internal::make-autolisp-vla-object :value value))
 
+;;; --- opaque AutoLISP handles onto Common Lisp objects ------------------
+;;; Frames / windows / faces and the like cross into AutoLISP as opaque,
+;;; type-safe handles rather than integer indices: (type (clal-make-window …))
+;;; -> WINDOW, and they print as #<WINDOW "name" address>. Wrappers are interned
+;;; per CL object so the same object is EQ-stable across AutoLISP calls.
+
+(defun autolisp-lisp-object-value (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-lisp-object-value object))
+
+(defun autolisp-lisp-object-type-name (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-lisp-object-type-name object))
+
+(defvar *lisp-object-wrappers*
+  (make-hash-table :test 'eq)
+  "CL object -> its interned AUTOLISP-LISP-OBJECT wrapper (EQ-stable identity).")
+
+(defun wrap-lisp-object (value type-name &optional labeler)
+  "Wrap the CL VALUE as an opaque AutoLISP object reporting TYPE-NAME (a string,
+e.g. \"WINDOW\") to (type …); LABELER is an optional thunk returning a fresh
+short label for printing. The same VALUE always yields the same (EQ) wrapper."
+  (or (gethash value *lisp-object-wrappers*)
+      (setf (gethash value *lisp-object-wrappers*)
+            (clautolisp.autolisp-runtime.internal::make-autolisp-lisp-object
+             :value value :type-name type-name :labeler labeler))))
+
+(defun lisp-object-p (object &optional type-name)
+  "True when OBJECT is an opaque AutoLISP lisp-object (of TYPE-NAME, if given)."
+  (and (typep object 'autolisp-lisp-object)
+       (or (null type-name)
+           (string-equal type-name (autolisp-lisp-object-type-name object)))))
+
+(defun unwrap-lisp-object (object &optional type-name who)
+  "The CL object inside an opaque AUTOLISP-LISP-OBJECT; a runtime error if OBJECT
+is not a lisp-object, or (when TYPE-NAME is given) not of that type. WHO names
+the caller for the error message."
+  (unless (typep object 'autolisp-lisp-object)
+    (signal-autolisp-runtime-error
+     :bad-argument "~@[~A: ~]expected an opaque lisp-object, got ~S."
+     who object))
+  (when (and type-name
+             (not (string-equal type-name (autolisp-lisp-object-type-name object))))
+    (signal-autolisp-runtime-error
+     :bad-argument "~@[~A: ~]expected a ~A handle, got a ~A."
+     who type-name (autolisp-lisp-object-type-name object)))
+  (autolisp-lisp-object-value object))
+
+(defun reset-lisp-object-wrappers ()
+  "Drop the interned lisp-object wrappers (a fresh session / tests)."
+  (clrhash *lisp-object-wrappers*))
+
 (defun make-autolisp-safearray (&key value)
   (clautolisp.autolisp-runtime.internal::make-autolisp-safearray :value value))
 
@@ -1342,12 +2109,15 @@ it). The QUIT event cannot be ignored. Set by the clautolisp CLI's
 --on-quit option; the AutoLISP variable *CLAL-ON-QUIT* mirrors it and is
 consulted LIVE at each (quit) / (exit) call.")
 
-(defparameter *clal-debugger-ui* :tui
-  "The debugger user-interface selection (debugger command reference §10):
-:TUI (the line/terminal UI), :NCURSES, or :ALDB (the Emacs front-end). Set
-by the clautolisp CLI's --debugger-ui option, defaulting to the persisted
+(defparameter *clal-debugger-ui* :dumb
+  "The debugger user-interface selection (debugger command reference §10). The
+canonical values are the symbols =DUMB= (the line/terminal UI), =NCURSES=, and
+=ALDB= (the Emacs front-end); =TERMINAL= and =TUI= are accepted aliases of
+=DUMB=, and =EMACS= of =ALDB=, matched case-insensitively. Set by the
+clautolisp CLI's --debugger-ui option, defaulting to the persisted
 default-user-interface aldo setting. Mirrored to the AutoLISP variable
-*CLAL-DEBUGGER-UI*.")
+*CLAL-DEBUGGER-UI*, which the debugger reads live at each stop; if it is set to
+an unrecognised value the debugger warns and uses the DUMB UI.")
 
 (defparameter *clal-aldb-listen* nil
   "The aldb (Emacs UI) transport requested on the CLI
@@ -1391,6 +2161,62 @@ caught autolisp-runtime-error BEFORE returning the AutoLISP error object
 (spec §10.2 'break on caught error'). The debugger installs this only when
 break-on-caught is enabled; NIL by default (off).")
 
+(defparameter *resolve-unbound-function-hook* nil
+  "When non-nil, a function (SYMBOL CONTEXT) the evaluator calls just
+before signalling :undefined-function for an unbound operator. It returns
+a callable (autolisp-subr / autolisp-usubr) to use as the function, or NIL
+to let the normal :undefined-function error fire. This is how the builtins
+layer wires the dynamic Visual-LISP `vla-*' accessor façade without the
+runtime having to depend on the builtins system (a layer above it). See
+RESOLVE-VLA-ACCESSOR in autolisp-builtins-core.")
+
+(defparameter *vlax-collection-items-hook* nil
+  "When non-nil, a function (COLLECTION-VLA) returning a CL list of an
+ActiveX collection's member values; used by the VLAX-FOR special form.
+Set by the builtins layer (which owns the host COM protocol), so the
+runtime need not depend on the host/builtins layers above it.")
+
+(defparameter *com-point-wrap-hook* nil
+  "When non-nil, a function (DOUBLES-LIST) returning the ActiveX
+VARIANT-wrapped double SAFEARRAY the vendor COM surface hands back for a
+point-valued property (InsertionPoint, TextAlignmentPoint, …). Set by
+the builtins layer, which owns the safearray representation; a host
+returning point properties calls it so the runtime/host layers need not
+depend on the builtins layer above them. When nil (builtins not loaded,
+e.g. bare host unit tests) points pass through as plain lists.")
+
+(defparameter *com-point-unwrap-hook* nil
+  "When non-nil, a function (VALUE) returning the CL list of doubles
+inside a VARIANT / SAFEARRAY point value, or NIL when VALUE is neither.
+The write-side companion of *COM-POINT-WRAP-HOOK*: lets a host accept
+vlax-3d-point results for point-valued property writes.")
+
+(defparameter *com-objects-wrap-hook* nil
+  "When non-nil, a function (VALUES-LIST) returning the ActiveX
+VARIANT-wrapped SAFEARRAY of the given values (VLA-objects, typically)
+that object-array-valued COM methods hand back — GetAttributes et al.
+Set by the builtins layer alongside *COM-POINT-WRAP-HOOK*; when nil the
+values pass through as a plain list.")
+
+(defmacro without-builtin-layer-hooks (&body body)
+  "Run BODY in the bare-runtime hook state: every hook a layer above the
+runtime installs here (INSTALL-CORE-BUILTINS sets them all, process-wide)
+bound to NIL for BODY's dynamic extent, and restored afterwards.
+
+The hooks are global because the builtins layer, once installed, is the
+whole program's; but a caller that exercises the layers BELOW the builtins
+(the cador host suite: COM points as plain lists, no vla-* facade) has to
+establish that state itself rather than rely on nobody having installed
+the builtins earlier in the same process -- otherwise its results depend on
+what ran before it (install-core-builtins-leaks-com-hooks-across-suites).
+This is the one list of those hooks: a new one gets added here too."
+  `(let ((*resolve-unbound-function-hook* nil)
+         (*vlax-collection-items-hook* nil)
+         (*com-point-wrap-hook* nil)
+         (*com-point-unwrap-hook* nil)
+         (*com-objects-wrap-hook* nil))
+     ,@body))
+
 (defparameter *debug-define-command-hook* nil
   "When non-nil, a function (NAMES FUNCTION DOC) the CLAL-DEFINE-DEBUGGER-COMMAND
 builtin calls to register an AutoLISP-defined debugger command (command
@@ -1412,6 +2238,23 @@ AutoLISP command body, DOC a string or NIL. The debugger UI installs it; NIL
   "When non-nil, a thunk returning the CL list of registered interactor name
 strings, for the CLAL-LIST-INTERACTOR-NAMES builtin. The debugger UI
 installs it; NIL (an empty list) when that layer is absent.")
+
+(defparameter *ui-binding-hook* nil
+  "When non-nil, a function (OP &rest ARGS) the CLAL-BINDING family of builtins
+call to manage the debugger UI's user key bindings (ncurses-key-bindings.issue).
+OP is a keyword: :BIND (KEY-STRING COMMAND) — COMMAND a CL string (a command
+name/line) or an AutoLISP function designator / form; :UNBIND (KEY-STRING);
+:LOOKUP (KEY-STRING); :MAP (AUTOLISP-FUNCTION) — called with (KEY-STRING COMMAND)
+per binding; :DEFINE-COMMAND (NAME-STRING AUTOLISP-FUNCTION). The debugger UI
+installs it; NIL (a no-op) when that layer is absent.")
+
+(defparameter *ui-object-hook* nil
+  "When non-nil, a function (OP &rest ARGS) the CLAL frame / window / face
+builtins call to reach the debugger UI's tui-core objects (TUI module spec). OP
+is a keyword (:MAKE-FRAME :FRAME-LIST :SELECT-FRAME :MAKE-WINDOW :WINDOW-LIST
+:DEFINE-FACE :FACE-PARAMETERS …); the hook marshals AutoLISP values <-> tui-core
+objects (returning opaque lisp-object handles via WRAP-LISP-OBJECT). The debugger
+UI installs it; NIL (a no-op) when that layer is absent.")
 
 (defparameter *debug-break-hook* nil
   "When non-nil, a function of one optional MESSAGE argument that the
@@ -1461,6 +2304,48 @@ runtime instrument functions for stepping/breakpoints — lazily, on a function'
 first call under a debug session — without the runtime depending on the debugger
 layer (the same dependency-inversion as *debug-break-hook*).")
 
+(defparameter +poll-operator-name+ "%CLAL-POLL"
+  "Name of the special operator the debugger weaves around every
+instrumentable form of a function it instruments.
+
+It lives HERE, in the runtime, rather than in the debugger that weaves it,
+because it names a protocol with THREE participants, not two: the debugger
+emits the node, the interpreter dispatches it (through
+REGISTER-SPECIAL-OPERATOR), and the compiler has to recognise it in order to
+translate an instrumented body instead of handing it straight back to the
+interpreter. A name each of them spelled separately would be three chances
+to disagree.")
+
+(defparameter *compiled-poll-hook* nil
+  "When non-nil, a function (FID FORM-ID CONTEXT THUNK) running THUNK under
+the debugger's poll protocol: the shadow stack, the :BEFORE / :AFTER poll
+points, form-level jumps and the CLAL-POLL-RETURN restart. The debug system
+installs it (clautolisp.debug:call-with-poll-point) when it loads; NIL when
+the debugger is absent.
+
+The same dependency-inversion as *INSTRUMENT-USUBR-HOOK*, and it exists for
+one reason: compiled instrumented code must reach the poll protocol as the
+INTERPRETER'S OWN, not through a second copy of it. EVAL-POLL-FORM supplies
+the inner form as (lambda () (autolisp-eval inner context)); compiled code
+supplies it as the transpiled inner form. Same protocol, two ways of
+producing the value inside it.")
+
+(declaim (inline call-with-compiled-poll-point))
+(defun call-with-compiled-poll-point (fid form-id context thunk)
+  "Run THUNK as the body of poll point FORM-ID of function FID.
+
+What compiled instrumented code emits for a %CLAL-POLL node. With no
+debugger loaded there is no protocol to run, so THUNK is simply called --
+which is also what EVAL-POLL-FORM does on a thread that is not being
+debugged.
+
+INLINE because compiled instrumented code calls it once per instrumented
+form, and out of line it is a whole call to read one special variable and
+funcall through it."
+  (if *compiled-poll-hook*
+      (funcall *compiled-poll-hook* fid form-id context thunk)
+      (funcall thunk)))
+
 (defparameter *debug-instrumentation-enabled* t
   "Whether the runtime weaves instrumented forks while debugging. Reflects the
 CLAL-OPTIMIZATION DEBUG level (CLAL-OPTIMIZE sets it: T when DEBUG>0, NIL under
@@ -1468,14 +2353,366 @@ SPACE / DEBUG 0). When NIL, debugged code runs its plain body — no poll points
 no stepping — trading debuggability for speed/size (the fork matrix's DEBUG-0
 rows). T by default, so a debug session instruments what it runs.")
 
+(defparameter *before-load-file-hook* nil
+  "When non-nil, a function called with the resolved namestring of a file about
+to be loaded (AUTOLISP-LOAD-FILE-IN-CONTEXT), before its forms are evaluated. The
+aldo debugger installs it to open a new load generation for that file's FILE:LINE
+breakpoints, so a reload re-resolves them (aldo-command-from-repl.issue). NIL when
+the debug system is absent.")
+
+(defparameter *after-load-file-hook* nil
+  "When non-nil, a function called with the resolved namestring of a file just
+loaded, after its forms are evaluated (on normal completion). The aldo debugger
+installs it to warn when a reload moved any FILE:LINE breakpoint. NIL when the
+debug system is absent.")
+
+(defun instrument-usubr-if-possible (function)
+  "Weave FUNCTION's instrumented fork via *INSTRUMENT-USUBR-HOOK*, SURFACING a
+failure instead of silently swallowing it: if the weave raises (a construct the
+instrumenter cannot yet handle), emit ONE warning naming the function and the
+cause, remember the failure on the usubr so we neither re-warn nor re-attempt on
+every call, and fall back to the plain body. Returns the instrumented body (now
+non-nil), or NIL when the debugger layer is absent or the weave failed — the
+caller then runs the plain body (no poll points ⇒ that function shows no stack
+frames, which is exactly what the warning now makes visible instead of a silent
+empty backtrace). Idempotent: an already-instrumented function is left as is."
+  (when (and *instrument-usubr-hook*
+             (not (autolisp-usubr-instrumented-body function))
+             (not (autolisp-usubr-instrumentation-failed function)))
+    (handler-case (funcall *instrument-usubr-hook* function)
+      (error (condition)
+        (setf (autolisp-usubr-instrumentation-failed function) t)
+        (warn "clautolisp: cannot instrument ~A for debugging (~A); it will run ~
+without breakpoints or stack frames — the debugger will show no frames for it. ~
+Please report the function's source as an instrumenter gap."
+              (let ((name (autolisp-usubr-name function)))
+                (if (and name (plusp (length name))) name "<lambda>"))
+              condition))))
+  (autolisp-usubr-instrumented-body function))
+(defparameter *compile-usubr-hook* nil
+  "When non-nil, a function (USUBR) that transpiles USUBR's body to Common Lisp
+and stores the result in its COMPILED-BODY slot
+(clautolisp.autolisp-compiler:compile-usubr). The compiler installs it when its
+system loads; NIL when the compiler is absent. Same dependency-inversion as
+*INSTRUMENT-USUBR-HOOK* and for the same reason: the runtime must be able to run
+compiled function bodies without depending on the compiler layer.")
+
+(defparameter *emit-host-compiler-diagnostics* nil
+  "Whether the host Common Lisp compiler's diagnostics reach the terminal.
+
+The runtime compiles AutoLISP function bodies to Common Lisp and hands them to
+the host compiler — lazily, when a function crosses the compilation threshold,
+and eagerly at SPEED 3 and when CLAL-COMPILE-FILE writes an artefact. SBCL and
+CCL narrate that compilation on *error-output*: style warnings for the shape of
+the generated code, notes about optimizations not taken, redefinition warnings.
+None of it is actionable by an AutoLISP author — it names generated Common Lisp
+they never wrote — so by default (NIL) it is muffled by WITH-MUFFLED-HOST-COMPILER
+around every host compile call. The clautolisp CLI raises this to T under
+--verbose / --debug, for someone debugging the compiler itself; bound only there
+and by tests.")
+
+(defun call-with-muffled-host-compiler (thunk)
+  "Run THUNK with the host compiler's diagnostics suppressed, unless
+*EMIT-HOST-COMPILER-DIAGNOSTICS* asks for them. Muffles warnings, style
+warnings and (on SBCL) compiler notes, and silences the *COMPILE-VERBOSE* /
+*COMPILE-PRINT* progress chatter. Errors are NOT muffled — a genuine
+compilation failure still signals, so the caller's handler sees it."
+  (if *emit-host-compiler-diagnostics*
+      (funcall thunk)
+      (flet ((muffle (condition)
+               (let ((restart (find-restart 'muffle-warning condition)))
+                 (when restart (invoke-restart restart)))))
+        (declare (dynamic-extent #'muffle))
+        (let ((*compile-verbose* nil)
+              (*compile-print* nil))
+          (handler-bind ((warning #'muffle)
+                         #+sbcl (sb-ext:compiler-note #'muffle))
+            (funcall thunk))))))
+
+(defmacro with-muffled-host-compiler (&body body)
+  "Evaluate BODY with the host Common Lisp compiler's diagnostics suppressed
+unless *EMIT-HOST-COMPILER-DIAGNOSTICS* is set. Wrap every host COMPILE /
+COMPILE-FILE / WITH-COMPILATION-UNIT the AutoLISP layers drive."
+  `(call-with-muffled-host-compiler (lambda () ,@body)))
+
+(defparameter *autolisp-compilation-enabled* t
+  "Whether the runtime weaves compiled forks for AutoLISP functions. T by
+default, but that is only half the switch — with no compiler loaded
+*COMPILE-USUBR-HOOK* is NIL and nothing is compiled, so an image built without
+the compiler behaves exactly as it did before it existed. Bind this to NIL to
+force everything through the interpreter, which is the first thing to try when
+compiled and interpreted results are suspected of disagreeing.")
+
+(defparameter *autolisp-speed-level* 2
+  "The SPEED optimization quality, 0..3, as the runtime sees it.
+
+THE ALGEBRA (debugger-public-interface issue, Part A). The optimization
+qualities do not each own a switch; what matters is their level, and for the
+instrumented fork their level RELATIVE to one another:
+
+  non-instrumented fork   always present; compiled iff SPEED >= 1
+  instrumented fork       present iff DEBUG >= SPACE; compiled iff SPEED >= 2
+
+So the two forks compile at different levels ON PURPOSE. SPEED 1 says `make
+my code fast'; SPEED 2 says `and make it fast while I am debugging it too',
+which is a further step because a compiled instrumented fork is worth less
+(the poll protocol, not interpretation, is what makes debugging slow) and
+costs a second compilation of the same function.
+
+SPEED 3 says compile EAGERLY, at definition, rather than once a function is
+hot. That is not merely sooner: compiling a whole file in one unit is what
+makes file-wide optimizations possible at all, where compiling one function
+at a time on the call that made it hot can only ever optimize that function.
+
+Set by CLAL-OPTIMIZE. Bound directly only by tests.")
+
+(defparameter *autolisp-lexical-locals-enabled* nil
+  "When true, compiling a function's plain fork also tries to build its
+LEXICAL fork (lexical-locals-escape-analysis): formals and /-locals as Common
+Lisp variables, no dynamic frame per call. Set by CLAL-OPTIMIZE at
+(SPEED 3) (DEBUG 0) only -- `make it as fast as possible, I will not debug
+it' -- and read when a function is compiled, not when it is called.
+
+It does not change what a program computes: every callee that could see the
+locals is called with them materialised into a real frame, and the fork never
+runs under a debug session. So it is a SPEED quality, not the unsound named
+quality the issue warns against.")
+
+(defun autolisp-compile-plain-fork-p ()
+  "Whether a function's non-instrumented fork should be compiled."
+  (and *autolisp-compilation-enabled* (>= *autolisp-speed-level* 1)))
+
+(defun autolisp-compile-instrumented-fork-p ()
+  "Whether a function's instrumented fork should be compiled."
+  (and *autolisp-compilation-enabled* (>= *autolisp-speed-level* 2)))
+
+(defun autolisp-compile-eagerly-p ()
+  "Whether functions are compiled at definition rather than once hot."
+  (and *autolisp-compilation-enabled* (>= *autolisp-speed-level* 3)))
+
+(defparameter *autolisp-compilation-threshold* 16
+  "How many times a function must be called before its body is compiled.
+
+Not a tuning knob so much as a statement about what compilation costs: weaving
+a fork runs the host Common Lisp compiler, which is expensive next to
+interpreting a short body once. Most functions in a freshly loaded file are
+called once or never, and compiling those would make loading slower for no
+return. A function that has been called sixteen times is doing work, and pays
+the compilation back quickly. 1 means compile on first call — what the test
+suite uses, so that every function it exercises runs compiled.
+
+Consulted at SPEED 1 and 2 only. SPEED 3 compiles at definition and never
+reaches the threshold; SPEED 0 never compiles at all.")
+
+(defparameter *usubr-compilation-count* 0
+  "How many function bodies have been handed to the host compiler.
+
+Kept because the compiler had no idea how often it was being asked. A
+LAMBDA in a loop invited it to run ONCE PER ITERATION -- 60000 times in
+the measured case, 26 seconds absorbed in silence -- and nothing
+anywhere said so; the shape was found by benchmarking, which is not a
+way to find bugs. See lambda-in-a-loop-never-compiles.issue.")
+
+(defparameter *usubr-compilation-warning-threshold* 1000
+  "Compilations in one image after which COUNT-USUBR-COMPILATION warns, once.
+
+Not a limit and not tunable policy: nothing is refused, and the number
+is deliberately ABSURD rather than tight. A thousand distinct function
+bodies in one session is already implausible for AutoLISP, so crossing
+it means the same code is being compiled over and over -- which is a
+bug in whatever decides, not in the program being compiled. A tight
+threshold would have to be RIGHT; this one only has to be unreachable
+by honest work.
+
+MEASURED, so that `unreachable' is not a guess: the whole compiler test
+suite -- every equivalence case, every open-coding case, the
+instrumented and whole-corpus runs -- compiles 56 bodies. The margin is
+eighteenfold. The shape this exists to catch overshot it by SIXTY.")
+
+(defvar *usubr-compilation-warned-p* nil
+  "True once the threshold warning has been emitted, so it is emitted ONCE.
+A diagnostic that fires 59000 times is the same silence with more
+output.")
+
+(defun count-usubr-compilation (function)
+  "Record that FUNCTION's body was compiled, and warn once if the count
+has become absurd. Called from both compilation paths."
+  (incf *usubr-compilation-count*)
+  (when (and (not *usubr-compilation-warned-p*)
+             (> *usubr-compilation-count* *usubr-compilation-warning-threshold*))
+    (setf *usubr-compilation-warned-p* t)
+    (warn "clautolisp: the host compiler has now run ~D times in this ~
+           image (most recently for ~A). That is far more distinct ~
+           function bodies than a program has, so the same body is ~
+           probably being compiled repeatedly -- which is a bug in what ~
+           DECIDES to compile, not in the code being compiled."
+          *usubr-compilation-count*
+          (autolisp-usubr-name function))))
+
+(defun maybe-compile-usubr (function)
+  "Weave FUNCTION's compiled fork when it has earned one, and return it.
+
+Returns the compiled body (a function) or NIL, in which case the caller runs the
+plain body. A compilation that errors stores :FAILED rather than NIL, so it is
+attempted once and never retried: NIL means `not tried yet', and a body that
+cannot be compiled must not run the compiler again on every call."
+  (let ((compiled (autolisp-usubr-compiled-body function)))
+    (cond
+      ((functionp compiled) compiled)
+      ((eq :failed compiled) nil)
+      ((not (and (autolisp-compile-plain-fork-p) *compile-usubr-hook*)) nil)
+      ;; COUNT ON THE SITE WHEN THERE IS ONE. A lambda in a loop mints a
+      ;; new closure per iteration, so counting on the closure asks "is
+      ;; THIS object hot?" -- always no -- where the question is "is this
+      ;; CODE hot?". See lambda-in-a-loop-never-compiles.issue.
+      ((< (if (autolisp-usubr-site function)
+              (incf (usubr-site-call-count (autolisp-usubr-site function)))
+              (incf (autolisp-usubr-call-count function)))
+          *autolisp-compilation-threshold*)
+       nil)
+      (t
+       (handler-case (funcall *compile-usubr-hook* function)
+         (error () (setf (autolisp-usubr-compiled-body function) :failed)))
+       (count-usubr-compilation function)
+       (let ((result (autolisp-usubr-compiled-body function)))
+         ;; Publish to the site so the NEXT closure from this lambda form
+         ;; starts compiled instead of recompiling the same body. :FAILED
+         ;; is deliberately not published: it is stored on the closure,
+         ;; and a site that failed once will fail again and be asked
+         ;; again -- rare enough to leave alone, and cheaper than
+         ;; teaching the site a third state.
+         (when (and (functionp result) (autolisp-usubr-site function))
+           (setf (usubr-site-compiled-body (autolisp-usubr-site function)) result))
+         (and (functionp result) result))))))
+
+(defparameter +lap-file-type+ "lap"
+  "Pathname type of a compiled AutoLISP application.
+
+A .lap is a native host FASL, renamed -- the analogue of AutoCAD .vlx and
+BricsCAD .des. It lives here rather than in the compiler because LOAD has
+to recognise the type whether or not the compiler is present in the
+image: a clautolisp built without the compiler must say `I cannot load
+this\' rather than try to read it as source.")
+
+(defparameter *compile-files-to-artefact-hook* nil
+  "When non-nil, a function (SOURCE-PATHNAMES OUTPUT-PATHNAME) that
+compiles the AutoLISP sources into one .lap and returns its truename, or
+NIL on failure (clautolisp.autolisp-compiler:compile-autolisp-files-to-lap).
+
+Installed by the compiler when it loads; NIL when it is absent. The same
+dependency inversion as *COMPILE-USUBR-HOOK*, and needed for the same
+reason twice over: the runtime must not depend on the compiler, and
+neither must the builtins layer, which is where CLAL-COMPILE-FILE lives
+and which sits below the compiler in the system graph.")
+
+(defun default-lap-pathname (source-pathname)
+  "SOURCE.lsp -> SOURCE.lap, beside the source."
+  (make-pathname :type +lap-file-type+ :defaults source-pathname))
+
+(defun lap-pathname-p (pathname)
+  "True when PATHNAME names a compiled AutoLISP application."
+  (string-equal +lap-file-type+ (or (pathname-type pathname) "")))
+
+(defun compile-usubr-if-eager (function)
+  "Compile FUNCTION now, if SPEED asks for eager compilation.
+
+At SPEED 3 a function is compiled when it is DEFINED rather than when it turns
+out to be hot. Called from DEFUN, so it never affects a function that is only
+being interpreted at a lower level.
+
+Only the PLAIN fork. An instrumented fork does not exist yet at definition
+time -- the debugger weaves one on a function's first call under a session,
+deliberately, so that code defined before the session is debuggable without a
+separate instrument-on-defun pass. Eagerly instrumenting every DEFUN to have
+something to compile would make loading a file pay for a debug session that
+may never start.
+
+Errors are swallowed the same way MAYBE-COMPILE-USUBR swallows them, into
+:FAILED: a function whose body the compiler chokes on must still be DEFINED,
+and must still run interpreted. A DEFUN that signalled because compilation
+failed would make SPEED 3 a correctness setting, which it is not."
+  (when (and (autolisp-compile-eagerly-p) *compile-usubr-hook*)
+    (handler-case (funcall *compile-usubr-hook* function)
+      (error () (setf (autolisp-usubr-compiled-body function) :failed)))
+    (count-usubr-compilation function))
+  function)
+
+(defparameter *compile-instrumented-usubr-hook* nil
+  "When non-nil, a function (USUBR) that transpiles USUBR's INSTRUMENTED
+body and stores the result in COMPILED-INSTRUMENTED-BODY
+(clautolisp.autolisp-compiler:compile-instrumented-usubr). NIL when the
+compiler is absent, in which case debugged code runs interpreted exactly as
+it did before the compiler existed.")
+
+(defun maybe-compile-instrumented-usubr (function)
+  "Weave FUNCTION's COMPILED INSTRUMENTED fork when it has earned one.
+
+The instrumented body must already exist: this compiles what the
+instrumenter produced, it does not instrument. Returns the compiled function
+or NIL, in which case the caller interprets the instrumented body.
+
+Shares CALL-COUNT and the threshold with the plain compiled fork, because
+they are answering the same question -- is this function hot enough to be
+worth compiling. A function that was already hot before the debugger
+attached therefore compiles its instrumented fork at once, which is the case
+that matters: running to a breakpoint deep inside a loop."
+  (let ((compiled (autolisp-usubr-compiled-instrumented-body function)))
+    (cond
+      ((functionp compiled) compiled)
+      ((eq :failed compiled) nil)
+      ((not (and (autolisp-compile-instrumented-fork-p)
+                 *compile-instrumented-usubr-hook*))
+       nil)
+      ((null (autolisp-usubr-instrumented-body function)) nil)
+      ;; COUNT ON THE SITE when the closure shares the site's debug record
+      ;; (debug-lambda-in-a-loop-reinstrumented): a lambda in a loop is a new
+      ;; closure per iteration, and only its CODE can get hot.
+      ((< (if (%shares-site-debug-record-p function)
+              (incf (clautolisp.autolisp-runtime.internal::usubr-site-debug-call-count
+                     (autolisp-usubr-site function)))
+              (incf (autolisp-usubr-call-count function)))
+          *autolisp-compilation-threshold*)
+       nil)
+      (t
+       (handler-case (funcall *compile-instrumented-usubr-hook* function)
+         (error () (setf (autolisp-usubr-compiled-instrumented-body function)
+                         :failed)))
+       (let ((result (autolisp-usubr-compiled-instrumented-body function)))
+         ;; Publish to the site, so the next closure starts compiled.
+         (when (and (functionp result) (%shares-site-debug-record-p function))
+           (setf (usubr-site-compiled-instrumented-body (autolisp-usubr-site function))
+                 result))
+         (and (functionp result) result))))))
+
+(defun %shares-site-debug-record-p (function)
+  "True when FUNCTION's instrumented body is its site's: the debug record
+the closures of one lambda form share."
+  (let ((site (autolisp-usubr-site function)))
+    (and site
+         (autolisp-usubr-instrumented-body function)
+         (eq (autolisp-usubr-instrumented-body function)
+             (usubr-site-instrumented-body site)))))
+
 (defun maybe-instrument-usubr (function)
   "Lazily weave FUNCTION's instrumented fork on its first call under a debug
-session, when instrumentation is enabled and the debugger layer is loaded.
-Returns the instrumented body (now non-nil), or NIL if instrumentation is
-disabled / the debugger is absent, so the caller falls back to the plain body."
-  (when (and *debug-instrumentation-enabled* *instrument-usubr-hook*)
-    (ignore-errors (funcall *instrument-usubr-hook* function))
-    (autolisp-usubr-instrumented-body function)))
+session, when instrumentation is enabled (the CLAL-OPTIMIZATION DEBUG level, via
+*DEBUG-INSTRUMENTATION-ENABLED*) and the debugger layer is loaded. Returns the
+instrumented body (now non-nil), or NIL if instrumentation is disabled / the
+debugger is absent / the weave failed, so the caller falls back to the plain
+body. A weave failure is surfaced once (see INSTRUMENT-USUBR-IF-POSSIBLE)."
+  (when *debug-instrumentation-enabled*
+    (instrument-usubr-if-possible function)))
+
+(defun instrument-defun-if-debugging (function)
+  "Weave FUNCTION eagerly at DEFUN/load time when a debug session is active and
+instrumentation is enabled (CLAL-OPTIMIZATION DEBUG>0) — the documented \"the
+loader instruments the interpreted code\" behavior. So code loaded under
+--on-error debug / a debugger UI is debuggable immediately (breakpoints before
+first call; a weave failure surfaces at load, naming the function) instead of
+only lazily on first call. Outside a session (*DEBUGGING* NIL) this is a no-op,
+so ordinary non-debug runs keep defining plain, allocation-free bodies."
+  (when *debugging*
+    (maybe-instrument-usubr function)))
 
 (defun append-proper-and-tail (elements tail)
   (if (null elements)
@@ -1547,7 +2784,23 @@ disabled / the debugger is absent, so the caller falls back to the plain body."
                         elements))
             (doc (cons-object-preceding-doc object)))
        (when (and clautolisp.source:*track-source-positions* (consp result))
-         (clautolisp.source:note-position result (cons-object-span object)))
+         (clautolisp.source:note-position result (cons-object-span object))
+         ;; …and each ATOM element's position, keyed by this list and the
+         ;; element's index: an atom is no key of its own (the same symbol or
+         ;; fixnum appears everywhere), its occurrence is. Read by the
+         ;; instrumenter when it weaves poll points around atoms
+         ;; (instrumenter-no-pollpoints-on-atoms).
+         (clautolisp.source:note-element-positions
+          result
+          (mapcar (lambda (element)
+                    (clautolisp.source:source-position-from-span
+                     (typecase element
+                       (symbol-object (symbol-object-span element))
+                       (string-object (string-object-span element))
+                       (integer-object (integer-object-span element))
+                       (real-object (real-object-span element))
+                       (t nil))))
+                  (cons-object-elements object))))
        ;; Source-aware-defun-documentation: if the parsed cons-object
        ;; carried a ;|…|; block-comment doc, register that text against
        ;; the fresh CL cons we are returning. eval-defun-form /
@@ -1585,19 +2838,26 @@ disabled / the debugger is absent, so the caller falls back to the plain body."
   (multiple-value-bind (value boundp origin)
       (lookup-variable object context)
     (declare (ignore origin))
-    (unless boundp
-      ;; Autodesk documents that testing an undefined symbol with BOUNDP
-      ;; creates the symbol and assigns it NIL, while still returning NIL.
-      (set-variable object nil context)
-      (setf value nil
-            boundp t))
-    (if value
-        (intern-autolisp-symbol "T")
-        nil)))
+    (cond
+      ;; A non-NIL variable value is bound. (AutoLISP reads a NIL value as
+      ;; unbound, so a value of NIL falls through to the clauses below.)
+      ((and boundp value) (autolisp-true-symbol))
+      ;; AutoLISP is a Lisp-1: a subr or special operator is bound to its
+      ;; function even with no value cell, so (boundp 'car), (boundp 'setq)
+      ;; and (boundp 'command) are all T in real AutoCAD/BricsCAD. Report
+      ;; those as bound, and do NOT manufacture a NIL variable for them.
+      ((or (autolisp-symbol-function-bound-p object)
+           (known-special-operator-p (autolisp-symbol-name object)))
+       (autolisp-true-symbol))
+      ;; Otherwise an ordinary symbol with no (non-NIL) value. Autodesk
+      ;; documents that testing an undefined symbol with BOUNDP creates the
+      ;; symbol and assigns it NIL, while still returning NIL.
+      (t (unless boundp (set-variable object nil context))
+         nil))))
 
 (defun autolisp-null (object)
   (if (null object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
 
 (defun autolisp-not (object)
@@ -1605,18 +2865,52 @@ disabled / the debugger is absent, so the caller falls back to the plain body."
 
 (defun autolisp-listp (object)
   (if (listp object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
 
 (defun autolisp-atom (object)
   (if (atom object)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
 
 (defun autolisp-vl-symbolp (object)
   (if (typep object 'autolisp-symbol)
-      (intern-autolisp-symbol "T")
+      (autolisp-true-symbol)
       nil))
+
+;;; AutoCAD's lower-case symbol names (type-symbols-print-lowercase-on-
+;;; autocad.issue). Measured 2026-10-23 with probes/sources/probe-type-
+;;; symbols.lsp: on AutoCAD 2022 the symbols VARIANT and SAFEARRAY have the
+;;; NAMES "variant" and "safearray" -- vl-symbol-name, princ and prin1 give
+;;; them in lower case, whether the symbol comes from (type v), from 'VARIANT
+;;; quoted in source or from (read "VARIANT") -- while reading stays case
+;;; insensitive (every spelling is the same symbol, EQ to 'VARIANT). Every
+;;; other TYPE result (VLA-OBJECT, ENAME, PICKSET, FILE, SUBR, USUBR,
+;;; EXRXSUBR, INT, REAL, STR, SYM, LIST) is upper case there, and BricsCAD V25
+;;; / V26 give all of them in upper case. So the symbol stays the same
+;;; (interned under its canonical upper-case name, which every internal name
+;;; comparison keeps using); only the name it SHOWS -- what vl-symbol-name
+;;; returns and the printer writes -- is lower case, under every dialect but
+;;; the BricsCAD ones.
+
+(defparameter *autocad-lower-case-symbol-names*
+  '(("VARIANT" . "variant") ("SAFEARRAY" . "safearray"))
+  "Canonical name -> the name AutoCAD shows for it (measured, see above).")
+
+(defun autolisp-symbol-print-name (symbol)
+  "The name SYMBOL shows to the program -- vl-symbol-name, princ, prin1 --
+under the current dialect: its canonical name, except the few symbols
+AutoCAD names in lower case (*AUTOCAD-LOWER-CASE-SYMBOL-NAMES*) under
+every dialect whose product is not BricsCAD."
+  (let* ((name (autolisp-symbol-name symbol))
+         (lower (cdr (assoc name *autocad-lower-case-symbol-names* :test #'string=))))
+    (if (and lower
+             (not (eq :bricscad
+                      (ignore-errors
+                       (clautolisp.autolisp-reader:autolisp-dialect-product
+                        (current-evaluation-dialect))))))
+        lower
+        name)))
 
 (defun autolisp-vl-symbol-name (object)
   (unless (typep object 'autolisp-symbol)
@@ -1625,7 +2919,7 @@ disabled / the debugger is absent, so the caller falls back to the plain body."
      "Expected an AutoLISP symbol, got ~S."
      object))
   (clautolisp.autolisp-runtime.internal::make-autolisp-string
-   :value (autolisp-symbol-name object)))
+   :value (autolisp-symbol-print-name object)))
 
 (defun autolisp-vl-symbol-value (object)
   (unless (typep object 'autolisp-symbol)
@@ -1641,6 +2935,25 @@ disabled / the debugger is absent, so the caller falls back to the plain body."
          (current-evaluation-context)
          arguments))
 
+(defun resolve-unbound-function-or-signal (symbol context)
+  "SYMBOL has no function binding. Give *RESOLVE-UNBOUND-FUNCTION-HOOK* a
+chance to synthesize one (the vla-* accessor façade); otherwise signal
+:undefined-function. Never returns NIL — either a callable or a throw.
+
+Recognise-but-don't-define: before signalling, a name the portability
+catalogue lists as `:declined' (BricsCAD's `SETF', `LET*') gets a note
+saying the omission is deliberate and why. The error itself is
+unchanged — the note only precedes it — so nothing downstream that
+matches on :undefined-function is affected."
+  (or (and *resolve-unbound-function-hook*
+           (funcall *resolve-unbound-function-hook* symbol context))
+      (progn
+        (emit-declined-construct-note (autolisp-symbol-name symbol))
+        (signal-autolisp-runtime-error
+         :undefined-function
+         "Undefined AutoLISP function ~A."
+         (autolisp-symbol-name symbol)))))
+
 (defun resolve-autolisp-function-designator (designator
                                             &optional
                                               (context (current-evaluation-context)))
@@ -1652,12 +2965,9 @@ disabled / the debugger is absent, so the caller falls back to the plain body."
      (multiple-value-bind (binding boundp origin)
          (lookup-function designator context)
        (declare (ignore origin))
-       (unless boundp
-         (signal-autolisp-runtime-error
-          :undefined-function
-          "Undefined AutoLISP function ~A."
-          (autolisp-symbol-name designator)))
-       binding))
+       (if boundp
+           binding
+           (resolve-unbound-function-or-signal designator context))))
     ((and (consp designator)
           (= (length designator) 2)
           (typep (first designator) 'autolisp-symbol)
@@ -1686,50 +2996,69 @@ disabled / the debugger is absent, so the caller falls back to the plain body."
             nil
             (error condition))))))
 
+;;; *error* is looked up and called AT SIGNAL TIME, before the stack
+;;; unwinds: the standard idiom (defun c:cmd (/ *error* ...) (defun *error*
+;;; (msg) ...) ...) declares the handler LOCAL to the command, and AutoCAD
+;;; calls the binding current where the error happened, with the command's
+;;; other locals still visible to it. A HANDLER-CASE here unwound first, so
+;;; the local binding was already undone and only the global *error* was
+;;; ever seen (local-error-handler-not-called). With HANDLER-BIND, inner
+;;; handlers (vl-catch-all-apply, the debugger) still run first, an error
+;;; raised by *error* itself still propagates outwards, and with no *error*
+;;; the condition is declined -- the callers above see it as before.
+;;;
+;;; VL-EXIT-WITH-VALUE leaves a separate-namespace VLX with a value.
+;;; clautolisp loads no VLX, so outside VL-CATCH-ALL-APPLY nothing stopped
+;;; the AUTOLISP-NAMESPACE-EXIT it signals and it reached the host Lisp's
+;;; debugger (vl-exit-with-error-leaks-host-condition). Here, the document
+;;; namespace's toplevel, it is the value of the form. (VL-EXIT-WITH-ERROR
+;;; raises its AutoLISP error itself when no boundary takes the exit.)
 (defun call-with-autolisp-error-handler (thunk &optional (context (current-evaluation-context)))
-  (handler-case
+  (block handled
+    (handler-bind
+        ((autolisp-runtime-error
+           (lambda (condition)
+             (set-autolisp-errno (autolisp-runtime-error-errno condition) context)
+             (let ((handler (resolve-autolisp-error-handler context)))
+               (when handler
+                 (return-from handled
+                   (call-autolisp-function-in-context
+                    handler
+                    context
+                    (make-autolisp-string
+                     (autolisp-runtime-error-message condition))))))))
+         (autolisp-namespace-exit
+           (lambda (condition)
+             (when (eq :value (autolisp-namespace-exit-kind condition))
+               (set-autolisp-errno 0 context)
+               (return-from handled (autolisp-namespace-exit-value condition))))))
       (let ((result (funcall thunk)))
         (set-autolisp-errno 0 context)
-        result)
-    (autolisp-runtime-error (condition)
-      (set-autolisp-errno (autolisp-runtime-error-errno condition) context)
-      (let ((handler (resolve-autolisp-error-handler context)))
-        (if handler
-            (call-autolisp-function-in-context
-             handler
-             context
-             (make-autolisp-string (autolisp-runtime-error-message condition)))
-            (error condition))))))
+        result))))
 
 (defun autolisp-slash-symbol-p (symbol)
   (and (typep symbol 'autolisp-symbol)
        (string= "/" (autolisp-symbol-name symbol))))
 
 (defun autolisp-ampersand-symbol-p (symbol)
-  "T iff SYMBOL is the AutoLISP rest-parameter separator — either
-the bare `&' (clautolisp's original spelling proposed in
-`issues/open/variadic-functions.issue') or `&REST' (BricsCAD V26's
-spelling, confirmed by Bricsys support and observed in the user's
-own `(defun foo (&rest args) …)' transcripts). Match is
-case-insensitive on the symbol name only; we do NOT implement a
-full Common Lisp lambda-list parser — `&body', `&optional', `&key'
-remain unsupported."
+  "T iff SYMBOL is the AutoLISP rest-parameter separator `&REST' -- the
+spelling BricsCAD V25 / V26 implement (undocumented, confirmed by the
+2026-08-07 harvest) and clautolisp provides. Match is case-insensitive
+on the symbol name only; we do NOT implement a full Common Lisp
+lambda-list parser — `&body', `&optional', `&key' remain unsupported.
+
+The bare `&' is NOT a separator (pjb, 2026-10-23): it was clautolisp's
+own proposal (issues/closed/variadic-functions.issue), BricsCAD does not
+need it since it has `&REST', and AutoCAD wants neither spelling. So `&'
+is an ordinary symbol, and in a lambda list an ordinary parameter name."
   (and (typep symbol 'autolisp-symbol)
-       (let ((name (string-upcase (autolisp-symbol-name symbol))))
-         (or (string= "&" name)
-             (string= "&REST" name)))))
+       (string= "&REST" (string-upcase (autolisp-symbol-name symbol)))))
 
 (defun autolisp-ampersand-spelling (symbol)
-  "Return :ampersand if SYMBOL is `&', :and-rest if it is `&REST'
-(any case). Returns NIL when SYMBOL is not a recognised
-rest-separator. Used by the dialect-warning path to format the
-exact spelling the user wrote."
-  (when (typep symbol 'autolisp-symbol)
-    (let ((name (string-upcase (autolisp-symbol-name symbol))))
-      (cond
-        ((string= "&" name)     :ampersand)
-        ((string= "&REST" name) :and-rest)
-        (t nil)))))
+  "Return :and-rest if SYMBOL is `&REST' (any case), NIL otherwise. Used
+by the dialect-warning path to name the separator in the diagnostic."
+  (when (autolisp-ampersand-symbol-p symbol)
+    :and-rest))
 
 (defun %portability-warning-occurrence-seen-p (occurrence)
   "T iff this OCCURRENCE (a source object identity — the lambda-list
@@ -1751,7 +3080,74 @@ or no session is reachable, dedup is skipped (always emit)."
       ((gethash occurrence table) t)
       (t (setf (gethash occurrence table) t) nil))))
 
-(defun emit-lambda-list-extension-warning (spelling who &optional occurrence)
+;;; --- the shared shape of every dialect portability diagnostic ------
+;;;
+;;; pjb's 2026-08-14 ruling (see the register at the top of
+;;; portability.lisp) settles what these lines look like:
+;;;
+;;;   [TAG] FILE:LINE in FUNCTION: one short line
+;;;
+;;; The TAG is the stable identifier and the key into the manual's
+;;; annex; the location is reported because we warn only once per
+;;; occurrence and can afford to look it up; the message is short
+;;; because everything longer belongs in the annex.
+
+(defun %portability-warning-function-name ()
+  "The name of the innermost AutoLISP function being executed, or NIL at
+top level. Read from the live evaluator stack, whose :USUBR frames are
+ (:USUBR NAME . ARGUMENTS) — the same stack `vl-bt' prints."
+  (loop :for frame :in *autolisp-call-stack*
+        :when (and (consp frame)
+                   (eq :usubr (car frame))
+                   (consp (cdr frame))
+                   (stringp (cadr frame)))
+          :return (cadr frame)))
+
+(defun %portability-warning-location (occurrence &optional function-name)
+  "\"FILE:LINE in FUNCTION\" for this occurrence, with whichever parts are
+known; NIL when none are.
+
+The position comes from the debugger's source map, which records a span
+for every compound form — but only while `clautolisp.source:*track-source-
+positions*' is set (a debug load). In a plain production run the table is
+empty by design, so the file and line are simply absent and the warning
+degrades to \"in FUNCTION\", or to no location at all. Reporting the parts
+we have beats either fabricating a position or suppressing the warning.
+
+FUNCTION-NAME is passed by callers that know the name directly — DEFUN
+knows the function it is defining, which is the one the user cares about
+and which no stack walk could supply, since the body is not running yet."
+  (let* ((position (and occurrence
+                        (ignore-errors (clautolisp.source:position-of occurrence))))
+         (file (and position (clautolisp.source:source-position-file position)))
+         (line (and position (clautolisp.source:source-position-start-line position)))
+         (name (or function-name (%portability-warning-function-name))))
+    (cond ((and file line name) (format nil "~A:~D in ~A" file line name))
+          ((and file line)      (format nil "~A:~D" file line))
+          (name                 (format nil "in ~A" name))
+          (t nil))))
+
+(defun %portability-diagnostic (tag location &rest arguments)
+  "The complete one-line diagnostic for TAG: \"[TAG] LOCATION: MESSAGE\".
+
+MESSAGE is formatted from the register entry's control string with
+ARGUMENTS, so the wording lives in exactly one place and the manual annex
+is generated from that same entry. An unregistered TAG cannot produce a
+sensible line and is a programming error caught by a test
+ (`UNREGISTERED-CONSTRUCT-TAGS'); it degrades here to the raw arguments
+rather than signalling, because a diagnostic must never be the thing that
+breaks the run it is diagnosing."
+  (let* ((entry (find-dialect-warning tag))
+         (control (if entry
+                      (dialect-warning-message entry)
+                      "~{~A~^ ~}"))
+         (body (if entry
+                   (apply #'format nil control arguments)
+                   (format nil control (list arguments)))))
+    (format nil "[~A]~@[ ~A~]: ~A" tag location body)))
+
+(defun emit-lambda-list-extension-warning (spelling who &optional occurrence
+                                                          function-name)
   "When a defun/lambda lambda-list uses a rest-parameter separator,
 emit a `[lambda-list-extension]' dialect portability warning
 (autolisp-spec ch.25) unless the current dialect explicitly accepts
@@ -1760,18 +3156,18 @@ that spelling.
 Per `issues/open/bricscad-undocumented-clisms.issue' and the user's
 2026-06-07 ruling:
 
-  - :clautolisp dialect — silent for both `&' and `&REST' (both
-    are blessed by the spec extension).
-  - :bricscad-v26 dialect — silent for `&REST' (BricsCAD's native
-    undocumented form), warns for `&' (clautolisp's spelling that
-    BricsCAD does NOT accept).
+  - :clautolisp dialect — silent (`&REST' is its blessed extension).
+  - :bricscad-v25 / :bricscad-v26 — silent (BricsCAD's native,
+    undocumented form).
   - :lax dialect — silent for everything. `--lax' is the catch-all
     `accept every vendor's extensions without complaining' mode;
     extending that contract to lambda-list extensions matches the
     same dialect's behavior on encoding diagnostics
     (see `%enc-dialect-is-lax-p').
-  - :strict, :autocad-2026 — warn for both spellings (they are
-    non-portable across vendors).
+  - :strict, :autocad-* — warn: AutoCAD has no rest parameter.
+
+The bare `&' is no separator at all (pjb, 2026-10-23), so it never
+reaches this function: it is an ordinary parameter name.
 
 Once-per-occurrence (autolisp-spec ch.25): a warning fires at most
 once per run for each distinct source OCCURRENCE (the lambda-list
@@ -1800,46 +3196,923 @@ run surfaces (stderr is not swallowed by the quiet/verbosity knobs)."
                          (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
                           dialect)))
                    :warn))
-         (silent-p
-           (case name
-             ((:clautolisp :lax) t)
-             ((:bricscad-v26) (eq spelling :and-rest))
-             (t nil)))
          (token (case spelling
-                  (:ampersand "&")
-                  (:and-rest  "&REST")
-                  (t "<rest-separator>"))))
+                  (:and-rest "&REST")
+                  (t "<rest-separator>")))
+         ;; The support decision comes from the ONE knowledge base
+         ;; (autolisp-spec ch.25); this used to be an inline `case'.
+         ;; The message text now comes from the register, so the
+         ;; wording, the annex and this line cannot drift apart.
+         (silent-p (portability-construct-silent-p
+                    (find-portability-construct token) name))
+         (message (and (not silent-p)
+                       (%portability-diagnostic
+                        "lambda-list-extension"
+                        (%portability-warning-location occurrence function-name)
+                        who token (or name "default")))))
     (unless silent-p
       (when (eq mode :error)
         ;; Escalation: turn the advisory into a hard error. This runs
         ;; before dedup — the first reached occurrence aborts the run.
-        (signal-autolisp-runtime-error
-         :non-portable-construct
-         "~A: `~A' is a clautolisp variadic-function extension, not portable to dialect ~(~A~); --portability-warning-mode error escalates it to an error."
-         who token (or name "default")))
+        ;; "~A" and not MESSAGE as a control: a path or a token could
+        ;; contain a tilde and would then be re-processed as FORMAT
+        ;; directives.
+        (signal-autolisp-runtime-error :non-portable-construct "~A" message))
       (unless (%portability-warning-occurrence-seen-p occurrence)
+        (format *error-output* "~&~A~%" message)))))
+
+(defun emit-bricscad-undocumented-warning (construct &optional occurrence)
+  "Emit an `[ext-bricscad-undocumented]' dialect portability warning
+when CONSTRUCT (a short string such as \"LET\") — a BricsCAD V26
+undocumented Common-Lisp construct catalogued in
+`autolisp-spec/documentation/bricscad-undocumented-extensions.org' —
+is evaluated under a dialect whose target host does NOT provide it.
+
+Vendor-confirmed on 2026-08-07 (the vendor:probes:bricscad:macos
+harvest against real BricsCAD V26; see the issue
+`bricscad-undocumented-clisms.issue'): LET is a genuine BricsCAD
+extension (CL-style PARALLEL binding), while AutoCAD and the strict
+portable profile have no LET. So:
+
+  - :bricscad-v26 — silent (native; this is where LET lives).
+  - :clautolisp   — silent (clautolisp implements LET as a blessed
+                    extension of its own).
+  - :lax          — silent (the catch-all `accept every vendor's
+                    extension without complaining' mode, matching the
+                    encoding-diagnostic and lambda-list-extension gates).
+  - :strict, :autocad-2026 (and any other target host that lacks the
+                    construct) — warn, because the construct is not
+                    portable: portable AutoLISP has no LET.
+
+Once-per-source-occurrence via `%portability-warning-occurrence-seen-p'
+(keyed on OCCURRENCE — the binding-list cons identity — so a LET
+re-evaluated in a loop warns only once, and a DIFFERENT LET warns on
+its own first evaluation). Honours the active dialect's
+`portability-warning-mode': when it is `:error', a non-silent hit
+signals an AutoLISP runtime error instead of printing — the same
+warning->error escalation as `emit-lambda-list-extension-warning'.
+Advisory otherwise: the construct still evaluates normally. Warnings
+go to *ERROR-OUTPUT*."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (and dialect
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn))
+         ;; Support decision from the ONE knowledge base (ch.25). An
+         ;; uncatalogued CONSTRUCT is not silent — a caller that asked
+         ;; for a diagnostic gets one — but a catalogued construct is
+         ;; gated by its own native-in / silent-in sets, which is how
+         ;; :bricscad-v25 now behaves like :bricscad-v26 (the old
+         ;; inline `case' listed only v26).
+         (silent-p (portability-construct-silent-p
+                    (find-portability-construct construct) name))
+         (message (and (not silent-p)
+                       (%portability-diagnostic
+                        "ext-bricscad-undocumented"
+                        (%portability-warning-location occurrence)
+                        construct (or name "default")))))
+    (unless silent-p
+      (when (eq mode :error)
+        ;; Escalation: turn the advisory into a hard error. Runs before
+        ;; dedup — the first reached occurrence aborts the run.
+        (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+      (unless (%portability-warning-occurrence-seen-p occurrence)
+        (format *error-output* "~&~A~%" message)))))
+
+(defun emit-declined-construct-note (label)
+  "Explain a construct clautolisp DELIBERATELY does not implement.
+
+For catalogue entries of kind `:declined' — today BricsCAD's `SETF'
+and `LET*' (see `portability.lisp' for the harvest evidence). Calling
+one is an `:undefined-function' error, which is correct but tells the
+user nothing about WHY: `SETF' looks like an obvious omission when it
+is in fact a considered refusal to imitate an operator that returns a
+constant sentinel 2 and does not assign, and `LET*' looks like an
+oversight when BricsCAD has no `LET*' either.
+
+So this prints a note and RETURNS — the caller still signals the
+error. Three deliberate differences from the advisory emitters:
+
+  - Not dialect-gated. The error fires under every dialect, so the
+    explanation is useful under every dialect; a `--dialect bricscad'
+    user is in fact the most likely to be surprised, because on the
+    real engine the construct does exist.
+  - No escalation knob. The outcome is already an error; there is
+    nothing to escalate.
+  - Deduped per label rather than per source occurrence, since an
+    undefined-function error normally aborts the run anyway and the
+    note is about the construct, not the call site.
+
+Silent for anything not catalogued as `:declined', which is what keeps
+this off the path of ordinary undefined-function errors. Goes to
+*ERROR-OUTPUT* like every other portability diagnostic."
+  (let ((entry (find-portability-construct label)))
+    (when (and entry (eq (portability-construct-kind entry) :declined))
+      (unless (%portability-warning-occurrence-seen-p
+               (portability-construct-label entry))
         (format *error-output*
-                "~&[lambda-list-extension] ~A: `~A' is a clautolisp ~
-variadic-function extension; --dialect ~(~A~) flags it as ~
-non-portable. Use --dialect clautolisp to silence, or rewrite ~
-without a rest parameter.~%"
-                who token (or name "default"))))))
+                "~&[~A] ~A is not implemented by clautolisp, deliberately: ~A ~
+Evidence: ~A. It stays undefined rather than silently doing something ~
+different from the vendor.~%"
+                (portability-construct-tag entry)
+                (portability-construct-label entry)
+                (portability-construct-summary entry)
+                (portability-construct-evidence entry)))
+      t)))
+
+(defun autolisp-path-has-dotdot-component-p (path)
+  "T iff the string PATH contains a `..' PATH COMPONENT — a `..' segment
+delimited by `/' or `\\' or a string end. So `../x', `a/../b', `x/..'
+and `..' all count, but `a..b', `..foo' and `foo..' (no separator) do
+NOT. Both separators are checked so a Windows-style path is caught too."
+  (and (stringp path)
+       (loop with len = (length path)
+             for start = 0 then (1+ pos)
+             for pos = (position-if (lambda (c) (or (char= c #\/) (char= c #\\)))
+                                    path :start start)
+             for seg = (subseq path start (or pos len))
+             when (string= seg "..") return t
+             while pos
+             finally (return nil))))
+
+(defun %dotdot-path-warning-seen-p (path)
+  "T iff a `..'-path portability warning has already fired for the string
+PATH in this run; records it as seen otherwise. Keyed by the path string
+ (EQUAL) in the session's DOTDOT-PATH-WARNINGS-SEEN table, so dedup is
+once-per-distinct-path and resets with a fresh session. When no session
+is reachable, dedup is skipped (always emit)."
+  (let* ((context (ignore-errors (current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                        context)))
+         (table   (and session
+                       (clautolisp.autolisp-runtime.internal::runtime-session-dotdot-path-warnings-seen
+                        session))))
+    (cond
+      ((null table) nil)
+      ((gethash path table) t)
+      (t (setf (gethash path table) t) nil))))
+
+(defun emit-dotdot-path-portability-warning (path who)
+  "When PATH contains a `..' component, emit a `[path-dotdot]' dialect
+portability warning — because `..' resolution is NOT portable: POSIX
+hosts (clautolisp everywhere, BricsCAD on macOS) walk the tree
+physically (UP: a `..' through a missing directory FAILS, and a `..'
+after a symbolic link lands wherever the link's target's parent is),
+while Windows CADs (BricsCAD, AutoCAD) collapse `..' textually (BACK: it
+succeeds through a missing directory and ignores symlinks). Even when
+both resolve, they disagree the moment a symlink precedes the `..'. See
+cad-path-dotdot-resolution.issue for the probed matrix.
+
+Silent ONLY in the --lax dialect (the catch-all `accept anything without
+complaining' mode). Every other dialect — --strict, the vendor dialects
+ (--autocad / --bricscad) and --clautolisp — warns, because the construct
+is non-portable regardless of which engine's semantics you prefer. WHO
+is the builtin name for the diagnostic prefix (e.g. \"OPEN\").
+
+Deduped once per distinct PATH per run (%dotdot-path-warning-seen-p).
+Honours the active dialect's PORTABILITY-WARNING-MODE: when it is
+`:error', a non-silent hit signals a runtime error instead of printing
+ (the same warning->error escalation as the lambda-list extension
+warning). Advisory otherwise — the operation proceeds normally. Warnings
+go to *ERROR-OUTPUT*."
+  (when (autolisp-path-has-dotdot-component-p path)
+    (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+           (name (and dialect
+                      (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+           (mode (or (and dialect
+                          (ignore-errors
+                           (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                            dialect)))
+                     :warn)))
+      (unless (eq name :lax)
+        (let ((message (%portability-diagnostic
+                        "path-dotdot"
+                        (%portability-warning-location nil)
+                        who path)))
+          (when (eq mode :error)
+            (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+          (unless (%dotdot-path-warning-seen-p path)
+            (format *error-output* "~&~A~%" message)))))))
+
+(defun %load-lone-cr-in-string (dialect)
+  "What LOAD under DIALECT makes of a lone CR inside a string literal:
+:NEWLINE for BricsCAD, which reads it as a line feed, :KEEP everywhere
+else -- AutoCAD keeps it, and so does READ in every engine.
+issues/closed/lone-cr-in-string-literal.issue."
+  (if (eq :bricscad (ignore-errors
+                     (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))
+      :newline
+      :keep))
+
+(defun emit-lone-cr-in-string-warning (condition dialect behaviour)
+  "The `[lone-cr-in-string]' warning for one lone CR met by LOAD inside a
+string literal (CONDITION, a LONE-CR-IN-STRING-LITERAL). BEHAVIOUR is what
+the reader did with it (:KEEP or :NEWLINE).
+
+An unresolved divergence (autolisp-spec ch.25, case 3): AutoCAD keeps the
+CR, BricsCAD reads it as LF, so every dialect but --lax warns. Reported
+once per occurrence: each CR in the file is its own occurrence, and a file
+loaded twice is read twice. Honours PORTABILITY-WARNING-MODE like the
+other dialect notices: `:error' signals instead of printing."
+  (let ((name (and dialect
+                   (ignore-errors
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+        (mode (or (and dialect
+                       (ignore-errors
+                        (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                         dialect)))
+                  :warn)))
+    (unless (eq name :lax)
+      (let* ((file (clautolisp.autolisp-reader:lone-cr-in-string-literal-source-name
+                    condition))
+             (line (clautolisp.autolisp-reader:lone-cr-in-string-literal-line
+                    condition))
+             (message (%portability-diagnostic
+                       "lone-cr-in-string"
+                       (if file (format nil "~A:~D" file line) (format nil "line ~D" line))
+                       (if (eq behaviour :newline)
+                           "read as LF (code 10)"
+                           "kept as CR (code 13)"))))
+        (when (eq mode :error)
+          (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+        (format *error-output* "~&~A~%" message)))))
+
+(defvar *errno-setvar-warned* nil
+  "True once EMIT-ERRNO-SETVAR-WARNING has printed in this run: the
+`[errno-setvar]' notice is once per run, not once per setvar.")
+
+(defun emit-errno-setvar-warning (value)
+  "Emit the `[errno-setvar]' notice for (setvar \"ERRNO\" VALUE): both vendors
+document ERRNO as read-only and both accept the write
+(errno-setvar-accepted-by-vendors). Under the vendor dialects and --strict,
+once per run; silent under --clautolisp and --lax. Honours the dialect's
+PORTABILITY-WARNING-MODE: `:error' signals instead of printing."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (dialect-name (and dialect
+                            (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn)))
+    (unless (member dialect-name '(:clautolisp :lax))
+      (let ((message (%portability-diagnostic
+                      "errno-setvar" (%portability-warning-location nil) value)))
+        (when (eq mode :error)
+          (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+        (unless *errno-setvar-warned*
+          (setf *errno-setvar-warned* t)
+          (format *error-output* "~&~A~%" message))))))
+
+;;; --- the encoding replacement (encoding-replacement-character-option) ---
+;;;
+;;; What a write does with a character the target encoding cannot hold. No
+;;; vendor signals (catalogue cases 535-545, 2026-11-03): AutoCAD keeps the low
+;;; byte, BricsCAD best-fits on Windows and writes \U+XXXX on macOS. The policy
+;;; comes from, in order: the per-situation global
+;;; (*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT* /
+;;; *AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*), the general
+;;; *AUTOLISP-ENCODING-REPLACEMENT*, then the dialect's default. The CLI's
+;;; -Ereplacement family seeds the globals; user code may SETQ them.
+
+(defparameter *encoding-replacement-policy-names*
+  '(("error" . :error) ("low-byte" . :low-byte)
+    ("best-fit" . :best-fit) ("escape" . :escape))
+  "The named policies a replacement value may give instead of a character.")
+
+(defun parse-encoding-replacement (text)
+  "The policy TEXT (a CL string) names: a CHARACTER when TEXT is one
+character, :ERROR / :LOW-BYTE / :BEST-FIT / :ESCAPE for those words (any
+case), NIL for an empty TEXT, :INVALID for anything else."
+  (cond
+    ((zerop (length text)) nil)
+    ((= 1 (length text)) (char text 0))
+    (t (or (cdr (assoc text *encoding-replacement-policy-names* :test #'string-equal))
+           :invalid))))
+
+(defun encoding-replacement-policy-name (policy)
+  "POLICY spelt as the option and the global take it back."
+  (if (characterp policy)
+      (string policy)
+      (car (rassoc policy *encoding-replacement-policy-names*))))
+
+;;; SPEC-UNCERTAIN: the BricsCAD best-fit / escape split is assumed to be the
+;;; platform's (V25-Windows and V26-macOS measured only, Linux not at all),
+;;; and AutoCAD's low byte was measured at an unrecorded LISPSYS --
+;;; issues/open/deferred-spec-research.issue, "Encoding replacement".
+(defun dialect-encoding-replacement-default (dialect)
+  "The policy DIALECT applies when nothing was asked. pjb's rule
+(error-processing-per-dialect.issue, section 7): a vendor dialect does what
+its vendor was measured to do (DIALECT-FEATURE :ENCODING-REPLACEMENT);
+--dialect clautolisp does what BricsCAD V26 on macOS does, the \\U+XXXX
+escape -- it loses nothing and reads back unambiguously -- and --strict and
+--lax do as --dialect clautolisp."
+  (let ((product (and dialect
+                      (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+    (if (member product '(:autocad :bricscad))
+        (or (ignore-errors
+             (clautolisp.autolisp-reader:dialect-feature-for dialect :encoding-replacement))
+            :escape)
+        :escape)))
+
+(defun %encoding-replacement-variable (name context)
+  "The policy the AutoLISP global NAME gives, or NIL when it is unbound or
+nil. A string or a symbol is read by PARSE-ENCODING-REPLACEMENT; anything else
+-- and a word that names no policy -- is an AutoLISP error naming the
+variable, raised where the write needs it."
+  (multiple-value-bind (value boundp)
+      (ignore-errors (lookup-variable (intern-autolisp-symbol name) context))
+    (when (and boundp value)
+      (let ((policy (cond ((typep value 'autolisp-string)
+                           (parse-encoding-replacement (autolisp-string-value value)))
+                          ((typep value 'autolisp-symbol)
+                           (parse-encoding-replacement (autolisp-symbol-name value)))
+                          (t :invalid))))
+        (when (eq policy :invalid)
+          (signal-autolisp-runtime-error
+           :invalid-encoding-replacement
+           "~A is ~A: expected a one-character string, or \"error\", \"low-byte\", ~
+\"best-fit\" or \"escape\" (nil for the dialect's default)."
+           name (autolisp-princ-to-string-for-message value)))
+        policy))))
+
+(defun autolisp-princ-to-string-for-message (value)
+  (cond ((typep value 'autolisp-string) (format nil "~S" (autolisp-string-value value)))
+        ((typep value 'autolisp-symbol) (autolisp-symbol-name value))
+        (t (princ-to-string value))))
+
+(defparameter +encoding-replacement-sysvar+ "CLAUTOLISPENCODINGREPLACEMENT"
+  "The clautolisp system variable -- and the environment variable that seeds
+it -- giving the replacement policy when no AutoLISP global does.")
+
+(defun resolve-encoding-replacement (situation
+                                     &key (context (current-evaluation-context))
+                                          sysvar-value)
+  "The replacement policy for SITUATION (:FILE, a stream OPEN made, or
+:TERMINAL), as (values POLICY SOURCE): a CHARACTER, :LOW-BYTE, :BEST-FIT,
+:ESCAPE, or :ERROR to signal. In order: the per-situation global, the
+general *AUTOLISP-ENCODING-REPLACEMENT* (both seeded by the -Ereplacement
+options), SYSVAR-VALUE -- the CLAUTOLISPENCODINGREPLACEMENT system variable,
+read by the caller from the host, seeded from the environment variable of the
+same name -- and the dialect's default. SOURCE is :GLOBAL, :SYSVAR or
+:DIALECT."
+  (let ((policy (or (%encoding-replacement-variable
+                     (ecase situation
+                       (:file "*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*")
+                       (:terminal "*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*"))
+                     context)
+                    (%encoding-replacement-variable "*AUTOLISP-ENCODING-REPLACEMENT*"
+                                                    context))))
+    (cond
+      (policy (values policy :global))
+      ((and (stringp sysvar-value)
+            (plusp (length (string-trim " " sysvar-value))))
+       (let ((from-sysvar (parse-encoding-replacement (string-trim " " sysvar-value))))
+         (when (eq from-sysvar :invalid)
+           (signal-autolisp-runtime-error
+            :invalid-encoding-replacement
+            "~A is ~S: expected one character, or \"error\", \"low-byte\", ~
+\"best-fit\" or \"escape\" (\"\" for the dialect's default)."
+            +encoding-replacement-sysvar+ sysvar-value))
+         (values from-sysvar :sysvar)))
+      (t
+       (values (dialect-encoding-replacement-default
+                (ignore-errors (current-evaluation-dialect)))
+               :dialect)))))
+
+(defvar *encoding-replacement-warnings-seen* (make-hash-table :test 'equal)
+  "(CALLER . WHO) pairs already reported by EMIT-ENCODING-REPLACEMENT-WARNING
+in this run: the notice is once per calling function and builtin, the first
+time that caller makes that builtin substitute -- not once per character.")
+
+(defun emit-encoding-replacement-warning (who character encoding replacement)
+  "The `[encoding-replacement]' notice: WHO (a builtin name) wrote
+REPLACEMENT (a string) in place of CHARACTER, which ENCODING cannot hold.
+
+pjb's rule (error-processing-per-dialect.issue, section 7): each dialect
+behaves as its product does, and an argument in the dialect-specific set is
+reported the first time the CALLER calls the function with it, so the user
+can wrap the call portably. Every dialect warns but --lax, --dialect
+clautolisp and --strict included: the vendors substitute three different ways.
+Honours PORTABILITY-WARNING-MODE: `:error' signals instead of printing."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (dialect-name (and dialect
+                            (ignore-errors
+                             (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn)))
+    (unless (eq dialect-name :lax)
+      (let ((message (%portability-diagnostic
+                      "encoding-replacement" (%portability-warning-location nil)
+                      who (char-code character)
+                      (string-upcase (princ-to-string encoding))
+                      replacement))
+            (key (cons (ignore-errors (%portability-warning-function-name)) who)))
+        (when (eq mode :error)
+          (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+        (unless (gethash key *encoding-replacement-warnings-seen*)
+          (setf (gethash key *encoding-replacement-warnings-seen*) t)
+          (format *error-output* "~&~A~%" message))))))
+
+
+(defvar *printer-nil-file-warned* nil
+  "True once EMIT-PRINTER-NIL-FILE-WARNING has printed in this run: the
+`[printer-nil-file]' notice is once per run, not once per call.")
+
+(defun %resolved-printer-nil-file-policy (dialect-name)
+  "Classify DIALECT-NAME for (princ X nil) / (print X nil) / (prin1 X nil),
+which both references document (output to the command line) and AutoCAD
+2022 rejects (autocad-output-explicit-nil-file-rejected). Returns (values
+ACTION WARN-P): ACTION is :normative (print to the command line, as
+documented) or :deviant (signal AutoCAD's bad-argument error). autocad ->
+deviant + warn; strict -> normative + warn; bricscad / clautolisp / lax /
+unknown -> normative, silent."
+  ;; SPEC-UNCERTAIN: only AutoCAD 2022 at LISPSYS 0 was measured; AutoCAD
+  ;; 2026 and LISPSYS 1 / 2 are assumed to behave the same
+  ;; (issues/open/deferred-spec-research.issue, PRINC / PRINT / PRIN1).
+  (case (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect-name)
+    ((:autocad-2026) (values :deviant   t))
+    ((:strict)       (values :normative t))
+    (t               (values :normative nil))))
+
+(defun emit-printer-nil-file-warning (operator action)
+  "Emit the `[printer-nil-file]' notice for OPERATOR (\"PRINC\", \"PRINT\" or
+\"PRIN1\") called with an explicit NIL file, ACTION being what the dialect
+does (:normative or :deviant, see %RESOLVED-PRINTER-NIL-FILE-POLICY). Once
+per run. Honours the dialect's PORTABILITY-WARNING-MODE: `:error' signals
+instead of printing."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn))
+         (message (%portability-diagnostic
+                   "printer-nil-file" (%portability-warning-location nil)
+                   operator
+                   (if (eq action :deviant)
+                       "clautolisp rejects it, as AutoCAD does"
+                       "clautolisp prints to the command line, as documented"))))
+    (when (eq mode :error)
+      (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+    (unless *printer-nil-file-warned*
+      (setf *printer-nil-file-warned* t)
+      (format *error-output* "~&~A~%" message))))
+
+(defun printer-explicit-nil-file-action (operator)
+  "What OPERATOR (\"PRINC\" / \"PRINT\" / \"PRIN1\") does with an explicit NIL
+file under the active dialect: warns when the dialect asks for it, and
+returns :normative (print to the command line) or :deviant (reject, as
+AutoCAD 2022 does)."
+  (let ((dialect-name (ignore-errors
+                       (clautolisp.autolisp-reader:autolisp-dialect-name
+                        (current-evaluation-dialect)))))
+    (multiple-value-bind (action warn-p)
+        (%resolved-printer-nil-file-policy dialect-name)
+      (when warn-p
+        (emit-printer-nil-file-warning operator action))
+      action)))
+
+(defvar *clautolisp-sysvar-warnings-seen* (make-hash-table :test 'equal)
+  "Names of the clautolisp system variables already reported by
+EMIT-CLAUTOLISP-SYSVAR-WARNING in this run: the notice is once per variable,
+not once per read.")
+
+(defvar *internal-sysvar-read* nil
+  "True while clautolisp itself reads one of its own system variables (the
+write builtins reading CLAUTOLISPENCODINGREPLACEMENT): the program did not
+use it, so the `[clautolisp-sysvar]' notice is not due.")
+
+(defun emit-clautolisp-sysvar-warning (name &optional vendor-note)
+  "Emit the `[clautolisp-sysvar]' extension notice: the clautolisp system
+variable NAME is being used under a dialect it is not portable to. VENDOR-NOTE,
+when given, says what the vendor uses instead (\"BricsCAD's own is BASEFILE\").
+
+Silent under --dialect clautolisp and --lax. Once per NAME per run
+ (*CLAUTOLISP-SYSVAR-WARNINGS-SEEN*). Honours the dialect's
+PORTABILITY-WARNING-MODE: `:error' signals instead of printing, as the other
+dialect notices do. Warnings go to *ERROR-OUTPUT*; the operation proceeds."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (dialect-name (and dialect
+                            (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn)))
+    (unless (or *internal-sysvar-read*
+                (member dialect-name '(:clautolisp :lax)))
+      (let ((message (%portability-diagnostic
+                      "clautolisp-sysvar"
+                      (%portability-warning-location nil)
+                      name (or dialect-name "default") vendor-note)))
+        (when (eq mode :error)
+          (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+        (unless (gethash name *clautolisp-sysvar-warnings-seen*)
+          (setf (gethash name *clautolisp-sysvar-warnings-seen*) t)
+          (format *error-output* "~&~A~%" message))))))
+
+;;; --- vendor-only operators out of their dialect --------------------------
+;;; deferred-clautolisp-out-of-dialect-warnings; the register entry
+;;; "vendor-operator" (portability.lisp) is the specification of this notice.
+
+(defun %warn-out-of-dialect-p (context)
+  "False only when the AutoLISP variable *AUTOLISP-WARN-OUT-OF-DIALECT* is
+BOUND to NIL -- (setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil). Unbound means the
+default, on: an AutoLISP variable nobody set reads as NIL, so an unset one
+cannot be what silences. Re-read at each decision, like
+*AUTOLISP-FILE-ENCODING*, so setting it takes effect at once."
+  (let ((symbol (ignore-errors (find-autolisp-symbol "*AUTOLISP-WARN-OUT-OF-DIALECT*"))))
+    (if (null symbol)
+        t
+        (multiple-value-bind (value boundp)
+            (ignore-errors (lookup-variable symbol context))
+          (or (not boundp) value)))))
+
+(defun %vendor-operator-silent-p (owner dialect &optional name)
+  "True when a call to an operator OWNER alone provides is silent under
+DIALECT: under --lax, and under any dialect of the owner's PRODUCT (matched on
+the product, so bricscad-mac and bricscad-v25 are BricsCAD too), and under
+--clautolisp when NAME is an operator clautolisp adopts
+(*CLAUTOLISP-ADOPTED-OPERATORS*). Strict and clautolisp otherwise warn: strict
+is the portable subset, clautolisp is strict plus clautolisp's own extensions,
+not the vendors' (spec ch.25 case 1)."
+  (or (null dialect)
+      (eq :lax (clautolisp.autolisp-reader:autolisp-dialect-name dialect))
+      (eq owner (clautolisp.autolisp-reader:autolisp-dialect-product dialect))
+      (and name
+           (clautolisp-adopted-operator-p name)
+           (eq :clautolisp (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))))
+
+(defun %vendor-operator-warning-seen-p (name)
+  "T when the `vendor-operator' notice already fired for NAME in this
+session; records it otherwise. Kept in the session's
+DOTDOT-PATH-WARNINGS-SEEN table under an `op:' key, the table-sharing
+convention of the `fse:' / `case:' notices. No session reachable: never
+seen (always emit)."
+  (let* ((context (ignore-errors (current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                        context)))
+         (table (and session
+                     (clautolisp.autolisp-runtime.internal::runtime-session-dotdot-path-warnings-seen
+                      session)))
+         (key (concatenate 'string "op:" name)))
+    (cond
+      ((null table) nil)
+      ((gethash key table) t)
+      (t (setf (gethash key table) t) nil))))
+
+(defun emit-vendor-operator-warning (subr owner)
+  "The `[vendor-operator]' notice for a call of SUBR, whose operator only
+OWNER (:AUTOCAD / :BRICSCAD) provides, when the active dialect is not the
+owner's. Once per operator per session on *ERROR-OUTPUT*; the call proceeds.
+Under PORTABILITY-WARNING-MODE :error it signals :non-portable-construct
+instead, at every call. Silenced by *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (unless (%vendor-operator-silent-p owner dialect (autolisp-subr-name subr))
+      (let ((context (ignore-errors (current-evaluation-context))))
+        (when (%warn-out-of-dialect-p context)
+          (let* ((name (autolisp-subr-name subr))
+                 (mode (or (ignore-errors
+                            (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                             dialect))
+                           :warn))
+                 (message (%portability-diagnostic
+                           "vendor-operator"
+                           (%portability-warning-location nil)
+                           name
+                           (ecase owner (:autocad "AutoCAD") (:bricscad "BricsCAD"))
+                           (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+            (when (eq mode :error)
+              (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+            (unless (%vendor-operator-warning-seen-p name)
+              (format *error-output* "~&~A~%" message))))))))
+
+(defun emit-version-operator-warning (subr gates)
+  "The `[version-operator]' notice for a call of SUBR when the active
+dialect's product version lacks it (GATES from operator-versions.lisp).
+Once per operator per session; :error mode signals :non-portable-construct.
+Silenced by *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (product (and dialect (ignore-errors
+                                (clautolisp.autolisp-reader:autolisp-dialect-product dialect))))
+         (version (and dialect (ignore-errors
+                                (clautolisp.autolisp-reader:autolisp-dialect-version dialect))))
+         (gate (%version-gate-violation gates product version)))
+    (when gate
+      (let ((context (ignore-errors (current-evaluation-context))))
+        (when (%warn-out-of-dialect-p context)
+          (destructuring-bind (gate-product since until) gate
+            (let* ((name (autolisp-subr-name subr))
+                   (vendor (ecase gate-product (:autocad "AutoCAD") (:bricscad "BricsCAD")))
+                   (when-text (if (and since (< version since))
+                                  (format nil "added in ~A ~A~D" vendor
+                                          (if (eq gate-product :bricscad) "V" "") since)
+                                  (format nil "removed in ~A ~A~D" vendor
+                                          (if (eq gate-product :bricscad) "V" "") until)))
+                   (mode (or (ignore-errors
+                              (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                               dialect))
+                             :warn))
+                   (message (%portability-diagnostic
+                             "version-operator"
+                             (%portability-warning-location nil)
+                             name
+                             (clautolisp.autolisp-reader:autolisp-dialect-name dialect)
+                             when-text)))
+              (when (eq mode :error)
+                (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+              (unless (%vendor-operator-warning-seen-p (concatenate 'string "v:" name))
+                (format *error-output* "~&~A~%" message)))))))))
+
+;;; --- feet / inch / fraction distance input (DISTOF, GETDIST) -------------
+;;; system-variables.issue: DISTOF ignored its MODE and GETDIST read only
+;;; decimals. Autodesk documents DISTOF as RTOS's complement, taking the
+;;; LUNITS modes, with modes 3 and 4 PARSED EQUIVALENTLY -- engineering and
+;;; architectural forms accepted for either (autolisp-spec, distof Notes).
+
+(defun %parse-unsigned-decimal (text)
+  "TEXT as a non-negative rational when it is digits with at most one `.'
+and at least one digit (\"18\", \"5.50\", \".5\", \"5.\"), else NIL."
+  (let ((dot (position #\. text)))
+    (when (and (plusp (length text))
+               (every (lambda (c) (or (digit-char-p c) (char= c #\.))) text)
+               (<= (count #\. text) 1)
+               (some #'digit-char-p text))
+      (let ((int (subseq text 0 (or dot (length text))))
+            (frac (if dot (subseq text (1+ dot)) "")))
+        (+ (if (plusp (length int)) (parse-integer int) 0)
+           (if (plusp (length frac))
+               (/ (parse-integer frac) (expt 10 (length frac)))
+               0))))))
+
+(defun %parse-mixed-number (text)
+  "TEXT as a non-negative rational in the forms RTOS modes 3-5 print and a
+user types: a decimal (\"5.5\"), a fraction (\"1/2\"), or a whole number and a
+fraction joined by a space or a hyphen (\"5 1/2\", \"5-1/2\" -- the UNITMODE 0
+and 1 forms). NIL for anything else."
+  (let* ((text (string-trim " " text))
+         (slash (position #\/ text)))
+    (if (null slash)
+        (%parse-unsigned-decimal text)
+        (let* ((joint (position-if (lambda (c) (member c '(#\Space #\-))) text
+                                   :end slash :from-end t))
+               (whole-text (if joint (string-trim " " (subseq text 0 joint)) ""))
+               (numer-text (subseq text (if joint (1+ joint) 0) slash))
+               (denom-text (subseq text (1+ slash))))
+          (when (and (every #'digit-char-p numer-text) (plusp (length numer-text))
+                     (every #'digit-char-p denom-text) (plusp (length denom-text))
+                     (every #'digit-char-p whole-text))
+            (let ((denom (parse-integer denom-text)))
+              (unless (zerop denom)
+                (+ (if (plusp (length whole-text)) (parse-integer whole-text) 0)
+                   (/ (parse-integer numer-text) denom)))))))))
+
+(defun parse-autolisp-distance (text mode)
+  "Parse the distance TEXT the way DISTOF does for LUNITS MODE 3, 4
+(engineering / architectural, accepted alike) or 5 (fractional); a double
+in drawing units (inches for 3/4), or NIL when TEXT is not in that form.
+Modes 1 and 2 (decimal, scientific) are the caller's own decimal parser.
+
+  3, 4:  [-] [FEET'] [-] [INCHES] [\"]   e.g. 1'-5 1/2\" 1'-5.50\" 1'6\" 8'
+         -1/2\" 17.5   FEET may be decimal; INCHES as %PARSE-MIXED-NUMBER
+  5:     [-] WHOLE [ N/D ] | N/D | decimal   e.g. 17 1/2  17-1/2  1/2"
+  (let* ((text (string-trim '(#\Space #\Tab) (or text "")))
+         (negative (and (plusp (length text)) (char= (char text 0) #\-)))
+         (body (string-trim '(#\Space) (if negative (subseq text 1) text)))
+         (value
+           (case mode
+             ((3 4)
+              (let* ((tick (position #\' body))
+                     (feet (if tick (%parse-unsigned-decimal
+                                     (string-trim " " (subseq body 0 tick)))
+                               0))
+                     (rest (string-trim " " (if tick (subseq body (1+ tick)) body))))
+                (when (and (plusp (length rest)) (char= (char rest 0) #\-) tick)
+                  (setf rest (string-trim " " (subseq rest 1))))
+                (when (and (plusp (length rest))
+                           (char= (char rest (1- (length rest))) #\"))
+                  (setf rest (string-trim " " (subseq rest 0 (1- (length rest))))))
+                (let ((inches (if (zerop (length rest))
+                                  (and tick 0)
+                                  (%parse-mixed-number rest))))
+                  (when (and feet inches (plusp (length body)))
+                    (+ (* 12 feet) inches)))))
+             (5 (%parse-mixed-number body)))))
+    (when value
+      (coerce (if negative (- value) value) 'double-float))))
+
+;;; --- text extents: TEXTBOX and the TEXT bounding box --------------------
+;;; Measured, not approximated: *STANDARD-GLYPH-METRICS* (text-metrics.lisp,
+;;; generated from TEXTBOX on AutoCAD 2022 and BricsCAD). It replaces one 0.6
+;;; width ratio for every character -- 10 x M and 10 x i measured alike, 6.0;
+;;; the vendors say 11.43 and 2.92.
+
+(defun %glyph-metrics (char)
+  "#(LEFT-BEARING INK-RIGHT ADVANCE INK-BOTTOM INK-TOP) of CHAR at height 1.
+A character outside printable ASCII takes `n''s metrics: the font is not
+known for it, and a lowercase letter's is the least surprising guess."
+  (let ((code (char-code char)))
+    (or (and (< 31 code 127) (aref *standard-glyph-metrics* code))
+        (aref *standard-glyph-metrics* (char-code #\n)))))
+
+(defun text-ink-box (string height &key (width-factor 1.0d0) bricscad)
+  "The TEXTBOX of STRING at HEIGHT and WIDTH-FACTOR, as (values X0 Y0 X1 Y1
+ADVANCE): the ink of its glyphs laid out by their advances, no kerning (the
+vendors apply none -- six pairs measured). ADVANCE is the pen's travel, what
+justification aligns.
+
+Two reporting rules differ between the vendors, both measured:
+- a box that does not straddle the baseline: BricsCAD reports the ink;
+  AutoCAD reports it TOUCHING the baseline -- \" is (0, 0.354), not
+  (0.646, 1.0); _ is (-0.278, 0), not (-0.278, -0.189);
+- spaces: AutoCAD gives them no ink (a string of spaces is a zero box),
+  BricsCAD ink up to their advance on the baseline.
+BRICSCAD selects the BricsCAD rules."
+  (let ((pen 0d0) (x0 nil) (y0 0d0) (x1 0d0) (y1 0d0))
+    (loop for char across string
+          for m = (%glyph-metrics char)
+          for space-p = (char= char #\Space)
+          do (when (or (not space-p) bricscad)
+               (let ((left (+ pen (aref m 0)))
+                     (right (+ pen (aref m 1))))
+                 (if (null x0)
+                     (setf x0 left x1 right y0 (aref m 3) y1 (aref m 4))
+                     (setf x0 (min x0 left) x1 (max x1 right)
+                           y0 (min y0 (aref m 3)) y1 (max y1 (aref m 4))))))
+             (incf pen (aref m 2)))
+    (unless x0
+      (setf x0 0d0 x1 0d0 y0 0d0 y1 0d0))
+    (unless bricscad
+      (cond ((plusp y0) (setf y1 (- y1 y0) y0 0d0))
+            ((minusp y1) (setf y1 0d0))))
+    (let ((h (coerce height 'double-float))
+          (w (coerce width-factor 'double-float)))
+      (values (* x0 h w) (* y0 h) (* x1 h w) (* y1 h) (* pen h w)))))
+
+(defun autolisp-path-has-forward-slash-ellipsis-p (path)
+  "T iff PATH contains a `...' subfolder-recursion component (AutoCAD's
+support/trusted-path `...' wildcard — a directory and all of its
+subfolders) introduced by a FORWARD slash: a `/...' where the `...' is a
+whole component (immediately followed by `/', `\\' or the string end).
+
+The `...' wildcard is spelled with a BACK slash (`\\...') on
+AutoCAD-Windows; the forward-slash spelling `/...' is accepted by
+clautolisp and by AutoCAD on macOS but is NOT accepted on
+AutoCAD-Windows — hence the platform-gated warning
+ (dialect-platform-version-axis.issue). `.../' at the very start
+ (`/...') and embedded (`a/.../b') both count; a backslash-introduced
+`\\...' does not."
+  (and (stringp path)
+       (loop with len = (length path)
+             for pos = (search "/..." path) then (search "/..." path :start2 (1+ pos))
+             while pos
+             for after = (+ pos 4)
+             when (or (= after len)
+                      (let ((c (char path after)))
+                        (or (char= c #\/) (char= c #\\))))
+               return t
+             finally (return nil))))
+
+(defun %forward-slash-ellipsis-warning-seen-p (path)
+  "Dedup for the `/...' portability warning, keyed by the path STRING in
+the session's DOTDOT-PATH-WARNINGS-SEEN table under a distinct `fse:'
+namespace (so it never collides with the `..'-path dedup that shares the
+table). Once-per-distinct-path per run; skipped (always emit) when no
+session is reachable."
+  (let* ((context (ignore-errors (current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                        context)))
+         (table   (and session
+                       (clautolisp.autolisp-runtime.internal::runtime-session-dotdot-path-warnings-seen
+                        session)))
+         (key     (concatenate 'string "fse:" path)))
+    (cond
+      ((null table) nil)
+      ((gethash key table) t)
+      (t (setf (gethash key table) t) nil))))
+
+(defun emit-forward-slash-ellipsis-portability-warning (path who)
+  "When PATH carries a `/...' subfolder-recursion component, emit a
+`[path-slash-ellipsis]' portability warning — but ONLY when the active
+dialect targets a WINDOWS platform. AutoCAD-Windows (and BricsCAD on
+Windows) accept the `...' subfolder wildcard only with a back slash
+ (`\\...'); the forward-slash spelling `/...' silently fails to expand
+there, though it works under clautolisp and AutoCAD-mac.
+
+Gated on the dialect's PLATFORM facet
+ (dialect-platform-version-axis.issue): warns when PLATFORM is
+:windows (the vendor dialects `--autocad' / `--bricscad'), silent on
+:macos / :linux (`--dialect autocad-mac') and on the platform-neutral
+profiles (`--strict', `--clautolisp', `--lax', whose PLATFORM is NIL).
+This is the first concrete consumer of the platform axis. WHO is the
+builtin name for the diagnostic prefix (e.g. \"FINDFILE\").
+
+Deduped once per distinct PATH per run. Honours the active dialect's
+PORTABILITY-WARNING-MODE: `:error' escalates a fired warning to a runtime
+error (the same warning->error knob as the `..'-path warning). Advisory
+otherwise; warnings go to *ERROR-OUTPUT*."
+  (when (autolisp-path-has-forward-slash-ellipsis-p path)
+    (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+           (platform (and dialect
+                          (ignore-errors
+                           (clautolisp.autolisp-reader:autolisp-dialect-platform dialect))))
+           (mode (or (and dialect
+                          (ignore-errors
+                           (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                            dialect)))
+                     :warn)))
+      (when (eq platform :windows)
+        (let ((message (%portability-diagnostic
+                        "path-slash-ellipsis"
+                        (%portability-warning-location nil)
+                        who path)))
+          (when (eq mode :error)
+            (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+          (unless (%forward-slash-ellipsis-warning-seen-p path)
+            (format *error-output* "~&~A~%" message)))))))
+
+(defun %path-case-warning-seen-p (path)
+  "Dedup for the `[path-case]' warning, keyed by the path STRING in the
+session's DOTDOT-PATH-WARNINGS-SEEN table under a distinct `case:'
+namespace (the same table-sharing convention the `fse:' dedup uses).
+Once-per-distinct-path per run; skipped (always emit) when no session is
+reachable."
+  (let* ((context (ignore-errors (current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                        context)))
+         (table   (and session
+                       (clautolisp.autolisp-runtime.internal::runtime-session-dotdot-path-warnings-seen
+                        session)))
+         (key     (concatenate 'string "case:" path)))
+    (cond
+      ((null table) nil)
+      ((gethash key table) t)
+      (t (setf (gethash key table) t) nil))))
+
+(defun emit-path-case-portability-warning (path real who)
+  "Emit a `[path-case]' warning: PATH was located only because the case
+was folded, and its real name on disk is REAL. WHO is the builtin name
+for the diagnostic prefix (e.g. \"LOAD\").
+
+Called ONLY from the case-folding resolver, and only when a fold
+actually happened — an exact match never warns, which is both the common
+case and the one that costs nothing to check. The caller decides that;
+this function does not re-examine the filesystem.
+
+Unlike the `..' and `/...' warnings, this one does not vary by dialect:
+the mismatch is between the program and the DISK, and it is equally
+wrong under every dialect. It fires wherever CLAUTOLISPCASEINSENSITIVEPATHS
+is 1 and a fold occurred, including under --lax, because the sysvar is
+already an explicit opt-in and silencing the diagnostic too would leave
+the user with no way to learn what the real names are.
+
+This is the whole point of the feature not being a carpet to sweep
+under: the run proceeds AND the developer is told which spelling would
+fail on a strict filesystem. Deduped once per distinct PATH per run.
+Honours the dialect's PORTABILITY-WARNING-MODE: `:error' escalates to a
+runtime error. Warnings go to *ERROR-OUTPUT*."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn))
+         (message (%portability-diagnostic
+                   "path-case"
+                   (%portability-warning-location nil)
+                   who path real)))
+    (when (eq mode :error)
+      (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+    (unless (%path-case-warning-seen-p path)
+      (format *error-output* "~&~A~%" message))))
 
 (defun split-usubr-lambda-list (lambda-list)
   "Walk LAMBDA-LIST and split it into the three positional groups
 clautolisp's `defun' / `lambda' recognises:
 
-  required* [`&' rest-param] [`/' locals*]
+  required* [`&REST' rest-param] [`/' locals*]
 
 Return three values: REQUIRED (list of symbols), REST-PARAM (the
-single symbol after `&', or NIL when no `&' is present), LOCALS
-(list of symbols after `/').
+single symbol after `&REST', or NIL when there is none), LOCALS
+(list of symbols after `/'). A bare `&' is an ordinary parameter
+name, not a separator (pjb, 2026-10-23).
 
 Errors signalled:
   :invalid-lambda-list  — LAMBDA-LIST is not a proper list.
-  :invalid-rest-parameter — `&' is present but the following slot
+  :invalid-rest-parameter — `&REST' is present but the following slot
     is missing, is not a single symbol, or there is more than one
-    symbol between `&' and `/'.
+    symbol between `&REST' and `/'.
 
 The `/'-locals slot stays exactly as before for back-compat with
 every existing AutoLISP defun."
@@ -1851,12 +4124,12 @@ every existing AutoLISP defun."
   (let* ((amp-pos   (position-if #'autolisp-ampersand-symbol-p lambda-list))
          (slash-pos (position-if #'autolisp-slash-symbol-p lambda-list)))
     (when (and amp-pos slash-pos (>= amp-pos slash-pos))
-      ;; `&' appearing AFTER `/' is meaningless: it would name a
+      ;; `&REST' appearing AFTER `/' is meaningless: it would name a
       ;; local. Refuse it explicitly so users hit a clean error
       ;; rather than a silent mis-bind.
       (signal-autolisp-runtime-error
        :invalid-rest-parameter
-       "AutoLISP lambda list: `&' must precede `/', got ~S."
+       "AutoLISP lambda list: `&REST' must precede `/', got ~S."
        lambda-list))
     (let* ((required (subseq lambda-list 0 (or amp-pos slash-pos
                                                (length lambda-list))))
@@ -1870,44 +4143,78 @@ every existing AutoLISP defun."
         (unless (= 1 (length rest-slice))
           (signal-autolisp-runtime-error
            :invalid-rest-parameter
-           "AutoLISP lambda list: `&' must be followed by exactly one symbol, got ~S."
+           "AutoLISP lambda list: `&REST' must be followed by exactly one symbol, got ~S."
            rest-slice))
         (unless (typep (first rest-slice) 'autolisp-symbol)
           (signal-autolisp-runtime-error
            :invalid-rest-parameter
-           "AutoLISP lambda list: rest-parameter after `&' must be a symbol, got ~S."
+           "AutoLISP lambda list: rest-parameter after `&REST' must be a symbol, got ~S."
            (first rest-slice))))
       (values required
               (when amp-pos (first rest-slice))
               locals))))
 
+(defun usubr-lambda-list-split (function)
+  "SPLIT-USUBR-LAMBDA-LIST for FUNCTION, computed once and remembered.
+
+Returns the same three values as SPLIT-USUBR-LAMBDA-LIST. A lambda list
+does not change after the function object exists, so re-walking it on
+every call — two POSITION-IFs, up to three SUBSEQs and the validation —
+was work repeated to reach an answer already known. It showed up as
+POSITION-IF at 7% of a call-dominated profile.
+
+Only successful splits are remembered. A malformed lambda list keeps
+signalling on every call, exactly as before: memoising the failure, or
+computing this eagerly in the constructor, would move the diagnostic from
+the call to the definition, which is a behaviour change."
+  (let ((split (clautolisp.autolisp-runtime.internal::autolisp-usubr-lambda-list-split
+                function)))
+    (if split
+        (values (first split) (second split) (third split))
+        (multiple-value-bind (required rest-param locals)
+            (split-usubr-lambda-list (autolisp-usubr-lambda-list function))
+          (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-lambda-list-split
+                 function)
+                (list required rest-param locals))
+          (values required rest-param locals)))))
+
+(defun check-usubr-arity (name req-count rest-p arguments)
+  "Signal :WRONG-NUMBER-OF-ARGUMENTS when ARGUMENTS does not fit a function
+named NAME with REQ-COUNT required formals (and a rest parameter when REST-P).
+One statement of the rule and its messages, shared by BIND-USUBR-FRAME and the
+lexical fork, which binds no frame but must refuse the same calls in the same
+words."
+  (let ((arg-count (length arguments)))
+    (cond
+      (rest-p
+       ;; Variadic: at least REQ-COUNT arguments are needed, no
+       ;; upper bound. Excess arguments gather into REST-PARAM as
+       ;; a proper list (NIL when there are exactly REQ-COUNT
+       ;; arguments, matching `(princ)' / `(princ x)' / `(princ x
+       ;; fh)' behavior the extension was designed to emulate).
+       (when (< arg-count req-count)
+         (signal-autolisp-runtime-error
+          :wrong-number-of-arguments
+          "AutoLISP function ~A expects at least ~D arguments, got ~D."
+          name
+          req-count
+          arg-count)))
+      (t
+       (unless (= req-count arg-count)
+         (signal-autolisp-runtime-error
+          :wrong-number-of-arguments
+          "AutoLISP function ~A expects ~D arguments, got ~D."
+          name
+          req-count
+          arg-count))))))
+
 (defun bind-usubr-frame (function arguments context)
   (multiple-value-bind (required rest-param locals)
-      (split-usubr-lambda-list (autolisp-usubr-lambda-list function))
-    (let ((req-count (length required))
-          (arg-count (length arguments)))
-      (cond
-        (rest-param
-         ;; Variadic: at least REQ-COUNT arguments are needed, no
-         ;; upper bound. Excess arguments gather into REST-PARAM as
-         ;; a proper list (NIL when there are exactly REQ-COUNT
-         ;; arguments, matching `(princ)' / `(princ x)' / `(princ x
-         ;; fh)' behavior the extension was designed to emulate).
-         (when (< arg-count req-count)
-           (signal-autolisp-runtime-error
-            :wrong-number-of-arguments
-            "AutoLISP function ~A expects at least ~D arguments, got ~D."
-            (autolisp-usubr-name function)
-            req-count
-            arg-count)))
-        (t
-         (unless (= req-count arg-count)
-           (signal-autolisp-runtime-error
-            :wrong-number-of-arguments
-            "AutoLISP function ~A expects ~D arguments, got ~D."
-            (autolisp-usubr-name function)
-            req-count
-            arg-count)))))
+      (usubr-lambda-list-split function)
+    (check-usubr-arity (autolisp-usubr-name function)
+                       (length required)
+                       rest-param
+                       arguments)
     (push-dynamic-frame context)
     (loop for symbol in required
           for value in arguments
@@ -1951,6 +4258,7 @@ selected this way — they fall back to the session-wide
     ((typep function 'autolisp-usubr) (or (autolisp-usubr-name function) "<lambda>"))
     (t (format nil "~S" function))))
 
+(declaim (inline autolisp-function-trace-p))
 (defun autolisp-function-trace-p (function)
   "T iff FUNCTION's invocation should be traced — either the
 session-wide *autolisp-trace-p* flag is on, or the function has
@@ -1958,11 +4266,17 @@ a name that's been registered via the TRACE special operator.
 Anonymous lambdas (no name) fall through to the session-wide
 flag only."
   (or *autolisp-trace-p*
-      (let ((name (cond ((typep function 'autolisp-subr)
-                         (autolisp-subr-name function))
-                        ((typep function 'autolisp-usubr)
-                         (autolisp-usubr-name function)))))
-        (and name (gethash name *autolisp-traced-symbols*)))))
+      ;; The empty-table test comes FIRST and is the point of it. Nothing
+      ;; is traced in the overwhelmingly common case, yet this ran an
+      ;; EQUAL hash — i.e. hashed a name STRING — on every single call to
+      ;; learn that. HASH-TABLE-COUNT is a slot read, and an empty table
+      ;; can only answer NIL, so the two are equivalent.
+      (and (plusp (hash-table-count *autolisp-traced-symbols*))
+           (let ((name (cond ((typep function 'autolisp-subr)
+                              (autolisp-subr-name function))
+                             ((typep function 'autolisp-usubr)
+                              (autolisp-usubr-name function)))))
+             (and name (gethash name *autolisp-traced-symbols*))))))
 
 (defun autolisp-format-trace-value (value)
   ;; Compact one-line printer for trace-value display. Strings keep
@@ -2031,6 +4345,17 @@ flag only."
                       (cons (cons :subr
                                   (cons (autolisp-subr-name function) arguments))
                             *autolisp-call-stack*)))
+                 ;; A vendor-only operator out of its dialect: one slot test
+                 ;; for every portable call (the slot is NIL), the notice at
+                 ;; the first call of a vendor's. Interpreted and compiled
+                 ;; calls both come through here.
+                 (let ((owner (autolisp-subr-owner function)))
+                   (when owner
+                     (emit-vendor-operator-warning function owner)))
+                 ;; An operator the dialect's product VERSION lacks.
+                 (let ((gate (autolisp-subr-version-gate function)))
+                   (when gate
+                     (emit-version-operator-warning function gate)))
                  (handler-case
                      (apply (autolisp-subr-function function) arguments)
                    (autolisp-runtime-error (condition)
@@ -2051,6 +4376,21 @@ flag only."
                             :details (list :subr (autolisp-subr-name function)
                                            :condition condition)
                             :call-stack (current-autolisp-call-stack))))))
+              ;; The LEXICAL fork (lexical-locals-escape-analysis): no frame
+              ;; is pushed, because its formals and /-locals are Common Lisp
+              ;; variables; it checks its own arity with the same rule and
+              ;; words as BIND-USUBR-FRAME. Never under a debug session --
+              ;; the debugger reads and writes frame bindings at a stop, and
+              ;; this fork has none to show it.
+              ((and (not *debugging*)
+                    (typep function 'autolisp-usubr)
+                    (functionp (autolisp-usubr-lexical-body function)))
+               (let ((*autolisp-call-stack*
+                      (cons (cons :usubr
+                                  (cons (or (autolisp-usubr-name function) "<lambda>")
+                                        arguments))
+                            *autolisp-call-stack*)))
+                 (funcall (autolisp-usubr-lexical-body function) context arguments)))
               ((typep function 'autolisp-usubr)
                ;; Two-bodies dispatch (clautolisp-debugger plan §3a,
                ;; revised by design note DN-2): while a debug session is
@@ -2064,17 +4404,39 @@ flag only."
                ;; — and an uninstrumented function always runs plain. With
                ;; no session active *DEBUGGING* is NIL and this reduces to
                ;; the original plain-body path at no cost.
-               (let ((selected-body
+               (let* (;; Which of the four bodies runs.
+                      ;;
+                      ;; Debuggability still wins over speed where the
+                      ;; two compete -- an instrumented body must run
+                      ;; under a debug session or stepping and
+                      ;; breakpoints would stop working on any function
+                      ;; hot enough to have been compiled. What changed
+                      ;; is that this is no longer a choice between
+                      ;; debuggable and compiled: the transpiler can
+                      ;; compile an INSTRUMENTED body too, so a debug
+                      ;; session gets both. The order is therefore
+                      ;; instrumented-and-compiled, then instrumented,
+                      ;; then compiled, then plain.
+                      (instrumented-body
+                       (and *debugging*
+                            (or (autolisp-usubr-instrumented-body function)
+                                (maybe-instrument-usubr function))))
+                      (compiled-body
+                       (if instrumented-body
+                           (maybe-compile-instrumented-usubr function)
+                           (and (not *debugging*)
+                                (maybe-compile-usubr function))))
+                      (selected-body
                        (if *debugging*
-                           (or (autolisp-usubr-instrumented-body function)
-                               ;; Lazily weave the instrumented fork on this
-                               ;; function's first call under a debug session
-                               ;; (compiled-eval model): stepping/breakpoints
-                               ;; then ride on it, and code defined before the
-                               ;; session becomes debuggable without a separate
+                           (or instrumented-body
+                               ;; The instrumented fork is woven lazily on
+                               ;; this function's first call under a debug
+                               ;; session (compiled-eval model), just above:
+                               ;; stepping/breakpoints ride on it, and code
+                               ;; defined before the session becomes
+                               ;; debuggable without a separate
                                ;; instrument-on-defun pass. No cost when not
                                ;; debugging (*DEBUGGING* NIL short-circuits).
-                               (maybe-instrument-usubr function)
                                (autolisp-usubr-body function))
                            (autolisp-usubr-body function))))
                  (let ((*autolisp-call-stack*
@@ -2094,7 +4456,16 @@ flag only."
                    ;; frame provably exists and the pop pairs with it.
                    (bind-usubr-frame function arguments context)
                    (unwind-protect
-                        (autolisp-eval-progn selected-body context)
+                        ;; The compiled fork runs HERE and nowhere else:
+                        ;; inside the frame BIND-USUBR-FRAME just pushed
+                        ;; and inside the same unwind-protect, so it sees
+                        ;; the parameters bound exactly as the plain body
+                        ;; does and unwinds the same way. Compiling the
+                        ;; body changes how the body is evaluated, not
+                        ;; what it is evaluated in.
+                        (if compiled-body
+                            (funcall compiled-body context)
+                            (autolisp-eval-progn selected-body context))
                      (pop-dynamic-frame context)))))
               (t
                (signal-autolisp-runtime-error
@@ -2105,6 +4476,47 @@ flag only."
         (decf *autolisp-trace-depth*)
         (autolisp-trace-exit function result))
       result)))
+
+(defun synchronize-process-environment ()
+  "Anchor the engine to the LIVE process: its cwd, and its path frame.
+
+TWO HALVES, AND THEY MUST NOT BE SEPARATED -- which is exactly what
+went wrong (windows-msys-paths-in-autolisp-load-alfe.issue).
+
+  1. THE CWD. *AUTOLISP-CURRENT-DIRECTORY* and the support paths are
+     captured from (truename \".\") at image-DUMP time, so a saved
+     executable would resolve relative LOAD / OPEN / FINDFILE against
+     the BUILD directory rather than where the user launched it.
+     Common Lisp's *DEFAULT-PATHNAME-DEFAULTS* is kept in agreement so
+     bare CL merges match.
+
+  2. THE RUN FRAME. The mapping layer distinguishes the frame the Lisp
+     was BUILT in from the one it RUNS in. *RUN-ENVIRONMENT* defaults
+     to the build frame, and on a mingw-SBCL-under-MSYS2 host the build
+     frame carries the native drive-style override -- so until the run
+     frame is detected, an MSYS2 path like \"/c/Users/...\" maps to
+     nothing and LOAD reports it missing.
+
+WHY THIS IS ONE FUNCTION AND NOT TWO. Both halves used to live in the
+clautolisp TOOL's startup, where an embedder could not call them. alfe
+mirrored the first half into its own backend -- comment and issue
+reference included -- and not the second, so `alfe --clautolisp' could
+not open a /c/... path that `clautolisp' opened fine. pjb, 2026-09-16:
+\"In general we should get strictly the same semantics, unless an
+exception is specified and documented.\" Duplicated startup is how the
+semantics drifted; one function that every entry point calls is the
+repair. Adding a third entry point should mean calling this, not
+copying it.
+
+Safe and idempotent on every host: on macOS and Linux the run frame is
+the identity environment and the mapping layer short-circuits."
+  (let ((cwd (ignore-errors (uiop:getcwd))))
+    (when cwd
+      (setf *default-pathname-defaults* cwd)
+      (set-autolisp-current-directory cwd)
+      (set-autolisp-support-paths (list (namestring cwd)))))
+  (ignore-errors (clautolisp.pathname-mapping:initialize-run-environment))
+  (values))
 
 (defun self-evaluating-runtime-value-p (object)
   (or (null object)
@@ -2218,13 +4630,23 @@ returning the last form's value. Outside a session this is AUTOLISP-EVAL-PROGN."
      (length arguments)))
   (let* ((place-result (autolisp-eval (first arguments) context))
          (value-result (autolisp-eval (second arguments) context)))
-    (unless (typep place-result 'autolisp-symbol)
-      (signal-autolisp-runtime-error
-       :invalid-set-place
-       "SET place must evaluate to an AutoLISP symbol, got ~S."
-       place-result))
-    (set-variable place-result value-result context)
-    value-result))
+    (set-autolisp-place place-result value-result context)))
+
+(defun set-autolisp-place (place value context)
+  "Assign VALUE to the variable PLACE names, and return VALUE.
+
+PLACE and VALUE are already EVALUATED -- SET evaluates its place form,
+which is the whole difference from SETQ. Extracted so the compiler
+calls this rule instead of restating it: the check that a place is a
+symbol, its diagnostic, and the SET's value are three decisions, and
+three decisions restated are three things that can drift."
+  (unless (typep place 'autolisp-symbol)
+    (signal-autolisp-runtime-error
+     :invalid-set-place
+     "SET place must evaluate to an AutoLISP symbol, got ~S."
+     place))
+  (set-variable place value context)
+  value)
 
 (defun eval-trace-form (arguments context)
   ;; (trace foo bar)  — symbol-name arguments are taken bare (not
@@ -2284,6 +4706,11 @@ returning the last form's value. Outside a session this is AUTOLISP-EVAL-PROGN."
 ;;;               comma-separated coordinates a user would type
 ;;;               ("1.0,2.0" / "1.0,2.0,3.0").
 ;;;   ename    -> the entity handle text (entity-selection input).
+;;;   pickset  -> the live selection-set value itself, un-normalized —
+;;;               vendor COMMAND accepts a selection set wherever a
+;;;               command prompts for object selection (the classic
+;;;               (command "._erase" ss "") idiom); it has no textual
+;;;               spelling, so the backend receives the object.
 ;;;   others   -> :invalid-command-argument (nil included: vendor
 ;;;               AutoLISP rejects nil command input too).
 ;;;
@@ -2299,13 +4726,146 @@ COMMAND token sequence to the HAL backend HOST. The autolisp-host
 module installs #'HOST-COMMAND here when loaded; tests may rebind
 it to capture routed tokens without a host system.")
 
+(defun autolisp-format-real (value)
+  "The host-independent AutoLISP spelling of a real VALUE: the double-float
+PRINC form with the CL float-type marker elided and any exponent normalised
+to a lowercase `e', an unsigned `+', and no leading zeros. This is the single
+source of truth for princ/prin1/rtos-decimal/command-token real formatting.
+
+Without the normalisation the spelling is host-dependent: for 1e20 SBCL
+prints `1.0e20' while CCL prints `1.0E+20', and for 1e-8 SBCL `1.0e-8' vs
+CCL `1.0E-8'. Binding *READ-DEFAULT-FLOAT-FORMAT* only elides the type
+marker; it does not unify the exponent case/sign/padding. We post-process so
+both hosts agree on the SBCL-canonical form (float-printer-omits-double-float
+-marker; ccl-suite-failures.issue)."
+  (let* ((d (coerce value 'double-float))
+         (s (let ((*read-default-float-format* 'double-float))
+              (princ-to-string d)))
+         (pos (position-if (lambda (c)
+                             (member c '(#\e #\E #\d #\D #\s #\S #\f #\F #\l #\L)))
+                           s)))
+    (if (null pos)
+        s
+        (let* ((mantissa (subseq s 0 pos))
+               (exp      (subseq s (1+ pos)))
+               (neg      (and (plusp (length exp)) (char= (char exp 0) #\-)))
+               (digits   (string-left-trim "0" (string-left-trim "+-" exp))))
+          (when (zerop (length digits)) (setf digits "0"))
+          (concatenate 'string mantissa "e" (if neg "-" "") digits)))))
+
+;;; --- Real printing per product (dialect-platform-version-axis) -------------
+;;;
+;;; Measured (probe-versions, 2026-10-25; probe:suite AutoCAD 2022 job
+;;; 17450478986, BricsCAD V26 macOS 17450478987, V25 Windows 17450350668):
+;;;   AutoCAD   C %.6g, with ".0" added to a mantissa that has no point:
+;;;             0.333333  1.0e+06  1.23457e+07  1.0e-05  100.0
+;;;   BricsCAD  C %.15g, with ".0" added only when there is neither a point
+;;;             nor an exponent: 0.333333333333333  1000000.0  1e+15  1e-05
+;;; and clautolisp's own spelling (AUTOLISP-FORMAT-REAL) for clautolisp,
+;;; strict and lax (pjb, 2026-10-25: "keep the 3 variants ... in strict, use
+;;; clautolisp format, just as in lax"). BricsCAD V18.1's "tiny doubles print
+;;; 0.0" is not what either prints today.
+
+(defun %c-g-format (value precision)
+  "VALUE as C's printf %.<PRECISION>g writes it: PRECISION significant digits
+of the double's exact value, fixed notation when the decimal exponent X is in
+[-4, PRECISION), else scientific; trailing zeros (and a trailing point)
+removed; the exponent signed, with at least two digits."
+  (let ((d (coerce value 'double-float)))
+    (if (zerop d)
+        (if (minusp (float-sign d)) "-0" "0")
+        (let* ((r (abs (rational d)))
+               (x (floor (log (coerce r 'double-float) 10d0))))
+          ;; exact: 10^x <= r < 10^(x+1)
+          (loop while (< r (expt 10 x)) do (decf x))
+          (loop while (>= r (expt 10 (1+ x))) do (incf x))
+          (let ((n (round (* r (expt 10 (- (1- precision) x))))))
+            ;; rounding up to 10^precision moves the exponent
+            (when (>= n (expt 10 precision))
+              (setf n (round n 10))
+              (incf x))
+            (let* ((digits (format nil "~D" n))      ; PRECISION digits
+                   (sign (if (minusp d) "-" "")))
+              (flet ((trim (text)
+                       (if (find #\. text)
+                           (string-right-trim "." (string-right-trim "0" text))
+                           text)))
+                (if (and (<= -4 x) (< x precision))
+                    (concatenate 'string sign
+                                 (trim (if (minusp x)
+                                           (concatenate 'string "0."
+                                                        (make-string (- -1 x) :initial-element #\0)
+                                                        digits)
+                                           (concatenate 'string (subseq digits 0 (1+ x)) "."
+                                                        (subseq digits (1+ x))))))
+                    (format nil "~A~Ae~A~2,'0D" sign
+                            (trim (concatenate 'string (subseq digits 0 1) "." (subseq digits 1)))
+                            (if (minusp x) "-" "+")
+                            (abs x))))))))))
+
+(defun autolisp-format-real-as (value product)
+  "The spelling PRODUCT's printer gives the real VALUE: :AUTOCAD, :BRICSCAD,
+or NIL for clautolisp's own (AUTOLISP-FORMAT-REAL)."
+  (case product
+    (:autocad
+     (let* ((s (%c-g-format value 6))
+            (e (position #\e s))
+            (mantissa (subseq s 0 (or e (length s)))))
+       (if (find #\. mantissa)
+           s
+           (concatenate 'string mantissa ".0" (if e (subseq s e) "")))))
+    (:bricscad
+     (let ((s (%c-g-format value 15)))
+       (if (or (find #\. s) (find #\e s)) s (concatenate 'string s ".0"))))
+    (t (autolisp-format-real value))))
+
+(defun %real-format-product ()
+  "The product whose real spelling the active dialect prints with, or NIL."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (and dialect (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+
+(defun autolisp-print-real (value)
+  "The real VALUE as the active dialect's printer spells it (PRIN1 / PRINC /
+VL-PRIN1-TO-STRING ...), after the `[real-format]' notice when AutoCAD and
+BricsCAD would spell it differently. COMMAND tokens and RTOS do not come
+here: they keep AUTOLISP-FORMAT-REAL's full precision."
+  (emit-real-format-warning value)
+  (autolisp-format-real-as value (%real-format-product)))
+
+(defun emit-real-format-warning (value)
+  "The `[real-format]' notice: printing VALUE, which AutoCAD and BricsCAD
+spell differently (0.333333 / 0.333333333333333, 1.0e+06 / 1000000.0 ...).
+Once per session; silent under lax; :error mode signals
+:non-portable-construct; *AUTOLISP-WARN-OUT-OF-DIALECT* = NIL silences it."
+  (let ((autocad (autolisp-format-real-as value :autocad))
+        (bricscad (autolisp-format-real-as value :bricscad)))
+    (unless (string= autocad bricscad)
+      (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+             (name (and dialect (ignore-errors
+                                 (clautolisp.autolisp-reader:autolisp-dialect-template-name
+                                  (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))))
+             (context (ignore-errors (current-evaluation-context))))
+        (when (and dialect (not (eq name :lax)) (%warn-out-of-dialect-p context))
+          (let ((mode (or (ignore-errors
+                           (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                            dialect))
+                          :warn))
+                (message (%portability-diagnostic
+                          "real-format"
+                          (%portability-warning-location nil)
+                          autocad bricscad
+                          (autolisp-format-real-as value nil))))
+            (when (eq mode :error)
+              (signal-autolisp-runtime-error :non-portable-construct "~A" message))
+            (unless (%vendor-operator-warning-seen-p "real-format")
+              (format *error-output* "~&~A~%" message))))))))
+
 (defun format-command-number (value)
   "Format the number VALUE as a CAD command-line token: integers in
 decimal, reals in their AutoLISP princ spelling (no CL float marker)."
   (if (integerp value)
       (format nil "~D" value)
-      (let ((*read-default-float-format* 'double-float))
-        (princ-to-string (coerce value 'double-float)))))
+      (autolisp-format-real value)))
 
 (defun command-point-p (value)
   "True iff VALUE is an AutoLISP point usable as command input: a
@@ -2333,10 +4893,23 @@ no command-input reading (nil, symbols, nested lists, functions, …)."
      (format nil "~{~A~^,~}" (mapcar #'format-command-number value)))
     ((typep value 'autolisp-ename)
      (format nil "~A" (autolisp-ename-value value)))
+    ((typep value 'autolisp-pickset)
+     ;; A selection set has no command-line spelling: it passes to the
+     ;; backend live (vendor COMMAND accepts one wherever a command
+     ;; prompts for object selection).
+     value)
+    ((and (consp value)
+          (typep (first value) 'autolisp-ename)
+          (consp (rest value))
+          (command-point-p (second value)))
+     ;; The ENTSEL form (ename point) -- what a single-object pick answers
+     ;; (LENGTHEN, TRIM, DIVIDE ...). Passed live too: the point matters
+     ;; (which end LENGTHEN extends). Rejected here before 2026-10-03.
+     value)
     (t
      (signal-autolisp-runtime-error
       :invalid-command-argument
-      "COMMAND argument must be a string, number, point list, or entity name, got ~S."
+      "COMMAND argument must be a string, number, point list, entity name, or selection set, got ~S."
       value))))
 
 (defun dispatch-autolisp-command (values &optional (context (current-evaluation-context)))
@@ -2410,13 +4983,13 @@ COMMAND-S special forms and the VL-CMDF builtin."
 ;; OR / AND, plus vendor-inventory-2026.org §10 item 11). Short-circuit
 ;; evaluation is preserved; only the return shape changes.
 (defun eval-and-form (arguments context)
-  (let ((t-symbol (intern-autolisp-symbol "T")))
+  (let ((t-symbol (autolisp-true-symbol)))
     (dolist (argument arguments t-symbol)
       (when (autolisp-false-p (autolisp-eval argument context))
         (return nil)))))
 
 (defun eval-or-form (arguments context)
-  (let ((t-symbol (intern-autolisp-symbol "T")))
+  (let ((t-symbol (autolisp-true-symbol)))
     (dolist (argument arguments nil)
       (when (autolisp-true-p (autolisp-eval argument context))
         (return t-symbol)))))
@@ -2426,24 +4999,135 @@ COMMAND-S special forms and the VL-CMDF builtin."
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
      "WHILE expects at least one argument."))
-  (loop while (autolisp-true-p (autolisp-eval (first arguments) context))
-        do (autolisp-eval-progn (rest arguments) context))
-  nil)
+  ;; The value of the last body expression of the last iteration, nil when
+  ;; the body never runs (spec, WHILE Return Values; AutoCAD's while page).
+  ;; It used to be nil always (while-repeat-return-nil).
+  (let ((result nil))
+    (loop while (autolisp-true-p (autolisp-eval (first arguments) context))
+          do (setf result (autolisp-eval-progn (rest arguments) context)))
+    result))
+
+;;; The pieces of REPEAT and FOREACH that DECIDE something, factored out
+;;; so the compiler can emit the loop without restating any of it.
+;;;
+;;; The transpiler open-codes both loops -- until 2.0.21 a FOREACH inside
+;;; a compiled function meant the whole loop, body included, ran
+;;; interpreted -- and the rule it must not break is the one that governs
+;;; this whole compiler: no second implementation of anything that can
+;;; disagree. So what compiled code supplies is the SHAPE (the loop, and
+;;; the body as compiled code); every check, every error and the binding
+;;; rule come from here, which is what the interpreter calls too.
+
+(defun check-repeat-count (count)
+  "Signal unless COUNT is a valid REPEAT count; return the number of
+iterations. The count check and its diagnostic in one place, for the
+interpreter and for compiled code."
+  (unless (typep count '(signed-byte 32))
+    (signal-autolisp-runtime-error
+     :invalid-repeat-count
+     "REPEAT count must evaluate to an integer, got ~S."
+     count))
+  (max 0 count))
+
+(defun check-foreach-sequence (sequence)
+  "Signal unless SEQUENCE is a list FOREACH can walk; return it."
+  (unless (listp sequence)
+    (signal-autolisp-runtime-error
+     :invalid-foreach-sequence
+     "FOREACH list argument must evaluate to a proper list, got ~S."
+     sequence))
+  sequence)
+
+(defun bind-foreach-variable (name element context)
+  "Give NAME the value ELEMENT for one FOREACH iteration: a BINDING in the
+frame FOREACH pushed, so whatever NAME held before the loop is restored
+when the loop ends.
+
+It used to ASSIGN when a dynamic binding for NAME already existed
+anywhere in the chain, and so clobbered a `/'-local -- of the function
+running the loop, and, because AutoLISP is dynamically scoped, of its
+CALLER too. Nobody had ever asked an engine whether that was right. pjb
+asked (2026-08-30), the probe went to AutoCAD, and AutoCAD BINDS:
+
+    case                            AutoCAD   clautolisp was
+    /-local of the same function    BEFORE    the last element
+    /-local of the CALLER           BEFORE    the last element
+
+which is also what the specification always said -- `bind it to name',
+`rebinding name for each iteration', `restored when the rebinding frame
+is popped'. The implementation matched neither.
+
+The compiler needs no change for this: it open-codes FOREACH by CALLING
+this function rather than restating the rule, so both forks moved
+together the moment this line did. See
+issues/closed/foreach-binding-vs-assignment.issue."
+  (bind-dynamic-variable name element context))
+
+;;; FOREACH with NO BODY: the RETURN VALUE is the one case where the
+;;; vendors disagree (foreach-empty-body-return-diverges.issue). The spec
+;;; -- "the final body value, or nil if no body exists" -- and AutoCAD
+;;; (2022, 2026) return nil; BricsCAD (V25 Windows, V26 macOS) returns the
+;;; LIST its loop left in the accumulator. clautolisp follows the spec by
+;;; default and reproduces BricsCAD's answer only under --dialect bricscad
+;;; (and --lax), classifying the dialect exactly as every other
+;;; :vendor-divergence does (cf. %RESOLVED-DIVERGENCE-POLICY in cador).
+;;; The interpreter and the compiler BOTH call FOREACH-EMPTY-BODY-RESULT
+;;; for the body-less case, so the two forks cannot drift (see the note
+;;; above CHECK-REPEAT-COUNT).
+
+(defun %resolved-foreach-empty-body-policy (dialect-name)
+  "Classify DIALECT-NAME for the body-less FOREACH return divergence.
+Returns (values ACTION WARN-P): ACTION is :normative (nil, per the spec
+and AutoCAD) or :deviant (the list, per BricsCAD); WARN-P is true iff a
+portability warning is due.  lax -> deviant, silent; bricscad -> deviant
++ warn; strict -> normative + warn; autocad / clautolisp / unknown ->
+normative, silent."
+  (case (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect-name)
+    ((:lax)                            (values :deviant   nil))
+    ((:bricscad :bricscad-v25 :bricscad-v26 :bricscad-mac :bricscad-linux)
+     (values :deviant   t))
+    ((:strict)                         (values :normative t))
+    (t                                 (values :normative nil))))
+
+(defun emit-foreach-empty-body-divergence-warning (dialect-name action)
+  "Advisory to *ERROR-OUTPUT*: a body-less FOREACH's return value is not
+portable.  Emitted under --dialect bricscad (where clautolisp returns the
+list to match) and --strict (where it returns nil, per the spec)."
+  (format *error-output*
+          "~&[foreach-empty-body] a FOREACH with no body returns nil under ~
+the specification and AutoCAD, but BricsCAD returns the list left in its ~
+accumulator. clautolisp returns ~A under --dialect ~A; the two answers ~
+are not portable.~%"
+          (if (eq action :deviant) "the list" "nil")
+          (or dialect-name "the active dialect")))
+
+(defun foreach-empty-body-result (sequence context)
+  "The value a body-less FOREACH yields, resolved by the active dialect.
+nil for an empty SEQUENCE -- the vendors agree there, so nothing diverges
+and nothing warns.  For a non-empty SEQUENCE the answer follows
+%RESOLVED-FOREACH-EMPTY-BODY-POLICY: the list under bricscad / lax, nil
+everywhere else, warning under bricscad and strict."
+  (if (null sequence)
+      nil
+      (let ((dialect-name (ignore-errors (current-evaluation-dialect-name context))))
+        (multiple-value-bind (action warn-p)
+            (%resolved-foreach-empty-body-policy dialect-name)
+          (when warn-p
+            (emit-foreach-empty-body-divergence-warning dialect-name action))
+          (if (eq action :deviant) sequence nil)))))
 
 (defun eval-repeat-form (arguments context)
   (unless (>= (length arguments) 1)
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
      "REPEAT expects at least one argument."))
-  (let ((count (autolisp-eval (first arguments) context)))
-    (unless (typep count '(signed-byte 32))
-      (signal-autolisp-runtime-error
-       :invalid-repeat-count
-       "REPEAT count must evaluate to an integer, got ~S."
-       count))
-    (loop repeat (max 0 count)
-          do (autolisp-eval-progn (rest arguments) context))
-    nil))
+  (let ((count (check-repeat-count (autolisp-eval (first arguments) context))))
+    ;; The final body value, nil when the body never runs (spec, REPEAT
+    ;; Return Values). It used to be nil always (while-repeat-return-nil).
+    (let ((result nil))
+      (loop repeat count
+            do (setf result (autolisp-eval-progn (rest arguments) context)))
+      result)))
 
 (defun eval-foreach-form (arguments context)
   (unless (>= (length arguments) 2)
@@ -2459,47 +5143,214 @@ COMMAND-S special forms and the VL-CMDF builtin."
        :invalid-foreach-binding
        "FOREACH binding name must be an AutoLISP symbol, got ~S."
        name))
-    (let ((sequence (autolisp-eval (second arguments) context)))
-      (unless (listp sequence)
-        (signal-autolisp-runtime-error
-         :invalid-foreach-sequence
-         "FOREACH list argument must evaluate to a proper list, got ~S."
-         sequence))
+    (let ((sequence (check-foreach-sequence
+                     (autolisp-eval (second arguments) context))))
       (unwind-protect
            (progn
              (push-dynamic-frame context)
-             (dolist (element sequence result)
-               (if (find-dynamic-binding name (evaluation-context-dynamic-frame context))
-                   (set-variable name element context)
-                   (bind-dynamic-variable name element context))
-               (setf result (if body
-                                (autolisp-eval-progn body context)
-                                nil))))
+             (dolist (element sequence)
+               (bind-foreach-variable name element context)
+               (when body
+                 (setf result (autolisp-eval-progn body context)))))
+        (pop-dynamic-frame context))
+      ;; With a body, the last body value; with none, the dialect-resolved
+      ;; body-less value (nil per the spec/AutoCAD, the list under bricscad).
+      (if body
+          result
+          (foreach-empty-body-result sequence context)))))
+
+(defun check-vlax-collection-support ()
+  "Signal unless COM collection support is installed.
+
+Separate from VLAX-COLLECTION-ITEMS, and called BEFORE the collection
+form is evaluated, because that is the interpreter's order: with COM
+absent, (vlax-for x (some-form-with-side-effects) ...) signals without
+running the side effect. A compiler that evaluated first and complained
+second would differ from the interpreter in exactly the way nothing
+notices until it matters."
+  (unless *vlax-collection-items-hook*
+    (signal-autolisp-runtime-error
+     :unsupported-special-operator
+     "VLAX-FOR is unavailable: no COM collection support is installed.")))
+
+(defun vlax-collection-items (collection)
+  "The members of COLLECTION, through the hook the builtins layer
+installs. The runtime cannot reach the host COM protocol, and the
+compiler cannot either -- both ask this."
+  (funcall *vlax-collection-items-hook* collection))
+
+(defun eval-vlax-for-form (arguments context)
+  "(vlax-for VAR COLLECTION BODY...) — iterate over an ActiveX
+collection, binding VAR to each member (Visual LISP special form, spec
+1568). The member list comes from *vlax-collection-items-hook*, which the
+builtins layer installs (the runtime cannot reach the host COM protocol)."
+  (unless (>= (length arguments) 2)
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "VLAX-FOR expects at least a binding name and a collection, got ~D arguments."
+     (length arguments)))
+  (let ((name (first arguments))
+        (body (cddr arguments))
+        (result nil))
+    (unless (typep name 'autolisp-symbol)
+      (signal-autolisp-runtime-error
+       :invalid-foreach-binding
+       "VLAX-FOR binding name must be an AutoLISP symbol, got ~S." name))
+    (check-vlax-collection-support)
+    (let ((items (vlax-collection-items
+                  (autolisp-eval (second arguments) context))))
+      (unwind-protect
+           (progn
+             (push-dynamic-frame context)
+             (dolist (element items result)
+               ;; The SAME rule FOREACH uses, from the same function.
+               ;;
+               ;; This read ASSIGN-IF-ALREADY-BOUND until 2.0.26 -- the
+               ;; exact code FOREACH carried until AutoCAD was probed
+               ;; (2.0.22) and answered that it BINDS. VLAX-FOR was left
+               ;; behind by that fix, so the two loops in this
+               ;; implementation disagreed about their loop variable:
+               ;; (vlax-for x coll ...) wrote a caller's local named X
+               ;; and left the last member in it, while (foreach x l ...)
+               ;; did not.
+               ;;
+               ;; No vendor probe covers VLAX-FOR specifically -- it
+               ;; needs a live COM collection, which the probe harness
+               ;; cannot conjure. What is asserted here is the ANALOGY:
+               ;; the spec describes both in the same words, the
+               ;; behaviour FOREACH was proved to have is the one the
+               ;; spec always described, and two loops differing on
+               ;; their binding rule is far likelier to be an oversight
+               ;; than a vendor quirk nobody documented. See
+               ;; issues/closed/vlax-for-binding-rule-unprobed.issue.
+               (bind-foreach-variable name element context)
+               (setf result (if body (autolisp-eval-progn body context) nil))))
         (pop-dynamic-frame context)))))
 
-(defun maybe-warn-about-rest-separator (lambda-list who)
+(defun parse-let-binding (binding)
+  "Parse one LET binding, returning (values SYMBOL INIT-FORM). A binding
+is either a bare symbol (bound to NIL, so INIT-FORM is NIL) or a
+two-element list (SYMBOL INIT-FORM). Anything else signals
+:invalid-let-binding. Mirrors Common Lisp's LET binding shapes; the
+one-element list (SYMBOL) is also accepted as a NIL initialiser."
+  (cond
+    ((typep binding 'autolisp-symbol)
+     (values binding nil))
+    ((and (consp binding)
+          (typep (first binding) 'autolisp-symbol)
+          (null (cddr binding)))
+     (values (first binding) (second binding)))
+    (t
+     (signal-autolisp-runtime-error
+      :invalid-let-binding
+      "LET binding must be a symbol or a (symbol init-form) list, got ~S."
+      binding))))
+
+(defun eval-let-form (arguments context)
+  ;; (let ((x 1) (y 2)) body...) — the BricsCAD V26 undocumented
+  ;; Common-Lisp extension (see
+  ;; autolisp-spec/documentation/bricscad-undocumented-extensions.org).
+  ;; Semantics vendor-confirmed on 2026-08-07 against real BricsCAD V26:
+  ;; CL-style PARALLEL binding — every init-form is evaluated in the
+  ;; ENCLOSING scope first, then the variables are bound simultaneously
+  ;; in a fresh dynamic frame (so in (let ((x 1) (y x)) ...) the y init
+  ;; sees the OUTER x, not the let's x=1; the harvest gave (1 10) for
+  ;; (setq x 10)(let ((x 1)(y x))(list x y))). The body is an implicit
+  ;; progn returning its last form's value; an empty body returns nil.
+  ;;
+  ;; The binding frame is a dynamic-frame like defun's `/'-locals, so a
+  ;; LET-bound name shadows the surrounding binding for the extent of the
+  ;; body and is torn down on both normal and non-local exit — matching
+  ;; the FOREACH / usubr-frame discipline.
+  ;;
+  ;; Availability is dialect-controlled: under a dialect whose target
+  ;; host lacks LET (strict / autocad) EVAL-LET-FORM still evaluates the
+  ;; form but emits an [ext-bricscad-undocumented] warning (or errors
+  ;; when --portability-warning-mode error); under bricscad / clautolisp
+  ;; / lax it is silent. LET* is deliberately NOT provided — the harvest
+  ;; proved BricsCAD V26 has no LET* ("no function definition <LET*>").
+  (unless (>= (length arguments) 1)
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "LET expects a binding list and body forms, got ~D arguments."
+     (length arguments)))
+  (let ((binding-list (first arguments))
+        (body (rest arguments)))
+    (unless (listp binding-list)
+      (signal-autolisp-runtime-error
+       :invalid-let-bindings
+       "LET binding list must be a proper list, got ~S."
+       binding-list))
+    (emit-bricscad-undocumented-warning "LET" binding-list)
+    ;; Parallel binding: parse + evaluate EVERY init-form against the
+    ;; enclosing scope BEFORE any LET variable is bound.
+    (let ((symbols '())
+          (values '()))
+      (dolist (binding binding-list)
+        (multiple-value-bind (symbol init-form) (parse-let-binding binding)
+          (push symbol symbols)
+          (push (autolisp-eval init-form context) values)))
+      (setf symbols (nreverse symbols)
+            values (nreverse values))
+      (unwind-protect
+           (progn
+             (push-dynamic-frame context)
+             (loop for symbol in symbols
+                   for value in values
+                   do (bind-dynamic-variable symbol value context))
+             (autolisp-eval-progn body context))
+        (pop-dynamic-frame context)))))
+
+(defun maybe-warn-about-rest-separator (lambda-list who &optional function-name)
   "Walk LAMBDA-LIST, find the rest-separator if any, and emit a
 dialect-aware warning via `emit-lambda-list-extension-warning'.
 A no-op when LAMBDA-LIST has no separator or is malformed (the
-malformed cases surface at call-time via `bind-usubr-frame')."
+malformed cases surface at call-time via `bind-usubr-frame').
+
+FUNCTION-NAME is the name being defined, when there is one. The
+diagnostic reports the function concerned (pjb's ruling), and here it
+cannot be read off the call stack: DEFUN's body is not running yet, so
+the innermost frame is whatever called DEFUN. The definer knows the
+name; a LAMBDA has none and passes NIL."
   (when (listp lambda-list)
     (dolist (element lambda-list)
       (let ((spelling (autolisp-ampersand-spelling element)))
         (when spelling
-          (emit-lambda-list-extension-warning spelling who lambda-list)
+          (emit-lambda-list-extension-warning spelling who lambda-list
+                                              function-name)
           (return))))))
 
-(defun eval-lambda-form (arguments context)
+(defun eval-lambda-form (arguments context &optional site)
+  "Build the closure a LAMBDA form denotes.
+
+SITE, when given, is the sharing point for every closure this same
+LAMBDA form builds -- the transpiler passes one per call site. A
+closure whose site already has a compiled body starts life with it, so
+a lambda in a loop compiles ONCE rather than once per iteration or,
+at the default threshold, never at all.
+
+NIL SITE is the interpreter's case and keeps the old behaviour exactly:
+the decision stays on the closure."
   (unless (>= (length arguments) 2)
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
      "LAMBDA expects a lambda list and at least one body form, got ~D arguments."
      (length arguments)))
   (maybe-warn-about-rest-separator (first arguments) "LAMBDA")
-  (make-autolisp-usubr "LAMBDA"
-                       (first arguments)
-                       (rest arguments)
-                       context))
+  (let ((function (make-autolisp-usubr "LAMBDA"
+                                       (first arguments)
+                                       (rest arguments)
+                                       context
+                                       site)))
+    ;; Inherit what the site already knows. Only the PLAIN compiled body
+    ;; is shared: an instrumented body carries form-ids tied to one
+    ;; function's debug metadata, so sharing it would make the debugger
+    ;; step through the wrong record.
+    (when site
+      (let ((compiled (usubr-site-compiled-body site)))
+        (when compiled
+          (setf (autolisp-usubr-compiled-body function) compiled))))
+    function))
 
 (defun compatibility-definition-from-parts (lambda-list body)
   (cons lambda-list body))
@@ -2555,7 +5406,8 @@ malformed cases surface at call-time via `bind-usubr-frame')."
        :invalid-defun-name
        "DEFUN-Q name must be an AutoLISP symbol, got ~S."
        name))
-    (maybe-warn-about-rest-separator lambda-list "DEFUN-Q")
+    (maybe-warn-about-rest-separator lambda-list "DEFUN-Q"
+                                     (autolisp-symbol-name name))
     (let ((function (make-autolisp-usubr (autolisp-symbol-name name)
                                          lambda-list
                                          body
@@ -2563,6 +5415,7 @@ malformed cases surface at call-time via `bind-usubr-frame')."
           (definition (compatibility-definition-from-parts lambda-list body)))
       (set-function name function context)
       (set-autolisp-function-list-definition name definition context)
+      (instrument-defun-if-debugging function)
       name)))
 
 (defun eval-defun-form (arguments context)
@@ -2579,12 +5432,17 @@ malformed cases surface at call-time via `bind-usubr-frame')."
        :invalid-defun-name
        "DEFUN name must be an AutoLISP symbol, got ~S."
        name))
-    (maybe-warn-about-rest-separator lambda-list "DEFUN")
+    (maybe-warn-about-rest-separator lambda-list "DEFUN"
+                                     (autolisp-symbol-name name))
     (let ((function (make-autolisp-usubr (autolisp-symbol-name name)
                                          lambda-list
                                          body
                                          context)))
       (set-function name function context)
+      ;; SPEED 3: compile now rather than once hot. Deliberately AFTER
+      ;; SET-FUNCTION, so a self-recursive function resolves its own name
+      ;; while being compiled exactly as it would at run time.
+      (compile-usubr-if-eager function)
       ;; Source-aware-defun-documentation: DEFUN always rewrites the
       ;; binding cell's doc slot. With a preceding ;|…|; block the
       ;; new doc is (:function "TEXT"); without one it is nil. Every
@@ -2596,7 +5454,17 @@ malformed cases surface at call-time via `bind-usubr-frame')."
                        (let ((text (current-form-preceding-doc)))
                          (and text (list :function text)))
                        context)
+      (instrument-defun-if-debugging function)
       name)))
+
+(defvar *special-operator-generation* 0
+  "Bumped by every mutation of *SPECIAL-OPERATOR-DISPATCH*.
+
+Each AUTOLISP-SYMBOL caches the handler it last resolved to, stamped
+with this counter; a bump invalidates every cached answer at once
+without walking the symbol table. A DEFVAR, not a DEFPARAMETER, so
+that reloading this file bumps the counter (see below) instead of
+resetting it to a value that stale caches would still match.")
 
 (defparameter *special-operator-dispatch*
   (list (cons "QUOTE" #'eval-quote-form)
@@ -2610,6 +5478,13 @@ malformed cases surface at call-time via `bind-usubr-frame')."
         (cons "WHILE" #'eval-while-form)
         (cons "REPEAT" #'eval-repeat-form)
         (cons "FOREACH" #'eval-foreach-form)
+        (cons "VLAX-FOR" #'eval-vlax-for-form)
+        ;; LET — BricsCAD V26 undocumented extension (CL-style parallel
+        ;; binding), vendor-confirmed 2026-08-07. Available under
+        ;; bricscad / clautolisp / lax; warns under strict / autocad via
+        ;; EVAL-LET-FORM's [ext-bricscad-undocumented] gate. LET* is NOT
+        ;; registered — the same harvest proved BricsCAD V26 has no LET*.
+        (cons "LET" #'eval-let-form)
         (cons "LAMBDA" #'eval-lambda-form)
         (cons "FUNCTION" #'eval-function-form)
         (cons "DEFUN-Q" #'eval-defun-q-form)
@@ -2619,10 +5494,31 @@ malformed cases surface at call-time via `bind-usubr-frame')."
         (cons "COMMAND" #'eval-command-form)
         (cons "COMMAND-S" #'eval-command-s-form)))
 
+;;; Reloading this file rebuilds the table above and drops anything
+;;; registered into it at runtime; bump the generation so no symbol
+;;; keeps pointing at a handler this image no longer dispatches.
+(incf *special-operator-generation*)
+
 (defun special-operator-function (operator)
-  (cdr (assoc (special-operator-name operator)
-              *special-operator-dispatch*
-              :test #'string=)))
+  "The handler for OPERATOR, or NIL if it names no special operator.
+
+Called on the operator of every compound form the interpreter
+evaluates, so the answer is memoised on the symbol itself; see the
+SPECIAL-OPERATOR-CACHE slot of AUTOLISP-SYMBOL. Only a symbol can name
+a special operator, so anything else is NIL without consulting the
+table at all."
+  (when (typep operator 'autolisp-symbol)
+    (let ((cache (clautolisp.autolisp-runtime.internal::autolisp-symbol-special-operator-cache
+                  operator)))
+      (if (eql (car cache) *special-operator-generation*)
+          (cdr cache)
+          (let ((handler (cdr (assoc (special-operator-name operator)
+                                     *special-operator-dispatch*
+                                     :test #'string=))))
+            (setf (clautolisp.autolisp-runtime.internal::autolisp-symbol-special-operator-cache
+                   operator)
+                  (cons *special-operator-generation* handler))
+            handler)))))
 
 (defun register-special-operator (name function)
   "Install FUNCTION as the handler for the special operator named NAME
@@ -2635,6 +5531,7 @@ debug system. Re-registering a name replaces the previous handler."
     (if entry
         (setf (cdr entry) function)
         (push (cons name function) *special-operator-dispatch*)))
+  (incf *special-operator-generation*)
   name)
 
 (defun unregister-special-operator (name)
@@ -2644,6 +5541,7 @@ register-special-operator. Returns T if an entry was removed."
     (setf *special-operator-dispatch*
           (remove name *special-operator-dispatch*
                   :key #'car :test #'string=))
+    (incf *special-operator-generation*)
     (and present t)))
 
 (defun known-special-operator-p (name)
@@ -2727,12 +5625,9 @@ forms have unevaluated operands it must not instrument (spec §5.3)."
                         (autolisp-eval operator context)
                         (multiple-value-bind (binding boundp origin) (lookup-function operator context)
                           (declare (ignore origin))
-                          (unless boundp
-                            (signal-autolisp-runtime-error
-                             :undefined-function
-                             "Undefined AutoLISP function ~A."
-                             (autolisp-symbol-name operator)))
-                          binding))))
+                          (if boundp
+                              binding
+                              (resolve-unbound-function-or-signal operator context))))))
               (apply #'call-autolisp-function-in-context
                      function
                      context
@@ -2774,6 +5669,14 @@ forms have unevaluated operands it must not instrument (spec §5.3)."
      (intern-autolisp-symbol "VARIANT"))
     ((typep object 'autolisp-vla-object)
      (intern-autolisp-symbol "VLA-OBJECT"))
+    ;; what vl-catch-all-apply returns on an error (entget-pointers probe,
+    ;; section 13); TYPE signalled on it
+    ((typep object 'autolisp-catch-all-error)
+     (intern-autolisp-symbol "VL-CATCH-ALL-APPLY-ERROR"))
+    ((typep object 'autolisp-lisp-object)
+     ;; an opaque handle onto a CL object reports its own type designator,
+     ;; e.g. (type (clal-make-window …)) -> WINDOW
+     (intern-autolisp-symbol (autolisp-lisp-object-type-name object)))
     (t
      (signal-autolisp-runtime-error
       :unknown-runtime-type
@@ -2804,6 +5707,18 @@ forms have unevaluated operands it must not instrument (spec §5.3)."
 (defun autolisp-read-from-file (path &rest options &key &allow-other-keys)
   (first (apply #'read-runtime-from-file path options)))
 
+(defun lookup-autolisp-encoding-variable (name &optional (context (current-evaluation-context)))
+  "The CL external-format the AutoLISP global NAME (a string naming an
+encoding) designates, or NIL when it is unbound, empty or not a string."
+  (handler-case
+      (multiple-value-bind (value boundp)
+          (lookup-variable (intern-autolisp-symbol name) context)
+        (and boundp
+             (typep value 'autolisp-string)
+             (plusp (length (autolisp-string-value value)))
+             (parse-locale-encoding-string (autolisp-string-value value))))
+    (error () nil)))
+
 (defun lookup-autolisp-file-encoding (&optional (context (current-evaluation-context)))
   "Resolve the AutoLISP-level *AUTOLISP-FILE-ENCODING* global to a
 CL external-format keyword, or NIL when the global isn't bound
@@ -2825,6 +5740,44 @@ so a value written and read back under the same encoding round-trips."
            (parse-locale-encoding-string (autolisp-string-value value)))
           (t nil)))
     (error () nil)))
+
+(defun call-in-file-compilation-unit (thunk)
+  "Run THUNK -- the loading of one AutoLISP file -- inside a host
+compilation unit when SPEED asks for eager compilation.
+
+This is where `SPEED 3 compiles the whole file at once' actually happens,
+and it needed no new machinery: at SPEED 3 every DEFUN compiles as it is
+evaluated, so putting the LOAD inside one unit puts every one of that
+file's compilations inside it too.
+
+:OVERRIDE NIL, deliberately, and this is where the design note in
+compiler.issue diverges from pjb's sketch. A nested unit with :OVERRIDE
+T starts a FRESH one instead of joining the enclosing one -- which would
+make CLAL-COMPILE-SYSTEM's system-wide unit inert, since each file it
+loads would open its own. :OVERRIDE NIL is what lets a file's unit be
+absorbed into a system's when there is one, and still create its own when
+there is not.
+
+WHAT THIS BUYS TODAY, precisely: a compilation unit defers
+undefined-function warnings to its end, so a function called before it is
+defined -- across files, in a system -- resolves quietly instead of
+warning at every forward reference. The wider prize pjb named (coalescing
+common literals, linking calls directly instead of through the symbol
+binding) belongs to COMPILE-FILE, not to a run of COMPILE calls, and
+arrives with the artefact writer."
+  (if (autolisp-compile-eagerly-p)
+      (with-muffled-host-compiler
+        (with-compilation-unit (:override nil) (funcall thunk)))
+      (funcall thunk)))
+
+(defun %autocad-source-policy (external-format)
+  "The AutoCAD source-decoding policy for EXTERNAL-FORMAT: :UNICODE for
+UTF-8, :ANSI for windows-1252, NIL (plain decoding) for anything else."
+  (let* ((base (if (consp external-format) (first external-format) external-format))
+         (name (and base (string-upcase (string base)))))
+    (cond ((member name '("UTF-8" "UTF8") :test #'equal) :unicode)
+          ((member name '("WINDOWS-1252" "CP1252" "WINDOWS1252") :test #'equal) :ansi)
+          (t nil))))
 
 (defun autolisp-load-file-in-context (path context &rest read-options)
   ;; Source-file encoding precedence, when the caller did NOT pass
@@ -2854,6 +5807,19 @@ so a value written and read back under the same encoding round-trips."
                                 (runtime-session-default-source-encoding
                                  session)))
          (dialect (current-evaluation-dialect context))
+         ;; LOAD must tokenize like the active session, just like the CLI's
+         ;; entry file. Preserve explicit caller options (first keyword wins).
+         ;; Otherwise vendor literals such as 1e-6 become strict-mode symbols.
+         (read-options
+          (append read-options
+                  (list :token-mode
+                        (clautolisp.autolisp-reader:autolisp-dialect-token-mode dialect)
+                        :extended-string-escapes-p
+                        (clautolisp.autolisp-reader:autolisp-dialect-extended-string-escapes-p dialect)
+                        :warn-on-integer-overflow-p
+                        (clautolisp.autolisp-reader:autolisp-dialect-warn-on-integer-overflow-p dialect)
+                        :lone-cr-in-string
+                        (%load-lone-cr-in-string dialect))))
          (effective-encoding
           (cond
             (options-have-external-format nil) ; caller supplied one
@@ -2861,19 +5827,60 @@ so a value written and read back under the same encoding round-trips."
             (session-encoding session-encoding)
             (t (clautolisp.autolisp-reader:autolisp-dialect-default-source-encoding
                 dialect))))
+         ;; Under an AutoCAD dialect, the default source decoding is
+         ;; AutoCAD's own rule, measured (E1, job 16931781178): at
+         ;; windows-1252 (LISPSYS 0) a UTF-8 BOM is skipped; at UTF-8
+         ;; (LISPSYS 1 / 2) a file that is not UTF-8 reads as
+         ;; windows-1252. An explicit encoding (LOAD's third argument)
+         ;; is honoured as given.
+         (source-policy
+          (and effective-encoding
+               (eq :autocad (ignore-errors
+                             (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))
+               (%autocad-source-policy effective-encoding)))
          (effective-options
-          (if effective-encoding
-              (append read-options
-                      (list :external-format effective-encoding))
-              read-options)))
+          (cond
+            (source-policy
+             (append read-options (list :source-policy source-policy)))
+            (effective-encoding
+             (append read-options
+                     (list :external-format effective-encoding)))
+            (t read-options))))
     (call-with-autolisp-error-handler
      (lambda ()
-       ;; Top-level forms go through the compiled-eval model so a file
-       ;; loaded under a debug session is instrumentable (LOAD → EVAL →
-       ;; clal-compile). Outside a session this is a plain eval-progn.
-       (autolisp-eval-toplevel-progn
-        (apply #'read-runtime-from-file path effective-options)
-        context))
+       ;; A file (re)load opens a new "load generation" for its FILE:LINE
+       ;; breakpoints (aldo-command-from-repl.issue): the before-hook lets the
+       ;; debugger clear their per-load arming so they re-resolve against the
+       ;; new content, the after-hook lets it warn about any that moved. Both
+       ;; NIL when the debug system is absent; the resolved namestring is used
+       ;; so it matches the metadata source positions.
+       (let ((resolved (ignore-errors (namestring (truename path)))))
+         (when (and *before-load-file-hook* resolved)
+           (funcall *before-load-file-hook* resolved))
+         (multiple-value-prog1
+             ;; ONE compilation unit for the whole file, INSIDE the load
+             ;; generation rather than around it: the debugger's hooks
+             ;; bracket the load, and the compiler's unit brackets the
+             ;; forms it may compile while that load runs. Nesting them
+             ;; the other way would put the after-hook inside the unit
+             ;; and defer its warnings past the load it reports on.
+             (call-in-file-compilation-unit
+              (lambda ()
+                ;; Top-level forms go through the compiled-eval model so a
+                ;; file loaded under a debug session is instrumentable
+                ;; (LOAD -> EVAL -> clal-compile). Outside a session this is
+                ;; a plain eval-progn.
+                (autolisp-eval-toplevel-progn
+                 (handler-bind
+                     ((clautolisp.autolisp-reader:lone-cr-in-string-literal
+                        (lambda (condition)
+                          (emit-lone-cr-in-string-warning
+                           condition dialect
+                           (getf effective-options :lone-cr-in-string)))))
+                   (apply #'read-runtime-from-file path effective-options))
+                 context)))
+           (when (and *after-load-file-hook* resolved)
+             (funcall *after-load-file-hook* resolved)))))
      context)))
 
 (defun autolisp-load-file (path &rest read-options)

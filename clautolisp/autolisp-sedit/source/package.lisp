@@ -52,6 +52,7 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    #:recording-forms #:session-source
    #:*sedit-recording* #:sedit-recording #:record-source
    ;; --- storage: files, directories, save/load (§2.3–§2.4, §5.7–§5.9) ---
+   #:normalize-source-path
    #:sedit-load #:sedit-save #:read-directory
    #:sedit-fs-new-file #:sedit-fs-rename #:sedit-fs-delete
    #:*auto-saving* #:should-auto-save-p
@@ -62,10 +63,17 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    #:*clal-sedit-initial-form* #:*clal-sedit-last-result*
    ;; --- modes, the transition machine, and the driver (§1, §5, §6.6) ---
    #:sedit-command #:sedit-run #:render-selection
-   #:sedit-mode-prompt #:sedit-help-text
+   #:sedit-mode-prompt #:sedit-help-text #:*sedit-window-height*
    ;; SEDIT as an interactor (interactor-design-revision.issue T2/D9)
    #:*sedit* #:*sedit-commands* #:*sedit-user-commands*
-   #:sedit-enter #:sedit-interactor-help
+   #:sedit-enter #:sedit-interactor-help #:*default-on-quit-policy*
+   ;; SEDIT as a window interactor template (windows-and-interactor-templates)
+   #:make-sedit-activation #:sedit-select
+   #:sedit-interactor-state-p #:sedit-interactor-state-session
+   #:sedit-activation-session #:sedit-activation-render
+   #:*sedit-eval-hook* #:*sedit-eval-print-hook*
+   #:*sedit-load-hook* #:*sedit-debug-hook* #:*sedit-file-save-hook*
+   #:*sedit-write-new-file-hook*
    ;; --- clipboard (§5.4 + clipboard-interface.org) ---
    #:clipboard-provider #:clipboard-provider-p #:make-clipboard-provider
    #:clipboard-provider-name #:clipboard-provider-available-p

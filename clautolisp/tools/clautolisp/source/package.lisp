@@ -14,7 +14,12 @@
                 #:interactor-prompt #:interactor-reader
                 #:interactor-evaluator
                 #:make-activation #:activation-state #:*command-activation*
+                #:make-interactor
                 #:interactor-loop #:interactor-return)
+  ;; the *AUTOLISP* REPL interactor + its state now live in the repl library;
+  ;; the tool's comma-commands register into it and repl-loop drives it.
+  (:import-from #:clautolisp.repl
+                #:*autolisp* #:make-repl-state)
   (:import-from #:clautolisp.autolisp-reader
                 #:autolisp-dialect
                 #:autolisp-dialect-name
@@ -67,19 +72,43 @@
                 #:*default-runtime-host*)
   (:import-from #:clautolisp.autolisp-host
                 #:host-name
-                #:null-host
-                #:make-null-host
-                #:*null-host*)
-  (:import-from #:clautolisp.autolisp-mock-host
-                #:make-mock-host
-                #:mock-host
-                #:mock-host-prompt-stream)
+                #:nihil
+                #:make-nihil
+                #:*nihil*)
+  (:import-from #:clautolisp.cador
+                #:make-cador
+                #:cador
+                #:cador-prompt-stream)
   (:import-from #:clautolisp.autolisp-builtins-core
                 #:autolisp-value->string
-                #:install-core-builtins)
+                #:install-core-builtins
+                #:set-clal-optimization-levels)
   (:import-from #:clautolisp.autolisp-init-files
                 #:*default-clautolisp-stems*
                 #:find-init-files
                 #:no-init-requested-p)
+  (:import-from #:clautolisp.autolisp-cli
+                #:validate-debugger-options
+                #:effective-user-interface)
   (:export #:main
-           #:*version*))
+           #:*version*
+           ;; The debugger run machinery, shared with alfe's in-process
+           ;; engine (debugger-public-interface-and-on-error.issue: alfe
+           ;; shares the debugger options, pjb 2026-10-06).
+           #:resolve-debugger-settings
+           #:debugger-settings-on-error
+           #:debugger-settings-debug-ui
+           #:with-debugger-settings
+           #:sync-debugger-policy-mirrors
+           #:call-with-interrupt-handler
+           #:call-with-debug-session
+           #:continue-past-action-errors-p
+           #:run-actions-continuing-past-errors
+           #:run-under-session-debugging
+           #:repl-eval-turn
+           #:install-interrupt-handler
+           #:restore-interrupt-handler
+           #:handle-interrupt
+           ;; The run's dribble streams and CLAL-DRIBBLE, shared with the
+           ;; same engine (alfe-clautolisp-backend-semantic-parity.issue).
+           #:call-with-engine-dribble))

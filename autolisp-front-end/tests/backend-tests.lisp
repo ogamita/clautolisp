@@ -4,7 +4,7 @@
 
 ;;;; FiveAM tests for the abstract backend protocol and the echo
 ;;;; backend. The acceptance criterion in
-;;;; ../../issues/open/alfe-backend-interface.issue calls for an
+;;;; ../../issues/closed/alfe-backend-interface.issue calls for an
 ;;;; end-to-end plan exercise:
 ;;;;
 ;;;;     (:eval "(+ 1 2)") → output "3"
@@ -65,6 +65,34 @@ SUCCESS at the end of the queue."
       (is (search "main MY-MAIN" output)))
     (shutdown session)))
 
+(test echo-backend-accepts-the-situation-encoding-keywords
+  "START-ENGINE takes one keyword per encoding situation (section 6 point 1)
+next to the legacy :load-encoding / :io-encoding mirrors; the echo backend
+accepts them all (and ignores them), with the plist built by the CLI helper."
+  (let* ((backend (find-backend :echo))
+         (session (apply #'start-engine backend nil
+                         :dialect :strict
+                         :load-encoding "UTF-8"
+                         :io-encoding "UTF-8"
+                         (alfe.cli:situation-engine-keywords
+                          (alfe.cli:parse-arguments
+                           '("-E" "UTF-8" "-Econsole" "cp1252" "-Ecadstdio-in" "latin-1"))))))
+    (is (eq :ready (session-state session)))
+    (let ((session2 (start-engine backend nil
+                                  :source-encoding "UTF-8"
+                                  :file-read-encoding "WINDOWS-1252"
+                                  :file-write-encoding "UTF-8"
+                                  :console-in-encoding nil
+                                  :console-out-encoding "UTF-16LE"
+                                  :cadstdio-in-encoding nil
+                                  :cadstdio-out-encoding nil
+                                  :log-encoding "UTF-8"
+                                  :terminal-in-encoding "UTF-8"
+                                  :terminal-out-encoding "UTF-8")))
+      (is (eq :ready (session-state session2)))
+      (shutdown session2))
+    (shutdown session)))
+
 (test backend-error-carries-structured-payload
   "The condition hierarchy preserves :backend / :phase / :code /
 :message / :details — the CLI relies on them for exit-code mapping
@@ -118,3 +146,25 @@ removes only alfe's own protocol/ scratch and leaves the caller's files."
     (ensure-directories-exist base)
     (alfe.workdir:remove-workdir base)
     (is (not (uiop:directory-exists-p base)))))
+
+;;; --- workdir random tag is seeded (workdir-random-tag-unseeded) ---
+
+(test workdir-random-tag-is-seeded-and-varies
+  "random-tag must draw from a high-entropy per-process state, not the
+implementation's fixed default sequence: before the seed fix every
+process produced the SAME 6-char tag (workdir-random-tag-unseeded.issue)."
+  ;; well-formed: 6 lowercase alphanumerics
+  (let ((tag (alfe.workdir::random-tag)))
+    (is (= 6 (length tag)))
+    (is (every (lambda (c) (or (digit-char-p c) (char<= #\a c #\z))) tag)))
+  ;; Simulate fresh-process starts: clear the memoised state so the next
+  ;; call re-seeds via (make-random-state t), and take the first tag each
+  ;; time. A properly seeded generator yields differing first tags; an
+  ;; unseeded / fixed-seed one repeats the same tag every time.
+  (let ((first-tags
+          (loop repeat 8
+                collect (progn (setf alfe.workdir::*tag-random-state* nil)
+                               (alfe.workdir::random-tag)))))
+    (is (> (length (remove-duplicates first-tags :test #'string=)) 1)))
+  ;; Reset so later callers get a fresh seed rather than our torn-down one.
+  (setf alfe.workdir::*tag-random-state* nil))

@@ -12,6 +12,8 @@
                 #:def-suite
                 #:in-suite
                 #:is
+                #:pass
+                #:fail
                 #:signals
                 ;; #:run intentionally NOT imported here — alfe.cli also
                 ;; exports a RUN symbol (the CLI entry point) and the
@@ -53,6 +55,7 @@
                 #:cli-options-dialect
                 #:cli-options-host
                 #:cli-options-help-p
+                #:cli-options-list-hosts-p
                 #:cli-options-version-p
                 #:cli-options-verbosity
                 #:cli-options-interactive-p
@@ -64,7 +67,8 @@
                 #:cli-situation-encoding
                 #:terminal-encoding-plan
                 #:cli-options-dwg
-                #:cli-options-epure-p
+                #:cli-options-plugin-options
+                #:cli-options-plugins-active
                 #:cli-options-bootstrap-phase
                 #:cli-options-workdir
                 #:cli-options-keep-workdir-p
@@ -73,6 +77,13 @@
                 #:cli-options-positional
                 #:cli-options-no-init-p
                 #:plan-from-options
-                #:env-default)
+                #:env-default
+                ;; --print-command
+                #:make-cli-options
+                #:cli-options-print-command-p
+                #:print-command-plan
+                #:format-launch-command
+                #:shell-quote-argument
+                #:windows-quote-argument)
   (:export #:autolisp-front-end-suite
            #:run-all-tests))

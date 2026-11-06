@@ -58,21 +58,65 @@ fresh ones named after it."
                            (make-command-dictionary
                             (concatenate 'string (string name) "-user")))))))
 
-(defstruct (activation (:constructor make-activation (interactor &optional state)))
+(defstruct (activation (:constructor make-activation (interactor &optional state name)))
   "One entry of *INTERACTOR-STACK*: the (singleton) INTERACTOR paired with the
 STATE of this activation of it — like a call frame pairing a function with
 its locals (interactor-design-revision.issue T1). The state is whatever the
 mode needs per entry: the navigator's location and redraw flag, the
 debugger's UI/session/stop. Recursive entries (a nested invoke-debugger
 suspending one navigator under another) each carry their own state over the
-same interactor."
+same interactor.
+
+NAME is this activation's INSTANCE name (windows-and-interactor-templates.issue),
+distinguishing several live instances of one interactor over a shared singleton
+backend — the lisp REPL / aldo debugger UI can be instantiated many times over
+the one evaluator / debugger (\"lisp repl\", \"lisp repl dessin 1#2<2>\"). NIL
+falls back to the interactor's own name (ACTIVATION-LABEL)."
   (interactor nil :type (or null interactor))
-  (state      nil))
+  (state      nil)
+  (name       nil :type (or null string)))
+
+(defun activation-label (activation)
+  "The display / routing name of ACTIVATION: its instance NAME, or the
+interactor's name when none was assigned."
+  (or (activation-name activation)
+      (interactor-name (activation-interactor activation))))
+
+(defmethod print-object ((activation activation) stream)
+  ;; Print just the label — NEVER descend into STATE. A UI activation's state
+  ;; can reach the whole running image (a debug session -> evaluation context ->
+  ;; runtime session -> every loaded function), so the default struct printer
+  ;; would try to print the entire image (megabytes) whenever an activation
+  ;; appears in a backtrace, a test failure, or the dribble.
+  (print-unreadable-object (activation stream :type t :identity t)
+    (write-string (activation-label activation) stream)))
+
+(defun uniquify-instance-name (base existing &key (test #'equal))
+  "BASE when no EXISTING name equals it; otherwise BASE with a =<N>= suffix for
+the least N ≥ 2 that is free — the slime-mrepl scheme for several instances of
+one interactor (windows-and-interactor-templates.issue). EXISTING is a list of
+names."
+  (if (not (member base existing :test test))
+      base
+      (loop for n from 2
+            for candidate = (format nil "~A<~D>" base n)
+            unless (member candidate existing :test test)
+              do (return candidate))))
 
 (defvar *interactor-stack* '()
   "The stack of live ACTIVATIONs, innermost first. Commands are searched down
 this stack — user dictionaries before system dictionaries at each level — so
 user commands shadow system commands and inner loops shadow outer loops.")
+
+(defvar *writing-prompt* nil
+  "True while INTERACTOR-LOOP is writing a turn's prompt.
+
+Whether a character belongs to a prompt is knowledge only this loop has:
+downstream, a prompt is just output with no trailing newline, exactly
+like a (princ \"...\") that ends a program. Consumers that must tell them
+apart — the dribble, which omits prompts but must keep unterminated real
+output — cannot infer it once the characters have gone by, so the loop
+says it while it writes (dribble-eof-prompt-recorded.issue).")
 
 (defun push-interactor (interactor &optional state)
   "Enter INTERACTOR with this activation's STATE: subsequent turns of the
@@ -391,8 +435,10 @@ outer one within the same loop), or with INTERACTOR-RETURN's value."
                 (error (err)
                   (format error-output "~&~A while printing ~A status~%"
                           err (interactor-name top))))))
-          ;; prompt
-          (let ((prompt (interactor-prompt top)))
+          ;; prompt -- announced as such, because nothing downstream can
+          ;; tell prompt text from unterminated output once written.
+          (let ((prompt (interactor-prompt top))
+                (*writing-prompt* t))
             (etypecase prompt
               (null   (format output "~&~A> " (interactor-name top)))
               (string (format output "~&~A" prompt))

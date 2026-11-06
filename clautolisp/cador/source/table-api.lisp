@@ -1,0 +1,115 @@
+(in-package #:clautolisp.cador)
+
+;;;; Symbol-table walker HAL methods on cador (Phase 11).
+;;;;
+;;;; Implements: host-tblsearch, host-tblnext, host-tblobjname.
+;;;;
+;;;; Per-kind iteration state is kept on cador-tblnext-iterators
+;;;; (a hash-table from kind keyword to remaining-list). REWIND
+;;;; restarts the walk; without REWIND, each call advances by one.
+
+;;; --- Helpers -----------------------------------------------------
+
+(defun resolve-table-kind (kind operator-name)
+  "Coerce KIND from an AutoLISP-string / CL-string / keyword to
+the cador's per-kind keyword."
+  (let ((string (cond
+                  ((typep kind 'clautolisp.autolisp-runtime:autolisp-string)
+                   (clautolisp.autolisp-runtime:autolisp-string-value kind))
+                  ((stringp kind) kind)
+                  ((keywordp kind) (string-downcase (symbol-name kind)))
+                  (t nil))))
+    (unless (and string (plusp (length string)))
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+       :invalid-table-kind
+       "~A expects a table-kind name, got ~S."
+       operator-name kind))
+    (let ((upcased (string-upcase string)))
+      (cond
+        ((member upcased '("LAYER") :test #'string=) :layer)
+        ((member upcased '("LTYPE" "LINETYPE") :test #'string=) :ltype)
+        ((member upcased '("STYLE" "TEXTSTYLE") :test #'string=) :style)
+        ((member upcased '("DIMSTYLE") :test #'string=) :dimstyle)
+        ((member upcased '("VIEW") :test #'string=) :view)
+        ((member upcased '("UCS") :test #'string=) :ucs)
+        ((member upcased '("VPORT" "VIEWPORT") :test #'string=) :vport)
+        ((member upcased '("APPID") :test #'string=) :appid)
+        ((member upcased '("BLOCK" "BLOCK_RECORD") :test #'string=)
+         :block-record)
+        (t (intern (string-downcase upcased) "KEYWORD"))))))
+
+(defun resolve-record-name (name operator-name)
+  (cond
+    ((typep name 'clautolisp.autolisp-runtime:autolisp-string)
+     (clautolisp.autolisp-runtime:autolisp-string-value name))
+    ((stringp name) name)
+    (t
+     (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+      :invalid-table-name
+      "~A expects a record name string, got ~S."
+      operator-name name))))
+
+(defun table-record->ename (host record)
+  "Intern a table-record's id as an ENAME (via the host cache) so
+AutoLISP code can round-trip table identity through tblobjname and the
+result is EQ to any other ename for the same record. (ename-eq-identity)"
+  (handle->ename host (symbol-table-record-id record)))
+
+;;; --- Method definitions ------------------------------------------
+
+;;; Table records store PURE Common-Lisp values (CL strings). The
+;;; AutoLISP view wraps every string value as an autolisp-string —
+;;; exactly like ENTITY->AL-VIEW does for entities — so that user code
+;;; can (strcat), (=) and (type) the values a tblsearch / tblnext record
+;;; yields. Without this wrap the raw CL strings would reject those
+;;; operators. Table records carry no (-1 . ename) head (tblobjname is
+;;; the way to an ename), so we wrap the data list as-is -- except the
+;;; DXF pointer group codes (330-369, 390-399, 480-481), which come back
+;;; as ENAMES like ENTGET's, not as handle strings. The view is built by
+;;; TABLE-RECORD-AL-VIEW+EXTRAS (entity-api.lisp), which also adds a BLOCK
+;;; record's (-2 . first-entity) group.
+
+(defmethod host-tblsearch ((host cador) kind name)
+  (let ((record (cador-find-table-record host
+                                              (resolve-table-kind kind 'tblsearch)
+                                              (resolve-record-name name 'tblsearch))))
+    ;; BLOCK records additionally carry the (-2 . first-entity) walk
+    ;; entry, as on the vendors (see TABLE-RECORD-AL-VIEW+EXTRAS).
+    (and record (table-record-al-view+extras host record))))
+
+(defmethod host-tblnext ((host cador) kind &key rewind)
+  (let* ((k (resolve-table-kind kind 'tblnext))
+         (iterators (cador-tblnext-iterators host))
+         (table (cador-table host k)))
+    (when (or rewind (not (nth-value 1 (gethash k iterators))))
+      ;; (Re)build the iterator only on first reference or on
+      ;; explicit rewind; once exhausted (value = nil but key
+      ;; present) further calls return nil until rewound.
+      (let ((records '()))
+        (maphash (lambda (name record)
+                   (declare (ignore name))
+                   (push record records))
+                 table)
+        (setf (gethash k iterators)
+              (sort records (lambda (a b)
+                              (string< (symbol-table-record-name a)
+                                       (symbol-table-record-name b)))))))
+    (let ((remaining (gethash k iterators)))
+      (cond
+        ((null remaining) nil)
+        (t
+         (let ((next (first remaining)))
+           (setf (gethash k iterators) (rest remaining))
+           (table-record-al-view+extras host next)))))))
+
+(defmethod host-tblobjname ((host cador) kind name)
+  ;; A BLOCK answers its BLOCK entity, not the BLOCK_RECORD (that is the
+  ;; entity's 330, and the owner a LINE names): entget-pointers sections 10
+  ;; and 11 on both vendors.
+  (let* ((kind (resolve-table-kind kind 'tblobjname))
+         (record (cador-find-table-record host kind
+                                          (resolve-record-name name 'tblobjname))))
+    (and record
+         (if (eq kind :block-record)
+             (handle->ename host (%block-entity-handle host record))
+             (table-record->ename host record)))))

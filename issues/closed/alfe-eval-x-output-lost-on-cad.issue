@@ -1,0 +1,164 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-eval-x-output-lost-on-cad — a failing -x form is reported DONE OK, silently
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: alfe-backend
+#+DEPENDS: -
+#+BRANCH: feat-bricscad-print-check
+#+DATE: 2026-09-25
+
+* Observed
+
+pjb, on the Windows machine, alfe 2.2.90, BricsCAD V25 under EPURE:
+
+#+begin_example
+alfe --keep-workdir -norc --verbose --debug --bricscad --epure \
+  -x '(print (= "" (toutes_options nil)))' \
+  -x '(print (equal (quote ((enabled) (message))) (f_DateHeure_UTC 0)))'
+#+end_example
+
+The run is a success by every measure alfe reports: READY after 17 s,
+DONE 1 OK, DONE 2 OK, plan finished status=:SUCCESS exit=0, errors.txt
+empty, protocol/stderr.txt empty. And it prints NOTHING:
+
+#+begin_example
+$ od -c protocol/stdout.txt
+0000000  \r  \n  \r  \n
+#+end_example
+
+* Diagnosis — the error was swallowed, the output was never lost
+
+The bracketing run pjb ran next settles it. The SAME session, with the
+call bracketed by two princ:
+
+#+begin_example
+alfe --keep-workdir --debug --verbose -norc --bricscad --epure \
+  -x '(princ 1)' -x '(print (toutes_options nil))' -x '(princ 2)'
+
+protocol/stdout.txt:   1   2  \r  \n  \r  \n
+#+end_example
+
+=1= and =2= both arrive, adjacent, in one file: the output channel is
+intact across the middle form, which contributed ZERO bytes -- not even
+the leading newline =print= always writes. (The trailing =\r\n\r\n= is
+the EPURE session's own trailer; it appears in every EPURE run,
+including ones that print correctly, which is why pjb's first capture
+consisted of exactly that pair and nothing else.)
+
+A form that reaches =print= cannot emit nothing. The form never reached
+it: =(toutes_options nil)= SIGNALLED, and alfe reported OK.
+
+The bug is in alfe's own override of =autolisp-eval-request-form=,
+emitted into run-common.lsp by
+=autolisp-front-end/source/file-protocol.lisp:1377=:
+
+#+begin_src lisp
+(setq *AUTOLISP-EVAL-RESULT* nil)
+(vl-catch-all-apply 'load (list path))   ; <- the outcome is DISCARDED
+(setq r *AUTOLISP-EVAL-RESULT*)
+#+end_src
+
+The protocol server loop does the right thing --
+=autolisp-protocol-server-loop= (autolisp-remote-io.lsp:265..291) calls
+=autolisp-eval-request-form= under =vl-catch-all-apply= and, on an
+error, logs =ERROR protocol request N: …= to protocol/stderr.txt, sets
+rc 1 and =DONE N FAIL=. But the override catches the error FIRST, with
+its own =vl-catch-all-apply=, and returns the untouched nil result. The
+loop sees a clean return, so it writes =DONE N OK=.
+
+So every =-x= form that signals -- undefined function, wrong arity, bad
+argument type -- is reported as a success, with no diagnostic anywhere
+and the form's output missing. That is the whole of this ticket; the
+earlier readings (print broken, booleans, -x vs -l, EPURE) are all
+refuted, and the four-way comparison that refuted them is kept below.
+
+The =-l= path is unaffected: =autolisp-load-form-p= routes it to
+=autolisp-eval-load-form=, which does not catch, so its errors reach
+the loop and are reported.
+
+* What it is NOT (the four-way comparison, verify:bricscad-print:windows)
+
+The same three forms, none of which can signal, each way:
+
+#+begin_example
+1. loaded from a file       exit 0   \r\nT \r\nnil end
+2. passed with -x           exit 0   \r\nT \r\nnil 42        (actions = 3)
+3. under EPURE, from a file exit 0   \r\nT \r\nnil end\r\n\r\n
+4. under EPURE, with -x     exit 0   \r\nT \r\nnil 42\r\n\r\n (actions = 3)
+#+end_example
+
+print works, booleans render, -x carries output, and an EPURE session
+does not intercept the printer. All four print because none of those
+forms fails -- which is exactly the blind spot.
+
+* Why it matters
+
+A user asking a CAD a question with =-x= gets exit 0 and silence when
+his expression is wrong, with nothing to distinguish it from a working
+run. It is worse than a lost diagnostic: it is a false SUCCESS, and a
+script that tests alfe's exit code cannot see the failure at all. It
+also cost this investigation several rounds -- the EPURE API validation
+(alfe-plugin-epure-windows-validation.issue) read the silence three
+times over as a fault in EPURE.
+
+* Fix
+
+Do not discard the load outcome. Keep the guard (so runtime flags are
+still published), but re-signal afterwards so the server loop's own
+handler does its documented job:
+
+#+begin_src lisp
+(setq *AUTOLISP-EVAL-RESULT* nil)
+(setq err (vl-catch-all-apply 'load (list path)))
+(if (vl-catch-all-error-p err)
+  (setq err (vl-catch-all-error-message err))
+  (progn (setq err nil) (setq r *AUTOLISP-EVAL-RESULT*)))
+…
+(alfe-publish-runtime-flags)
+(if err (error err) r)
+#+end_src
+
+Re-signalling by MESSAGE keeps the quit-signal path working: the loop
+recognises a quit by =autolisp-quit-signal-p= on the message.
+
+* Acceptance
+
+- An =-x= form that signals gives a non-zero exit, a =DONE N FAIL=
+  status and an =ERROR protocol request N: …= line on stderr -- the
+  same as the equivalent form loaded with =-l=.
+- A form that succeeds is unaffected: =DONE N OK=, exit 0.
+- A regression test covers both, without a CAD.
+- pjb's own case reports the real error instead of printing nothing.
+
+* Resolved -- alfe 2.2.91
+
+The emitted override binds the load's outcome, and re-signals it by
+message after publishing the runtime flags
+(autolisp-front-end/source/file-protocol.lisp). The protocol server
+loop then does what it always could: `DONE N FAIL', rc 1, and
+`ERROR protocol request N: <the engine's own message>' on
+protocol/stderr.txt; alfe exits non-zero.
+
+Tested WITHOUT a CAD, which the suite had never done: clautolisp is
+an AutoLISP engine, so it can host the emitted run-common.lsp and
+answer for the runtime's own behaviour. Two tests in
+autolisp-front-end/tests/file-protocol-tests.lisp:
+
+- protocol-emitted-eval-override-resignals-the-load-error -- pins the
+  emitted text, including that the ONLY occurrence of the load call
+  is the one bound to ERR, so the discarding shape cannot come back.
+- protocol-signalling-form-is-reported-fail-not-ok -- spawns
+  clautolisp-sbcl on the emitted file and drives the protocol:
+  `(no_such_function 1)' must publish DONE 1 FAIL with the diagnostic
+  on stderr, and `(print (= 1 1))' must still publish DONE 2 OK with
+  `T' on stdout. Red before the fix ("a signalling form must publish
+  DONE 1 FAIL, got \"DONE 1 OK\"", stderr empty); green after. It is
+  skipped where clautolisp-sbcl is not on disk.
+
+Documented in RELEASE_NOTES.org (alfe / Backends) and in the alfe
+user manual (§ Action output semantics), which states the new
+contract and warns that a script written against the old silence
+must be re-run.
+
+Noticed while fixing this, filed separately:
+alfe-cad-error-reported-twice-on-stderr.issue.

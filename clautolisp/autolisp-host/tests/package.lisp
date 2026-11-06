@@ -24,9 +24,9 @@
                 #:host
                 #:hostp
                 #:host-name
-                #:null-host
-                #:make-null-host
-                #:*null-host*
+                #:nihil
+                #:make-nihil
+                #:*nihil*
                 #:host-entget
                 #:host-entlast
                 #:host-getvar

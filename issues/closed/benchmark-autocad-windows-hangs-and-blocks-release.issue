@@ -1,0 +1,212 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: benchmark-autocad-windows-hangs-and-blocks-release — a silent 2-hour job sits in front of every release stage
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: -
+
+* Context
+
+Observed while cutting =release-1.8.49=. The tag pipeline reached the
+=benchmark= stage, and =benchmark:autocad:windows= then held the Windows
+runner — which has concurrency 1 — for two hours, until the project job
+timeout killed it. Only then did =release:windows:x86-64= start.
+
+The same job stalled =release-1.8.47=; it was cancelled by hand that time.
+Twice now it has been the single thing standing between a green tag and its
+artefacts.
+
+* Problem, part 1: it hangs
+
+The job has never succeeded. Its siblings on the same machine finish in
+about a minute and a half:
+
+| job                        | duration |
+|----------------------------+----------|
+| =benchmark:bricscad:windows=  | 1m37     |
+| =benchmark:clautolisp:windows= | 1m16     |
+| =benchmark:bricscad:macos=     | 1m00     |
+| =benchmark:autocad:windows=    | killed at the 120 min timeout |
+
+This is consistent with the known accoreconsole failure mode (see
+=accoreconsole-deported-load-highbyte.issue= and the stranded-process
+incident that killed =release-1.8.41=): AutoCAD starts and never returns.
+
+* Problem, part 2: the hang is invisible
+
+Even granting that it hangs, nothing in the job log says so. The script is
+
+#+begin_src yaml
+- make -C autolisp-benchmark run-autocad-windows *>&1 | Out-File -Encoding utf8 dist/bench/autocad-windows.txt
+- Get-Content dist/bench/autocad-windows.txt
+#+end_src
+
+Every byte of output goes into a file, and the file is only printed by the
+*next* step. So while the benchmark runs, the trace shows the =make= command
+and then nothing at all — and if the job never finishes, the =Get-Content=
+never runs and the output is *never* shown. A job that hangs produces
+exactly the same trace as a job that is working: the log ends at the same
+line either way. There is no way to tell them apart from outside.
+
+That is the more serious half. The hang costs two hours; the silence is
+what makes an operator sit and wait through them, unable to decide.
+
+* Why it matters for releases
+
+=benchmark= is a stage in front of =release=, so this job gates the release
+lanes even though its results are not release products. =allow_failure: true=
+saves the pipeline — the release stage does start once the job dies — but
+not the two hours.
+
+* Options
+
+1. Give the CAD benchmark jobs a short =timeout:= of their own (5–10 min).
+   A benchmark whose siblings take 90 seconds does not need 120 minutes, and
+   this alone caps the damage without deciding anything about AutoCAD.
+2. =tee= instead of =Out-File= so the trace shows progress live, the way
+   =benchmark:bricscad:macos= already does with =2>&1 | tee=. The Windows
+   equivalent is =| Tee-Object=. This makes a hang diagnosable.
+3. Move =benchmark= after =collect=, or off the release-tag path entirely,
+   so no benchmark can ever gate an artefact.
+4. Fix or disable the AutoCAD benchmark itself — the underlying accoreconsole
+   problem is tracked separately.
+
+Options 1 and 2 are independent of the AutoCAD question and worth doing on
+their own: together they turn a two-hour silent block into a ten-minute
+failure with a readable log.
+
+* Done (2026-08-19, clautolisp 1.8.51) — options 1 and 2
+
+pjb: « Fixe le timeout et le Tee-Object sur les benchmarks CAD ».
+
+- =.benchmark= carries =timeout: 15 minutes=. The jobs it covers finish in
+  about 90 seconds, so this is an order of magnitude of headroom and still
+  caps the damage at a tenth of the project default. The timeout is on the
+  base template, not on the CAD jobs alone: a benchmark is a measurement,
+  never a release product, and none of them may hold a runner for two
+  hours in front of the release stage.
+- The three Windows benchmark jobs pipe through =Tee-Object -Variable=
+  and write the captured output afterwards, instead of sending everything
+  to a file and printing it in the *next* step. The trace is now live, so
+  the last line before a stall is visible. =Tee-Object -FilePath= alone
+  would have restored the live trace but writes UTF-16LE under PowerShell
+  5.1, which is exactly the encoding the Pages parser was taught to cope
+  with; capturing and writing explicitly keeps the artifact UTF-8.
+
+The fix is deliberately not limited to the CAD jobs:
+=benchmark:clautolisp:windows= had the identical silent-trace pattern, and
+leaving it would have kept one job that cannot be diagnosed.
+
+
+* DONE (2026-08-20, clautolisp 1.8.60) — option 3, la seule qui retire le mal
+
+pjb, en préparant 1.9.0 : « ok faisons ces trois petits avant 1.9.0 ».
+
+Ce qui rendait ce job capable de coûter une release n'est pas le job :
+c'est l'ORDRE. =benchmark= était un stage placé entre =test= et
+=release=, aucun job =release:*= ne déclare =needs:=, donc ils
+attendaient tout le stage =benchmark= par le seul jeu de l'ordre des
+stages — et =benchmark:autocad:windows= partage avec
+=release:windows:x86-64= le runner Windows, qui est à concurrence 1.
+
+Le stage passe donc après =collect= :
+
+: build -> test -> release -> collect -> benchmark -> deploy
+
+Conséquences, et elles se lisent dans cet ordre :
+
+- plus aucun artefact ne peut faire la queue derrière une mesure : le
+  blocage de 1.8.47 (annulé à la main) et de 1.8.49 (deux heures
+  d'attente) devient structurellement impossible, pas seulement plus
+  court ;
+- la mesure n'est PAS retirée des pipelines de release. Elle tourne
+  toujours sur le tag, après que les artefacts sont construits et
+  réunis. Elle garde sa valeur d'enregistrement et perd son pouvoir de
+  coûter une release — c'est exactement ce qu'on veut d'un benchmark ;
+- =pages=, qui EST le rapport de benchmark et le =needs:=, reste en
+  =deploy=, après =benchmark=. C'est pourquoi le stage va là et non tout
+  à la fin : le mettre après =deploy= aurait privé le rapport de ses
+  entrées.
+
+** Le timeout de 15 minutes reste, et ce n'est pas une redondance
+
+Le plafond posé en 1.8.51 avait été écrit contre CE blocage-là, qui
+n'existe plus. Il sert maintenant à autre chose, et c'est la raison de le
+garder : un benchmark CAO coincé tient le runner Windows à concurrence 1
+contre TOUTES les autres pipelines, ce que le réordonnancement ne touche
+pas. Le commentaire du template =.benchmark= a été récrit en
+conséquence — il affirmait « =benchmark= is a stage IN FRONT OF
+=release= », ce qui est désormais faux, et un commentaire faux dans un
+fichier CI est pire que pas de commentaire.
+
+** Verrouillé par un contrôle, parce que l'ordre se défait sans bruit
+
+Rien dans GitLab ne signale qu'on a remis un stage au mauvais endroit :
+la pipeline reste verte, et le défaut ne se manifeste qu'au tag suivant,
+sous la forme d'une release en retard. =scripts/check-release-lane-integrity.py=
+gagne donc un cinquième contrôle : =benchmark= ne doit pas précéder
+=release=. Il est câblé dans =make check-release=.
+
+Vérifié dans les deux sens, ce qui est le minimum pour un contrôle de ce
+genre : il passe sur l'ordre actuel, et il ÉCHOUE (sortie 1, avec la
+chaîne des stages imprimée) sur une copie du fichier remise dans
+l'ancien ordre. Un contrôle qu'on n'a pas vu échouer ne prouve rien.
+
+* Toujours ouvert — le hang lui-même
+
+=benchmark:autocad:windows= ne fonctionne toujours pas. Il échoue
+maintenant en 15 minutes avec une trace lisible, et il n'est plus devant
+quoi que ce soit qui compte. Reste l'option 4 : réparer ou désactiver le
+benchmark AutoCAD.
+
+Le STATUS reste donc TODO, délibérément. La note de 1.8.51 disait que
+« le problème accoreconsole sous-jacent est suivi séparément » ; vérifié
+le 2026-08-20, c'est vrai du problème accoreconsole et FAUX du benchmark
+lui-même — aucun autre ticket ouvert ne mentionne
+=benchmark:autocad:windows=. Le fermer maintenant perdrait l'option 4,
+qui ne vit qu'ici. Ce qui est levé, et c'est ce que le titre décrivait,
+c'est le risque pour les releases.
+
+* 2026-09-28 — it no longer hangs; it failed on an arity trap, fixed
+
+Every run on record since August had been CANCELLED before finishing
+(superseded pipelines), so nothing said whether the hang was still there.
+Played by hand on MR !338's pipeline (job 16774988547, alfe 2.2.145):
+*no hang*. accoreconsole started, alfe reached its protocol, and the run
+failed in 142 s with a readable error:
+
+#+begin_example
+ERROR protocol request 3: while loading ...\autolisp-benchmark\harness\run.lsp
+(form starting at line 39) at line 39, column 1: nombre d'arguments insuffisants
+#+end_example
+
+"Too few arguments" -- the accoreconsole fixes of September
+(accoreconsole-deported-load-highbyte, the bridge fixes) took the hang away,
+and what was behind it is an arity trap of alfe's own making. AutoCAD has no
+variadic user functions, so alfe's bootstrap replaces princ/print/prin1 with
+fixed =(obj file)= versions and pads the calls it SEES: the forms of the file
+=-l= loads. run.lsp loads its harness through its own function, with a
+NATIVE =(load ...)= inside it (line 39), and AutoCAD's own loader then ran
+version.lsp's bare =(princ)= against the two-argument replacement.
+
+Fixed in =autolisp-benchmark/Makefile=: on AutoCAD the suite is loaded with
+=-x (alfe-load "…/harness/run.lsp")= instead of =-l=. alfe-load rewrites every
+princ/print/prin1/load call in what it loads, function bodies included, so the
+nested loads are covered -- the accoreconsole-deported-load-highbyte decision
+(code alfe owns calls alfe-load; ordinary user code keeps the native
+operators) applied to the benchmark. BricsCAD and clautolisp keep =-l=: they
+have =&rest= and get variadic shadows.
+
+Still open until a run PRODUCES numbers: play =benchmark:autocad:windows=
+with this change.
+
+* Resolved 2026-09-28 — the AutoCAD benchmark runs and reports
+
+=benchmark:autocad:windows= on MR !342's pipeline (job 16778123587), with the
+alfe-load change: green. accoreconsole loaded the suite (=7 benchmarks
+registered=), ran every class for 3 s, and printed its table -- 1927696
+iterations in 21236 ms. The hang (fixed by the September accoreconsole work)
+and the arity trap behind it (fixed here) are both gone, so option 4 is done:
+the AutoCAD benchmark is repaired rather than disabled, and the numbers can go
+beside BricsCAD's and clautolisp's.

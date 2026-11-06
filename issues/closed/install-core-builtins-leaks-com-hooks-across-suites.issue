@@ -1,0 +1,116 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: install-core-builtins-leaks-com-hooks-across-suites — a test suite that installs the builtins breaks the cador suite run after it
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-install-core-builtins-leaks-com-hooks-across-suites
+
+* Context
+
+Found 2026-10-06 while adding exit-status tests to the clautolisp tool
+suite (sysexits-exit-statuses.issue).
+
+* Problem
+
+=install-core-builtins= (autolisp-builtins-core/source/api.lisp) SETFs
+process-wide hooks: =*com-point-wrap-hook*=, =*com-point-unwrap-hook*=,
+=*com-objects-wrap-hook*=, =*vlax-collection-items-hook*=,
+=*resolve-unbound-function-hook*= and =*com-loaded-p*=. Once they are set,
+COM point properties come back as VARIANT(SAFEARRAY) objects.
+
+In =make -C clautolisp test-sbcl= the suites run in a fixed order: the
+clautolisp tool suite, ..., the cador suite (1574 checks), then the
+builtins suite. The cador suite expects plain lists from
+=host-vlax-get-property ... "InsertionPoint"=, which it only gets because
+no suite before it has installed the builtins. A tool-suite test that
+calls =setup-context= (hence =install-core-builtins=) made 7 cador tests
+fail with =#<VARIANT ARRAY #<SAFEARRAY>>= is not a LIST
+(VLAX-BLOCK-ADDATTRIBUTE-ADDS-AN-ATTDEF-TO-THE-BLOCK,
+INSERT-DELETE-ERASES-THE-ATTRIBUTE-RUN, ENTITY-MOVE-ROTATE-COPY-DELETE-METHODS,
+INSERTBLOCK-*, ENTITY-PROPERTY-BRIDGE-READS-AND-WRITES-DXF-GROUPS). The
+cador suite alone, and the full run on master, are green.
+
+Repro: in =clautolisp/tools/clautolisp/tests/exit-status-tests.lisp=
+remove the =with-isolated-builtin-hooks= wrapper and run =make -C
+clautolisp test-sbcl=.
+
+* Proposal
+
+Either the cador tests bind the hooks they depend on (NIL, or the
+host-level behaviour they test) instead of relying on the global default,
+or =install-core-builtins= stops being process-global (hooks per session /
+context). The exit-status tests work around it with
+=with-isolated-builtin-hooks=, which rebinds the six variables.
+
+* Acceptance criteria
+
+- The cador suite passes when run after any suite that installs the
+  builtins (e.g. move it after the builtins suite once, and see it stay
+  green).
+
+* Resolution (clautolisp 2.2.221, 2026-10-07)
+
+** Reproduced
+
+With the =with-isolated-builtin-hooks= wrapper removed from the tool
+suite's exit-status tests, =make -C clautolisp test-sbcl= stops at the
+cador suite with =Fail: 7= ("cador tests failed."). Also reproduced
+directly: load the test systems, call =install-core-builtins=, then run
+each perform-time suite: only the cador suite is affected (reader,
+interactor, repl, source-map, runtime, drawing, host, cadtui and dcl stay
+green with the hooks installed).
+
+** Cause
+
+The hooks are process-global on purpose -- once installed, the builtins
+are the whole program's, and every production path installs them -- so
+making them per-session would not help: the cador tests call the host
+directly against the default context, which the other suites share too.
+The order dependence came from the cador suite: it tests the host BELOW
+the builtins layer (points as plain lists) but never established that
+state; it inherited it from "no suite installed the builtins before me".
+The tool suite runs at LOAD time (its run.lisp), i.e. before every
+perform-time suite, so the first tool test that called =setup-context=
+broke cador.
+
+** Fix
+
+- =clautolisp.autolisp-runtime:without-builtin-layer-hooks= (new,
+  exported): binds every hook a layer above the runtime installs
+  (=*resolve-unbound-function-hook*=, =*vlax-collection-items-hook*=,
+  =*com-point-wrap-hook*=, =*com-point-unwrap-hook*=,
+  =*com-objects-wrap-hook*=) to NIL for its body. It is the one list of
+  those hooks; =install-core-builtins= carries a comment to keep the two
+  in step.
+- The cador suite runs inside =call-with-cador-suite-environment=
+  (cador/tests/test-harness.lisp), which uses it: the suite now starts
+  from a known hook state whatever ran before it.
+- The tool suite's =with-isolated-builtin-hooks= workaround is removed.
+  It is no longer needed, and without it the full run exercises the
+  leaking order every time (the tool suite installs the builtins at load
+  time, before cador).
+- =*com-loaded-p*= is builtins-internal state that
+  =install-core-builtins= resets itself; nothing below the builtins reads
+  it, so it is not part of the bare-host state.
+
+** Reproduction kept as tests
+
+=autolisp-builtins-core/tests/builtin-hooks-isolation-tests.lisp= (the
+builtins-core test system now depends on =clautolisp/cador/tests=):
+
+- =installed-builtins-hooks-do-not-reach-the-cador-suite= installs the
+  builtins, checks the leak source is live (=%wrap-com-point= returns a
+  VARIANT out there), then checks that inside the cador suite's
+  environment =%wrap-com-point= / =%wrap-com-objects= return plain lists
+  and every hook is NIL. With the harness reverted to a bare =funcall= it
+  fails 3 of its 6 checks.
+- =without-builtin-layer-hooks-restores-the-installed-hooks= checks the
+  macro unbinds rather than uninstalls (also across a THROW).
+
+Acceptance criterion met: the cador suite passes after a suite that
+installs the builtins (the tool suite, at load time, on every run).
+=make test-sbcl= and =make test-ccl=: 34 suite runs each, Fail 0;
+alfe =test-sbcl=: Fail 0.
+
+Found on the way: =cador-tests-reference-builtins-core-without-depending-on-it.issue=.

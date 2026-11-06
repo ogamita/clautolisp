@@ -1,0 +1,225 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: sysvar-table-ignores-runtime-dialect-change — (setq *autolisp-dialect* …) change le dialecte mais pas la table des sysvars
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: case-insensitive-paths-ignored-in-cad-dialects
+#+BRANCH: fix-sysvar-dialect-tracking
+
+* Constat (pjb, 2026-08-20, clautolisp 1.8.59)
+
+=(setq *AUTOLISP-DIALECT* …)= change bien le dialecte actif — c'est
+documenté et voulu — mais la TABLE DES SYSVARS de l'hôte ne suit pas.
+
+#+begin_example
+$ CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp
+AUTOLISP REPL (STRICT dialect, cador host)
+_$ (getenv "CLAUTOLISPCASEINSENSITIVEPATHS")
+"1"
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")
+nil
+_$ (setq *autolisp-dialect* 'bricscad)
+BRICSCAD
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")
+nil    ; <-- devrait valoir 1 : le dialecte n'est plus strict,
+       ;     et la variable d'environnement vaut 1
+_$ (setvar "CLAUTOLISPCASEINSENSITIVEPATHS" 1)
+Error: MockHost has no system variable named CLAUTOLISPCASEINSENSITIVEPATHS.
+#+end_example
+
+* Le défaut est SYMÉTRIQUE, et plus large que ce sysvar
+
+Vérifié sur la même version, dans l'autre sens :
+
+#+begin_example
+_$ (getvar "ACTIVITYINSIGHTSPATH")
+"C:\\Users\\{username}\\AppData\\Local\\Autodesk\\ActivityInsights\\Common"
+_$ (setq *autolisp-dialect* 'bricscad)
+BRICSCAD
+_$ (getvar "ACTIVITYINSIGHTSPATH")
+"C:\\Users\\{username}\\AppData\\Local\\Autodesk\\ActivityInsights\\Common"
+#+end_example
+
+ACTIVITYINSIGHTSPATH est dans =*bricscad-absent-sysvars*=, et la mesure
+sur un BricsCAD V26 réel le donne =nil= (bricscad-sysvars-on-macos). Sous
+dialecte bricscad il ne devrait donc pas répondre du tout.
+
+Autrement dit : la bascule de dialecte ne RÉVÈLE pas les sysvars propres
+à clautolisp, et ne MASQUE pas ceux propres à AutoCAD. La table ne suit
+pas le dialecte, dans aucun sens.
+
+* Cause
+
+Deux notions de « dialecte » coexistent, et une seule est dynamique.
+
+1. =CURRENT-EVALUATION-DIALECT= (autolisp-runtime/source/api.lisp)
+   consulte =*AUTOLISP-DIALECT*= *à chaque appel* — c'est ce qui fait que
+   les avertissements de portabilité, les options du lecteur et le
+   résolveur de casse suivent la bascule immédiatement.
+
+2. La table des sysvars appartient à l'HÔTE et n'est peuplée qu'UNE FOIS,
+   à l'installation des variables de transmission
+   (autolisp-cli/source/transmit.lisp) :
+
+   - =APPLY-DIALECT-TRUST-DEFAULTS= -> =apply-dialect-trust-sysvar-defaults=
+     (les défauts SECURELOAD / TRUSTEDPATHS, leur lecture-seule, les
+     sysvars clautolisp, et l'amorçage par l'environnement) ;
+   - =APPLY-DIALECT-SYSVAR-DEFAULTS= -> =apply-bricscad-dialect-sysvars=
+     (le retrait des sysvars que BricsCAD ne définit pas).
+
+   Les deux reçoivent =(transmit-dialect-keyword bindings)=, c'est-à-dire
+   le dialecte de LANCEMENT, lu une fois. Rien ne les rejoue.
+
+Ce ne sont donc pas quelques cellules oubliées : *tout ce qui dépend du
+dialecte dans la table est figé au lancement* — l'existence des sysvars
+clautolisp, l'existence des sysvars absents de BricsCAD, la
+lecture-seule de SECURELOAD/TRUSTEDPATHS sous bricscad, et l'amorçage
+par les variables d'environnement.
+
+* Comportement demandé (pjb)
+
+- on doit pouvoir POSER le sysvar dès que le dialecte n'est pas strict ;
+- en revenant à strict, il redevient nil, MASQUÉ — mais sa dernière
+  valeur est CONSERVÉE, pour être restaurée si le dialecte redevient
+  non-strict.
+
+Le masquage-avec-mémoire est le point de conception intéressant : il dit
+que passer par strict ne doit pas DÉTRUIRE un réglage, seulement le
+rendre invisible le temps qu'on y est. Un aller-retour
+non-strict -> strict -> non-strict doit rendre la valeur qu'on avait
+posée.
+
+* Questions à trancher avant d'implémenter
+
+1. *Restaurer la valeur sauvée, ou ré-amorcer depuis l'environnement ?*
+   Si l'utilisateur a fait =(setvar … 0)= sous bricscad puis est passé par
+   strict, le retour doit-il rendre 0 (sa valeur) ou 1 (l'environnement) ?
+   « Conserver sa dernière valeur » dit 0, et c'est cohérent avec la
+   précédence =setvar > env > défaut= déjà spécifiée.
+
+2. *Et au PREMIER dévoilement ?* Dans le cas du constat, aucune valeur
+   n'a jamais été posée : la première révélation doit donc appliquer la
+   précédence complète, donc lire l'environnement — sinon la trace
+   ci-dessus resterait fausse.
+
+3. *La symétrie s'applique-t-elle aux sysvars absents de BricsCAD ?* Le
+   même raisonnement voudrait qu'une bascule vers bricscad les masque, et
+   qu'un retour les restaure. C'est le même mécanisme ; le ticket
+   recommande de le traiter d'un seul tenant plutôt que d'ajouter un cas
+   particulier pour un sysvar.
+
+4. *Où brancher ?* Rejouer les overlays à chaque =getvar= serait coûteux
+   et fragile. Deux pistes : rendre la lecture du sysvar consciente du
+   dialecte courant (une vue plutôt qu'une table figée), ou détecter le
+   changement de =*AUTOLISP-DIALECT*= et rejouer les overlays à ce
+   moment-là. La première évite le problème de « qui remarque le
+   changement » ; la seconde garde le coût au moment rare.
+
+* Portée
+
+Ce ticket est la suite directe de
+=case-insensitive-paths-ignored-in-cad-dialects= (1.8.56), qui a rendu
+CLAUTOLISPCASEINSENSITIVEPATHS présent sous tous les dialectes sauf
+strict — mais uniquement selon le dialecte de LANCEMENT. Le constat de
+pjb est ce que cette correction laisse encore ouvert.
+
+* Contournement (avant 1.9.9)
+
+Lancer avec le dialecte voulu (=--dialect bricscad=) plutôt que de
+basculer à chaud : la table est alors correcte pour ce dialecte, et
+l'amorçage par l'environnement fonctionne.
+
+* RÉSOLU en 1.9.9 — une vue base + overlay, rejouée paresseusement
+
+Les quatre questions du ticket sont tranchées, et par les réponses que
+son propre raisonnement indiquait :
+
+1. *Restaurer la valeur sauvée*, pas ré-amorcer depuis l'environnement.
+   La précédence =setvar > env > défaut= est déjà spécifiée, et un setvar
+   mémorisé reste un setvar.
+2. *Au premier dévoilement*, précédence complète — donc lecture de
+   l'environnement — puisque aucune valeur n'a jamais été posée. C'est ce
+   qui rend la trace du constat correcte.
+3. *Oui, la symétrie s'applique* aux sysvars absents de BricsCAD, et d'un
+   seul tenant : la table est reconstruite depuis la base à chaque
+   bascule, donc les deux directions tombent du même rejeu.
+4. *Où brancher* : ni l'une ni l'autre des deux pistes telles qu'énoncées,
+   mais leur combinaison — un rejeu, DÉCLENCHÉ PARESSEUSEMENT à l'accès.
+
+** Le mécanisme
+
+: base     un instantané de la table pris au lancement AVANT tout
+:          overlay de dialecte — le catalogue indépendant du dialecte ;
+: overlay  les deux fonctions de lancement, rejouées pour le nouveau
+:          dialecte ;
+: mémoire  les valeurs que SETVAR a posées, réappliquées par-dessus.
+
+Repartir de la base est ce qui rend l'overlay *réversible*. Un overlay
+RETIRE des cellules (BricsCAD ne les définit pas), et rien ne peut
+« dé-retirer » une cellule sinon repartir d'une table qui l'avait encore.
+C'est pourquoi la piste « rejouer les overlays » ne suffisait pas seule :
+rejouée sur la table courante, elle n'annule rien.
+
+Le déclenchement répond au « qui remarque le changement ? » de la
+question 4 : *personne*. Chaque lecture et chaque écriture de sysvar
+passe par =%SYSVAR-HOST=, qui compare d'un =EQ= le dialecte courant à
+celui que la table reflète, et ne reconstruit que s'ils diffèrent. Coût
+sur le chemin courant : une comparaison de pointeurs.
+
+Le contrôleur vit dans =autolisp-builtins-core/source/secureload.lisp= ;
+la fermeture qui rejoue les deux overlays est fournie par le CLI
+(=autolisp-cli/source/transmit.lisp=), seule couche qui voie à la fois
+l'overlay de confiance et l'overlay d'existence bricscad de cador.
+
+** Le masquage avec mémoire, et une décision prise sans pjb
+
+Les valeurs mémorisées sont réappliquées *à travers SETVAR*, pas forcées
+dans la cellule. Sous un dialecte qui cache le sysvar, ou qui le rend
+lecture-seule, la valeur reste mémorisée et NON appliquée.
+
+La forcer inventerait un état de moteur — exactement ce que le travail
+sur les dialectes refuse de faire ailleurs (cf. le refus d'inventer des
+défauts BricsCAD dans =*bricscad-factory-defaults*=). À réviser si pjb
+préfère l'autre convention.
+
+** Vérifié sur le binaire construit
+
+Sur la trace même du constat :
+
+: strict: nil   bricscad: 1   back-strict: nil   bricscad-again: 0
+
+et la symétrie :
+
+: ACTIVITYINSIGHTSPATH   strict: <valeur>   bricscad: nil   autocad: <valeur>
+
+Quatre tests de régression dans
+=autolisp-builtins-core/tests/sysvar-dialect-tracking-tests.lisp=, dont
+un qui vérifie qu'une reconstruction ne perd pas l'état utilisateur
+ordinaire (USERI1) — puisqu'elle restaure une table entière.
+
+** TROIS BOGUES TROUVÉS EN CODANT, dont deux silencieux
+
+1. *Ajouter une méthode à un protocole sans importer le symbole ne rate
+   pas : ça réussit ailleurs.* =clautolisp.cador= n'importait pas les
+   deux nouveaux génériques du protocole hôte, donc ses =defmethod= ont
+   défini des méthodes sur =clautolisp.cador::host-snapshot-sysvars= —
+   une fonction générique HOMONYME et DISTINCTE, que personne n'appelle.
+   Zéro avertissement à la compilation ; le symptôme était que rien ne
+   changeait.
+
+   C'est un piège de paquet, pas de l'inattention : la prochaine
+   extension du protocole hôte y retombera de la même façon. Toute
+   addition à =autolisp-host/source/protocol.lisp= doit être suivie de
+   l'ajout du symbole à la liste =:import-from= de CHAQUE hôte qui
+   l'implémente.
+
+2. =copy-sysvar-cell=, le copieur engendré par =defstruct=, n'était
+   exporté par aucun paquet. Celui-là a au moins échoué franchement.
+
+3. *Un fichier de tests sans =(in-suite …)= compile, se charge, et ne
+   tourne pas.* Mes quatre tests ont d'abord été déclarés hors suite : la
+   suite est passée VERTE en ne les exécutant pas, et je l'ai d'abord
+   lue comme une réussite. C'est le pire des trois, parce qu'il se
+   présente comme un succès. La convention du dépôt — chaque fichier de
+   tests redéclare =(in-suite …)= — n'est donc pas décorative, et le
+   harnais gagnerait à refuser un fichier de tests qui n'en a pas.

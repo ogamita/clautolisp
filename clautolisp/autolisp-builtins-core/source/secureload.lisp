@@ -36,11 +36,21 @@ A file with no extension is not gated."
 
 ;;; --- dialect defaults ----------------------------------------------
 
+(defun %product-dialect-name (dialect-name)
+  "DIALECT-NAME with every spelling of a vendor product folded onto that
+product's template keyword: :bricscad-mac, :bricscad-linux, :bricscad-v25
+... -> :bricscad-v26; :autocad-mac, :autocad-2022 ... -> :autocad-2026.
+Comparing the NAME with EQ missed every derived spelling, so
+--dialect bricscad-mac got AutoCAD's SECURELOAD (2026-10-03)."
+  (if dialect-name
+      (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect-name)
+      dialect-name))
+
 (defun secureload-dialect-default (dialect-name)
   "The default SECURELOAD value for DIALECT-NAME (a keyword such as
-:autocad-2026 / :bricscad-v26 / :strict / :lax / :clautolisp). spec
-§ 'Dialect-dependent defaults'."
-  (case dialect-name
+:autocad-2026 / :bricscad-v26 / :strict / :lax / :clautolisp, or any
+derived spelling of a product). spec § 'Dialect-dependent defaults'."
+  (case (%product-dialect-name dialect-name)
     (:autocad-2026 1)
     (:bricscad-v26 0)
     ;; --strict means "the intersection of all dialects" (a program that
@@ -65,7 +75,7 @@ clautolisp controls it; real hosts derive it from the registry. spec
 BricsCAD makes both read-only (admin-configured); AutoCAD and the
 clautolisp dialects leave them settable so users / tests can opt in or
 out. spec § 'Dialect-dependent defaults'."
-  (eq dialect-name :bricscad-v26))
+  (eq (%product-dialect-name dialect-name) :bricscad-v26))
 
 ;;; --- trusted-path parsing ------------------------------------------
 
@@ -301,12 +311,24 @@ PATHS environment variable (applied by the caller, higher precedence)."
   '(("SECURELOAD" . :integer)
     ("TRUSTEDPATHS" . :string)
     ("CLAUTOLISPSUPPORTFILESEARCHPATH" . :string)
-    ("CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS" . :string))
-  "Trust-model sysvars seedable from an identically-named environment
-variable. Precedence is setvar > env var > dialect default (spec
-§ 'Environment-variable initialisation'). SECURELOAD parses as an
-integer; the rest are strings. The CLAUTOLISP* pair is seeded only
-under the clautolisp dialect, where the cells exist.")
+    ("CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS" . :string)
+    ("CLAUTOLISPCASEINSENSITIVEPATHS" . :integer))
+  "Sysvars seedable from an IDENTICALLY-NAMED environment variable.
+Precedence is setvar > env var > dialect default (spec
+§ 'Environment-variable initialisation'). SECURELOAD and
+CLAUTOLISPCASEINSENSITIVEPATHS parse as integers; the rest are strings.
+An entry is seeded only where its sysvar EXISTS, or the seeding would
+write a cell nothing reads: the CLAUTOLISP* trust pair under the
+clautolisp dialect, and CLAUTOLISPCASEINSENSITIVEPATHS under every
+dialect but --strict
+(case-insensitive-paths-ignored-in-cad-dialects.issue).
+
+The name matches the sysvar exactly, with no underscores. That is the
+convention for every sysvar-seeding variable here, and it is what
+distinguishes them from clautolisp's own program-level variables
+ (CLAUTOLISP_ROOT, CLAUTOLISP_PREFIX, ...), which are underscored: seeing
+CLAUTOLISPCASEINSENSITIVEPATHS tells you a sysvar of that exact name is
+what will hold the value (pjb, 2026-08-19).")
 
 (defun %coerce-env-sysvar-value (kind raw)
   "Coerce a raw environment string RAW to the sysvar KIND, or NIL when
@@ -351,15 +373,182 @@ spec §§ 'Dialect-dependent defaults', 'New clautolisp system variables',
                   nil)
           ;; CL drop: gate on CLAL-COMMON-LISP availability (cl-debugging.issue).
           (define "CLAUTOLISPDROP" :integer 0 nil))
+        ;; 2b. Case-insensitive path resolution: EVERY dialect but --strict
+        ;; (pjb's ruling, case-insensitive-paths-ignored-in-cad-dialects).
+        ;;
+        ;; It was clautolisp-only, which put it exactly where it was least
+        ;; needed: a --bricscad / --autocad run is how a corpus WRITTEN FOR
+        ;; WINDOWS is exercised, and that is the corpus whose path spellings
+        ;; nobody ever checked. Under those dialects the sysvar did not
+        ;; exist, so neither setvar nor the environment had any purchase --
+        ;; SCHMS+ set it to 1 under --dialect bricscad-v26 and nothing
+        ;; changed.
+        ;;
+        ;; The DEFAULT stays 0 there, and that is the ruling too, not an
+        ;; oversight: BricsCAD on Linux is not believed to fold case on a
+        ;; case-sensitive filesystem, so folding it here would be OUR
+        ;; invention rather than fidelity to the emulated engine. It stays
+        ;; an explicit request.
+        ;;
+        ;; --strict is the exception: its whole job is to report what a
+        ;; portable engine would refuse, and a path whose case does not
+        ;; match the disk is precisely that.
+        ;;
+        ;; Read/write in the emulation dialects, deliberately: getvar there
+        ;; answers for a sysvar the emulated CAD does not know, and that is
+        ;; accepted -- the vendors' own sysvar lists already differ from
+        ;; each other (pjb).
+        (unless (eq dk :strict)
+          (define "CLAUTOLISPCASEINSENSITIVEPATHS" :integer 0 nil))
         ;; 3. environment-variable overrides (env > dialect default).
         (dolist (entry *clautolisp-trust-env-sysvars*)
           (let ((name (car entry)) (kind (cdr entry)))
+            ;; A variable may only seed a sysvar that EXISTS under this
+            ;; dialect, or the seeding would write a cell nothing reads.
+            ;; CLAUTOLISPCASEINSENSITIVEPATHS exists everywhere but
+            ;; --strict, which is what makes
+            ;;   CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect bricscad …
+            ;; work -- the exact invocation that did nothing before
+            ;; (case-insensitive-paths-ignored-in-cad-dialects).
             (when (or clautolisp-p
                       (member name '("SECURELOAD" "TRUSTEDPATHS")
-                              :test #'string=))
+                              :test #'string=)
+                      (and (not (eq dk :strict))
+                           (string= name "CLAUTOLISPCASEINSENSITIVEPATHS")))
               (let ((raw (%env getenv name)))
                 (when raw
                   (let ((value (%coerce-env-sysvar-value kind raw)))
                     (when value
                       (define name kind value (read-only-for name))))))))))
     host)))
+
+
+;;;; --- The sysvar table follows the dialect ---------------------------
+;;;;
+;;;; sysvar-table-ignores-runtime-dialect-change.issue.
+;;;;
+;;;; Two notions of "dialect" coexisted, and only one was dynamic.
+;;;; CURRENT-EVALUATION-DIALECT consults *AUTOLISP-DIALECT* on EVERY
+;;;; call, which is what makes (setq *autolisp-dialect* 'bricscad) move
+;;;; the portability warnings, the reader options and the case resolver
+;;;; at once. The sysvar table belongs to the HOST and was populated
+;;;; ONCE, at launch, from the launch dialect -- so everything
+;;;; dialect-dependent in it was frozen: which clautolisp sysvars exist,
+;;;; which AutoCAD ones BricsCAD hides, whether SECURELOAD is read-only,
+;;;; and the seeding from the environment.
+;;;;
+;;;; The fix is a BASE + OVERLAY view, replayed lazily:
+;;;;
+;;;;   base     a snapshot of the table taken at launch BEFORE any
+;;;;            dialect overlay -- the dialect-independent catalogue;
+;;;;   overlay  the launch-time functions, re-run for the new dialect;
+;;;;   memory   the values SETVAR has been given, re-applied on top.
+;;;;
+;;;; Rebuilding from the base is what makes the overlay reversible: a
+;;;; dialect overlay REMOVES cells (BricsCAD does not define them), and
+;;;; there is no way to un-remove a cell except to start again from a
+;;;; table that still had it.
+;;;;
+;;;; "Masking with memory" (pjb's ruling): passing through a dialect
+;;;; that hides a sysvar must not DESTROY the setting, only make it
+;;;; invisible while we are there. So SETVAR's values are remembered
+;;;; independently of the table and re-applied after every rebuild --
+;;;; a non-strict -> strict -> non-strict round trip gives back the
+;;;; value that was set, not the environment's.
+;;;;
+;;;; Re-applied THROUGH SETVAR, deliberately: a remembered value lands
+;;;; only where a setvar would be accepted now. Under a dialect that
+;;;; hides the sysvar, or makes it read-only, the value stays
+;;;; remembered and unapplied rather than being forced into a cell the
+;;;; emulated engine would not have. Forcing it would invent an engine
+;;;; state, which is the thing this project's dialect work refuses to
+;;;; do.
+
+(defstruct (sysvar-dialect-controller (:conc-name sdc-))
+  "Everything needed to rebuild the sysvar table for a new dialect."
+  host
+  base
+  applied-dialect
+  ;; The dialect itself (its name), not its template: bricscad-v25 and
+  ;; bricscad-v26 share the :bricscad-v26 template but not their sysvar set
+  ;; (*bricscad-v25-absent-sysvars*), so a switch between them must rebuild.
+  applied-identity
+  (user-values '())
+  (syncing nil)
+  apply-overlays)
+
+(defvar *sysvar-dialect-controller* nil
+  "The active SYSVAR-DIALECT-CONTROLLER, or NIL when the table is not
+dialect-tracked (a host with no sysvar table, or a unit-test context
+that never installed one). NIL means every entry point below is a
+no-op, which is the pre-1.9.9 behaviour.")
+
+(defun install-sysvar-dialect-controller (host dialect-keyword apply-overlays)
+  "Take HOST's dialect-independent base snapshot and register
+APPLY-OVERLAYS, a function of (HOST DIALECT-KEYWORD) that applies every
+dialect-dependent sysvar overlay. MUST be called BEFORE the launch
+overlays run, since the snapshot is what they are applied on top of.
+Returns the controller, or NIL when HOST has no sysvar table."
+  (let ((base (and host (host-snapshot-sysvars host))))
+    (setf *sysvar-dialect-controller*
+          (and base
+               (make-sysvar-dialect-controller
+                :host host
+                :base base
+                :applied-dialect dialect-keyword
+                :apply-overlays apply-overlays)))))
+
+(defun forget-sysvar-dialect-controller ()
+  "Drop the controller. For tests, and for a session teardown that
+leaves no stale host behind."
+  (setf *sysvar-dialect-controller* nil))
+
+(defun note-sysvar-user-value (name value)
+  "Remember that SETVAR gave NAME the value VALUE, so a dialect that
+hides NAME masks the setting rather than destroying it. Only user-level
+SETVAR records here: host-derived and launch-time writes are part of the
+overlay and are reproduced by replaying it."
+  (let ((c *sysvar-dialect-controller*))
+    (when (and c (not (sdc-syncing c)))
+      (let ((entry (assoc name (sdc-user-values c) :test #'string-equal)))
+        (if entry
+            (setf (cdr entry) value)
+            (push (cons name value) (sdc-user-values c))))))
+  value)
+
+(defun %sync-sysvar-table-to-dialect (c dialect-keyword &optional (identity dialect-keyword))
+  (setf (sdc-syncing c) t)
+  (unwind-protect
+       (let ((host (sdc-host c)))
+         (host-restore-sysvars host (sdc-base c))
+         (funcall (sdc-apply-overlays c) host dialect-keyword)
+         ;; Oldest first: the alist is pushed onto, so a name set twice
+         ;; appears once, already carrying its latest value.
+         (dolist (entry (reverse (sdc-user-values c)))
+           ;; A value that no longer fits (hidden or read-only sysvar)
+           ;; stays remembered and unapplied -- see the header.
+           (ignore-errors
+            (clautolisp.autolisp-host:host-setvar host (car entry) (cdr entry))))
+         (setf (sdc-applied-dialect c) dialect-keyword
+               (sdc-applied-identity c) identity))
+    (setf (sdc-syncing c) nil))
+  c)
+
+(defun ensure-sysvar-table-matches-dialect (host dialect-keyword
+                                            &optional (identity dialect-keyword))
+  "Rebuild HOST's sysvar table when the dialect is no longer the one the
+table reflects. DIALECT-KEYWORD is the template the overlays dispatch on;
+IDENTITY (default: the same) the dialect itself -- two dialects of one
+template (bricscad-v25 / -v26) can still differ. Cheap on the common path:
+two EQs against the last-applied pair. Called from every sysvar read and
+write, which is what makes `(setq *autolisp-dialect* …)' visible to GETVAR
+immediately without anyone having to notice the assignment."
+  (let ((c *sysvar-dialect-controller*))
+    (when (and c
+               dialect-keyword
+               (not (sdc-syncing c))
+               (eq host (sdc-host c))
+               (not (and (eq dialect-keyword (sdc-applied-dialect c))
+                         (eq identity (sdc-applied-identity c)))))
+      (%sync-sysvar-table-to-dialect c dialect-keyword identity)))
+  host)

@@ -1,0 +1,39 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: windows-build-locked-executable — a running old exe blocks every later build on a Windows runner
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+BRANCH: windows-locked-exe-build
+
+* Symptom
+
+From 2026-10-03 20:09Z every job on the Windows CAD runner PF5S26B that
+builds alfe (probe:suite:bricscad:windows, verify:bricscad-hidden-ui:windows)
+failed in seconds:
+
+: ...\autolisp-front-end\tools\alfe\bin\alfe-sbcl.exe: Permission denied
+: Unhandled SB-IMPL::SAVE-ERROR ... Could not save core.
+
+Every one of them had passed up to 19:58Z.
+
+* Cause
+
+At 19:55-19:58Z the hung probe:suite:autocad:windows job and its
+probe:suite:bricscad:windows sibling were cancelled. Cancelling a job on the
+Windows runner does not kill the processes it started, so an alfe-sbcl.exe
+from that job kept running. Windows refuses to overwrite or delete a running
+executable, and the builds share one builds directory, so SAVE-LISP-AND-DIE
+could no longer write bin/alfe-sbcl.exe.
+
+* Fix (clautolisp 2.2.166)
+
+The shared generator (autolisp-reader/tools/read-autolisp/generate.lisp),
+which builds read-autolisp, clautolisp and alfe, now calls
+%MOVE-ASIDE-OLD-EXECUTABLE before saving. It deletes the old executable;
+when Windows keeps that executable locked, it renames it to
+<exe>.old-<universal-time> instead, which Windows allows for a running
+image. Leftovers from earlier builds are deleted once they are free.
+
+The stale process still holds the file and BricsCAD may be stuck with it:
+killing stray alfe-sbcl.exe / bricscad processes on PF5S26B is still worth
+doing by hand.

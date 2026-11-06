@@ -1,3 +1,24 @@
+# ======================================================================
+# GitHub Actions parity (see .github/workflows/README.md)
+# ----------------------------------------------------------------------
+# This file is the SOURCE OF TRUTH for CI. The COMMON (Linux, host-portable)
+# lanes below are ALSO mirrored, by hand, into .github/workflows/ci.yml,
+# because GitLab->GitHub is a plain git mirror that does NOT translate CI.
+#
+# COMMON — keep .github/workflows/ci.yml in sync with these before a merge
+# to master or a release tag/branch:
+#   test:clautolisp:sbcl        test:clautolisp:ccl
+#   test:clautolisp:file-compat:sbcl   test:clautolisp:file-compat:ccl
+#   test:autolisp-test:sbcl
+#   test:alfe:sbcl   test:alfe:ccl   test:alfe:conformance
+#   test:alfe:spec-coverage      build:alfe:sbcl
+#
+# GITLAB-ONLY (NOT mirrored — need self-hosted / CAD-equipped runners):
+#   the CI-image build; every *:macos / *:windows job; verify:*; vendor:*;
+#   *:probe:*; encoding:experiment:*; benchmark:*; the release:* matrix;
+#   pages / collect / deploy.
+# ======================================================================
+
 variables:
   CLAUTOLISP_CI_IMAGE: $CI_REGISTRY_IMAGE/clautolisp-ci
   CLAUTOLISP_CI_LATEST: $CI_REGISTRY_IMAGE/clautolisp-ci:latest
@@ -16,7 +37,9 @@ variables:
 default:
   image: $CLAUTOLISP_CI_LATEST
   # Runners are selected by CONFIGURATION tags: <os>,<arch>,<executor>
-  # (+ capability tags like gui/bricscad/autocad where a job needs them).
+  # (+ capability tags like gui/cad where a job needs them; `cad' is ONE tag
+  # for every vendor, on a concurrency=1 runner, because the mutex is global
+  # — see the CAD-capability note in .gitlab/native.yml).
   # The linux/amd64 work runs in the CI image on the self-hosted poseidon
   # group runner (ogamita-linux-docker, tags linux,amd64,docker; poseidon
   # is the always-on Linux compute box). Jobs needing another platform
@@ -39,12 +62,33 @@ workflow:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'     # master (development)
     - when: never                                       # no work-branch / version-* pipelines
 
+# BENCHMARK COMES AFTER COLLECT, and that order is the fix for
+# benchmark-autocad-windows-hangs-and-blocks-release, not a tidying.
+#
+# `benchmark' used to sit between `test' and `release'. None of the release
+# jobs declare `needs:', so they waited for the whole benchmark stage by
+# stage order alone -- and benchmark:autocad:windows shares the Windows
+# runner, which has concurrency 1, with release:windows:x86-64. A benchmark
+# that hangs there therefore held the release lane behind it twice:
+# release-1.8.47 was cancelled by hand, release-1.8.49 waited out the full
+# two-hour timeout before its artefacts could even start.
+#
+# Capping the job (timeout: 15 minutes, 1.8.51) shortened that block; it did
+# not remove it, because the ordering is what creates it. Putting the stage
+# last does remove it: a benchmark is a measurement, never a release
+# product, so nothing that ships may ever queue behind one.
+#
+# The measurement is NOT dropped from release pipelines -- it still runs on
+# the tag, just after the artefacts are built and collected, so it keeps its
+# value as a record and loses its power to cost a release. `pages' (the
+# benchmark report, stage deploy) stays after it and still gets its inputs,
+# which is why the stage goes here and not at the very end.
 stages:
   - build
   - test
-  - benchmark
   - release
   - collect
+  - benchmark
   - deploy
 
 # --- Release-ref rule fragments (issues/closed/release-ci.issue) -------------
@@ -57,6 +101,16 @@ stages:
 # tag, jobs keep their normal rules (manual for the intermittent CAD lanes,
 # automatic for the poseidon test lanes). These anchors are spliced as the
 # FIRST rule of a job so the release tag wins over the manual fallback.
+.not-on-schedule: &not-on-schedule
+  # The nightly schedule exists for ONE job: sweep:stale-pipelines.
+  # Everything else stays off it. Without this, a scheduled pipeline on
+  # master runs the whole test matrix at 03:00Z -- and native:pipeline
+  # with it, which would create one more never-completing child every
+  # night, feeding the very leak the sweep is there to drain
+  # (ci-native-child-pipeline-creation-fails.issue).
+  if: '$CI_PIPELINE_SOURCE == "schedule"'
+  when: never
+
 .on-release-mandatory: &on-release-mandatory
   if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
   when: on_success
@@ -65,6 +119,108 @@ stages:
   if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
   when: on_success
   allow_failure: true
+
+# Platform-bound release jobs: mandatory on a tag, unless the person cutting
+# the release says the machine is not there.
+#
+# The obvious form -- gate on $WINDOWS_RUNNER == "online" from
+# detect:runners -- DOES NOT WORK IN THE PARENT, and failed silently when
+# tried on release-1.8.43: GitLab evaluates `rules:' at PIPELINE CREATION,
+# before any job has run, so a variable published by detect:runners as a
+# DOTENV ARTIFACT does not exist yet. The condition was never true, the
+# `when: never' fallback won, and release:windows:x86-64 /
+# release:darwin:arm64 were never created at all -- a release quietly
+# missing two platforms WHILE BOTH MACHINES WERE ONLINE (detect:runners
+# reported exactly that in the same pipeline). Worse than the blocking it
+# replaced, and invisible.
+#
+# The child pipeline can do it because the parent passes those values as
+# TRIGGER VARIABLES, which are known when the child is created. The parent
+# cannot, so the intent is expressed explicitly instead: cutting a release
+# with a machine switched off means saying so.
+#
+#   git tag ... && git push          -> Windows/macOS products expected
+#   SKIP_WINDOWS_RELEASE=1 (CI var)  -> cut without the Windows products
+#   SKIP_MACOS_RELEASE=1             -> likewise for macOS
+#   ARM32_RELEASE=1                  -> ADD the qemu armv7 lane, which is
+#                                       off by default because it is
+#                                       blocked, not intermittent
+#
+# Explicit beats automatic here: the failure mode of the automatic version
+# was a release that looked complete and was not.
+.on-release-windows: &on-release-windows
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $SKIP_WINDOWS_RELEASE != "1"'
+  when: on_success
+  allow_failure: false
+.on-release-windows-absent: &on-release-windows-absent
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+  when: never
+.on-release-macos: &on-release-macos
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $SKIP_MACOS_RELEASE != "1"'
+  when: on_success
+  allow_failure: false
+.on-release-macos-absent: &on-release-macos-absent
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+  when: never
+# arm32 is OPT-IN, and it is the only lane that is. The other two are
+# opt-out because they are INTERMITTENT -- the machine is either there or
+# it is declared absent with SKIP_*_RELEASE, and a failure means something
+# went wrong. The armv7 lane is not intermittent, it is BLOCKED: Debian's
+# armhf SBCL is built without threads, and bordeaux-threads 0.9 refuses to
+# load on a thread-less implementation ("This implementation is
+# unsupported"), so the build dies before it can produce anything.
+#
+# It ran anyway until 1.9.0, on allow_failure, on the reasoning that it
+# "contributes when it can". Three tags say otherwise: release-1.8.47 died
+# that way after 44 minutes, release-1.9.0 after 48 (job 16026668734), and
+# it has never once succeeded. A lane that cannot succeed does not
+# contribute -- it spends the better part of an hour of an emulated runner
+# and holds `collect' behind it, on every release.
+#
+# pjb, cutting 1.9.0: "we'll have to disable arm32 release for now."
+#
+# So the default is now OFF and the switch is positive: ARM32_RELEASE=1
+# turns the lane back on, which is what to set the day the thread-less
+# question is answered (native hardware, or a threaded armhf SBCL, or a
+# bordeaux-threads that loads) -- and turning it on is then how you TEST
+# that answer. SKIP_ARM32_RELEASE is deliberately not kept as an alias: a
+# skip variable for a lane that no longer runs by default would only be
+# read as evidence that it does. See
+# issues/open/release-arm32-thread-less-sbcl.issue.
+#
+# allow_failure stays TRUE for the opt-in run, so re-enabling it to try a
+# fix cannot block a release either.
+.on-release-arm32: &on-release-arm32
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $ARM32_RELEASE == "1"'
+  when: on_success
+  allow_failure: true
+.on-release-arm32-absent: &on-release-arm32-absent
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+  when: never
+
+# --- Windows shell-runner hygiene -------------------------------------------
+#
+# The runner's default `git clean -ffdx' also removes IGNORED files, i.e. the
+# build output under dist/ and build/. On POSIX that is harmless: an open file
+# can still be unlinked. On Windows it CANNOT -- a process holding a handle
+# makes the delete fail, git clean returns non-zero, and the job dies in
+# get_sources before a single line of its own script runs.
+#
+# That is not hypothetical. On the release-1.8.41 tag, two accoreconsole
+# processes outliving their vendor-probe job kept
+# dist/vendor-probes/autocad/drawing-data.log open, and EVERY Windows job of
+# the pipeline failed on it -- release and both benchmarks -- with a message
+# that names a log file and says nothing about a stale CAD process.
+#
+# So: on Windows the runner stops cleaning ignored files, and each job owns
+# the output directory it writes. A job that cannot clear its own dist/ must
+# say why (see scripts/release-windows.sh), because a release quietly built
+# on top of a previous run's leftovers is worse than one that fails.
+#
+# Deliberately NOT applied to the Linux/macOS runners: there the -ffdx clean
+# works and catches stale-artefact bugs, which is worth keeping.
+.windows-clean: &windows-clean
+  GIT_CLEAN_FLAGS: -ffd
 
 # Build the CI image with kaniko — NO Docker daemon, NO privileged, NO
 # socket exposure. The poseidon group runner is rootless docker
@@ -81,6 +237,7 @@ build:clautolisp-ci-image:
   # not fail a whole pipeline run.
   retry: 2
   rules:
+    - *not-on-schedule
     # Never rebuild the image on a release tag: use the already-published
     # :latest. (Otherwise a flaky image build blocks the release stage.)
     - if: '$CI_COMMIT_TAG'
@@ -118,27 +275,165 @@ build:clautolisp-ci-image:
 .pre-warm-quicklisp-sbcl: &pre-warm-quicklisp-sbcl
   - sbcl --noinform --no-userinit --non-interactive
          --load /root/quicklisp/setup.lisp
-         --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)'
+         --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "cffi" "usocket") :silent t)'
 
 .pre-warm-quicklisp-ccl: &pre-warm-quicklisp-ccl
   - ccl --no-init -b
         -e '(load "/root/quicklisp/setup.lisp")'
-        -e '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)'
+        -e '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "cffi" "usocket") :silent t)'
         -e '(ccl:quit)'
 
+# --- ASDF fasl cache (ci-cache-tool-builds.issue) ---------------------------
+#
+# Compiling the project's own Lisp is most of every Lisp lane on poseidon:
+# ~90 of build:alfe:sbcl's 104 s script, 82 of test:clautolisp:sbcl's 105.
+# This template carries the fasls from one run of a job to the next -- but
+# ONLY when they were compiled from exactly the same inputs.
+#
+# The GitLab key is deliberately NOT what decides that. It is one entry per
+# job (bounded storage on the runner's local cache), and every entry holds a
+# KEY file: a content hash of the source tree (git object ids of every
+# top-level entry but issues/, documentation/, probe-results/ and the prose
+# files), of the Lisp implementations, of the Quicklisp dist and releases,
+# and of the image's installed packages. scripts/ci-build-cache.sh compares
+# it with the checkout and either reuses the fasls whole (touching them, so
+# that ASDF -- which only compares file times -- takes them as current) or
+# discards them whole and the job compiles cold. A changed source can
+# therefore never meet an old fasl, which plain time-based reuse cannot
+# promise after a fresh clone (the script's header has the two failure
+# modes, both measured).
+#
+# So a hit happens when nothing compiled changed: a pipeline that touches
+# only issues, documentation or probe results, or a re-run. Measured in
+# the CI image on poseidon, build-alfe-sbcl: 131 s cold, 5 s on a hit.
+#
+# The restore runs in before_script; the save MUST be the last line of
+# `script', not after_script: on the docker executor after_script runs in
+# another container, where /root/.cache (the image's XDG_CACHE_HOME, where
+# the fasls are) is not the one the job wrote. The cache is uploaded only
+# for a successful job. Never used by release:* -- a release builds cold
+# from its tag, by policy, whatever any key says.
+.fasl-cache:
+  cache:
+    key: fasl-v1-$CI_JOB_NAME_SLUG
+    paths: [.ci-cache/fasl/]
+    when: on_success
+  before_script:
+    - sh scripts/ci-build-cache.sh restore fasl
+
+# Does a COMPLETE INSTALLED RELEASE find its native DWG libraries?
+#
+# clautolisp-distributed-native-libraries-not-loaded: an installation that
+# carried lib/clautolisp/<os>/<arch>/clal_dwg.so still answered "no writer
+# codec registered for format :DWG". The unit tests cannot see that -- it is
+# a property of the INSTALLED TREE, not of the sources -- so this lane
+# installs into a prefix whose path contains a space, runs the installed
+# binary from an unrelated directory with no CLAUTOLISP_DWG_LIBDIR and no
+# library path, writes a DWG through the ActiveX SaveAs path, MOVES the
+# prefix and does it again, and finally checks that a binaries-only install
+# names the missing library instead of blaming the codec.
+#
+# Manual: it builds the vendored libredwg and a program image, which is
+# minutes of work, and nothing below it depends on the result.
+verify:packaged-dwg:linux:
+  rules:
+    - *not-on-schedule
+    - when: manual
+      allow_failure: true
+  stage: test
+  timeout: 45m
+  # The LibreDWG build cache (scripts/ci-build-cache.sh, kind libredwg): the
+  # vendored LibreDWG + shim are reused whenever the libredwg submodule
+  # commit, clautolisp/drawing-dwg and the toolchain are the same -- whatever
+  # else the clautolisp commit changed, since LibreDWG now carries ITS OWN
+  # version (third-party/libredwg.release) instead of clautolisp's git
+  # describe (libredwg-version-is-superproject-describe). Measured in the CI
+  # image: make build-libraries 164 s cold (27 objects), 1 s and 0 objects on
+  # a hit from another clautolisp commit (cache ~60 MB). The submodule must
+  # be checked out by the runner (recursive), not by `make submodules' later:
+  # the restore runs first and a missing submodule is a MISS that is never
+  # saved. Restore in before_script, save as the LAST script line (as
+  # .fasl-cache); never on release:* lanes, which build cold from their tag.
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive   # libredwg (+ jsmn), before the restore
+  cache:
+    key: libredwg-v1-$CI_JOB_NAME_SLUG
+    paths: [.ci-cache/libredwg/]
+    when: on_success
+  before_script:
+    - sh scripts/ci-build-cache.sh restore libredwg
+  script:
+    - *pre-warm-quicklisp-sbcl
+    - make build-libraries          # vendored libredwg + the CFFI shim
+    - make build-programs           # the standalone images
+    - bash scripts/verify-packaged-dwg.sh
+    - sh scripts/ci-build-cache.sh save libredwg
+
 test:clautolisp:sbcl:
+  extends: .fasl-cache
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - *pre-warm-quicklisp-sbcl
     - make -C clautolisp test-sbcl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:ccl:
+  extends: .fasl-cache
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - *pre-warm-quicklisp-ccl
     - make -C clautolisp test-ccl
+    - sh scripts/ci-build-cache.sh save fasl
+
+test:clautolisp:compiler:sbcl:
+  extends: .fasl-cache
+  rules:
+    - *not-on-schedule
+    - when: on_success
+  stage: test
+  script:
+    - *pre-warm-quicklisp-sbcl
+    # The whole corpus, twice over: once with every AutoLISP function body
+    # compiled, once with every INSTRUMENTED body compiled. Both assert that
+    # compiled and interpreted evaluation AGREE -- which is the compiler's
+    # contract -- rather than that the compiler handles a list of forms.
+    - make -C clautolisp test-compiler-equivalence
+    - make -C clautolisp test-debug-compiled
+    # And the question neither of those asks, because both link the compiler
+    # in directly, as a test of the compiler must: does the program that
+    # SHIPS have a compiler in it? Until 2.0.12 it did not.
+    - make -C clautolisp test-shipped-compiler
+    # A docstring closed early by an unescaped quote is read as FORMS into
+    # the function body. It has happened twice; whether the test suite
+    # notices depends on what the prose happens to say, so the structural
+    # check is the detector, not the suites.
+    - make -C clautolisp check-docstrings
+    - sh scripts/ci-build-cache.sh save fasl
+
+test:clautolisp:compiler:ccl:
+  extends: .fasl-cache
+  rules:
+    - *not-on-schedule
+    - when: on_success
+  stage: test
+  script:
+    - *pre-warm-quicklisp-ccl
+    # A .lap is a native host FASL, so each host ships its own compiler and
+    # each has to be asked separately. 2.0.11 is the standing reason: a lane
+    # that is not run is not evidence.
+    - make -C clautolisp test-shipped-compiler-ccl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:file-compat:sbcl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - mkdir -p clautolisp/.artifacts
@@ -150,6 +445,9 @@ test:clautolisp:file-compat:sbcl:
       - clautolisp/.artifacts/file-compat-sbcl.json
 
 test:clautolisp:file-compat:ccl:
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - mkdir -p clautolisp/.artifacts
@@ -170,29 +468,129 @@ test:clautolisp:file-compat:ccl:
 # here keeps both CIs symmetrical.
 
 test:autolisp-test:sbcl:
+  extends: .fasl-cache
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - make -C autolisp-test test
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:sbcl:
+  extends: .fasl-cache
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
+  variables:
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
   script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end test-sbcl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:ccl:
+  extends: .fasl-cache
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
+  variables:
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
   script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    # (The child is the SBCL program; the CCL alfe drives it -- the
+    # cross-Lisp parity a mixed installation has.)
+    - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end test-ccl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:conformance:
+  extends: .fasl-cache
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end conformance
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:spec-coverage:
+  extends: .fasl-cache
+  rules:
+    - *not-on-schedule
+    - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end check-spec-coverage
+    - sh scripts/ci-build-cache.sh save fasl
+
+# --- SCHMS CAD corpus, headless on poseidon --------------------------------
+#
+# The SCHMS+ suite (`make test-cad-clautolisp`) is the end-to-end consumer
+# that keeps surfacing gaps in the vlax / VLA surface — vla-accessor-family
+# and vla-entity-property-bridge were both driven by its failures, and the
+# latter's remaining item is literally "re-run SCHMS to confirm what it
+# consumes". It runs against `--host cador`, i.e. the headless CAD core, so
+# unlike every other CAD lane it needs NO AutoCAD, NO BricsCAD and no native
+# runner: poseidon [linux, amd64, docker] is the right home for it.
+#
+# INERT UNTIL PROVISIONED. SCHMS is a private client corpus
+# (sncf-reseau/src/schms), not a submodule and not public, so this job
+# cannot clone it without credentials. The first rule makes the job simply
+# not exist until pjb defines SCHMS_REPO_URL, exactly like
+# BRICSCAD_PROFILE_CLEAN gates the sysvar harvest and RUNNER_STATUS_TOKEN
+# gates the runner probe — never a false red, never a stuck-pending job.
+#
+# pjb must provide, as masked CI/CD variables:
+#   SCHMS_REPO_URL    clone URL for the SCHMS corpus, credentials included
+#                     (e.g. https://gitlab-ci-token:<PAT>@host/group/schms.git)
+#   SCHMS_REF         optional; branch/tag to test (default: the repo default)
+#
+# Non-gating on purpose (allow_failure): SCHMS is an external corpus whose
+# own churn must never redden a clautolisp pipeline. Its value is the
+# report, and the artifact is the report.
+test:cad:schms:linux:
+  stage: test
+  tags: [linux, amd64, docker]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    SCHMS_DIR: "$CI_PROJECT_DIR/../schms"
+  rules:
+    - *not-on-schedule
+    # No credentials configured => the job does not exist at all.
+    - if: '$SCHMS_REPO_URL == null || $SCHMS_REPO_URL == ""'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  script:
+    # Install clautolisp where the corpus expects to find it on PATH. The
+    # programs phase only (install-documentation needs the TeX/Emacs
+    # toolchain this image does not carry, and SCHMS needs none of it).
+    - make install-programs PREFIX="$CI_PROJECT_DIR/stage"
+    - export PATH="$CI_PROJECT_DIR/stage/bin:$PATH"
+    - clautolisp --version
+    - rm -rf "$SCHMS_DIR"
+    - git clone --depth 1 ${SCHMS_REF:+--branch "$SCHMS_REF"} "$SCHMS_REPO_URL" "$SCHMS_DIR"
+    # The corpus drives clautolisp itself; host=cador is the headless CAD
+    # core, which is what makes this runnable off a CAD runner at all.
+    - make -C "$SCHMS_DIR" test-cad-clautolisp 2>&1 | tee schms-report.txt
+  artifacts:
+    name: "schms-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [schms-report.txt]
+    expire_in: 30 days
 
 # Mirror of the GitHub `alfe-binary` job: build alfe-sbcl, assert
 # its --version matches the source-declared version, smoke-test the
@@ -205,11 +603,16 @@ test:alfe:spec-coverage:
 # user / system init-file output so the captured stdout is just
 # the (princ) value.
 build:alfe:sbcl:
+  extends: .fasl-cache
+  rules:
+    - *not-on-schedule
+    - when: on_success
   # A build: job belongs in the build stage (issues/open/release-ci.issue) so
   # it runs before the test lanes that `needs:` its artifact.
   stage: build
   script:
     - make -C autolisp-front-end build-alfe-sbcl
+    - sh scripts/ci-build-cache.sh save fasl
     - |
       declared=$(sed -n 's/.*\*version\* "\([^"]*\)".*/\1/p' \
                      autolisp-front-end/tools/alfe/source/version.lisp)
@@ -226,7 +629,42 @@ build:alfe:sbcl:
     when: always
     paths:
       - autolisp-front-end/tools/alfe/bin/alfe-sbcl
-    expire_in: 14 days
+    # Second-biggest consumer of the namespace after `documentation': 207
+    # runs holding 2.74 GB over the same twelve days (13 MB each). Its real
+    # consumers are the test lanes, which `needs:' it inside the SAME
+    # pipeline, so they never see an expired copy whatever this says. Three
+    # days keeps it downloadable for a couple of working days after a run --
+    # the reason the comment above gives for publishing it at all -- without
+    # keeping a fortnight of them.
+    expire_in: 3 days
+
+# --- release packaging checks -----------------------------------------
+#
+# Deliberately NOT folded into the `documentation' job, which is skipped on
+# tags — precisely the pipeline where a release is being cut. This runs on
+# merge requests, on master AND on tags, in the `test' stage so a tag
+# pipeline fails here rather than after the whole release matrix has built.
+#
+# Cheap: fabricates artefacts and repackages them, no build, no CAD, a
+# couple of seconds. See release-artefact-set-incomplete.issue for what it
+# is defending against — 7 of the 10 specified artefacts were missing, and
+# reading the recipe had not revealed it.
+check:release:
+  rules:
+    - *not-on-schedule
+    - when: on_success
+  stage: test
+  tags: [linux, amd64, docker]        # poseidon (always-on)
+  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  before_script:
+    # zip/unzip are needed for the Windows .zip artefacts and the -all.zip
+    # (pjb, 2026-08-16). collect-artefacts ERRORS rather than skipping when
+    # they are missing, so a release cannot quietly ship without them.
+    - pkgs=""; for t in bzip2 tar make zip unzip; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+  script:
+    - make check-release
 
 # Build the documentation on ordinary pipelines (default branch + merge
 # requests) and publish it as a SHORT-lived job artefact, structured exactly
@@ -244,6 +682,7 @@ documentation:
   variables:
     GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
   rules:
+    - *not-on-schedule
     - if: '$CI_COMMIT_TAG'            # tags: release:documentation handles it
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -263,14 +702,109 @@ documentation:
   before_script:
     # doc tooling is baked into the CI image; install only what's missing
     # (a fallback for a stale :latest right after the Dockerfile change).
-    - pkgs=""; command -v emacs >/dev/null || pkgs="$pkgs emacs-nox"; command -v xelatex >/dev/null || pkgs="$pkgs texlive texlive-latex-extra texlive-xetex texlive-plain-generic"; command -v makeinfo >/dev/null || pkgs="$pkgs texinfo"; command -v dot >/dev/null || pkgs="$pkgs graphviz"; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
-    - command -v emacs makeinfo xelatex dot >/dev/null
+    - pkgs=""; command -v emacs >/dev/null || pkgs="$pkgs emacs-nox"; command -v xelatex >/dev/null || pkgs="$pkgs texlive texlive-latex-extra texlive-xetex texlive-plain-generic"; command -v makeinfo >/dev/null || pkgs="$pkgs texinfo"; command -v dot >/dev/null || pkgs="$pkgs graphviz"; command -v fc-list >/dev/null || pkgs="$pkgs fontconfig"; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    # The doc fonts are NOT optional decoration: the preamble maps glyphs onto
+    # them, and every fallback is guarded, so a missing font degrades to a
+    # dropped glyph in a PDF that still builds. Install them, and let
+    # check-doc-glyph-coverage below verify the result rather than trust it.
+    - 'fonts=""; have() { fc-list --format "%{family}\n" 2>/dev/null | grep -q "$1"; }; have "DejaVu Serif" || fonts="$fonts fonts-dejavu"; have "Symbola" || fonts="$fonts fonts-symbola"; have "Noto Sans CJK" || fonts="$fonts fonts-noto-cjk"; [ -z "$fonts" ] || { apt-get update && apt-get install -y $fonts; }'
+    - command -v emacs makeinfo xelatex dot fc-list >/dev/null
+    # check-native-pipeline-yaml parses the child pipeline with PyYAML (baked
+    # into the image; this is the stale-:latest fallback).
+    - python3 -c 'import yaml' 2>/dev/null || { apt-get update && apt-get install -y python3-yaml; }
   script:
-    - make release-documentation      # build-documentation + package the share/doc tarball
+    # The dialect-warnings annex is generated from the register in
+    # autolisp-runtime/source/portability.lisp and TRACKED, so it can go
+    # stale the moment someone improves an entry without regenerating.
+    # Fail here rather than ship a manual that disagrees with what the
+    # program prints.
+    - make -C clautolisp check-dialect-warnings-annex
+    # The vendor-only operator table is generated from the spec's
+    # Availability sections: a spec edit that changes who owns an operator
+    # must regenerate it (deferred-clautolisp-out-of-dialect-warnings).
+    - make -C clautolisp check-operator-availability
+    # The user-visible rule (AGENTS.md): a CLI option or CLAL- builtin that
+    # reaches no manual fails here. Run BEFORE the build -- it is seconds,
+    # and the point is to fail on the documentation gap rather than after
+    # several minutes of LaTeX.
+    - make check-user-visible-documentation
+    # A commit message is CODE on the Windows runner (its PowerShell executor
+    # writes CI_COMMIT_MESSAGE into a .ps1 and under-escapes it), so an em dash
+    # kills a Windows job before it clones. Say so HERE, in a lane that always
+    # runs, instead of leaving it to be rediscovered from a PowerShell parser
+    # error quoting the commit body
+    # (windows-runner-commit-message-breaks-powershell).
+    - make check-commit-message-ascii
+    # The pipeline sweep decides which pipelines can never finish. It had no
+    # test, and all three of its defects were selection defects -- which is how
+    # two merges came to land on master with NO pipeline at all, the cap having
+    # been filled by children of merge requests that were already merged
+    # (ci-job-activity-cap-refuses-master-pipelines). Seconds, and it runs in a
+    # lane that always runs, because the failure it guards against is silent:
+    # a pipeline that was never created cannot report its own absence.
+    - make check-stale-pipeline-sweep
+    # A test file without (in-suite ...) loads and its tests never run, so the
+    # suite reports SUCCESS by not executing them -- the worst failure shape
+    # this repository meets, and one it has already met. Seconds, in a lane
+    # that always runs (test-file-without-in-suite-runs-nothing).
+    - make check-test-suite-membership
+    # The native child's merge-request gate is "run when these paths changed",
+    # so a missing pattern SKIPS the Windows/macOS lanes in silence. No tracked
+    # path may be unclassified -- in the gate, or declared irrelevant on purpose
+    # (ci-job-activity-cap-refuses-master-pipelines).
+    - make check-native-pipeline-changes
+    # The probe jobs run automatically only when their FAMILY changed, so a
+    # probe file in no family would never be re-measured, in silence
+    # (scripts/ci-detect-probe-changes.py).
+    - make check-probe-families
+    # GitLab refusing the child .gitlab/native.yml fails native:pipeline with
+    # downstream_pipeline_creation_failed and skips EVERY macOS/Windows job,
+    # naming no line; `glab ci lint' only reads this file
+    # (native-pipeline-yaml-not-linted).
+    - make check-native-pipeline-yaml
+    # XeLaTeX has NO font fallback: a glyph the body face lacks is dropped,
+    # the PDF is produced successfully, and the character is simply gone.
+    # Cheap and BEFORE the build, for the same reason as the check above --
+    # and it needs fontconfig + the doc fonts to answer, which is why the
+    # before_script installs them (tex-pdf-characters.issue).
+    - make check-doc-glyph-coverage
+    # The Info export used to be 51 minutes of this job -- 94% of it -- so
+    # the job skipped it with SPEC_PAGED_TARGETS="pages html" and left the
+    # manual to release:documentation. The cost was ox-texinfo naming nodes
+    # against a growing ALIST, which is quadratic in the number of nodes;
+    # autolisp-spec/scripts/spec-texinfo-fast-node.el replaces that lookup
+    # and the export now takes 60 seconds
+    # (doc-build-info-export-quadratic.issue).
+    #
+    # So the skip is GONE and merge requests build the Info manual again.
+    # That matters beyond the minutes: while it was skipped, the only lane
+    # that built the manual was the release lane, so a spec edit that broke
+    # the Info build could only be found ON a release.
+    #
+    # This runs first, and it is three seconds: it exports a prefix of the
+    # real spec with and without the override and fails unless the two are
+    # byte-identical. The override is pinned to an INTERNAL org function, so
+    # an org upgrade could change node names under us; without this check
+    # that drift would surface much later, as dead cross-references.
+    - make -C autolisp-spec check-info-export-equivalence
+    - make release-documentation
   artifacts:
     name: "clautolisp-documentation-$CI_COMMIT_SHORT_SHA"
     paths: [dist/]
-    expire_in: 1 week
+    # ONE DAY, and this is the single most expensive line in the file.
+    #
+    # This job runs on every merge-request and every master pipeline, and
+    # its dist/ is 51 MB. Measured on 2026-08-21, over the twelve days the
+    # jobs API still had artefacts for: 175 runs, 8.99 GB -- 39% of the
+    # 23.10 GB that took the namespace over its 10 GB allowance and made
+    # every CI job fail to clone (namespace-storage-blocks-ci.issue).
+    #
+    # NOTHING CONSUMES IT. `deploy:documentation' needs the tag lane's
+    # `release:documentation', not this; `pages' needs the benchmarks. The
+    # artefact exists so a human can download the rendered manuals after a
+    # doc change and look at them. A day is long enough for that, and the
+    # week it used to keep cost eight gigabytes to serve the same purpose.
+    expire_in: 1 day
 
 # --- Release artefacts (see issues/open/release-artefacts.issue) -------
 #
@@ -299,9 +833,27 @@ documentation:
 
 .release-common:
   stage: release
+  # DOWNLOAD NOTHING. Without this, GitLab's default applies -- a job with
+  # no `needs:' receives the artifacts of EVERY job in every earlier stage
+  # -- and build:alfe:sbcl publishes exactly
+  # autolisp-front-end/tools/alfe/bin/alfe-sbcl, built on LINUX.
+  #
+  # On the release-1.9.0 tag that Linux ELF landed at that path in the
+  # WINDOWS lane's workspace, where the Windows build then wrote its own
+  # alfe-sbcl.exe beside it. The packaging loop tested the bare name first,
+  # found the ELF, and shipped a Linux binary as the Windows alfe. macOS
+  # escaped only by luck: there the built name IS the bare name, so the
+  # build overwrote the download.
+  #
+  # `dependencies: []' and not `needs: []': needs would also detach the job
+  # from stage ordering and let a release start before the tests, which is
+  # not the intent. dependencies only says "fetch no artifacts".
+  # See windows-release-binaries-lose-exe.issue.
+  dependencies: []
   variables:
     GIT_SUBMODULE_STRATEGY: recursive   # libredwg (+ jsmn) needed by build-libraries
   rules:
+    - *not-on-schedule
     - *on-release-mandatory
     - when: manual
       allow_failure: true
@@ -335,6 +887,9 @@ release:linux:x86-64:
     - make build-libraries
     - make release-programs
     - make release-libraries
+    # Refuse to hand up an empty dist/: a lane that built nothing must
+    # not look like a lane that built everything (see the Makefile).
+    - make verify-release-artefacts
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-linux-x86-64"
     paths: [dist/]
@@ -363,6 +918,13 @@ release:documentation:
     - command -v emacs makeinfo xelatex dot >/dev/null
   script:
     - make release-documentation
+    # The Info manual is built HERE and nowhere else: the
+    # merge-request lane skips it (see the documentation job). Its
+    # install step is guarded by `if [ -f ]', so a build that quietly
+    # failed to produce it would ship a documentation artefact without
+    # it and say nothing. This is the lane that publishes it, so it
+    # asserts instead of hoping.
+    - 'test -f autolisp-spec/build/info/autolisp-spec.info || { echo "ERROR - the Info manual was not built, and this is the lane that publishes it."; exit 1; }'
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-documentation"
     paths: [dist/]
@@ -377,18 +939,17 @@ release:linux:arm64:
   # [linux,arm64,docker] runner is kept for optional native validation.
   tags: [linux, arm64, qemu]      # poseidon qemu (was thalassa native)
   image: $ARM64_BASE              # buildpack-deps bookworm, arm64 (digest-pinned)
-  # Cache the libredwg cmake build dir so the slow (emulated) C compile is
-  # reused across runs — cmake rebuilds only changed objects. Per-arch key
-  # (objects are arch-specific). Interim measure (b); the durable fix (a) is
-  # baking libredwg into a per-arch CI image. Bump -v2 to force a cold build.
-  cache:
-    key:
-      prefix: libredwg-arm64-v1
-      files:
-        - .gitmodules
-        - clautolisp/drawing-dwg/build-libredwg.sh
-    paths:
-      - clautolisp/third-party/libredwg/build/
+  # NO libredwg build cache here, and none on any release:* lane
+  # (ci-cache-tool-builds.issue). A release builds every product cold from
+  # its tag. This lane used to cache clautolisp/third-party/libredwg/build/
+  # under a key of .gitmodules + build-libredwg.sh, which does NOT pin the
+  # submodule commit -- and it never saved anything: on release-2.1.0 and
+  # release-2.2.1 the cache was "Successfully extracted" and all 27 C
+  # objects were recompiled anyway (29 minutes both times), because a fresh
+  # clone stamps every source newer than the restored objects. A cache that
+  # cannot help and can only be wrong is not kept. The durable answer for
+  # the emulated build stays (a): libredwg baked into a per-arch CI image.
+  cache: []
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
     - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
@@ -398,6 +959,9 @@ release:linux:arm64:
     - make build-programs           # SBCL arm64 images (no CCL on arm64)
     - make release-programs
     - make release-libraries
+    # Refuse to hand up an empty dist/: a lane that built nothing must
+    # not look like a lane that built everything (see the Makefile).
+    - make verify-release-artefacts
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-linux-arm64"
     paths: [dist/]
@@ -426,32 +990,47 @@ release:linux:arm32:
     # under qemu-user (tested on poseidon), so it stays off this lane.
     RELEASE_LISPS: "sbcl"
   rules:
-    - when: manual                # manual + never block: first qemu/sbcl try is an experiment
+    # Automatic on a release tag, like every other platform lane. It used
+    # to be manual-only, and that quietly cost two releases their arm32
+    # products: collect:release needs this job, and GitLab SKIPS a job
+    # whose need is an unplayed manual one. `optional: true' does NOT
+    # rescue that -- optional only covers a job that is ABSENT from the
+    # pipeline, and a manual job is present, merely unplayed. 1.8.43
+    # published nothing for this reason; 1.8.46 escaped it only because
+    # the job happened to be played by hand.
+    #
+    # Off a release tag it stays an opt-in experiment.
+    - *on-release-arm32
+    - *on-release-arm32-absent
+    - when: manual
       allow_failure: true
-  # Cache the libredwg cmake build dir (see arm64 lane) — the emulated armv7
-  # C compile is the slowest step; reusing objects across runs is the (b)
-  # time-saver until libredwg is baked into a per-arch CI image (a).
-  cache:
-    key:
-      prefix: libredwg-arm32-v1
-      files:
-        - .gitmodules
-        - clautolisp/drawing-dwg/build-libredwg.sh
-    paths:
-      - clautolisp/third-party/libredwg/build/
+  # No libredwg build cache: a release builds cold (see release:linux:arm64).
+  cache: []
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
     # CCL v1.13 32-bit ARM: the linuxarm tarball holds armcl/armcl.image at its
     # ROOT (no ccl/ prefix), so extract INTO /opt/ccl; `ccl` wrapper on PATH.
     - |
-      case " $RELEASE_LISPS " in *" ccl "*) ;; *) echo "ccl not in RELEASE_LISPS — skipping CCL install"; exit 0;; esac
-      curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 \
-           -o /tmp/linuxarm.tar.gz \
-           https://github.com/Clozure/ccl/releases/download/v1.13/linuxarm.tar.gz
-      mkdir -p /opt/ccl && tar -xzf /tmp/linuxarm.tar.gz -C /opt/ccl
-      printf '%s\n' '#!/bin/sh' 'exec /opt/ccl/armcl "$@"' > /usr/local/bin/ccl
-      chmod +x /usr/local/bin/ccl
-      ccl --no-init --eval '(progn (format t "CCL ~a on ~a~%" (lisp-implementation-version) (machine-type)) (ccl:quit))'
+      # Skip THIS STEP when ccl is not wanted -- never `exit 0'. GitLab
+      # concatenates before_script and script into one shell, so an exit
+      # here ends the whole job, and ends it GREEN: the runner uploads an
+      # empty dist/ and the release quietly loses this platform. That is
+      # exactly how release-1.8.46 shipped without its linux-arm32
+      # artefacts, with a successful 35-second job as the only trace.
+      case " $RELEASE_LISPS " in
+        *" ccl "*)
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 \
+               -o /tmp/linuxarm.tar.gz \
+               https://github.com/Clozure/ccl/releases/download/v1.13/linuxarm.tar.gz
+          mkdir -p /opt/ccl && tar -xzf /tmp/linuxarm.tar.gz -C /opt/ccl
+          printf '%s\n' '#!/bin/sh' 'exec /opt/ccl/armcl "$@"' > /usr/local/bin/ccl
+          chmod +x /usr/local/bin/ccl
+          ccl --no-init --eval '(progn (format t "CCL ~a on ~a~%" (lisp-implementation-version) (machine-type)) (ccl:quit))'
+          ;;
+        *)
+          echo "ccl not in RELEASE_LISPS — skipping CCL install"
+          ;;
+      esac
     - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
     - sbcl --non-interactive --load /tmp/ql.lisp --eval '(quicklisp-quickstart:install)'
   script:
@@ -459,6 +1038,9 @@ release:linux:arm32:
     - make build-programs           # loops RELEASE_LISPS -> build-sbcl + build-ccl
     - make release-programs
     - make release-libraries
+    # Refuse to hand up an empty dist/: a lane that built nothing must
+    # not look like a lane that built everything (see the Makefile).
+    - make verify-release-artefacts
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-linux-arm32"
     paths: [dist/]
@@ -467,6 +1049,11 @@ release:linux:arm32:
 release:darwin:arm64:
   extends: .release-common
   tags: [macos, arm64, shell]     # thalassa (intermittent): native macOS arm64 build
+  rules:
+    - *on-release-macos
+    - *on-release-macos-absent
+    - when: manual
+      allow_failure: true
   before_script:
     # The workstation provides the toolchain (MacPorts: sbcl, cmake; cc
     # via Xcode) and Quicklisp at ~/quicklisp/. SBCL-only on arm64.
@@ -476,31 +1063,102 @@ release:darwin:arm64:
     - make build-programs           # SBCL arm64 images
     - make release-programs
     - make release-libraries
+    # Refuse to hand up an empty dist/: a lane that built nothing must
+    # not look like a lane that built everything (see the Makefile).
+    - make verify-release-artefacts
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-darwin-arm64"
     paths: [dist/]
     expire_in: 30 days
 
-# Windows x86-64 — STUB for now (real packaging follows
-# documentation/windows-package-spec.md: SBCL/CCL images, libdwg.dll,
-# and a zip into the Windows install root). This job only confirms the
-# self-hosted Windows runner is reachable and reports its toolchain.
-# Shell executor = PowerShell. No submodules needed for the stub.
+# Windows x86-64 — real packaging (was a STUB until 2026-08-16).
+#
+# pjb built the Windows zips with `make release' from an MSYS2 bash with no
+# trouble, so this lane does the same rather than reimplementing packaging
+# in PowerShell.
+#
+# The PowerShell -> MSYS2 handoff follows run-forest-run, which pjb pointed
+# at as the place where it is normalised; scripts/avec-bash.ps1 and
+# scripts/environnement-windows.sh are adapted from it (see their headers).
+# The three findings that make the difference, each learned the hard way
+# there rather than here:
+#
+#   - MSYS2_PATH_TYPE=inherit, or the login profile REPLACES the Windows
+#     PATH and sbcl disappears;
+#   - MINGW64 before UCRT64, because build-libredwg.sh refuses UCRT64 and
+#     CLANG64 for the native codec (they import private UCRT API sets that
+#     native SBCL lacks). Picking "whatever is installed" is taking the
+#     observation for a criterion;
+#   - CC set on the BASH side in POSIX form: from PowerShell it arrives as
+#     "C:/msys64/..." and CMake truncates it at the colon, which is the
+#     real content of build-tool-paths-unquoted.issue.
+#
+# The artefacts are .zip here and .tar.bz2 everywhere else: the Makefile's
+# pack-release-artefact branches on the target OS (pjb, 2026-08-16). No
+# PowerShell packaging code exists, so there is nothing to keep in step.
+#
+# SHAKEDOWN PENDING: like the vendor probes before it, this needs its first
+# run on the real runner to settle. RELEASE_LISPS is sbcl-only until a CCL
+# build is confirmed on that box.
 release:windows:x86-64:
   extends: .release-common
   tags: [windows, amd64, shell]   # windows PC (intermittent): GUI bricscad/autocad host
+  # 100%-MANUAL FALLBACK. The PRIMARY release Windows build is GitHub Actions
+  # (.github/workflows/release.yml — the CAD-free always-available host,
+  # windows-build-host.issue / !129); collect:release pulls that artefact via
+  # `gh run download`. This self-hosted lane stays only as an on-demand native
+  # build/check, so it is NOT auto-scheduled on a tag and NOT a collect need
+  # (check-release-collect-needs.sh exempts it as collected out-of-band).
+  rules:
+    - when: manual
+      allow_failure: true
   variables:
-    GIT_SUBMODULE_STRATEGY: none
+    <<: *windows-clean
+    MSYS2_ROOT: 'C:\msys64'
+    RELEASE_LISPS: "sbcl"
   script:
-    - 'Write-Host "clautolisp $env:CI_COMMIT_TAG -- windows/x86-64 lane (STUB)"'
-    - 'Write-Host "Toolchain probe:"'
-    - 'foreach ($t in @("sbcl","cmake","git","cl","gcc")) { $c = Get-Command $t -ErrorAction SilentlyContinue; if ($c) { Write-Host ("  {0}: {1}" -f $t, $c.Source) } else { Write-Host ("  {0}: NOT FOUND" -f $t) } }'
-    - 'New-Item -ItemType Directory -Force -Path dist | Out-Null'
-    - '"clautolisp $env:CI_COMMIT_TAG windows/x86-64 packaging is a STUB. See documentation/windows-package-spec.md." | Set-Content -Encoding utf8 dist/windows-x86-64-STUB.txt'
-    - 'Get-Content dist/windows-x86-64-STUB.txt'
+    # scripts/avec-bash.ps1 owns the PowerShell -> MSYS2 handoff: it picks
+    # MSYS2's bash over Git's, sets MSYS2_PATH_TYPE=inherit so the login
+    # profile does not wipe the Windows PATH (sbcl lives there), and selects
+    # the subsystem with MINGW64 FIRST -- the DWG codec refuses UCRT64 and
+    # CLANG64. It deliberately does not set CC; the bash side does, because
+    # a CC crossing the PowerShell boundary comes out as "C:/..." and CMake
+    # truncates it at the colon.
+    - '& scripts/avec-bash.ps1 scripts/release-windows.sh'
+    # PowerShell does NOT fail a step on a native program's non-zero exit,
+    # so without this check the job would go green over a failed build and
+    # the release would come up two artefacts short.
+    - 'if ($LASTEXITCODE -ne 0) { throw "Windows release packaging failed ($LASTEXITCODE)" }'
+    - 'Get-ChildItem dist'
+  # UPLOAD THE TWO ZIPS, NOT THE WHOLE dist/, because the whole dist/
+  # cannot be uploaded from this machine at all.
+  #
+  # On the release-1.9.1 tag this job built correctly, passed every
+  # artefact check, and then died three times on
+  #
+  #   dist/: found 362 matching artifact files and directories
+  #   ERROR: Uploading artifacts as "archive" to coordinator... error
+  #   WARNING: Retrying...  context=artifacts-uploader  error=invalid argument
+  #
+  # A full retry from scratch (job 16032976102, 20 minutes of cold build)
+  # reproduced it exactly, so it is DETERMINISTIC, not a flake -- which is
+  # what rules out simply retrying until green.
+  #
+  # Two zips are all `collect:release' takes from this lane anyway; the
+  # other 360 entries are staging left in dist/ by the packaging step and
+  # have no consumer. Narrowing removes whatever the uploader objects to
+  # -- the count, or a path in that staging tree (Windows MAX_PATH is a
+  # standing suspect) -- without needing to know which, and it is the
+  # cheapest of the four options in
+  # windows-artifact-upload-fails-on-release.issue.
+  #
+  # If it still fails, the failure has been narrowed to two files, which
+  # is itself the next piece of evidence.
   artifacts:
-    name: "clautolisp-$CI_COMMIT_TAG-windows-x86-64-stub"
-    paths: [dist/]
+    name: "clautolisp-$CI_COMMIT_TAG-windows-x86-64"
+    paths:
+      - dist/clautolisp-*-binaries-windows-x86-64.zip
+      - dist/clautolisp-*-libraries-windows-x86-64.zip
     expire_in: 30 days
 
 # --- platform verification: the vl-registry backends (vl-registry.issue) ---
@@ -518,172 +1176,255 @@ release:windows:x86-64:
 # process spawning) gets validated on the real OS. They use the machine's
 # own sbcl + ~/quicklisp (both runners build releases, so the toolchain is
 # there). allow_failure: intermittent laptops must never block a pipeline.
-.platform-test-common:
-  stage: test
+# --- Runner-availability gating (detect + child pipeline) ------------------
+# The macOS/Windows runners are intermittent laptops. Native jobs can't be
+# gated by plain rules: (evaluated at pipeline creation, blind to the runtime
+# runner state), nor by "playing" manual jobs from an orchestrator (a manual
+# job stays `created`, unplayable, until its stage/needs are ready). So:
+#   detect:runners  — on the always-on Linux runner, records which native
+#                     runners are ONLINE into a dotenv;
+#   native:pipeline — triggers the CHILD pipeline .gitlab/native.yml, passing
+#                     those variables; the child's native jobs' rules: are
+#                     evaluated at the CHILD's creation (variables now KNOWN)
+#                     => on_success when the runner is online, `manual`
+#                     (non-blocking fallback) when it is offline.
+# See runner-availability-gating.issue.
+#
+# FAIL-SAFE: no RUNNER_STATUS_TOKEN (api scope) or any API error => offline =>
+# the child's native jobs are manual (today's behaviour). Never a false online.
+# --- nightly hygiene ---------------------------------------------------
+#
+# The native child pipeline never completes on its own: its jobs are
+# `manual' whenever their runner is offline, so the child stays ACTIVE and
+# its jobs keep counting against the project's jobs-in-active-pipelines
+# cap. One immortal pipeline per push. That cap was reached on 2026-08-19
+# -- 17 children still `running', the oldest seven hours old -- and no new
+# child could be created, which turned every pipeline in the project red
+# with zero failed jobs (ci-native-child-pipeline-creation-fails.issue).
+#
+# `default: interruptible: true' in .gitlab/native.yml lets GitLab
+# auto-cancel a child once a NEWER pipeline supersedes it. That covers a
+# branch pushed repeatedly, and only that: a ref pushed once and then
+# abandoned -- a merge request merged from its last push, the normal case
+# -- has nothing to supersede it. This drains those.
+#
+# It is a broom, not a fix, and it is scheduled rather than reactive for
+# exactly that reason. SWEEP_MAX_AGE_HOURS tunes it without touching code.
+# Renamed from sweep:stale-child-pipelines: it no longer sweeps only children.
+# A stuck PARENT holds jobs against the same cap, and one of them had held
+# fifteen since 2026-08-22 while nothing looked at it
+# (ci-job-activity-cap-refuses-master-pipelines).
+sweep:stale-pipelines:
+  stage: .pre
+  tags: [linux, amd64, docker]
+  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    # At 03:00Z this clears everything from before 15:00Z the day before,
+    # leaving the previous evening's children still clickable in the
+    # morning -- the manual jobs exist to be played when a laptop comes
+    # back online, and a sweep that removed them the same night would take
+    # that away.
+    SWEEP_MAX_AGE_HOURS: "12"
+    # Parents have no "nobody will play this" signal, so they go by age alone
+    # and the threshold is generous: a master pipeline waiting on the serial
+    # Windows runner legitimately stays open for hours. Five weeks is not that.
+    SWEEP_MAX_PARENT_AGE_HOURS: "48"
   rules:
-    - *on-release-mandatory
-    # automatic on master pushes (allow_failure: the runners are
-    # intermittent laptops and must never block); manual elsewhere
+    # The nightly schedule runs this and nothing else: every other job
+    # carries *not-on-schedule.
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: on_success
+    # AND on every master pipeline. Nightly-only was not enough: the cap was
+    # crossed at 21:47Z by four children of merge requests merged minutes
+    # earlier, and the next sweep was due at 03:00Z -- five hours in which
+    # every master pipeline would have been REFUSED, which is how two merges
+    # came to land with no CI at all. The job takes two seconds and is
+    # idempotent, and it never cancels its own pipeline or its own child
+    # (protected explicitly, and tested).
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       when: on_success
       allow_failure: true
+    # And by hand, from any pipeline, for the day the bucket fills early.
     - when: manual
       allow_failure: true
+  script:
+    - python3 scripts/cancel-stale-pipelines.py
+
+detect:runners:
+  stage: .pre
+  tags: [linux, amd64, docker]
   variables:
     GIT_SUBMODULE_STRATEGY: none
-
-test:clautolisp:macos:
-  extends: .platform-test-common
-  tags: [macos, arm64, shell]
-  script:
-    - make -C clautolisp test-sbcl
-    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
-
-test:clautolisp:windows:
-  extends: .platform-test-common
-  tags: [windows, amd64, shell]
-  script:
-    - make -C clautolisp test-sbcl
-    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
-
-.verify-registry-common:
-  stage: test
   rules:
-    - *on-release-mandatory
-    - when: manual
-      allow_failure: true
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
-
-verify:vl-registry:macos:
-  extends: .verify-registry-common
-  tags: [macos, arm64, shell]
+    - *not-on-schedule
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - when: never
   script:
-    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
-
-verify:vl-registry:windows:
-  extends: .verify-registry-common
-  tags: [windows, amd64, shell]
-  script:
-    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
-
-# --- vendor verification: alfe probes on real BricsCAD / AutoCAD ------------
-#
-# The Windows runner has BricsCAD and AutoCAD installed and runs in an open
-# desktop session, so alfe can drive them. These MANUAL jobs run the portable
-# entity / drawing-data / selection conformance probes
-# (autolisp-front-end/tests/scenarios/entities/*probe.lsp) — byte-identical to
-# the ones clautolisp passes headlessly — against each real product, capture
-# every probe's output as an artifact (dist/vendor-probes/<backend>/), and fail
-# on any probe FAIL or unreachable backend. This is the automated form of the
-# entity-mutation / drawing-data-structures / selection vendor-verification
-# tail. Manual + allow_failure: launching GUI CAD is heavy and the runner is
-# intermittent; trigger on demand, download the artifacts, feed FAILs back.
-# --- shared alfe build (artifacts + needs) --------------------------
-#
-# Build alfe ONCE per pipeline on each intermittent runner and share the binary
-# with the (manual) vendor-probe jobs via `needs:`, instead of rebuilding it in
-# every probe job's before_script. clautolisp/alfe change often, so we still
-# build from source (rather than the runner's installed copy) -- bringing our
-# own is more reproducible. Manual because the windows/macos runners are
-# intermittent: trigger the build, then the probes that need it.
-.alfe-build:
-  stage: build
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
-  script:
-    - make -C autolisp-front-end build-alfe-sbcl
+    - python3 scripts/ci-detect-runners.py runners.env
+    # Which CAD probe families this change wrote or modified (pjb, 2026-09-28:
+    # run the probes only then -- their results are committed). The child
+    # cannot ask `changes:' itself: in a child pipeline it is always true.
+    - python3 scripts/ci-detect-probe-changes.py emit runners.env
+    - cat runners.env
   artifacts:
-    name: "alfe-$CI_COMMIT_SHORT_SHA"
-    paths: [autolisp-front-end/tools/alfe/bin/]
-    expire_in: 1 day
-  rules:
-    - *on-release-mandatory
-    - when: manual
-      allow_failure: true
+    reports:
+      dotenv: runners.env
 
-build:alfe:windows:
-  extends: .alfe-build
-  tags: [windows, amd64, shell]
-
-build:alfe:macos:
-  extends: .alfe-build
-  tags: [macos, arm64, shell]        # thalassa (intermittent)
-
-.vendor-probe-common:
+native:pipeline:
   stage: test
-  tags: [windows, amd64, shell]
+  # allow_failure: a bridge that CANNOT create its child must never hold a
+  # release (or any pipeline) hostage. Native tests are best-effort — the
+  # child's own jobs are already allow_failure — but the BRIDGE itself could
+  # still go red (downstream_pipeline_creation_failed) and fail the parent,
+  # which is exactly how ci-native-child-pipeline-creation-fails blocked
+  # master and releases (the active-jobs cap; a namespace over the storage
+  # quota; any future reason). Failing softly here lets the `release' stage
+  # proceed regardless of WHY the child could not be created. The child still
+  # runs independently when it can; this only stops its absence from being
+  # fatal. See ci-native-child-pipeline-creation-fails (durable fix #1).
+  allow_failure: true
+  needs:
+    - job: detect:runners
+      artifacts: true
   variables:
-    GIT_SUBMODULE_STRATEGY: none
-    # The runner's own drawing -- a real CAD-made file the CADs actually open.
-    # (A libredwg-WRITTEN empty.dwg is NOT CAD-valid: BricsCAD rejects it with
-    # "AcDbDictionary can't be cast to AcDbLayerTable", so we can't ship a
-    # generated one.) The probes self-clean at seed time (clean-slate), so this
-    # drawing's stray content can't poison the counts.
-    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
-    # 1 -> pass --debug --verbose --keep-workdir and archive each kept
-    # protocol workdir under dist/vendor-probes/<backend>/<probe>-workdir/.
-    PROBE_KEEP_WORKDIR: '1'
+    MACOS_RUNNER: "$MACOS_RUNNER"
+    WINDOWS_RUNNER: "$WINDOWS_RUNNER"
+    ARM64_RUNNER: "$ARM64_RUNNER"
+    PROBES_CHANGED: "$PROBES_CHANGED"
+    # The arm64 lanes in .gitlab/native.yml pick native-vs-emulated on
+    # ARM64_RUNNER and pull the same digest-pinned arm64 base as the parent's
+    # release:linux:arm64 — forwarded here rather than duplicated, since a child
+    # pipeline inherits neither the parent's anchors nor its top-level variables.
+    ARM64_BASE: "$ARM64_BASE"
   rules:
-    - *on-release-mandatory
-    - when: manual
-      allow_failure: true
-  # alfe comes from the build:alfe:* artifact via `needs:` on each job below --
-  # no per-probe rebuild.
-  artifacts:
-    name: "vendor-probes-$CI_COMMIT_SHORT_SHA"
-    when: always
-    paths: [dist/vendor-probes/]
-    expire_in: 30 days
+    - *not-on-schedule
+    # A TAG and MASTER always spawn the child: those are the refs whose results
+    # anybody relies on, and `changes:' against a merge commit compares with the
+    # first parent, which is not a question with a useful answer.
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    # A MERGE REQUEST spawns it only when it changes something the native lanes
+    # could conceivably exercise (pjb, 2026-09-27: "implement it, use changes:
+    # on native:pipeline").
+    #
+    # WHY: each child is ~21 Windows/macOS jobs that queue behind a serial CAD
+    # runner. Eight merge requests in three hours -- six of them
+    # documentation-only -- put 172 jobs in flight and GitLab then REFUSED a new
+    # pipeline outright: "The pipeline job activity limit was exceeded", zero
+    # jobs, which reads like an ordinary red while the work simply never ran
+    # (ci-job-activity-cap-refuses-master-pipelines). A docs-only change
+    # creating twenty-one CAD jobs is waste as well as pressure.
+    #
+    # THE RISK, and what guards it. GitLab has no "only these paths changed"
+    # primitive, so this has to be written as "run when these changed" -- and a
+    # pattern missing from the list SILENTLY SKIPS the native lanes on a real
+    # code change. This repository has been bitten twice by that shape (see the
+    # release:* comment about a release "quietly missing two platforms WHILE
+    # BOTH MACHINES WERE ONLINE ... Worse than the blocking it replaced, and
+    # invisible"). So the list is DELIBERATELY GENEROUS -- overlap costs one
+    # spurious child, omission costs a silent skip -- and
+    # `make check-native-pipeline-changes' fails when any tracked path matches
+    # neither this list nor the explicitly-declared irrelevant one. A new file
+    # type therefore has to be classified on purpose; it cannot slip through.
+    # RE-LANDED in the SHORT list form (clautolisp 2.2.142). The extended
+    # `changes: paths:' form that stood here was REVERTED 2026-09-27 because it
+    # SILENTLY SKIPPED the bridge on a real code change: MR !321 (sha aa0d83a0,
+    # a genuine merge_request_event pipeline) changed scripts/*.py -- which
+    # `**/*.py' covers -- yet created detect:runners and NO native:pipeline.
+    # The one difference from the form that demonstrably works elsewhere in
+    # this file (build:clautolisp-ci-image, which uses the short list) was the
+    # `paths:' sub-key. That was a hypothesis, not a finding, and this rule
+    # decides whether Windows and macOS get tested at all, so it was proven by
+    # experiment before re-landing. Two isolated MRs targeting a base branch
+    # that already carried THIS short-form gate, so `changes:' saw only the
+    # one-file diff: a .py-only MR (!350, pipeline 2889668504) CREATED the
+    # native:pipeline bridge -- the exact case that silently skipped under
+    # `paths:' -- and a .org-only MR (!351, pipeline 2889673744) created NO
+    # bridge. Positive and negative both correct; the `paths:' sub-key was it.
+    #
+    # THE RISK this guards. GitLab has no "only these paths changed" primitive,
+    # so the gate must be written as "run when these changed", and a pattern
+    # missing from the list SILENTLY SKIPS the native lanes on a real code
+    # change (this repository has been bitten by that shape -- see the release:*
+    # comment about a release "quietly missing two platforms WHILE BOTH MACHINES
+    # WERE ONLINE"). So the list is DELIBERATELY GENEROUS -- overlap costs one
+    # spurious child, omission costs a silent skip -- and
+    # `make check-native-pipeline-changes' (scripts/check-native-pipeline-
+    # changes.py) fails when any tracked path matches neither this list nor an
+    # explicitly-declared irrelevant one. A new file type therefore has to be
+    # classified on purpose; it cannot slip through. See
+    # ci-job-activity-cap-refuses-master-pipelines.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        # Lisp, and the systems that build it
+        - "**/*.lisp"
+        - "**/*.asd"
+        - "**/*.lsp"
+        - "**/*.el"
+        - "**/*.sexp"
+        # native code and its build
+        - "**/*.c"
+        - "**/*.h"
+        - "**/*.cpp"
+        - "**/*.hpp"
+        - "**/CMakeLists.txt"
+        - "**/Makefile"
+        - "**/*.mk"
+        # drivers and scripts the lanes actually run
+        - "**/*.sh"
+        - "**/*.ps1"
+        - "**/*.cmd"
+        - "**/*.bat"
+        - "**/*.vbs"
+        - "**/*.py"
+        - "**/*.scr"
+        # CI definitions, configuration and data the lanes read
+        - "**/*.yml"
+        - "**/*.yaml"
+        - "**/*.json"
+        - "**/*.cfg"
+        - "**/*.conf"
+        - "**/*.txt"
+        - "**/*.csv"
+        - "**/*.dcl"
+        # drawing fixtures
+        - "**/*.dwg"
+        - "**/*.dwt"
+        - "**/*.dxf"
+        # the CI image the lanes run in, and every tools/ tree -- the latter
+        # because several of its programs are EXTENSIONLESS executables
+        # (run-file-compat, read-all-autolisp, sanity-check) that no extension
+        # pattern would ever catch. check-native-pipeline-changes found all four.
+        - "**/Dockerfile"
+        - "**/tools/**"
+        # the vendored submodule pointer, and the submodule list itself
+        - ".gitmodules"
+        - "clautolisp/third-party/**"
+    - when: never
+  trigger:
+    include: '.gitlab/native.yml'
+    # NB: no `strategy: depend` — when the runner is offline the child's jobs
+    # are `manual` and the child pipeline never "completes", so depending on it
+    # would hang this parent job (re-creating the pile-up we're avoiding). The
+    # child runs independently; its jobs are allow_failure anyway.
 
-vendor:probes:bricscad:
-  extends: .vendor-probe-common
-  needs: [{ job: "build:alfe:windows", artifacts: true }]
-  script:
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
+# NOTE: build:alfe:{macos,windows} moved to the child pipeline
+# .gitlab/native.yml so they are runner-availability gated (on_success when
+# the runner is online — a native "does alfe build on this OS" check). The
+# benchmark:*:cad jobs below no longer `needs:` them; they self-build alfe.
 
-vendor:probes:autocad:
-  extends: .vendor-probe-common
-  needs: [{ job: "build:alfe:windows", artifacts: true }]
-  script:
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
-
-# macOS twin of the BricsCAD vendor probe, driven by the bash script
-# (run-vendor-probes.sh) rather than PowerShell. BricsCAD batch (bricscad -B
-# run.scr) is the same mechanism as Windows; macOS BricsCAD is typically a
-# clean install (no vertical-app auto-load), so no profile is forced -- set
-# $BRICSCAD_PROFILE_CLEAN if one is needed. Lets us exercise the CAD path while
-# the Windows box is offline.
-vendor:probes:bricscad:macos:
-  extends: .vendor-probe-common
-  tags: [macos, arm64, shell]          # thalassa (intermittent)
-  needs: [{ job: "build:alfe:macos", artifacts: true }]
-  script:
-    - bash scripts/run-vendor-probes.sh --backend bricscad --keep-workdir "$PROBE_KEEP_WORKDIR"
-
-# ============================================================================
-# Encoding experiment: run encoding-probe.lsp under a MATRIX of encoding
-# knobs (Unix LANG/LC_*; Windows chcp code page) on each CAD backend, to
-# DISCOVER which knob changes the exhibited encoding. Fills the
-# encoding-situations §7 defaults table; the result is the
-# dist/encoding/<backend>-<os>.txt report artifact.
-#
-# Runs SYSTEMATICALLY (for now, per pbourguignon): rules `on_success` rather
-# than `manual`, so no one has to trigger them by hand while we gather the
-# data. Each job is SELF-CONTAINED -- it builds alfe in-script rather than
-# depending on the manual build:alfe:* jobs (those stay manual, so a `needs:`
-# on them would make the encoding job "skipped"). `allow_failure` so an
-# offline/misbehaving CAD runner never reddens the pipeline, and
-# `interruptible` so a newer pipeline cancels older still-pending runs on the
-# intermittent macOS/Windows boxes instead of letting them pile up.
-# ============================================================================
 .encoding-experiment:
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
   interruptible: true
+  # MANUAL: a dev-time exploratory experiment (reason-1), not a gate.
   rules:
-    - when: on_success
+    - *not-on-schedule
+    - when: manual
       allow_failure: true
   artifacts:
     name: "encoding-$CI_COMMIT_SHORT_SHA"
@@ -699,43 +1440,86 @@ encoding:experiment:clautolisp:linux:
     - make -C autolisp-front-end build-alfe-sbcl
     - bash scripts/run-encoding-experiment.sh --backend clautolisp
 
-encoding:experiment:bricscad:macos:
-  extends: .encoding-experiment
-  tags: [macos, arm64, shell]
-  script:
-    - make -C autolisp-front-end build-alfe-sbcl
-    - bash scripts/run-encoding-experiment.sh --backend bricscad
-
-encoding:experiment:bricscad:windows:
-  extends: .encoding-experiment
-  tags: [windows, amd64, shell]
-  script:
-    - make -C autolisp-front-end build-alfe-sbcl
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend bricscad
-
-encoding:experiment:autocad:windows:
-  extends: .encoding-experiment
-  tags: [windows, amd64, shell]
+.pathname-probe:
+  stage: test
   variables:
-    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
+    GIT_SUBMODULE_STRATEGY: none
+  interruptible: true
+  # MANUAL: the "." / ".." resolution was captured (see
+  # cad-path-dotdot-resolution.issue); keep the jobs available to re-run
+  # on demand (a runner is up) without firing on every pipeline.
+  rules:
+    - when: manual
+      allow_failure: true
+  artifacts:
+    name: "pathname-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/pathname/]
+    expire_in: 30 days
+
+pathname:probe:clautolisp:linux:
+  # MANUAL: a reason-1 probe (on-demand), like the benchmarks/CAD lanes. This
+  # per-job rules override otherwise beats .pathname-probe's manual default.
+  rules:
+    - *not-on-schedule
+    - when: manual
+      allow_failure: true
+  extends: .pathname-probe
+  tags: [linux, amd64, docker]
+  image: $CLAUTOLISP_CI_LATEST
   script:
     - make -C autolisp-front-end build-alfe-sbcl
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad -Dwg $env:PROBE_DWG
+    - bash scripts/run-pathname-probe.sh --backend clautolisp
 
-# ============================================================================
-# Benchmarks: run the AutoLISP suite on each target and publish a comparison
-# table (GitLab Pages). Manual per target (the macOS/Windows runners are
-# intermittent) -- run the ones whose runner is up, then `pages` aggregates
-# whatever produced a dist/bench/<label>.txt. BENCH_SECONDS flows to the
-# benchmark Makefile via the environment (its `?=` picks it up).
-# ============================================================================
+intersectwith:probe:clautolisp:linux:
+  # MANUAL: the clautolisp column of the IntersectWith probe (the CAD columns
+  # are the intersectwith:probe:* jobs of the native child), to diff against
+  # them -- cador-intersectwith-missing.issue.
+  stage: test
+  interruptible: true
+  rules:
+    - *not-on-schedule
+    - when: manual
+      allow_failure: true
+  tags: [linux, amd64, docker]
+  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-intersectwith-probe.sh --backend clautolisp
+  artifacts:
+    name: "intersectwith-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/intersectwith/]
+    expire_in: 30 days
+
 .benchmark:
   stage: benchmark
+  # A benchmark may not hold a runner for the project default (120 min).
+  # These jobs measure a warm build and finish in about 90 seconds
+  # (bricscad:windows 1m37, clautolisp:windows 1m16, bricscad:macos 1m00),
+  # so 15 minutes is an order of magnitude of headroom and still turns a
+  # hung CAD into a ten-minute failure instead of an unbounded one.
+  # allow_failure is already true here: a benchmark is a measurement, never
+  # a release product, and it must not be able to cost one.
+  #
+  # This cap was written (1.8.51) while `benchmark' still ran IN FRONT OF
+  # `release', where a hang gated every release lane -- release-1.8.47 was
+  # cancelled by hand, release-1.8.49 waited the full two hours. The stage
+  # now runs after `collect' (see the stages: list), so that particular
+  # damage is gone by construction. The timeout stays: it is what keeps a
+  # wedged CAD from holding the concurrency-1 Windows runner against every
+  # OTHER pipeline, which reordering does nothing about.
+  timeout: 15 minutes
   variables:
     GIT_SUBMODULE_STRATEGY: none
     BENCH_SECONDS: '3.0'
+  # MANUAL: benchmarks/probes are reason-1 jobs (one-shot, on-demand); a release
+  # must not depend on a benchmark having run. Covers benchmark:* and, via
+  # .benchmark-cad, the CAD archival lanes.
   rules:
-    - *on-release-benchmark
+    - *not-on-schedule
     - when: manual
       allow_failure: true
   artifacts:
@@ -765,15 +1549,25 @@ benchmark:clautolisp:macos:
 benchmark:clautolisp:windows:
   extends: .benchmark
   tags: [windows, amd64, shell]
+  variables:
+    <<: *windows-clean
   script:
     - make build-programs
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
-    # Merge all streams (*>&1) then write UTF-8. PowerShell's bare `*>`
-    # redirection defaults to UTF-16LE, which the Pages report parser used
-    # to read as UTF-8 garbage (empty column); the parser now sniffs the
-    # BOM, but UTF-8 keeps the raw artifact human-readable too.
-    - make -C autolisp-benchmark run-clautolisp-sbcl *>&1 | Out-File -Encoding utf8 dist/bench/clautolisp-windows.txt
-    - Get-Content dist/bench/clautolisp-windows.txt
+    # Merge all streams (*>&1), show them as they arrive, and keep UTF-8.
+    #
+    # Tee-Object -Variable, not Out-File: sending the run's output straight
+    # to a file makes the job trace silent for its whole duration, so a job
+    # that hangs and a job that works produce the same log -- and if it
+    # never finishes, the output is never shown at all. That is what made
+    # benchmark:autocad:windows undiagnosable from outside.
+    # Tee-Object -FilePath would restore the live trace but writes UTF-16LE
+    # under PowerShell 5.1; PowerShell's bare `*>' does the same, which the
+    # Pages report parser used to read as UTF-8 garbage (empty column). It
+    # sniffs the BOM now, but UTF-8 keeps the raw artifact readable, so the
+    # output is captured in a variable and written explicitly.
+    - make -C autolisp-benchmark run-clautolisp-sbcl *>&1 | Tee-Object -Variable benchOut
+    - $benchOut | Out-File -Encoding utf8 dist/bench/clautolisp-windows.txt
 
 # --- CAD: alfe drives the real CAD to run the same suite ---
 # SHAKEDOWN PENDING: like the vendor probes, the CAD path needs a first run on
@@ -787,31 +1581,38 @@ benchmark:clautolisp:windows:
 
 benchmark:bricscad:macos:
   extends: .benchmark-cad
-  tags: [macos, arm64, shell]
-  needs: [{ job: "build:alfe:macos", artifacts: true }]
+  tags: [macos, arm64, shell, cad]
   script:
+    - make -C autolisp-front-end build-alfe-sbcl
     - mkdir -p dist/bench
     - make -C autolisp-benchmark run-bricscad-macos 2>&1 | tee dist/bench/bricscad-macos.txt
 
 benchmark:bricscad:windows:
   extends: .benchmark-cad
-  tags: [windows, amd64, shell]
-  needs: [{ job: "build:alfe:windows", artifacts: true }]
+  tags: [windows, amd64, shell, cad]
   variables:
+    <<: *windows-clean
     AUTOLISP_BRICSCAD_PROFILE: '<<Profil sans nom>>'
   script:
+    - make -C autolisp-front-end build-alfe-sbcl
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
-    - make -C autolisp-benchmark run-bricscad-windows *>&1 | Out-File -Encoding utf8 dist/bench/bricscad-windows.txt
-    - Get-Content dist/bench/bricscad-windows.txt
+    # Live trace + UTF-8 artifact -- see benchmark:clautolisp:windows.
+    - make -C autolisp-benchmark run-bricscad-windows *>&1 | Tee-Object -Variable benchOut
+    - $benchOut | Out-File -Encoding utf8 dist/bench/bricscad-windows.txt
 
 benchmark:autocad:windows:
   extends: .benchmark-cad
-  tags: [windows, amd64, shell]
-  needs: [{ job: "build:alfe:windows", artifacts: true }]
+  tags: [windows, amd64, shell, cad]
+  variables:
+    <<: *windows-clean
   script:
+    - make -C autolisp-front-end build-alfe-sbcl
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
-    - make -C autolisp-benchmark run-autocad-windows *>&1 | Out-File -Encoding utf8 dist/bench/autocad-windows.txt
-    - Get-Content dist/bench/autocad-windows.txt
+    # Live trace + UTF-8 artifact -- see benchmark:clautolisp:windows. This
+    # is the job whose silence hid a two-hour hang twice; with the tee, the
+    # last line it printed before stalling is visible in the trace.
+    - make -C autolisp-benchmark run-autocad-windows *>&1 | Tee-Object -Variable benchOut
+    - $benchOut | Out-File -Encoding utf8 dist/bench/autocad-windows.txt
 
 # --- publish: aggregate whatever ran into one table on GitLab Pages ---
 pages:
@@ -828,6 +1629,7 @@ pages:
     - { job: "benchmark:bricscad:windows",   artifacts: true, optional: true }
     - { job: "benchmark:autocad:windows",    artifacts: true, optional: true }
   rules:
+    - *not-on-schedule
     - *on-release-mandatory
     - when: manual
       allow_failure: true
@@ -853,25 +1655,129 @@ collect:release:
   image: $CLAUTOLISP_CI_LATEST
   variables:
     GIT_SUBMODULE_STRATEGY: none
+    # GitHub handoff for the Windows set (windows-build-host.issue / !129).
+    # GH_REPO/GH_WORKFLOW are plain; GH_TOKEN is a masked CI/CD variable with
+    # actions:read on the repo.
+    GH_REPO: "ogamita/clautolisp"
+    GH_WORKFLOW: "release.yml"
+    # The release mirror (scripts/mirror-release-to-poseidon.sh) sends as
+    # release-ogamita, the poseidon account owning the ogamita web tree, with
+    # the runners' deploy key (DEPLOY_SSH_PRIVATE_KEY, protected + masked, so
+    # present on release-* tags only) and DEPLOY_KNOWN_HOSTS -- the same two
+    # variables as deploy:documentation (documentation/poseidon-deploy.md).
+    DEPLOY_HOST: poseidon.informatimago.com
+    DEPLOY_USER: release-ogamita
+  # EVERY release:* job belongs here: one omitted costs a full build whose
+  # artefacts are then discarded in silence (which is what happened to
+  # release:linux:arm32). `needs:' cannot be a glob, so
+  # scripts/check-release-collect-needs.sh makes the omission fail the
+  # pipeline instead — add a platform, and it tells you to wire it here.
+  # The intermittent platforms are `optional': their job is SKIPPED on a
+  # release tag when the runner is offline (see .on-release-windows /
+  # .on-release-macos), and a non-optional `needs' on a skipped job would
+  # fail this one -- turning "the laptop was off" into "the release
+  # produced nothing at all", which is precisely the outcome pjb ruled
+  # against: a release without a runner ships without that runner's
+  # products.
+  #
+  # collect-artefacts prints which targets actually reached it, so a short
+  # set is visible in the log instead of being silently smaller.
   needs:
     - { job: "release:linux:x86-64", artifacts: true }
     - { job: "release:linux:arm64",  artifacts: true }
-    - { job: "release:darwin:arm64", artifacts: true }
-    - { job: "release:windows:x86-64", artifacts: true }
+    # arm32 is OPTIONAL, and since 1.9.0 that is the NORMAL case rather
+    # than a switched-off one: the lane is off by default (it is blocked,
+    # see .on-release-arm32), so it is simply ABSENT from a release
+    # pipeline, and `optional' is what lets this job proceed without it.
+    #
+    # `optional' is NOT what makes a manual job safe to need -- that was
+    # my error, and it cost two releases. GitLab SKIPS a job whose need is
+    # an unplayed manual job, optional or not: optional covers ABSENT, not
+    # PRESENT-BUT-UNPLAYED. release-1.8.43 published nothing that way, and
+    # release-1.8.47 was skipped again until the arm32 job was played by
+    # hand. Every job needed here is therefore automatic on a release tag;
+    # check-release-collect-needs.sh enforces exactly that.
+    - { job: "release:linux:arm32",  artifacts: true, optional: true }
+    - { job: "release:darwin:arm64", artifacts: true, optional: true }
+    # release:windows:x86-64 is intentionally NOT here: the release Windows set
+    # is built on GitHub Actions and fetched below with `gh run download`
+    # (windows-build-host.issue / !129). check-release-collect-needs.sh exempts
+    # it as collected out-of-band; the GitLab job is a manual PC fallback only.
     - { job: "release:documentation", artifacts: true }
   rules:
+    - *not-on-schedule
     - *on-release-mandatory
     - when: manual
       allow_failure: true
   before_script:
     # tar/make are in the CI image; install bzip2 if the image lacks it
     # (mirrors release:linux:x86-64's package-guard).
-    - pkgs=""; for t in bzip2 tar make; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    # zip/unzip are needed for the Windows .zip artefacts and the -all.zip
+    # (pjb, 2026-08-16). collect-artefacts ERRORS rather than skipping when
+    # they are missing, so a release cannot quietly ship without them.
+    - pkgs=""; for t in bzip2 tar make zip unzip curl rsync ssh python3; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; pkgs=$(echo "$pkgs" | sed 's/\bssh\b/openssh-client/'); [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    # gh reads $GH_TOKEN from the environment; install it self-contained if the
+    # CI image lacks it (TODO: bake gh into the image).
+    - |
+      if ! command -v gh >/dev/null 2>&1; then
+        GH_VER=2.62.0
+        curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" -o /tmp/gh.tgz
+        tar -xzf /tmp/gh.tgz -C /tmp
+        install -m0755 "/tmp/gh_${GH_VER}_linux_amd64/bin/gh" /usr/local/bin/gh
+      fi
+      gh --version | head -1
   script:
+    # Pull the Windows release set GitHub Actions built for this tag. Best-effort
+    # (windows-build-host.issue / !129): if GitHub has not finished (mirror lag)
+    # or GH_TOKEN is unset, the set still assembles WITHOUT Windows and the log
+    # says so — re-run this job later to fold it in. verify-release-artefacts /
+    # check-release-artefact-set flag a short set downstream.
+    - |
+      if command -v gh >/dev/null 2>&1 && [ -n "${GH_TOKEN:-}" ]; then
+        tag="${CI_COMMIT_TAG:-}"
+        rid="$(gh run list -R "$GH_REPO" --workflow "$GH_WORKFLOW" --branch "$tag" \
+                 --json databaseId,status --jq \
+                 'map(select(.status=="completed"))|.[0].databaseId' 2>/dev/null || true)"
+        if [ -n "$rid" ]; then
+          gh run download "$rid" -R "$GH_REPO" -p 'clautolisp-*-windows-*' -D dist \
+            && echo "fetched Windows set:" && find dist -name 'clautolisp-*-windows-*.zip' \
+            || echo "WARN: gh run download failed; assembling WITHOUT the Windows set"
+        else
+          echo "WARN: no completed GitHub run for $tag yet; assembling WITHOUT the Windows set"
+        fi
+      else
+        echo "WARN: gh unavailable or GH_TOKEN unset; assembling WITHOUT the Windows set"
+      fi
+    # gh nests each artifact under dist/<name>/ — flatten the win zips into dist/.
+    - find dist -mindepth 2 -name 'clautolisp-*-windows-*.zip' -exec cp {} dist/ \; 2>/dev/null || true
     - make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
+    # Mirror the set to the poseidon download area HERE, not through a GitLab
+    # artefact: the set (~1 GB for release-2.3.0) is above gitlab.com's
+    # artefact limit -- the upload answered 413 and nothing could be published
+    # by the documented procedure (collect-release-artefact-exceeds-gitlab-
+    # size-limit, option 3). Release tags only: off a tag the job just
+    # assembles. A failed mirror fails the job: a release is not published
+    # until its archives are downloadable.
+    - |
+      if [ -n "${CI_COMMIT_TAG:-}" ]; then
+        bash scripts/mirror-release-to-poseidon.sh "${CI_COMMIT_TAG#release-}" dist/combined
+      else
+        echo "not a release tag: assembled, not mirrored"
+      fi
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-release"
-    paths: [dist/combined/]
+    # Only what is small and read later: the manifest (make-gitlab-release.py
+    # reads it to list the release's assets) and the release page. The
+    # archives themselves are on poseidon.
+    paths:
+      - dist/combined/manifest-release-assets.txt
+      - dist/combined/index.html
+    # FINITE: the published release links point at the POSEIDON mirror
+    # (durable, external), which this job wrote; make-gitlab-release.py
+    # defaults to --links poseidon. The durability invariant -- that the
+    # published links default to poseidon -- is enforced by
+    # check-release-lane-integrity.py check (3). 30 days covers publishing
+    # the release after the tag.
     expire_in: 30 days
 
 # --- deploy: publish the spec HTML manual to the poseidon web site -----
@@ -917,11 +1823,12 @@ deploy:documentation:
   variables:
     GIT_STRATEGY: none                # nothing from the repo is needed — only the artefact
     DEPLOY_HOST: poseidon.informatimago.com
-    DEPLOY_USER: clautolisp-deploy
+    DEPLOY_USER: release-ogamita
     DEPLOY_URL: http://poseidon.informatimago.com/ogamita/autolisp-spec/
   needs:
     - { job: "release:documentation", artifacts: true }
   rules:
+    - *not-on-schedule
     - *on-release-mandatory
     - when: manual
       allow_failure: true
@@ -944,10 +1851,10 @@ deploy:documentation:
     - if [ -f "$DEPLOY_KNOWN_HOSTS" ]; then base64 -d "$DEPLOY_KNOWN_HOSTS"; else printf '%s' "$DEPLOY_KNOWN_HOSTS" | base64 -d; fi > ~/.ssh/known_hosts
     - chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
     - 'SSH="ssh -i $HOME/.ssh/id_deploy -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o IdentitiesOnly=yes"'
-    # 3. Mirror the manual into the rrsync-restricted dir (empty remote path
-    #    = the restricted root). --delete prunes pages dropped from a newer
-    #    spec build; the dir is pre-provisioned by setup-deploy.sh.
-    - rsync -rlptz --delete -e "$SSH" "$html/" "$DEPLOY_USER@$DEPLOY_HOST:"
+    # 3. Mirror the manual into autolisp-spec/ of the rrsync-restricted ogamita
+    #    tree (paths are relative to it). --delete prunes pages dropped from a
+    #    newer spec build; the tree is provisioned by setup-deploy.sh.
+    - rsync -rlptz --delete --chmod=D755,F644 -e "$SSH" "$html/" "$DEPLOY_USER@$DEPLOY_HOST:autolisp-spec/"
     - 'echo "published to $DEPLOY_URL"'
   environment:
     name: poseidon/autolisp-spec

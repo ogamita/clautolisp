@@ -9,6 +9,10 @@
 (require :asdf)
 (let ((ql (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname))))
   (when (probe-file ql) (load ql)))
+;; cador reaches the registry through CFFI (registry-native.lisp): ASDF does
+;; not install a missing quicklisp dependency, so fetch them here.
+(when (find-package :ql)
+  (funcall (find-symbol "QUICKLOAD" :ql) '("babel" "cffi") :silent t))
 (handler-case
     (progn
       ;; resolve the repo root from $CI_PROJECT_DIR when set (a userinit or
@@ -18,11 +22,11 @@
                                 (uiop:ensure-directory-pathname
                                  (or (uiop:getenv "CI_PROJECT_DIR")
                                      (uiop:getcwd))))))
-      (asdf:load-system "clautolisp/autolisp-mock-host"))
+      (asdf:load-system "clautolisp/cador"))
   (error (e) (format t "~&LOAD FAILED: ~A~%" e) (uiop:quit 2)))
 (let* ((root "HKCU\\Software\\clautolisp-vlreg-test")
        (key  (concatenate 'string root "\\Sub"))
-       (host (clautolisp.autolisp-mock-host:make-mock-host))
+       (host (clautolisp.cador:make-cador))
        (fails 0))
   (flet ((chk (label ok)
            (format t "~&~:[FAIL~;ok  ~]  ~A~%" ok label)
@@ -55,6 +59,24 @@
          (clautolisp.autolisp-host:host-registry-delete host key "k1"))
     (chk "value gone"
          (null (clautolisp.autolisp-host:host-registry-read host key "k1")))
+    ;; Values by registry type, read off standard values every Windows has
+    ;; (the ones probe-triage2 measured on the vendors).
+    #+(or win32 windows mswindows os-windows)
+    (flet ((rd (k v) (clautolisp.autolisp-host:host-registry-read host k v)))
+      (let ((expand (rd "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" "TEMP"))
+            (dword (rd "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager" "ProtectionMode"))
+            (multi (rd "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\ServiceGroupOrder" "List"))
+            (binary (rd "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Windows" "ShutdownTime")))
+        (format t "  REG_EXPAND_SZ ~S~%  REG_DWORD ~S~%  REG_MULTI_SZ ~S...~%  REG_BINARY ~S~%"
+                expand dword (and (consp multi) (subseq multi 0 (min 3 (length multi)))) binary)
+        (chk "REG_EXPAND_SZ read expanded"
+             (and (stringp expand) (not (find #\% expand))))
+        (chk "REG_DWORD read as an integer" (integerp dword))
+        (chk "REG_MULTI_SZ read as (7 string ...)"
+             (and (consp multi) (eql 7 (first multi)) (every #'stringp (rest multi))))
+        (chk "REG_BINARY read as (3 byte ...)"
+             (and (consp binary) (eql 3 (first binary)) (every #'integerp (rest binary))
+                  (= 9 (length binary))))))
     ;; cleanup: remove the test keys entirely
     (clautolisp.autolisp-host:host-registry-delete host key nil)
     (clautolisp.autolisp-host:host-registry-delete host root nil)

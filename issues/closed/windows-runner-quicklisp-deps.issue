@@ -1,0 +1,148 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: windows-runner-quicklisp-deps — the Windows CI runner cannot quickload FiveAM (network) so test:*:windows fail
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: infra-windows-runner-quicklisp-deps
+
+* Context
+
+On 2026-08-07, with the native Windows runner back online, several
+Windows CI jobs failed NOT on clautolisp code but because Quicklisp on the
+runner cannot fetch dependencies over the network:
+
+    ; file: C:/msys64/home/PPBN02261/quicklisp/quicklisp/http.lisp
+    ;     (ERROR "Unable to process HTTP header")
+
+This aborts (ql:quickload "fiveam" ...) at the top of `make test-sbcl`, so
+the FiveAM test systems never load → "compilation unit aborted; caught 1
+fatal ERROR". Observed on test:clautolisp:windows (job 15764322028) and
+earlier test:alfe:windows — both do a runtime ql:quickload of fiveam (+
+bordeaux-threads / babel / trivial-gray-streams for alfe).
+
+The same commit is GREEN on the macOS runner (fiveam already present in
+its ~/quicklisp) and on Linux docker (deps baked into the image — see the
+clautolisp-quicklisp-ci-deps rule). The gap is specific to the Windows
+runner's Quicklisp/network.
+
+* Problem
+
+test:clautolisp:windows / test:alfe:windows can never be trusted while the
+Windows runner must reach the Quicklisp CDN at job time: the fetch is
+flaky (TLS "unexpected eof", "Unable to process HTTP header"). They are
+allow_failure, so they do not block, but they never give a real signal
+either.
+
+Jobs that do NOT ql-fetch pass fine on the same runner, proving the code
+and toolchain are healthy: conformance:pathname-mapping:windows and
+test:autolisp-test:windows were GREEN on the very same pipeline.
+
+* Proposal
+
+Provision the Windows runner's Quicklisp the way the Dockerfile / macOS
+runner already are — bake the fixed dep set into ~/quicklisp so no
+job-time download is needed:
+  - fiveam, bordeaux-threads, babel, trivial-gray-streams (the set the
+    Makefiles quickload), plus whatever alfe's spec-coverage adds.
+  - i.e. run one `(ql:quickload ...)` of that set at provisioning time (or
+    ship a local-projects / bundle), then jobs run fully offline.
+Alternatively, point the runner at a local Quicklisp mirror.
+
+* Acceptance criteria
+
+- test:clautolisp:windows and test:alfe:windows run to a real
+  pass/fail on the Windows runner with NO network fetch at job time.
+- Re-run the current master pipeline: those two go green (the code is
+  already green everywhere the fetch is not needed).
+
+* Notes
+
+Runner-provisioning task (owner: pjb / the Windows box), not a clautolisp
+source change. Filed per the "write tickets for bugs found in passing"
+rule while confirming the 1.8.7 pathname fix.
+
+* RESOLVED 2026-08-14 — measured on the runner (see the CORRECTION below)
+
+pjb brought the Windows runner online and asked for the Windows issues to
+be worked. Rather than provision anything, the first step was to MEASURE:
+a fresh master pipeline (2761319717) was triggered so `detect:runners'
+would see the runner and the native child pipeline would create its
+Windows jobs automatically.
+
+Result — the acceptance criteria are met as they stand:
+
+| job                              | outcome                     |
+|----------------------------------+-----------------------------|
+| test:alfe:windows                | SUCCESS                     |
+| test:autolisp-test:windows       | SUCCESS                     |
+| build:alfe:windows               | SUCCESS                     |
+| conformance:pathname-mapping:windows | SUCCESS                 |
+| test:clautolisp:windows          | ran the FULL suite, then failed on an unrelated bug |
+
+The two jobs this ticket names — test:alfe:windows and
+test:clautolisp:windows — no longer abort on `(ql:quickload "fiveam")'.
+The runner's own dist is being used: the traces show babel loading from
+   C:/msys64/home/PPBN02261/quicklisp/dists/quicklisp/software/babel-20260101-git/
+which is exactly the "deps present locally, no job-time download" state
+the Proposal asked for. babel and trivial-gray-streams — core dependencies
+only since 1.8.28, i.e. added AFTER this ticket was filed — resolve too.
+
+test:clautolisp:windows still fails, but NOT on this. Its trace shows every
+suite running to completion with `Fail: 0`, and the job then dies in the
+`verify-vl-registry.lisp' step that follows `make test-sbcl' — on a UTF-8
+decoding error over reg.exe's output. That is a genuine clautolisp bug,
+independent of Quicklisp, and it is split out as
+vl-registry-reg-exe-oem-codepage.issue (fixed in 1.8.32).
+
+So: the clautolisp unit suite is GREEN on Windows. Closing.
+
+* CORRECTION 2026-08-14 — the fetch still fails; it is no longer FATAL
+
+The closure above originally claimed "there is no 'Unable to process HTTP
+header' anywhere in either trace". That was WRONG, and the correction
+matters because it changes what the next reader should expect.
+
+Grepping the traces of the very jobs that PASS:
+
+: test:clautolisp:windows (job 15908371542, SUCCESS) -> 1 occurrence
+: test:alfe:windows        (job 15908371546, SUCCESS) -> 1 occurrence
+: verify:bricscad-hidden-ui:windows (FAILED, for its own reasons) -> 1 occurrence
+
+So Quicklisp still tries to reach the CDN at job time and still fails to.
+What changed is that the failure is no longer fatal: every system the
+Makefiles quickload is already installed in the runner's dist, so the
+resolution succeeds from local files after the failed fetch and the run
+continues. The jobs are green because the DEPENDENCIES are present, not
+because the network was fixed.
+
+Two consequences worth writing down rather than rediscovering:
+
+1. The acceptance criterion "with NO network fetch at job time" is, read
+   literally, still unmet — a fetch is attempted on every run. The
+   criterion that matters in practice ("those two go green") is met, and
+   the lane is trustworthy today, which is why this stays closed.
+2. The exposure is exactly one new dependency wide. Add a system that is
+   NOT already in the runner's dist and the fetch that currently fails
+   harmlessly becomes fatal again, in precisely the shape this ticket
+   describes. That is not hypothetical: babel and trivial-gray-streams
+   became core dependencies in 1.8.28, after this ticket was filed, and
+   they happen to be present. The next one might not be — see the
+   clautolisp-quicklisp-ci-deps rule, which exists for that reason.
+
+If that happens, this ticket is the diagnosis, and the Proposal above
+(bake the dep set into the runner's ~/quicklisp, or point it at a local
+mirror) is the fix — it was not wasted work, only work not yet needed.
+
+* Note on what was NOT done
+
+No provisioning, no bundle, no local mirror — none turned out to be
+needed TODAY. Measuring first cost one pipeline and avoided building
+infrastructure for a symptom that had stopped biting.
+
+But per the CORRECTION above, "not needed" is weaker than it first looked:
+the fetch still runs and still fails on every job, and what makes that
+survivable is that the dist happens to hold every system we ask for. The
+Proposal is therefore not wrong work — it is deferred work, and the thing
+that would make it due again is one dependency this project adds that the
+runner does not already have.

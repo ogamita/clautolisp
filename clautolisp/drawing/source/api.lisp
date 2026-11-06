@@ -54,7 +54,8 @@ string. Signals DRAWING-ERROR on a malformed string."
                       :block     (entity-handle-block e)
                       :layer     (entity-handle-layer e)
                       :data      (copy-tree (entity-handle-data e))
-                      :deleted-p (entity-handle-deleted-p e)))
+                      :deleted-p (entity-handle-deleted-p e)
+                      :object-p  (entity-handle-object-p e)))
 
 (defun %copy-record (r)
   (make-symbol-table-record :id   (symbol-table-record-id r)
@@ -68,7 +69,8 @@ string. Signals DRAWING-ERROR on a malformed string."
                     :value          (let ((v (sysvar-cell-value c)))
                                       (if (consp v) (copy-tree v) v))
                     :read-only-p    (sysvar-cell-read-only-p c)
-                    :host-derived-p (sysvar-cell-host-derived-p c)))
+                    :host-derived-p (sysvar-cell-host-derived-p c)
+                    :scope          (sysvar-cell-scope c)))
 
 (defun %copy-dictionary-tree (d)
   (let ((new (make-dictionary)))
@@ -143,9 +145,10 @@ explicit (RETURN value) exits the loop early."
      (map-entities (lambda (,var) ,@body) ,drawing :include-deleted ,include-deleted)))
 
 (defun drawing-entity-count (drawing &key include-deleted)
-  "The number of (non-deleted, unless INCLUDE-DELETED) entities."
+  "The number of (non-deleted, unless INCLUDE-DELETED) graphical entities --
+not the dictionaries, xrecords and other objects the table also holds."
   (let ((n 0))
-    (map-entities (lambda (e) (declare (ignore e)) (incf n))
+    (map-entities (lambda (e) (when (graphical-entity-p e) (incf n)))
                   drawing :include-deleted include-deleted)
     n))
 
@@ -259,23 +262,38 @@ is a host-layer concern."
          :format-control "entity data requires a (0 . \"TYPE\") marker, got ~S"
          :format-arguments (list data)))
 
-(defun add-entity (drawing dxf &key handle block)
+(defvar *drawing-modification-hook* nil
+  "NIL, or a function of one argument, the DRAWING, called before every change
+NOTE-DRAWING-MODIFIED records -- a host's chance to refuse it (cador binds it
+to check document locking, D1 §10).")
+
+(defun note-drawing-modified (drawing &optional (bit 1))
+  "Record in DRAWING's DBMOD that its database changed (BIT 1 by default)."
+  (when *drawing-modification-hook*
+    (funcall *drawing-modification-hook* drawing))
+  (setf (drawing-dbmod drawing) (logior (drawing-dbmod drawing) bit))
+  drawing)
+
+(defun add-entity (drawing dxf &key handle block object-p)
   "Add an entity from the DXF group-code list DXF to DRAWING. HANDLE,
 if supplied (a loader preserving file handles), fixes the handle;
 otherwise a fresh one is allocated. BLOCK, if supplied, is the name of
 the block definition that owns the entity (NIL = model space). DXF must
 carry a (0 . \"TYPE\") marker. Any caller-supplied -1 / 5 pairs are
 stripped; (5 . hex) is injected. The drawing's seed is kept strictly
-greater than every used handle. Returns the new ENTITY-HANDLE."
+greater than every used handle. OBJECT-P marks an object read from an
+OBJECTS section. Returns the new ENTITY-HANDLE."
   (let* ((kind (%entity-kind-from-data dxf))
          (int  (if handle (handle->integer handle) (allocate-handle drawing)))
          (key  (format nil "~X" int))
          (data (cons (cons 5 key) (%strip-codes dxf '(-1 5))))
-         (entity (make-entity-handle :id key :kind kind :data data :block block)))
+         (entity (make-entity-handle :id key :kind kind :data data :block block
+                                     :object-p object-p)))
     (when (>= int (drawing-handle-seed drawing))
       (setf (drawing-handle-seed drawing) (1+ int)))
     (setf (gethash key (drawing-entities drawing)) entity)
     (push key (drawing-creation-order drawing))
+    (note-drawing-modified drawing)
     entity))
 
 ;;; --- Block definitions ------------------------------------------
@@ -284,6 +302,7 @@ greater than every used handle. Returns the new ENTITY-HANDLE."
   "Register a block definition named NAME whose BLOCK header is the
 group-code list HEADER-DATA. The block's entities are ordinary
 entities added with :block NAME. Returns HEADER-DATA."
+  (note-drawing-modified drawing)
   (setf (gethash name (drawing-blocks drawing)) header-data))
 
 (defun find-block (drawing name)
@@ -312,6 +331,7 @@ Returns NIL."
   "Register a non-graphical OBJECTS-section object (an xrecord or other
 non-dictionary object) under its hex HANDLE string. OBJECT-DATA is its
 group-code list. Returns OBJECT-DATA."
+  (note-drawing-modified drawing)
   (setf (gethash (handle->key handle) (drawing-objects drawing)) object-data))
 
 (defun find-object (drawing handle)
@@ -358,6 +378,7 @@ carries a (-3 ...) xdata cell it is merged application-by-application
 (see %MERGE-XDATA); when DXF carries no xdata cell the entity's existing
 xdata is preserved untouched. NIL if no such live entity. Returns the
 ENTITY-HANDLE."
+  (note-drawing-modified drawing)
   (let* ((key (handle->key handle))
          (entity (gethash key (drawing-entities drawing))))
     (when (and entity (not (entity-handle-deleted-p entity)))
@@ -388,6 +409,7 @@ if no such entity exists."
 (defun set-entity-deleted-status (drawing handle deletedp)
   "Set the deleted flag of entity HANDLE to (and DELETEDP t); returns
 that boolean. Signals DRAWING-ERROR if no such entity exists."
+  (note-drawing-modified drawing)
   (let ((e (%entity-raw drawing handle)))
     (if e
         (setf (entity-handle-deleted-p e) (and deletedp t))
@@ -403,14 +425,56 @@ that boolean. Signals DRAWING-ERROR if no such entity exists."
 
 ;;; --- Symbol-table mutation --------------------------------------
 
+(defun %record-handle (drawing record previous)
+  "The hex handle RECORD is to carry: its id when that already is one, else
+the (5 . handle) it was read with, else the handle of the PREVIOUS record of
+that name it replaces (the vendors keep a record's handle across a
+modification), else a fresh one."
+  (let ((id (symbol-table-record-id record))
+        (file (cdr (assoc 5 (symbol-table-record-data record)))))
+    (cond ((stringp id) id)
+          ((and (stringp file) (ignore-errors (handle->integer file)))
+           (string-upcase file))
+          ((and previous (stringp (symbol-table-record-id previous)))
+           (symbol-table-record-id previous))
+          (t (format nil "~X" (allocate-handle drawing))))))
+
+(defun ensure-record-handle (drawing record &optional previous)
+  "Make RECORD's id its hex handle (see %RECORD-HANDLE; PREVIOUS is the
+record of that name it replaces, if any) and keep DRAWING's seed above it.
+Table records share the drawing's handle space with the entities, as on the
+vendors, so HANDENT and TBLOBJNAME meet on one ename. Returns the handle."
+  (let* ((handle (%record-handle drawing record previous))
+         (int (handle->integer handle)))
+    (setf (symbol-table-record-id record) handle)
+    (when (>= int (drawing-handle-seed drawing))
+      (setf (drawing-handle-seed drawing) (1+ int)))
+    handle))
+
 (defun add-table-record (drawing record)
-  "Add (or replace) RECORD in DRAWING's table for its kind; returns it."
+  "Add (or replace) RECORD in DRAWING's table for its kind; returns it.
+The record gets its handle (ENSURE-RECORD-HANDLE)."
+  (note-drawing-modified drawing)
   (let* ((kind (symbol-table-record-kind record))
          (tbl (or (gethash kind (drawing-tables drawing))
                   (setf (gethash kind (drawing-tables drawing))
                         (make-hash-table :test #'equalp)))))
+    (ensure-record-handle drawing record
+                          (gethash (symbol-table-record-name record) tbl))
     (setf (gethash (symbol-table-record-name record) tbl) record)
     record))
+
+(defun find-table-record-by-handle (drawing handle)
+  "The SYMBOL-TABLE-RECORD (any kind) whose handle is HANDLE, or NIL."
+  (maphash (lambda (kind tbl)
+             (declare (ignore kind))
+             (maphash (lambda (name record)
+                        (declare (ignore name))
+                        (when (equalp (symbol-table-record-id record) handle)
+                          (return-from find-table-record-by-handle record)))
+                      tbl))
+           (drawing-tables drawing))
+  nil)
 
 (defun remove-table-record (drawing kind name)
   "Remove the KIND record named NAME; T iff it was present."
@@ -441,4 +505,6 @@ defaults if absent. Loaders use this to populate the header."
       (setf (gethash name (drawing-header-variables drawing))
             (make-sysvar-cell :name name :kind kind :value value
                               :read-only-p read-only-p
-                              :host-derived-p host-derived-p))))
+                              :host-derived-p host-derived-p
+                              ;; A header variable read from a file.
+                              :scope :drawing))))

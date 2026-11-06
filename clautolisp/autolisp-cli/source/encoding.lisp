@@ -54,20 +54,19 @@ that don't expose an introspectable list of external formats."
               name)))
 
 (defun %implementation-knows-encoding-p (keyword)
-  "True when the running Common Lisp implementation recognises
-KEYWORD as an external-format. Catches typos like :UFT-8 that
-would otherwise survive the syntactic gate and only fail later
-at OPEN time.
+  "True when clautolisp can open a stream in KEYWORD's external format.
+Catches typos like :UFT-8 that would otherwise survive the syntactic
+gate and only fail later at OPEN time.
 
-SBCL and CCL expose introspection APIs (sb-impl::get-external-format
-and ccl:character-encoding); on other implementations the function
-returns T to fall through to the syntactic gate."
-  #+sbcl
-  (not (null (ignore-errors (sb-impl::get-external-format keyword))))
-  #+ccl
-  (not (null (ignore-errors (ccl:lookup-character-encoding keyword))))
-  #-(or sbcl ccl)
-  t)
+Delegates to CLAUTOLISP.AUTOLISP-READER:EXTERNAL-FORMAT-AVAILABLE-P so
+the CLI's answer matches what OPEN will actually do: that covers the
+host CL's own registry plus the built-in single-octet code-page codec.
+Probing only the host — the shape this had before
+cp1252-codec-host-independent — made `-e cp1252' a usage error on CCL
+while the very same encoding worked when named from AutoLISP code.
+On implementations with no introspectable registry the predicate stays
+permissive and the syntactic gate has the last word."
+  (clautolisp.autolisp-reader:external-format-available-p keyword))
 
 (defun %plausible-encoding-name-p (name)
   "Plausibility check used by RESOLVE-ENCODING-NAME for encoding
@@ -130,6 +129,10 @@ Resolution order:
      and recombine.
   2. Match the (suffix-less) name against *ENCODING-ALIASES* —
      mandatory four with their CLI-accepted aliases.
+  2b. Match it against CLAUTOLISP.AUTOLISP-RUNTIME:*ENCODING-SPELLING-
+     ALIASES* — the encodings whose spelling differs between SBCL and
+     CCL, where the name the user typed must be translated to the one
+     the running host registers (macroman-encoding-name.issue).
   3. Pass an alphabetically-plausible name to the impl's
      external-format registry (SBCL: sb-impl::get-external-
      format). Accept if known.
@@ -147,21 +150,30 @@ Resolution order:
        ;; call VALUES from the outer scope.
        (let ((row (find-if (lambda (r) (%encoding-alias-match-p name (cddr r)))
                            *encoding-aliases*)))
-         (cond
-           (row
-            (values (first row) (second row)))
-           ((%plausible-encoding-name-p name)
-            (let ((up (string-upcase name)))
-              (values up (intern up :keyword))))
-           (t
-            (error 'cli-usage-error
-                   :option option
-                   :message
-                   (format nil "Unknown encoding ~S. Expected one of: ~
+         (multiple-value-bind (divergent-canonical divergent-keyword)
+             (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias name)
+           (cond
+             (row
+              (values (first row) (second row)))
+             ;; An encoding the two hosts spell differently: accept
+             ;; every spelling and hand the impl the one it knows, so
+             ;; `-e macroman' behaves like the `(open … "macroman")' it
+             ;; parallels rather than dying as a usage error on SBCL
+             ;; while working on CCL. macroman-encoding-name.issue.
+             (divergent-keyword
+              (values divergent-canonical divergent-keyword))
+             ((%plausible-encoding-name-p name)
+              (let ((up (string-upcase name)))
+                (values up (intern up :keyword))))
+             (t
+              (error 'cli-usage-error
+                     :option option
+                     :message
+                     (format nil "Unknown encoding ~S. Expected one of: ~
 ~{~A~^, ~} (with the usual aliases; append -mac / -dos / -unix / ~
 -lf / -cr / -crlf to force a line-ending variant)."
-                           name
-                           (mapcar #'first *encoding-aliases*))))))))))
+                             name
+                             (mapcar #'first *encoding-aliases*)))))))))))
 
 (defun encoding-keyword (name &optional option)
   "Return the CL external-format keyword for NAME — the second value
@@ -260,15 +272,47 @@ formats are read straight from the vector."
                      :test #'equal :key #'car)))))
     (sort rows #'string< :key #'car))
   #+ccl
-  (let ((rows '()))
-    (ccl::map-character-encodings
-     (lambda (name encoding)
-       (declare (ignore encoding))
-       (let ((s (string name)))
-         (pushnew (cons s '()) rows :test #'equal :key #'car))))
+  ;; CCL has no MAP-CHARACTER-ENCODINGS (the name this called before
+  ;; existed in no CCL release, so --list-encodings died with an
+  ;; undefined-function on every CCL host). Its registry is the internal
+  ;; hash CCL::*CHARACTER-ENCODINGS*, name -> encoding struct, with the
+  ;; aliases interned as their own keys.
+  (let ((rows '())
+        (table (and (boundp 'ccl::*character-encodings*)
+                    (symbol-value 'ccl::*character-encodings*))))
+    (when (hash-table-p table)
+      (maphash (lambda (name encoding)
+                 (declare (ignore encoding))
+                 (pushnew (cons (string name) '()) rows
+                          :test #'equal :key #'car))
+               table))
     (sort rows #'string< :key #'car))
   #-(or sbcl ccl)
   nil)
+
+(defparameter *builtin-codec-probes*
+  '(:cp1250 :cp1251 :cp1252 :cp1253 :cp1254 :cp1255 :cp1256 :cp1257 :cp1258
+    :koi8-r :koi8-u
+    :iso-8859-1 :iso-8859-2 :iso-8859-3 :iso-8859-4 :iso-8859-5
+    :iso-8859-6 :iso-8859-7 :iso-8859-8 :iso-8859-9 :iso-8859-10
+    :iso-8859-11 :iso-8859-13 :iso-8859-14 :iso-8859-15 :iso-8859-16
+    :cp437 :cp850 :mac-roman :ascii)
+  "Single-octet encodings worth reporting in the --list-encodings
+catalogue as coming from clautolisp's own codec. Only those the running
+host CL does NOT ship are printed — on SBCL that list is normally empty,
+on CCL it is the CP-125x and KOI8 families.")
+
+(defun enumerate-builtin-codec-encodings ()
+  "Return the sorted names of encodings clautolisp supplies itself
+because the host CL ships no codec for them. See
+cp1252-codec-host-independent.issue."
+  (sort (loop for keyword in *builtin-codec-probes*
+              when (and (not (clautolisp.autolisp-reader:host-external-format-supported-p
+                              keyword))
+                        (clautolisp.autolisp-reader:external-format-available-p
+                         keyword))
+                collect (symbol-name keyword))
+        #'string<))
 
 (defun print-encodings (&optional (stream *standard-output*))
   "Print the catalogue of supported encoding names to STREAM. Used
@@ -319,6 +363,15 @@ any case):~%"
             (format stream "  ~14A ~{~A~^, ~}~%" (car row) (cdr row)))
            (t
             (format stream "  ~A~%" (car row))))))))
+  ;; Encodings this host CL does not ship but clautolisp supplies itself.
+  ;; Without this section the catalogue would under-report what actually
+  ;; works — the CP-125x family on CCL, most visibly CP-1252.
+  (let ((builtin (enumerate-builtin-codec-encodings)))
+    (when builtin
+      (format stream "~%Provided by clautolisp (this Common Lisp ships no ~
+codec for them):~%")
+      (dolist (name builtin)
+        (format stream "  ~A~%" name))))
   (force-output stream))
 
 (defun resolve-effective-encoding (cli-value)

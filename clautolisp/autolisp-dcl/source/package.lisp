@@ -67,6 +67,8 @@
    #:install-default-renderer
    #:current-dcl-renderer
    #:make-noop-renderer
+   ;; Exported so a host (e.g. cadtui) can build its own presentation backend.
+   #:make-dcl-renderer
    ;; Terminal renderer
    #:make-terminal-renderer
    ;; Phase 15b — sexp wire protocol + subprocess renderer
@@ -76,4 +78,5 @@
    #:read-sexp-message
    #:write-sexp-message
    #:tile->sexp
-   #:make-subprocess-renderer))
+   #:make-subprocess-renderer
+   #:make-ncurses-renderer))

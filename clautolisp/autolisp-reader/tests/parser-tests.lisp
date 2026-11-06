@@ -102,6 +102,27 @@ comment |; b)"))
       (when (probe-file path)
         (delete-file path)))))
 
+(test read-file-with-invalid-utf-8-signals-on-every-host
+  "A default-encoding (UTF-8) source holding a lone latin-1 byte is an error on
+every host: SBCL's stream signals, CCL's substitutes U+FFFD, which the reader
+turns into SOURCE-DECODING-ERROR. A U+FFFD the file really contains is kept."
+  (let ((path (merge-pathnames #P"autolisp-reader-invalid-utf-8.lsp"
+                               (uiop:temporary-directory))))
+    (flet ((write-octets (octets)
+             (with-open-file (stream path :direction :output :if-exists :supersede
+                                          :element-type '(unsigned-byte 8))
+               (write-sequence (coerce octets '(vector (unsigned-byte 8))) stream))))
+      (unwind-protect
+           (progn
+             (write-octets '(40 112 114 105 110 99 32 34 #xE9 34 41))  ; (princ "<e9>")
+             (is (eq :error
+                     (handler-case (progn (read-forms-from-file path) :read)
+                       (error () :error))))
+             (write-octets '(40 112 114 105 110 99 32 34 #xEF #xBF #xBD 34 41))
+             (is (= 1 (length (read-result-objects (read-forms-from-file path))))))
+        (when (probe-file path)
+          (delete-file path))))))
+
 ;;; --- preceding-doc (source-aware-defun-documentation) -------------
 
 (test preceding-doc-attaches-to-following-cons-form

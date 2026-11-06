@@ -12,6 +12,13 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
                 #:autolisp-usubr-body
                 #:autolisp-usubr-instrumented-body
                 #:autolisp-usubr-debug-metadata
+                ;; debug-lambda-in-a-loop-reinstrumented: one debug record per
+                ;; lambda FORM, kept on its site.
+                #:autolisp-usubr-site
+                #:autolisp-usubr-compiled-instrumented-body
+                #:usubr-site-instrumented-body
+                #:usubr-site-debug-metadata
+                #:usubr-site-compiled-instrumented-body
                 #:autolisp-symbol
                 #:autolisp-symbol-name
                 #:autolisp-string
@@ -20,6 +27,11 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
                 #:split-usubr-lambda-list
                 #:register-special-operator
                 #:known-special-operator-p
+                ;; The poll-point protocol's shared name and seam. Both
+                ;; live in the runtime because three layers speak it; see
+                ;; the docstring on +POLL-OPERATOR-NAME+.
+                #:+poll-operator-name+
+                #:*compiled-poll-hook*
                 #:autolisp-eval
                 #:*debugging*
                 #:current-evaluation-context
@@ -40,6 +52,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
                 #:*autolisp-caught-error-hook*)
   (:import-from #:clautolisp.source
                 #:position-of
+                #:element-position-of
                 #:source-position
                 #:source-position-p
                 #:source-position-equal
@@ -70,6 +83,10 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:functions-matching
    #:form-id-position
    #:form-id-kind
+   #:atom-form-kind-p
+   #:*instrument-atoms*
+   #:*instrument-atoms-predicate*
+   #:instrument-atoms-p
    #:find-form-id-at-line
    #:form-ids-at-line
    #:form-id-at-line-col
@@ -94,7 +111,10 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:thread-debug-info-breakpoints
    #:thread-debug-info-summary
    #:thread-debug-info-volatile
-   #:thread-debug-info-current-pp
+   #:thread-debug-info-frame-pool
+   #:thread-debug-info-current-pp-valid-p
+   #:thread-debug-info-current-pp-fid
+   #:thread-debug-info-current-pp-form-id
    #:thread-debug-info-status
    #:thread-debug-info-inbound
    #:thread-debug-info-outbound
@@ -130,14 +150,25 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:virtual-breakpoint-line
    #:virtual-breakpoint-col
    #:virtual-breakpoint-anchor-line
+   #:virtual-breakpoint-form-id
    #:virtual-breakpoint-ti
    #:add-virtual-breakpoint
+   #:add-function-breakpoint
    #:list-virtual-breakpoints
    #:find-virtual-breakpoint
    #:remove-virtual-breakpoint
    #:clear-virtual-breakpoints
    #:virtual-breakpoints-for-file
    #:materialize-virtual-breakpoints
+   ;; FILE:LINE breakpoints (aldo-command-from-repl.issue)
+   #:line-breakpoint #:line-breakpoint-p
+   #:line-breakpoint-id #:line-breakpoint-file #:line-breakpoint-line
+   #:line-breakpoint-col #:line-breakpoint-ti #:line-breakpoint-bp
+   #:line-breakpoint-resolved-line #:line-breakpoint-armed-generation
+   #:add-line-breakpoint #:list-line-breakpoints #:find-line-breakpoint
+   #:remove-line-breakpoint #:line-breakpoints-for-file
+   #:resolve-line-breakpoint #:set-line-breakpoint
+   #:materialize-line-breakpoints
    ;; software watchpoints (command reference §2 watch)
    #:watch #:watch-p
    #:watch-symbol #:watch-name #:watch-last-value #:watch-prev-value

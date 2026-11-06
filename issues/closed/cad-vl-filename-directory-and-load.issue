@@ -1,0 +1,106 @@
+cad-vl-filename-directory-and-load — harness framework load fails on BricsCAD (path derivation)
+===============================================================================================
+
+Reported from: SCHMS+ test harness (sncf-reseau/src/schms,
+tests/test-unitaire.lsp) via `alfe --bricscad --mode batch`.
+alfe 1.1.16, BricsCAD V26, macOS.
+
+Summary
+-------
+
+The harness derives its own directory from `*tu:self-override*` and
+from there computes the test-framework path. This works on clautolisp
+(suite runs, 177 OK) but on BricsCAD `*tu:test-framework*` ends up NIL,
+so `(load *tu:test-framework*)` fails:
+
+    ERROR ... while loading .../tests/test-unitaire.lsp
+      (form at line N): bad argument type <*TU:TEST-FRAMEWORK*>
+      ; expected <STRING> at [findfile]
+
+i.e. the value passed to `load`/`findfile` is nil — the framework path
+the harness computed could not be opened on BricsCAD.
+
+What the diagnostics show (in isolation, on BricsCAD)
+-----------------------------------------------------
+
+These all behave like clautolisp, which makes the failure puzzling:
+
+    (vl-filename-directory "/a/b/c")                         => "/a/b"   (parity OK)
+    (open "<clean abs path to test-framework.lsp>" "r")     => <file>   (OK)
+
+So neither `vl-filename-directory` on a directory argument nor `open`
+of the clean absolute path misbehaves on its own — yet the harness,
+which composes exactly those operations, yields a nil framework path
+on BricsCAD only.
+
+Suspected
+---------
+
+A residual path-derivation divergence between BricsCAD and clautolisp:
+either `vl-filename-directory` differs for some argument shape the
+harness actually produces (trailing separator, extension-less last
+component, deep path), or the composed path differs subtly (separator,
+double slash) so `open` returns nil. Needs the computed value printed
+under the live BricsCAD run to pin down:
+
+    ;; add to the harness or run after load:
+    (princ (strcat "repo=[" *tu:repo-dir* "] fw=[" (vl-prin1-to-string *tu:test-framework*) "]\n"))
+
+Why it matters
+--------------
+
+It blocks running the existing AutoLISP unit suite under BricsCAD via
+alfe (it already passes under clautolisp). Same harness, same inputs,
+divergent result — so it points at a BricsCAD-vs-clautolisp file/path
+behavior difference.
+
+Related
+-------
+
+See cad-path-dotdot-resolution.issue (BricsCAD does not resolve ".."
+segments) — the harness now emits clean paths to avoid that, but the
+framework path still does not resolve here.
+
+UPDATE / RESOLUTION
+-------------------
+
+Diagnosed further: `vl-filename-directory` is NOT the culprit — it
+behaves like clautolisp on BricsCAD (`(vl-filename-directory "/a/b/c")`
+=> "/a/b"), and `*tu:test-framework*` was confirmed to hold the correct
+non-nil string right before the failing form. The real cause is that an
+IN-FILE native `(load <abs-path>)` fails under BricsCAD's `load` shadow
+in that context, even though alfe's own `--load` action and
+`(vl-catch-all-apply 'load (list <same-path>))` both succeed.
+
+Worked around on the SCHMS+ side by loading the framework via an alfe
+`--load` action and skipping the in-file `(load …)` (guarded by
+`(boundp '*t:suites*)`). With that, the full suite runs under BricsCAD.
+
+So this issue is effectively "in-file native `(load <abs-path>)` fails
+under the BricsCAD load shadow in some contexts" — retitle/triage
+accordingly. The vl-filename-directory angle can be dropped. (The
+remaining BricsCAD/macOS failures are encoding only — see
+cad-load-encoding-macos.issue.)
+
+
+Resolution (fixed by alfe 1.7.5 — verified on real BricsCAD, cad-triage-vl)
+---------------------------------------------------------------------------
+
+Same root cause as alfe-load-form-argument-not-evaluated, NOT a path-derivation
+divergence. The error "bad argument type <*TU:TEST-FRAMEWORK*>" is the SYMBOL
+reaching findfile: the harness does (load *tu:test-framework*) as a top-level
+form, and autolisp-eval-load-form passed the argument UNEVALUATED. It was
+misread here as "*tu:test-framework* ends up NIL" (a nil value would error as
+<nil>, not <*TU:TEST-FRAMEWORK*>).
+
+alfe 1.7.5 evaluates the (load X) argument, so a variable / (strcat ...) load
+works. Verified by replicating the exact harness shape on real BricsCAD V26 /
+macOS (a *tu:self-override* var -> vl-filename-directory -> composed sibling
+path -> (load VAR)):
+
+  VL-DIR=[.../dist/cad-triage-vl]                 <- vl-filename-directory OK
+  VL-FW=[.../vl-framework.lsp]                    <- composed path OK
+  VL-FRAMEWORK-LOADED / VL-FRAMEWORK-SEES=999     <- (load VAR) now works
+
+vl-filename-directory itself did NOT diverge; the whole failure was the
+unevaluated load argument. Closed by verification.

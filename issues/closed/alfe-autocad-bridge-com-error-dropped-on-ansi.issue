@@ -1,0 +1,50 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-autocad-bridge-com-error-dropped-on-ansi — the COM error the bridge recorded never reached the message, on a French Windows
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: next-work
+
+* Symptom
+
+=verify:epure-api:windows= on MR !336 (2026-09-28, job 16774481586): all
+three AutoCAD runs failed the same way, after about 122 s each:
+
+#+begin_example
+alfe: alfe AUTOCAD backend error (phase BOOTSTRAP): AutoCAD COM bridge
+  (cscript) exited before READY (exit 4): ATTACHED=0
+CREATED=0 [PROCESS-EXITED-BEFORE-READY]
+#+end_example
+
+=ATTACHED=0 CREATED=0= and exit 4 means the bridge's =CreateObject= failed;
+the bridge then writes =COM.STAGE=, =COM.ERROR.HEX= and
+=COM.ERROR.DESCRIPTION= to its error file, and =summarize-process-exit=
+prints them (alfe-autocad-cad-selection-ignores-com-progid). None of them
+appeared. The same shape on MR !330 the day before.
+
+* Cause
+
+The bridge writes that file with the FileSystemObject's default, the ANSI code
+page -- CP1252 on the runner's French Windows -- so an accented COM description
+("L'exécution du serveur a échoué") is not UTF-8. alfe read it with
+=uiop:read-file-string= (UTF-8) inside =ignore-errors=: the first accented byte
+signalled, the error became NIL, and the message fell back to cscript's stdout.
+The one line that explains the failure was the one that got dropped.
+
+The existing test (=autocad-bridge-exit-message-reports-the-com-failure=)
+passed the error text as a string, so it never exercised the read.
+
+* Resolution — alfe 2.2.146
+
+=read-bridge-errors= decodes the file's octets with babel: strict UTF-8 first
+(what alfe itself writes there), CP1252 when that fails. From octets rather than
+through a stream's external format because CCL, unlike SBCL, substitutes U+FFFD
+for an invalid UTF-8 byte instead of signalling, so a stream-based fallback would
+never fall back there. Test =autocad-bridge-errors-are-read-in-the-ansi-code-page-too=
+writes the CP1252 bytes and checks the file read, the message (=0x80080005=, the
+accented description), that a UTF-8 file still reads as UTF-8, and that an
+absent file is NIL. alfe suite 1358/1358 on SBCL and CCL.
+
+What the failure itself is -- why =CreateObject= fails on the runner now -- is
+=alfe-autocad-createobject-fails-on-runner=; the next AutoCAD run will print it.

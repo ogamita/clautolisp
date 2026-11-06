@@ -1,0 +1,147 @@
+#+TITLE: cador: entget of a main-space entity has no 330 owner; header group order differs from AutoCAD
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: cador-entget-pointer-codes-are-handle-strings
+#+BRANCH:
+
+* Symptom
+
+Found while fixing =cador-entget-pointer-codes-are-handle-strings=
+(clautolisp 2.3.7), on the clautolisp baseline run of
+=probes/sources/probe-entget-pointers.lsp=:
+
+#+begin_src lisp
+(setq l (entmakex '((0 . "LINE") (8 . "0") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0))))
+(assoc 330 (entget l))   ; nil on cador; AutoCAD: (330 . <*Model_Space record>)
+#+end_src
+
+and the header order of entget differs:
+
+- cador LINE: =-1 5 0 ...= (handle before type)
+- cador XRECORD after dictadd: =-1 5 330 0 100 280 ...= (the owner is
+  inserted after the FIRST stored group, which is the 5)
+- AutoCAD (documented examples): =-1 0 5 [102 {ACAD_REACTORS 330 102 }] 330 100 ...=
+
+* Measured 2026-10-08 (probe-entget-pointers.lsp)
+
+Jobs 17026569911 (AutoCAD 2022), 17026569912 (BricsCAD V25 Windows),
+17026569913 (BricsCAD V26 macOS); results under
+=probe-results/{autocad,bricscad}/*/20261008T*/results.sexp=.
+
+- LINE in model space: =330:ENAME=, =(entget 330)= -> =BLOCK_RECORD= on
+  all three (cador: no 330).
+- The pair order of an XRECORD (codes of =entget=):
+  - free XRECORD: AutoCAD =-1 0 330 5 100 280 ...= (it HAS an owner 330
+    before the 5 even outside a dictionary); BricsCAD =-1 0 5 100 280 ...=;
+    cador =-1 5 0 100 280 ...=.
+  - after dictadd + dictsearch: both vendors =-1 0 5 102 330 102 330 100
+    280 ...= (the {ACAD_REACTORS 330 102} reactor group, then the owner);
+    cador =-1 5 330 0 100 280 ...= (no reactor group).
+- Layer "0" record via =(entget (tblobjname "LAYER" "0"))=: AutoCAD
+  =5 360 330 390 347 348= (an extension dictionary, owner TABLE, plot
+  style ACDBPLACEHOLDER, material MATERIAL, 348); BricsCAD =5 330 390
+  347=; cador none of them. BLOCK record via tblobjname: =330 5= on all
+  vendors; cador none. tblsearch / tblnext views: no pointer codes on any
+  vendor (cador agrees).
+- INSERT with attributes: BricsCAD INSERT =5 330=, its ATTRIB's 330 ->
+  INSERT (cador agrees on the ATTRIB). AutoCAD: =(entget ins)= gave no
+  pointer pair at all ("none" -- not even a 5, so entget probably returned
+  nil for an INSERT entmakex-ed with 66 . 1 before its SEQEND) and the
+  ATTRIB's 330 -> BLOCK_RECORD. Unexplained; needs its own probe case
+  before cador follows it.
+- (entget (namedobjdict)) lists 16 350 entries on both vendors (the
+  default ACAD_* / Bricsys dictionaries); cador's fresh drawing has none.
+
+* Cause
+
+=clautolisp.drawing:add-entity= stores =(5 . handle)= at the head of the
+data; the owner of a main-space entity is implicit (=entity-handle-block=
+NIL) and only written as a 330 by the DXF writer (=dxf.lisp=, the
+=*Model_Space= record handle); =set-entity-owner= (dictionary.lisp) puts
+the 330 after the first group.
+
+* Fix sketch
+
+Synthesize the 330 owner in the AutoLISP view (the block record's id as an
+ENAME -- table record ids are gensyms in a fresh cador document, so they
+need a real handle first), and order the view's header groups
+=-1 0 5 [102...] 330 100= like the vendors. TO MEASURE against the
+=entget-pointers= probe results (LINE in model space, XRECORD codes)
+before relying on the exact order.
+
+* Measured (2026-10-22, entget-pointers probe section 10, MR !471)
+
+BricsCAD V26 macOS, job 17397066992 (section 10 added for this ticket:
+the full code order, not only which pointers exist):
+
+| object                     | BricsCAD V26                              |
+|----------------------------+-------------------------------------------|
+| LINE / CIRCLE / TEXT       | -1 0 5 330 100 67 410 8 100 ...           |
+| INSERT (with or without 66) | -1 0 5 330 100 67 410 8 100 ...          |
+| ATTRIB of an INSERT        | -1 0 5 330 100 ... (330 -> INSERT)        |
+| free XRECORD               | -1 0 5 100 280 ...                        |
+| XRECORD after dictadd      | -1 0 5 102 330 102 330 100 280 ...        |
+| a LINE's 330               | -> BLOCK_RECORD                           |
+
+So one rule: -1 0 5, then the {ACAD_REACTORS (330 . dict)} group of a
+dictionary member, then the owner 330, then the rest. (The INSERT that
+AutoCAD answered with "no pointer pair" on 2026-10-08 is a normal list on
+BricsCAD; AutoCAD's answer to section 10 is pending.)
+
+* Fix (clautolisp 2.3.30 / alfe 2.3.30) -- NEXT until AutoCAD is measured
+
+cador/source/entity-api.lisp:
+- ENTITY->AL-VIEW orders the view with %VENDOR-HEADER-ORDER: 0, 5, the
+  102 reactor groups, the owner 330, then the stored rest in order.
+- A graphical entity that stores no owner gets (330 . <its space's -- or
+  its block definition's -- BLOCK_RECORD>), the record tblobjname
+  returns (entget of it is the BLOCK_RECORD view).
+- An object a dictionary owns gets (102 . "{ACAD_REACTORS") (330 . dict)
+  (102 . "}") before its owner.
+- Nothing synthesized is stored: AL-DATA->PURE (entmake / entmakex /
+  entmod) drops the reactor groups and a 330 naming a table record
+  (%DROP-VIEW-ONLY-GROUPS), so (entmod (entget e)) and (entmake (cdr
+  (entget e))) round trips store what they stored before.
+
+clautolisp's own run of the probe now reads -1 0 5 330 ... for the
+entities and exactly the vendors' two XRECORD orders. Tests (cador
+entity-api-tests): ENTGET-ROUND-TRIPS-STORE-NOTHING-SYNTHESIZED,
+ENTGET-OF-A-DICTIONARY-MEMBER-HAS-THE-REACTOR-GROUP; 4 tests that pinned
+the old order (5 second, no 330 on a main-space LINE) updated.
+
+What follows the header (subclass markers, 67/410/210 defaults, table
+records' 5/330/390/347, tblobjname "BLOCK" returning the BLOCK entity,
+the default NOD entries) is cador-entget-subclass-layout-and-record-
+pointers.
+
+To close: the AutoCAD 2022 section-10 answers (probe:entget-pointers:
+autocad:windows, Windows runners 2026-10-23). AutoCAD's 2026-10-08 data
+put a free XRECORD's 330 BEFORE its 5 (-1 0 330 5 100 ...): if entities
+follow that order too, the 330 position becomes a per-dialect choice.
+
+* AutoCAD measured (2026-10-23) -- DONE, 2.3.37
+
+entget-pointers section 10 on AutoCAD 2022 (job 17398575906) and BricsCAD
+V25 Windows (job 17398575907):
+
+| object                  | AutoCAD 2022                          | BricsCAD V25 / V26                  |
+|-------------------------+---------------------------------------+-------------------------------------|
+| LINE / CIRCLE / TEXT / INSERT | -1 0 330 5 100 67 410 8 100 ... | -1 0 5 330 100 67 410 8 100 ...    |
+| free XRECORD            | -1 0 330 5 100 280 ...                | -1 0 5 100 280 ...                  |
+| XRECORD after dictadd   | -1 0 5 102 330 102 330 100 ...        | -1 0 5 102 330 102 330 100 ...      |
+| a LINE's 330            | -> BLOCK_RECORD                       | -> BLOCK_RECORD                     |
+
+So the vendors differ on ONE point: AutoCAD lists the owner BEFORE the
+handle unless a 102 group precedes it. clautolisp 2.3.37 discriminates by
+product, like the pointer codes: BricsCAD dialects -1 0 5 [102] 330,
+every other dialect (autocad, clautolisp, strict, lax) AutoCAD's -1 0 330
+5 ... / -1 0 5 102 ... 330 (%VENDOR-HEADER-ORDER). Test
+ENTGET-HEADER-OWNER-POSITION-FOLLOWS-THE-PRODUCT (pointer-dialect-tests);
+the default-dialect assertions of entity-api-tests follow AutoCAD.
+
+Still different, and moved to cador-entget-subclass-layout-and-record-
+pointers: AutoCAD gives a free XRECORD and the named-object dictionary an
+owner 330 (the NOD's is the null <Entity name: 0>), where cador stores
+none; and AutoCAD's (entget ins) of an INSERT entmakex'ed with (66 . 1)
+before its ATTRIB/SEQEND is nil (BricsCAD returns the list).

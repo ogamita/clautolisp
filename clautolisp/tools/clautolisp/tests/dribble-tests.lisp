@@ -21,9 +21,12 @@ dribble. The interactor stack is empty, which counts as AUTOLISP."
           (clautolisp.tools.clautolisp::*dribble-names*
             (clautolisp.tools.clautolisp::%resolve-dribble-names names))
           (clautolisp.tools.clautolisp::*dribble-open-tee* nil)
+          (clautolisp.tools.clautolisp::*dribble-open-line-prompt-p* nil)
           (clautolisp.interactor:*interactor-stack* '()))
       (funcall thunk)
-      ;; Flush a pending partial line, as dribble-stop would.
+      ;; Flush exactly as DRIBBLE-STOP does. Prompt discrimination is not
+      ;; a parameter here: it happens inside %TEE-EMIT-BUFFERED-LINE, on
+      ;; every termination path.
       (clautolisp.tools.clautolisp::%dribble-terminate-open-line))))
 
 (test dribble-tee-prefixes-output-lines
@@ -249,3 +252,109 @@ records the file, and the following argv element is NOT consumed."
                (clautolisp.autolisp-cli:cli-options-dribble options)))
     (is (eq :all (clautolisp.autolisp-cli:cli-options-dribble-interactors
                   options)))))
+
+;;; --- the prompt pending at end of session ------------------------------
+;;;
+;;; dribble-eof-prompt-recorded.issue. Two rules met head-on: the format
+;;; omits prompts, and unterminated genuine output must still be
+;;; recorded. Everywhere else the distinction comes from EVIDENCE -- an
+;;; input line completing proves the pending partial was a prompt -- but
+;;; at end of input nothing completes, so the prompt marks itself.
+
+(test dribble-eof-pending-prompt-is-not-recorded
+  "A partial line left pending by a prompt is dropped at stop, not
+emitted as `;; O: _$'."
+  (let* ((real (make-string-output-stream))
+         (dribbled
+           (call-with-dribble-to-string
+            nil
+            (lambda ()
+              (let ((tee (clautolisp.tools.clautolisp::make-dribble-output-tee real "O")))
+                (clautolisp.tools.clautolisp::with-dribble-prompt
+                  (write-string "_$ " tee)))))))
+    ;; the user still SEES the prompt; only the dribble omits it
+    (is (string= "_$ " (get-output-stream-string real)))
+    (is (string= "" dribbled))))
+
+(test dribble-eof-pending-real-output-is-still-recorded
+  "The conservative half of the tradeoff must survive: output left
+unterminated by (princ \"...\") is genuine and is recorded."
+  (let ((dribbled
+          (call-with-dribble-to-string
+           nil
+           (lambda ()
+             (let ((tee (clautolisp.tools.clautolisp::make-dribble-output-tee
+                         (make-string-output-stream) "O")))
+               (write-string "no trailing newline" tee))))))
+    (is (string= (format nil ";; O: no trailing newline~%") dribbled))))
+
+(test dribble-eof-prompt-followed-by-output-is-recorded
+  "A line that STARTS as a prompt and then carries real output is real
+output: one non-prompt character is enough to keep it."
+  (let ((dribbled
+          (call-with-dribble-to-string
+           nil
+           (lambda ()
+             (let ((tee (clautolisp.tools.clautolisp::make-dribble-output-tee
+                         (make-string-output-stream) "O")))
+               (clautolisp.tools.clautolisp::with-dribble-prompt
+                 (write-string "_$ " tee))
+               (write-string "42" tee))))))
+    (is (string= (format nil ";; O: _$ 42~%") dribbled))))
+
+(test dribble-prompt-terminated-by-interleaving-is-not-recorded
+  "The regression that the first attempt at this fix missed: at end of
+input the pending prompt line is terminated by the INTERLEAVING rule --
+another stream writing -- well before DRIBBLE-STOP runs. Deciding at stop
+time was deciding too late, so the decision lives on the emit path, and
+this is what proves it."
+  (let ((dribbled
+          (call-with-dribble-to-string
+           nil
+           (lambda ()
+             (let ((o (clautolisp.tools.clautolisp::make-dribble-output-tee
+                       (make-string-output-stream) "O"))
+                   (e (clautolisp.tools.clautolisp::make-dribble-output-tee
+                       (make-string-output-stream) "E")))
+               (clautolisp.tools.clautolisp::with-dribble-prompt
+                 (write-string "_$ " o))
+               ;; the other tee writes: the open prompt line is terminated
+               (write-string "oops" e)
+               (terpri e))))))
+    (is (string= (format nil ";; E: oops~%") dribbled)
+        "the prompt must not survive an interleaved write; got ~S" dribbled)))
+
+(test dribble-omits-debugger-stop-announcement
+  "dribble-stop-announcement-interactor.issue: with a dribble capturing the
+default AUTOLISP set, a debugger stop's `Break at ...' announcement must NOT be
+recorded. The stop's ALDO activation is now established (by
+CALL-WITH-STOP-INTERACTOR in SESSION-STOP) around the WHOLE stop — the
+announcement included — so the filter sees ALDO, not AUTOLISP, from the first
+line. Before the fix the announcement was printed before the push and leaked."
+  (let* ((context (progn
+                    (clautolisp.debug:reset-function-id-registry)
+                    (clautolisp.debug:clear-virtual-breakpoints)
+                    (clautolisp.source:clear-source-positions)
+                    (clautolisp.autolisp-runtime:make-default-runtime-context)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (dribbled
+           (call-with-dribble-to-string
+            nil                         ; default captured set = AUTOLISP; stack '() = AUTOLISP
+            (lambda ()
+              ;; The stop UI writes through a dribble O-tee, exactly as the REPL
+              ;; wires *standard-output* — so what the stop prints is subject to
+              ;; the interactor filter. `c' resumes the programmatic break.
+              (let* ((tee (clautolisp.tools.clautolisp::make-dribble-output-tee
+                           (make-broadcast-stream) "O"))
+                     (ui (clautolisp.ui.dumb:make-dumb-ui
+                          :input (make-string-input-stream (format nil "c~%"))
+                          :output tee)))
+                (clautolisp.debug.ui:call-with-session
+                 ui
+                 (lambda () (clautolisp.debug:invoke-debugger-break "halt here"))
+                 :thread-info ti :context context))))))
+    ;; The announcement (and its message) belong to the stop, filtered as ALDO.
+    (is (null (search "Break" dribbled))
+        "the stop announcement leaked into the dribble: ~S" dribbled)
+    (is (null (search "halt here" dribbled))
+        "the stop message leaked into the dribble: ~S" dribbled)))

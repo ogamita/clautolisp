@@ -1,7 +1,7 @@
 ;;;; clautolisp/tools/clautolisp/tests/debugger-options-tests.lisp
 ;;;;
 ;;;; CLI parse tests for the debugger (aldo) options of
-;;;; issues/open/debugger-public-interface-and-on-error.issue Parts B-D:
+;;;; issues/closed/debugger-public-interface-and-on-error.issue Parts B-D:
 ;;;;   --on-error / --on-interrupt / --on-quit POLICY
 ;;;;   --debugger-ui UI
 ;;;;   --aldb-listen [HOST:]PORT / --aldb-stdio
@@ -59,12 +59,18 @@ batch: on-error quit; on-interrupt debug; on-quit quit)."
 ;;; --- --debugger-ui ------------------------------------------------
 
 (test debugger-ui-values
-  (is (eq :tui     (clautolisp.autolisp-cli:cli-options-user-interface
-                    (%parse "--debugger-ui" "tui"))))
-  (is (eq :tui     (clautolisp.autolisp-cli:cli-options-user-interface
+  ;; Canonical spellings: dumb / ncurses / aldb. terminal & tui alias dumb;
+  ;; emacs aliases aldb. Matching is case-insensitive.
+  (is (eq :dumb    (clautolisp.autolisp-cli:cli-options-user-interface
+                    (%parse "--debugger-ui" "dumb"))))
+  (is (eq :dumb    (clautolisp.autolisp-cli:cli-options-user-interface
                     (%parse "--debugger-ui" "terminal"))))
+  (is (eq :dumb    (clautolisp.autolisp-cli:cli-options-user-interface
+                    (%parse "--debugger-ui" "tui"))))
+  (is (eq :dumb    (clautolisp.autolisp-cli:cli-options-user-interface
+                    (%parse "--debugger-ui" "DUMB"))))            ; case-insensitive
   (is (eq :ncurses (clautolisp.autolisp-cli:cli-options-user-interface
-                    (%parse "--debugger-ui" "ncurses"))))
+                    (%parse "--debugger-ui" "NCurses"))))
   (is (eq :aldb    (clautolisp.autolisp-cli:cli-options-user-interface
                     (%parse "--debugger-ui" "aldb"))))
   (is (eq :aldb    (clautolisp.autolisp-cli:cli-options-user-interface
@@ -147,3 +153,136 @@ legacy aliases). They now fail as unknown options."
 (test no-debugger-option-means-no-ui-request
   (is (null (clautolisp.tools.clautolisp::effective-user-interface
              (%parse "-x" "(+ 1 2)")))))
+
+;;; --- aldb transport gating (§10): stdio + TCP listener ------------
+
+(defun %status (debug-ui aldb-listen)
+  (clautolisp.tools.clautolisp::aldb-transport-status debug-ui aldb-listen))
+
+(test aldb-stdio-transport
+  ;; --aldb-stdio: RPC over the process stdin/stdout
+  (is (eq :stdio (%status :aldb :stdio))))
+
+(test aldb-listener-transport
+  ;; --aldb-listen HOST:PORT, and plain aldb (no explicit transport), both
+  ;; run over the TCP listener
+  (is (eq :listener (%status :aldb "127.0.0.1:4301")))
+  (is (eq :listener (%status :aldb nil))))
+
+(test non-aldb-ui-is-not-gated
+  (is (eq :not-aldb (%status :tui nil)))
+  (is (eq :not-aldb (%status :ncurses nil))))
+
+;;; --- aldb listener address parsing/resolution --------------------
+
+(test aldb-split-address-forms
+  (flet ((hp (a) (multiple-value-list
+                  (clautolisp.tools.clautolisp::aldb-split-address a))))
+    (is (equal '("127.0.0.1" 4301) (hp "4301")))       ; bare port
+    (is (equal '("localhost" 4301) (hp "localhost:4301")))
+    (is (equal '("::1" 4301) (hp "[::1]:4301")))))      ; bracketed IPv6
+
+(test aldb-split-address-resolves-service-names
+  ;; a TCP service name resolves via the system services database. Needs
+  ;; /etc/services (or the Windows equivalent); where it is absent (a minimal
+  ;; container) the lookup returns NIL and the assertions self-skip.
+  (flet ((port (a) (ignore-errors
+                     (nth-value 1 (clautolisp.tools.clautolisp::aldb-split-address a)))))
+    (let ((http (port "http")))
+      (is (or (null http) (eql 80 http)))            ; bare service name → 80
+      (when http
+        (is (eql 80 (port "127.0.0.1:http")))        ; host:service
+        (is (eql 80 (port "www")))))))               ; www is an /etc/services alias of http
+
+(test aldb-split-address-rejects-unknown-service
+  ;; an unknown service name errors (whether or not the database is present)
+  (signals error
+    (clautolisp.tools.clautolisp::aldb-split-address "host:no-such-service-zzz")))
+
+(test aldb-resolve-listener-address-explicit-and-default
+  ;; stdio / non-aldb → NIL; a "HOST:PORT" passes through; plain aldb → default
+  (is (null (clautolisp.tools.clautolisp::aldb-resolve-listener-address :aldb :stdio)))
+  (is (null (clautolisp.tools.clautolisp::aldb-resolve-listener-address :tui nil)))
+  (is (string= "h:9" (clautolisp.tools.clautolisp::aldb-resolve-listener-address :aldb "h:9")))
+  (let ((default (clautolisp.tools.clautolisp::aldb-resolve-listener-address :aldb nil)))
+    (is (stringp default))
+    (is (find #\: default))))
+
+(test connect-prompt-is-single-spaced
+  ;; the §10 connect prompt must not double-space: long format lines are
+  ;; continued with ~<newline>, not a bare backslash (which is a literal newline).
+  (let* ((ui (make-instance 'clautolisp.tools.clautolisp::aldb-listener-ui
+                            :socket nil :address "127.0.0.1:4301" :context nil))
+         (out (with-output-to-string (*standard-output*)
+                (clautolisp.tools.clautolisp::aldb-print-connect-prompt ui nil))))
+    (is (not (search (format nil "~%~%") out)))        ; no blank lines
+    ;; host and port are prompted separately, matching aldb-connect's interactive form
+    (is (search "M-x aldb-connect RET 127.0.0.1 RET 4301 RET" out))
+    (is (search "1) dumb" out))
+    (is (search "2) ncurses" out))))
+
+(test aldb-default-listen-address-uses-a-free-port
+  ;; With nothing configured the default binds an OS-chosen free port (0), not a
+  ;; fixed one, on 127.0.0.1 (aldb-stdio-is-a-poor-default).
+  (let ((addr (clautolisp.tools.clautolisp::aldb-default-listen-address)))
+    (is (stringp addr))
+    (is (eql 0 (nth-value 1 (clautolisp.tools.clautolisp::aldb-split-address addr))))
+    (is (string= "127.0.0.1"
+                 (nth-value 0 (clautolisp.tools.clautolisp::aldb-split-address addr))))))
+
+(test build-debug-ui-defaults-aldb-to-a-listener-not-stdio
+  ;; The crux of aldb-stdio-is-a-poor-default: with no listener address and no
+  ;; --aldb-stdio (e.g. a live switch to aldb), aldb builds a TCP LISTENER UI —
+  ;; the user connects from Emacs — rather than hijacking the process stdio.
+  (let ((clautolisp.tools.clautolisp::*aldb-listener-address* nil)
+        (clautolisp.autolisp-runtime:*clal-aldb-listen* nil)
+        (ctx (clautolisp.autolisp-runtime:make-default-runtime-context)))
+    (let ((ui (clautolisp.tools.clautolisp::build-debug-ui :aldb ctx)))
+      (unwind-protect
+           (is (typep ui 'clautolisp.tools.clautolisp::aldb-listener-ui))
+        ;; release the bound socket
+        (ignore-errors (clautolisp.tools.clautolisp::aldb-close-listener ui)))))
+  ;; but --aldb-stdio (the runtime request) still uses the stdio emacs-ui
+  (let ((clautolisp.tools.clautolisp::*aldb-listener-address* nil)
+        (clautolisp.autolisp-runtime:*clal-aldb-listen* :stdio)
+        (ctx (clautolisp.autolisp-runtime:make-default-runtime-context)))
+    (let ((ui (clautolisp.tools.clautolisp::build-debug-ui :aldb ctx)))
+      (is (not (typep ui 'clautolisp.tools.clautolisp::aldb-listener-ui))))))
+
+;;; --- (quit) at a debugger prompt ----------------------------------
+;;;
+;;; aldo-companion-quit-leaks-a-host-backtrace: the debugger UI runs on the
+;;; aldo companion thread, and AUTOLISP-TERMINATION is NOT an ERROR -- so the
+;;; companion's ERROR clause never saw the (quit) a user typed at the DBG> /
+;;; NAV> prompt, the condition left the thread unhandled, and the host Lisp
+;;; killed the process with a full backtrace and exit 1. Measured on the built
+;;; binary before the fix.
+
+(test companion-terminate-reports-and-exits-with-the-forms-status
+  "COMPANION-TERMINATE prints the toplevel's own termination line and exits
+with the status the (quit N) carried, through the injected exit function."
+  (let* ((exited '())
+         (text (with-output-to-string (err)
+                 (let ((*error-output* err))
+                   (clautolisp.tools.clautolisp::companion-terminate
+                    (make-condition 'clautolisp.autolisp-runtime:autolisp-termination
+                                    :kind :quit :status 7)
+                    :exit-fn (lambda (&rest arguments) (push arguments exited)))))))
+    ;; the same wording the toplevel uses, so a quit from the debugger and a
+    ;; quit from _$ do not look like two different events
+    (is (search "terminated by" text))
+    (is (search "QUIT" text))
+    ;; and it really exits, with the form's status
+    (is (equal '((7 nil)) exited))))
+
+(test companion-terminate-is-reached-for-a-termination-not-an-error
+  "The condition the companion must catch is not an ERROR -- which is why it
+needed a clause of its own. Pin that, so a future simplification to a single
+ERROR handler fails here instead of in the user's face."
+  (let ((termination (make-condition 'clautolisp.autolisp-runtime:autolisp-termination
+                                     :kind :exit :status 0)))
+    (is (typep termination 'condition))
+    (is (not (typep termination 'error))
+        "AUTOLISP-TERMINATION must not be an ERROR subtype; if it becomes one, ~
+the companion's ERROR clause would swallow a quit and answer :continue")
+    (is (eql 0 (clautolisp.autolisp-runtime:autolisp-termination-status termination)))))

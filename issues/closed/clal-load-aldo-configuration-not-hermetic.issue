@@ -1,0 +1,59 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: clal-load-aldo-configuration-not-hermetic — a no-UI test failed on the persistent macOS runner
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+
+* Symptom
+
+=test:clautolisp:macos= failed (job 16466188513, MR !192 pipeline 2843757118)
+with a single failing check in =AUTOLISP-BUILTINS-CORE-SUITE=:
+
+: CLAL-UI-AND-DEBUG-BUILTINS-RETURN-NIL-WITHOUT-A-UI
+:   (clal-load-aldo-configuration) should return nil with no UI attached
+
+The job is =allow_failure: true=, so it did not block, but it reddened every
+macOS pipeline. It does NOT reproduce on the Linux docker runners.
+
+* Cause
+
+The test asserted a false invariant. =CLAL-LOAD-ALDO-CONFIGURATION= is not a
+UI-hook-gated builtin: its handler is
+
+: (load-aldo-configuration-from (clautolisp.configuration:config-load-path "aldo"))
+
+which reads =clautolisp/aldo.conf= from =$XDG_CONFIG_HOME= then
+=$XDG_CONFIG_DIRS= (=clautolisp/configuration/source/xdg.lisp:65=). Its result
+depends on the FILESYSTEM, not on whether a UI is attached. The no-UI test
+(=%with-no-ui-hooks=, forcing the 7 UI hooks nil) had it in its list anyway;
+that passed only incidentally, because the ephemeral Linux runners have no
+=aldo.conf=. The macOS runner is *persistent* and carries a real
+=~/.config/clautolisp/aldo.conf=, so the builtin correctly loaded it and
+returned non-nil — failing an assertion that never belonged there. Same class
+as the earlier red-master incident and the "test the shipped artefact on a
+persistent host" lesson.
+
+* Fix (2026-09-13)
+
+=clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp=:
+- Removed =(clal-load-aldo-configuration)= from
+  =CLAL-UI-AND-DEBUG-BUILTINS-RETURN-NIL-WITHOUT-A-UI= (it is not UI-gated).
+- Added =CLAL-LOAD-ALDO-CONFIGURATION-RETURNS-NIL-WITH-NO-CONFIG-FILE=, which
+  is hermetic: it stubs =clautolisp.configuration::config-getenv= to point
+  =XDG_CONFIG_HOME= and =XDG_CONFIG_DIRS= at a fresh empty temp directory (nil
+  would fall back to =~/.config=, which on a persistent host may hold a real
+  file), so =config-load-path= finds nothing and the builtin must return nil.
+  Coverage of the builtin is preserved (the coverage tool still sees the call);
+  the core loader =load-aldo-configuration-from= keeps its existing hermetic
+  save/load round-trip tests in =clal-extensions-tests.lisp=.
+
+Verified with the full image: =make -C clautolisp test-sbcl= exits 0, the new
+test passes, the invariant test still passes, no regressions.
+
+* Acceptance criteria
+
+- [X] The no-UI invariant test no longer depends on the runner's filesystem.
+- [X] =clal-load-aldo-configuration= stays covered, hermetically.
+- [X] Full =test-sbcl= green.

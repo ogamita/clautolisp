@@ -1,0 +1,88 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: test-file-without-in-suite-runs-nothing — a test file that loads but never runs, and reports green
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: feat-check-test-suite-membership
+#+DATE: 2026-09-27
+
+* Observed
+
+From the write-up of =sysvar-table-ignores-runtime-dialect-change= (closed),
+which found it while adding tests and named it the worst of the three bugs it
+hit:
+
+#+begin_quote
+*Un fichier de tests sans =(in-suite …)= compile, se charge, et ne tourne pas.*
+Mes quatre tests ont d'abord été déclarés hors suite : la suite est passée VERTE
+en ne les exécutant pas, et je l'ai d'abord lue comme une réussite. C'est le pire
+des trois, parce qu'il se présente comme un succès. La convention du dépôt —
+chaque fichier de tests redéclare =(in-suite …)= — n'est donc pas décorative, et
+le harnais gagnerait à refuser un fichier de tests qui n'en a pas.
+#+end_quote
+
+That last clause is this ticket. Filed as its own issue rather than left as a
+sentence in a closed one, per AGENTS.md.
+
+* Why it matters more than it looks
+
+Every other failure in this repository announces itself. This one *reports
+success*: the file compiles, the tests are defined, nothing warns, and the suite
+is green because it ran fewer tests than the author believes. It is the same
+family as the release check that passed a 42 MB archive no launcher could open,
+and as the nightly sweep that printed "nothing to sweep" for weeks — and this
+repository keeps meeting that family.
+
+It is also easy to reintroduce: a new test file is usually copied from a
+neighbour, and the one line that does not look load-bearing is the one that is.
+
+* Resolved — clautolisp 2.2.132
+
+=scripts/check-test-suite-membership.py=, =make check-test-suite-membership=,
+wired into the CI documentation lane (seconds, in a lane that always runs).
+Three rules, each because its absence is silent:
+
+1. A file with =(test NAME ...)= forms must carry =(in-suite ...)=. Without it
+   the tests attach to whatever suite happened to be current at load time — in
+   practice nothing that gets run.
+2. The suite it names must be declared by a =def-suite= in the same =tests/=
+   directory. A typo names a suite that does not exist; a name that happens to
+   match ANOTHER subproject's suite would not even signal.
+3. A =tests/= directory must not declare more than one ROOT suite (a =def-suite=
+   with no =:in=). A second root is not reachable from the one the runner runs,
+   so its tests load and never execute — rule 1's silence, one level up.
+
+State of the tree when the check landed: *24 test directories, 106 files defining
+tests, all clean.* So it is a guard against the next occurrence, not a cleanup —
+which is the right moment to add one.
+
+** The check is tested, and each rule watched failing
+
+=scripts/tests/test-check-test-suite-membership.py=, 8 tests. The script takes
+=--root= for exactly this: every rule is exercised against a fixture that
+violates it AND one that does not, in pairs — a file without =(in-suite ...)=
+fails and the same file with it passes; two root suites fail and a =:in= child
+passes. A check nobody has watched fail proves nothing, and this one guards a
+defect that already passed for green once.
+
+** What is NOT checked, and why it is stated rather than left as a gap
+
+Whether the runner actually runs the root suite, and whether a child suite is
+reachable through =:in=. Those need the live FiveAM registry rather than the
+source text. The cheap static half runs in every pipeline; the dynamic
+complement — walk every defined test and assert it is reachable from the suite
+the runner runs — would catch the remaining shape and is worth doing if this
+ever bites again.
+
+=autolisp-test/= is excluded: its corpus harness has its own =deftest= macros and
+its own runner, so FiveAM's suite rules do not apply there. The exclusion is
+tested too, so it cannot quietly widen.
+
+* Note
+
+Found while triaging =autolisp-globals-writability-triage= (whose dependency is
+the ticket quoted above). The triage itself needed no work — it already contains
+its answer — but its dependency's post-mortem contained an unimplemented
+recommendation, which is the kind of thing that otherwise stays buried in a
+closed file.

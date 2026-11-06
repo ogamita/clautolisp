@@ -1,0 +1,50 @@
+=== debut chargement = 1
+=== handler global pose = 1
+=== avant P7 = 1
+=== avant P8 = 1
+=== charge = ("Bricsys" "26.0 BricsCAD" "fr_FR")
+P1 debut = 1
+  P1 handler appele, msg = "divide by zero at [/]"
+  P1 handler voit p1loc = "LOCALE-P1"
+  P1 handler voit sauvegarde = SUBR
+P1B *error* restaure apres P1 ? = GLOBAL-HANDLER
+P1F debut = 1
+  P2 handler appele, msg = "bad argument type <NIL> ; expected <STRING> at [strcat]"
+  P2 handler voit p2loc = "LOCALE-P2"
+P2 debut = 1
+  P2 handler appele, msg = "bad argument type <NIL> ; expected <STRING> at [strcat]"
+  P2 handler voit p2loc = "LOCALE-P2"
+P2B *error* restaure apres P2 ? = GLOBAL-HANDLER
+P3 debut = 1
+  P3 *error* LOCAL appele, msg = "bad argument type <1> ; expected <CONS> at [car]"
+  P3 local voit id = 42
+P4 debut = 1
+  P4 *error* local commande, msg = "no function definition <UNDEFINED-P4-FN> ; expected FUNCTION at [eval]"
+  P4 voit p4cmd = "CMD"
+  P4 voit p4loc (sous-fonction) = "PROFOND"
+P5 debut = 1
+P5 resultat catch-all = (ERROR "divide by zero at [/]")
+P6 debut = 1
+  P6 handler appele, msg = "divide by zero at [/]"
+  P6 handler fin (ne doit pas s'afficher) = 1
+P8 debut = 1
+  P8INNER debut = 1
+  P8 handler externe, msg = "divide by zero at [/]"
+P9 debut = 1
+  P9 handler msg de (exit) = "quit / exit abort"
+P10 debut = 1
+P11 debut = 1
+P11 apres command (continue) = 4
+P11 apres command-s (continue) = 4
+P12 debut = 1
+  P12 handler msg de (error) = "error"
+=== debut chargement = 1
+=== handler global pose = 1
+=== avant P7 = 1
+=== avant P8 = 1
+=== charge = ("Bricsys" "26.0 BricsCAD" "fr_FR")
+P13 debut = 1
+P13 resultat command-s = nil
+P13 apres command-s (continue) = 4
+P14 debut = 1
+P14 resultat = nil

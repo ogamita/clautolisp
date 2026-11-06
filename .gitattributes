@@ -3,3 +3,8 @@
 *.dwg binary
 *.dwt binary
 *.dws binary
+
+# Common Lisp uses `~` immediately before a newline as a FORMAT control
+# continuation. CRLF checkout inserts a #\Return after `~`, turning it into
+# an invalid directive, so source files must remain LF on Windows.
+*.lisp text eol=lf

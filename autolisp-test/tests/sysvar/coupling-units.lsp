@@ -65,6 +65,48 @@
           (rtos 0.5 2 4))
   ".5000")
 
+;;; --- rtos modes 3-5 (engineering / architectural / fractional) -----
+;;; LUPREC is decimal places for engineering, and the power-of-two
+;;; fraction denominator (2^LUPREC) for architectural / fractional.
+;;; Canonical AutoCAD examples for 17.5 drawing-units (inches).
+
+(deftest "sysvar-rtos-mode-3-engineering"
+  '((operator . "LUNITS") (area . "sysvar") (profile . strict))
+  '(rtos 17.5 3 2)
+  "1'-5.50\"")
+
+(deftest "sysvar-rtos-mode-4-architectural"
+  '((operator . "LUNITS") (area . "sysvar") (profile . strict))
+  '(rtos 17.5 4 2)
+  "1'-5 1/2\"")
+
+(deftest "sysvar-rtos-mode-5-fractional"
+  '((operator . "LUNITS") (area . "sysvar") (profile . strict))
+  '(rtos 17.5 5 2)
+  "17 1/2")
+
+;;; --- UNITMODE: 0 = display form (space), 1 = input form (hyphen) ----
+
+(deftest "sysvar-unitmode-0-uses-space"
+  '((operator . "UNITMODE") (area . "sysvar") (profile . strict))
+  '(progn (setvar "UNITMODE" 0)
+          (rtos 17.5 4 2))
+  "1'-5 1/2\"")
+
+(deftest "sysvar-unitmode-1-uses-hyphen"
+  '((operator . "UNITMODE") (area . "sysvar") (profile . strict))
+  '(progn (setvar "UNITMODE" 1)
+          (let ((result (rtos 17.5 5 2)))
+            (setvar "UNITMODE" 0)        ;; restore
+            result))
+  "17-1/2")
+
+;; Reset UNITMODE so it does not leak into later tests.
+(deftest "sysvar-unitmode-reset"
+  '((operator . "UNITMODE") (area . "sysvar") (profile . strict))
+  '(progn (setvar "UNITMODE" 0) (getvar "UNITMODE"))
+  0)
+
 ;; Reset DIMZIN so it does not leak into later tests in the shared image.
 (deftest "sysvar-dimzin-reset"
   '((operator . "DIMZIN") (area . "sysvar") (profile . strict))

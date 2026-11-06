@@ -4,8 +4,8 @@
 
 - *Status:* design specification (problem statement + proposed architecture). No implementation yet.
 - *Scope:* MS-Windows builds and runs of clautolisp across coexisting environments — native Windows, Cygwin, MSYS2, and WSL. macOS and Linux keep the trivial identity mapping.
-- *Tracks:* issues/open/clautolisp-windows-pathname-mapping.issue.
-- *Related (resolved):* issues/closed/clautolisp-boot-cwd-pwd-pathname-defaults.issue (the cwd/PWD base at boot — a special case handled in 1.2.8). issues/open/cad-path-dotdot-resolution.issue (~..~ semantics once the base and rooting are correct).
+- *Tracks:* issues/closed/clautolisp-windows-pathname-mapping.issue.
+- *Related (resolved):* issues/closed/clautolisp-boot-cwd-pwd-pathname-defaults.issue (the cwd/PWD base at boot — a special case handled in 1.2.8). issues/closed/cad-path-dotdot-resolution.issue (~..~ semantics once the base and rooting are correct).
 
 * 1. Problem statement
 

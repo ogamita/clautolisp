@@ -1,0 +1,2765 @@
+# Child pipeline: native (macOS / Windows) intermittent-runner jobs, gated on
+# runner availability (runner-availability-gating.issue).
+#
+# Triggered by the parent's `native:pipeline`, which passes MACOS_RUNNER /
+# WINDOWS_RUNNER / ARM64_RUNNER (online|offline) from detect:runners. Here they
+# are ordinary variables, KNOWN at this pipeline's creation, so the gate rules:
+# below pick
+#   online  -> when: on_success  (the job runs automatically)
+#   offline -> when: manual      (fallback: clickable, non-blocking, never
+#                                 stuck-pending, never reddens the pipeline)
+# arm64 is the exception whose offline fallback is not `manual' but an
+# EMULATED twin on poseidon's always-on qemu lane -- see the arm64 gate
+# templates below (cecil-native-arm64-runner.issue).
+# and a release-* TAG keeps the jobs that used to be release-mandatory
+# mandatory (block the release).
+#
+# PROBES are gated on a third variable, PROBES_CHANGED (pjb, 2026-09-28: "run
+# the vendor probe jobs only when new probes are written (or old probes
+# modified); probe results are stored in the project and git"). A probe
+# measures the VENDOR, and its answer is committed, so re-running it on a
+# change that did not touch it re-measures the same thing on a serial CAD
+# runner. Each probe job (vendor:probes:*, probe:suite:*, probe:load-refusal:*,
+# encoding:experiment:*, *:probe:*, harvest:sysvars:*) carries its own rules:
+#   runner online AND its family in PROBES_CHANGED -> on_success
+#   otherwise                                       -> manual (play by hand)
+# The families and their files are in scripts/ci-detect-probe-changes.py,
+# which detect:runners runs; `make check-probe-families' fails when a probe
+# file is in no family or a family is tested by no rule here. Consequence:
+# vendor:probes:* no longer BLOCK a release tag -- a release does not need
+# the vendor re-measured.
+#
+# Child pipelines do NOT inherit the parent's anchors / templates, so the gate
+# templates are defined here. Native jobs run on shell executors, no image.
+#
+# STILL IN THE PARENT (.gitlab-ci.yml), not here:
+#   - release:* (must not auto-run per push; mandatory only on release tags),
+#     benchmark:* (expensive, manual);
+#   - build:alfe:{macos,windows} + vendor:probes:* — build:alfe is a `needs:`
+#     dependency of the parent's benchmark:*:cad jobs, so it can't move alone;
+#     vendor:probes migrate in a follow-up (made self-building so they no
+#     longer need build:alfe);
+#   - the *:linux encoding / pathname probes (Linux runner is always-on).
+
+stages:
+  - build      # arm64 docker image (kaniko); nothing in `test' depends on it
+  - test
+
+# A child pipeline inherits NEITHER the parent's anchors NOR its top-level
+# variables. CI_REGISTRY* are predefined everywhere, so the image name is
+# rederived here rather than forwarded; ARM64_BASE (a pinned digest) IS
+# forwarded by native:pipeline to avoid duplicating the digest.
+variables:
+  CLAUTOLISP_CI_IMAGE: $CI_REGISTRY_IMAGE/clautolisp-ci
+
+# EVERY job here is interruptible, so a superseded child pipeline can be
+# auto-cancelled instead of living for ever
+# (ci-native-child-pipeline-creation-fails.issue).
+#
+# The jobs of this child are `manual' whenever their runner is offline, so
+# the child NEVER completes on its own: it stays ACTIVE, and its jobs keep
+# counting against the project's jobs-in-active-pipelines cap. One immortal
+# pipeline per push. On 2026-08-19 that cap was reached -- 17 children still
+# `running', the oldest seven hours old -- and NO new child could be created,
+# which made every pipeline red with zero failed jobs.
+#
+# GitLab only auto-cancels a superseded pipeline when its pending/running
+# jobs are ALL interruptible; a single job without it pins the pipeline.
+# Three jobs below already declared it individually, which is exactly the
+# half-measure that does nothing: the other twenty-three held the pipeline
+# open. Declared here so it applies to every job, including the ones added
+# next.
+#
+# On a release tag this changes nothing in practice: auto-cancel only fires
+# when a NEWER pipeline supersedes one on the same ref, and a release tag is
+# not re-pushed.
+default:
+  interruptible: true
+
+# --- gate templates --------------------------------------------------------
+# *-hard : jobs that were release-mandatory (test:*, verify:*) -> on a
+#          release tag they are on_success and BLOCK the release
+#          (allow_failure:false), as before.
+# *-soft : jobs that were never release-blocking (conformance:*, encoding:*,
+#          pathname:*) -> allow_failure everywhere.
+# A RELEASE IS NEVER HOSTAGE TO AN ABSENT MACHINE (pjb, 2026-08-16):
+# "si on lance une release sans un runner, ca passe sans ses produits. Mais
+# si le runner est disponible ses produits doivent etre inclus".
+#
+# So on a release tag the platform gate is decided by RUNNER AVAILABILITY,
+# which detect:runners publishes as MACOS_RUNNER / WINDOWS_RUNNER:
+#
+#   tag + runner online  -> runs, and BLOCKS the release if it fails. The
+#                           machine is there, so its products belong in the
+#                           release and a failure is a real failure.
+#   tag + runner offline -> does not run at all. The release ships without
+#                           that platform's products rather than waiting on
+#                           a laptop that is switched off.
+#
+# The order matters: the online case must be tested FIRST, because GitLab
+# takes the first matching rule. The previous shape had the bare tag rule
+# first, which made every release mandatory-on-Windows whatever the runner
+# was doing -- that is how release-1.8.42 came to be blocked by a machine
+# whose network was failing.
+#
+# detect:runners is fail-safe (any API error yields `offline'), so the
+# failure mode is a release missing a platform's artefacts, never a release
+# blocked on a machine nobody can reach.
+.gate-macos-hard:
+  tags: [macos, arm64, shell]
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $MACOS_RUNNER == "online"'
+      when: on_success
+      allow_failure: false
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+      when: never
+    - if: '$MACOS_RUNNER == "online"'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+
+# Windows shell-runner hygiene, repeated here because A CHILD PIPELINE
+# DOES NOT INHERIT THE PARENT'S ANCHORS. The same variable is set on the
+# parent's Windows jobs (.windows-clean in .gitlab-ci.yml); applying it
+# there only was an incomplete fix, and it showed: on MR!99 the child's
+# probe:suite:autocad:windows, vendor:probes:* and pathname:probe:* all
+# died in get_sources on
+#
+#   failed to remove dist/vendor-probes/autocad/drawing-data.log:
+#   Device or resource busy
+#
+# -- a CAD process outliving its job and holding a file open, which the
+# runner's default `git clean -ffdx' cannot delete on Windows (POSIX can
+# unlink an open file; Windows cannot). The job then dies before its own
+# script runs.
+#
+# Put on the GATE TEMPLATES rather than per job, so every Windows job in
+# this file is covered, including ones added later. `extends' deep-merges
+# variables, so a job with its own variables: block keeps both.
+.windows-clean-vars: &windows-clean-vars
+  GIT_CLEAN_FLAGS: -ffd
+
+.gate-windows-hard:
+  tags: [windows, amd64, shell]
+  variables:
+    <<: *windows-clean-vars
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ && $WINDOWS_RUNNER == "online"'
+      when: on_success
+      allow_failure: false
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+      when: never
+    - if: '$WINDOWS_RUNNER == "online"'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+
+.gate-macos-soft:
+  tags: [macos, arm64, shell]
+  rules:
+    - if: '$MACOS_RUNNER == "online"'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+
+.gate-windows-soft:
+  tags: [windows, amd64, shell]
+  variables:
+    <<: *windows-clean-vars
+  rules:
+    - if: '$WINDOWS_RUNNER == "online"'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+
+# manual-only: NEVER auto-start, even when the runner is online. For a job
+# that is known not to work headlessly and would otherwise hang the runner.
+.gate-macos-manual:
+  tags: [macos, arm64, shell]
+  rules:
+    - when: manual
+      allow_failure: true
+
+# CAD-capability variants: jobs that LAUNCH a real BricsCAD/AutoCAD add the
+# `cad' tag, routing them to the CAD-capable runner, which pjb configures
+# concurrency=1. Same rules as the base gate; only the tag list differs.
+# Non-CAD native jobs keep the plain [os, arch, shell] tags and may run on a
+# higher-concurrency runner.
+#
+# ONE tag, not one per vendor (pjb, 2026-08-14). The mutex a CAD job needs is
+# GLOBAL, not per-vendor: two BricsCAD must not run at once, two AutoCAD must
+# not, and a BricsCAD must not run beside an AutoCAD either. A single `cad'
+# tag on a concurrency=1 runner is what serialises all of them. Per-vendor
+# tags would have created two pools that can each run one job — i.e. two CADs
+# at once, the case this is meant to prevent.
+#
+# So there is no `bricscad' / `autocad' distinction to make here, and the
+# templates are named for the capability rather than the vendor: a job's
+# vendor is visible in its own name, and two identical templates under two
+# names would only invite someone to believe they route differently.
+#
+# A CAD job gets an explicit TIMEOUT, which the non-CAD jobs do not need.
+#
+# On 2026-08-14 a verify:bricscad-hidden-ui:windows launched BricsCAD with
+# neither a drawing nor a profile; BricsCAD put up a modal dialog asking what
+# to use, invisible under /Automation, and waited. alfe's own 180 s READY
+# timeout fired, but the CAD process it had spawned stayed alive, so the JOB
+# did not end: it was still running 32 minutes later, holding the single
+# concurrency=1 CAD slot. Every other CAD job queued behind it — 70 of them
+# by the time it was noticed — and an hour of a laptop's battery went to
+# nothing. Without this, the ceiling is the project default (an hour).
+#
+# 30m is measured, not guessed: the longest legitimate CAD job observed is
+# encoding:experiment:bricscad:windows at 1158 s (19 min); everything else
+# runs in under 223 s. That leaves ~55% headroom over the real outlier while
+# halving the worst case. Raise it if a legitimate job ever approaches it —
+# but raise it deliberately, because the cost of this ceiling being too high
+# is paid by every other job on the runner.
+.gate-macos-cad-hard:   { extends: .gate-macos-hard,   tags: [macos, arm64, shell, cad], timeout: 30m }
+.gate-macos-cad-soft:   { extends: .gate-macos-soft,   tags: [macos, arm64, shell, cad], timeout: 30m }
+.gate-macos-cad-manual: { extends: .gate-macos-manual, tags: [macos, arm64, shell, cad], timeout: 30m }
+# Every Windows CAD job sweeps FIRST (autocad-orphaned-by-killed-or-
+# cancelled-jobs.issue). A run that alfe could not close -- killed, or
+# its job cancelled -- leaves an acad.exe owned by the COM service, out
+# of reach of any process-tree kill, and the next CAD job inherits it.
+#
+# BEFORE, not after: a hard cancel never runs an after_script, which is
+# exactly the ending this exists for. Before is also the safe moment,
+# since nothing the current job started can be caught by it.
+#
+# It kills only instances alfe WROTE DOWN as having created, matching
+# PID and creation time both -- never an AutoCAD somebody else started
+# on that machine. It reports and exits 0 whatever happens: a sweep must
+# not fail the job it precedes.
+.cad-sweep-before:
+  before_script:
+    # Log the Windows interactive-session state FIRST, before anything else,
+    # so every CAD job's log says whether the desktop was live, disconnected
+    # or locked -- the difference between a COM/GUI CAD run that works and one
+    # that dies partway (autocad-com-fails-in-disconnected-windows-session).
+    # WRAPPED so it can NEVER fail the job: this runs in before_script of every
+    # Windows CAD job, and a failing before_script fails the job, so a mere
+    # diagnostic must be caught even against its own parse errors -- `try/&/catch'
+    # then `exit 0' makes powershell.exe return 0 whatever the script does.
+    - 'powershell -NoProfile -ExecutionPolicy Bypass -Command "try { & scripts/windows-session-state.ps1 } catch { Write-Host $_ } ; exit 0"'
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep-orphaned-cad.ps1
+
+.gate-windows-cad-hard:
+  extends: [.gate-windows-hard, .cad-sweep-before]
+  tags: [windows, amd64, shell, cad]
+  timeout: 30m
+.gate-windows-cad-soft:
+  extends: [.gate-windows-soft, .cad-sweep-before]
+  tags: [windows, amd64, shell, cad]
+  timeout: 30m
+
+# A CAD job that does NOT touch AutoCAD still sweeps -- cleaning up is always
+# right on a shared runner -- but must not be STOPPED by a wedged acad.exe: that
+# instance owns the AutoCAD.Application COM registration, which a BricsCAD
+# session neither asks for nor shares (cad-sweep-blocks-bricscad-jobs-over-
+# autocad; among the 22 jobs the sweep failed on 2026-09-26 was
+# harvest:sysvars:bricscad:windows). accoreconsole IS AutoCAD, so those jobs
+# keep the blocking gate.
+#
+# THESE ARE NOT PER-VENDOR RUNNER POOLS, and they do not reopen the ruling
+# above: the `cad' tag is UNCHANGED and still the single global mutex, so a
+# BricsCAD job still cannot run beside an AutoCAD one. The only difference is
+# what a LEFTOVER acad.exe means for this job -- nothing, when the job never
+# speaks to AutoCAD. That is a per-job fact about the sweep's verdict, not about
+# scheduling, which is why it is one variable and not a tag.
+#
+# It is a GATE rather than a variable repeated per job so that reading a job's
+# `extends' tells you which it is.
+.gate-windows-bricscad-hard:
+  extends: .gate-windows-cad-hard
+  variables:
+    CAD_SWEEP_NONBLOCKING: "1"
+.gate-windows-bricscad-soft:
+  extends: .gate-windows-cad-soft
+  variables:
+    CAD_SWEEP_NONBLOCKING: "1"
+
+# --- ASDF fasl cache (ci-cache-tool-builds.issue) ---------------------------
+# Same scheme as the parent's .fasl-cache (repeated: a child pipeline does not
+# inherit templates); the reasoning is in scripts/ci-build-cache.sh. Reuse
+# only when a KEY file proves the fasls were compiled from exactly this
+# source tree, Lisp and Quicklisp; otherwise they are discarded whole and the
+# job compiles cold. The save is the last line of each job's script.
+#
+# macOS ONLY. The macOS runner cleans with -ffdx, so today every job there
+# compiles cold, and the cache (stored on the runner's own disk) is the only
+# reuse there is. The Windows runner is deliberately left out: it cleans
+# with -ffd, so its working tree -- clautolisp/.cache included -- already
+# survives between jobs (.windows-clean-vars), and adding a second, cached
+# copy beside it would make two reuse paths, unstated, which is how a stale
+# build gets shipped. Windows release builds clear that surviving cache
+# (scripts/release-windows.sh); what the Windows test lanes reuse stays
+# ASDF's time-based judgement, a known limit recorded in the ticket.
+.fasl-cache:
+  cache:
+    key: fasl-v1-$CI_JOB_NAME_SLUG
+    paths: [.ci-cache/fasl/]
+    when: on_success
+  before_script:
+    - sh scripts/ci-build-cache.sh restore fasl
+
+# --- arm64 (native cecil/thalassa preferred, emulated poseidon fallback) ----
+# A native arm64 machine joined the fleet (cecil, the NVIDIA DGX Spark; and
+# thalassa already offers native linux/arm64 docker). Both are intermittent
+# (office hours), so detect:runners publishes ARM64_RUNNER (online|offline)
+# from the `arm64' tag and native:pipeline forwards it here.
+#
+# The macOS/Windows gates fall back to a MANUAL click when their runner is
+# offline, because those platforms have no other runner. arm64 does: poseidon
+# runs it under qemu-user ([linux, arm64, qemu]). So the arm64 gates come as a
+# mutually-exclusive PAIR, and every arm64 job is defined twice, once per gate,
+# sharing one script:
+#   ARM64_RUNNER online  -> the :native job runs, the :emulated twin is skipped
+#                           (native REPLACES emulated -- pjb, 2026-09-28)
+#   ARM64_RUNNER offline -> the :native job is skipped, the :emulated twin runs
+#                           (emulated FALLBACK)
+# native BLOCKS a release tag when the machine is actually online (like
+# .gate-*-hard); emulated is allow_failure everywhere (qemu is slow, and this
+# is non-release validation). The release arm64 ARTEFACT stays on the parent's
+# always-on qemu lane, deliberately -- an intermittent machine must never
+# silently drop arm64 from a release (cecil-native-arm64-runner.issue Step 2).
+.gate-linux-arm64-native:
+  tags: [linux, arm64, docker]     # cecil or thalassa, whichever is awake
+  image: $ARM64_BASE               # native pull on arm64; no emulation
+  rules:
+    - if: '$ARM64_RUNNER != "online"'
+      when: never                  # native absent -> the :emulated twin covers it
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+      when: on_success
+      allow_failure: false         # native present on a tag: a failure is real
+    - when: on_success
+      allow_failure: true          # native present off a tag: run, non-blocking
+
+.gate-linux-arm64-emulated:
+  tags: [linux, arm64, qemu]       # poseidon qemu-user (always-on)
+  image: $ARM64_BASE               # arm64 manifest digest; binfmt runs it
+  rules:
+    - if: '$ARM64_RUNNER == "online"'
+      when: never                  # native present -> it REPLACES emulated
+    - when: on_success
+      allow_failure: true          # native absent: emulated fallback (slow)
+
+# $ARM64_BASE is a bare buildpack-deps, not the Lisp CI image (which is
+# amd64-only), so install the toolchain the same way release:linux:arm64 does.
+.arm64-lisp-toolchain: &arm64-lisp-toolchain
+  - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
+  - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
+  - sbcl --non-interactive --load /tmp/ql.lisp --eval '(quicklisp-quickstart:install)'
+  - sbcl --noinform --no-userinit --non-interactive --load ~/quicklisp/setup.lisp --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)'
+
+# The clautolisp unit suite on arm64 (SBCL only -- Clozure CL has no arm64
+# build). Native on cecil/thalassa; emulated fallback under qemu on poseidon.
+test:clautolisp:linux-arm64:native:
+  extends: .gate-linux-arm64-native
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  before_script: *arm64-lisp-toolchain
+  script:
+    - make -C clautolisp test-sbcl
+
+test:clautolisp:linux-arm64:emulated:
+  extends: .gate-linux-arm64-emulated
+  stage: test
+  timeout: 45m                     # the full suite under qemu-user is slow
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  before_script: *arm64-lisp-toolchain
+  script:
+    - make -C clautolisp test-sbcl
+
+# arm64 docker image -- an arm64 "release package": the clautolisp CI/runtime
+# image built for linux/arm64 and pushed to the GitLab registry with an -arm64
+# tag. kaniko (no daemon, no privileged), exactly like the parent's
+# build:clautolisp-ci-image, but on an arm64 runner so its RUN steps execute
+# arm64. On master/tag the native lane builds automatically; on an MR it is
+# manual (an arm64 image build is minutes of work, rarely needed per MR). The
+# emulated lane runs kaniko ITSELF as arm64 under qemu, which is slow, so it
+# stays manual whatever the ref.
+.build-arm64-ci-image: &build-arm64-ci-image
+  - |
+    mkdir -p /kaniko/.docker
+    cat > /kaniko/.docker/config.json <<EOF
+    {"auths":{"$CI_REGISTRY":{"username":"$CI_REGISTRY_USER","password":"$CI_REGISTRY_PASSWORD"}}}
+    EOF
+    # :$CI_COMMIT_SHA-arm64 always; :arm64 (the moving arm64 latest) on master.
+    DESTS="--destination $CLAUTOLISP_CI_IMAGE:$CI_COMMIT_SHA-arm64"
+    [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && DESTS="$DESTS --destination $CLAUTOLISP_CI_IMAGE:arm64"
+    /kaniko/executor \
+      --context "$CI_PROJECT_DIR" \
+      --dockerfile "$CI_PROJECT_DIR/clautolisp/docker/Dockerfile" \
+      --custom-platform=linux/arm64 \
+      $DESTS \
+      --cache=true \
+      --cache-repo "$CLAUTOLISP_CI_IMAGE/cache-arm64"
+
+build:clautolisp-ci-image:arm64:native:
+  stage: build
+  tags: [linux, arm64, docker]     # cecil or thalassa
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  retry: 2
+  rules:
+    - if: '$ARM64_RUNNER != "online"'
+      when: never                  # native absent -> the :emulated twin
+    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
+      when: on_success
+      allow_failure: true          # an image build never blocks a release
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+      allow_failure: true
+    - when: manual                 # MRs: build by hand
+      allow_failure: true
+  script: *build-arm64-ci-image
+
+build:clautolisp-ci-image:arm64:emulated:
+  stage: build
+  tags: [linux, arm64, qemu]       # poseidon qemu-user
+  image:
+    # kaniko's OWN arm64 image, pinned by digest, so binfmt runs it and its RUN
+    # steps execute arm64 (a plain tag would be pulled amd64 -- gitlab-runner
+    # 19.1 ignores platform). Refresh alongside the tag in the native twin above
+    # and build:clautolisp-ci-image in .gitlab-ci.yml.
+    name: gcr.io/kaniko-project/executor@sha256:6fcac15aa570456d7f89be1145e44d16f453fd420d6d8a2738fab3b19513fd39
+    entrypoint: [""]
+  retry: 2
+  rules:
+    - if: '$ARM64_RUNNER == "online"'
+      when: never                  # native present -> it REPLACES emulated
+    - when: manual                 # emulated arm64 image build is SLOW: by hand
+      allow_failure: true
+  script: *build-arm64-ci-image
+
+# --- unit suites on the real OS --------------------------------------------
+test:clautolisp:macos:
+  extends: [.gate-macos-hard, .fasl-cache]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C clautolisp test-sbcl
+    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
+    - sh scripts/ci-build-cache.sh save fasl
+
+# The DWG codec on REAL vendor templates (.dwt): BricsCAD V26's and AutoCAD
+# 2026's, installed on thalassa -- they cannot be committed. Builds libredwg,
+# then reads each template and cross-checks BricsCAD's named-object
+# dictionary against what the entget-pointers probe measured on the same
+# files (scripts/test-vendor-templates.sh).
+test:dwt:macos:
+  extends: .gate-macos-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive   # libredwg, for build-libraries
+  script:
+    - make build-libraries
+    - sh scripts/test-vendor-templates.sh
+
+test:clautolisp:windows:
+  extends: .gate-windows-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C clautolisp test-sbcl
+    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
+
+test:autolisp-test:macos:
+  extends: [.gate-macos-hard, .fasl-cache]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-test test
+    - sh scripts/ci-build-cache.sh save fasl
+
+test:autolisp-test:windows:
+  extends: .gate-windows-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-test test
+
+test:alfe:macos:
+  extends: [.gate-macos-hard, .fasl-cache]
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
+  script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    # Here it is the native verification of that table (file polling of the
+    # action boundaries, process streams, paths) on macOS.
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end test-sbcl
+    - sh scripts/ci-build-cache.sh save fasl
+
+# alfe under CCL on macOS (ccl-protocol-write-atomic-file-contention-hangs):
+# MANUAL, a measurement lane -- no other lane runs CCL on macOS, where the
+# contention test was seen to freeze the x86 CCL under Rosetta. Uses the first
+# CCL it finds; the Makefile's TEST_TIMEOUT kills a frozen run (exit 142).
+test:alfe:ccl:macos:
+  tags: [macos, arm64, shell]
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - |
+      CCLBIN=""
+      for c in "$CCL" ccl ccl64 dx86cl64 /usr/local/src/ccl/dx86cl64 /usr/local/src/ccl/dx86cl /opt/local/bin/ccl64; do
+        [ -n "$c" ] || continue
+        if command -v "$c" >/dev/null 2>&1; then CCLBIN=$(command -v "$c"); break; fi
+      done
+      if [ -z "$CCLBIN" ]; then echo "test:alfe:ccl:macos: no CCL on this runner"; exit 1; fi
+      echo "CCL: $CCLBIN"; file "$CCLBIN" || true
+      echo "machine: $(uname -m); Rosetta-translated shell: $(sysctl -in sysctl.proc_translated 2>/dev/null || echo n/a)"
+      make -C autolisp-front-end test-ccl CCL="$CCLBIN" TEST_TIMEOUT=1800
+
+test:alfe:windows:
+  extends: .gate-windows-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
+  script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    # Here it is the native verification of that table on MS-Windows
+    # (clautolisp-sbcl.exe, file polling of the action boundaries, process
+    # streams, drive-letter paths).
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end test-sbcl
+
+# --- W4 pathname-mapping conformance (real frames) -------------------------
+conformance:pathname-mapping:macos:
+  extends: .gate-macos-soft
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    CLAUTOLISP_DEBUG_PATHMAP: "1"
+  script:
+    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-pathname-mapping.lisp"
+
+conformance:pathname-mapping:windows:
+  extends: .gate-windows-soft
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    CLAUTOLISP_DEBUG_PATHMAP: "1"
+  script:
+    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-pathname-mapping.lisp"
+
+# --- platform vl-registry verification -------------------------------------
+verify:vl-registry:macos:
+  extends: .gate-macos-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
+
+# The installed-prefix half of alfe-installed-runtime-prefix-discovery:
+# the unit tests use a pretend executable in a pretend install tree, and
+# only a real `make install-programs' on Windows can answer the ticket's
+# remaining criterion. Starts no CAD (--print-command stages and stops),
+# so it needs no cad tag.
+verify:installed-prefix:windows:
+  extends: .gate-windows-soft
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installed-prefix.ps1
+
+verify:vl-registry:windows:
+  extends: .gate-windows-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
+
+# Does a COMPLETE INSTALLED RELEASE find its native DWG libraries on
+# MS-Windows? The Windows half of clautolisp-distributed-native-libraries-not-
+# loaded, and the half with the extra rule: clal_dwg.dll IMPORTS libredwg.dll,
+# a DLL carries no rpath, so the two are not interchangeable halves of one
+# thing and the program must NAME the missing one rather than blame the codec.
+# The check removes libredwg.dll from the installed prefix and insists on that
+# message.
+#
+# The work happens in MSYS2 bash (scripts/avec-bash.ps1 does the handoff, and
+# the bash side sources environnement-windows.sh for MINGW64-first + a POSIX
+# CC), so the platform-neutral checker is reused instead of being rewritten in
+# PowerShell. NO CAD is involved: this needs Windows, not AutoCAD, so it takes
+# the plain windows gate and NOT .gate-windows-cad-* -- nothing here should
+# wait behind, or be failed by, the CAD sweep.
+#
+# Manual, like its Linux counterpart: it is minutes of C and Lisp compilation
+# and nothing depends on its result.
+# alfe --template against the real CADs (alfe-template-option, acceptance):
+# acad.dwt / Default-imperial.dwt give MEASUREMENT 0, acadiso.dwt /
+# Default-m.dwt 1, on alfe's per-run copy. Manual: a CAD job not to add to
+# every pipeline's sweep; play it when template.lisp or %SESSION-DWG changes.
+verify:alfe-template:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  timeout: 30m
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - '& scripts/avec-bash.ps1 scripts/verify-alfe-template.sh bricscad autocad'
+    - 'if ($LASTEXITCODE -ne 0) { throw "alfe --template check failed ($LASTEXITCODE)" }'
+
+verify:packaged-dwg:windows:
+  extends: .gate-windows-soft
+  stage: test
+  timeout: 60m
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive   # vendored libredwg (+ jsmn)
+    MSYS2_ROOT: 'C:\msys64'
+  script:
+    - '& scripts/avec-bash.ps1 scripts/verify-packaged-dwg-windows.sh'
+    # PowerShell does NOT fail a step on a native program's non-zero exit, so
+    # without this the job would go green over a failed check (the trap the
+    # release lane documents two jobs above).
+    - 'if ($LASTEXITCODE -ne 0) { throw "packaged-dwg check failed ($LASTEXITCODE)" }'
+
+# alfe --epure against the real CADs, with EPURE installed on the runner
+# (pjb, 2026-09-25). The plug-in rests on two assumptions inherited from
+# the legacy wrapper -- that a nested ._SCRIPT returns control to the
+# outer /b script, and that COM SendCommand keeps the order -- and both
+# have only ever been asserted against a mock
+# (alfe-plugin-epure-windows-validation.issue).
+#
+# A PROBE: it keeps the workdir and prints the emitted run.scr /
+# bridge-*.vbs / protocol files, which is the evidence those assumptions
+# need. Manual and CAD-tagged, since it starts a real CAD.
+# Why does (print X) write only a newline in an EPURE session, when it
+# prints fine without EPURE? Two runs separate boolean rendering in the
+# shadow from something the EPURE session changes. Dumps the BYTES of
+# protocol/stdout.txt: the presence or absence of print trailing space
+# is the whole distinction.
+verify:bricscad-print:windows:
+  extends: .gate-windows-bricscad-soft
+  stage: test
+  timeout: 45m
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-bricscad-print.ps1
+
+# Does EPURE's API answer inside an alfe session? (pjb, before closing
+# alfe-plugin-epure-windows-validation.) Reaching READY says EPURE
+# loaded; this says its functions answer, which is what --epure is for.
+#
+# Its own job, and 60 minutes: verify:epure:windows grew to six CAD
+# launches and hit the 30 minute cap before ever reaching these runs.
+# One launch per CAD here, twice -- as pjb types it, and from a file.
+verify:epure-api:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  timeout: 60m
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-epure-api.ps1
+
+verify:epure:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-epure-windows.ps1
+
+# What the registry actually holds, and what alfe makes of it. Starts no
+# AutoCAD (--print-command stages without launching), so it needs no CAD
+# tag and cannot hang on a licence dialog. Manual: it is a diagnostic,
+# run when a COM resolution is in question
+# (alfe-autocad-progid-registry-probe-fails.issue).
+probe:com-registration:autocad:windows:
+  extends: .gate-windows-soft
+  stage: test
+  # A diagnostic, never automatic: the gate's rules would start it on
+  # every pipeline when the runner is online.
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-autocad-com-registration.ps1
+
+# Where AutoCAD / BricsCAD keep TRUSTEDPATHS in the registry, so alfe can add
+# its workdir before launching and remove it after
+# (alfe-cad-workdir-not-in-trustedpaths). Read-only reg queries, no CAD, no
+# build: a diagnostic, played by hand.
+probe:trustedpaths-registry:windows:
+  extends: .gate-windows-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-trustedpaths-registry.ps1
+  artifacts:
+    when: always
+    name: "trustedpaths-registry-$CI_COMMIT_SHORT_SHA"
+    paths: [dist/trustedpaths-registry/]
+    expire_in: 90 days
+
+# The end-to-end proof: SECURELOAD=2 in every AutoCAD profile, then alfe must
+# still run (its workdir trusted for the run), an untrusted -l control must be
+# refused, and no entry may remain afterwards. It changes the runner's AutoCAD
+# profiles for its duration and restores them, so it is played by hand.
+verify:trustedpaths-secureload2:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-trustedpaths-secureload2.ps1
+
+# Output printed by a function DEFINED with -l and CALLED with -x reaches alfe
+# on AutoCAD accoreconsole (autocad-no-rest-output-capture: the eval-request
+# path, native-loaded from protocol\alfe-eval.lsp, used to lose it). Manual:
+# a check for that ticket, played when the capture path changes.
+verify:autocad-x-output:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-autocad-x-output.ps1
+
+# alfe-cad-nil-catch-all-message, the vendor check: on AutoCAD a caught
+# error can carry a NIL message (vl-exit-with-error outside a VLX); a -x
+# request failing so must report FAIL, not DONE OK, on the GUI and on
+# AcCoreConsole. Manual: one run settles it.
+verify:autocad-nil-catch-all:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-autocad-nil-catch-all.ps1
+
+# The other half of the COM work: a REAL AutoCAD, launched through the
+# bridge, evaluating ActiveX. The registry probe above says which ProgID
+# alfe picks; only this says the bridge reaches READY and AutoLISP runs
+# inside AutoCAD. SCHMS's test-cad-activex:autocad:windows asks the same
+# question from another repository, which this project cannot reach.
+#
+# Manual, and CAD-tagged: it starts AutoCAD on the runner.
+verify:autocad-activex:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-autocad-activex.ps1
+
+# What runs in the CURRENT Windows session state? Prints the session state
+# (console/rdp, connect state, locked) and then a 3x3 matrix: clautolisp
+# (in-process control), bricscad and autocad, each under --mode batch,
+# --mode automation and --epure. It reports and exits 0; reading the matrix
+# against the session banner is the deliverable. The point is to characterise
+# the disconnected-GUI state -- runner logged in but the desktop suspended
+# back to the login window -- in which COM/GUI CAD (automation, epure) dies
+# while headless batch (accoreconsole) survives, the difference seen between
+# benchmark:autocad:windows and benchmark:bricscad:windows on the same runner.
+# See autocad-com-fails-in-disconnected-windows-session.issue. Manual and
+# CAD-tagged: it launches both real CADs. 90m: up to six real CAD launches,
+# some of which may time out under a suspended desktop.
+probe:cad-session-state:windows:
+  extends: .gate-windows-cad-soft
+  stage: test
+  timeout: 90m
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-session-state.ps1
+
+# --- real-CAD BricsCAD automation checks (self-building) -------------------
+verify:bricscad-hidden-ui:windows:
+  extends: .gate-windows-bricscad-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-bricscad-hidden-ui.ps1
+
+# MANUAL-ONLY (not auto-gated): --mode automation on macOS is not yet
+# validated — BricsCAD launches but the osascript/AppleScript path does not
+# drive it (it sits interactive), so an auto-run would just hang the serial
+# macOS runner. Kept clickable, but EXPECT IT TO FAIL, and not because
+# anything regressed: the alfe-bricscad-automation-macos decision was
+# taken in 1.8.34 (pjb chose option A), and `--mode automation' is now
+# WINDOWS-ONLY -- alfe refuses it on macOS with [NO-AUTOMATION], which is
+# exactly what this job then reports.
+#
+# It survives as the investigation tool for option B (driving the
+# launcher by hand in front of the machine), which the issue left open.
+# Manual-only, so it costs nothing until someone clicks it; a red run
+# here is the designed refusal, not a fault to chase.
+verify:bricscad-automation:macos:
+  extends: .gate-macos-cad-manual
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  artifacts:
+    name: "bricscad-automation-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/bricscad-automation/]
+    expire_in: 30 days
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/verify-bricscad-automation.sh
+
+# --- encoding experiment (self-contained, builds alfe in-script) -----------
+.encoding-artifacts:
+  interruptible: true
+  artifacts:
+    name: "encoding-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/encoding/]
+    expire_in: 30 days
+
+encoding:experiment:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .encoding-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,encoding,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-encoding-experiment.sh --backend bricscad
+
+encoding:experiment:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .encoding-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,encoding,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend bricscad
+
+encoding:experiment:autocad:windows:
+  extends: [.gate-windows-cad-soft, .encoding-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,encoding,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad
+
+# encoding-situations-cli-options experiment E1: AutoCAD's native (load) under
+# LISPSYS 0 / 1 / 2 x a windows-1252 / UTF-8 / UTF-8-with-BOM source. Writes
+# LISPSYS (and SECURELOAD 0) into every AutoCAD profile for the run, restarts
+# accoreconsole per level, restores both values at the end.
+encoding:experiment:lispsys-bom:autocad:windows:
+  extends: [.gate-windows-cad-soft, .encoding-artifacts]
+  # dist/e1/ holds the fixtures and the forward files (e1f-*.txt) whose SIZE
+  # lines the report quotes: the bytes are evidence too
+  # (encoding-probe-artifacts-and-macos-forward). Only this job writes there.
+  artifacts:
+    name: "encoding-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/encoding/, dist/e1/]
+    expire_in: 30 days
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,lispsys-bom,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-lispsys-bom-probe.ps1
+
+# --- pathname "." / ".." probe (self-contained) ----------------------------
+# --- path-carrying system variables: what a real engine actually holds ------
+#
+# bricscad-sysvars-on-macos.issue. The inventory marks most of these
+# :host-specific, so the generated catalogue carries "" -- which means NOBODY
+# MEASURED THEM, not that a real CAD leaves them empty. Every proposal about
+# what clautolisp should put in them is a guess until these have run.
+#
+# FOUR jobs for THREE engines, and the fourth is the point: AutoCAD is probed
+# twice, once through the GUI engine (--mode automation -> acad) and once
+# headless (--mode batch -> AcCoreConsole). Whether the two populate the same
+# variables is one of the questions being asked (pjb) -- a variable only the
+# GUI fills is one clautolisp has no reason to imitate, and finding that out
+# by reading documentation is exactly what this avoids.
+.path-sysvars-artifacts:
+  artifacts:
+    name: "path-sysvars-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/path-sysvars/]
+    expire_in: 30 days
+
+path-sysvars:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .path-sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,path-sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-path-sysvars-probe.sh --backend bricscad
+
+path-sysvars:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .path-sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,path-sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-path-sysvars-probe.ps1 -Backend bricscad
+
+path-sysvars:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .path-sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,path-sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-path-sysvars-probe.ps1 -Backend autocad
+
+path-sysvars:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .path-sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,path-sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-path-sysvars-probe.ps1 -Backend accoreconsole
+
+# --- localised CAD command names: getcname harvest for cadtui ---------------
+#
+# cadtui-locale-probe-getcname.issue. cadtui translates CAD command names
+# international<->local; the localised forms can only be MEASURED on a localised
+# install. getcname is a nil stub in clautolisp, so this harvest is meaningful
+# only against a real CAD -- and the runners' BricsCAD is a French install, so
+# BricsCAD here yields real fr_FR names. Soft (a probe measures, never gates);
+# artifacts feed scripts/cadtui-getcname-to-sexp.py -> command.sexp.
+.getcname-artifacts:
+  artifacts:
+    name: "getcname-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/getcname/]
+    expire_in: 30 days
+
+getcname:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .getcname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,getcname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-getcname-probe.sh --backend bricscad
+
+getcname:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .getcname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,getcname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-getcname-probe.ps1 -Backend bricscad
+
+getcname:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .getcname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,getcname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-getcname-probe.ps1 -Backend autocad
+
+getcname:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .getcname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,getcname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-getcname-probe.ps1 -Backend accoreconsole
+
+# --- curve geometry: vlax-curve-* / ArcLength / bulges, measured -------------
+#
+# cador-curve-length-and-sampling.issue. SCHMS read an ARC's length as 0.274
+# (R 10, 90 degrees) and got NIL sampling a chain of curves on the cador host;
+# the fix follows the documented AcDbCurve conventions (ARC params = angles,
+# bulge segments = arcs), and these jobs MEASURE them on the vendors: every
+# vlax-curve-* on ARC (0-90, 315-45), CIRCLE, LINE, LWPOLYLINE (bulge, closed,
+# elevation) and 2D POLYLINE, at boundary params / dists and vertices, plus the
+# ArcLength / TotalAngle / Length / Area properties and how entmake / command
+# ARC / vla-AddArc store the angles. Soft: a probe measures, never gates.
+.curve-geometry-artifacts:
+  artifacts:
+    name: "curve-geometry-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/curve-geometry/]
+    expire_in: 30 days
+
+curve-geometry:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-curve-geometry-probe.sh --backend bricscad
+
+curve-geometry:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-curve-geometry-probe.ps1 -Backend bricscad
+
+curve-geometry:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-curve-geometry-probe.ps1 -Backend autocad
+
+curve-geometry:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .curve-geometry-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,curve-geometry,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-curve-geometry-probe.ps1 -Backend accoreconsole
+
+# --- keyboard command aliases: the .pgp harvest for cadtui -------------------
+#
+# cadtui-locale-probe-pgp-aliases.issue. The third, distinct CAD locale
+# dictionary (purely local aliases, never _-prefixed). The probe just LOCATES
+# and reads the install's alias file (acad.pgp / default.pgp); on the localised
+# runner it yields the French aliases (L -> LIGNE). Soft. Artifacts feed
+# scripts/cadtui-pgp-to-sexp.py -> alias.sexp.
+.pgp-artifacts:
+  artifacts:
+    name: "pgp-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/pgp/]
+    expire_in: 30 days
+
+pgp:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .pgp-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,pgp,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-pgp-probe.sh --backend bricscad
+
+pgp:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .pgp-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,pgp,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pgp-probe.ps1 -Backend bricscad
+
+pgp:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .pgp-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,pgp,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pgp-probe.ps1 -Backend autocad
+
+# --- command OPTION KEYWORDS: the hardest CAD locale dictionary --------------
+#
+# cadtui-locale-option-keywords.issue. No getcname-equivalent exists, so the
+# probe DRIVES each command and captures the localised keywords from its prompt
+# (PROMPTOPTIONTRANSLATEKEYWORDS). BATCH engines only (accoreconsole /
+# bricscad -b) — prompts echo to stdout and no GUI dialog can wedge the runner;
+# the probe also cancels each command with a bounded ESC loop. Soft. Artifacts
+# feed scripts/cadtui-optkw-to-sexp.py -> option-keyword.sexp (first cut).
+.optkw-artifacts:
+  artifacts:
+    name: "optkw-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/optkw/]
+    expire_in: 30 days
+
+optkw:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .optkw-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,optkw,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-optkw-probe.ps1 -Backend accoreconsole
+
+optkw:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .optkw-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,optkw,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-optkw-probe.sh --backend bricscad
+
+optkw:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .optkw-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,optkw,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-optkw-probe.ps1 -Backend bricscad
+
+# --- a long, chatty accoreconsole session must complete ----------------------
+#
+# alfe-accoreconsole-console-pipe-not-drained.issue. alfe used to leave
+# accoreconsole's console on pipes nobody read until it exited; once the pipe
+# was full the engine blocked and the run hung until --timeout. The probe
+# drives ~1 MB into accoreconsole's console in ONE session (native princ,
+# echoed SETVAR / REGEN commands), measuring engine-console-stdout.txt after
+# every chunk (FLOOD-STEP); red on FLOOD-INCOMPLETE, or on FLOOD-WEAK (under
+# 256 KB reached the console: the run proves nothing). Soft: a probe measures.
+.console-flood-artifacts:
+  artifacts:
+    name: "console-flood-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/console-flood/]
+    expire_in: 30 days
+
+console-flood:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .console-flood-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,console-flood,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-console-flood-probe.ps1 -Backend accoreconsole
+
+.pathname-artifacts:
+  interruptible: true
+  artifacts:
+    name: "pathname-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/pathname/]
+    expire_in: 30 days
+
+pathname:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .pathname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,pathname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-pathname-probe.sh --backend bricscad
+
+pathname:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .pathname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,pathname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend bricscad
+
+pathname:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .pathname-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,pathname,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend autocad
+
+# --- COMMAND prompts from GUI AutoCAD (windows-runner-sunset B12, path 1) -----
+#
+# Headless accoreconsole cannot capture interactive command prompts: a
+# loaded-lisp (command "_LINE") does not suspend there, so LASTPROMPT stays
+# empty (proven 2026-10-25). A GUI acad.exe, launched with /b run.scr, runs the
+# SAME probe suite in the real interactive app where (command ...) suspends and
+# LASTPROMPT holds the prompt. MANUAL + allow_failure on purpose: GUI acad on a
+# CI runner may have no interactive desktop or no GUI license seat, in which
+# case it times out with no results -- that outcome is itself the finding.
+command-prompts:gui:autocad:windows:
+  extends: .gate-windows-cad-soft
+  rules:
+    - when: manual
+      allow_failure: true
+  stage: test
+  interruptible: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - bash scripts/run-command-prompts-gui-autocad.sh dist/command-prompts-gui
+  artifacts:
+    when: always
+    name: "command-prompts-gui-$CI_COMMIT_SHORT_SHA"
+    paths: [dist/command-prompts-gui/]
+    expire_in: 30 days
+
+# --- ActiveX IntersectWith: what the vendors return --------------------------
+#
+# cador-intersectwith-missing.issue. clautolisp implements IntersectWith from
+# the reference, which says nothing about the ORDER of the points, tangency,
+# overlapping curves, a crossing at a polyline vertex, how far a polyline
+# extends, or vlax-safearray->list on the EMPTY result. This probe measures
+# them (both call forms, the four acExtend options). `autocad' is the GUI
+# engine through COM automation; `accoreconsole' the headless console, which
+# has no application object -- whether its vla- surface answers is itself
+# measured. Soft: a probe measures, never gates.
+.intersectwith-artifacts:
+  interruptible: true
+  artifacts:
+    name: "intersectwith-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/intersectwith/]
+    expire_in: 30 days
+
+intersectwith:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .intersectwith-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-intersectwith-probe.sh --backend bricscad
+
+intersectwith:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .intersectwith-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend bricscad
+
+intersectwith:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .intersectwith-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend autocad
+
+intersectwith:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .intersectwith-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,intersectwith,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-intersectwith-probe.ps1 -Backend accoreconsole
+
+# --- real literals through alfe: every digit must reach the CAD -------------
+#
+# alfe-cad-transport-rounds-reals.issue. alfe's CAD-side loader used to PRINT
+# each loaded form back for the CAD's native LOAD, and princ keeps 6
+# significant digits of a real on AutoCAD and 14 on BricsCAD. Since alfe
+# 2.3.12 the form's own text travels, and a form alfe must rewrite is printed
+# with every real at full precision. These jobs MEASURE it: assorted literals
+# (1.2345678901234, pi/2 to 17 digits, 1.0e-300, 1.0e300, -0.0, 3.0, DBL_MAX,
+# ...) loaded by -l (top-level and normalised forms) and sent by -x, each
+# compared with the CAD's own (read "<digits>") and printed with (rtos x 2 16)
+# and (rtos x 1 16). Soft: a probe measures, never gates.
+.real-transport-artifacts:
+  interruptible: true
+  artifacts:
+    name: "real-transport-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/real-transport/]
+    expire_in: 30 days
+
+real-transport:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .real-transport-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-real-transport-probe.sh --backend bricscad
+
+real-transport:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .real-transport-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-real-transport-probe.ps1 -Backend bricscad
+
+real-transport:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .real-transport-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-real-transport-probe.ps1 -Backend autocad
+
+real-transport:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .real-transport-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,real-transport,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-real-transport-probe.ps1 -Backend accoreconsole
+
+# --- angle units of a vendor-written DXF file ------------------------------
+#
+# dxf-file-angle-units.issue, dxf-angle-units-hatch-viewport-tables.issue.
+# clautolisp's DXF codec converts a table of angle groups (ARC 50/51, TEXT /
+# ATTRIB / ATTDEF 50/51, MTEXT 50, INSERT 50, DIMENSION 50-53, VERTEX 50,
+# HATCH 52/53 and its arc / elliptic-arc edge 50/51, VPORT 50/51, VIEW 50,
+# STYLE 50) from DEGREES in the file to RADIANS in entget, from the DXF
+# reference only. These jobs MEASURE it: the probe builds entities with
+# known angles, prints entget's values, exports the drawing as DXF
+# (vla-SaveAs, else SAVEAS / DXFOUT) and prints the same groups as the file
+# holds them. The DXF itself is in the artefact (a fixture for
+# clautolisp/drawing/tests/fixtures/vendor-dxf/). Soft: a probe measures,
+# never gates.
+.dxf-angles-artifacts:
+  interruptible: true
+  artifacts:
+    name: "dxf-angles-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/dxf-angles/]
+    expire_in: 30 days
+
+dxf-angles:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .dxf-angles-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,dxf-angles,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-dxf-angles-probe.sh --backend bricscad
+
+dxf-angles:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .dxf-angles-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,dxf-angles,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-dxf-angles-probe.ps1 -Backend bricscad
+
+dxf-angles:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .dxf-angles-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,dxf-angles,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-dxf-angles-probe.ps1 -Backend autocad
+
+dxf-angles:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .dxf-angles-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,dxf-angles,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-dxf-angles-probe.ps1 -Backend accoreconsole
+
+# --- a second CAD instance: what COM / LaunchServices offer ----------------
+# alfe-cad-launch-new-by-default: alfe is to LAUNCH a new CAD by default and
+# attach to a running one only on request, to a given instance by PID. These
+# jobs MEASURE what that can rest on: whether a second CreateObject / launch
+# gives a second process, which instance GetActiveObject returns, what the
+# Running Object Table holds per instance, and whether System Events can
+# target one of two same-named BricsCAD processes by unix id. Soft: a probe
+# measures, never gates.
+.cad-instances-artifacts:
+  interruptible: true
+  artifacts:
+    name: "cad-instances-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/cad-instances/]
+    expire_in: 30 days
+
+cad-instances:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .cad-instances-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,cad-instances,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - bash scripts/probe-cad-instances.sh
+
+cad-instances:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .cad-instances-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,cad-instances,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-probe-cad-instances-paths.ps1
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-instances.ps1 -Backend bricscad
+
+cad-instances:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .cad-instances-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,cad-instances,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test-probe-cad-instances-paths.ps1
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-cad-instances.ps1 -Backend autocad
+
+# --- user globals through alfe: a (setq f ...) must reach the global ------
+#
+# alfe-eval-request-locals-capture-user-setq.issue. AutoLISP binds a DEFUN's
+# parameters and locals dynamically, and alfe evaluates every user form inside
+# its own CAD-side functions; up to alfe 2.3.14 those bound F, TEXT, R, PATH,
+# FORM ..., so a user (setq f 1) set alfe's local and was lost. Since 2.3.15
+# they are all named alfe--NAME. These jobs MEASURE it: the -l file, an -x
+# setq and a function each set 23 such names, and a LATER request reads the
+# globals back (RLOCALS ... kept|lost). Soft: a probe measures, never gates.
+.request-locals-artifacts:
+  interruptible: true
+  artifacts:
+    name: "request-locals-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/request-locals/]
+    expire_in: 30 days
+
+request-locals:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .request-locals-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,request-locals,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-request-locals-probe.sh --backend bricscad
+
+request-locals:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .request-locals-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,request-locals,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-request-locals-probe.ps1 -Backend bricscad
+
+request-locals:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .request-locals-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,request-locals,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-request-locals-probe.ps1 -Backend autocad
+
+request-locals:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .request-locals-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,request-locals,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-request-locals-probe.ps1 -Backend accoreconsole
+
+# --- vendor probes on real BricsCAD / AutoCAD ------------------------------
+# Self-building (make build-alfe-sbcl in-script), like the encoding/pathname
+# probes, so they no longer `needs:` build:alfe:* (which stays in the parent
+# for benchmark:*:cad). Release-mandatory when a release tag runs (.gate-hard).
+.vendor-probe-artifacts:
+  artifacts:
+    name: "vendor-probes-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/vendor-probes/]
+    expire_in: 30 days
+
+vendor:probes:bricscad:
+  extends: [.gate-windows-bricscad-hard, .vendor-probe-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,vendor,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_KEEP_WORKDIR: '1'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad -KeepWorkdir $env:PROBE_KEEP_WORKDIR
+
+vendor:probes:autocad:
+  extends: [.gate-windows-cad-hard, .vendor-probe-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,vendor,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_KEEP_WORKDIR: '1'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -KeepWorkdir $env:PROBE_KEEP_WORKDIR
+
+# The probes/ SUITE (probes/sources/manifest.txt), as opposed to the alfe
+# scenario probes above. It had no CI job at all: `make probe-autocad' was
+# a manual ritual on someone's machine, which is why questions it answers
+# stayed open.
+#
+# SOFT on purpose, on a tag as everywhere else: a probe MEASURES an engine,
+# it does not gate a release. Its answer changes what clautolisp claims,
+# and that is a decision, not a build failure.
+#
+# PROBE_NO_COMMIT: the runner script normally git-commits its results so
+# they can be handed back; in CI the checkout is detached and committing
+# there would be pointless, so the results travel as an artefact instead.
+probe:suite:autocad:windows:
+  extends: .gate-windows-cad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,suite,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-autocad
+  artifacts:
+    when: always
+    name: "probe-suite-autocad-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+# BricsCAD's half of the probes/ suite, on BOTH platforms because BricsCAD
+# runs on both and a divergence between them is itself an answer.
+#
+# There was no BricsCAD job for this suite at all -- only the AutoCAD one
+# above -- so any probe/ question needing BOTH engines could not be
+# answered from CI. foreach-binding-vs-assignment.issue is exactly such a
+# question, which is what these jobs are for.
+#
+# SOFT, like the AutoCAD one and for the same reason: a probe MEASURES an
+# engine, it does not gate anything. PROBE_NO_COMMIT because the CI
+# checkout is detached; results travel as an artefact.
+#
+# The FULL suite runs on BricsCAD again (2026-10-03). It was narrowed
+# (PROBE_SUITES 'rtos foreach-scope ...') while it killed the engine on both
+# platforms -- `wrapper-start' and nothing more, a segfault on macOS, a
+# silent exit on Windows. The cause was one FORM: a body-less
+# (foreach e (list 1 2 3)) in probe-foreach-scope.lsp, which BricsCAD
+# refuses to LOAD, taking the whole file -- and the run -- with it. It now
+# has a body, and the rule is kept in probes/README.org: syntax a host might
+# refuse goes in a string, read at run time, so a refusal is one case's
+# `error', not a dead engine. See issues/closed/probes-suite-crashes-
+# bricscad.issue.
+#
+# PROBE_SPLIT_SUITES stays: one form per file, so a load that HANGS still
+# names the form it hung on.
+probe:suite:bricscad:macos:
+  extends: .gate-macos-cad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,suite,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    # No PROBE_SUITES: the FULL suite (every non-quarantined manifest line)
+    # runs again -- probes-suite-crashes-bricscad, 2026-10-03.
+    # One form per file, so a load that HANGS still names the form it
+    # hung on -- see split_wanted in probes/scripts/run-probes.sh.
+    PROBE_SPLIT_SUITES: 'foreach-scope vlax-for-scope'
+  script:
+    # alfe as well as clautolisp: the BricsCAD probes are DRIVEN BY ALFE
+    # (detect-cad.sh), because launching BricsCAD directly segfaults on
+    # both platforms while alfe drives it green on both.
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-suite-bricscad-macos-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+# WHICH FORM WILL BRICSCAD NOT READ FROM A FILE?
+#
+# These two run the QUARANTINED load-refusal suite, alone and split.
+# Unlike every other probe, its forms are written out rather than hidden
+# in strings, because LOADING THEM IS THE EXPERIMENT -- so the engine is
+# EXPECTED to hang, and the last per-form marker in the results is the
+# answer. See probes/sources/probe-load-refusal.lsp and
+# issues/open/bricscad-refuses-to-load-what-it-will-run.issue.
+#
+# PROBE_TIMEOUT low, because the Windows runner is serial and nothing
+# should queue behind a deliberate hang. PROBE_ANY_RESULT_IS_SUCCESS,
+# because this is an EXPERIMENT whose whole point is to capture whatever
+# the engine does — a crash, a hang the timeout kills, a load that never
+# returns — so ANY captured (non-empty) result is a success and the job
+# goes GREEN; only a run that produced nothing at all fails. allow_failure
+# is kept as a belt-and-braces guard for the no-result case.
+probe:load-refusal:bricscad:macos:
+  extends: .gate-macos-cad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,load-refusal,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'load-refusal'
+    PROBE_SPLIT_SUITES: 'load-refusal'
+    PROBE_TIMEOUT: '45'
+    PROBE_ANY_RESULT_IS_SUCCESS: '1'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-load-refusal-bricscad-macos-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:load-refusal:bricscad:windows:
+  extends: .gate-windows-bricscad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,load-refusal,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'load-refusal'
+    PROBE_SPLIT_SUITES: 'load-refusal'
+    PROBE_TIMEOUT: '45'
+    PROBE_ANY_RESULT_IS_SUCCESS: '1'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-load-refusal-bricscad-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:suite:bricscad:windows:
+  extends: .gate-windows-bricscad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,suite,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    # No PROBE_SUITES: the FULL suite (every non-quarantined manifest line)
+    # runs again -- probes-suite-crashes-bricscad, 2026-10-03.
+    # One form per file, so a load that HANGS still names the form it
+    # hung on -- see split_wanted in probes/scripts/run-probes.sh.
+    PROBE_SPLIT_SUITES: 'foreach-scope vlax-for-scope'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-suite-bricscad-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+# WHAT TYPE DOES ENTGET GIVE THE DXF POINTER GROUP CODES?
+#
+# probes/sources/probe-entget-pointers.lsp alone (PROBE_SUITES), on the three
+# CAD engines: 330/340/350/360/390/480 as ENAME or handle string, the null
+# pointer of the named-object dictionary, a pointer to an erased object,
+# 320-329, handle strings written through entmakex / entmod, and the XRECORD
+# read-back layout ((280 . 1) after the AcDbXrecord marker). The answer
+# settles the TO MEASURE points of
+# issues/closed/cador-entget-pointer-codes-are-handle-strings.issue. The same
+# suite also runs inside the full probe:suite:* jobs; these narrow jobs give
+# the answer without the rest of the suite's queue time. SOFT, like every
+# probe: it measures, it gates nothing.
+# AutoCAD at LISPSYS 1 (dialect-platform-version-axis): the runner's AutoCAD
+# is at 0. scripts/run-lispsys1-probe.sh sets 1, measures in fresh sessions
+# (only if a fresh session reads 1), and ALWAYS sets it back to 0 and checks
+# it (pjb 2026-10-25: "Ok for LISPSYS 1, but restore it to 0 afterwards").
+# MANUAL even when its files change: it changes the machine's AutoCAD
+# setting, which the SCHMS jobs rely on. after_script repeats the reset.
+probe:lispsys1:autocad:windows:
+  extends: .gate-windows-cad-soft
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,lispsys1,/'
+      when: manual
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - bash scripts/run-lispsys1-probe.sh
+  after_script:
+    - bash scripts/run-lispsys1-probe.sh --reset-only
+  artifacts:
+    when: always
+    name: "probe-lispsys1-autocad-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:entget-pointers:autocad:windows:
+  extends: .gate-windows-cad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-autocad
+  artifacts:
+    when: always
+    name: "probe-entget-pointers-autocad-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:entget-pointers:bricscad:windows:
+  extends: .gate-windows-bricscad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-entget-pointers-bricscad-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:entget-pointers:bricscad:macos:
+  extends: .gate-macos-cad-soft
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+  script:
+    # BricsCAD probes are DRIVEN BY ALFE (detect-cad.sh), as in
+    # probe:suite:bricscad:macos.
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-entget-pointers-bricscad-macos-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:autocad-imperial:windows:
+  extends: .gate-windows-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN imperial template (acad.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'acad.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-autocad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-autocad-imperial-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:autocad-metric:windows:
+  extends: .gate-windows-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN metric template (acadiso.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'acadiso.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make probe-autocad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-autocad-metric-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-imperial:windows:
+  extends: .gate-windows-bricscad-soft
+  # entget-pointers on a drawing of the CAD's OWN imperial template (Default-imperial.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-imperial.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-imperial-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-metric:windows:
+  extends: .gate-windows-bricscad-soft
+  # entget-pointers on a drawing of the CAD's OWN metric template (Default-m.dwt,
+  # BricsCAD's BASEFILE on the runners),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-m.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-metric-windows-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-imperial:macos:
+  extends: .gate-macos-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN imperial template (Default-imperial.dwt),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-imperial.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-imperial-macos-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+probe:template-defaults:bricscad-metric:macos:
+  extends: .gate-macos-cad-soft
+  # entget-pointers on a drawing of the CAD's OWN metric template (Default-m.dwt,
+  # BricsCAD's BASEFILE on the runners),
+  # not alfe's empty.dwg (a French AutoCAD 2005 file): what a NEW drawing
+  # holds (alfe-template-option; PROBE_TEMPLATE in run-probes.sh). A missing
+  # template fails the job with the templates found listed.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,entget-pointers,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_NO_COMMIT: '1'
+    PROBE_SUITES: 'entget-pointers'
+    PROBE_TEMPLATE: 'Default-m.dwt'
+  script:
+    - make -C clautolisp build-clautolisp-sbcl
+    - make -C autolisp-front-end build-alfe-sbcl
+    - make probe-bricscad
+  artifacts:
+    when: always
+    name: "probe-template-defaults-bricscad-metric-macos-$CI_COMMIT_SHORT_SHA"
+    paths: [probe-results/]
+    expire_in: 90 days
+
+vendor:probes:bricscad:macos:
+  extends: [.gate-macos-cad-hard, .vendor-probe-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,vendor,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_KEEP_WORKDIR: '1'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-vendor-probes.sh --backend bricscad --keep-workdir "$PROBE_KEEP_WORKDIR"
+
+# --- clean-profile sysvar harvest for BricsCAD Phase 2 ---------------------
+# NON-GATING data collection (allow_failure via the soft gate). Drives
+# `make save-sysvars` restricted to the bricscad backend/dialect against
+# real BricsCAD via a built-not-installed alfe, from a PRISTINE profile and
+# a freshly-created default drawing, so sysvars-alfe-<uname>-bricscad.txt is
+# a *clean factory-default* reference — unlike the customised / French /
+# metric dump the issue's "IMPORTANT caveat" warns against bulk-importing.
+#
+# Feed the artifacts to scripts/classify-sysvar-diff.py and paste bucket
+# (b) into *BRICSCAD-FACTORY-DEFAULTS* (cador/source/bricscad-sysvar-
+# overrides.lisp). Full steps: "Phase 2 runbook" in
+# issues/open/bricscad-dialect-sysvar-parity.issue.
+#
+# pjb must provision on the bricscad runner:
+#   BRICSCAD_PROFILE_CLEAN  — name of a pristine BricsCAD profile (no
+#                             vertical app / custom paths / non-default
+#                             locale). Exported here to alfe as
+#                             AUTOLISP_BRICSCAD_PROFILE, the same clean-
+#                             profile knob the vendor-probe scripts use.
+# The drawing must be a freshly-created default (metric/imperial per the
+# template decision) — do NOT open a saved customised .dwg.
+.sysvars-artifacts:
+  interruptible: true
+  artifacts:
+    name: "sysvars-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths:
+      - sysvars-alfe-*-bricscad.txt
+      - sysvars-clautolisp-*-bricscad.txt
+    expire_in: 30 days
+
+harvest:sysvars:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    ALFE_BIN: '$CI_PROJECT_DIR/autolisp-front-end/tools/alfe/bin/alfe-sbcl'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    # CAD-side runtime for a built-not-installed alfe (see the probe scripts).
+    - export ALFE_RUNTIME_LSP="$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-remote-io.lsp"
+    - export ALFE_BOOTSTRAP_LSP="$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-bootstrap.lsp"
+    # Clean profile: name a pristine BricsCAD profile so no vertical app or
+    # custom path/locale contaminates the factory-default reference.
+    - export AUTOLISP_BRICSCAD_PROFILE="${BRICSCAD_PROFILE_CLEAN:-<<Profil sans nom>>}"
+    - make save-sysvars ALFE="$ALFE_BIN" SAVE_SYSVARS_BACKENDS=bricscad SAVE_SYSVARS_DIALECTS=bricscad
+
+# Windows twin. Provided for parity with the sibling bricscad windows jobs
+# (pathname:probe / encoding:experiment). NOTE: `make save-sysvars` uses a
+# POSIX `for` recipe, so it depends on the runner's GNU make having a sh
+# (as `make build-alfe-sbcl` already does on this runner). Non-gating; the
+# authoritative reference is the Darwin dump, so a Windows shell mismatch
+# here is not release-blocking. pjb must confirm this runs before relying
+# on the Windows artifact.
+harvest:sysvars:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .sysvars-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,sysvars,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    # .exe, unlike the macOS twin below: since
+    # alfe-sbcl-windows-build-missing-exe-suffix the Windows build produces
+    # alfe-sbcl.exe, and an extension-less name is not executable on
+    # Windows at all -- `cannot execute binary file: Exec format error',
+    # which is how both Windows benchmarks died on the release-1.9.0 tag.
+    # This job hands ALFE_BIN straight to make, so nothing downstream
+    # repairs the name for it, unlike the run-*.ps1 probes which copy to
+    # .exe themselves (windows-exe-suffix-callers-not-swept.issue).
+    ALFE_BIN: '$CI_PROJECT_DIR/autolisp-front-end/tools/alfe/bin/alfe-sbcl.exe'
+    # These were `export' lines copied from the macOS twin below. `export' is
+    # a POSIX builtin and this job's shell is PowerShell, where it is not a
+    # command at all: the job died with CommandNotFoundException on the first
+    # one, having never launched BricsCAD. `variables:' is shell-agnostic,
+    # which is the property this job needed all along.
+    ALFE_RUNTIME_LSP: '$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-remote-io.lsp'
+    ALFE_BOOTSTRAP_LSP: '$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-bootstrap.lsp'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    # Clean profile, honouring $BRICSCAD_PROFILE_CLEAN. Not a `variables:'
+    # entry because the default must not shadow a project-level override, and
+    # `${VAR:-default}' is a shell expansion PowerShell does not have either.
+    - 'if ($env:BRICSCAD_PROFILE_CLEAN) { $env:AUTOLISP_BRICSCAD_PROFILE = $env:BRICSCAD_PROFILE_CLEAN } else { $env:AUTOLISP_BRICSCAD_PROFILE = "<<Profil sans nom>>" }'
+    # $env:NAME, not $NAME: in PowerShell the bare form is a script variable
+    # that does not exist here, so the make invocation was passing ALFE="".
+    - 'make save-sysvars ALFE="$env:ALFE_BIN" SAVE_SYSVARS_BACKENDS=bricscad SAVE_SYSVARS_DIALECTS=bricscad'
+
+# --- native "does alfe build on this OS" check (no CAD) ---------------------
+# Gated like the other native jobs: auto when the runner is online. Not a CAD
+# job, so plain [os, arch, shell] tags (may run on the higher-concurrency
+# runner). The binary is published as an artifact for download.
+build:alfe:macos:
+  extends: .gate-macos-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+  artifacts:
+    name: "alfe-$CI_COMMIT_SHORT_SHA"
+    paths: [autolisp-front-end/tools/alfe/bin/]
+    expire_in: 1 day
+
+# NO artifacts, deliberately. This job's value is proving that alfe BUILDS
+# on Windows, which the build itself establishes; the binary it produced was
+# uploaded for nobody. Verified before removing: no job `needs' it, nothing
+# downloads it, and the CAD jobs on the same runner rebuild alfe themselves.
+#
+# It was not merely waste. On a release tag this job is allow_failure: false
+# (.gate-windows-hard), and on release-1.8.42 the ~13 MB upload died three
+# times mid-POST -- "use of closed network connection" -- so a release was
+# blocked by an artefact with no consumer. Every Windows job that uploads
+# 0.0-0.5 MB succeeds on that machine while this one does not, which points
+# at a middlebox (firewall/DPI/antivirus) cutting long transfers rather than
+# at anything CI can fix. The right answer is not to make the upload more
+# robust: it is not to make it.
+build:alfe:windows:
+  extends: .gate-windows-hard
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    # PowerShell does NOT fail a step on a native program's non-zero exit
+    # (see release:windows:x86-64 in .gitlab-ci.yml for the same lesson) --
+    # without this check a broken build would sail straight into the
+    # --version probe below and surface as a confusing "not recognized"
+    # error instead of the real build failure.
+    - 'if ($LASTEXITCODE -ne 0) { throw "build-alfe-sbcl failed ($LASTEXITCODE)" }'
+    # Sanity check, kept permanently (mirrors `Get-ChildItem dist` in
+    # release:windows:x86-64): shows what build-alfe-sbcl actually produced
+    # before the --version probe below trusts a specific filename. This is
+    # what caught alfe-sbcl-windows-build-missing-exe-suffix.issue -- SBCL's
+    # SAVE-LISP-AND-DIE :EXECUTABLE T was silently writing a plain,
+    # extension-less `alfe-sbcl' image on this runner, so every downstream
+    # reference to `alfe-sbcl.exe' failed with a bare "file not found",
+    # nothing pointing at the real cause. Fixed at the source in
+    # clautolisp/autolisp-reader/tools/read-autolisp/generate.lisp
+    # (EXECUTABLE-PROGRAM-NAME), which now appends .exe itself on Windows
+    # rather than trusting the implementation to do it.
+    - 'Get-ChildItem "$env:CI_PROJECT_DIR\autolisp-front-end\tools\alfe\bin" -ErrorAction SilentlyContinue | Format-Table -AutoSize | Out-String | Write-Host'
+    # Prove the binary exists and answers, since no artefact records it.
+    #
+    # An ABSOLUTE path is required, via $env:CI_PROJECT_DIR. PowerShell only
+    # auto-executes a path when it is QUALIFIED -- absolute, a drive letter,
+    # or explicitly relative (.\, ..\) -- or found on PATH; a bare
+    # "dir/exe.exe" is parsed as a command NAME rather than a path and gives
+    # CommandNotFoundException even when the file exists (job 16000852460).
+    # The `&' call operator alone does NOT fix this: `&' only forces
+    # PowerShell to invoke its argument as a command, it does not change how
+    # that argument is resolved, so `& "dir/exe.exe"' hits the exact same
+    # CommandNotFoundException (confirmed on MR !111).
+    - '& "$env:CI_PROJECT_DIR\autolisp-front-end\tools\alfe\bin\alfe-sbcl.exe" --version'
+    - 'if ($LASTEXITCODE -ne 0) { throw "alfe-sbcl.exe --version failed ($LASTEXITCODE)" }'
+
+# --- ;| block comments |; through alfe's CAD-side loader ---------------------
+#
+# alfe-cad-source-loader-evaluates-block-comments.issue. alfe splits an -l
+# file into forms itself, and up to 2.3.12 its scanners knew only the line
+# comment: the lines of a ;| ... |; block after the first were read as code
+# (SCHMS job 529707, `no function definition: SYMBOLE'). These jobs load a
+# file with block comments in every position on the real CADs; any comment
+# text evaluated fails the load before BLKC-DONE. Soft: a probe never gates.
+.block-comment-artifacts:
+  interruptible: true
+  artifacts:
+    name: "block-comment-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/block-comment/]
+    expire_in: 30 days
+
+block-comment:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .block-comment-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,block-comment,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-block-comment-probe.sh --backend bricscad
+
+block-comment:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .block-comment-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,block-comment,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-block-comment-probe.ps1 -Backend bricscad
+
+block-comment:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .block-comment-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,block-comment,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-block-comment-probe.ps1 -Backend autocad
+
+block-comment:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .block-comment-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,block-comment,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-block-comment-probe.ps1 -Backend accoreconsole
+
+# --- control flow on the CADs: WHILE / REPEAT values, vl-exit-* outside a VLX
+#
+# while-repeat-return-nil.issue and vl-exit-with-error-leaks-host-condition
+# .issue. clautolisp's WHILE and REPEAT return nil, the spec says the last
+# body value; vl-exit-with-error outside a separate-namespace VLX escapes
+# every clautolisp handler. These jobs MEASURE both on the real CADs, each
+# case inside vl-catch-all-apply (control-flow-probe.lsp). Soft: a probe
+# measures, never gates.
+.control-flow-artifacts:
+  interruptible: true
+  artifacts:
+    name: "control-flow-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/control-flow/]
+    expire_in: 30 days
+
+control-flow:probe:bricscad:macos:
+  extends: [.gate-macos-cad-soft, .control-flow-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$MACOS_RUNNER == "online" && $PROBES_CHANGED =~ /,control-flow,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-control-flow-probe.sh --backend bricscad
+
+control-flow:probe:bricscad:windows:
+  extends: [.gate-windows-bricscad-soft, .control-flow-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,control-flow,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-control-flow-probe.ps1 -Backend bricscad
+
+control-flow:probe:autocad:windows:
+  extends: [.gate-windows-cad-soft, .control-flow-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,control-flow,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-control-flow-probe.ps1 -Backend autocad
+
+control-flow:probe:accoreconsole:windows:
+  extends: [.gate-windows-cad-soft, .control-flow-artifacts]
+  # a PROBE: automatic only when its family changed (and the runner is
+  # online), otherwise manual -- see scripts/ci-detect-probe-changes.py.
+  rules:
+    - if: '$WINDOWS_RUNNER == "online" && $PROBES_CHANGED =~ /,control-flow,/'
+      when: on_success
+      allow_failure: true
+    - when: manual
+      allow_failure: true
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-control-flow-probe.ps1 -Backend accoreconsole

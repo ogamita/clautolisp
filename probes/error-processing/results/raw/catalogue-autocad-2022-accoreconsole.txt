@@ -1,0 +1,567 @@
+FIXTURE *DOC* ERROR no function definition: VLAX-GET-ACAD-OBJECT
+FIXTURE *BLOCKS* ERROR no function definition: VLA-GET-BLOCKS
+FIXTURE *LO* ERROR no function definition: VLAX-ENAME->VLA-OBJECT
+FIXTURE *EMPTY-SA* ERROR no function definition: VLAX-MAKE-SAFEARRAY
+=== PCAT (nil "24.1" "AutoCAD" "FR") start=0
+CASE 0 (/ 1 0) => (ERROR "division par z�ro") ; ERRNO=0
+CASE 1 (/ 1.0 0) => (ERROR "division par z�ro") ; ERRNO=0
+CASE 2 (/ 1 0.0) => (ERROR "division par z�ro") ; ERRNO=0
+CASE 3 (/ 0 0) => (ERROR "division par z�ro") ; ERRNO=0
+CASE 4 (/ 0.0 0.0) => (ERROR "division par z�ro") ; ERRNO=0
+CASE 5 (rem 1 0) => (ERROR "division par z�ro") ; ERRNO=0
+CASE 6 (rem 1.0 0.0) => (ERROR "division par z�ro") ; ERRNO=0
+CASE 7 (sqrt -1) => (ERROR "fonction non d�finie pour l'argument: -1") ; ERRNO=0
+CASE 8 (sqrt -1.0) => (ERROR "fonction non d�finie pour l'argument: -1.0") ; ERRNO=0
+CASE 9 (log 0) => (ERROR "fonction non d�finie pour l'argument: 0") ; ERRNO=0
+CASE 10 (log -1) => (ERROR "fonction non d�finie pour l'argument: -1") ; ERRNO=0
+CASE 11 (log 0.0) => (ERROR "fonction non d�finie pour l'argument: 0.0") ; ERRNO=0
+CASE 12 (expt 0 -1) => (ERROR "fonction non d�finie pour 0 en puissance n�gative") ; ERRNO=0
+CASE 13 (expt 0.0 -1) => (ERROR "fonction non d�finie pour 0 en puissance n�gative") ; ERRNO=0
+CASE 14 (expt -8.0 (/ 1.0 3)) => (ERROR "x**y n'est pas d�fini si x est un r�el < 0 et y n'est pas un nombre entier") ; ERRNO=0
+CASE 15 (atan 0 0) => (VALUE 0.0) ; ERRNO=0
+CASE 16 (atan 0.0 0.0) => (VALUE 0.0) ; ERRNO=0
+CASE 17 (exp 1000) => (VALUE inf.0) ; ERRNO=0
+CASE 18 (exp -1000) => (VALUE 0.0) ; ERRNO=0
+CASE 19 (fix 1e20) => (VALUE 1.0e+20) ; ERRNO=0
+CASE 20 (fix -1e20) => (VALUE -1.0e+20) ; ERRNO=0
+CASE 21 (+ 2147483647 1) => (VALUE -2147483648) ; ERRNO=0
+CASE 22 (* 65536 65536) => (VALUE 0) ; ERRNO=0
+CASE 23 (- -2147483648 1) => (VALUE -2.14748e+09) ; ERRNO=0
+CASE 24 (abs -2147483648) => (VALUE 2.14748e+09) ; ERRNO=0
+CASE 25 (1+ nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 26 (+ 1 nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 27 (+ 1 "a") => (ERROR "type d'argument incorrect: numberp: \"a\"") ; ERRNO=0
+CASE 28 (* "a" 1) => (ERROR "type d'argument incorrect: numberp: \"a\"") ; ERRNO=0
+CASE 29 (abs nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 30 (max) => (VALUE 0) ; ERRNO=0
+CASE 31 (min) => (VALUE 0) ; ERRNO=0
+CASE 32 (max 1 nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 33 (min nil 1) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 34 (gcd 0 0) => (ERROR "argument incorrect: 0") ; ERRNO=0
+CASE 35 (gcd 1.5 2) => (ERROR "type d'argument incorrect: fixnump: 1.5") ; ERRNO=0
+CASE 36 (lsh 1 40) => (VALUE 256) ; ERRNO=0
+CASE 37 (lsh 1 -40) => (VALUE 0) ; ERRNO=0
+CASE 38 (~ nil) => (ERROR "type d'argument incorrect: INT nil") ; ERRNO=0
+CASE 39 (~ 1.5) => (ERROR "type d'argument incorrect: INT 1.5") ; ERRNO=0
+CASE 40 (float nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 41 (boole 99 1 1) => (ERROR "boole arg1 < 0 or > 15: 99") ; ERRNO=0
+CASE 42 (minusp nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 43 (zerop nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 44 (numberp nil) => (VALUE nil) ; ERRNO=0
+CASE 45 (+) => (VALUE 0) ; ERRNO=0
+CASE 46 (-) => (VALUE 0) ; ERRNO=0
+CASE 47 (/) => (VALUE 0) ; ERRNO=0
+CASE 48 (/ 5) => (VALUE 5) ; ERRNO=0
+CASE 49 (/ 0) => (VALUE 0) ; ERRNO=0
+CASE 50 (cos 1e300) => (VALUE -0.575386) ; ERRNO=0
+CASE 51 (sin nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 52 (itoa 1.5) => (ERROR "type d'argument incorrect: fixnump: 1.5") ; ERRNO=0
+CASE 53 (itoa nil) => (ERROR "type d'argument incorrect: fixnump: nil") ; ERRNO=0
+CASE 54 (atoi nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 55 (atoi "abc") => (VALUE 0) ; ERRNO=0
+CASE 56 (atoi "12abc") => (VALUE 12) ; ERRNO=0
+CASE 57 (atoi "99999999999") => (VALUE 2147483647) ; ERRNO=0
+CASE 58 (atof nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 59 (atof "x") => (VALUE 0.0) ; ERRNO=0
+CASE 60 (atof "1e999") => (VALUE inf.0) ; ERRNO=0
+CASE 61 (rtos nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 62 (rtos 1.0 9) => (ERROR "valeur d'argument incorrecte: mode rtos: 9") ; ERRNO=0
+CASE 63 (rtos 1.0 2 -1) => (ERROR "valeur d'argument incorrecte: Pr�cision rtos: -1") ; ERRNO=0
+CASE 64 (rtos 1.0 2 99) => (VALUE "1") ; ERRNO=0
+CASE 65 (distof "abc") => (VALUE nil) ; ERRNO=0
+CASE 66 (distof nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 67 (distof "1" 9) => (ERROR "valeur d'argument incorrecte: mode distof: 9") ; ERRNO=0
+CASE 68 (angtof "abc") => (VALUE nil) ; ERRNO=0
+CASE 69 (angtos nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 70 (angtos 1.0 9) => (ERROR "valeur d'argument incorrecte: mode angtos: 9") ; ERRNO=0
+CASE 71 (cvunit 1 "inch" "nosuchunit") => (VALUE nil) ; ERRNO=0
+CASE 72 (cvunit nil "inch" "cm") => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 73 (< 1 "a") => (ERROR "type d'argument de comparaison incorrect: 1 \"a\"") ; ERRNO=0
+CASE 74 (< 'a 'b) => (ERROR "type d'argument de comparaison incorrect: A B") ; ERRNO=0
+CASE 75 (= nil) => (VALUE T) ; ERRNO=0
+CASE 76 (<) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 77 (< nil 1) => (VALUE T) ; ERRNO=0
+CASE 78 (> nil 1 "a") => (VALUE nil) ; ERRNO=0
+CASE 79 (>= 'a nil) => (VALUE T) ; ERRNO=0
+CASE 80 (= 1 "1") => (VALUE nil) ; ERRNO=0
+CASE 81 (eq) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 82 (equal 1) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 83 (equal 1.0 1.05 nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 84 (equal 1.0 1.05 "x") => (ERROR "type d'argument incorrect: numberp: \"x\"") ; ERRNO=0
+CASE 85 (substr "abc" 0) => (ERROR "valeur d'argument incorrecte: positive 0") ; ERRNO=0
+CASE 86 (substr "abc" 5) => (VALUE "") ; ERRNO=0
+CASE 87 (substr "abc" 2 -1) => (ERROR "valeur d'argument incorrecte: non n�gatif: -1") ; ERRNO=0
+CASE 88 (substr "abc" 2 99) => (VALUE "bc") ; ERRNO=0
+CASE 89 (substr nil 1) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 90 (substr "abc" nil) => (ERROR "type d'argument incorrect: fixnump: nil") ; ERRNO=0
+CASE 91 (strlen nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 92 (strlen) => (VALUE 0) ; ERRNO=0
+CASE 93 (strlen "a" nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 94 (strcat) => (VALUE "") ; ERRNO=0
+CASE 95 (strcat nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 96 (strcat "a" 1) => (ERROR "type d'argument incorrect: stringp 1") ; ERRNO=0
+CASE 97 (strcase nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 98 (strcase "a" 1) => (VALUE "a") ; ERRNO=0
+CASE 99 (ascii "") => (VALUE 0) ; ERRNO=0
+CASE 100 (ascii nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 101 (chr 0) => (VALUE "") ; ERRNO=0
+CASE 102 (chr 300) => (VALUE ",") ; ERRNO=0
+CASE 103 (chr -1) => (VALUE "�") ; ERRNO=0
+CASE 104 (chr 65.5) => (ERROR "type d'argument incorrect: fixnump: 65.5") ; ERRNO=0
+CASE 105 (chr nil) => (ERROR "type d'argument incorrect: fixnump: nil") ; ERRNO=0
+CASE 106 (vl-string-search nil "a") => (ERROR "type d'argument incorrect: (or stringp symbolp): nil") ; ERRNO=0
+CASE 107 (vl-string-search "a" nil) => (ERROR "type d'argument incorrect: (or stringp symbolp): nil") ; ERRNO=0
+CASE 108 (vl-string-search "" "abc") => (VALUE 0) ; ERRNO=0
+CASE 109 (vl-string-search "a" "abc" 99) => (ERROR "valeur d'argument incorrecte: string position out of range 99") ; ERRNO=0
+CASE 110 (vl-string-search "a" "abc" -1) => (ERROR "valeur d'argument incorrecte: non n�gatif: -1") ; ERRNO=0
+CASE 111 (vl-string-subst nil "a" "b") => (ERROR "type d'argument incorrect: (or stringp symbolp): nil") ; ERRNO=0
+CASE 112 (vl-string-subst "x" "" "abc") => (VALUE "xabc") ; ERRNO=0
+CASE 113 (vl-string-translate "ab" "x" "aabb") => (VALUE "xxbb") ; ERRNO=0
+CASE 114 (vl-string-trim nil "a") => (ERROR "type d'argument incorrect: (or stringp symbolp): nil") ; ERRNO=0
+CASE 115 (vl-string-position 999 "abc") => (VALUE nil) ; ERRNO=0
+CASE 116 (vl-string-position nil "abc") => (ERROR "type d'argument incorrect: fixnump: nil") ; ERRNO=0
+CASE 117 (vl-string-elt "abc" 9) => (ERROR "valeur d'argument incorrecte: string position out of range 9") ; ERRNO=0
+CASE 118 (vl-string-elt "abc" -1) => (ERROR "valeur d'argument incorrecte: non n�gatif: -1") ; ERRNO=0
+CASE 119 (vl-string->list nil) => (ERROR "type d'argument incorrect: (or stringp symbolp): nil") ; ERRNO=0
+CASE 120 (vl-list->string '(65 nil)) => (ERROR "code caract�re de la liste incorrect: nil") ; ERRNO=0
+CASE 121 (vl-list->string '(300)) => (ERROR "code caract�re de la liste incorrect: 300") ; ERRNO=0
+CASE 122 (wcmatch nil "*") => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 123 (wcmatch "a" nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 124 (wcmatch "a" "") => (VALUE nil) ; ERRNO=0
+CASE 125 (wcmatch "" "*") => (VALUE T) ; ERRNO=0
+CASE 126 (wcmatch "a" "[") => (VALUE nil) ; ERRNO=0
+CASE 127 (read "") => (VALUE nil) ; ERRNO=0
+CASE 128 (read ")") => (ERROR "parenth�se fermante suppl�mentaire en entr�e") ; ERRNO=0
+CASE 129 (read "(a") => (ERROR "structure incorrecte de la liste en entr�e") ; ERRNO=0
+CASE 130 (read "a b") => (VALUE A) ; ERRNO=0
+CASE 131 (read "'") => (ERROR "Fin de fichier (EOF) apr�s apostrophe en entr�e") ; ERRNO=0
+CASE 132 (read nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 133 (read "1e999") => (VALUE inf.0) ; ERRNO=0
+CASE 134 (read "#") => (VALUE #) ; ERRNO=0
+CASE 135 (vl-prin1-to-string) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 136 (snvalid nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 137 (snvalid "a*b") => (VALUE nil) ; ERRNO=1
+CASE 138 (xstrcase nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 139 (vl-string-left-trim "" "aa") => (VALUE "aa") ; ERRNO=0
+CASE 140 (vl-string-mismatch nil "a") => (ERROR "type d'argument incorrect: (or stringp symbolp): nil") ; ERRNO=0
+CASE 141 (car 1) => (ERROR "type d'argument incorrect: consp 1") ; ERRNO=0
+CASE 142 (car "a") => (ERROR "type d'argument incorrect: consp \"a\"") ; ERRNO=0
+CASE 143 (cdr "a") => (ERROR "type d'argument incorrect: consp \"a\"") ; ERRNO=0
+CASE 144 (cadr '(1)) => (VALUE nil) ; ERRNO=0
+CASE 145 (caddr 1) => (ERROR "type d'argument incorrect: 1") ; ERRNO=0
+CASE 146 (nth -1 '(1 2)) => (ERROR "valeur d'argument incorrecte: non n�gatif: -1") ; ERRNO=0
+CASE 147 (nth 5 '(1 2)) => (VALUE nil) ; ERRNO=0
+CASE 148 (nth nil '(1)) => (ERROR "type d'argument incorrect: fixnump: nil") ; ERRNO=0
+CASE 149 (nth 1.5 '(1 2)) => (ERROR "type d'argument incorrect: fixnump: 1.5") ; ERRNO=0
+CASE 150 (last nil) => (VALUE nil) ; ERRNO=0
+CASE 151 (last 1) => (ERROR "type d'argument incorrect: listp 1") ; ERRNO=0
+CASE 152 (last '(1 . 2)) => (ERROR "liste incorrecte: 2") ; ERRNO=0
+CASE 153 (length 1) => (ERROR "type d'argument incorrect: listp 1") ; ERRNO=0
+CASE 154 (length '(1 . 2)) => (ERROR "liste incorrecte: 2") ; ERRNO=0
+CASE 155 (length "abc") => (ERROR "type d'argument incorrect: listp \"abc\"") ; ERRNO=0
+CASE 156 (reverse 1) => (ERROR "type d'argument incorrect: listp 1") ; ERRNO=0
+CASE 157 (reverse '(1 . 2)) => (ERROR "liste incorrecte: 2") ; ERRNO=0
+CASE 158 (append 1 '(2)) => (ERROR "type d'argument incorrect: listp 1") ; ERRNO=0
+CASE 159 (append '(1) 2) => (ERROR "type d'argument incorrect: listp 2") ; ERRNO=0
+CASE 160 (append '(1 . 2) '(3)) => (ERROR "liste incorrecte: 2") ; ERRNO=0
+CASE 161 (assoc 1 1) => (ERROR "type d'argument incorrect: listp 1") ; ERRNO=0
+CASE 162 (assoc 1 '(1 2)) => (ERROR "liste d'associations incorrecte: (1 2)") ; ERRNO=0
+CASE 163 (cons 1) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 164 (cons) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 165 (member 1 2) => (ERROR "type d'argument incorrect: consp 2") ; ERRNO=0
+CASE 166 (vl-position 1 2) => (ERROR "type d'argument incorrect: listp 2") ; ERRNO=0
+CASE 167 (mapcar '+ '(1 2) '(1)) => (VALUE (2)) ; ERRNO=0
+CASE 168 (mapcar 'car 1) => (ERROR "type d'argument incorrect: listp 1") ; ERRNO=0
+CASE 169 (mapcar 'car '(1)) => (ERROR "type d'argument incorrect: consp 1") ; ERRNO=0
+CASE 170 (mapcar nil '(1)) => (ERROR "fonction incorrecte: nil") ; ERRNO=0
+CASE 171 (apply '+ 1) => (ERROR "Erreur au niveau de la fin de la liste d'arguments: 1") ; ERRNO=0
+CASE 172 (apply '+ '(1 . 2)) => (ERROR "Erreur au niveau de la fin de la liste d'arguments: 2") ; ERRNO=0
+CASE 173 (apply 'nosuchfn '(1)) => (ERROR "no function definition: nil") ; ERRNO=0
+CASE 174 (vl-sort 1 '<) => (ERROR "type d'argument incorrect: listp 1") ; ERRNO=0
+CASE 175 (vl-sort '(2 1 nil) '<) => (VALUE (nil 1 2)) ; ERRNO=0
+CASE 176 (vl-sort '("b" 1) '<) => (ERROR "type d'argument de comparaison incorrect: 1 \"b\"") ; ERRNO=0
+CASE 177 (vl-sort-i '(2 1) nil) => (ERROR "fonction incorrecte: nil") ; ERRNO=0
+CASE 178 (vl-remove 1 2) => (ERROR "type d'argument incorrect: listp 2") ; ERRNO=0
+CASE 179 (vl-remove-if 'numberp 1) => (ERROR "type d'argument incorrect: listp 1") ; ERRNO=0
+CASE 180 (subst 1 2 3) => (ERROR "type d'argument incorrect: consp 3") ; ERRNO=0
+CASE 181 (list) => (VALUE nil) ; ERRNO=0
+CASE 182 (vl-list* 1) => (VALUE 1) ; ERRNO=0
+CASE 183 (vl-list*) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 184 (acad_strlsort nil) => (VALUE nil) ; ERRNO=0
+CASE 185 (acad_strlsort '(1 2)) => (VALUE nil) ; ERRNO=0
+CASE 186 (acad_strlsort '("b" nil)) => (VALUE nil) ; ERRNO=0
+CASE 187 (vl-every 'numberp 1) => (ERROR "type d'argument incorrect: listp 1") ; ERRNO=0
+CASE 188 (vl-some 'numberp 1) => (ERROR "type d'argument incorrect: listp 1") ; ERRNO=0
+CASE 189 (vl-member-if 'numberp 1) => (ERROR "type d'argument incorrect: listp 1") ; ERRNO=0
+CASE 190 (vl-consp) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 191 (listp) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 192 (nth 0 nil) => (ERROR "type d'argument incorrect: consp nil") ; ERRNO=0
+CASE 193 (car nil) => (VALUE nil) ; ERRNO=0
+CASE 194 (assoc nil nil) => (VALUE nil) ; ERRNO=0
+CASE 195 (foreach x 1 x) => (ERROR "type d'argument incorrect: consp 1") ; ERRNO=0
+CASE 196 (foreach x '(1 . 2) x) => (ERROR "type d'argument incorrect: consp 2") ; ERRNO=0
+CASE 197 (repeat -1 1) => (VALUE nil) ; ERRNO=0
+CASE 198 (repeat 1.5 1) => (ERROR "type d'argument incorrect: fixnump: 1.5") ; ERRNO=0
+CASE 199 (repeat nil 1) => (ERROR "type d'argument incorrect: fixnump: nil") ; ERRNO=0
+CASE 200 (while) => (ERROR "erreur de syntaxe") ; ERRNO=0
+CASE 201 (if) => (ERROR "erreur de syntaxe") ; ERRNO=0
+CASE 202 (cond (1)) => (VALUE 1) ; ERRNO=0
+CASE 203 (cond) => (VALUE nil) ; ERRNO=0
+CASE 204 (progn) => (VALUE nil) ; ERRNO=0
+CASE 205 (and) => (VALUE T) ; ERRNO=0
+CASE 206 (or) => (VALUE nil) ; ERRNO=0
+CASE 207 (quote) => (ERROR "erreur de syntaxe") ; ERRNO=0
+CASE 208 (eval 'pcat-unbound-var) => (VALUE nil) ; ERRNO=0
+CASE 209 (eval '(pcat-unbound-fn)) => (ERROR "no function definition: PCAT-UNBOUND-FN") ; ERRNO=0
+CASE 210 (pcat-unbound-fn 1) => (ERROR "no function definition: PCAT-UNBOUND-FN") ; ERRNO=0
+CASE 211 (set 1 1) => (ERROR "type d'argument incorrect: symbolp 1") ; ERRNO=0
+CASE 212 (set "x" 1) => (ERROR "type d'argument incorrect: symbolp \"x\"") ; ERRNO=0
+CASE 213 (boundp 1) => (VALUE nil) ; ERRNO=0
+CASE 214 (boundp nil) => (VALUE nil) ; ERRNO=0
+CASE 215 (type) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 216 (atoms-family 2) => (VALUE ("VL-CONSP" "LISPED" "*MERR*" "*PUSH-ERROR-USING-COMMAND*" "VL-ACAD-DEFUN" "C:MVSETUP" "GRCLEAR" "_AUTOARXLOAD" "GETANGLE" "VL-DOC-SET" "RTOS" "LOG" "PCAT-RUN-CASE" "VL-CMDF" "C:VLIDE" "PRAGMA" "STRLEN" "VLISP-FASRES-LOAD" "*C*" "ADS" "REVERSE" "C:DDRMODES" "ADD_LIST" "VL-BB-REF" "MINUSP" "SETCFG" "AI_TILEDVP" "CADDDR" "SETFUNHELP" "AI_TRANSD" "C:AI_FMS" "ACDIMENABLEUPDATE" "CDADDR" "ARXUNLOAD" "*PCAT-CASES*" "*A*" "ABS" "EQUAL" "C:AI_TRAINING_SAFE" "C:AI_DIM_TEXTABOVE" "VL-LOAD-COM" "CADDAR" "ENTMAKE" "CDADAR" "SSADD" "START_DIALOG" "VERIFY_ARXAPP_LOADED" "VL-SYMBOL-NAME" "CADR" "C:DEMODIDACT" "TERM_DIALOG" "VL-FILE-RENAME" "ACRX_CMD_MODAL" "*PCAT-LOG*" "BOOLE" "TRACE" "ALERT" ":PROG-ID" "ENTSEL" "TEXTPAGE" "_VL-TIMES" "INTERS" ":METHODS-PREFIX" "FINDTRUSTEDFILE" "VL-DOC-IMPORT" "VL-FILE-COPY" "READ" "FUNCTION" "GETFILED" "P1-TRANSACTION" "STRCASE" "DEFUN-Q-LIST-SET" "CAAR" "FLOAT" "VL-FILENAME-MKTEMP" "SET_TILE" "MSGOF" "VECTOR_IMAGE" "VL-FILE-SIZE" "VL-REMOVE-IF-NOT" "FNSPLITL" "1-" "1+" "_VL-FAST-MODE" "SRC" "VL-LIST->STRING" "READ-CHAR" "START_LIST" "C:PCXIN" "COMMAND-S" "VL-STRING-MISMATCH" "/=" "ARXLOAD" "CDADR" "C:P8INNER" "READ-LINE" "VL-VBARUN" "C:GOTOURL" "SETVAR" "C:GIFIN" "ENTGET" "CAAADR" "POLAR" "REGAPP" "QUOTE" "VL-EXIT-WITH-ERROR" "VL-STRING-POSITION" "REPEAT" "GETCFG" "CDAAR" ":PROPERTIES-PREFIX" "PCAT-FIX" "ITOA" ":VLAX-TRUE" "NENTSEL" "*POP-ERROR-MODE*" "*PROBE-START*" "ACAD_STRLSORT" "*PZ*" ":CONSTANTS-PREFIX" "VL-SOME" "CAAAAR" "C:TUTCLEAR" "APPEND" "C:AI_PSPACE" "CLOSE" "NEW_DIALOG" "VL-ACAD-UNDEFUN" "GETREAL" "LENGTH" "AI_TRANS" "ATOMS-FAMILY" "HELP" "IS_LEAD_BYTE" "*DEADOK*" "AI_REFEDIT_ALERT" "VL-ARX-IMPORT" "ATOM" "ATOI" "VL-SYMBOLP" "C:AI_DRAWORDER" "ATOF" "VL-SORT" "GETCORNER" "SSDEL" "VMON" "OSNAP" "SIN" "VLARTS-INIT" "ACAD_HELPDLG" "C:DDEMODES" "SUBST" "DEFUN-Q" "VLISP-EXPORT-SYMBOL" "VL-REMOVE-IF" "CONS" "CDDR" "VL-PRINC-TO-STRING" "COS" "AI_ENTSNAP" "AI_UNDO_POP" "VLAX-REMOVE-CMD" "COND" "VL-UNLOAD-VLX" "NULL" "LOAD" "END_IMAGE" "DEFUN" "GRREAD" "CVUNIT" "SET" "NENTSELP" "*MERRMSG*" "DONE_DIALOG" "PLOG" "_INTERNAL-LOAD-ALL-FILE" "REPORT" "ALLOC" "CDAR" "PRINT" "SETENV" "UNLOAD_DIALOG" "GETCNAME" "GETVAR" "VL-VLX-LOADED-P" "HANDENT" "GLOBAL-HANDLER" "PRINC" "DICTSEARCH" "CDDDR" "STRCAT" "SSNAME" "DISTANCE" "PRIN1" "NTH" "AI_SYSVAR" "CDDADR" "LISTP" "TEXTSCR" "VL-EVERY" "SSLENGTH" "VL-REGISTRY-READ" "ENTUPD" "VLISP-IMPORT-EXSUBRS" "VL-REGISTRY-WRITE" "CAADDR" "ANGLE" "CHR" "LOGIOR" "DIMY_TILE" "VL-FILE-DIRECTORY-P" "DICTADD" "VLAX-FOR" "GETORIENT" "CDDAR" "VL-FILENAME-EXTENSION" "TYPE" "BOUNDP" "REDRAW" "C:DDGRIPS" ":VLAX-FALSE" "ZEROP" "VLISP-FASRES-LIST" "VL-SYMBOL-VALUE" "EVAL" "CDDAAR" "GETKWORD" "PAUSE" "ACRX_CMD_USEPICKSET" "AI_HIDEEDGE_ALERT" "LAMBDA" "NOT" "VLAX-ADD-CMD" "CAADAR" "DICTNEXT" "VL-LIST-LOADED-VLX" "SSSETFIRST" "VL-PROPAGATE" "AI_POPMENUCFG" "GCD" "C:AI_PRODUCT_SUPPORT" "CDR" "SSMEMB" "ATAN" "VL-MKDIR" "VL-STRING->LIST" "GETPOINT" "SSGET" "*LAST-VALUE*" "VL-NANP" "FINDFILE" "ENTMOD" "TBLSEARCH" "DICTRENAME" "VL-LOAD-REACTORS" "VL-CATCH-ALL-ERROR-MESSAGE" "C:AI_DIM_TEXTCENTER" "TBLNEXT" "GETINT" "C:AI_PRODUCT_SUPPORT_SAFE" "PROMPT" "TABLET" "AI_NOFILE" "LOGAND" "DIMX_TILE" "VL-STRING-TRIM" "SHOULD-LOAD-DOC-LSP" "C:DECHARGDIDACT" "VL-LIST-EXPORTED-FUNCTIONS" "CAR" "VL-REMOVE" "C:AI_TILEMODE1" "AI_CIRCTANSTART" "SSGETFIRST" "GETENV" "AI_UNDO_PUSH" "UNTRACE" "GETSTRING" "CAADR" "*SS*" "VER" "VL-LOAD-ALL" "VL-STRING-SEARCH" "AI_DESELECT" "VL-FILE-DELETE" "LIST" "PCAT-FIXTURES" "DISTOF" "VL-STRING-SUBST" "GET_ATTR" "SQRT" "VL-FILE-SYSTIME" "AUTOARXLOAD" "OPEN" "VL-MEMBER-IF-NOT" "C:DDSELECT" "VL-REGISTRY-DELETE" "START_IMAGE" "REM" "AI_CIRCTAN" "CAAAR" "VL-CATCH-ALL-APPLY" "C:TIFFIN" "ASSOC" "PI" "DICTREMOVE" "AI_APPLOADED" ":VLAX-NULL" "VL-DIRECTORY-FILES" "OR" "VL-LIST*" "CDDDDR" "FIX" "AI_ROOTMENUS" "TERPRI" "AI_FFILE" "_VL-BALANCE-PARENTHESIS" "VLISP-INIRES-LIST" "VL-SORT-I" "LAST" "VLISP-IMPORT-SYMBOL" "C:PCAT" "AI_TILEDVP_CHK" "EXP" "GETDIST" "INITGET" "SETQ" ":TLB-FILENAME" "XDROOM" "CDDDAR" "AUTONATIVELOAD" "EXPT" "ENTNEXT" "MENUCMD" "END_LIST" "GRTEXT" "ENTMAKEX" "NUMBERP" "PCAT-WRITE" "P2-TRANSACTION" "VL-BT-OFF" "VLISP-DCLRES-LIST" "C:P9" "C:P8" "C:P7" "C:P6" "C:P5" "C:TUTDEMO" "C:P4" "TEXTBOX" "C:P3" "IF" "C:P2" "C:P1" "*T*" "VL-DOC-EXPORT" "FILL_IMAGE" "VL-STRING-RIGHT-TRIM" "LOAD_DIALOG" "C:3DARRAY" "VL-GET-RESOURCE" "C:AI_CIRCTAN" "P3-DIALOGUE" "MAPCAR" "AI_VIEWPORTS_ALERT" "WCMATCH" "C:AI_DESELECT" "_AUTOQLOAD" "AUTOLOAD" "C:VLISP" "VL-VBALOAD" "VL-POSITION" "VL-PRIN1-TO-STRING" "GRVECS" "VL-MEMBER-IF" "_AUTOLOAD" "VL-CATCH-ALL-ERROR-P" "ACRX_CMD_TRANSPARENT" "GC" "AI_DRAWORDER" "XSTRCASE" "VL-STRING-TRANSLATE" "VL-BB-SET" "C:EDGE" "AI_NOTRANS" "ARX" "VL-EXIT-WITH-VALUE" "CLIENT_DATA_TILE" "SNVALID" "EQ" "*DEAD*" "CADDR" "VL-DOC-REF" "NAMEDOBJDICT" "MODE_TILE" "VL-LIST-LENGTH" "C:ATTREDEF" "EXIT" "GRAPHSCR" "SETVIEW" "*P*" "CADADR" "VL-BT" "ANGTOS" "CDAADR" "VL-STRING-LEFT-TRIM" "ACRX_CMD_REDRAW" "_VLISP-VERSION" "MEMBER" "GET_TILE" "APPLY" "ANGTOF" "WHILE" "GRDRAW" "WRITE-CHAR" "MIN" "CADAR" "VPORTS" "ASCII" "EXPAND" "INITSTRING" "FOREACH" "VL-BT-ON" "CADAAR" "FORM" "*ERROR*" "AUTOARXACEDLOAD" "IMPORT3DS" "DEFUN-Q-LIST-REF" "~" "CDAAAR" "C:AI_CUSTOM_SAFE" "AND" "LOADEDP" "*L*" "AI_ONOFF" "VLISP-DCLRES-LOAD-DIALOG" "*PROBE-DIR*" "C:AI_SELALL" "COMMAND" "IMAGEFILE" "T" "MEM" "VL-FILENAME-DIRECTORY" "M" "TRANS" "I" "_VER" "VL-FILENAME-BASE" ">" ">=" "=" "<" "AI_SHOWEDGE_ALERT" "PLOG-PATH" "XDSIZE" "*PUSH-ERROR-USING-STACK*" "C:P2B" "PROGN" "/" "ENTLAST" "-" "LSH" "VL-INFP" "+" "*" "C:P1F" "FITSTR2LEN" "SLIDE_IMAGE" "C:P1B" "MENUGROUP" "ACTION_TILE" "<=" "MAX" "SUBSTR" "TBLOBJNAME" "C:P12" "C:P11" "C:P10" "SSNAMEX" "P4-PROFOND" "AI_PUTMENUCFG" "VL-STRING-ELT" "QUIT" "C:AI_DIM_TEXTHOME" "WRITE-LINE" "AI_DIM_CEN" "ENTDEL" "VL-REGISTRY-DESCENDENTS" "VL-INIT")) ; ERRNO=0
+CASE 217 (vl-symbol-value nil) => (ERROR "type d'argument incorrect: symbolp nil") ; ERRNO=0
+CASE 218 (vl-symbol-value 1) => (ERROR "type d'argument incorrect: symbolp 1") ; ERRNO=0
+CASE 219 (vl-symbol-name "x") => (ERROR "type d'argument incorrect: symbolp \"x\"") ; ERRNO=0
+CASE 220 (vl-symbolp) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 221 ((lambda (x) x)) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 222 ((lambda (x) x) 1 2) => (ERROR "nombre d'arguments trop important") ; ERRNO=0
+CASE 223 ((lambda () 1) 1) => (ERROR "nombre d'arguments trop important") ; ERRNO=0
+CASE 224 (defun) => (ERROR "erreur de syntaxe") ; ERRNO=0
+CASE 225 (defun 1 () 1) => (ERROR "erreur de syntaxe") ; ERRNO=0
+CASE 226 (function 1) => (ERROR "type d'argument incorrect: consp 1") ; ERRNO=0
+CASE 227 (function pcat-unbound-fn) => (VALUE PCAT-UNBOUND-FN) ; ERRNO=0
+CASE 228 (vl-acad-defun 'pcat-unbound-fn) => (VALUE 2095) ; ERRNO=0
+CASE 229 (type pcat-unbound-fn) => (VALUE nil) ; ERRNO=0
+CASE 230 (setq) => (ERROR "erreur de syntaxe") ; ERRNO=0
+CASE 231 (setq a) => (ERROR "erreur de syntaxe") ; ERRNO=0
+CASE 232 (setq 1 2) => (ERROR "erreur de syntaxe") ; ERRNO=0
+CASE 233 (lambda) => (ERROR "erreur de syntaxe") ; ERRNO=0
+CASE 234 (eval) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 235 (apply) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 236 (vl-catch-all-apply nil nil) => (ERROR "fonction incorrecte: nil") ; ERRNO=0
+CASE 237 (vl-catch-all-apply 'pcat-unbound-fn nil) => (ERROR "fonction incorrecte: PCAT-UNBOUND-FN") ; ERRNO=0
+CASE 238 (vl-catch-all-error-message 1) => (ERROR "l'argument n'est pas une erreur vl-catch-all-apply: 1") ; ERRNO=0
+CASE 239 (vl-catch-all-error-p) => (ERROR "nombre d'arguments insuffisants") ; ERRNO=0
+CASE 240 (vl-catch-all-apply 'car '(1)) => (ERROR "type d'argument incorrect: consp 1") ; ERRNO=0
+CASE 241 ((lambda (g) (g)) (function (lambda () 1))) => (ERROR "fonction incorrecte: (quote #<SUBR @0000013ea8c60cf0 -lambda->)") ; ERRNO=0
+CASE 242 ((lambda (g) (g)) (lambda () 1)) => (VALUE 1) ; ERRNO=0
+CASE 243 ((lambda (g) (g)) '(lambda () 1)) => (ERROR "fonction incorrecte: (LAMBDA nil 1)") ; ERRNO=0
+CASE 244 ((lambda (g) (apply g nil)) (function (lambda () 1))) => (VALUE 1) ; ERRNO=0
+CASE 245 ((lambda (g) (apply g nil)) '(lambda () 1)) => (VALUE 1) ; ERRNO=0
+CASE 246 ((lambda (g) (g)) 'pcat-write) => (ERROR "fonction incorrecte: PCAT-WRITE") ; ERRNO=0
+CASE 247 ((lambda (g) (g 1)) '1+) => (ERROR "fonction incorrecte: 1+") ; ERRNO=0
+CASE 248 (mapcar (function (lambda (x) x)) '(1)) => (VALUE (1)) ; ERRNO=0
+CASE 249 (mapcar '(lambda (x) x) '(1)) => (VALUE (1)) ; ERRNO=0
+CASE 250 (mapcar (lambda (x) x) '(1)) => (ERROR "fonction incorrecte: #<SUBR @0000013ea8c6f138 -lambda->") ; ERRNO=0
+CASE 251 (exit) => (ERROR "quitter / sortir abandon") ; ERRNO=0
+CASE 252 (quit) => (ERROR "quitter / sortir abandon") ; ERRNO=0
+CASE 253 (exit 1) => (ERROR "quitter / sortir abandon") ; ERRNO=0
+CASE 254 (vl-exit-with-error "x") => (ERROR nil) ; ERRNO=0
+CASE 255 (vl-exit-with-value 1) => (ERROR nil) ; ERRNO=0
+CASE 256 (error "pcat-message") => (ERROR "no function definition: ERROR") ; ERRNO=0
+CASE 257 (error 'sym) => (ERROR "no function definition: ERROR") ; ERRNO=0
+CASE 258 (error) => (ERROR "no function definition: ERROR") ; ERRNO=0
+CASE 259 (*error* "x") => (VALUE ) ; ERRNO=0
+CASE 260 (vl-bt) => (VALUE nil) ; ERRNO=0
+CASE 261 (polar nil 0 1) => (ERROR "type d'argument incorrect: point 2D/3D: nil") ; ERRNO=0
+CASE 262 (polar '(0 0) nil 1) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 263 (polar '(0 0) 0 nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+CASE 264 (polar '(0) 0 1) => (ERROR "type d'argument incorrect: point 2D/3D: (0)") ; ERRNO=0
+CASE 265 (distance '(0 0) '(1)) => (ERROR "type d'argument incorrect: point 2D/3D: (1)") ; ERRNO=0
+CASE 266 (distance '(0 0) '(1 1 1)) => (VALUE 1.41421) ; ERRNO=0
+CASE 267 (distance '(0 0 5) '(0 0)) => (VALUE 0.0) ; ERRNO=0
+CASE 268 (distance nil '(1 1)) => (ERROR "type d'argument incorrect: point 2D/3D: nil") ; ERRNO=0
+CASE 269 (angle '(0 0) '(0 0)) => (VALUE 0.0) ; ERRNO=0
+CASE 270 (angle nil '(1 1)) => (ERROR "type d'argument incorrect: point 2D/3D: nil") ; ERRNO=0
+CASE 271 (inters '(0 0) '(1 0) '(0 1) '(1 1)) => (VALUE nil) ; ERRNO=0
+CASE 272 (inters '(0 0) '(1 0) '(2 1) '(2 2)) => (VALUE nil) ; ERRNO=0
+CASE 273 (inters '(0 0) '(1 0) '(2 1) '(2 2) nil) => (VALUE (2.0 0.0)) ; ERRNO=0
+CASE 274 (inters '(0 0) '(0 0) '(0 1) '(1 1)) => (VALUE nil) ; ERRNO=0
+CASE 275 (inters nil '(1 1) '(0 1) '(1 0)) => (ERROR "type d'argument incorrect: point 2D/3D: nil") ; ERRNO=0
+CASE 276 (trans '(0 0 0) 0 99) => (VALUE (0.0 0.0 0.0)) ; ERRNO=0
+CASE 277 (trans nil 0 1) => (ERROR "type d'argument incorrect: point 2D/3D: nil") ; ERRNO=0
+CASE 278 (trans '(0 0 0) 0 *t*) => (VALUE (0.0 0.0 0.0)) ; ERRNO=0
+CASE 279 (osnap '(0 0) "_bogus") => (VALUE nil) ; ERRNO=0
+CASE 280 (osnap nil "_end") => (ERROR "type d'argument incorrect: point 2D/3D: nil") ; ERRNO=0
+CASE 281 (textbox nil) => (ERROR "liste entget non d�finie") ; ERRNO=0
+CASE 282 (textbox '((1 . "a"))) => (VALUE ((0.126194 -0.0409277 0.0) (1.794 1.85198 0.0))) ; ERRNO=0
+CASE 283 (entget nil) => (ERROR "type d'argument incorrect: lentityp nil") ; ERRNO=0
+CASE 284 (entget "x") => (ERROR "type d'argument incorrect: lentityp \"x\"") ; ERRNO=0
+CASE 285 (entget *dead*) => (VALUE nil) ; ERRNO=0
+CASE 286 (entdel nil) => (ERROR "type d'argument incorrect: lentityp nil") ; ERRNO=0
+CASE 287 (entdel *dead*) => (VALUE ENAME) ; ERRNO=0
+CASE 288 (entnext nil) => (ERROR "type d'argument incorrect: lentityp nil") ; ERRNO=0
+CASE 289 (entnext "x") => (ERROR "type d'argument incorrect: lentityp \"x\"") ; ERRNO=0
+CASE 290 (entlast 1) => (ERROR "nombre d'arguments trop important") ; ERRNO=0
+CASE 291 (entmake nil) => (VALUE nil) ; ERRNO=0
+CASE 292 (entmake '((0 . "BOGUS"))) => (VALUE nil) ; ERRNO=36
+CASE 293 (entmake '((0 . "LINE"))) => (VALUE nil) ; ERRNO=47
+CASE 294 (entmakex '((0 . "LINE") (10 0.0 0.0 0.0))) => (VALUE nil) ; ERRNO=47
+CASE 295 (entmakex (list '(0 . "LINE") (cons 10 nil) '(11 5.0 5.0 0.0))) => (ERROR "groupe DXF incorrect: (10)") ; ERRNO=0
+CASE 296 (entmakex '((0 . "LINE") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0) (8 . ""))) => (VALUE nil) ; ERRNO=25
+CASE 297 (entmakex '((0 . "LINE") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0) (62 . 999))) => (VALUE nil) ; ERRNO=27
+CASE 298 (entmakex '((0 . "INSERT") (2 . "PCAT_NO_BLOCK") (10 0.0 0.0 0.0))) => (VALUE nil) ; ERRNO=0
+CASE 299 (entmakex '((0 . "CIRCLE") (10 0.0 0.0 0.0) (40 . -1.0))) => (VALUE ENAME) ; ERRNO=0
+CASE 300 (entmakex '((0 . "TEXT") (10 0.0 0.0 0.0) (40 . 1.0) (1 . "x") (7 . "PCAT_NO_STYLE"))) => (VALUE nil) ; ERRNO=0
+CASE 301 (entmod nil) => (VALUE nil) ; ERRNO=0
+CASE 302 (entmod '((0 . "LINE"))) => (VALUE nil) ; ERRNO=47
+CASE 303 (entmod (subst '(8 . "") (assoc 8 (entget *l*)) (entget *l*))) => (VALUE nil) ; ERRNO=25
+CASE 304 (entmod (subst '(62 . 999) '(62 . 999) (append (entget *l*) '((62 . 999))))) => (VALUE nil) ; ERRNO=27
+CASE 305 (entmod (list (cons -1 *dead*) '(8 . "0"))) => (VALUE ((-1 . <Nom d'entit�: 13ea3722a10>) (8 . "0"))) ; ERRNO=0
+CASE 306 (entupd nil) => (ERROR "type d'argument incorrect: lentityp nil") ; ERRNO=0
+CASE 307 (entupd *dead*) => (VALUE ENAME) ; ERRNO=0
+CASE 308 (handent "ZZZZZZ") => (VALUE nil) ; ERRNO=13
+CASE 309 (handent nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 310 (handent "") => (VALUE nil) ; ERRNO=13
+CASE 311 (ssget "X" '((0 . "PCATNOTYPE"))) => (VALUE nil) ; ERRNO=0
+CASE 312 (ssget "BOGUS") => (ERROR "cha�ne du mode ssget incorrecte") ; ERRNO=98
+CASE 313 (ssname nil 0) => (ERROR "type d'argument incorrect: lselsetp nil") ; ERRNO=0
+CASE 314 (ssname *ss* 99) => (VALUE nil) ; ERRNO=0
+CASE 315 (ssname *ss* -1) => (VALUE nil) ; ERRNO=0
+CASE 316 (sslength nil) => (ERROR "type d'argument incorrect: lselsetp nil") ; ERRNO=0
+CASE 317 (ssadd 1) => (ERROR "type d'argument incorrect: lentityp 1") ; ERRNO=0
+CASE 318 (ssadd *dead* (ssadd)) => (VALUE PICKSET) ; ERRNO=0
+CASE 319 (ssdel *t* *ss*) => (VALUE nil) ; ERRNO=0
+CASE 320 (ssmemb nil *ss*) => (ERROR "type d'argument incorrect: lentityp nil") ; ERRNO=0
+CASE 321 (tblsearch "LAYER" nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 322 (tblsearch "BOGUS" "0") => (ERROR "fonction rejet�e par AutoCAD: argument(s) incorrects de la fonction de table: \"BOGUS\" \"0\"") ; ERRNO=19
+CASE 323 (tblsearch "LAYER" "PCAT_NOPE") => (VALUE nil) ; ERRNO=0
+CASE 324 (tblobjname "LAYER" "PCAT_NOPE") => (VALUE nil) ; ERRNO=0
+CASE 325 (tblnext "BOGUS") => (ERROR "fonction rejet�e par AutoCAD: argument(s) incorrects de la fonction de table: \"BOGUS\" nil") ; ERRNO=19
+CASE 326 (dictsearch nil "x") => (ERROR "type d'argument incorrect: lentityp nil") ; ERRNO=0
+CASE 327 (dictsearch (namedobjdict) nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 328 (dictsearch (namedobjdict) "PCAT_NOPE") => (VALUE nil) ; ERRNO=19
+CASE 329 (dictnext nil) => (ERROR "type d'argument incorrect: lentityp nil") ; ERRNO=0
+CASE 330 (dictremove (namedobjdict) "PCAT_NOPE") => (VALUE nil) ; ERRNO=19
+CASE 331 (regapp nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 332 (regapp "") => (VALUE nil) ; ERRNO=1
+CASE 333 (regapp "A B") => (VALUE "A B") ; ERRNO=0
+CASE 334 (getvar "PCATNOSUCHVAR") => (VALUE nil) ; ERRNO=0
+CASE 335 (getvar nil) => (ERROR "type d'argument incorrect: (or stringp symbolp): nil") ; ERRNO=0
+CASE 336 (getvar 1) => (ERROR "type d'argument incorrect: (or stringp symbolp): 1") ; ERRNO=0
+CASE 337 (setvar "PCATNOSUCHVAR" 1) => (ERROR "param�tre de la variable AutoCAD rejet�: \"PCATNOSUCHVAR\" 1") ; ERRNO=0
+CASE 338 (setvar "OSMODE" "a") => (ERROR "param�tre de la variable AutoCAD rejet�: \"OSMODE\" \"a\"") ; ERRNO=87
+CASE 339 (setvar "OSMODE" 99999) => (ERROR "param�tre de la variable AutoCAD rejet�: \"OSMODE\" 99999") ; ERRNO=22
+CASE 340 (setvar "OSMODE" -1) => (ERROR "param�tre de la variable AutoCAD rejet�: \"OSMODE\" -1") ; ERRNO=22
+CASE 341 (setvar "CLAYER" "PCAT_NOPE_LAYER") => (ERROR "param�tre de la variable AutoCAD rejet�: \"CLAYER\" \"PCAT_NOPE_LAYER\"") ; ERRNO=22
+CASE 342 (setvar "DWGNAME" "x") => (ERROR "param�tre de la variable AutoCAD rejet�: \"DWGNAME\" \"x\"") ; ERRNO=20
+CASE 343 (setvar "CECOLOR" "999") => (ERROR "param�tre de la variable AutoCAD rejet�: \"CECOLOR\" \"999\"") ; ERRNO=22
+CASE 344 (setvar "LUPREC" 99) => (ERROR "param�tre de la variable AutoCAD rejet�: \"LUPREC\" 99") ; ERRNO=22
+CASE 345 (getenv nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 346 (getenv "PCAT_NO_ENV") => (VALUE nil) ; ERRNO=0
+CASE 347 (setenv nil "x") => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 348 (getcfg nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 349 (getcfg "Bogus/x") => (VALUE nil) ; ERRNO=0
+CASE 350 (vlax-curve-getPointAtParam *l* 25.0) => (ERROR "no function definition: VLAX-CURVE-GETPOINTATPARAM") ; ERRNO=0
+CASE 351 (vlax-curve-getPointAtParam *l* -1.0) => (ERROR "no function definition: VLAX-CURVE-GETPOINTATPARAM") ; ERRNO=0
+CASE 352 (vlax-curve-getPointAtDist *l* 25.0) => (ERROR "no function definition: VLAX-CURVE-GETPOINTATDIST") ; ERRNO=0
+CASE 353 (vlax-curve-getPointAtDist *l* -1.0) => (ERROR "no function definition: VLAX-CURVE-GETPOINTATDIST") ; ERRNO=0
+CASE 354 (vlax-curve-getParamAtPoint *l* '(5.0 3.0 0.0)) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATPOINT") ; ERRNO=0
+CASE 355 (vlax-curve-getParamAtPoint *l* '(5.0 3.0)) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATPOINT") ; ERRNO=0
+CASE 356 (vlax-curve-getDistAtPoint *l* '(5.0 3.0 0.0)) => (ERROR "no function definition: VLAX-CURVE-GETDISTATPOINT") ; ERRNO=0
+CASE 357 (vlax-curve-getParamAtDist *l* 25.0) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATDIST") ; ERRNO=0
+CASE 358 (vlax-curve-getDistAtParam *l* 25.0) => (ERROR "no function definition: VLAX-CURVE-GETDISTATPARAM") ; ERRNO=0
+CASE 359 (vlax-curve-getParamAtPoint *p* '(5.0 3.0 0.0)) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATPOINT") ; ERRNO=0
+CASE 360 (vlax-curve-getDistAtPoint *p* '(5.0 3.0 0.0)) => (ERROR "no function definition: VLAX-CURVE-GETDISTATPOINT") ; ERRNO=0
+CASE 361 (vlax-curve-getParamAtPoint *pz* '(5.0 3.0 0.0)) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATPOINT") ; ERRNO=0
+CASE 362 (vlax-curve-getParamAtPoint *pz* '(5.0 0.0 0.0)) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATPOINT") ; ERRNO=0
+CASE 363 (vlax-curve-getParamAtPoint *pz* '(5.0 0.0)) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATPOINT") ; ERRNO=0
+CASE 364 (vlax-curve-getParamAtDist *p* 99.0) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATDIST") ; ERRNO=0
+CASE 365 (vlax-curve-getPointAtParam *p* 5.0) => (ERROR "no function definition: VLAX-CURVE-GETPOINTATPARAM") ; ERRNO=0
+CASE 366 (vlax-curve-getParamAtPoint *a* '(0.0 0.0 0.0)) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATPOINT") ; ERRNO=0
+CASE 367 (vlax-curve-getParamAtDist *a* 99.0) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATDIST") ; ERRNO=0
+CASE 368 (vlax-curve-getDistAtParam *a* 0.0) => (ERROR "no function definition: VLAX-CURVE-GETDISTATPARAM") ; ERRNO=0
+CASE 369 (vlax-curve-getDistAtParam *a* 3.0) => (ERROR "no function definition: VLAX-CURVE-GETDISTATPARAM") ; ERRNO=0
+CASE 370 (vlax-curve-getPointAtParam *a* 3.0) => (ERROR "no function definition: VLAX-CURVE-GETPOINTATPARAM") ; ERRNO=0
+CASE 371 (vlax-curve-getParamAtDist *c* 99.0) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATDIST") ; ERRNO=0
+CASE 372 (vlax-curve-getParamAtPoint *c* '(0.0 0.0 0.0)) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATPOINT") ; ERRNO=0
+CASE 373 (vlax-curve-getClosestPointTo *l* nil) => (ERROR "no function definition: VLAX-CURVE-GETCLOSESTPOINTTO") ; ERRNO=0
+CASE 374 (vlax-curve-getClosestPointTo *l* '(20.0 5.0 0.0) T) => (ERROR "no function definition: VLAX-CURVE-GETCLOSESTPOINTTO") ; ERRNO=0
+CASE 375 (vlax-curve-getClosestPointTo *l* '(20.0 5.0)) => (ERROR "no function definition: VLAX-CURVE-GETCLOSESTPOINTTO") ; ERRNO=0
+CASE 376 (vlax-curve-getFirstDeriv *l* 25.0) => (ERROR "no function definition: VLAX-CURVE-GETFIRSTDERIV") ; ERRNO=0
+CASE 377 (vlax-curve-getSecondDeriv *l* 25.0) => (ERROR "no function definition: VLAX-CURVE-GETSECONDDERIV") ; ERRNO=0
+CASE 378 (vlax-curve-getEndParam *t*) => (ERROR "no function definition: VLAX-CURVE-GETENDPARAM") ; ERRNO=0
+CASE 379 (vlax-curve-getEndParam nil) => (ERROR "no function definition: VLAX-CURVE-GETENDPARAM") ; ERRNO=0
+CASE 380 (vlax-curve-getEndParam *dead*) => (ERROR "no function definition: VLAX-CURVE-GETENDPARAM") ; ERRNO=0
+CASE 381 (vlax-curve-getArea *l*) => (ERROR "no function definition: VLAX-CURVE-GETAREA") ; ERRNO=0
+CASE 382 (vlax-curve-getArea *t*) => (ERROR "no function definition: VLAX-CURVE-GETAREA") ; ERRNO=0
+CASE 383 (vlax-curve-isClosed *t*) => (ERROR "no function definition: VLAX-CURVE-ISCLOSED") ; ERRNO=0
+CASE 384 (vlax-curve-getStartPoint *t*) => (ERROR "no function definition: VLAX-CURVE-GETSTARTPOINT") ; ERRNO=0
+CASE 385 (vlax-curve-getPointAtDist *l* nil) => (ERROR "no function definition: VLAX-CURVE-GETPOINTATDIST") ; ERRNO=0
+CASE 386 (vlax-curve-getParamAtPoint *l* nil) => (ERROR "no function definition: VLAX-CURVE-GETPARAMATPOINT") ; ERRNO=0
+CASE 387 (vlax-curve-getEndParam 'x) => (ERROR "no function definition: VLAX-CURVE-GETENDPARAM") ; ERRNO=0
+CASE 388 (command "_PCATNOSUCHCMD") => (VALUE nil) ; ERRNO=0
+CASE 389 (command-s "_PCATNOSUCHCMD") => (ERROR "Erreur inconnue de (command-s).") ; ERRNO=0
+CASE 390 (vl-cmdf "_PCATNOSUCHCMD") => (VALUE T) ; ERRNO=0
+CASE 391 (command "_LINE" "pas-un-point" "") => (VALUE nil) ; ERRNO=0
+CASE 392 CRASH (moteur termine ou bloque sur ce cas)
+FIXTURE *DOC* ERROR no function definition: VLAX-GET-ACAD-OBJECT
+FIXTURE *BLOCKS* ERROR no function definition: VLA-GET-BLOCKS
+FIXTURE *LO* ERROR no function definition: VLAX-ENAME->VLA-OBJECT
+FIXTURE *EMPTY-SA* ERROR no function definition: VLAX-MAKE-SAFEARRAY
+=== PCAT (nil "24.1" "AutoCAD" "FR") start=393
+CASE 393 (vl-cmdf "_LINE" "pas-un-point" "") => (VALUE T) ; ERRNO=0
+CASE 394 (command "_LINE" nil) => (VALUE nil) ; ERRNO=0
+CASE 395 (command-s "_LINE" '(0 0) nil) => (ERROR "Erreur inconnue de (command-s).") ; ERRNO=0
+CASE 396 (command "_LAYER" "_S" "PCAT_NOPE_LAYER" "") => (VALUE nil) ; ERRNO=0
+CASE 397 CRASH (moteur termine ou bloque sur ce cas)
+FIXTURE *DOC* ERROR no function definition: VLAX-GET-ACAD-OBJECT
+FIXTURE *BLOCKS* ERROR no function definition: VLA-GET-BLOCKS
+FIXTURE *LO* ERROR no function definition: VLAX-ENAME->VLA-OBJECT
+FIXTURE *EMPTY-SA* ERROR no function definition: VLAX-MAKE-SAFEARRAY
+=== PCAT (nil "24.1" "AutoCAD" "FR") start=398
+CASE 398 (command "_CIRCLE" '(0 0) -5) => (VALUE nil) ; ERRNO=0
+CASE 399 CRASH (moteur termine ou bloque sur ce cas)
+FIXTURE *DOC* ERROR no function definition: VLAX-GET-ACAD-OBJECT
+FIXTURE *BLOCKS* ERROR no function definition: VLA-GET-BLOCKS
+FIXTURE *LO* ERROR no function definition: VLAX-ENAME->VLA-OBJECT
+FIXTURE *EMPTY-SA* ERROR no function definition: VLAX-MAKE-SAFEARRAY
+=== PCAT (nil "24.1" "AutoCAD" "FR") start=400
+CASE 400 (vl-cmdf "_CIRCLE" '(0 0) -5) => (VALUE T) ; ERRNO=0
+CASE 401 (command 1 2) => (VALUE nil) ; ERRNO=2
+CASE 402 (command-s) => (VALUE nil) ; ERRNO=0
+CASE 403 (command) => (VALUE nil) ; ERRNO=0
+CASE 404 (getvar "CMDACTIVE") => (VALUE 0) ; ERRNO=0
+CASE 405 (vla-item *blocks* "PCAT_NO_BLOCK") => (ERROR "no function definition: VLA-ITEM") ; ERRNO=0
+CASE 406 (vla-item *blocks* 99999) => (ERROR "no function definition: VLA-ITEM") ; ERRNO=0
+CASE 407 (vlax-ename->vla-object nil) => (ERROR "no function definition: VLAX-ENAME->VLA-OBJECT") ; ERRNO=0
+CASE 408 (vlax-ename->vla-object *dead*) => (ERROR "no function definition: VLAX-ENAME->VLA-OBJECT") ; ERRNO=0
+CASE 409 (vla-get-name nil) => (ERROR "no function definition: VLA-GET-NAME") ; ERRNO=0
+CASE 410 (vlax-get-property *lo* 'PcatBogus) => (ERROR "no function definition: VLAX-GET-PROPERTY") ; ERRNO=0
+CASE 411 (vlax-put-property *lo* 'Color "red") => (ERROR "no function definition: VLAX-PUT-PROPERTY") ; ERRNO=0
+CASE 412 (vlax-invoke-method *lo* 'PcatBogus) => (ERROR "no function definition: VLAX-INVOKE-METHOD") ; ERRNO=0
+CASE 413 (vla-get-effectivename *lo*) => (ERROR "no function definition: VLA-GET-EFFECTIVENAME") ; ERRNO=0
+CASE 414 (vla-get-textstring *lo*) => (ERROR "no function definition: VLA-GET-TEXTSTRING") ; ERRNO=0
+CASE 415 (vlax-property-available-p *lo* 'PcatBogus) => (ERROR "no function definition: VLAX-PROPERTY-AVAILABLE-P") ; ERRNO=0
+CASE 416 (vlax-method-applicable-p *lo* 'PcatBogus) => (ERROR "no function definition: VLAX-METHOD-APPLICABLE-P") ; ERRNO=0
+CASE 417 (vlax-variant-value nil) => (ERROR "no function definition: VLAX-VARIANT-VALUE") ; ERRNO=0
+CASE 418 (vlax-variant-value 1) => (ERROR "no function definition: VLAX-VARIANT-VALUE") ; ERRNO=0
+CASE 419 (vlax-safearray->list nil) => (ERROR "no function definition: VLAX-SAFEARRAY->LIST") ; ERRNO=0
+CASE 420 (vlax-safearray->list *empty-sa*) => (ERROR "no function definition: VLAX-SAFEARRAY->LIST") ; ERRNO=0
+CASE 421 (vlax-make-safearray vlax-vbDouble '(0 . -1)) => (ERROR "no function definition: VLAX-MAKE-SAFEARRAY") ; ERRNO=0
+CASE 422 (vlax-make-safearray vlax-vbDouble '(0 . 0)) => (ERROR "no function definition: VLAX-MAKE-SAFEARRAY") ; ERRNO=0
+CASE 423 (vlax-make-safearray vlax-vbDouble '(0 . -2)) => (ERROR "no function definition: VLAX-MAKE-SAFEARRAY") ; ERRNO=0
+CASE 424 (vlax-make-variant nil) => (ERROR "no function definition: VLAX-MAKE-VARIANT") ; ERRNO=0
+CASE 425 (vlax-ldata-get "pcat" "nokey") => (ERROR "no function definition: VLAX-LDATA-GET") ; ERRNO=0
+CASE 426 (vlax-ldata-get nil nil) => (ERROR "no function definition: VLAX-LDATA-GET") ; ERRNO=0
+CASE 427 (vlax-erased-p *lo*) => (ERROR "no function definition: VLAX-ERASED-P") ; ERRNO=0
+CASE 428 (vlax-erased-p nil) => (ERROR "no function definition: VLAX-ERASED-P") ; ERRNO=0
+CASE 429 (vlax-read-enabled-p nil) => (ERROR "no function definition: VLAX-READ-ENABLED-P") ; ERRNO=0
+CASE 430 (vlax-get-acad-object 1) => (ERROR "no function definition: VLAX-GET-ACAD-OBJECT") ; ERRNO=0
+CASE 431 (vla-put-layer *lo* "PCAT_NOPE_LAYER") => (ERROR "no function definition: VLA-PUT-LAYER") ; ERRNO=0
+CASE 432 (vla-put-color *lo* 999) => (ERROR "no function definition: VLA-PUT-COLOR") ; ERRNO=0
+CASE 433 (vlax-release-object nil) => (ERROR "no function definition: VLAX-RELEASE-OBJECT") ; ERRNO=0
+CASE 434 (vlax-tmatrix nil) => (ERROR "no function definition: VLAX-TMATRIX") ; ERRNO=0
+CASE 435 (vlax-3d-point nil) => (ERROR "no function definition: VLAX-3D-POINT") ; ERRNO=0
+CASE 436 (vlax-3d-point '(1)) => (ERROR "no function definition: VLAX-3D-POINT") ; ERRNO=0
+CASE 437 (vla-get-blocks nil) => (ERROR "no function definition: VLA-GET-BLOCKS") ; ERRNO=0
+CASE 438 (vla-add *blocks* (vlax-3d-point '(0 0 0)) "") => (ERROR "no function definition: VLAX-3D-POINT") ; ERRNO=0
+CASE 439 (vlax-get *lo* 'PcatBogus) => (ERROR "no function definition: VLAX-GET") ; ERRNO=0
+CASE 440 (vlax-invoke *lo* 'PcatBogus) => (ERROR "no function definition: VLAX-INVOKE") ; ERRNO=0
+CASE 441 (vlax-dump-object nil) => (ERROR "no function definition: VLAX-DUMP-OBJECT") ; ERRNO=0
+CASE 442 (vla-getboundingbox *lo* 'a 'b) => (ERROR "no function definition: VLA-GETBOUNDINGBOX") ; ERRNO=0
+CASE 443 (open nil "r") => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 444 (open "Z:/pcat/nonexistent/x.txt" "r") => (VALUE nil) ; ERRNO=0
+CASE 445 (open "pcat.txt" "z") => (ERROR "mode d'ouverture inconnu: \"z\"") ; ERRNO=0
+CASE 446 (open "Z:/pcat/nonexistent/x.txt" "w") => (VALUE nil) ; ERRNO=0
+CASE 447 (read-line nil) => (ERROR "type d'argument incorrect: FILE nil") ; ERRNO=0
+CASE 448 (read-char nil) => (ERROR "type d'argument incorrect: FILE nil") ; ERRNO=0
+CASE 449 (close nil) => (ERROR "type d'argument incorrect: streamp nil") ; ERRNO=0
+CASE 450 (write-line 1 nil) => (ERROR "type d'argument incorrect: stringp 1") ; ERRNO=0
+CASE 451 (write-line "x" 1) => (ERROR "type d'argument incorrect: output-streamp: 1") ; ERRNO=0
+CASE 452 (findfile nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 453 (findfile "") => (VALUE nil) ; ERRNO=0
+CASE 454 (findfile "pcat_nonexistent.lsp") => (VALUE nil) ; ERRNO=0
+CASE 455 (load "pcat_nonexistent_zz") => (ERROR "La commande CHARGER n'a pas abouti: \"pcat_nonexistent_zz\"") ; ERRNO=0
+CASE 456 (load "pcat_nonexistent_zz" 'pcat-fail) => (VALUE PCAT-FAIL) ; ERRNO=0
+CASE 457 (load nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 458 (vl-file-delete "pcat_nonexistent") => (VALUE nil) ; ERRNO=0
+CASE 459 (vl-file-delete nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 460 (vl-file-size "pcat_nonexistent") => (VALUE nil) ; ERRNO=0
+CASE 461 (vl-file-rename "pcat_a" "pcat_b") => (VALUE nil) ; ERRNO=0
+CASE 462 (vl-file-copy "pcat_a" "pcat_b") => (VALUE nil) ; ERRNO=0
+CASE 463 (vl-directory-files "Z:/pcat/nonexistent") => (VALUE nil) ; ERRNO=0
+CASE 464 (vl-directory-files nil nil) => (VALUE ("." ".." "03-11-2026_12-50-52_v25-2-05-0.dmp" "acc22-lancement-1" "acc22-lancement-2" "acc22-lancement-3" "acc22-lancement-4" "alfe-acc" "alfe-acc2" "alfe-bc" "bc25-lancement-1" "bis" "crash_report.txt" "Dessin1_147015b38.log" "Dessin1_150381761.log" "Dessin1_159d4787d.log" "Dessin1_171ba097d.log" "Dessin1_17a1306dc.log" "Dessin1_19c07e773.log" "Dessin1_1cce74275.log" "drive-win.sh" "empty_110727772.log" "empty_11c123a28.log" "empty_1234b91fc.log" "empty_12e07e139.log" "empty_1462707ac.log" "empty_161c9c37e.log" "empty_166da0a58.log" "empty_1965b742a.log" "empty_197d1bf73.log" "empty_1a7858072.log" "empty_1c8b1607f.log" "empty_1cc8b07e2.log" "empty_1cef72bea.log" "err-acc22" "err-acc22b" "err-bc25" "probe-catalogue-skip.lsp" "probe-catalogue.lsp" "probe-error.lsp" "result-autocad-2022-accoreconsole.txt" "result-bricscad-v25-windows.txt" "test-acc" "win-cad.sh" "win-env.sh")) ; ERRNO=0
+CASE 465 (vl-filename-base nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 466 (vl-filename-extension "") => (VALUE nil) ; ERRNO=0
+CASE 467 (vl-filename-directory nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 468 (vl-mkdir nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 469 (vl-file-directory-p nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 470 (vl-filename-mktemp nil nil nil) => (VALUE "C:\\Users\\USER\\AppData\\Local\\Temp\\$VL~~001") ; ERRNO=0
+CASE 471 (load_dialog "pcat_nonexistent.dcl") => (VALUE -1) ; ERRNO=0
+CASE 472 (load_dialog nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 473 (new_dialog "pcat_nope" 1) => (VALUE nil) ; ERRNO=0
+CASE 474 (new_dialog "pcat_nope" 99999) => (VALUE nil) ; ERRNO=0
+CASE 475 (set_tile "x" "y") => (VALUE nil) ; ERRNO=0
+CASE 476 (get_tile "x") => (VALUE nil) ; ERRNO=0
+CASE 477 (done_dialog) => (VALUE (0 0)) ; ERRNO=0
+CASE 478 (unload_dialog 99999) => (VALUE nil) ; ERRNO=0
+CASE 479 (start_list "x") => (VALUE nil) ; ERRNO=0
+CASE 480 (add_list "x") => (VALUE nil) ; ERRNO=0
+CASE 481 (end_list) => (VALUE nil) ; ERRNO=0
+CASE 482 (mode_tile "x" 1) => (VALUE nil) ; ERRNO=0
+CASE 483 (action_tile "x" "(princ)") => (VALUE nil) ; ERRNO=0
+CASE 484 (get_attr "x" "y") => (VALUE "") ; ERRNO=0
+CASE 485 (term_dialog) => (VALUE nil) ; ERRNO=0
+CASE 486 (vl-registry-read "HKEY_NOPE\\x") => (ERROR "racine de la cl� de registre incorrecte: \"HKEY_NOPE\"") ; ERRNO=0
+CASE 487 (vl-registry-read nil) => (ERROR "type d'argument incorrect: (or stringp symbolp): nil") ; ERRNO=0
+CASE 488 (startapp nil) => (ERROR "no function definition: STARTAPP") ; ERRNO=0
+CASE 489 (vl-propagate nil) => (ERROR "type d'argument incorrect: symbolp nil") ; ERRNO=0
+CASE 490 (vl-bb-ref nil) => (ERROR "type d'argument incorrect: (or stringp symbolp): nil") ; ERRNO=0
+CASE 491 (vl-doc-ref nil) => (ERROR "type d'argument incorrect: (or stringp symbolp): nil") ; ERRNO=0
+CASE 492 (vlax-add-cmd nil nil) => (ERROR "type d'argument incorrect: (or stringp symbolp): nil") ; ERRNO=0
+CASE 493 (arxload "pcat_nonexistent") => (ERROR "ARXLOAD a �chou�") ; ERRNO=93
+CASE 494 (arxload "pcat_nonexistent" 'pcat-fail) => (VALUE PCAT-FAIL) ; ERRNO=93
+CASE 495 (autoload nil nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 496 (menucmd nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+CASE 497 (menucmd "Gbogus.ID_Nope=~") => (VALUE nil) ; ERRNO=0
+CASE 498 (grtext -99 "x") => (VALUE nil) ; ERRNO=0
+CASE 499 (grdraw nil nil 1) => (ERROR "type d'argument incorrect: point 2D/3D: nil") ; ERRNO=0
+CASE 500 (redraw *dead* 1) => (VALUE nil) ; ERRNO=0
+CASE 501 (alloc -1) => (VALUE 256) ; ERRNO=0
+CASE 502 (mem 1) => (ERROR "nombre d'arguments trop important") ; ERRNO=0
+CASE 503 (ver 1) => (ERROR "nombre d'arguments trop important") ; ERRNO=0
+CASE 504 (vl-get-resource "pcat_nope") => (VALUE nil) ; ERRNO=0
+CASE 505 (- 2147483648) => (VALUE -2.14748e+09) ; ERRNO=0
+CASE 506 2147483648 => (VALUE 2.14748e+09) ; ERRNO=0
+CASE 507 (type 2147483648) => (VALUE REAL) ; ERRNO=0
+CASE 508 (type 2147483647) => (VALUE INT) ; ERRNO=0
+CASE 509 (- -2147483648) => (VALUE 2.14748e+09) ; ERRNO=0
+CASE 510 (- 0 -2147483648) => (VALUE 2.14748e+09) ; ERRNO=0
+CASE 511 (type -2147483648) => (VALUE REAL) ; ERRNO=0
+CASE 512 (abs -2147483647) => (VALUE 2147483647) ; ERRNO=0
+CASE 513 (- -2147483647 1) => (VALUE -2147483648) ; ERRNO=0
+CASE 514 (type (- -2147483647 1)) => (VALUE INT) ; ERRNO=0
+CASE 515 (* -1 -2147483648) => (VALUE 2.14748e+09) ; ERRNO=0
+CASE 516 (/ -2147483648 -1) => (VALUE 2.14748e+09) ; ERRNO=0
+CASE 517 (fix 2147483648.0) => (VALUE 2.14748e+09) ; ERRNO=0
+CASE 518 (fix 2147483647.0) => (VALUE 2147483647) ; ERRNO=0
+CASE 519 (fix -2147483649.0) => (VALUE -2.14748e+09) ; ERRNO=0
+CASE 520 (1- -2147483648) => (VALUE -2.14748e+09) ; ERRNO=0
+CASE 521 (type (1- -2147483648)) => (VALUE REAL) ; ERRNO=0
+CASE 522 (atoi "2147483648") => (VALUE 2147483647) ; ERRNO=0
+CASE 523 (itoa 2147483648) => (ERROR "type d'argument incorrect: fixnump: 2.14748e+09") ; ERRNO=0
+CASE 524 (rtos 2147483648 2 0) => (VALUE "2147483648") ; ERRNO=0
+CASE 525 (rem 2147483648 7) => (VALUE 2.0) ; ERRNO=0
+CASE 526 (gcd 2147483648 6) => (ERROR "type d'argument incorrect: fixnump: 2.14748e+09") ; ERRNO=0
+CASE 527 (logand 2147483648 1) => (ERROR "type d'argument incorrect: fixnump: 2.14748e+09") ; ERRNO=0
+CASE 528 (lsh 1 31) => (VALUE -2147483648) ; ERRNO=0
+CASE 529 (lsh 1 32) => (VALUE 1) ; ERRNO=0
+CASE 530 (~ 2147483647) => (VALUE -2147483648) ; ERRNO=0
+CASE 531 (float 2147483648) => (VALUE 2.14748e+09) ; ERRNO=0
+CASE 532 (= 2147483648 2147483648.0) => (VALUE T) ; ERRNO=0
+CASE 533 (eq 2147483648 2147483648) => (VALUE T) ; ERRNO=0
+CASE 534 (numberp 2147483648) => (VALUE T) ; ERRNO=0
+CASE 535 (pcat-roundtrip (chr 233) nil) => (VALUE ("�" (233 10))) ; ERRNO=0
+CASE 536 (pcat-roundtrip (chr 8364) nil) => (VALUE ("�" (172 10))) ; ERRNO=0
+CASE 537 (pcat-roundtrip (chr 300) nil) => (VALUE ("," (44 10))) ; ERRNO=0
+CASE 538 (pcat-roundtrip (strcat "a" (chr 20013) "b") nil) => (VALUE ("a-b" (97 45 98 10))) ; ERRNO=0
+CASE 539 (pcat-roundtrip (chr 300) "utf8") => (ERROR "mode d'ouverture inconnu: \"utf8\"") ; ERRNO=0
+CASE 540 (pcat-roundtrip (chr 300) "w,ccs=UTF-8") => (VALUE ("," (44 10))) ; ERRNO=0
+CASE 541 (vl-prin1-to-string (chr 300)) => (VALUE "\",\"") ; ERRNO=0
+CASE 542 (vl-princ-to-string (chr 300)) => (VALUE ",") ; ERRNO=0
+CASE 543 (strlen (chr 300)) => (VALUE 1) ; ERRNO=0
+CASE 544 (ascii (chr 300)) => (VALUE 44) ; ERRNO=0
+CASE 545 (vl-string->list (chr 8364)) => (VALUE (172)) ; ERRNO=0
+=== PCAT DONE

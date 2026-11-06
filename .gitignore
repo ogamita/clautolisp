@@ -16,6 +16,8 @@
 *.fas
 *.fasl
 *.fasl*
+# alfe compiled plug-ins (NAME.VERSION-IMPL.plugin): made by --compile-plugin, never committed
+*.plugin
 *.fsl
 *.gcda
 *.gcno
@@ -176,3 +178,9 @@ clautolisp/drawing-dwg/source/clal_dwg.so
 # from ever being committed again — every PDF in the tree is generated from a
 # tracked .org. install-documentation / release-documentation collect from build/.
 *.pdf
+
+autolisp-spec/documentation/.harvest/
+
+# CI build caches (scripts/ci-build-cache.sh): the GitLab cache: of a job
+# holds .ci-cache/<kind>/; never tracked.
+/.ci-cache/

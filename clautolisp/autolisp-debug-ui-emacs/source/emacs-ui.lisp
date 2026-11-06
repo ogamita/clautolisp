@@ -19,22 +19,86 @@
 
 ;;; --- wire writing --------------------------------------------------
 
+;;; The messages must be read by EMACS `read', not Common Lisp `read'. Elisp
+;;; has no packages and is case-sensitive, so a plain CL `prin1' is unreadable
+;;; on the client: NIL prints as COMMON-LISP:NIL / T as COMMON-LISP:T (Elisp
+;;; reads those as ordinary non-nil symbols), and every keyword prints
+;;; UPPER-CASE (=:ATTACHED=), which is a *different* symbol from the lower-case
+;;; =:attached= aldb.el pcase / plist-get on. So we serialize wire forms by
+;;; hand into Elisp-readable text: nil / t, and lower-cased keywords / symbols.
+
+(defun write-elisp-string (string stream)
+  "Write STRING as an Elisp string literal (escaping \\ and \")."
+  (write-char #\" stream)
+  (loop for ch across string
+        do (when (or (char= ch #\") (char= ch #\\)) (write-char #\\ stream))
+           (write-char ch stream))
+  (write-char #\" stream))
+
+(defun write-elisp-form (object stream)
+  "Write OBJECT to STREAM as one Elisp-readable form. Wire values are lists,
+keywords, strings, integers, and nil/t (the serializers upstream reduce
+everything else — snapshots, positions, values — to those). NIL/T become the
+Elisp atoms nil/t; keywords and any other symbols are lower-cased and emitted
+without a package prefix; anything unexpected degrades to a readable string
+rather than raw CL syntax."
+  (cond
+    ((null object)     (write-string "nil" stream))
+    ((eq object t)     (write-string "t" stream))
+    ((keywordp object) (write-char #\: stream)
+                       (write-string (string-downcase (symbol-name object)) stream))
+    ((symbolp object)  (write-string (string-downcase (symbol-name object)) stream))
+    ((integerp object) (princ object stream))
+    ((stringp object)  (write-elisp-string object stream))
+    ((consp object)
+     (write-char #\( stream)
+     (loop for cell on object
+           do (write-elisp-form (car cell) stream)
+              (cond ((consp (cdr cell)) (write-char #\Space stream))
+                    ((cdr cell)                 ; a dotted tail
+                     (write-string " . " stream)
+                     (write-elisp-form (cdr cell) stream))))
+     (write-char #\) stream))
+    (t (write-elisp-string (princ-to-string object) stream))))
+
 (defun write-message (ui tag &rest args)
   "Write one RPC message — the form (TAG . ARGS) — to the channel, one per
-line, readable by Emacs `read`. Strings, integers, and keywords print
-readably; nested wire forms are plain lists."
-  (let ((stream (emacs-ui-output ui))
-        (*print-readably* nil)
-        (*print-pretty* nil)
-        (*package* (find-package :keyword)))
-    (prin1 (cons tag args) stream)
+line, as Elisp-readable text (§20.1). Keywords/symbols are lower-cased and
+NIL/T become nil/t, so the Emacs client's `read' yields the atoms aldb.el
+dispatches on."
+  (let ((stream (emacs-ui-output ui)))
+    (write-elisp-form (cons tag args) stream)
     (terpri stream)
     (force-output stream)))
 
+(defun strip-ansi (string)
+  "Remove ANSI CSI escape sequences (ESC [ … final-byte) from STRING. aldb
+carries PLAIN text and lets Emacs apply its own faces — the runtime colour
+policy's in-band SGR must never reach the wire (aldb-faces-not-escape-sequences).
+No ESC ⇒ STRING is returned unchanged."
+  (if (find #\Escape string)
+      (with-output-to-string (out)
+        (let ((i 0) (n (length string)))
+          (loop while (< i n) do
+            (let ((c (char string i)))
+              (cond
+                ((and (char= c #\Escape) (< (1+ i) n) (char= (char string (1+ i)) #\[))
+                 (incf i 2)
+                 (loop while (and (< i n)
+                                  (not (<= #x40 (char-code (char string i)) #x7e)))
+                       do (incf i))
+                 (when (< i n) (incf i)))
+                (t (write-char c out) (incf i)))))))
+      string))
+
 (defun preview (value &optional (limit 80))
-  "A human-readable one-line string for a value (the Emacs side shows it;
-it is never read back as code)."
-  (let ((string (handler-case (prin1-to-string value) (error () "#<?>"))))
+  "A human-readable one-line string for a value (the Emacs side shows it; it is
+never read back as code). Rendered with the runtime colour policy OFF and any
+stray ANSI stripped, so the aldb wire is plain text — Emacs applies its own
+faces (aldb-faces-not-escape-sequences)."
+  (let ((string (strip-ansi
+                 (let ((clautolisp.autolisp-runtime:*color-output* nil))
+                   (handler-case (prin1-to-string value) (error () "#<?>"))))))
     (if (> (length string) limit)
         (concatenate 'string (subseq string 0 limit) "…")
         string)))
@@ -47,10 +111,18 @@ it is never read back as code)."
           (source-position-start-line position)
           (source-position-start-column position))))
 
+(defun frame-locals->wire (frame)
+  "The frame's own locals (formals + /-locals) as (NAME PREVIEW) pairs, so aldb
+can show them indented under the frame (aldb-toggle-details, aldb-commands.issue)."
+  (loop for entry in (stack-frame-bindings-introduced frame)
+        collect (list (autolisp-symbol-name (binding-entry-symbol entry))
+                      (preview (binding-entry-value entry)))))
+
 (defun frame->wire (frame index)
   (list :frame index
         (or (stack-frame-function-name frame) "?")
-        (source-position->wire (stack-frame-source-position frame))))
+        (source-position->wire (stack-frame-source-position frame))
+        (frame-locals->wire frame)))
 
 (defun bindings->wire (snapshot)
   "Visible bindings as (NAME PREVIEW) pairs — names and printed previews
@@ -84,6 +156,13 @@ error messages (§20.2 buffers are populated from this)."
 
 (defmethod ui-show-source ((ui emacs-ui) position)
   (write-message ui :show-source (source-position->wire position)))
+
+(defmethod ui-show-stop-source-p ((ui emacs-ui))
+  ;; aldb tiles *aldb* over *aldb-stack* and opens source on demand (v /
+  ;; aldb-show-source), so the engine must not auto-push the source view at
+  ;; each stop and disturb that layout (aldb-commands.issue).
+  (declare (ignore ui))
+  nil)
 
 (defmethod ui-breakpoint-added ((ui emacs-ui) bp)
   (write-message ui :breakpoint-added (breakpoint-id bp)
@@ -146,7 +225,25 @@ otherwise the command was answered inline and the loop keeps reading."
       (:advance (values (apply #'cmd-advance session args) t))
       (:select-frame (cmd-select-frame session (first args)) (values nil nil))
       (:eval (reply-eval ui session (first args)) (values nil nil))
+      ;; frame-targeted variants (aldb-commands.issue): select the frame, then
+      ;; evaluate / pretty-eval / inspect in its dynamic context.
+      (:eval-in-frame
+       (cmd-select-frame session (first args))
+       (reply-eval ui session (second args)) (values nil nil))
+      (:pprint-eval-in-frame
+       (cmd-select-frame session (first args))
+       (reply-pprint-eval ui session (second args)) (values nil nil))
+      (:inspect-in-frame
+       (cmd-select-frame session (first args))
+       (reply-inspect ui session (second args)) (values nil nil))
+      ;; restart-frame: resume by jumping to the beginning of the frame's
+      ;; function (aldb-restart-frame, aldb-commands.issue). A resume directive.
+      (:restart-frame
+       (let ((d (restart-frame-directive ui session (first args))))
+         (if d (values d t) (values nil nil))))
       (:set-breakpoint-line (reply-set-breakpoint ui session (first args)) (values nil nil))
+      (:remove-breakpoint-line (reply-remove-breakpoint ui session (first args)) (values nil nil))
+      (:toggle-breakpoint-line (reply-toggle-breakpoint ui session (first args)) (values nil nil))
       (:list-breakpoints (reply-breakpoints ui session) (values nil nil))
       (:inspect (reply-inspect ui session (first args)) (values nil nil))
       (:inspector-descend (reply-descend ui session (first args)) (values nil nil))
@@ -160,9 +257,37 @@ otherwise the command was answered inline and the loop keeps reading."
   (first (clautolisp.autolisp-runtime:read-runtime-from-string string)))
 
 (defun reply-eval (ui session string)
+  ;; evaluate in the SELECTED frame's context (aldb tracks it via :select-frame),
+  ;; so an eval on an outer frame sees that frame's bindings (§9.3)
   (handler-case
-      (write-message ui :eval-result (preview (cmd-eval session (parse-form string)) 200))
+      (write-message ui :eval-result
+                     (preview (cmd-eval session (parse-form string)
+                                        :frame-index (session-selected-frame session))
+                              200))
     (error (e) (write-message ui :eval-error (princ-to-string e)))))
+
+(defun reply-pprint-eval (ui session string)
+  "Like REPLY-EVAL but pretty-print the result (aldb-pprint-eval-in-frame)."
+  (handler-case
+      (let ((*print-pretty* t) (*print-right-margin* 72))
+        (write-message ui :eval-result
+                       (preview (cmd-eval session (parse-form string)
+                                          :frame-index (session-selected-frame session))
+                                2000)))
+    (error (e) (write-message ui :eval-error (princ-to-string e)))))
+
+(defun restart-frame-directive (ui session index)
+  "The resume directive that restarts frame INDEX — jumps execution to the
+beginning (form 0) of that frame's function (§1 jump). NIL (a message is
+written) when the frame has no instrumented function to restart."
+  (let* ((frames (snapshot-call-stack (session-snapshot session)))
+         (frame (and frames (nth index frames)))
+         (fid (and frame (stack-frame-fid frame))))
+    (if (and fid (plusp fid))
+        (cmd-jump session fid 0)
+        (progn (write-message ui :error "restart-frame"
+                              "no instrumented function to restart for this frame")
+               nil))))
 
 (defun return-directive (ui session string)
   (handler-case (cmd-return session (cmd-eval session (parse-form (or string "nil"))))
@@ -173,6 +298,18 @@ otherwise the command was answered inline and the loop keeps reading."
     (if bp
         (write-message ui :breakpoint-set (breakpoint-id bp) line)
         (write-message ui :message :warning (format nil "no poll point at line ~A" line)))))
+
+(defun reply-remove-breakpoint (ui session line)
+  (let ((bp (cmd-remove-breakpoint-at-line session line)))
+    (if bp
+        (write-message ui :breakpoint-removed (breakpoint-id bp))
+        (write-message ui :message :warning (format nil "no breakpoint at line ~A" line)))))
+
+(defun reply-toggle-breakpoint (ui session line)
+  (multiple-value-bind (bp enabled) (cmd-toggle-breakpoint-enabled-at-line session line)
+    (if bp
+        (write-message ui :breakpoint-enabled (breakpoint-id bp) (and enabled t))
+        (write-message ui :message :warning (format nil "no breakpoint at line ~A" line)))))
 
 (defun reply-breakpoints (ui session)
   (write-message ui :breakpoints
@@ -192,9 +329,15 @@ otherwise the command was answered inline and the loop keeps reading."
     (error (e) (write-message ui :inspect-error (princ-to-string e)))))
 
 (defun page->wire (session)
+  ;; The page HEADER and each component's PREVIEW are already the inspector's
+  ;; printed (prin1) sexp representations — pass them through verbatim (ANSI
+  ;; stripped), NEVER back through PREVIEW, which would prin1 the string again
+  ;; and double-quote it, e.g. "(UUID . \"…\")" instead of (UUID . "…")
+  ;; (aldb-inspect-values-not-strings). ORIGIN and PATH are raw values, so they
+  ;; go through PREVIEW to be printed once.
   (let ((page (session-page (session-inspector session))))
     (list :type (inspect-page-type-name page)
-          :header (inspect-page-header page)
+          :header (strip-ansi (inspect-page-header page))
           :origin (preview (session-origin (session-inspector session)))
           :path (multiple-value-bind (expr kind) (cmd-inspector-path-expression session)
                   (if (eq kind :partial)
@@ -203,7 +346,7 @@ otherwise the command was answered inline and the loop keeps reading."
           :components (loop for c in (inspect-page-components page)
                             for i from 0
                             collect (list i (inspect-component-label c)
-                                          (preview (inspect-component-preview c))
+                                          (strip-ansi (inspect-component-preview c))
                                           (and (inspect-component-descendable-p c) t))))))
 
 (defun reply-page (ui session)

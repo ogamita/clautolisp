@@ -1,0 +1,73 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: hosted-engine-first-request-stall: a hosted clautolisp engine sat at READY 0 for 30 s before picking up request 1
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-hosted-engine-first-request-stall
+#+DATE: 2026-10-14
+
+* Symptom
+
+On 2026-10-14 (clautolisp / alfe 2.3.18, macOS arm64, SBCL),
+=make -C autolisp-front-end test= failed one check out of 2265:
+
+: PROTOCOL-FAILURE-INSIDE-A-LOADED-FILE-FAILS-THAT-REQUEST
+:   a failure in a loaded file must fail ITS request, got "READY 0"
+
+=drive-hosted-engine= (=autolisp-front-end/tests/file-protocol-tests.lisp=)
+sends each form through stdin.txt and waits 30 s for =DONE n=. On a miss
+it recorded only the current status. Here that status was still
+=READY 0=, so the engine had not even published =RUNNING 1=
+(=autolisp-protocol-server-loop= publishes it as soon as it reads a
+request).
+
+The engine did pick request 1 up later: =send-stdin= for request 2 waits
+at most 5 s for the slot to be free and did not signal =:stdin-busy=,
+and requests 2-4 all ended as expected. So request 1 was consumed
+somewhere between 30 and 35 s after it was sent.
+
+* Reproduction (not reproduced)
+
+- The test on its own: 7/7 checks pass.
+- The full suite rerun right afterwards on the same machine: 2265/2265
+  pass, in 5m22 of wall-clock time. The failing run took 10m44 with about
+  the same user time (4m31 vs 4m05), so that machine was probably loaded
+  by something else.
+
+* What was checked
+
+- =autolisp-protocol-remote-read-line= polls stdin.txt every 100 ms
+  (=autolisp-protocol-yield=, vlax-sleep). There is no back-off that
+  could grow to 30 s.
+- The host publishes stdin.txt by rename (=write-atomic-file=). The
+  engine deletes the file only once it has read some lines from it.
+  Neither side shows a race that could lose or hide the file.
+- =READY 0= is published right before the loop starts, so no setup work
+  runs between it and the first poll.
+
+The leading hypothesis is a scheduling stall under load. A 30 s stall
+before the first poll succeeds is still long enough to need explaining.
+
+* Diagnostics added (clautolisp / alfe 2.3.19)
+
+On a miss, =drive-hosted-engine= now records
+: <current status> [miss: stdin-present=yes|no engine-alive=yes|no elapsed=N.Ns]
+(=%hosted-engine-miss-record=). The status still comes first, so the
+existing =" OK"= / =" FAIL"= checks read it unchanged. How to read the
+next occurrence:
+
+- =stdin-present=yes engine-alive=yes=: the engine is alive and has not
+  polled. Look at scheduling, vlax-sleep and the heartbeat write.
+- =stdin-present=no=, status still =READY 0=: the request was consumed
+  and RUNNING was never published. Look at the read path and the status
+  write.
+- =engine-alive=no=: the engine died. Check =engine-stderr.txt= in the
+  kept workdir.
+
+* Next steps
+
+1. Wait for a recurrence that carries the miss record.
+2. If it shows a live engine that has not polled, measure the poll
+   cadence under load (heartbeat.txt timestamps) before raising the
+   30 s budget. Raising it would only hide the stall.

@@ -1,0 +1,66 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: lone-cr-in-string-literal -- a lone CR inside a string literal becomes LF in clautolisp
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: fix-lone-cr-in-string-literal
+#+DATE: 2026-10-27
+
+* Symptom
+
+A line break written literally inside a string literal is accepted by
+every engine, and CR LF / LF both become a single LF (code 10)
+everywhere. A LONE CR (code 13) inside the string is where they differ:
+
+| reader | clautolisp 2.3.24 | AutoCAD 2022 Windows | BricsCAD V25 Windows | BricsCAD V26 macOS |
+|--------+-------------------+----------------------+----------------------+--------------------|
+| =read= | 10                | 13                   | 13                   | 13                 |
+| =load= | 10                | 13                   | 10                   | 10                 |
+
+=load= of ="ab<CR><CR>cd"= in a CR LF file: AutoCAD (13 13), BricsCAD
+and clautolisp (10 10).
+
+* Evidence
+
+Probe =probes/sources/probe-multiline-string.lsp= (fixtures in
+=probes/sources/fixtures/mls-*.lsp=, byte-exact), run 2026-10-27:
+
+- =probe-results/autocad/ms-windows/20261027T092452Z/=
+- =probe-results/bricscad/ms-windows/20261027T092505Z/=
+- =probe-results/bricscad/macos/20261027T092421Z/=
+- =probe-results/clautolisp/macos/20261027T092420Z/=
+
+* Classification (AGENTS.md, Dialect Divergence)
+
+- =read=: case 0 (all vendors agree: lone CR kept). clautolisp is WRONG
+  in every dialect -- =read= on a string is not a file boundary and must
+  not normalise line endings.
+- =load=: vendors disagree (AutoCAD keeps CR, BricsCAD turns it into LF),
+  no vendor document covers it: case 3 (unresolved) until the spec adopts
+  one. =--dialect autocad= should keep the CR.
+
+* To do
+
+1. Regression tests (reader) for both readers, then fix =read=.
+2. Make the =load= behaviour follow the product under =--dialect=.
+3. Add the results to the autolisp-spec "String Literal" reader entry
+   (version bump), with the case-3 note.
+
+* Resolved (clautolisp 2.3.72, 2026-10-27)
+
+- The reader's line-ending pass turns only CR LF into LF; a lone CR
+  reaches the tokenizer, which reads it as a line break outside strings
+  and, inside a string literal, keeps it or turns it into LF per the new
+  reader option =:lone-cr-in-string= (=:keep= by default, =:newline=),
+  signalling =lone-cr-in-string-literal= (file, line) each time.
+- READ keeps the CR in every dialect, silently (vendors agree).
+- LOAD picks =:newline= for the BricsCAD product, =:keep= otherwise, and
+  turns the signal into the registered =[lone-cr-in-string]= warning in
+  every dialect but lax (case 3).
+- Found on the way and fixed: the tokenizer did not count the lines
+  inside a multi-line string, so every position after one was off.
+- Tests: autolisp-reader tokenizer-tests (7), autolisp-builtins-core
+  lone-cr-in-string-tests (3); they failed before the fix.
+- Spec 0.14.5: String Literal entry gains the tested matrix and the
+  clautolisp note. User manual: /Line breaks inside a string literal/.

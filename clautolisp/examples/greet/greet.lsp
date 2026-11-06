@@ -1,5 +1,10 @@
 (defun c:greet (/ id status name shout)
-  (setq id (load_dialog "/Users/pjb/src/public/clautolisp/clautolisp/examples/greet/greet.dcl"))
+  ;; Relative name: run from this directory (clautolisp resolves a relative
+  ;; load_dialog against the cwd; in AutoCAD/BricsCAD put it on the support
+  ;; path). Keeps an absolute path out of the committed file -- the one that
+  ;; was here named a directory on the author's own machine, so the example
+  ;; printed "Could not load greet.dcl" for everybody else.
+  (setq id (load_dialog "greet.dcl"))
   (cond
     ((< id 0)
      (princ "\nCould not load greet.dcl"))

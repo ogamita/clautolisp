@@ -34,13 +34,27 @@ case "$backend" in
 esac
 
 root="${CI_PROJECT_DIR:-$(pwd)}"
-# No default drawing: BricsCAD batch opens a fresh default drawing when none is
-# given (that's what the macOS probe relies on). A libredwg-written empty.dwg is
-# NOT CAD-valid, so we don't ship one; pass --dwg a real CAD-made file if a
-# specific drawing is needed. The probe self-cleans at seed time regardless.
+# No default drawing, and alfe no longer needs one from us: it CARRIES an empty
+# drawing in its image and writes a fresh copy into each invocation's workdir
+# (empty-ressource.issue). That supersedes the note that used to stand here --
+# "a libredwg-written empty.dwg is NOT CAD-valid, so we don't ship one" -- which
+# was true of a GENERATED drawing and is not true of the real CAD-made AC1032
+# file now committed beside the source that embeds it. Pass --dwg only to probe
+# a SPECIFIC drawing; doing so brings back a shared file and, with it, the
+# "already in use, open read-only?" modal this all exists to avoid.
 alfe="$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl"
+# The Windows build produces alfe-sbcl.exe (pjb, 2026-08-16). MSYS2 resolves
+# the suffix when EXECUTING a bare name, but `test -x' is not execution and
+# must be given the real file, so prefer the .exe when it is there.
+[ -x "$alfe.exe" ] && alfe="$alfe.exe"
 probe_dir="$root/autolisp-front-end/tests/scenarios/entities"
 out_dir="$root/dist/vendor-probes/$backend"
+# Clean this backend's dist dir at the START of the run -- see
+# run-vendor-probes.ps1 and vendor-probes-artifact-upload-bloat.issue: with
+# PROBE_KEEP_WORKDIR the kept protocol workdirs are copied in here, and dist/ is
+# untracked and the Windows runner reuses its build dir, so without this they
+# pile up across runs (39701 files, a half-hour upload retry on the CAD runner).
+rm -rf "$out_dir"
 mkdir -p "$out_dir"
 
 if [ ! -x "$alfe" ]; then
@@ -99,8 +113,8 @@ watch_workdir() {
   done
 }
 
-declare -a probe_names=("entity-lifecycle" "drawing-data" "selection")
-declare -a probe_files=("entity-lifecycle-probe.lsp" "drawing-data-probe.lsp" "selection-probe.lsp")
+declare -a probe_names=("entity-lifecycle" "drawing-data" "selection" "bricscad-extensions")
+declare -a probe_files=("entity-lifecycle-probe.lsp" "drawing-data-probe.lsp" "selection-probe.lsp" "bricscad-extensions-probe.lsp")
 
 failed=0
 summary="vendor probes: $backend"$'\n'"alfe: $alfe"$'\n'"dwg: ${dwg:-<none>}"$'\n'
@@ -172,15 +186,47 @@ for i in "${!probe_names[@]}"; do
   else
     sexp="$probe_dir/$name-$backend.sexp"
   fi
+  # HARVEST probes have no per-vendor expectation file: their point is to
+  # RECORD what the target does (e.g. bricscad-extensions decoding what
+  # BricsCAD's undocumented setf/let/let* actually return), so there is
+  # nothing to conform to yet. Save the transcript as the artifact and
+  # report HARVEST (green, never gates the pipeline). Once a target's
+  # behaviour is pinned, drop in a <name>[-<backend>].sexp and it becomes a
+  # normal conformance probe automatically.
+  if [ ! -f "$sexp" ]; then
+    summary+="HARVEST  $name -- transcript saved ($name.log); no expectation file, not gated"$'\n'
+    echo "HARVEST  $name (no $sexp; transcript in $log)"
+    unset args
+    continue
+  fi
   cmp_out="$(python3 "$root/scripts/compare-observations.py" "$sexp" "$log" 2>&1)"; cmp_rc=$?
   echo "$cmp_out"
   obs_line="$(printf '%s\n' "$cmp_out" | grep -m1 '^observations:')"
+  # A probe that YIELDS A RESULT is a success; only failing to obtain one fails
+  # the job (pjb 2026-09-10). compare-observations exits: 0 conforms, 1 the probe
+  # produced observations that diverge from the recorded expectation, 3 no
+  # observations at all.
+  #   rc 0        -> PASS.
+  #   rc 3        -> no result (backend unreachable / crashed): FAIL, every backend.
+  #   rc 1 + real CAD -> DIVERGED: the vendor differs from our recorded expectation.
+  #                  That is DATA about the vendor (tracked in
+  #                  vendor-probe-autocad-bricscad-divergences.issue), saved as the
+  #                  SUMMARY/log artifact — not a job failure. Green.
+  #   rc 1 + clautolisp reference -> the emulation must conform, so a divergence
+  #                  there is a real regression: keep gating it.
   if [ "$cmp_rc" -eq 0 ]; then
     summary+="PASS  $name -- ${obs_line:-conforms}"$'\n'; echo "PASS  $name"
-  else
+  elif [ "$cmp_rc" -eq 3 ]; then
     failed=$((failed+1))
     summary+="FAIL  $name -- ${obs_line:-no observations (backend unreachable or crashed)}"$'\n'
-    echo "FAIL  $name"
+    echo "FAIL  $name (no result: backend unreachable or probe crashed)"
+  elif [ "$backend" = "clautolisp" ]; then
+    failed=$((failed+1))
+    summary+="FAIL  $name -- ${obs_line} (clautolisp reference must conform)"$'\n'
+    echo "FAIL  $name (clautolisp reference diverged)"
+  else
+    summary+="DIVERGED  $name -- ${obs_line} (recorded, not gated)"$'\n'
+    echo "DIVERGED  $name (vendor differs from recorded expectation; recorded, not gated)"
   fi
   unset args
 done

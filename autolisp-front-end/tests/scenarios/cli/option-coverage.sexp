@@ -17,10 +17,14 @@ mention each one."
         "--no-color"
         "--quiet"
         "--timeout" "30"
+        ;; --write-workdir-path only fires once a workdir is prepared,
+        ;; which --dry-run never does; the parser must still accept it.
+        "--write-workdir-path" "workdir-path.txt"
         "-x" "(+ 1 2)")
  :expected-exit 0
  :covers-options ("--clautolisp" "--cad" "--dry-run"
                   "--mode" "--backend"
                   "--bootstrap-phase" "--no-init"
                   "--no-color"
-                  "--quiet" "--timeout"))
+                  "--quiet" "--timeout"
+                  "--write-workdir-path"))

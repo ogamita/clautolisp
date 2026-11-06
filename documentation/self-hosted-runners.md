@@ -4,9 +4,21 @@ clautolisp's CI runs entirely on **self-hosted** runners — no GitLab
 shared minutes:
 
 Runners are selected by **configuration tags** — `<os>,<arch>,<executor>`
-(plus capability tags `gui`/`bricscad`/`autocad` where a job needs the
-licensed GUI app). Tags describe the *machine*, not the project (the
-group already scopes projects).
+(plus capability tags `gui`/`cad` where a job needs the licensed GUI app).
+Tags describe the *machine*, not the project (the group already scopes
+projects).
+
+**One `cad` tag, not one per vendor.** A job that launches a real CAD is
+tagged `cad` and runs on a runner configured `concurrency = 1`, which is
+what serialises them. The mutex is **global, not per-vendor**: two BricsCAD
+must not run at once, two AutoCAD must not, and a BricsCAD must not run
+beside an AutoCAD either. Per-vendor tags would have created two pools that
+can each run one job — that is, two CADs at once, the situation this exists
+to prevent. The vendor a job targets is visible in the job's own name.
+
+**`nvidia` is the other capability tag.** It marks a runner with a usable
+GPU — today only cecil — and is how an LLM/ollama job asks for one. Unlike
+`cad` it implies no mutex: nothing about a GPU job requires serialising it.
 
 - **poseidon** (`poseidon.informatimago.com`) — a Debian server running
   `gitlab-runner` (under the unprivileged `runners` user, rootless docker)
@@ -18,10 +30,46 @@ group already scopes projects).
 - **thalassa** — an Apple-Silicon laptop (`macos,arm64`) serving the macOS
   build + the native `linux,arm64` docker lane.
 - **windows PC** — a `windows,amd64` laptop with GUI BricsCAD + AutoCAD.
+- **cecil** — an NVIDIA DGX Spark running Ubuntu on arm64, added
+  2026-08-21, with two runners: a shell one (`linux,arm64,shell,nvidia`) and
+  a docker one (`linux,arm64,docker,nvidia`). Both also accept **untagged**
+  jobs. It is a desk machine, but that buys no extra availability for now:
+  pjb, 2026-08-21 — "pour le moment elle se comporte comme un laptop, avec
+  horaires de bureaux". Treat it as just as intermittent as the two laptops.
 
-thalassa and the windows PC are **intermittent** (laptops, not always on),
-so their tagged jobs simply queue until the host is online — expected when
-a branch is pushed for validation.
+  **What cecil is for.** It is the fleet's first arm64 machine running Linux
+  *natively* — thalassa's Docker engine already runs `linux/arm64`
+  containers, but inside a VM on macOS — and it is likely faster and, above
+  all, has far more memory, so it can run **more jobs in parallel** than
+  thalassa. That capacity, not the architecture, is the point: for arm64
+  work it is a bigger second machine, not a unique one.
+
+  Its one genuinely unique capability is the **GPU**. It carries the
+  `nvidia` capability tag so that a job needing one can ask for it, and the
+  expected use is **LLM work (ollama)** — which we will need to test and
+  debug, and which poseidon can only do on CPU.
+
+thalassa, the windows PC and cecil are **intermittent** — two laptops and a
+desk machine that keeps office hours — so their tagged jobs simply queue
+until the host is online, expected when a branch is pushed for validation.
+poseidon is the only machine that is always on, which is why every lane that
+must run whenever a tag is pushed lives there.
+
+> cecil's two runners follow the `<os>,<arch>,<executor>` convention. The
+> **non-release** arm64 lanes now ask for them: `test:clautolisp:linux-arm64`
+> and `build:clautolisp-ci-image:arm64` request `linux,arm64,docker` (cecil or
+> thalassa, whichever is awake) and run natively when a native arm64 runner is
+> online, **falling back to the qemu-emulated lane** on poseidon when none is.
+> `detect:runners` publishes `ARM64_RUNNER` (from the `arm64` tag) and
+> `native:pipeline` forwards it into `.gitlab/native.yml`, where each arm64 job
+> is a mutually-exclusive `:native`/`:emulated` pair — the same
+> availability-gating framework as the macOS/Windows lanes.
+>
+> The **release** arm64 artefact (`release:linux:arm64`) deliberately stays on
+> `linux,arm64,qemu` (poseidon, always-on): a release tag is pushed when the
+> release is ready, not when an intermittent machine is awake, so an offline
+> native lane would either queue the release or silently drop arm64. See
+> `issues/open/cecil-native-arm64-runner.issue` (Step 2 vs Step 3).
 
 | Job                    | tags                  | runner               | what it builds              |
 |------------------------|-----------------------|----------------------|-----------------------------|
@@ -33,6 +81,10 @@ a branch is pushed for validation.
 | `release:linux:arm32`  | `linux, arm32, docker`| **native armv7 (not yet provisioned)** | linux/armv7 — does NOT build under qemu (manual/allow_failure; CCL-only; see note) |
 | `release:darwin:arm64` | `macos, arm64, shell` | thalassa             | native macOS arm64 binaries |
 | `release:windows:x86-64`| `windows, amd64, shell`| windows PC          | windows/amd64 (stub)        |
+| `test:clautolisp:linux-arm64:native` | `linux, arm64, docker`| cecil / thalassa (native) | SBCL unit suite on native arm64 (child pipeline; `ARM64_RUNNER == online`) |
+| `test:clautolisp:linux-arm64:emulated`| `linux, arm64, qemu`  | poseidon (qemu-user) | same suite, emulated fallback (`ARM64_RUNNER != online`; allow_failure) |
+| `build:clautolisp-ci-image:arm64:native` | `linux, arm64, docker`| cecil / thalassa (native) | arm64 CI image (kaniko), pushed `:…-arm64` / `:arm64` |
+| `build:clautolisp-ci-image:arm64:emulated`| `linux, arm64, qemu`  | poseidon (qemu-user) | arm64 CI image via arm64 kaniko under qemu (manual; slow) |
 
 One Apple-Silicon Mac (thalassa) serves **both** arm64 lanes: its Docker
 engine runs `linux/arm64` containers (the docker lane), and the shell

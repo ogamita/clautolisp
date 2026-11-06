@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: opendcl-controls — full common-control catalogue
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: opendcl.plan
+#+BRANCH: -
+
 opendcl-controls — full common-control catalogue
 ================================================
 

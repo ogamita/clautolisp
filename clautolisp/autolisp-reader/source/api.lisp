@@ -74,6 +74,15 @@
 (defun autolisp-dialect-name (dialect)
   (clautolisp.autolisp-reader.internal::autolisp-dialect-name dialect))
 
+(defun autolisp-dialect-product (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-product dialect))
+
+(defun autolisp-dialect-platform (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-platform dialect))
+
+(defun autolisp-dialect-version (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-version dialect))
+
 (defun autolisp-dialect-token-mode (dialect)
   (clautolisp.autolisp-reader.internal::autolisp-dialect-token-mode dialect))
 
@@ -107,10 +116,41 @@
 (defun find-autolisp-dialect (name)
   (clautolisp.autolisp-reader.internal::find-autolisp-dialect name))
 
+(defun autolisp-dialect-template-name (dialect-or-name)
+  "The name behaviour should dispatch on: any spelling of a vendor product
+-- :bricscad-mac, :bricscad-linux, :bricscad-v25, :autocad-mac,
+:autocad-2022 ... -- folds onto that product's template keyword
+(:bricscad-v26 / :autocad-2026); every other dialect keeps its own name.
+DIALECT-OR-NAME is a descriptor, a keyword or a string. Dispatching on
+AUTOLISP-DIALECT-NAME with EQ missed every derived spelling, so
+--dialect bricscad-mac behaved like AutoCAD for sysvars, SECURELOAD and
+the dialect warnings (2026-10-03)."
+  (let* ((dialect (if (or (keywordp dialect-or-name) (stringp dialect-or-name))
+                      (ignore-errors (find-autolisp-dialect dialect-or-name))
+                      dialect-or-name))
+         (product (and dialect (autolisp-dialect-product dialect))))
+    (case product
+      (:bricscad :bricscad-v26)
+      (:autocad  :autocad-2026)
+      (t (cond (dialect (autolisp-dialect-name dialect))
+               ((stringp dialect-or-name)
+                (intern (string-upcase dialect-or-name) "KEYWORD"))
+               (t dialect-or-name))))))
+
 (defun autolisp-dialect-names ()
   "Ordered list of selectable dialect-name strings (strict first, lax
 last); drives --list-dialects and validates --dialect."
   (clautolisp.autolisp-reader.internal::autolisp-dialect-names))
+
+(defun dialect-feature (feature product platform version)
+  "Look up FEATURE in the incremental feature/version matrix for
+PRODUCT/PLATFORM/VERSION; returns (values VALUE FOUNDP)."
+  (clautolisp.autolisp-reader.internal::dialect-feature
+   feature product platform version))
+
+(defun dialect-feature-for (dialect feature)
+  "DIALECT-FEATURE keyed off a DIALECT descriptor's facets."
+  (clautolisp.autolisp-reader.internal::dialect-feature-for dialect feature))
 
 (defun reader-options-from-dialect (dialect &rest args)
   (apply #'clautolisp.autolisp-reader.internal::reader-options-from-dialect
@@ -298,16 +338,17 @@ last); drives --list-dialects and validates --dialect."
 
 (defun tokenize-string (text &key options (token-mode :strict) retain-comments-p
                                warn-on-integer-overflow-p
-                               extended-string-escapes-p
+                               extended-string-escapes-p lone-cr-in-string
                                source-name)
   (let* ((effective-options
-           (clautolisp.autolisp-reader.internal::ensure-reader-options
+           (apply #'clautolisp.autolisp-reader.internal::ensure-reader-options
             options
             :token-mode token-mode
             :retain-comments-p retain-comments-p
             :warn-on-integer-overflow-p warn-on-integer-overflow-p
             :extended-string-escapes-p extended-string-escapes-p
-            :source-name source-name))
+            :source-name source-name
+            (and lone-cr-in-string (list :lone-cr-in-string lone-cr-in-string))))
          (normalized
            (clautolisp.autolisp-reader.internal:normalize-line-endings text)))
     (clautolisp.autolisp-reader.internal::tokenize-normalized-text
@@ -315,7 +356,7 @@ last); drives --list-dialects and validates --dialect."
 
 (defun tokenize-stream (stream &key options (token-mode :strict) retain-comments-p
                                  warn-on-integer-overflow-p
-                                 extended-string-escapes-p
+                                 extended-string-escapes-p lone-cr-in-string
                                  source-name)
   (tokenize-string
    (clautolisp.autolisp-reader.internal:decode-and-normalize-stream stream)
@@ -324,11 +365,12 @@ last); drives --list-dialects and validates --dialect."
    :retain-comments-p retain-comments-p
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name source-name))
 
 (defun tokenize-file (path &key options (token-mode :strict) retain-comments-p
                                warn-on-integer-overflow-p source-name
-                               extended-string-escapes-p
+                               extended-string-escapes-p lone-cr-in-string
                                external-format)
   (tokenize-string
    (if external-format
@@ -340,20 +382,22 @@ last); drives --list-dialects and validates --dialect."
    :retain-comments-p retain-comments-p
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name (or source-name (namestring path))))
 
 (defun read-forms-from-string (text &key options (token-mode :strict)
                                     warn-on-integer-overflow-p
-                                    extended-string-escapes-p
+                                    extended-string-escapes-p lone-cr-in-string
                                     source-name)
   (let ((effective-options
-          (clautolisp.autolisp-reader.internal::ensure-reader-options
+          (apply #'clautolisp.autolisp-reader.internal::ensure-reader-options
            options
            :token-mode token-mode
            :retain-comments-p nil
            :warn-on-integer-overflow-p warn-on-integer-overflow-p
            :extended-string-escapes-p extended-string-escapes-p
-           :source-name source-name)))
+           :source-name source-name
+            (and lone-cr-in-string (list :lone-cr-in-string lone-cr-in-string)))))
     (clautolisp.autolisp-reader.internal::parse-normalized-text
      (clautolisp.autolisp-reader.internal:normalize-line-endings text)
      effective-options
@@ -361,7 +405,7 @@ last); drives --list-dialects and validates --dialect."
 
 (defun read-forms-from-stream (stream &key options (token-mode :strict)
                                       warn-on-integer-overflow-p
-                                      extended-string-escapes-p
+                                      extended-string-escapes-p lone-cr-in-string
                                       source-name)
   (read-forms-from-string
    (clautolisp.autolisp-reader.internal:decode-and-normalize-stream stream)
@@ -369,35 +413,45 @@ last); drives --list-dialects and validates --dialect."
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name source-name))
 
 (defun read-forms-from-file (path &key options (token-mode :strict)
                                        warn-on-integer-overflow-p source-name
-                                       extended-string-escapes-p
-                                       external-format)
+                                       extended-string-escapes-p lone-cr-in-string
+                                       external-format
+                                       source-policy)
   (read-forms-from-string
-   (if external-format
-       (clautolisp.autolisp-reader.internal:decode-and-normalize-file
-        path :external-format external-format)
-       (clautolisp.autolisp-reader.internal:decode-and-normalize-file path))
+   (cond
+     ;; AutoCAD's own decoding rule (LISPSYS 0 / 1-2): see
+     ;; DECODE-AUTOCAD-SOURCE-OCTETS.
+     (source-policy
+      (clautolisp.autolisp-reader.internal:decode-and-normalize-file
+       path :source-policy source-policy))
+     (external-format
+      (clautolisp.autolisp-reader.internal:decode-and-normalize-file
+       path :external-format external-format))
+     (t (clautolisp.autolisp-reader.internal:decode-and-normalize-file path)))
    :options options
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name (or source-name (namestring path))))
 
 (defun read-concrete-from-string (text &key options (token-mode :strict)
                                        warn-on-integer-overflow-p
-                                       extended-string-escapes-p
+                                       extended-string-escapes-p lone-cr-in-string
                                        source-name)
   (let ((effective-options
-          (clautolisp.autolisp-reader.internal::ensure-reader-options
+          (apply #'clautolisp.autolisp-reader.internal::ensure-reader-options
            options
            :token-mode token-mode
            :retain-comments-p t
            :warn-on-integer-overflow-p warn-on-integer-overflow-p
            :extended-string-escapes-p extended-string-escapes-p
-           :source-name source-name)))
+           :source-name source-name
+            (and lone-cr-in-string (list :lone-cr-in-string lone-cr-in-string)))))
     (clautolisp.autolisp-reader.internal::parse-normalized-text
      (clautolisp.autolisp-reader.internal:normalize-line-endings text)
      effective-options
@@ -405,7 +459,7 @@ last); drives --list-dialects and validates --dialect."
 
 (defun read-concrete-from-stream (stream &key options (token-mode :strict)
                                          warn-on-integer-overflow-p
-                                         extended-string-escapes-p
+                                         extended-string-escapes-p lone-cr-in-string
                                          source-name)
   (read-concrete-from-string
    (clautolisp.autolisp-reader.internal:decode-and-normalize-stream stream)
@@ -413,11 +467,12 @@ last); drives --list-dialects and validates --dialect."
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name source-name))
 
 (defun read-concrete-from-file (path &key options (token-mode :strict)
                                           warn-on-integer-overflow-p source-name
-                                          extended-string-escapes-p
+                                          extended-string-escapes-p lone-cr-in-string
                                           external-format)
   (read-concrete-from-string
    (if external-format
@@ -428,4 +483,46 @@ last); drives --list-dialects and validates --dialect."
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
    :extended-string-escapes-p extended-string-escapes-p
+   :lone-cr-in-string lone-cr-in-string
    :source-name (or source-name (namestring path))))
+
+;;; --- Host-independent external formats -------------------------------
+;;;
+;;; Thin re-exports of the codec in external-format.lisp. Every caller in
+;;; the tree that needs to open a file under a named encoding, or to ask
+;;; whether a named encoding is usable at all, goes through these rather
+;;; than through the host CL's registry directly — see the commentary at
+;;; the head of external-format.lisp for why the two answers differ.
+
+(defun open-with-external-format (path &rest open-args
+                                  &key direction external-format
+                                  &allow-other-keys)
+  (declare (ignore direction external-format))
+  (apply #'clautolisp.autolisp-reader.internal:open-with-external-format
+         path open-args))
+
+(defun external-format-available-p (external-format)
+  (clautolisp.autolisp-reader.internal:external-format-available-p
+   external-format))
+
+(defun external-format-base (external-format)
+  (clautolisp.autolisp-reader.internal:external-format-base external-format))
+
+(defun host-external-format-supported-p (external-format)
+  (clautolisp.autolisp-reader.internal:host-external-format-supported-p
+   external-format))
+
+(deftype unencodable-character-error ()
+  'clautolisp.autolisp-reader.internal:unencodable-character-error)
+
+(defun character-encodable-p (character external-format)
+  (clautolisp.autolisp-reader.internal:character-encodable-p
+   character external-format))
+
+(defun string-encodable-p (string external-format)
+  (clautolisp.autolisp-reader.internal:string-encodable-p
+   string external-format))
+
+(defun encoding-replacement-text (character external-format policy)
+  (clautolisp.autolisp-reader.internal:encoding-replacement-text
+   character external-format policy))

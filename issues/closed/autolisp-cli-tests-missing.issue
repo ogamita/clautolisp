@@ -1,0 +1,66 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: autolisp-cli-tests-missing — test-op references a non-existent test system
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-autolisp-cli-tests-missing
+
+* Resolution (2026-08-03, clautolisp 1.7.14)
+
+Registered the missing =clautolisp/autolisp-cli/tests= system so the
+=clautolisp/autolisp-cli= test-op resolves, and gave the CLI layer a
+home for unit tests. Added:
+
+- =clautolisp/autolisp-cli/tests/{package,test-harness,cli-launch-tests,run}.lisp=,
+  mirroring =autolisp-builtins-core/tests= — same FiveAM shape,
+  =run-all-tests= entry point, and a SETUP-MOCK-EVALUATION-CONTEXT
+  fixture (runtime context backed by a fresh MockHost).
+- the =(defsystem "clautolisp/autolisp-cli/tests" …)= in
+  =clautolisp/clautolisp.asd=, and wired it into the aggregate
+  =clautolisp/tests= (depends-on + the run-all-tests perform) so it runs
+  under the default =make -C clautolisp test-sbcl=.
+
+First tests, per the To-do below:
+- APPLY-CLAUTOLISP-HOST-IDENTITY stamps PROGRAM / PRODUCT / VENDORNAME /
+  PLATFORM / ACADVER (and leaves ACADVER untouched on a blank version);
+- APPLY-TEMPPREFIX-DEFAULT resolution order (a stored registry value
+  wins and is normalised; the empty-registry path still yields a
+  non-empty, slash-terminated TEMPPREFIX) — driven against a hermetic
+  temp-file registry store;
+- the option value parsers (PARSE-HOST / PARSE-DIALECT / PARSE-TIMEOUT),
+  including their CLI-USAGE-ERROR rejections.
+
+Verification: =make -C clautolisp test-sbcl
+TEST_SYSTEM=clautolisp/autolisp-cli/tests= → 25/25 checks pass.
+
+* Symptom
+
+clautolisp.asd wires a test-op for the CLI system:
+
+    (asdf:defsystem "clautolisp/autolisp-cli"
+      ...
+      :in-order-to ((asdf:test-op
+                     (asdf:test-op "clautolisp/autolisp-cli/tests"))))
+
+but there is NO `(defsystem "clautolisp/autolisp-cli/tests" ...)` and no
+`clautolisp/autolisp-cli/tests/` directory. So
+
+    (asdf:test-system "clautolisp/autolisp-cli")
+
+fails with a missing-system error, and there is nowhere to unit-test the
+CLI layer (transmit bindings, apply-clautolisp-host-identity,
+apply-launch-codepage-to-sysvars, apply-tempprefix-default, option
+parsing).
+
+* To do
+
+- Add clautolisp/autolisp-cli/tests/{package,test-harness,run}.lisp and
+  the defsystem, mirroring autolisp-builtins-core/tests (which already
+  has setup-mock-evaluation-context — the exact fixture the CLI-launch
+  functions need: a runtime context backed by a fresh MockHost).
+- First tests to add: TEMPPREFIX resolution order (registry / TMPDIR /
+  platform default + persistence), and the PROGRAM/VENDORNAME/ACADVER
+  identity stamping.
+- Until then, CLI-launch behaviour is only covered end-to-end by direct
+  binary runs.

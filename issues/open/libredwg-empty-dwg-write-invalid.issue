@@ -1,4 +1,11 @@
--*- coding:utf-8 -*-
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: libredwg-empty-dwg-write-invalid — libredwg writes a DWG real CADs reject (report upstream)
+#+STATUS: BLOCKED
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: libredwg-upstream
+#+BRANCH: -
+
 
 libredwg-empty-dwg-write-invalid — libredwg writes a DWG real CADs reject (report upstream)
 ===========================================================================================

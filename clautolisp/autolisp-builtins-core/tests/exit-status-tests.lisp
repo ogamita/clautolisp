@@ -4,7 +4,7 @@
 
 ;;;; clautolisp exit-status channel:
 ;;;;   (autolisp-set-status N) / (autolisp-status) / (quit [status])
-;;;; See issues/open/autolisp-set-status-and-quit-status.issue and the
+;;;; See issues/closed/autolisp-set-status-and-quit-status.issue and the
 ;;;; builtins in autolisp-builtins-core/source/api.lisp.
 
 (defun %exit-status-context (dialect-name)

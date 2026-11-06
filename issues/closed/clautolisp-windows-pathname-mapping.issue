@@ -1,0 +1,278 @@
+clautolisp-windows-pathname-mapping — a path/pathname mapping layer for cross-environment Windows
+=================================================================================================
+
+Reported from: pathname-resolution problems surfaced while loading
+cadaptor under clautolisp (relative paths, cwd/PWD), generalised to
+the underlying Windows portability problem.
+Observed on: design issue; concrete symptoms on clautolisp 1.2.7 /
+alfe 1.1.16. Primary target: MS-Windows builds/runs.
+
+Terminology
+-----------
+
+- pathname : the Common Lisp notion (structured object).
+- path     : the POSIX / AutoCAD / BricsCAD notion (a plain string).
+
+The AutoLISP/AutoCAD/BricsCAD API works with PATH STRINGS, so
+clautolisp must be compatible with them; it cannot expose CL
+pathnames to user code.
+
+Summary
+-------
+
+There is a fundamental problem mapping CL pathnames to physical paths.
+
+On macOS and Linux, CL implementations are well-behaved: the mapping
+from pathnames to paths is handled correctly, roots are unambiguous
+("/"), and a single environment is in play.
+
+On MS-Windows there is NOT a single environment. Several coexisting
+environments use different path syntaxes and different virtual mount
+points / roots for the same physical files:
+
+- Native Windows: drive-letter roots, e.g. `C:/...`.
+- Cygwin / MSYS2: POSIX-style roots; `C:/` appears as `/c/` or
+  `/mnt/c` (the latter under WSL).
+- From native Windows, an MSYS2 `/` is actually something like
+  `C:/msys64/`.
+- `~/` (home) resolves to a variety of paths depending on the
+  environment.
+
+Worse:
+
+- A program such as SBCL may have been COMPILED in one environment
+  (msys2, WSL, native) and RUN in another. WSL is especially nasty
+  because it presents itself as Linux (`uname` says Linux) while the
+  surrounding Windows paths still exist.
+- The environment clautolisp was COMPILED in can differ from the
+  environment it is RUN in, which can differ again from the syntax of
+  the paths the USER passes to it.
+
+So at runtime there are (at least) three frames of reference to
+reconcile:
+
+1. what the CL implementation expects as physical pathnames — syntax
+   and roots / mount points — i.e. essentially the environment SBCL
+   (or the host CL) was compiled in;
+2. what the run-time environment expects (which Windows environment we
+   are actually running under);
+3. the paths the user gives us (in yet another syntax/rooting).
+
+Expected
+--------
+
+clautolisp needs a path-mapping layer (conceptually similar to
+logical pathnames) that:
+
+- knows frame (1): the physical-pathname syntax and roots the
+  underlying CL implementation was built for;
+- knows frame (2): the path syntax and mount points of the runtime
+  environment;
+- can transform / map paths between (3) the user-supplied syntax and
+  whatever the CL runtime actually needs to hit the right physical
+  file.
+
+Constraints / notes
+-------------------
+
+- We cannot "just use CL logical pathnames": the AutoLISP/AutoCAD/
+  BricsCAD API passes plain path strings, and user code expects path
+  strings back. The mapping must be compatible with that string-based
+  API and be transparent to user code.
+- Exposing CL logical pathnames as a *clautolisp extension* (opt-in,
+  on top of the string API) is a separate idea worth considering, but
+  it does not replace the mapping layer above.
+- macOS/Linux can keep the trivial identity mapping; the layer only
+  needs to do real work on Windows / cross-environment builds.
+
+Why it matters
+--------------
+
+Without this, clautolisp on Windows will mis-resolve user paths
+whenever the compile-time and run-time environments disagree (a very
+common situation: SBCL from msys2/WSL, run under native Windows or
+vice-versa). Path strings that work in one frame silently fail or hit
+the wrong file in another.
+
+Suggested direction
+-------------------
+
+- Detect, at build time, the physical-pathname syntax/roots the host
+  CL expects (record it in the image).
+- Detect, at run time, the active Windows environment (native /
+  Cygwin / MSYS2 / WSL) and its mount-point mapping.
+- Implement a canonicalisation/translation step applied to every path
+  string crossing the API boundary (in: user/AutoLISP -> CL; out: CL
+  -> user/AutoLISP), driven by the (build-env, run-env) pair.
+- Add a conformance test matrix across the environment combinations.
+
+Related
+-------
+
+- clautolisp-boot-cwd-pwd-pathname-defaults.issue (cwd/PWD at boot —
+  a special case of getting the base reference right).
+- cad-path-dotdot-resolution.issue (`..` semantics once the base and
+  rooting are correct).
+
+Triage (clautolisp 1.2.10)
+--------------------------
+
+DEFERRED — kept open. This is a cross-environment design issue, not a
+bounded bug: it requires a path-mapping layer driven by the
+(build-env, run-env) pair, plus a conformance matrix across native
+Windows / Cygwin / MSYS2 / WSL. None of that is reproducible or
+testable on the Linux/macOS build hosts, so it cannot be implemented
+and verified here.
+
+The narrow, testable subset it shares with cadaptor's symptoms —
+relative paths resolving against the live cwd at boot — was the
+separable bug and is fixed in 1.2.8 (see
+clautolisp-boot-cwd-pwd-pathname-defaults.issue). On macOS/Linux the
+mapping is the identity, so that fix is sufficient there; the Windows
+mapping layer remains future design work, to be scheduled against a
+real Windows target.
+
+A full design specification for the mapping layer (three frames of
+reference, the mount-table model, map-in/map-out primitives, build- and
+run-frame detection, edge-case rules, the conformance matrix, and a
+W0..W5 implementation plan) is now written up in
+clautolisp/documentation/clautolisp-windows-pathname-mapping-spec.org
+(PDF beside it). This issue stays open as the tracking issue for that
+spec.
+
+Progress (2026-08-06)
+---------------------
+
+Branch feature-windows-pathname-mapping. The mapping layer is now
+implemented; the whole thing short-circuits to the identity mapping on
+macOS/Linux, so existing behaviour there is unchanged (runtime +
+builtins-core + file-compat + tool suites all still green).
+
+New code:
+- clautolisp/autolisp-runtime/source/pathname-mapping.lisp — the
+  package clautolisp.pathname-mapping (nickname clal-pathmap): the
+  MAPPING-ENVIRONMENT / MOUNT-ENTRY model, *BUILD-ENVIRONMENT* /
+  *RUN-ENVIRONMENT*, TO-CANONICAL / FROM-CANONICAL, MAP-IN / MAP-OUT
+  (+ the string workhorses MAP-IN-NAMESTRING / MAP-OUT-NAMESTRING),
+  CLASSIFY-ENVIRONMENT-KIND, the standard mount tables, build/run
+  detection, and the UNMAPPABLE-PATH condition.
+- clautolisp/autolisp-runtime/tests/pathname-mapping-tests.lisp —
+  FiveAM tests (identity no-ops, WSL-trap classification, the synthetic
+  cross-frame translation matrix, edge cases, round-trip stability).
+- scripts/verify-pathname-mapping.lisp — the standalone §8 conformance
+  harness (sbcl/ccl --load), runnable on any host; exercises the full
+  synthetic (build x run) matrix plus a real-file round trip through the
+  live frames. Meant for the [windows, amd64, shell] runner.
+
+W-phase status:
+- W0 (model + identity) .......... DONE. map-in/map-out + the two live
+  environments; identity on :posix; §4.3 insertion points wired
+  (resolve-open-pathname, resolve-existing-file -> map-in;
+  builtin-findfile / builtin-findtrustedfile -> map-out; the boot cwd
+  sync in tools/clautolisp main.lisp now also classifies the run frame).
+- W1 (build-frame recording) ..... DONE. *BUILD-ENVIRONMENT* is captured
+  at file-load time (so it is frozen into the dumped image) with a probe
+  plist incl. (truename "/") per §5.1; BUILD-ENVIRONMENT accessor +
+  DESCRIBE-MAPPING-ENVIRONMENTS; CLAUTOLISP_DEBUG_PATHMAP env var dumps
+  both frames from the running binary (verified on the SBCL image).
+- W2 (run-frame detection) ....... DONE. CLASSIFY-ENVIRONMENT-KIND
+  (native / cygwin / msys2 / wsl / posix) is independent of
+  uiop:os-windows-p so it does not fall into the WSL-reports-Linux trap
+  (§1.1); INITIALIZE-RUN-ENVIRONMENT runs at tool startup.
+- W3 (translation) ............... DONE (logic; needs Windows CI to
+  confirm against real files). Non-identity map-in/map-out pivot through
+  the canonical C:/ form; edge cases covered: mount-point translation,
+  install-root remap (msys2 / -> C:/msys64/), ~ per run-frame home, UNC
+  preservation, mixed separators, already-canonical input under a
+  posix-rooted run frame, and the unmappable-path error.
+- W4 (conformance matrix) ........ HARNESS DELIVERED
+  (scripts/verify-pathname-mapping.lisp); GREEN on Linux. Needs the
+  [windows, amd64, shell] CI job wired (job spec handed to the
+  integrator) to run against real native/cygwin/msys2/wsl frames.
+- W5 (optional logical pathnames)  TODO (out of scope; §7).
+
+Still TODO after Windows CI confirms W3/W4: seed run-frame mount tables
+from the live /etc/fstab (cygwin/msys2) and `mount` 9p/drvfs output
+(WSL2) rather than the built-in defaults; today the standard tables use
+the conventional /cygdrive, /<letter>, /mnt/<letter> prefixes and a
+supplied install-root.
+
+Progress (2026-08-15) — W4 CONFIRMED on real Windows, live mount tables
+----------------------------------------------------------------------
+
+W4 is done. The [windows, amd64, shell] job this issue was waiting for
+turned out to be wired already (conformance:pathname-mapping:windows in
+.gitlab/native.yml), and it now RUNS — the runner came back online and
+the CAD tag fix let the native child pipeline through. Its output:
+
+    ok    round-trip build=MSYS2 run=MSYS2 "/c/x/y/z.lsp"
+    ok    round-trip build=CYGWIN run=NATIVE "C:/work/proj/a.lsp"
+    ... (full synthetic build x run matrix)
+    --- live-frame REAL FILE round trip (identity on Unix) ---
+    ok    map-in of a real file resolves to an openable pathname
+    ok    map-out(map-in(s)) round-trips to the run-frame form
+    pathname-mapping conformance: OK (build=MSYS2 run=MSYS2)
+
+Note the live frames: build=MSYS2 run=MSYS2, DETECTED — not a fallback to
+:posix. So the classification of §5 works on the real machine, the whole
+synthetic matrix passes there, and a real file round-trips through the
+live frames. That is what W4 asked for.
+
+W5 remains out of scope (§7, optional logical pathnames).
+
+LIVE MOUNT TABLES — the issue's "Still TODO after Windows CI"
+
+Implemented. STANDARD-MOUNT-TABLE described the CONVENTIONAL layout
+(/cygdrive/c, /c, /mnt/c, a supplied install root), which is right on a
+default install and wrong on any machine whose owner moved something: an
+msys2 installed elsewhere than C:/msys64, an fstab mapping a share, a WSL
+distro with extra drvfs mounts. The system already knows the truth —
+cygwin and msys2 keep it in /etc/fstab, WSL reports it through `mount' —
+and it is now read and PREFERRED, with the conventional table kept
+underneath for whatever it does not mention (%MERGE-MOUNT-TABLES).
+
+Parsing is separated from acquisition on purpose: PARSE-FSTAB-MOUNT-ENTRIES
+and PARSE-MOUNT-COMMAND-ENTRIES are pure functions over text, so the
+formats are tested on a host that has neither. LIVE-MOUNT-ENTRIES does the
+reading and never signals — a machine with no /etc/fstab, no `mount', or
+an unreadable one falls back to the conventions, because the mapping layer
+must not fail to start because a probe did.
+
+Details that needed care, each with a test:
+
+- fstab's field order is (Windows path, POSIX mount point), i.e. exactly
+  (canonical-prefix, frame-prefix);
+- an fstab also lists pseudo-filesystems (none, cygdrive, proc) that name
+  no physical Windows path — they are skipped rather than turned into a
+  bogus mapping;
+- fstab escapes a space as \040, which is what any path under
+  "Program Files" needs, so it is decoded;
+- under WSL both 9p (usually C:) and drvfs (the other drives) are Windows
+  filesystems and both are kept; ext4/proc/tmpfs are the distro's own and
+  are not.
+
+The number of live entries found is recorded in the environment's probe
+plist, so CLAUTOLISP_DEBUG_PATHMAP shows whether a frame was seeded from
+the system or from the conventions.
+
+Verified: SBCL and CCL suites green (exit 0), 7 new tests. The Windows
+job exercises the result on the real machine.
+
+
+CLOSED 2026-08-15 (clautolisp 1.8.38, merged as MR !81)
+-------------------------------------------------------
+
+Every work item this issue defined is delivered: W0 (model + identity),
+W1 (build-frame recording), W2 (run-frame detection), W3 (translation)
+and W4 (conformance matrix, now CONFIRMED on the real Windows runner
+with build=MSYS2 run=MSYS2 detected rather than fallen back to :posix).
+
+W5 is not left undone — it was declared out of scope by this issue's own
+§7, which lists optional logical pathnames as a non-goal. Closing on the
+scope the issue set for itself, not on a reduced one.
+
+The "Still TODO after Windows CI" item (seed the mount tables from the
+live system instead of the conventions) is delivered in the same release,
+so nothing carries forward from this ticket. Should logical pathnames
+ever be wanted, they warrant a new issue with their own justification —
+reopening this one would resurrect a non-goal.

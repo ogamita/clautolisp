@@ -1,7 +1,7 @@
 (:name "drawing-data-clautolisp"
  :description "Portable drawing-data-structures probe (drawing-data-probe.lsp) run under the clautolisp backend with the mock host: REGAPP; the full XData group-code set (1000/1002/1003/1005/1040/1070/1071) round-tripped through entget/entmod preserving order and multiplicity; multi-application xdata filtering; the named-object-dictionary tree with an XRECORD create/read/mutate/remove lifecycle; and tblsearch/tblnext over LAYER/LTYPE/STYLE/APPID. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
  :classification :clautolisp-only
- :argv ("--clautolisp" "--host" "mock" "-l" "drawing-data-probe.lsp")
+ :argv ("--clautolisp" "--host" "cador" "-l" "drawing-data-probe.lsp")
  :setup-files (("drawing-data-probe.lsp" ";;;; drawing-data-probe.lsp — drawing-data-structures PROBE
 ;;;;
 ;;;; A probe EXERCISES a feature and reports the EXHIBITED behaviour to be
@@ -13,7 +13,7 @@
 ;;;; provide, so it runs UNCHANGED on every target.
 ;;;;
 ;;;; Run it:
-;;;;   clautolisp:            clautolisp --clautolisp --host mock -l drawing-data-probe.lsp
+;;;;   clautolisp:            clautolisp --clautolisp --host cador -l drawing-data-probe.lsp
 ;;;;   via alfe on BricsCAD:  alfe --bricscad -l drawing-data-probe.lsp
 ;;;;   via alfe on AutoCAD:   alfe --autocad  -l drawing-data-probe.lsp
 ;;;;
@@ -80,7 +80,7 @@
                                        (cons 1000 \"tag-string\")
                                        (cons 1002 \"{\")
                                        (cons 1003 \"0\")
-                                       (cons 1005 \"2A\")
+                                       (cons 1005 (cdr (assoc 5 (entget e))))   ; a handle that EXISTS
                                        (cons 1040 1.5)
                                        (cons 1070 42)
                                        (cons 1071 100000)
@@ -95,7 +95,7 @@
   (obf \"xdata.1040-real\"   (equal (a2 1040 xd) 1.5))
   (obf \"xdata.1070-int16\"  (equal (a2 1070 xd) 42))
   (obf \"xdata.1071-int32\"  (equal (a2 1071 xd) 100000))
-  (obf \"xdata.1005-handle\" (equal (a2 1005 xd) \"2A\"))
+  (obf \"xdata.1005-handle\" (equal (a2 1005 xd) (cdr (assoc 5 (entget e)))))
   (entdel e))
 
 (defun run-xdata-multi-app-probe (/ a1 a2app e)

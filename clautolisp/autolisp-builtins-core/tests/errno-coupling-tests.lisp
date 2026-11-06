@@ -16,12 +16,12 @@
 ;;;; builtin" -- which is what the wiring in api.lisp does.
 
 (defun setup-mock-evaluation-context ()
-  "Install a fresh evaluation context backed by a default MockHost.
+  "Install a fresh evaluation context backed by a default cador.
 Returns the context."
   (clautolisp.autolisp-runtime:reset-default-evaluation-context)
   (let* ((session (clautolisp.autolisp-runtime:evaluation-context-session
                    (clautolisp.autolisp-runtime:current-evaluation-context)))
-         (mock    (clautolisp.autolisp-mock-host:make-mock-host)))
+         (mock    (clautolisp.cador:make-cador)))
     (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
           mock)
     (clautolisp.autolisp-runtime:current-evaluation-context)))
@@ -35,6 +35,29 @@ Returns the context."
                  (make-autolisp-string "/no/such/path/anywhere"))))
     (is (null result))
     (is (eql 22 (autolisp-errno)))))
+
+(test findfile-unmappable-path-returns-nil-not-cl-error
+  ;; Regression (MSYS2 runner, 2026-08-07): on a cross-frame host the
+  ;; pathname-mapping layer raises UNMAPPABLE-PATH for an absolute path with
+  ;; no mount entry. That CL condition must NOT escape the AutoLISP builtin:
+  ;; findfile of a missing/unmappable path returns nil (errno 22), never a
+  ;; raw UNMAPPABLE-PATH. Force a cross-frame (WSL run / native build) pair
+  ;; so map-in genuinely hits the unmappable branch on this Linux host.
+  (setup-mock-evaluation-context)
+  (set-autolisp-errno 0)
+  (let ((clautolisp.pathname-mapping:*run-environment*
+          (clautolisp.pathname-mapping:make-environment-for-kind
+           :wsl :home "/home/pjb"))
+        (clautolisp.pathname-mapping:*build-environment*
+          (clautolisp.pathname-mapping:make-environment-for-kind
+           :native-windows :home "C:/Users/pjb")))
+    (let ((result (handler-case
+                      (clautolisp.autolisp-builtins-core::builtin-findfile
+                       (make-autolisp-string "/no/such/rootfs/path/xyz"))
+                    (clautolisp.pathname-mapping:unmappable-path () :leaked))))
+      (is (null result)
+          "findfile of an unmappable path must return nil, got ~S" result)
+      (is (eql 22 (autolisp-errno))))))
 
 (test errno-findfile-on-hit-resets-to-0
   (setup-mock-evaluation-context)
@@ -113,7 +136,7 @@ Returns the context."
 (test errno-handent-bad-handle-sets-13
   (setup-mock-evaluation-context)
   (set-autolisp-errno 0)
-  ;; A handle like "ZZZ" never resolves on a fresh MockHost.
+  ;; A handle like "ZZZ" never resolves on a fresh cador.
   (let ((result (clautolisp.autolisp-builtins-core::builtin-handent (make-autolisp-string "ZZZ"))))
     (is (null result))
     (is (eql 13 (autolisp-errno)))))
@@ -186,3 +209,41 @@ Returns the context."
   (let ((result (clautolisp.autolisp-builtins-core::builtin-tablet)))
     (is (null result))
     (is (eql 68 (autolisp-errno)))))
+
+;;; --- OPEN read path maps in (windows-msys-paths-in-autolisp-load) ------
+
+(test open-read-resolver-maps-in-the-user-frame-path
+  ;; Regression: OPEN's resolver (RESOLVE-OPEN-SEARCH-PATHNAME) must MAP-IN
+  ;; the user/run-frame path, the way LOAD and the vl-file-* builtins do
+  ;; via RESOLVE-OPEN-PATHNAME. On the MSYS2 runner the program hands OPEN a
+  ;; /c/... path; here a synthetic run-frame mount stands in for /c/ and is
+  ;; pointed at a real directory on THIS host, so the mapping is exercised
+  ;; on Linux. Before the fix the resolver only normalised separators and
+  ;; the mapped path was never reached.
+  (let* ((dir (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "clal-openmap-~36R/" (random (expt 36 8)))
+                                (uiop:temporary-directory))))
+         (file (merge-pathnames "a.lsp" dir)))
+    (ensure-directories-exist dir)
+    (unwind-protect
+         (progn
+           (with-open-file (s file :direction :output :if-exists :supersede
+                                   :if-does-not-exist :create)
+             (write-string "(princ)" s))
+           (let ((clautolisp.pathname-mapping:*run-environment*
+                   (clautolisp.pathname-mapping:make-environment-for-kind
+                    :wsl :home "/home/pjb"
+                    :mount-table
+                    (list (clautolisp.pathname-mapping:make-mount-entry
+                           :frame-prefix "/synthetic/"
+                           :canonical-prefix (namestring dir)))))
+                 (clautolisp.pathname-mapping:*build-environment*
+                   (clautolisp.pathname-mapping:identity-environment)))
+             (let ((resolved (clautolisp.autolisp-builtins-core::resolve-open-search-pathname
+                              "/synthetic/a.lsp" "OPEN" :must-exist)))
+               (is (and resolved (probe-file resolved))
+                   "OPEN resolver did not map /synthetic/a.lsp onto the real file; got ~S"
+                   resolved)
+               (is (equal (truename file) (truename resolved))))))
+      (ignore-errors (delete-file file))
+      (ignore-errors (uiop:delete-empty-directory dir)))))

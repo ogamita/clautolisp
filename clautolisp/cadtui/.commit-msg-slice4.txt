@@ -1,0 +1,28 @@
+clautolisp 2.2.52: cadtui phase 5 slice 4 — dump entities routing + general dotted addressing
+
+Two additions finish Phase 5's addressing/dump story:
+
+- The dump verb routes to dump-entities whenever a CAD view's entities are
+  asked for: a target path ending in the container segment /entities, or a
+  positional :entities keyword. window:/page:/size: are honoured, so
+  =dump(.../cad-view/entities, window: (x1 y1 x2 y2)) or
+  =dump(.../cad-view, :entities, size: n) give the paginated, spatially-culled,
+  D<n>-addressable entity list from slice 3.
+
+- General dotted-relative addressing:
+  * root-relative dotted chains, e.g. drawings[1].cad-view.entities[1].grips[2];
+  * last-dump dotted chains, e.g. 2A.2 (the entity 2A, then its 2nd grip),
+    which composes with D<n>. references (D1.<handle>.<grip>).
+  Dotted KEYS are protected: the last-dump form tries the WHOLE string as one
+  key first, so a filename key like plan.dwg is never split; the root-relative
+  form only fires when no ':' is present, so role:cle addressing (whose key may
+  contain dots) stays a single segment or an absolute /path — a documented
+  limitation, not a regression.
+
+Tests: dump-verb entities routing (path + keyword forms), dotted grip
+addressing off an entity dump, root-relative and last-dump dotted chains, and
+the filename-key-not-split guard. Full make -C clautolisp test-sbcl green.
+alfe 2.2.60 tracks.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01XDPCe5o6LJkv4CR2FvYauz

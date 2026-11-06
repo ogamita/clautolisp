@@ -1,0 +1,78 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe BricsCAD batch ignores the --dwg drawing option
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-21
+
+* Observed
+
+Windows, BricsCAD V25 fr_FR, alfe 2.3.15 (SBCL executable). Discovered while
+automating SCHMS+ export from =export/test/Exemple Export.dwg= in the sibling
+SCHMS checkout.
+
+=--dwg= was supplied with an existing private copy of the fixture, but the
+session ran on =Dessin1=. The requested drawing was absent from the launch
+arguments. Adding =--epure= does not make the requested drawing take effect.
+
+This is consequential for CAD tests: the transport can report success while
+the test operates on a blank drawing instead of the requested fixture.
+
+* Reproduction
+
+Use an existing nonempty =fixture.dwg= and clear drawing/template environment
+overrides before running (example for Git Bash on Windows):
+
+#+begin_src sh
+env -u AUTOLISP_DWG -u AUTOLISP_BRICSCAD_TEMPLATE \
+  alfe -norc --bricscad --mode batch --dwg fixture.dwg \
+  -x '(print (getvar "DWGNAME"))' \
+  -x '(print (getvar "DWGPREFIX"))' --quit
+#+end_src
+
+Expected: =fixture.dwg= and the directory of the supplied file. Observed in
+the SCHMS run: =Dessin1=, with no requested fixture in the process command
+line. Repeat with =--epure= on a configured workstation; EPURE can add its
+own startup effects, so isolate the basic backend test first.
+
+The SCHMS diagnostic run passed these relevant options:
+
+#+begin_example
+alfe -norc --bricscad --epure --mode batch --timeout 600
+     --workdir <private-run>/alfe --keep-workdir
+     --dwg <private-run>/Exemple Export.dwg
+     -Esource WINDOWS-1252 -l <private-run>/run.lsp --quit -q
+#+end_example
+
+* Source evidence
+
+- =autolisp-front-end/source/cli.lisp= forwards =cli-options-dwg= to
+  =start-engine= as =:dwg=.
+- =autolisp-front-end/source/backend-bricscad.lisp= accepts =dwg= in
+  =start-engine= but declares it ignored. Its template discovery path does
+  not forward it as the =requested= argument.
+- =discover-bricscad-template= documents an explicit requested drawing as
+  the highest-precedence input, but the CLI value never reaches that path.
+
+* Workaround verified
+
+Setting =AUTOLISP_BRICSCAD_TEMPLATE= to the private fixture made the file
+appear in the BricsCAD process command line and opened the actual drawing.
+The SCHMS launcher also set =AUTOLISP_DWG=; this is a workaround, not a fix
+for the CLI option. EPURE's separate interactive migration on opening an old
+fixture then became visible; that is a different bootstrap issue.
+
+* Acceptance
+
+- Forward the requested drawing through BricsCAD template resolution before
+  considering a cached/default/vendor template.
+- An explicit =--dwg= must win over environment template/drawing defaults.
+- Add a backend regression checking the actual launch arguments, including
+  a pathname containing spaces and a pre-populated backend template cache.
+- An explicitly missing drawing must fail rather than silently fall back
+  to a blank/vendor drawing.
+- Verify on BricsCAD that =DWGNAME= and =DWGPREFIX= identify the requested
+  file, both with and without the EPURE plugin where available.
+- Do not change AutoCAD or clautolisp drawing selection incidentally.

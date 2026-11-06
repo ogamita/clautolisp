@@ -9,7 +9,8 @@ and tests/backend-cad-tests.lisp.
 Deferred items moved to other tickets:
   - EPURE gating (section 7) — moved to alfe-plugin-model.issue
     (no plugin model exists yet; the --epure flag parses but no
-    backend acts on it).
+    backend acts on it). DONE in alfe 2.2.76: the epure plug-in
+    (plugins/epure/), see issues/closed/alfe-plugin-epure.issue.
   - Linux automation mode — still deferred per the issue's own
     "Out of scope" note; requires a Linux BricsCAD test host.
   - Real-CAD smoke tests — gated behind BRICSCAD_SMOKE=1; the

@@ -1,0 +1,311 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: autolisp-spec: incorporate the engine facts from the alpm verification campaign
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-08-09
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: spec
+#+DEPENDS: -
+#+BRANCH: feature-autolisp-spec-alpm-verification-findings
+
+The alpm project (gitlab.com/ogamita/alpm) ran a portability probe
+suite (tests/verification/verification.lsp, greppable ALPM-VERIFY
+protocol) on FOUR engine/platform combinations via CI:
+
+- clautolisp 1.8.21 (macOS)
+- BricsCAD V26 macOS (LispEx 26.0, fr_FR) -- job verify:bricscad:macos
+- BricsCAD V25 Windows (LispEx 25.0, fr)  -- job verify:bricscad:windows
+- AutoCAD 2022 Windows (Visual LISP, fr)  -- job verify:autocad:windows
+
+plus a documentation pass over the VLISP project-file formats and
+DEScoder (alpm documentation/vlisp-project-files.org). The following
+facts are direct probe observations; several contradict or refine
+what the autolisp-spec draft currently says (many BricsCAD entries
+are marked "presumed compatible pending Phase 4 verification" --
+here is Phase-4-grade data for a batch of them).
+
+* Per-entry updates
+
+** LOAD
+Explicit non-.lsp extensions load as LISP source on ALL engines:
+(load "foo.alpm") evaluates the file on clautolisp, BricsCAD
+V25/V26, AutoCAD 2022 (probe V-1). The entry should state: when an
+extension is given explicitly, the file is read as source whatever
+the extension (binary formats are recognized by content/extension,
+not by rejecting others).
+
+** VL-FILE-SYSTIME -- DONE 2026-08-09 (see the correction below)
+Three different shapes for the same instant (Sun 2026-08-09):
+- AutoCAD 2022 runtime: (2026 8 0 9 12 21 8 1) -- 8 elements WITH
+  milliseconds, day-of-week Sunday=0. This CONTRADICTS Autodesk's
+  own documentation example (2003-09-10 Wednesday documented as
+  day-of-week 4, implying Sunday=1).
+- BricsCAD V25/V26: (2026 8 7 9 ...) -- 8 elements, Sunday=7.
+- clautolisp 1.8.21: (2026 8 0 9 ...) -- 7 elements, NO
+  milliseconds, Sunday=0.
+There's no reason to make a clautolisp specific extension here.
+Let's match what bricscad does, and document it. Then we'll verify
+briscad and autocad implementation in the various versions we may try
+it. 
+The entry should document the three conventions, the doc-vs-runtime
+divergence on AutoCAD, and advise portable use of positions
+1,2,4,5,6,7 only. (clautolisp fix tracked separately in
+vl-file-systime-parity.issue.)
+
+** WRITE-CHAR / READ-CHAR
+Asymmetric and PLATFORM-dependent (probe V-10, byte 233):
+- write-char emits the CHARACTER in the platform encoding: one byte
+  233 on clautolisp and on both Windows CADs; the UTF-8 pair C3 A9
+  on BricsCAD V26 macOS.
+- read-char returns RAW BYTES one at a time on every engine
+  (BricsCAD macOS reads back (195 169), not 233).
+The entries should state: write-char cannot portably emit arbitrary
+bytes; read-char is byte-level; the pair is only a round-trip on
+single-byte platforms.
+
+** VL-DOC-EXPORT (and family) -- upgrade BricsCAD from "presumed"
+The WHOLE family is present as SUBRs on AutoCAD 2022 AND BricsCAD
+V25/V26 (probe V-9 inventory): vl-doc-export, vl-doc-import,
+vl-doc-ref, vl-doc-set, vl-arx-import, vl-list-exported-functions,
+vl-list-loaded-vlx, vl-vlx-loaded-p, vl-unload-vlx, vl-acad-defun,
+vl-acad-undefun, vl-bb-ref, vl-bb-set.
+(vl-doc-export 'f) executed in the DOCUMENT namespace (plain source
+load) is an inert success everywhere: returns T on both CADs, the
+symbol on clautolisp (probe V-7). Entries currently reading
+"BricsCAD V26: presumed compatible" can be marked verified; the
+multidocument-analysis correction is tracked in
+vl-doc-namespace-family-bricscad.issue.
+
+** DEFUN-Q / DEFUN-Q-LIST-REF
+Verified behaviorally on all four combinations: defun-q defines a
+callable and defun-q-list-ref returns the list form ((X) X)
+(probe V-11). BricsCAD entries can move from presumed to verified.
+
+** VL-DIRECTORY-FILES
+Autodesk signature verified on all engines: directories argument
+-1 = directories only, 1 = files only (probe V-6).
+
+** FINDFILE
+Absolute forward-slash paths accepted on all engines; the CADs
+return the found path with BACKSLASHES (probe V-5) -- worth a note
+that results must be normalized before comparison.
+
+* Chapter 22 (Packaging, Compilation, and Namespaces) additions
+
+** DEScoder command line (v2.10, shipped with BricsCAD V25)
+From the DEScoder GUI help (no web documentation exists):
+  DESCoder.exe [-namespace] [-keep] [-nocompress] [-dialog] [SourceLisp]
+  DESCoder.exe [-keep] [-nocompress] [-dialog] [-project ProjectFile]
+  DESCoder.exe [-keep] [-nocompress] [-dialog] ProjectFile.prv
+  DESCoder.exe [-keep] [-nocompress] [-dialog] ProjectFile.prj
+- SourceLisp accepts wildcards (batch mode); any extension allowed.
+- -namespace = the VLX-NameSpace opt-in (recent DEScoder only);
+  listed only in the single-file form -- project mode presumably
+  inherits the .prv (:separate-namespace) entry (hypothesis).
+- -keep = the GUI's "Keep the Intermediate Files".
+- ProjectFile must be .prj or .prv: DEScoder CONSUMES the VLISP
+  project formats -- they are load-bearing on BricsCAD.
+- Without usable arguments DEScoder opens its GUI and waits
+  (observed): automation must bound the process.
+
+** DES namespace semantics -- VERIFIED (probe, BricsCAD V25, 2026-08-09)
+Loading a =DESCoder -namespace= .des (whose source vl-doc-exports
+one function and defines another without exporting it):
+- the non-exported function is INVISIBLE (its symbol evaluates to
+  nil in the document namespace);
+- the vl-doc-export'ed function is callable (SUBR);
+- (vl-list-loaded-vlx) reports the module under the FILE BASE NAME
+  ("v8ns" for v8ns.des);
+- (vl-list-exported-functions nil) lists the exported name.
+A .des encoded WITHOUT -namespace defines everything globally.
+I.e. the AutoCAD separate-namespace VLX semantics, exactly.
+Also observed: -keep leaves staged intermediates next to the source
+(name.lsp.x.lsp, name.lsp.0.lsp, name.lsp.1.lsp) before the .des.
+(alpm CI job verify:descoder:windows, job 15795237203.)
+
+** VLX NameSpace compatibility (Bricsys DevRef)
+DES data format and options storage are backward+forward
+compatible; a namespace-ENABLED .des on pre-V18.2 engines loads
+with "no NameSpaces available" -- isolation silently degrades to
+global visibility. Consequence worth normative text: code must not
+rely on namespace hiding for correctness.
+
+** .prj / .prv file formats
+No official specification exists; the formats are documented from
+four real samples (schms export.prj/prv, schmsplus.prj/prv,
+autolisp-misc.prj) plus the Make Application wizard GUI mapping in
+alpm's documentation/vlisp-project-files.org. Highlights the spec
+should carry (or cite):
+- .prj = VLISP-PROJECT-LIST property list; KEY CASE IS UNSTABLE
+  across writers (:NAME 2024 vs :name 2025 from the same product);
+  :OWN-LIST entries appear with and without the .lsp extension;
+  :PROJECT-KEYS :BUILD (:standard) vs (:OPTIMIZE :LOCALIZE :link)
+  maps to the GUI Standard vs Optimize-and-Link, i.e. to the
+  vlisp-compile modes st vs lsm/lsa.
+- .prv = PRV-DEF ASSOCIATION list (different shape!): :target,
+  :active-x, :separate-namespace, :protected, :load-file-list
+  (tags = the wizard's Program File Types; :prj observed),
+  :require-file-list (:DCL observed, :DVB expected),
+  :ob-directory, :tmp-directory, :optimization (st/lsm/lsa).
+- Empty (:separate-namespace) means OFF (two independent proofs:
+  the schms VLXs' functions are visible to runtime-loaded files,
+  and the schms sources contain zero vl-doc-export).
+- (:active-x . T) is stored even when the GUI gates the checkbox on
+  Separate Namespace -- do not infer namespace mode from it.
+
+** VLISP-COMPILE
+The existing entry's divergence note can be enriched with the GUI
+mapping: mode st = wizard "Standard" = .prj :BUILD (:standard);
+lsm/lsa = "Optimize and Link" = :BUILD (:OPTIMIZE :LOCALIZE :link);
+.prv (:optimization . st|lsm|lsa).
+
+* Sources / reproducibility
+
+- Probes: alpm tests/verification/verification.lsp (+
+  v8-descoder.lsp for the pending DES namespace semantics probe);
+  CI jobs verify:{clautolisp,bricscad}:{macos,windows},
+  verify:autocad:windows, verify:descoder:windows; transcripts in
+  the alpm CI artifacts (2026-08-09).
+- Format reference: alpm documentation/vlisp-project-files.org.
+- Result log: alpm documentation/alpm-specification.org,
+  "Portability / Verification Checklist" (V-1..V-11), and
+  tests/verification/README.org "Recorded results".
+
+* Triage 2026-08-09 — NEXT; the anchor for this batch
+
+Marked =NEXT= (P1, spec): this is Phase-4-grade four-engine evidence
+already in hand, so the work is pure documentation editing with no CAD
+access, no runner, and no dependency to wait on. It is the natural
+anchor for the whole alpm batch — the two sibling issues spun out of
+it are both *narrower than they look*:
+
+- =vl-doc-namespace-family-bricscad= turns out to need **no code
+  change at all**: all thirteen names of the family are already
+  registered unconditionally in
+  =clautolisp/autolisp-builtins-core/source/api.lisp= with no dialect
+  gating anywhere, so clautolisp already matches the probed BricsCAD
+  reality. Only =clautolisp-multidocument-analysis.org= (l.102, l.311)
+  is wrong. Fold that correction in with the VL-DOC-EXPORT section
+  below.
+- =vl-file-systime-parity= splits cleanly: the missing milliseconds
+  element is an unambiguous shape bug (ship it), while the
+  day-of-week convention needs a ruling — see that issue's Triage
+  section for the conflict between the correction added here ("match
+  what bricscad does") and clautolisp's current Sunday=0, which is
+  what AutoCAD's *runtime* actually returns.
+
+Suggested order of work, cheapest and least contentious first:
+
+1. the four "presumed → verified" upgrades that only raise confidence
+   and change no behaviour: VL-DOC-EXPORT family, DEFUN-Q /
+   DEFUN-Q-LIST-REF, VL-DIRECTORY-FILES, FINDFILE (+ the
+   normalise-backslashes note);
+2. LOAD (explicit extension ⇒ read as source on all four engines) —
+   a genuine clarification of an existing entry;
+3. WRITE-CHAR / READ-CHAR — the asymmetry is the sharpest new fact
+   here (write-char is platform-encoding, read-char is byte-level;
+   only a round trip on single-byte platforms) and deserves normative
+   text plus a cross-reference from the encoding issues;
+4. VL-FILE-SYSTIME — document all three conventions and the
+   AutoCAD doc-vs-runtime contradiction, advise portable use of
+   positions 1,2,4,5,6,7 only; behaviour change tracked separately;
+5. Chapter 22 additions (DEScoder command line, DES namespace
+   semantics, VLX backward/forward compatibility, .prj/.prv formats,
+   VLISP-COMPILE GUI mapping) — the largest chunk, and the one that
+   should cite alpm's =documentation/vlisp-project-files.org= rather
+   than duplicate it.
+
+** Correction 2026-08-09 to the VL-FILE-SYSTIME section above
+
+Item 4 of the suggested order is DONE, and doing it corrected the
+premise this issue records. The documentation scan pjb asked for shows
+there is *no* "doc-vs-runtime divergence on AutoCAD" and no third
+convention:
+
+- The example attributed above to Autodesk, =(2003 9 4 10 16 25 4 230)=
+  "implying Sunday=1", is not on any Autodesk page found, and it is
+  self-inconsistent: 2003-09-10 is a *Wednesday* = 3 under either
+  candidate convention, not 4. Autodesk's actual example is
+  =(1998 4 3 8 10 6 52)= -- 1998-04-08, a Wednesday, = 3.
+- Autodesk says only "Monday is day 1 ... and so on" and stops; Bricsys
+  states no numbering. No documented example on either side falls on a
+  Sunday (Autodesk 1998-04-08 Wed, Bricsys 2019-10-24 Thu, progeCAD
+  2011-02-25 Fri). Monday..Saturday = 1..6 is therefore the whole of
+  what is documented.
+- So AutoCAD (Sunday=0) and BricsCAD (Sunday=7) each *complete a
+  documented silence*; neither contradicts its own reference page, and
+  the divergence is one value wide.
+
+The advice to use positions 1,2,4,5,6,7 only stands, and is now in the
+spec entry. The arity point also stands and is sharper than recorded:
+both pages state seven elements while every engine returns eight, and
+the Bricsys page contradicts itself within one screen (seven-element
+format line, eight-value sample =(2019 10 4 24 4 1 10 0)=).
+
+Shipped in clautolisp 1.8.23 / autolisp-spec 0.9.3; details and the
+residual multi-version probe item in
+=issues/closed/vl-file-systime-parity.issue=.
+
+Two repository rules bind this work: every edit to
+=autolisp-visual-lisp-specification-draft.org= must increment that
+document's own version (AGENTS § Documentation), and the per-vendor
+differences must be classified into the case 0/1/2/3 taxonomy with a
+=*** clautolisp= note saying what each dialect does (AGENTS § Dialect
+Divergence). The VLX backward-compatibility point — a
+namespace-enabled .des silently degrading to global visibility on
+pre-V18.2 engines — is exactly the kind of fact that belongs in
+normative text: code must not rely on namespace hiding for
+correctness.
+
+* RESOLVED 2026-08-09 (autolisp-spec 0.9.3 -> 0.9.5)
+
+All eight per-entry updates and the chapter 22 additions are in. Twenty
+function entries moved from "presumed compatible pending Phase 4
+verification" to verified on both vendors (twenty-one counting
+VL-FILE-SYSTIME, done first and separately).
+
+** Per-entry
+- LOAD: an explicitly given extension makes the file load as source
+  whatever the extension; the documented .vlx/.fas/.lsp search order
+  applies only when no extension is given. Verified on all four
+  combinations.
+- VL-FILE-SYSTIME: done separately, see
+  issues/closed/vl-file-systime-parity.issue. The premise correction is
+  recorded above.
+- READ-CHAR / WRITE-CHAR: the asymmetry is written up on both entries
+  and cross-linked. write-char emits a CHARACTER in the platform
+  encoding (one byte 233 on clautolisp and both Windows CADs, the UTF-8
+  pair C3 A9 on BricsCAD V26 macOS); read-char returns RAW BYTES on
+  every engine. Consequences made explicit: write-char cannot portably
+  emit an arbitrary byte, and the pair round-trips only on single-byte
+  platforms -- a UTF-8 platform gives back (195 169) for a written "e"
+  acute, with no error to signal the skipped decode.
+- VL-DOC-EXPORT family: all thirteen names verified as SUBRs on AutoCAD
+  2022 and BricsCAD V25/V26; the inert-success-outside-a-module
+  behaviour documented. Analysis-document correction closed separately
+  as vl-doc-namespace-family-bricscad.
+- DEFUN-Q / DEFUN-Q-LIST-REF: verified behaviourally. DEFUN-Q-LIST-SET
+  was NOT part of probe V-11 and deliberately stays "presumed" -- the
+  batch upgrades only what the probe actually touched.
+- VL-DIRECTORY-FILES: the -1 / 1 selector semantics verified.
+- FINDFILE: forward-slash absolute paths accepted everywhere; the CADs
+  return BACKSLASH paths, so argument and result are not
+  interchangeable. Normalisation note added.
+
+** Chapter 22
+New sections: "VLX namespace family: verification 2026-08-09" (inventory,
+outside-a-module behaviour, DES namespace semantics, the
+silent-degradation compatibility caveat), "DEScoder command line" (the
+four usage forms, the -namespace/-keep flags, the GUI-waits-forever trap
+for automation), and "VLISP project files: .prj and .prv" (both shapes,
+the unstable key case, the empty-(:separate-namespace)-means-OFF trap
+and the (:active-x . T) red herring). A normative rule was added to the
+chapter head: namespace isolation is a delivery facility, not a
+correctness or security boundary. VLISP-COMPILE gained the mode mapping
+table (st = Standard = :BUILD (:standard); lsm/lsa = Optimize and Link =
+:BUILD (:OPTIMIZE :LOCALIZE :link); .prv :optimization).
+
+The .prj/.prv material cites alpm documentation/vlisp-project-files.org
+as the full reference rather than duplicating it, and the -namespace
+project-mode inheritance is marked explicitly as an unverified
+hypothesis.

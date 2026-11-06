@@ -1,0 +1,103 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-cad-source-loader-drops-a-second-form-on-a-line — a loaded file's later forms on a line were silently discarded
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: -
+#+BRANCH: fix-cador-addattribute-argument-order
+#+DATE: 2026-09-26
+
+* Observed
+
+alfe's CAD-side source loader runs only the FIRST form of each line of a
+loaded file and discards the rest, without a word. Through the
+clautolisp-hosted protocol harness (no CAD needed), loading
+
+#+begin_example
+(princ "x")(princ "y")
+(setq a 1)(setq b 2)
+#+end_example
+
+gave
+
+#+begin_example
+stdout:  "x(A 1 B UNBOUND)"
+status:  DONE 1 OK      protocol/stderr.txt empty
+#+end_example
+
+=y= was never printed and =b= was never set. clautolisp's own loader
+runs both forms (=xy= and =(A 1 B 2)=), so this was alfe's CAD-side
+loader alone -- the one that runs inside BricsCAD and AutoCAD.
+
+Two forms on a line is ordinary AutoLISP and a common style
+(=(princ "…")(princ x)=), so this silently changed the meaning of user
+code in every loaded file that has such a line.
+
+* Cause
+
+=autolisp-source-load-run-body-impl=
+(autolisp-front-end/source/runtime/autolisp-bootstrap.lsp) accumulates
+lines into =form-text= until =autolisp-source-scan-text= reports the text
+BALANCED, then:
+
+#+begin_src lisp
+(setq form-read (vl-catch-all-apply 'read
+                  (list (autolisp-source-trim-leading-junk form-text))))
+… evaluate form-read …
+(setq form-text "")          ;; <- everything after the first form is gone
+#+end_src
+
+=read= returns the FIRST form of the string. Balanced text can hold any
+number of forms, and the buffer was cleared straight after the first, so
+the remainder went with it.
+
+* How it surfaced
+
+Chasing a failure that looked swallowed: a loaded file with
+=(setq ran 1)(/ 1 0)= on one line reported DONE OK. The division looked
+lost in the reporting path, and was first written up as a re-entrancy
+defect in the eval override
+(issues/closed/alfe-eval-request-form-reenters-its-own-temp-file.issue,
+now marked MISDIAGNOSED). Looking at the protocol directory settled it:
+=alfe-eval-1.lsp= held =(setq *AUTOLISP-EVAL-RESULT* (SETQ RAN 1))= --
+the first form -- so the division had never been evaluated at all.
+
+* Resolved — clautolisp 2.2.100
+
+Two changes in the bootstrap:
+
+- =autolisp-source-first-form-end= (new): where the first top-level form
+  of a string ends, as a 1-based index, or NIL. It follows the same
+  conventions as =autolisp-source-scan-text= -- a string runs to its
+  unescaped closing quote, a semicolon comments out the rest of its line
+  -- and handles both a parenthesised list (ending at the paren that
+  brings the depth back to zero) and a bare atom (ending at the first
+  whitespace after it, or at end of text).
+- the read loop's =complete= branch now LOOPS: it splits the first form
+  off =form-text=, reads and evaluates that, re-scans the remainder and
+  continues while another complete form is there. What is left at the end
+  is either insubstantial (whitespace, a trailing comment), in which case
+  the buffer is cleared as before, or the beginning of a form the next
+  lines continue -- which is kept, and takes the current line as its
+  start line so a later diagnostic points at the right place.
+
+Tests (autolisp-front-end/tests/file-protocol-tests.lisp, hosted under
+clautolisp):
+
+- =protocol-loaded-file-runs-every-form-on-a-line= — two forms on line 1,
+  two on line 2, then a form SPANNING lines 3-4: stdout must be
+  =xyz(A 1 B 2)=. Before the fix it was =x(A 1 B UNBOUND)=.
+- =protocol-failure-inside-a-loaded-file-fails-that-request= — the
+  failure that started this: a file whose second form on a line signals
+  must fail ITS request, at one nesting level and at two, with the
+  engine's own message, and no failure attributed to a later request.
+
+alfe suite 1182 checks, 0 failures.
+
+* Note
+
+This also completes acceptance criterion 2 of
+=issues/open/alfe-autocad-error-primitive-masks-load-failure.issue= (a
+nested loaded-file failure reaching alfe with the original text and the
+inner source location), which is what that issue was waiting on besides
+its SCHME+ verification.

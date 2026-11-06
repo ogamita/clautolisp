@@ -75,3 +75,31 @@
       (ignore-errors (delete-file path)))
     (is (= 0 (length (lines-of (merge-pathnames "does-not-exist-xyz.lsp"
                                                 (uiop:temporary-directory))))))))
+
+(test atoms-are-positioned-by-their-occurrence
+  "instrumenter-no-pollpoints-on-atoms: an atom is no key of its own -- the
+same symbol appears everywhere -- so a tracked load records each atom's
+position against the CELL holding it, and SHIFT-SOURCE-POSITIONS moves those
+too (a breakpoint on a variable below an edit must follow its line)."
+  (clear-source-positions)
+  (let* ((top (first (with-source-tracking ()
+                       (clautolisp.autolisp-runtime:read-runtime-from-string
+                        (format nil "~%(setq x (foo y 12))") :source-name "t.lsp"))))
+         (inner (third top))                    ; (FOO Y 12)
+         (y-cell (cdr inner))
+         (twelve-cell (cddr inner)))
+    ;; line 2: "(setq x (foo y 12))" -- y at column 14, 12 at column 16
+    (let ((y (clautolisp.source:element-position-of y-cell))
+          (twelve (clautolisp.source:element-position-of twelve-cell)))
+      (is (source-position-p y))
+      (is (= 2 (source-position-start-line y)))
+      (is (= 14 (source-position-start-column y)))
+      (is (= 16 (source-position-start-column twelve))))
+    ;; a compound element is keyed by itself, not by its cell
+    (is (null (clautolisp.source:element-position-of (cddr top))))
+    ;; the operator symbol is an atom element too
+    (is (source-position-p (clautolisp.source:element-position-of inner)))
+    (clautolisp.source:shift-source-positions "t.lsp" 1 3)
+    (is (= 5 (source-position-start-line (clautolisp.source:element-position-of y-cell))))
+    (clear-source-positions)
+    (is (null (clautolisp.source:element-position-of y-cell)))))

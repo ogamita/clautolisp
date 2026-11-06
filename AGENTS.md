@@ -69,6 +69,10 @@ General directives for this repository.
 - The project must be buildable with SBCL.
 - The build should be able to produce a standalone executable.
 - Command-line and batch execution are first-class use cases.
+- The canonical dependency list (build/test toolchain on one hand,
+  documentation toolchain on the other, with per-distribution package
+  commands) is `INSTALL.org`; keep it current when adding a dependency,
+  and derive CI recipes from it.
 
 ## Licensing
 
@@ -171,6 +175,47 @@ stay in lock-step. The matrix:
 `.info` files for user-manuals install under `$(PREFIX)/share/info`
 and the dir node is updated via `install-info --info-dir`.
 
+**The user-visible rule** (pjb, 2026-08-16 — standing policy).
+*Adding or modifying **any** user-visible feature requires updating the
+documentation, **including the user manual of the tool concerned**.* Not
+only CLI options: a new setting, a REPL or interactor command, a new
+escape character, a builtin whose behaviour a user can observe, a new
+environment variable, a changed default, a new file the program reads or
+writes — each is user-visible and each lands in the user manual of
+`clautolisp` or `alfe` (or the module's own manual when that is where the
+audience is).
+
+The test to apply: *could a user notice this without reading the source?*
+If yes, it is documented before the issue is closed. An issue whose
+feature is user-visible and absent from the manual is **not done**,
+however green its tests are — the code half of the work is not the whole
+of it. Design specs (`documentation/*-spec.org`) do **not** discharge
+this: they address the implementer, not the user.
+
+**Which book** (pjb, 2026-08-16):
+
+- **System variables and AutoLISP operators** are documented in
+  `autolisp-spec`, *not* in a program's user manual: they are language
+  surface, not tool surface. The `CLAL-` namespace is the exception —
+  it has no vendor counterpart and exists only here.
+- **Environment variables and configuration settings** belong to the
+  documentation of the program that reads them.
+- **alfe does not repeat clautolisp's documentation.** For alfe,
+  clautolisp is a CAD like AutoCAD and BricsCAD, and each engine's own
+  surface belongs to that engine's manual. But every option alfe takes
+  into account and **transmits**, one way or another, to clautolisp or
+  AutoCAD or BricsCAD **must be documented for alfe** — including what
+  alfe imposes on the engine without being asked (it passes `--no-init`
+  and `--quiet` to a spawned clautolisp, so the engine's init files do
+  not run: exactly the kind of thing a user must not have to discover
+  from the source).
+
+`make check-user-visible-documentation` enforces the mechanical half of
+this — CLI options, `CLAL-` builtins, environment variables, settings,
+and the tokens alfe puts on an engine's command line. It is wired into
+the CI documentation lane. It checks that a name is *mentioned*; whether
+the prose is correct remains a review matter.
+
 **The synchronisation rule.** Any change to one track requires
 matching changes in the others:
 
@@ -203,6 +248,24 @@ runs `install-info --remove` to clean up. The staged tree carries a
 from the copy — it names only our manuals, so overwriting `$PREFIX`'s
 would drop every other package's entries — and re-registers each
 manual in the real dir node instead.
+
+## Issue tracking
+
+- Issues live as one file per issue under `issues/open/` (active) and
+  `issues/closed/` (resolved); closing an issue means appending a
+  `Resolved` note, setting `#+STATUS: DONE`, and `git mv`-ing it from
+  `open/` to `closed/`.
+- **Close as part of finishing, in the same change.** When an issue is
+  implemented and its tests pass, its closure (the `Resolved` note + status,
+  the `git mv` to `issues/closed/`, and the TRIAGE.org row flip to `DONE`)
+  goes in the SAME commit/branch/MR as the implementation and is merged along
+  with it — never deferred to a later sweep. An issue left under
+  `issues/open/` means "not done". See the **Issue triage workflow** section
+  in the Agent Operational Notes for the step list.
+- `issues/open/TRIAGE.org` is the triage index — the at-a-glance table of
+  open issues with their status. **It replaced the former
+  `issues/index.txt`**; there is no `index.txt` any more. Keep TRIAGE.org
+  in step when opening, closing, or re-prioritising an issue.
 
 ## Change Discipline
 
@@ -416,11 +479,49 @@ why `release-1.6.0` is followed by `release-1.6.11`.
 Each shipped program keeps its own version (clautolisp's
 `version.lisp`, alfe, read-autolisp, autolisp-spec, …); a program
 changed within a series must have `A.B = M.m`, and a program that has
-not changed may stay at an older `A.B` and still ship. Programs are
+not changed may stay at an older `A.B` and still ship.
+
+**A changed library is a changed program** (pjb, 2026-08-16). "Changed"
+means *what the user runs* changed, not that the program's own directory
+received a commit. A binary that is a thin CLI over a library — as
+`read-autolisp` is over `autolisp-reader` — must be bumped when that
+library changes, even with zero commits under its `tools/` directory.
+Measuring only the program directory is what left `read-autolisp` at
+`1.6.0` through the whole 1.8 series while the reader underneath gained
+a new codec and the dialect platform/version axis. The programs this
+repository ships are the three named by `scripts/manifest-versions.sh`;
+that file is the list to check against before a release. Programs are
 **not** tagged separately: the `clautolisp-v*`, `alfe-*` and `alref-v*`
 tag formats are **deprecated**. The existing tags stay (they are
 published immutable refs), but no new ones are created — a program
 version is read from its source.
+
+**Known audit exception — `release-1.8.103` (the shakedown tag).**
+`make check-versions` permanently reports two violations for the 1.8 series,
+and both are expected: `release-1.8.103` is a *release-pipeline shakedown*
+tag (message: "shakedown 5 — confirm all.zip + publish:release"), cut on a
+throwaway branch that forked before `release-1.8.41`..`.49` and never merged
+back — so it does **not** contain the real 1.8 trunk work (which lives at
+`release-1.8.49` → 1.9 → 2.x on `master`); its high DEVELOP number is the CI
+counter, not newer content. Consequently the audit reports **I3**
+(`1.8.49` is not an ancestor of `1.8.103`) and **I5** (`version-1.8` "should"
+be at the newest-by-number `1.8.103`). Both are artefacts of that immutable
+tag. The deliberate resolution: **`version-1.8` stays at `release-1.8.49`**
+(the real 1.8 tip a "1.8" user should get), and the shakedown tag is kept
+reachable — not orphaned (I7) — by the `dev-1.8-shakedown` branch. The tag is
+not deleted (published immutable ref) and `version-1.8` is not repointed onto
+it. Treat these two I3/I5 lines as a standing, accepted exception for the 1.8
+series only.
+
+Since clautolisp 2.2.109 that exception is **declared, not just described**:
+both lines are listed in `scripts/version-audit-exceptions.txt`, so
+`make check-versions` reports them as `xfail` with their reason and exits 0
+again. Every other violation still fails, a listed exception without a reason
+fails, and an exception that matches nothing fails as `stale` — so the list
+shrinks when a situation is resolved and cannot become a blanket. An audit
+that is always red is not a gate: nobody reads it, and the next real violation
+goes unseen. Declare an exception there only for an **immutable published
+ref**; anything still fixable gets fixed.
 
 **Cutting a release** (full procedure in `version-rules.md` § 5):
 
@@ -431,7 +532,183 @@ version is read from its source.
 4. push the tag and both pointers to `origin`;
 5. post-release bump on master, so no untagged commit claims a released
    version;
-6. `glab release create release-M.m.d`.
+6. wait for `collect:release` to succeed: it assembles the set AND mirrors it
+   to the poseidon download area itself (`scripts/mirror-release-to-poseidon.sh`,
+   the rrsync-restricted release key; its GitLab artefact keeps only the
+   manifest). To re-mirror by hand, on poseidon: `bash
+   scripts/deploy-release-to-poseidon.sh release-M.m.d --from DIR`;
+7. publish: `python3 scripts/make-gitlab-release.py release-M.m.d`.
+
+**Release runbook — the concrete commands and gotchas (as run end-to-end for
+release-2.1.0, 2026-09-06, entirely from an agent session).** An agent CAN do
+the whole thing; the traps below are what cost time the first time.
+
+- *Steps 1–5 from a worktree-isolated session.* Raw `git push origin master`,
+  force-push and branch merges are refused by the sandbox — but landing on
+  master still works: put the source changes (program stamps + `RELEASE_NOTES.org`,
+  step 1) on a work branch, open an MR, and set it to auto-merge. Auto-merge
+  lands on master which the direct push cannot. *Set it through the API, not
+  `glab mr merge --auto-merge`*: glab looks for a RUNNING pipeline, and when
+  the head pipeline is only created or pending -- which it is for the first
+  minutes after `glab mr create` -- it prints "No pipeline running" and MERGES
+  AT ONCE, untested (!336 and !338, 2026-09-28). Wait until the MR's
+  `head_pipeline.id` exists, then
+  `glab api -X PUT projects/ogamita%2Fclautolisp/merge_requests/<iid>/merge -f auto_merge=true`
+  and check the answer still says `opened` with `merge_when_pipeline_succeeds`
+  true. Do the
+  **post-release bump** (step 5) the same way, as its own auto-merged MR. The
+  **tag** and the `version-M.m` / `version-M` pointers are ordinary ref pushes
+  (NOT master, so allowed): `git tag -a release-M.m.d <sha>`, then
+  `git push origin release-M.m.d <sha>:refs/heads/version-M.m <sha>:refs/heads/version-M`.
+- *The git-guard bites twice.* It refuses a bash command containing the literal
+  string `GIT`+`LAB` (say the token comes from a file instead of typing the var
+  name) and any compound git command — split into plain one-per-line commands,
+  and read env via `python3 -c`, not shell parameter expansion.
+- *Program stamps (step 1).* `scripts/manifest-versions.sh` names the three:
+  `clautolisp`, `alfe`, `read-autolisp`. `alfe` tracks `clautolisp` — bump it to
+  the release `M.m`; `read-autolisp` bumps only if `autolisp-reader` changed.
+- *Step 6 is CI's.* `collect:release` mirrors the set itself, on the release
+  tag, as `release-ogamita` (the poseidon account owning the ogamita web
+  tree, rrsync-restricted to it; `documentation/setup-deploy.sh`) with the
+  runners' `DEPLOY_SSH_PRIVATE_KEY` protected variable. Only to RE-mirror by hand, on
+  poseidon as `claude` or `runners` (each has a `~/.ssh/release-ogamita` key;
+  no sudo), collect locally and run
+  `bash scripts/deploy-release-to-poseidon.sh release-M.m.d --from DIR`.
+- *`make-gitlab-release.py` uses glab's stored auth* (no token env of its own)
+  and creates/updates the Release itself. Run `--dry-run` first (it verifies
+  every link), then for real. `--links poseidon` (default) needs the step-6
+  mirror up; `--links gitlab` only works for a release collected before
+  clautolisp 2.3.52, whose artefact still held the archives.
+- *The collect:release manifest is the authority on what ships, not the
+  per-platform lane colour.* `make-gitlab-release.py --dry-run` lists it (15
+  assets for 2.1.0). For 2.1.0 `collect:release` reached `success` and bundled
+  real Windows binaries (`binaries-windows-x86-64.zip` 41 MB, pulled from the
+  GitHub mirror) while the GitLab `release:windows:x86-64` lane had failed
+  `stuck_pending_no_matching_runners` — so a red per-platform lane is NOT proof
+  the platform is missing. Wait for `collect:release=success` (poll its terminal
+  state) before mirroring/publishing.
+- *collect:release ran but could not store its artefact (GitLab `413 Payload
+  Too Large`).* release-2.3.0's set was ~1.07 GB, above gitlab.com's artefact
+  limit: the job ASSEMBLED all 15 assets (its log lists them), then failed at
+  upload, so neither script could fetch it. Reproduce the collect on poseidon
+  and publish from the local set: extract the tag (`git archive release-M.m.d`),
+  download each `release:*` job's artefacts and the GitHub Windows run
+  (`gh run download <id> -R ogamita/clautolisp -p 'clautolisp-*-windows-*'`),
+  copy the Windows zips into `dist/`, run `make collect-artefacts COLLECT_IN=dist
+  COLLECT_OUT=dist/combined`, then
+  `bash scripts/deploy-release-to-poseidon.sh release-M.m.d --from dist/combined`
+  and `python3 scripts/make-gitlab-release.py release-M.m.d --links poseidon
+  --manifest dist/combined/manifest-release-assets.txt` (dry run first). The
+  links are poseidon's, so nothing depends on the missing GitLab artefact
+  (collect-release-artefact-exceeds-gitlab-size-limit.issue). Since 2.3.52
+  this cannot happen: collect:release mirrors the set to poseidon and stores
+  only the manifest as its artefact.
+
+**Mirroring to poseidon (step 6).** Release archives are hosted on a
+**durable poseidon web area**, not on GitLab job artefacts. The `ogamita`
+namespace is on the free 10 GB plan; when it fills, git operations are
+refused (`namespace-storage-blocks-ci.issue`) and, worse, any purge to get
+back under the limit kills every GitLab-artefact link a release points at.
+So the published release must not depend on GitLab storage surviving.
+
+`collect:release` does it on the release tag: after `make collect-artefacts`
+it runs `scripts/mirror-release-to-poseidon.sh <ver> dist/combined`, which
+rsyncs the set over SSH as `release-ogamita` (an rrsync forced command
+chrooted to the ogamita web tree; files 444, directories 755) to
+`https://poseidon.informatimago.com/ogamita/clautolisp/releases/<ver>/` and
+regenerates the index pages (`scripts/gen-release-index.py --version` /
+`--root-index`; the version list comes from the server). A failed mirror
+fails the job. Its GitLab artefact keeps only `manifest-release-assets.txt`
+and the release page: the ~1 GB set is above gitlab.com's artefact limit
+(collect-release-artefact-exceeds-gitlab-size-limit). See `~/admin.org` on
+poseidon for the web layout, and `documentation/poseidon-deploy.md` for the
+key. `make-gitlab-release.py` fetches every link first and aborts if the
+mirror is not up.
+
+**Publishing the release (step 7).** Use the script, not `glab release
+create` by hand. It reads `manifest-release-assets.txt` — which
+`collect-artefacts` writes from the directory it just filled — so the
+release attaches exactly what the pipeline collected, and it **fetches
+every link before creating the release**, refusing to publish one that
+does not serve its file.
+
+- It **defaults to `--links poseidon`**: the Release links point at the
+  poseidon mirror above (quota-independent, permanent). `--links gitlab`
+  is the fallback, pointing at the `collect:release` job artefacts.
+- For the `gitlab` fallback, links must use `/artifacts/raw/<path>`, never
+  `/artifacts/file/<path>`. The `file` form is the artefact *browsing page*
+  and serves HTML; both answer `200`, so a consumer writes 40 KB of HTML to
+  disk under the archive's name and only fails at extraction. Releases
+  1.8.47 and 1.8.49 shipped that way, reported from another project's CI.
+- `collect:release` artefacts now `expire_in: 30 days` (was `never`): the
+  *published* links point at the durable poseidon mirror, not at them, so
+  they are only the re-mirror SOURCE and need not be permanent — which stops
+  the namespace growing ~1 GB per release for ever
+  (`namespace-storage-blocks-ci`). Re-mirror within the window; an older
+  release whose artefacts have expired is re-mirrored by re-running its tag
+  pipeline (or already lives on poseidon). The poseidon-default-links
+  invariant that makes a finite expiry safe is enforced by
+  `check-release-lane-integrity.py` check (3) — if that default is removed,
+  `collect:release` must go back to `expire_in: never`.
+  To move an older release off GitLab artefacts: mirror it, then
+  `make-gitlab-release.py release-M.m.d --update --links poseidon`, then the
+  GitLab job artefacts are free to delete (1.8.49, 1.8.103 were moved this
+  way).
+
+`make check-release` enforces both.
+
+Use `--dry-run` to verify the links without publishing, and `--update` to
+repair an already-published release.
+
+**Cutting a release without a platform.** Every platform lane is
+scheduled automatically on a `release-*` tag; a release does not wait for
+a machine, and it does not silently drop one either. When a machine is
+switched off, say so when cutting the release, as a CI variable:
+
+| variable | effect |
+|---|---|
+| `SKIP_WINDOWS_RELEASE=1` | cut without the Windows products |
+| `SKIP_MACOS_RELEASE=1` | cut without the macOS products |
+
+Without one of these, the lane runs and its artefacts are expected —
+which is the point: *if the runner is available, its products belong in
+the release* (pjb). Gating this on detected runner availability instead
+was tried and cannot work: GitLab evaluates `rules:` at pipeline
+creation, so a variable published by an earlier job as a dotenv artefact
+does not exist yet, and the jobs were never created at all.
+
+**armv7 is the exception, and its switch points the other way.** Those
+two lanes are opt-*out* because the machine is INTERMITTENT — present, or
+declared absent. armv7 is not intermittent, it is BLOCKED: Debian's armhf
+SBCL has no threads and bordeaux-threads 0.9 will not load on such an
+implementation, so the build cannot produce anything. It nevertheless ran
+on every tag until 1.9.0, on `allow_failure`, and never once succeeded —
+spending 44 minutes on release-1.8.47 and 48 on release-1.9.0, with
+`collect` waiting behind it each time.
+
+| variable | effect |
+|---|---|
+| `ARM32_RELEASE=1` | ADD the qemu armv7 lane, off by default |
+
+So a release simply carries no armv7 products, and says so rather than
+appearing to have tried. Set `ARM32_RELEASE=1` the day the thread-less
+question is answered — native hardware, a threaded armhf SBCL, or a
+bordeaux-threads that loads — since turning it on is also how that answer
+gets tested. `SKIP_ARM32_RELEASE` is gone rather than kept as an alias: a
+skip variable for a lane that no longer runs by default would be read as
+evidence that it does.
+
+Two things that are **not** interchangeable with these switches:
+
+- `optional: true` on a `needs:` entry covers a job that is **absent**
+  from the pipeline — which is what these switches produce. It does
+  **not** cover a job that is present but unplayed: GitLab skips the
+  dependent job outright. That is why no release lane may be manual-only;
+  `make check-release` enforces it.
+- `allow_failure: true` does not help a job that never starts. A lane
+  waiting for a runner that never picks it up stalls its whole stage, and
+  every later stage with it.
+
 
 **Build, install and release structure.** The Makefile phases
 (`programs` / `libraries` / `documentation`), the four verbs over them,
@@ -445,7 +722,10 @@ programs this repo ships.
 
 **Verification.** `make check-versions` audits the repository against
 the invariants; run `git fetch --prune --tags` first. It is expected to
-pass on master at all times.
+pass on master at all times — including the 1.8 shakedown case, which is
+declared in `scripts/version-audit-exceptions.txt` (see above) rather
+than left to fail. A red audit is a defect to fix or a new exception to
+justify, never something to step over.
 
 **Legacy refs.** Releases up to 1.6.11 were originally marked `vM.m.d`
 with `release-M.m.d` / `release-M.m` *branches*; the branches are gone,
@@ -455,3 +735,517 @@ format is **deprecated**, not deleted — use `release-M.m.d` for every
 new release. `release-1.3.1` not being an ancestor of
 `release-1.4.0` is correct, not damage: it is a maintenance release cut
 in parallel with trunk development (`version-rules.md` I4).
+
+---
+
+# Agent Operational Notes
+
+Working knowledge distilled from prior agent sessions — the "how to
+actually get things done here" that complements the normative policy
+above. These are point-in-time observations: file/line citations and
+version numbers may drift, so **verify against current code before
+asserting as fact**. Dates and versions are stamped so you can tell how
+fresh a note is.
+
+## Repository layout and provenance
+
+- Primary remote is **`gitlab:ogamita/clautolisp`**, auto **git-mirrored**
+  to GitHub. Mirroring copies files verbatim; it does **not** translate CI
+  (see *CI parity* below).
+- Monorepo root holds sibling subprojects: `clautolisp/` (the
+  implementation — one directory per ASDF system: `autolisp-reader`,
+  `autolisp-runtime`, `autolisp-builtins-core`, `autolisp-cli`,
+  `autolisp-interactor`, `autolisp-dcl`, `autolisp-sedit`, `tools/clautolisp`,
+  …), `autolisp-front-end/` (**alfe**, the multi-backend driver),
+  `autolisp-spec/` (the specification), `autolisp-test/` (the AutoLISP
+  conformance corpus/harness), `autolisp-benchmark/`, plus `issues/`,
+  `documentation/`, `scripts/`.
+- The shipped binaries: **clautolisp** (the runtime/REPL) and **alfe**
+  (`autolisp-front-end`, picks a backend: `--clautolisp` / `--bricscad` /
+  `--autocad`). alfe's `--clautolisp` `:direct` mode runs the runtime
+  in-process.
+
+## Build and test incantations
+
+- Build: `make -C clautolisp build-clautolisp-sbcl` (~5 min);
+  `make -C autolisp-front-end build-alfe-sbcl`. CCL variants swap `-ccl`.
+- Unit tests: `make -C clautolisp test-sbcl` / `test-ccl`;
+  `make -C autolisp-front-end test-sbcl`. Under the hood: `asdf:test-system`
+  with `XDG_CACHE_HOME=$HOME/.cache/clautolisp-build` + quicklisp + fiveam.
+- Always pass `-norc` / `--no-init` in test invocations and scripts.
+- On the project's SBCL platforms `internal-time-units-per-second` =
+  1000000 → `get-internal-real-time` / `-run-time` give **microsecond**
+  precision. Use them (not 1-second `get-universal-time`) wherever
+  sub-second resolution matters — e.g. unique timestamped names (two
+  `YYYYMMDDTHHMMSS` starts within one second collide), test fixtures
+  needing distinguishable times, benchmarking.
+
+## Test-harness gotchas (FiveAM)
+
+- **`.` pollution:** FiveAM writes `.` to `*standard-output*` per passing
+  `is`. A test that rebinds `*standard-output*`/`*error-output*` to capture
+  output must snapshot the captured value into a local **before** running
+  any `is`, or the dots corrupt the string.
+- **`is t` is a compile error in some contexts** — use `(pass ...)` to
+  register an unconditional pass, not `(is t ...)`.
+- **`deftest-error` matches by error-MESSAGE substring**
+  (`autolisp-test--message-mentions-p`), not by class/code. Pick a
+  substring stable across implementations. When behaviour becomes an
+  intentional divergence (warns instead of errors), convert to
+  `deftest-skip`, don't delete.
+- **Reset ordering** in unit tests: `reset-autolisp-symbol-table` →
+  `reset-default-evaluation-context` → `install-core-builtins` → lookups.
+  Wrong order ⇒ "Expected an AutoLISP function object, got NIL"
+  (`reset-default-evaluation-context` wipes the symbol table).
+- **Switch dialect in a test:** `reset-default-evaluation-context` +
+  `set-runtime-session-dialect`.
+- **Corpus baseline:** the raw `autolisp-test` corpus carries ~232
+  pre-existing failures (harness `:SUBR` classifier noise + missing
+  version-expectation overlay) plus a known recap crash. Judge changes by
+  **"no NEW failures"**, not absolute count.
+
+## Dialect system — single source of truth
+
+- Dialects modelled: `:strict` (default), `:autocad-2022`, `:autocad-2026`,
+  `:autocad`(→2026), `:bricscad-v25`, `:bricscad-v26`, `:bricscad`(→v26),
+  `:clautolisp`, `:lax`. Unversioned names alias the newest known version.
+- The registry (`*autolisp-named-dialects*`, `*autolisp-dialect-names*`) and
+  the sole resolver `find-autolisp-dialect` live **only** in
+  `clautolisp/autolisp-reader/source/dialect.lisp`. Everything delegates:
+  `parse-dialect` (cli), `keyword->dialect` (clautolisp main),
+  `resolve-clautolisp-dialect`/`dialect-cli-name` (alfe). **Adding a dialect
+  touches only `dialect.lisp`** — never scatter name tables.
+- **Shared CLI:** the clautolisp binary and alfe share
+  `*common-option-specs*` (`autolisp-cli/source/spec.lisp`) + the
+  `cli-options` struct (`options.lisp`). `--dialect` / `--list-dialects`
+  fall through to the shared spec; alfe overrides only
+  `--clautolisp`/`--autocad`/`--bricscad`.
+- **alfe backend ≠ dialect (decoupled):** the backend flags set only the
+  backend. `effective-dialect` (`cli.lisp`): a CAD backend imposes its own
+  dialect and IGNORES `--dialect`; the clautolisp backend HONORS `--dialect`
+  in any argv order, defaulting to `strict`.
+- **`*AUTOLISP-DIALECT*` is dynamic.** `current-evaluation-dialect` consults
+  the AutoLISP variable `*AUTOLISP-DIALECT*` first (via `lookup-variable`,
+  ignore-errors-guarded), then the runtime-session dialect, then strict. So
+  `(setq *AUTOLISP-DIALECT* 'lax)` changes dialect mid-run.
+
+## Dialect extensions — warn, don't error
+
+clautolisp intentionally extends beyond real AutoCAD/BricsCAD. A
+clautolisp-only extension used under a non-clautolisp dialect emits a
+**non-fatal warning** to `*error-output*` and **proceeds** — silent under
+`:clautolisp` and `:lax`, warns under strict/autocad/bricscad. Pattern:
+`emit-…-extension-warning`, gated by `(member dialect '(:clautolisp :lax))`.
+Model: `emit-lambda-list-extension-warning`; canonical case `(terpri <file>)`
+(real AutoCAD 2026 + BricsCAD V26 `terpri` is zero-arity/command-line-only).
+**Do not make these hard errors** — pjb corrected exactly this. The
+VENDOR-ONLY operators have theirs since 2.2.147 (pjb asked for it
+2026-09-29): `emit-vendor-operator-warning`, fired from the subr call site on
+a builtin whose `autolisp-subr-owner` is set from the GENERATED
+`operator-availability.lisp` (spec Availability → `make -C clautolisp
+operator-availability`; the documentation job checks it for drift). A wrong
+owner is fixed in the spec, never by hand in the table
+(`issues/closed/deferred-clautolisp-out-of-dialect-warnings.issue`). This is the *implementation* companion to the
+normative **Dialect Divergence and Warnings** section above.
+
+## Version-bump discipline
+
+`clautolisp/tools/clautolisp/source/version.lisp` (`*version*`,
+`MAJOR.MINOR.DEVELOP`, shown by `clautolisp --version`; package
+`#:clautolisp.tools.clautolisp`) MUST have **DEVELOP incremented by 1 on
+every commit that touches source** — any file outside `documentation/` and
+`issues/` (lisp sources, tests, `.asd`, Makefiles). Docs-only / issues-only
+commits do **not** bump. Put the version in the commit subject (e.g.
+`clautolisp 1.7.18: …`). alfe embeds the clautolisp runtime: keep both program versions exactly
+aligned, and increment both whenever either program or its embedded libraries
+change (pjb, 2026-10-14). Watch for version-bump **conflicts**
+when merging parallel work branches — resolve to the higher DEVELOP.
+
+## CI — GitLab is source of truth; mirror common lanes to GitHub
+
+Mirroring does not translate CI: `.gitlab-ci.yml` is inert on GitHub
+(Actions reads only `.github/workflows/*`), and GitLab ignores `.github/`.
+So the two CIs are **hand-maintained separately**.
+
+**RULE (since 2026-08-03):** `.gitlab-ci.yml` is authoritative;
+`.github/workflows/ci.yml` mirrors **only** the COMMON (`ubuntu-latest`,
+host-portable) lanes. **Before merging to master or cutting a release
+tag/branch, re-sync `ci.yml`** — a new/renamed common `make` target or dep
+bump in `.gitlab-ci.yml` gets the matching edit in the same change. Full
+contract + job-mapping table: `.github/workflows/README.md`; `.gitlab-ci.yml`
+carries a COMMON-vs-GITLAB-ONLY banner near the top — keep it in step.
+
+- Common lanes (mirrored): `test:clautolisp:{sbcl,ccl}`,
+  `file-compat:{sbcl,ccl}`, `autolisp-test:sbcl`,
+  `alfe:{sbcl,ccl,conformance,spec-coverage}`, `build:alfe:sbcl`.
+- GitLab-only (never mirrored — need self-hosted / CAD runners GitHub
+  lacks): every `*:macos` / `*:windows`, `verify:*`, `vendor:probes:*`,
+  `*:probe:*`, `encoding:experiment:*`, `benchmark:*`,
+  `build:clautolisp-ci-image`, `release:*` / `pages` / `collect` / `deploy`.
+- Setup is a composite action `.github/actions/setup-lisp` (input
+  `ccl:true`): installs SBCL (apt) + Clozure CL v1.13 the same way
+  `clautolisp/docker/Dockerfile` does (clone source, overlay release
+  kernel/heap tarball, wrap `lx86cl64` as `ccl`) + Quicklisp cache/pre-warm.
+  Keep `CCL_VERSION` in the action and the Dockerfile in step.
+
+## CI — native macOS/Windows lanes (platform-bug playbook)
+
+Since alfe 1.7.22 the alfe + autolisp-test **unit** suites run on native
+macOS (thalassa) and Windows (PF5S26BT) GitLab runners
+(`test:{alfe,autolisp-test}:{macos,windows}`, extend
+`.platform-test-common`, `allow_failure`). Recurring platform gotchas:
+
+- **The unit lane must NOT depend on real CAD.** `backend-available-p` gates
+  `:bricscad-only`/`:autocad-only` behind `ALFE_VENDOR_CONFORMANCE` opt-in;
+  `run-scenario` unsets `AUTOCAD_ACCORECONSOLE` in its sandbox so the corpus
+  runs an AutoCAD-absent baseline regardless of runner env.
+- **Scenario DSL `:skip-on-os (:windows …)`** (`conformance.lisp`,
+  `current-os-keyword`): for scenarios whose premise is false on a platform.
+  Don't mislabel a platform-specific assertion `:portable`.
+- **Windows rename is non-atomic** (UIOP overwrite = delete+rename): relax
+  contention stress tests on Windows via `(pass …)`; readers use
+  `:if-does-not-exist nil`, never probe-then-open (the delete-gap of a
+  hot-rewritten file makes TOCTOU fire). POSIX `rename(2)` is atomic.
+- **`-Eterminal` fd-reopen is unreliable on Windows** — first *write* EBADFs
+  under a non-console shell; `%make-terminal-fd-stream` returns NIL on
+  Windows → warn-and-keep-default. Proper fix (Console API /
+  `SetConsoleOutputCP`) tracked by `windows-terminal-encoding-fd-stream.issue`.
+- **Windows msys paths:** pass native paths (`cygpath -m`) as `#P"C:/…"`
+  literals to ASDF, not msys `/c/…` namestrings. (A "Component … not found"
+  from a Windows `make test` is usually a **stale clone** — `git pull` — not
+  a code bug.)
+- Debugging is iterative: each fix un-masks the next scenario. Monitor via
+  `glab api projects/ogamita%2Fclautolisp/pipelines/<id>/jobs` then
+  `/jobs/<jid>/trace`.
+
+## CI — the alfe lanes need clautolisp-sbcl
+
+Every alfe test of the `--backend subprocess` variant (the direct/subprocess
+parity table, the per-action hook rows) SKIPS as a passing assertion when no
+`clautolisp-sbcl` is built -- and until alfe 2.2.232 no CI lane built it, so
+the table never ran in CI. A lane running the alfe suite builds it first
+(`make -C clautolisp build-clautolisp-sbcl`) and sets
+`ALFE_TEST_REQUIRE_CLAUTOLISP=1`, which turns that skip into a failure
+(`clautolisp-binary-required-p` in `tests/backend-clautolisp-tests.lisp`). A
+new skip-when-absent test uses the same predicate.
+
+## CI — adding a Quicklisp dependency
+
+A new **quicklisp** dep breaks the alfe SBCL/CCL lanes with
+`ASDF/FIND-COMPONENT:MISSING-DEPENDENCY` — quicklisp's ASDF hook installs
+only systems named in an explicit `ql:quickload`, **not** transitive deps.
+Add the dep in **three** places: (1) `clautolisp/docker/Dockerfile`
+`ql:quickload` bake (both SBCL and CCL RUN lines); (2)
+`autolisp-front-end/Makefile` quickload blocks (`test-sbcl`/`test-ccl`/
+`conformance`); (3) `autolisp-front-end/scripts/check-spec-coverage.lisp`.
+Keep the Dockerfile bake in sync with the pre-warm anchor list in
+`.gitlab-ci.yml`.
+
+## CI — job placement (poseidon-first)
+
+If a job *can* run on **poseidon** (`[linux,amd64,docker]`), run it there —
+it is ~2× faster than thalassa, 128 GB RAM, RAID-1 SSD, always-on. Pin to
+thalassa (`macos,arm64,shell`) or the Windows PC (`windows,amd64,shell`)
+only when **genuinely platform-bound** (native macOS/Windows builds, GUI
+BricsCAD/AutoCAD). `release:linux:arm64` is the one lane that could move to
+poseidon but can't yet (needs a qemu arm64 runner).
+
+## CI — build caches (`scripts/ci-build-cache.sh`)
+
+The Lisp lanes on poseidon and the macOS unit lanes reuse the project's ASDF
+fasls across pipelines (`.fasl-cache` in `.gitlab-ci.yml` and
+`.gitlab/native.yml`, ci-cache-tool-builds.issue). Rules for anyone touching
+it or adding a lane:
+
+- **Never trust file times.** A cache is reused only when its KEY file (a
+  content hash of the source tree's git object ids, the Lisps, the Quicklisp
+  releases, the image's packages) equals the checkout's; otherwise it is
+  discarded whole. Reuse after a fresh clone by timestamps alone either
+  rebuilds everything or -- worse -- ships stale code (both measured; see the
+  script header).
+- **A new Lisp lane** gets `extends: .fasl-cache` and, as the LAST line of
+  `script` (never `after_script`: another container on docker),
+  `sh scripts/ci-build-cache.sh save fasl`. A job that leaves the checkout
+  modified is simply not saved.
+- **A file read at compile time outside the hashed tree** (today every
+  top-level entry except `issues/`, `documentation/`, `probe-results/`,
+  `.github/` and the root prose files) must be added to the key in
+  `source_tree`, or a stale fasl becomes possible.
+- **`release:*` never uses a build cache**; a release builds cold from its tag.
+- **Windows is deliberately uncached**: its `-ffd` clean keeps the working
+  tree (and `clautolisp/.cache`) between jobs, which is the one reuse path
+  there; `release-windows.sh` clears it for releases.
+- **LibreDWG** (kind `libredwg`, since clautolisp 2.2.230) is cached on the one
+  non-release Linux lane that builds it, `verify:packaged-dwg:linux`. Its key
+  is the submodule commit + `clautolisp/drawing-dwg` + the toolchain, NOT the
+  whole tree, so another clautolisp commit still hits and compiles 0 objects.
+  That only holds because LibreDWG's `config.h` no longer carries clautolisp's
+  `git describe` (next section). A lane that wants it needs
+  `GIT_SUBMODULE_STRATEGY: recursive`: the restore runs before any `make
+  submodules`, and a missing submodule is a miss that is never saved.
+
+## CI -- following LibreDWG stable releases
+
+clautolisp follows LibreDWG's **stable** releases (pjb, 2026-10-07): the GitHub
+releases of `LibreDWG/libredwg` with `prerelease=false` (`0.13.4`, `0.14`).
+The per-commit snapshots upstream also publishes as releases (`0.14.8590`,
+...) are prereleases and are NOT followed.
+
+`clautolisp/third-party/libredwg.release` records the followed release
+(`version 0.14`) and the commit its tag names. `build-libredwg.sh` writes that
+version to the submodule's `.version` and runs cmake from inside the
+submodule, so the shipped library reports `LibreDWG 0.14` (before 2.2.230 it
+reported clautolisp's `git describe`, because upstream's CMakeLists resolves
+`.version` / `git describe` in cmake's working directory --
+`issues/closed/libredwg-version-is-superproject-describe.issue`). The build
+FAILS if the submodule is not at the recorded commit, or if that commit's tags
+(when fetched) do not include the recorded version; `make check-libredwg-release`
+(part of `make check-release`, offline) fails if the gitlink disagrees with the
+file.
+
+`make check-libredwg-stable-release` (network: GitHub API + `git ls-remote`;
+manual or periodic, deliberately in no CI lane) says whether upstream has a
+newer stable release, and prints its commit. To follow one:
+
+1. `git -C clautolisp/third-party/libredwg fetch --tags origin` and
+   `git -C clautolisp/third-party/libredwg checkout <tag>`;
+2. set `version <tag>` and `commit <sha>` in
+   `clautolisp/third-party/libredwg.release`;
+3. `git add clautolisp/third-party/libredwg clautolisp/third-party/libredwg.release`;
+4. `make -C clautolisp build-libredwg` (the configure log says
+   `PACKAGE_VERSION: <tag>`), then the DWG tests
+   (`make -C clautolisp test-sbcl TEST_SYSTEM=clautolisp/drawing-dwg`), the
+   usual suites and the native Windows/macOS lanes (a LibreDWG change has broken
+   the MinGW build before -- see the notes in `build-libredwg.sh`);
+5. bump clautolisp (a shipped artefact changed) and add a RELEASE_NOTES bullet
+   naming the new LibreDWG release.
+
+The first build after a move recompiles every object (a new `config.h`); the
+libredwg build cache misses by key, as it must.
+
+## CI — where to PLAY a manual CAD job, and how long it will wait
+
+Two things cost a whole day of evidence runs on 2026-09-27, both avoidable.
+
+**Never play a manual CAD job on a MASTER child pipeline.** `.gitlab/native.yml`
+sets `default: interruptible: true` (the fix for the job-activity-cap leak), so
+the next master merge — yours or another session's — auto-cancels that child and
+your played job with it. On a busy day that is every ten minutes, and it is not
+something to time. Play it on a **merge-request** child: a master merge does not
+supersede a different ref, which is the same property that makes those children
+leak. A *merged* MR's child is fine and is not swept away either, because the
+pipeline sweep spares any pipeline holding a played job (`pending` +
+`manualJob: true` in GraphQL). A plain branch will **not** work: `detect:runners`,
+which `native:pipeline` needs, only runs on master, tags and
+`merge_request_event`, so an arbitrary branch gets no child at all.
+
+*This note exists because the lesson was first written into an issue that was
+then closed, and the next session — the same one, an hour later — repeated the
+mistake. Operational lessons belong here, not in a ticket that will be archived.*
+
+**Expect hours, not minutes.** The `cad` tag is one machine at concurrency 1, and
+every pipeline adds ~9 vendor-probe jobs to it: measured 73 pending behind 1
+running. A deliberately played CAD job therefore waits behind the whole backlog.
+It is *not* stuck if the runner's `contacted_at` is recent — check that field, not
+`status`, which reports `online` for up to two hours after a runner stops polling.
+GitLab drops a pending job after ~2 h only when **no runner matches**; with a live
+matching runner it simply waits.
+
+## CAD pathname semantics
+
+`..` / `.` resolution is **OS-level, not per-engine**. Missing-intermediate
+`..` (`BASE/noexist/../t`) is the discriminator: POSIX (clautolisp
+everywhere, BricsCAD **macOS**) = **UP** (physical walk → fails on missing
+dir); Windows (BricsCAD Windows, AutoCAD Windows) = **BACK** (textual
+collapse → succeeds). So clautolisp is *stricter* than the native Windows
+CADs. pjb ruling (clautolisp 1.7.5): open/findfile/load emit a
+`[path-dotdot]` warning for ANY path with a `..` component in every dialect
+except `--lax` (`emit-dotdot-path-portability-warning` +
+`autolisp-path-has-dotdot-component-p` in runtime `api.lisp`, deduped
+per-path/session). Relative paths anchor to the process working directory:
+alfe `:direct` mode re-anchors `*default-pathname-defaults*` +
+`set-autolisp-current-directory` + support-paths to `uiop:getcwd` at
+start-engine. **TEMPPREFIX** resolves registry → TMPDIR/TEMP/TMP → platform
+default (`/tmp/` | `C:/Temp/`) via `apply-tempprefix-default`. Evidence:
+`autolisp-front-end/tests/scenarios/entities/pathname-probe.lsp`
+(`pathname:probe:*` CI jobs, `when: manual`).
+
+## Dialect versions and products
+
+**Dispatch on the PRODUCT, never on a dialect keyword with EQ.** A derived
+spelling (`--dialect bricscad-mac`, `bricscad-linux`, `bricscad-v25`,
+`autocad-mac`, `autocad-2022`) is its own descriptor, named after itself, so
+`(eq name :bricscad-v26)` silently treats it as AutoCAD. Fold the name first:
+`autolisp-dialect-template-name` (reader) maps any spelling of a product onto
+`:bricscad-v26` / `:autocad-2026`; or test `autolisp-dialect-product`.
+(clautolisp 2.2.156 fixed eleven call sites that got this wrong.)
+
+**Version differences documented by the vendor are implemented, even when no
+runner can test them** (pjb, 2026-10-03). Put the behaviour behind the
+dialect's version facet (`autolisp-dialect-version`, e.g. autocad-2022 vs
+autocad-2026) and write a probe in `probes/sources/` for it, so users on that
+version can contribute results later. AutoCAD 2022 is the last version we can
+TEST; 2026 stays the behavioural template (`*autolisp-dialect-latest-version*`,
+the web reference the catalogue was built from). No bump to 2027 until it is
+characterised.
+
+## Documenting clautolisp deviations
+
+Whenever clautolisp deviates from / extends AutoCAD/BricsCAD, document in
+**both**: (1) a `*** clautolisp` subsection at the end of the corresponding
+`** Function Entry:` (or sysvar) in
+`autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org`,
+phrased explicitly as "clautolisp implementation deviation — not part of the
+normative specification above" (**never** edit the normative
+Syntax/Arguments/Return sections); and (2) a user-facing subsection in
+`clautolisp/documentation/clautolisp-user-manual.org`. Match the existing
+`*** clautolisp` style (TRUSTEDPATHS sysvar, the nine get\* pages). Docs-only
+edits do **not** bump `version.lisp`. Worked example: the interactive get\*
+family is GUI in AutoCAD/BricsCAD but **TUI** in clautolisp (prompt→stdout,
+one line←stdin; `--mock-input` for scripted runs; invalid/EOF → nil, no
+re-prompt). The `SPEC-UNCERTAIN` / `STUB:` two-place conventions above are
+the related source-marker discipline.
+
+## The interactor framework
+
+All interaction loops (REPL / ALDO debugger / NAVI / LAVI / INSPECT / SEDIT)
+run on `clautolisp/autolisp-interactor` (package `clautolisp.interactor`,
+dependency-free). Design record: `issues/closed/interactor-design-revision.issue`
+(interactor-unification CLOSED at 1.6.1).
+
+- Interactors are **singletons**; `*interactor-stack*` holds **activations**
+  `(interactor . state)` like call frames. A stop's ALDO stacks over the
+  ambient stack; "global" user commands live on AUTOLISP and fall through.
+- Registration (never routing) via `DEFINE-INTERACTOR` +
+  `(clal-define-command "NAME" NAMES FN [DOC])` /
+  `(clal-list-interactor-names)`. One reader entry `read-current-source`
+  consults `*AUTOLISP-DIALECT*` live at each read.
+- **Typed command arguments** (1.6.1): lambda-list entry `(NAME TYPE)`, TYPE
+  ∈ string/integer/float/ident/sexp; conversion in
+  `convert-command-argument`; mismatch → `command-argument-error`, call
+  skipped, loop stays alive. `(&whole arg)` = raw convention.
+- SEDIT is an interactor (`autolisp-sedit`); `q` above a stop = warn + y/n +
+  `aldo quit`. Full transition diagram deferred
+  (`interactor-state-diagram-revision.issue`, pjb-decision).
+- Deep design/implementation/debugging know-how for porting this + the ALDO
+  debugger to a full CL lives in
+  `/home/claude/skill-aldo-style-debugger-for-common-lisp.md` (reference impl
+  clautolisp v1.5.0) — hand it to a porting agent.
+
+## DCL — Dialog Control Language (GUI + TUI)
+
+A pluggable **`dcl-renderer`** struct (open/run/close/set-tile/mode/
+image-paint/populate-list fns) in `clautolisp/autolisp-dcl`. Two renderers:
+a **terminal (TUI)** renderer (default, headless) and a **Qt subprocess**
+renderer (Lisp side complete; the C++ app under `tools/clautolisp-gui-qt` is
+unbuilt here — tracked by `dcl-tui-completion.issue` / the OpenDCL epic).
+
+- **`--dcl tui|gui|auto`** selects the renderer (`auto` = GUI only on a TTY
+  with a driver configured, else TUI); wired in
+  `tools/clautolisp/source/main.lisp` (`select-and-install-dcl-renderer`).
+  AutoCAD's `-command` (headless) convention is mapped onto `--dcl tui` +
+  the auto-TUI-when-not-a-TTY path (clautolisp has no per-command
+  dispatcher).
+- Reserved magic vars are interned **without** the trailing `$`: `$KEY`,
+  `$VALUE`, `$REASON`, `$DATA` (`runtime.lisp`); `$reason` is a code
+  1/2/3/4 via `dcl-reason-code`.
+- Predefined **clusters** (`ok_only`, `ok_cancel`, `ok_cancel_help`, …)
+  expand at load into real accept/cancel/help/errtile tiles — a
+  keyword-normalization mismatch previously left an unexpandable
+  `<ok-cancel>` placeholder.
+- Validation artifact: `clautolisp/examples/all-widgets/` — a
+  standard-DCL-only dialog with one of every interactive tile plus a driver
+  that prints a labelled value report. Run the *same* program in BricsCAD,
+  AutoCAD, clautolisp GUI, and clautolisp TUI and diff the reports. Headless
+  TUI smoke test:
+  `printf 'name=…\naccept\n' | clautolisp-sbcl -norc -q --dcl tui -l all-widgets.lsp`.
+
+## CLI option convention
+
+Single-dash options must be **short** (one-letter); word options take
+**two** dashes: `-q`/`--quit`, never `-quit`. No silent legacy aliases — a
+removed spelling gets "Unknown option" + usage. Update every in-tree caller
+(Makefiles, docs, man, org tables) in the same commit. Exception: a short
+option with an attached parameter domain is fine — `-Eterminal encoding` is
+`-E` + the `terminal` domain (clisp-style). Host-Lisp lanes in Makefiles
+keep the host's own spelling.
+
+## Issue triage workflow
+
+`issues/open/TRIAGE.org` is the authoritative index (replaces the old
+`index.txt`). Priority order set by pjb: **P1** CAD backend / dialect
+divergences → **P2** language / builtins completeness → **P3** everything
+else. Rules: process `NEXT` before `TODO` within a tier, skip
+`BLOCKED`/`DEFERRED`; strive to complete an issue fully (only inconsistency
+or a dependency justifies parking it); check the tree first (progress may
+have made an issue moot → close with explanation); a **bug found
+incidentally** gets its own `issues/open/<slug>.issue` ticket (symptom,
+repro, cause) — don't just mention it. Every issue file uses the org keyword
+header (`#+STATUS`/`#+PRIORITY`/`#+TYPE`/`#+DEPENDS`/`#+BRANCH`). Branch
+naming: `fix-<slug>` / `feat-<slug>`; an epic runs one long-lived branch;
+fetch + rebase before merging back.
+
+**Closing an issue is part of finishing it, not a later sweep.** The moment an
+issue's work is implemented AND its tests pass, closing it belongs to the SAME
+change as the code — do all of this together, not in a follow-up:
+
+1. Update the issue file: append a `Resolved`/`DONE` note stating the version
+   and what shipped, and set `#+STATUS: DONE`.
+2. `git mv` the file from `issues/open/` to `issues/closed/`.
+3. Flip its row in `issues/open/TRIAGE.org` to `DONE` (keep the index in step).
+4. Stage all of that in the SAME commit as the implementation + tests, and
+   carry it through the SAME branch / MR — committed, pushed, and **merged
+   along with the code**.
+
+Never leave an implemented-and-tested issue sitting in `issues/open/` for a
+later pass: an issue still under `issues/open/` means "not done". (The only
+split is when a resolved issue spawns genuinely new, deferred work — file that
+as its OWN new `issues/open/<slug>.issue` and close the original.)
+
+## Commit / push identity
+
+pjb has delegated (standing, 2026-06-21, "Option A") committing under **his
+identity** (`Pascal J. Bourguignon` / informatimago@gmail.com) and pushing
+to **master** — proceed without asking. Feature-branch + MR only when he
+requests it. End commit messages with the Co-Authored-By: Claude trailer. If
+the harness classifier still gates the author/push, that is authorization
+friction, not a reason to stop.
+
+**Commit messages are PLAIN ASCII.** Hyphens, not em dashes; "section 11", not
+a section sign; straight quotes; no backticks. This is not style: the Windows
+runner's PowerShell executor writes `CI_COMMIT_MESSAGE` into a generated `.ps1`
+and under-escapes it, so a message with such punctuation kills the job before
+it clones — once, it went on to run the job's script in the runner's own
+directory instead (`windows-runner-commit-message-breaks-powershell`). Checked
+by `make check-commit-message-ascii` in the `documentation` CI lane (HEAD only,
+so a merge commit passes); sweep a branch before pushing with
+`make check-commit-message-ascii RANGE=origin/master..HEAD`. The real fix is a
+newer runner on that machine, which is pjb's call; until then this is the rule.
+
+## Ongoing epics (as of clautolisp 1.7.18 / alfe 1.7.24, 2026-08)
+
+- **Coverage epic** (`complete-unit-tests.issue`, P2): backfill builtin
+  behavioural coverage toward ≥95%. Tooling:
+  `clautolisp/autolisp-builtins-core/tests/scripts/coverage-report.sh`
+  (implemented set = `make-core-builtin-subr` names + special-op dispatch;
+  tested = literal `(NAME …` heads + `find-autolisp-symbol`). Remaining gaps
+  concentrate in VLAX-\* (need constructed mock objects), SS/entity mutation
+  (ENTUPD/SSGETFIRST), and misc families.
+- **Compiler** (`compiler.issue`, flagship DRAFT): interpreter companion +
+  AutoLISP→CL compiler. The full bytecode-VM + compiler know-how (staged
+  plan, ISA/IR, NLX via interpreter frames, fasl/boot-image bootstrap, the
+  lisp-1/dynamic-binding adaptation) is written up as a transfer skill in the
+  **bocl** repo: `design/skill-bytecode-vm-and-compiler.md` — copy it into
+  `.claude/skills/bytecode-vm-and-compiler/SKILL.md` when that work starts.
+- P1 items are largely gated on CAD hardware access, `pjb-decision`, or
+  upstream (libredwg) — see TRIAGE.org for the current gates.
+
+
+## Dedicated CAD CI runner accounts
+
+A CAD CI job owns its dedicated runner account for the duration of the job.
+Its preflight should stop residual acad.exe, accoreconsole.exe and bricscad.exe
+processes belonging to that exact account before launching the job's CAD.
+Verify the owner SID; do not apply this policy to another account, a service
+session, or an interactive attachment. ALFE's own teardown still restores the
+live session before closing only the COM application created by that invocation.

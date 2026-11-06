@@ -1,0 +1,88 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: aldo-companion-quit-leaks-a-host-backtrace — (quit) at a debugger prompt killed the process with a host backtrace
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-sedit-path-and-alfe-list-hosts
+#+DATE: 2026-09-26
+
+* Observed
+
+Found 2026-09-26 while MEASURING =navi-double-quit= on the built binary (a
+separate ticket; that one does not reproduce, see its note). Typing =(quit)= at
+the debugger prompt:
+
+#+begin_example
+$ printf '(defun foo (x) (/ x 0))\n(foo 1)\n(quit)\n' \
+  | clautolisp -norc -q --on-error debug
+...
+NAV>
+Unhandled CLAUTOLISP.AUTOLISP-RUNTIME:AUTOLISP-TERMINATION in thread
+  #<SB-THREAD:THREAD tid=3381742 "aldo-companion" RUNNING>:
+  AutoLISP termination requested: QUIT
+ 5: ((LAMBDA (&REST ARGUMENTS) :IN WRAP-BUILTIN-FUNCTION))
+14: ((LAMBDA NIL :IN CLAUTOLISP.TOOLS.CLAUTOLISP::START-ALDO-COMPANION))
+15: ((LABELS BORDEAUX-THREADS::%BINDING-DEFAULT-SPECIALS-WRAPPER ...))
+...
+22: ("foreign function: funcall1")
+unhandled condition in --disable-debugger mode, quitting
+$ echo $?
+1
+#+end_example
+
+Twenty-two frames of host Lisp, and exit 1, for a user asking the program to
+end. At the =_$= prompt the same form prints =clautolisp: terminated by QUIT=
+and exits 0.
+
+* Cause
+
+The debugger UI runs on the *aldo companion thread* (=start-aldo-companion=,
+tools/clautolisp/source/main.lisp). Its handler-case round =session-stop=
+caught =error= only -- and =AUTOLISP-TERMINATION= is defined as a
+=SERIOUS-CONDITION=, not an =ERROR= (autolisp-runtime/source/api.lisp:172),
+deliberately, so that a quit is not mistaken for a failure. So the condition
+left the companion thread unhandled, and the host Lisp killed the process.
+
+This is the class AGENTS.md § /Architecture/ forbids: "Common Lisp conditions
+and errors must not leak directly into the AutoLISP environment."
+
+The companion cannot simply return from the handler: the application thread is
+parked at the stop waiting for a resume directive, so there is nobody to hand
+the termination to -- and the user asked for the program to END, not for the
+stop to resume.
+
+* Fixed — clautolisp 2.2.116
+
+=COMPANION-TERMINATE= reports the termination with the toplevel's own
+=report-termination= (so a quit from the debugger and a quit from =_$= do not
+look like two different events), flushes the streams, and ends the process with
+the status the form carried. The exit function is injectable, which is what
+makes it testable without exiting the test run. The companion's handler-case
+gained a clause for =autolisp-termination= ahead of the =error= one.
+
+Measured after the fix, on the BUILT binary:
+
+#+begin_example
+(quit)   at the NAV> prompt -> "clautolisp: terminated by QUIT", exit 0
+(exit 3) at the NAV> prompt -> "clautolisp: terminated by EXIT", exit 3
+                               (with its [exit-status-extension] dialect warning)
+zero host-backtrace lines in either
+#+end_example
+
+Tests (tools/clautolisp/tests/debugger-options-tests.lisp):
+=companion-terminate-reports-and-exits-with-the-forms-status= checks the wording
+and that the injected exit is called with the form's status;
+=companion-terminate-is-reached-for-a-termination-not-an-error= pins the reason a
+separate clause is needed -- if =autolisp-termination= ever became an =ERROR=
+subtype, the companion's error clause would swallow a quit and answer
+=:continue=, and that test fails instead of the user's session.
+
+Documented in the user manual (the aldo section: quitting from a stop) and
+RELEASE_NOTES.org.
+
+* Note
+
+Filed and fixed in the same change, per AGENTS.md: a bug found while doing
+something else gets its own ticket, and an implemented-and-tested issue is
+closed with the code.

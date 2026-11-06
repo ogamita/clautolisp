@@ -33,9 +33,9 @@ to *debug-hit-handler*, and carries out the resolution it returns:
                                             instrumented form (§10.1)
 
 A decline returns normally so the condition keeps propagating."
-  (let* ((pp (thread-debug-info-current-pp ti))
-         (fid (if pp (car pp) 0))
-         (form-id (if pp (cdr pp) 0))
+  (let* ((valid (thread-debug-info-current-pp-valid-p ti))
+         (fid (if valid (thread-debug-info-current-pp-fid ti) 0))
+         (form-id (if valid (thread-debug-info-current-pp-form-id ti) 0))
          (metadata (metadata-for-function-id fid))
          (hit (make-hit :thread-info ti :fid fid :form-id form-id :when :error
                         :stop-reason reason :metadata metadata
@@ -43,8 +43,30 @@ A decline returns normally so the condition keeps propagating."
                         :condition condition
                         :error-message (autolisp-runtime-error-message condition)
                         :errno (ignore-errors (autolisp-errno))
-                        :snapshot (build-snapshot ti fid form-id :error metadata))))
+                        ;; Prefer the stack captured when CONDITION was signalled
+                        ;; (the error point) over TI's live stack, which an inner
+                        ;; HANDLER-CASE (a builtin wrapper, LOAD's *error* handler,
+                        ;; …) may already have unwound — so a function reached
+                        ;; through APPLY / MAPCAR / LOAD still shows a full
+                        ;; backtrace (aldo-no-frames-through-higher-order-builtins).
+                        :snapshot (build-snapshot
+                                   ti fid form-id :error metadata
+                                   (clautolisp.autolisp-runtime:autolisp-runtime-error-debug-snapshot
+                                    condition)))))
     (apply-error-directive (funcall *debug-hit-handler* hit))))
+
+(defun capture-error-shadow-stack ()
+  "Copy the current thread's debugger shadow call stack at the point an
+AUTOLISP-RUNTIME-ERROR is signalled — the deepest, error point, before any
+HANDLER-CASE between the error and the session handler unwinds it. NIL when no
+debug session is active on this thread, so ordinary runs pay nothing. Installed
+as the runtime's *DEBUG-ERROR-SNAPSHOT-HOOK* (the dependency-inversion pattern of
+*INSTRUMENT-USUBR-HOOK*)."
+  (let ((ti *thread-debug-info*))
+    (when (and ti (thread-debug-info-debug-flag ti))
+      (copy-list (thread-debug-info-call-stack ti)))))
+
+(setf clautolisp.autolisp-runtime:*debug-error-snapshot-hook* #'capture-error-shadow-stack)
 
 (defun apply-error-directive (directive)
   (cond
@@ -55,10 +77,11 @@ A decline returns normally so the condition keeps propagating."
     ((and (consp directive) (eq (first directive) :continue-with-return))
      ;; Return a value for the innermost instrumented form (§10.1). Safe
      ;; only for form-internal errors; if no instrumented form encloses
-     ;; the error there is no restart and we decline.
-     (let ((restart (find-restart 'clal-poll-return)))
-       (when restart
-         (invoke-restart restart (coerce-from-cl (second directive))))))
+     ;; the error there is no CATCH to reach, which a poll depth of zero
+     ;; is exactly what tells us, and we decline.
+     (let ((ti *thread-debug-info*))
+       (when (and ti (plusp (thread-debug-info-poll-depth ti)))
+         (throw +clal-poll-return-tag+ (coerce-from-cl (second directive))))))
     (t nil)))
 
 (defun call-with-error-integration (ti thunk break-on-caught)

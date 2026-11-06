@@ -94,8 +94,13 @@ derived value."
    ;; remote-forwarding table.
    (list "*AUTOLISP-VERSION*"
          (make-autolisp-string (or version-text "0.0.0")))
-   (list "*AUTOLISP-FRONTEND*"           (intern-autolisp-symbol frontend))
-   (list "*AUTOLISP-BACKEND*"            (intern-autolisp-symbol backend))
+   ;; A caller may pass an explicit NIL (e.g. alfe's wrapper leaves
+   ;; :backend unset when the builder is exercised in isolation), which
+   ;; would make INTERN-AUTOLISP-SYMBOL choke on a NIL name. Fall back to
+   ;; the documented "CLAUTOLISP" default so the builder is safely
+   ;; callable outside the full run path.
+   (list "*AUTOLISP-FRONTEND*"           (intern-autolisp-symbol (or frontend "CLAUTOLISP")))
+   (list "*AUTOLISP-BACKEND*"            (intern-autolisp-symbol (or backend "CLAUTOLISP")))
    (list "*AUTOLISP-DIALECT*"
          (dialect-name-symbol-keyword (cli-options-dialect options)))
    (list "*AUTOLISP-HOST*"
@@ -140,6 +145,28 @@ derived value."
           (if (cli-options-load-encoding options)
               (canonical-encoding-name (cli-options-load-encoding options))
               "")))
+   ;; The `file' situation (-Efile[-read|-write]): what OPEN uses when the
+   ;; program names no encoding -- empty when not given (then OPEN keeps
+   ;; *AUTOLISP-FILE-ENCODING* / the dialect default).
+   (list "*AUTOLISP-FILE-READ-ENCODING*"
+         (make-autolisp-string (or (cli-situation-encoding options "file" "read") "")))
+   (list "*AUTOLISP-FILE-WRITE-ENCODING*"
+         (make-autolisp-string (or (cli-situation-encoding options "file" "write") "")))
+   ;; The encoding replacement (-Ereplacement, -Efile-write-replacement,
+   ;; -Eterminal-out-replacement): what a write puts in place of a character
+   ;; the encoding cannot hold -- nil when not given (then the dialect's
+   ;; default; encoding-replacement-character-option).
+   (list "*AUTOLISP-ENCODING-REPLACEMENT*"
+         (autolisp-string-or-nil (cli-encoding-replacement-explicit options "all")))
+   (list "*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*"
+         (autolisp-string-or-nil (cli-encoding-replacement-explicit options "file/write")))
+   (list "*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*"
+         (autolisp-string-or-nil (cli-encoding-replacement-explicit options "terminal/out")))
+   ;; The `log' situation (-Elog): the encoding of the command-history log
+   ;; file (cador command-log.lisp) -- empty when not given (then the
+   ;; product's: windows-1252 for AutoCAD, UTF-8 otherwise).
+   (list "*AUTOLISP-LOG-ENCODING*"
+         (make-autolisp-string (or (cli-situation-encoding options "log" nil) "")))
    (list "*AUTOLISP-TERMINAL-ENCODING*"
          (make-autolisp-string
           (resolve-effective-encoding (cli-options-io-encoding options))))
@@ -160,9 +187,13 @@ derived value."
               (intern-autolisp-symbol (string-upcase (cli-options-main options)))))
    (list "*AUTOLISP-DRAWING*"
          (autolisp-string-or-nil (cli-options-dwg options)))
+   ;; One symbol per ACTIVE plug-in, in activation order: (EPURE) for
+   ;; --epure. The plug-ins themselves are alfe's (alfe.plugin); this
+   ;; library only carries their names.
    (list "*AUTOLISP-PLUGIN-OPTIONS*"
-         (when (cli-options-epure-p options)
-           (list (intern-autolisp-symbol "EPURE"))))
+         (mapcar (lambda (name)
+                   (intern-autolisp-symbol (string-upcase name)))
+                 (cli-options-plugins-active options)))
    (list "*AUTOLISP-WORKDIR*"
          (autolisp-string-or-nil (cli-options-workdir options)))
    (list "*AUTOLISP-KEEP-WORKDIR*"
@@ -220,6 +251,78 @@ DWGCODEPAGE via HOST-SET-DERIVED-SYSVAR again."
         (clautolisp.autolisp-host:host-set-derived-sysvar
          host "DWGCODEPAGE" effective)))))
 
+;;; --- TEMPPREFIX: the folder for temporary files -------------------
+;;;
+;;; On a real CAD, TEMPPREFIX is a registry-backed preference (the
+;;; "Temporary Drawing File Location"). clautolisp's mock host inherits
+;;; the AutoCAD-generated sysvar catalogue, where TEMPPREFIX is a
+;;; host-derived stand-in ("") — so `(getvar "TEMPPREFIX")` came back
+;;; EMPTY, which breaks portable code that builds temp paths from it.
+;;;
+;;; Resolution order at launch (mirrors a real host's preference load):
+;;;   1. the value already stored in the vl-registry, else
+;;;   2. the TMPDIR environment variable (TEMP / TMP on Windows), else
+;;;   3. the platform default ("/tmp/" on Unix, "C:/Temp/" on Windows).
+;;; A value resolved from the environment or the default is written back
+;;; to the registry, so it persists like a real preference. Only the
+;;; clautolisp engine reaches this path (real CAD backends never call
+;;; INSTALL-TRANSMIT-VARIABLES), so a genuine CAD's TEMPPREFIX is untouched.
+
+(defparameter +tempprefix-registry-key+
+  "HKEY_CURRENT_USER\\Software\\clautolisp\\Preferences"
+  "vl-registry key under which the resolved TEMPPREFIX preference is
+stored / retrieved by the clautolisp engine at launch.")
+
+(defparameter +tempprefix-registry-value+ "TempPrefix"
+  "The value-name of the TEMPPREFIX preference within
++TEMPPREFIX-REGISTRY-KEY+.")
+
+(defun %platform-temp-default ()
+  "The factory TEMPPREFIX when neither the registry nor the environment
+supplies one."
+  #+(or win32 windows mswindows os-windows) "C:/Temp/"
+  #-(or win32 windows mswindows os-windows) "/tmp/")
+
+(defun %environment-temp-dir ()
+  "The temp directory named by the environment, or NIL: TMPDIR on Unix,
+TEMP then TMP on Windows (all three are checked so a mixed shell still
+resolves)."
+  (loop for var in '("TMPDIR" "TEMP" "TMP")
+        for val = (ignore-errors (uiop:getenv var))
+        when (and val (plusp (length val))) return val))
+
+(defun %normalize-temp-prefix (path)
+  "Canonicalise PATH to a forward-slash directory ending in a slash, so
+concatenating a bare file name yields a valid path on every platform."
+  (let ((p (substitute #\/ #\\ path)))
+    (if (and (plusp (length p)) (char= #\/ (char p (1- (length p)))))
+        p
+        (concatenate 'string p "/"))))
+
+(defun apply-tempprefix-default (context)
+  "Populate the host's TEMPPREFIX sysvar at launch from the registry, the
+environment, or the platform default (in that order), persisting a
+freshly-resolved value to the registry. See the commentary above."
+  (when context
+    (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
+      (when host
+        (let* ((stored (ignore-errors
+                        (clautolisp.autolisp-host:host-registry-read
+                         host +tempprefix-registry-key+
+                         +tempprefix-registry-value+)))
+               (have-stored (and stored (plusp (length stored))))
+               (value (%normalize-temp-prefix
+                       (cond (have-stored stored)
+                             ((%environment-temp-dir))
+                             (t (%platform-temp-default))))))
+          (unless have-stored
+            (ignore-errors
+             (clautolisp.autolisp-host:host-registry-write
+              host +tempprefix-registry-key+
+              +tempprefix-registry-value+ value)))
+          (clautolisp.autolisp-host:host-set-derived-sysvar
+           host "TEMPPREFIX" value))))))
+
 (defun launch-program-name (frontend-name)
   "Return the value to publish as the PROGRAM sysvar (the AutoLISP/
 AutoCAD `(getvar \"PROGRAM\")` slot = the running application).
@@ -251,7 +354,7 @@ silently no-ops on hosts (or sysvar subsets) that lack the cell.
 Reached only by the clautolisp engine: alfe's bricscad/autocad
 backends drive a real CAD and never call INSTALL-TRANSMIT-VARIABLES on
 a local context, so this never clobbers a genuine CAD's identity.
-See issues/open/clautolisp-mock-host-getvar.issue."
+See issues/closed/clautolisp-mock-host-getvar.issue."
   (when context
     (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
       (when host
@@ -281,6 +384,9 @@ Side effects:
 - the clautolisp engine identity (PROGRAM / VENDORNAME / PLATFORM /
   ACADVER) is stamped onto the host via APPLY-CLAUTOLISP-HOST-IDENTITY
   so a clautolisp host stops reporting itself as BricsCAD;
+- the TEMPPREFIX sysvar is resolved (registry -> TMPDIR/TEMP -> platform
+  default) and stamped via APPLY-TEMPPREFIX-DEFAULT, replacing the
+  generated catalogue's empty host-derived stand-in;
 - the dialect-dependent SECURELOAD / TRUSTEDPATHS defaults (and the
   clautolisp-only trust sysvars) are stamped via
   APPLY-DIALECT-TRUST-DEFAULTS so each dialect launches with its own
@@ -301,8 +407,120 @@ Side effects:
                       (clautolisp.autolisp-runtime:autolisp-symbol-name
                        (second entry))))))
     (apply-clautolisp-host-identity context version frontend)
+    (apply-tempprefix-default context)
+    ;; The base snapshot must be taken BEFORE the two overlays below,
+    ;; because it is the dialect-INDEPENDENT table they are applied on
+    ;; top of, and the one a later dialect switch rebuilds from. A
+    ;; dialect overlay removes cells; nothing can un-remove them except
+    ;; starting again from a table that still had them
+    ;; (sysvar-table-ignores-runtime-dialect-change.issue).
+    (install-runtime-dialect-sysvar-tracking
+     context (transmit-dialect-keyword bindings))
     (apply-dialect-trust-defaults context (transmit-dialect-keyword bindings))
-    (apply-dialect-sysvar-defaults context (transmit-dialect-keyword bindings))))
+    (apply-dialect-sysvar-defaults context (transmit-dialect-keyword bindings))
+    (apply-persisted-lispsys context bindings)
+    (apply-command-log-preferences context)))
+
+(defun apply-command-log-preferences (context)
+  "The saved LOGFILEMODE / LOGFILEPATH of the active product, or the defaults
+(0, $XDG_STATE_HOME/clautolisp/logs/), on a cador host."
+  (when context
+    (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
+      (when (typep host 'clautolisp.cador:cador)
+        (clautolisp.cador:apply-command-log-preferences host)))))
+
+;;; --- LISPSYS: persisted, read at launch, the AutoCAD source default -------
+;;; Spec, "LISPSYS governs the AutoCAD source default (2021 and later)" and
+;;; "clautolisp: LISPSYS, persisted and read at launch" (pjb 2026-10-04: "a
+;;; new autocad installation will have LISPSYS=1; the users typically set it
+;;; [to 0] when they have windows-1252 code bases ... we must read back the
+;;; LISPSYS setting from persistent memory (the registry)").
+
+(defun %lispsys-launch-value (host dialect)
+  "The LISPSYS saved for DIALECT's product, as 0 / 1 / 2, or NIL."
+  (let* ((stored (ignore-errors
+                  (clautolisp.autolisp-host:host-registry-read
+                   host (clautolisp.autolisp-builtins-core::lispsys-registry-key dialect) "LISPSYS")))
+         (n (and (stringp stored) (ignore-errors (parse-integer stored)))))
+    (and (member n '(0 1 2)) n)))
+
+(defun %autocad-default-file-encoding (version lispsys)
+  "The AutoCAD source / file-READ default: before 2021 the ANSI code page;
+from 2021 the one LISPSYS selects (0: ANSI, 1 / 2: UTF-8). OPEN's default
+WRITE is windows-1252 at every level (measured on AutoCAD 2022, E1 job
+16980926802); OPEN-DEFAULT-EXTERNAL-FORMAT applies that, not this."
+  (if (or (not (integerp version)) (< version 2021) (eql lispsys 0))
+      "WINDOWS-1252"
+      "UTF-8"))
+
+(defun apply-persisted-lispsys-value (host dialect)
+  "Lay the LISPSYS saved for DIALECT's product onto HOST's sysvar table.
+Returns the value, or NIL when none is saved."
+  (let ((saved (and host (%lispsys-launch-value host dialect))))
+    (when saved
+      (clautolisp.autolisp-host:host-set-derived-sysvar host "LISPSYS" saved))
+    saved))
+
+(defun apply-persisted-lispsys (context bindings)
+  "Install the persisted LISPSYS (when one is saved for this product) and,
+under the AutoCAD dialects with no explicit -Esource / -e, make the
+encoding it selects the session's default for LOAD and OPEN's reads -- ahead
+of the POSIX locale, which AutoCAD does not consult. (OPEN's default write
+stays windows-1252 whatever LISPSYS says: OPEN-DEFAULT-EXTERNAL-FORMAT.)"
+  (when context
+    (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context))
+          (dialect (ignore-errors (clautolisp.autolisp-reader:find-autolisp-dialect
+                                   (transmit-dialect-keyword bindings)))))
+      (when host
+        (let ((saved (apply-persisted-lispsys-value host dialect)))
+          (let ((explicit (let ((entry (assoc "*AUTOLISP-CAD-LOAD-ENCODING*" bindings
+                                              :test #'string=)))
+                            (and entry (plusp (length (%autolisp-string->plain (second entry)))))))
+                (product (and dialect (ignore-errors
+                                       (clautolisp.autolisp-reader:autolisp-dialect-product dialect)))))
+            (when (and (eq product :autocad) (not explicit))
+              (let* ((version (ignore-errors
+                               (clautolisp.autolisp-reader:autolisp-dialect-version dialect)))
+                     (lispsys (or saved
+                                  (let ((v (ignore-errors
+                                            (clautolisp.autolisp-host:host-getvar host "LISPSYS"))))
+                                    (and (integerp v) v))
+                                  1))
+                     (encoding (%autocad-default-file-encoding version lispsys)))
+                ;; The source / file default only: SYSCODEPAGE is the
+                ;; operating system's code page, which LISPSYS does not change.
+                (set-variable (intern-autolisp-symbol "*AUTOLISP-FILE-ENCODING*")
+                              (make-autolisp-string encoding) context)))))))))
+
+(defun install-runtime-dialect-sysvar-tracking (context dialect-keyword)
+  "Make the host's sysvar table follow `(setq *AUTOLISP-DIALECT* …)'.
+
+This layer is the only one that can see BOTH dialect-dependent sysvar
+overlays — the trust overlay in autolisp-builtins-core and the bricscad
+existence overlay in cador — so it is the one that hands the runtime a
+closure re-applying both. Everything else about the mechanism lives with
+the controller in autolisp-builtins-core/source/secureload.lisp."
+  (when context
+    (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
+      (when host
+        (clautolisp.autolisp-builtins-core:install-sysvar-dialect-controller
+         host dialect-keyword
+         (lambda (host dialect-keyword)
+           (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
+            host dialect-keyword)
+           (when (eq (clautolisp.autolisp-reader:autolisp-dialect-template-name
+                      dialect-keyword)
+                     :bricscad-v26)
+             (clautolisp.cador:apply-bricscad-dialect-sysvars host))
+           ;; The replay starts from a snapshot taken before the overlays:
+           ;; the persisted LISPSYS has to be laid on again, for the new
+           ;; dialect's product.
+           (apply-persisted-lispsys-value
+            host (ignore-errors (clautolisp.autolisp-reader:find-autolisp-dialect
+                                 dialect-keyword)))
+           ;; ... and the product's log preferences.
+           (when (typep host 'clautolisp.cador:cador)
+             (clautolisp.cador:apply-command-log-preferences host))))))))
 
 (defun transmit-dialect-keyword (bindings)
   "Recover the dialect keyword (:strict / :autocad-2026 / :bricscad-v26
@@ -338,11 +556,15 @@ reports BricsCAD's sysvar *set* rather than AutoCAD's. Other dialects are
 left on the AutoCAD-derived catalogue. Reached only by the clautolisp
 engine (alfe's CAD backends never install transmit variables on a local
 context), so this never touches a real CAD's sysvars.
-See issues/open/bricscad-dialect-sysvar-parity.issue."
+See issues/closed/bricscad-dialect-sysvar-parity.issue."
   (when context
     (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
-      (when (and host (eq dialect-keyword :bricscad-v26))
-        (clautolisp.autolisp-mock-host:apply-bricscad-dialect-sysvars host)))))
+      ;; Any spelling of the product -- bricscad-mac, bricscad-linux,
+      ;; bricscad-v25 -- not only the template keyword (2026-10-03).
+      (when (and host
+                 (eq :bricscad-v26 (clautolisp.autolisp-reader:autolisp-dialect-template-name
+                                    dialect-keyword)))
+        (clautolisp.cador:apply-bricscad-dialect-sysvars host)))))
 
 (defun call-with-dynamic-transmit-binding (context name value thunk)
   "Set the *AUTOLISP-…* variable NAME to VALUE for the duration of

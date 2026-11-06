@@ -68,3 +68,51 @@
                              :format-control "nope")))
     ;; A drawing-error from the codec is NOT re-wrapped as a read-error.
     (signals drawing-format-error (read-drawing "/tmp/x.bin" :format :picky))))
+
+;;; --- *default-drawing-format* fallback ---------------------------
+
+(test write-drawing-default-format-special-is-the-last-resort
+  ;; *DEFAULT-DRAWING-FORMAT* supplies a format only when neither an
+  ;; explicit FORMAT, the drawing's own, nor the destination extension
+  ;; determines one — and a recognised extension still wins over it.
+  (let ((*drawing-codecs* (make-hash-table)))
+    (register-drawing-codec
+     :native :writer (lambda (drawing destination &key version)
+                       (declare (ignore drawing destination version))))
+    (register-drawing-codec
+     :dxf-ascii :writer (lambda (drawing destination &key version)
+                          (declare (ignore drawing destination version))))
+    ;; No policy → an undeterminable format still errors.
+    (let ((*default-drawing-format* nil))
+      (signals drawing-format-error (write-drawing (make-drawing) "/tmp/x.bin")))
+    ;; The special is the fallback for an unknown extension.
+    (let ((*default-drawing-format* :native)
+          (d (make-drawing)))
+      (write-drawing d "/tmp/x.bin")
+      (is (eq :native (drawing-format d))))
+    ;; A recognised extension wins over the special.
+    (let ((*default-drawing-format* :native)
+          (d (make-drawing)))
+      (write-drawing d "/tmp/x.dxf")
+      (is (eq :dxf-ascii (drawing-format d))))))
+
+(test write-drawing-default-version-special-records-version
+  ;; *DEFAULT-DRAWING-VERSION* supplies the version the codec is asked for
+  ;; and the drawing records, unless an explicit VERSION or the drawing's
+  ;; own version overrides it.
+  (let ((*drawing-codecs* (make-hash-table))
+        (seen-version :unset))
+    (register-drawing-codec
+     :native :writer (lambda (drawing destination &key version)
+                       (declare (ignore drawing destination))
+                       (setf seen-version version)))
+    (let ((*default-drawing-version* :ac1027)
+          (d (make-drawing :format :native)))
+      (write-drawing d "/tmp/x.native")
+      (is (eq :ac1027 seen-version))
+      (is (eq :ac1027 (drawing-version d))))
+    ;; An explicit version wins over the special.
+    (let ((*default-drawing-version* :ac1027)
+          (d (make-drawing :format :native)))
+      (write-drawing d "/tmp/x.native" :version :ac1032)
+      (is (eq :ac1032 (drawing-version d))))))

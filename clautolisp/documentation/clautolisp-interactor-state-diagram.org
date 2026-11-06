@@ -1,0 +1,141 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: Clautolisp Interactor State Diagram (draft for review)
+#+SUBTITLE: Transitions between the stacked interactors — REPL, ALDO, NAVI, LAVI, INSPECT, SEDIT (and, later, the cadtui console)
+#+AUTHOR: clautolisp project
+#+DATE: 2026-09-13
+#+OPTIONS: toc:2 num:t ^:nil
+#+STARTUP: overview
+#+DOCUMENT_VERSION: 0.1.0 (draft — seeds interactor-state-diagram-revision, pjb to decide)
+
+* 0. Status and scope
+
+Draft seeding =interactor-state-diagram-revision= (forked from
+=interactor-design-revision= point 6): the transitions *between* the
+interactors need one designed state diagram rather than ad-hoc per-command
+rules. This note (a) records the transition semantics *as they actually are
+in the code today* (verified 2026-09-13), (b) resolves =navi-double-quit=
+against that reading, and (c) lists the open design questions that are pjb's
+to decide. It changes no code; it is the artefact the issue asks for, offered
+for revision. It matters now because *cadtui* adds one more interactor to the
+stack, and its =q=/escape semantics should follow whatever rule this note
+settles — "decide before, or the rule is fixed by accident."
+
+Source of record: =clautolisp/autolisp-interactor/source/{interactor,input}.lisp=,
+=clautolisp/autolisp-debug-ui-dumb/source/{dumb-ui,commands}.lisp=,
+=clautolisp/autolisp-sedit/source/interactor.lisp=,
+=clautolisp/autolisp-repl/source/repl.lisp=.
+
+* 1. The mechanism (verified)
+
+There is ONE loop, =interactor-loop= (=interactor.lisp:409=), driving a stack
+=*interactor-stack*= (=:106=, innermost first). Each turn takes the top
+activation, prints its prompt, reads with its reader, and either runs a
+command (searched down the stack, with =NAME CMD …= routing) or hands a sexp
+to its evaluator.
+
+Two ways to leave a level:
+- =pop-interactor= (=:129=) pops the top activation. The loop *returns* as
+  soon as =(< (length *interactor-stack*) floor)= (=:409= body). =floor=
+  defaults to the stack depth at entry, but a nested entry may pass a smaller
+  floor so inner interactors can pop back to an outer one *within the same
+  loop*.
+- =interactor-return= (=:404=) throws =%interactor-loop= — the directive path
+  (continue/step/abort), used when leaving is a *resumption of the computation*
+  that entered the loop, not a pop.
+
+Nested loops are entered only for (a) a debugger stop (=ui-await-command=,
+=dumb-ui.lisp:446=, floor = the stop's ALDO depth) and (b) a mode entered
+mid-evaluation (=%interactor-mode-loop=, =dumb-ui.lisp:1801=). The latter
+*synthesises a base ALDO activation when none is active* (a mode entered from
+the REPL, the sedit hook, =ui-run-command=) so the debugger vocabulary and
+=aldo …= routing reach down, and sets =floor= to the full new depth.
+
+* 2. The states and transitions (today)
+
+#+begin_src mermaid
+stateDiagram-v2
+    [*] --> REPL
+    REPL --> ALDO: error / (clal-break) / breakpoint hit
+    ALDO --> REPL: c continue · i into · n next · o out · a advance · r FORM return · q quit(abort)
+    ALDO --> NAVI: nav  (auto-entered at a stop when navigator = sexp)
+    ALDO --> LAVI: lavi
+    ALDO --> INSPECT: inspect
+    ALDO --> SEDIT: (sedit-edit of a definition)
+    NAVI --> ALDO: q  (browsing, no stop — pops one level)
+    NAVI --> REPL: q + confirm  (at a stop: "really abort?" -> aldo quit, cascades out)
+    NAVI --> SEDIT: edit  (edit the form under point)
+    LAVI --> ALDO: q
+    INSPECT --> ALDO: q
+    SEDIT --> ALDO: q  (at a stop: confirm -> aldo quit; else pop, honouring the on-quit save guard)
+    REPL --> SEDIT: (clal-sedit …) from the toplevel
+    SEDIT --> REPL: q  (from a REPL-entered sedit)
+#+end_src
+
+Verified quit/return semantics:
+- *Leaving ALDO is a directive, not a pop (rule T4).* ALDO =q= → =cmd-abort=
+  → =:abort= (=autolisp-debug-ui/source/session.lisp:74=), carried out of the
+  loop by the owner's =ON-RESULT= (=%directive-on-result=, =dumb-ui.lisp:279=)
+  via =interactor-return=. The resume verbs (c/i/n/o/a/r) are the same
+  asymmetry.
+- *=q= at a stop, in NAVI or SEDIT, resolves the stop.* Both delegate to
+  =run-command-line "aldo quit"= after a =really abort? (y/n)= confirm
+  (=commands.lisp:360-377=; =autolisp-sedit/source/interactor.lisp:374-396=).
+  One =q= (confirmed) leaves everything.
+- *=q= while browsing (no stop) pops one level.* Because =%interactor-mode-loop=
+  set =floor= to include the synthetic base ALDO, popping NAVI drops the depth
+  below floor and the nested loop returns in a single =q= — it does not strand
+  the user at a second =DBG>=.
+
+* 3. navi-double-quit — resolved by the current code
+
+=navi-double-quit= (DRAFT) reports that one =q= in NAVI returned only to
+=DBG>= and a second =q= was needed to reach =_$=. Its trace is *at a real
+stop* (=(CLAL-SEDIT 'FACT)= signalled, the debugger stopped, the navigator
+opened). Against today's code:
+- At a stop, NAVI =q= takes the confirm→=aldo quit=→=:abort= branch, which
+  cascades out of the whole nested loop in one =q= (plus the y/n). No second
+  =q=.
+- Browsing without a stop, NAVI =q= pops below =floor= and the mode loop
+  returns in one =q= (§2).
+
+So the double-quit the ticket shows *no longer reproduces*: the trace predates
+the confirm-then-abort code (SEDIT/NAVI gained it with the =*default-on-quit-policy*=
+work) and the floor-based single-=q= return. **Recommendation: close
+=navi-double-quit= as resolved-by-construction**, folding its one real design
+question — "should a single =q= ever collapse *several* stacked interactors at
+once (whole-stack quit), or always exactly one level?" — into the open
+questions below, where it belongs to this diagram rather than to a one-off
+NAVI patch. (pjb's call, since the ticket is his DRAFT; left open pending §4.)
+
+A *separate* bug surfaced in the same trace and is NOT about quitting: the
+file CLAL-SEDIT opens is spelled =".../\"~/src/public/autolisp/fact.lsp\""= —
+the surrounding quotes are kept and =~= is not expanded (=merge-pathnames=
+does not expand =~=). Filed as its own ticket
+(=clal-sedit-recall-filename-quotes-and-tilde=), out of scope here.
+
+* 4. Open design questions (pjb to decide)
+
+The current transitions are consistent but were reached command-by-command.
+The revision must settle, as one diagram:
+
+1. *Whole-stack vs per-level =q=.* Today: exactly one level per =q= (except a
+   stop's confirm→abort, which is a directive). Alternative: a single =q=
+   leaves the whole current "activity". Whichever is chosen must be uniform
+   across NAVI/LAVI/INSPECT/SEDIT and the future cadtui console.
+2. *Install-on-return (epic §7).* Returning from SEDIT to NAVI with the edited
+   definition *installed* has no dedicated edge — the on-quit guard covers
+   only the SAVE half. Add an =install=/=done= command, or define the plain
+   pop edge to install.
+3. *navi ↔ lavi swap (D4).* Specified as pop+push within the same loop but not
+   yet implemented as commands. Add =lavi= from NAVI and =nav= from LAVI as
+   swap edges.
+4. *Stacking-legality matrix.* Which modes may stack over which (SEDIT over
+   INSPECT? INSPECT over SEDIT? NAVI over SEDIT?), and what =q= means at each
+   node — the same question (1) raises, made total over the pairs.
+5. *Where cadtui sits.* The cadtui console is another interactor with its own
+   reader (line classification) and its own escape char (=`=`= for
+   meta-commands). Its =q=/escape and its ability to descend into aldo/sedit
+   and return must be one edge-set in this diagram, not a new mechanism.
+
+The diagram in §2 is the current state, offered as the base to edit; §4 items
+are the deltas to decide before cadtui.

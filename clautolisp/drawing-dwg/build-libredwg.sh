@@ -43,6 +43,87 @@ if [ -z "$compiler_path" ]; then
   echo "error: C compiler '$compiler' was not found" >&2
   exit 1
 fi
+
+# NORMALISE TO THE POSIX FORM UNDER MSYS2, and do it HERE -- at the one
+# point where a Windows-form path can enter -- rather than at each use.
+#
+# `command -v' returns what it was given. Called with a bare name it
+# answers /mingw64/bin/gcc; called with CC=C:/msys64/ucrt64/bin/gcc, as
+# the SCHMS+ CI does, it answers that Windows path verbatim, drive letter
+# and all. Two separate things then go wrong, and only the second was
+# reported (build-tool-paths-unquoted.issue):
+#
+#  1. the UCRT64/Clang rejection below is written as `/ucrt64/*', a POSIX
+#     glob. It cannot match `C:/msys64/ucrt64/bin/gcc', so a Windows-form
+#     path walks straight past the check that exists to stop exactly this
+#     compiler -- the build then fails later, and about something else;
+#  2. the drive letter's colon reaches cmake, which reported
+#     CMAKE_C_COMPILER as `C'.
+#
+# On (2) the issue blamed cmake for treating `:' as a list separator in a
+# -D argument. That is NOT reproducible: cmake 3.31 passes
+# -DFOO=C:/msys64/ucrt64/bin/gcc through intact, typed or untyped. The
+# splitting is more likely MSYS2's own argument conversion, which treats a
+# value containing a colon as a path LIST. Either way the exposure is the
+# drive letter, so removing it at the source settles both -- and unlike
+# -DCMAKE_C_COMPILER:FILEPATH=, it also fixes (1), which no amount of
+# cmake typing would.
+#
+# A POSIX path is what the rest of this script already assumes, and MSYS2
+# converts it back for native cmake unambiguously, because with no colon
+# there is no list to mistake it for.
+case "$host_uname" in
+  MINGW*|MSYS*|CYGWIN*)
+    case "$compiler_path" in
+      ?:[/\\]*)
+        if command -v cygpath >/dev/null 2>&1; then
+          compiler_posix="$(cygpath -u "$compiler_path")"
+          echo "C compiler path normalised: $compiler_path -> $compiler_posix"
+          compiler_path="$compiler_posix"
+        else
+          echo "warning: '$compiler_path' is a Windows-form path and cygpath is" >&2
+          echo "         absent, so it cannot be normalised. The UCRT64 check" >&2
+          echo "         below will not recognise it." >&2
+        fi ;;
+    esac ;;
+esac
+# ... AND GIVE IT THE .exe A NATIVE PROGRAM NEEDS TO SEE.
+#
+# MSYS2's POSIX layer opens `gcc' when only `gcc.exe' exists. So
+# `command -v gcc' answers /mingw64/bin/gcc, `[ -x ]' on it is true, and
+# `"$compiler_path" -dumpmachine' below runs perfectly well -- every check
+# in this script passes.
+#
+# cmake is a NATIVE program and does no such fallback. It receives the
+# argument converted to <msys-root>/mingw64/bin/gcc, tests EXISTS on it,
+# finds nothing, and reports
+#
+#     The CMAKE_C_COMPILER: D:/a/_temp/msys64/mingw64/bin/gcc
+#     is not a full path to an existing compiler tool.
+#
+# AFTER having printed "The C compiler identification is GNU 16.1.0" two
+# lines earlier, which is what makes the message so hard to read: it did
+# find the compiler, it just cannot name the file.
+#
+# Measured on GitHub's windows-2025 runner, 2026-08-23, on a COLD build
+# directory. It goes unnoticed on the GitLab Windows runner because that
+# one cleans with `-ffd' rather than `-ffdx', so a configured CMake cache
+# survives between pipelines and cmake is never asked the question again.
+#
+# This is the same .exe trap that once shipped Windows release binaries
+# without their extension (windows-release-binaries-lose-exe.issue): a
+# name that MSYS2 resolves and Windows does not.
+case "$host_uname" in
+  MINGW*|MSYS*|CYGWIN*)
+    case "$compiler_path" in
+      *.exe) ;;
+      *) if [ -e "$compiler_path.exe" ]; then
+           echo "C compiler path completed: $compiler_path -> $compiler_path.exe"
+           compiler_path="$compiler_path.exe"
+         fi ;;
+    esac ;;
+esac
+
 compiler_dir="$(cd "$(dirname "$compiler_path")" && pwd)"
 PATH="$compiler_dir:$PATH"
 export PATH
@@ -78,6 +159,69 @@ fi
 # libredwg's own submodule (jsmn).
 git -C "$lr" submodule update --init
 
+# GIVE LIBREDWG ITS OWN VERSION (libredwg-version-is-superproject-describe).
+#
+# LibreDWG's CMakeLists takes PACKAGE_VERSION from a `.version' file, else
+# from `git describe', and BOTH are evaluated in cmake's WORKING DIRECTORY,
+# not in the source directory. This script used to run cmake from wherever
+# make ran it -- inside the CLAUTOLISP checkout -- so the library we shipped
+# called itself "LibreDWG release-2.2.1-781-g9fae492b", and config.h, which
+# every object includes, changed on every clautolisp commit: a full rebuild
+# each time, and no build cache could ever hit.
+#
+# The version is now RECORDED, not discovered: third-party/libredwg.release
+# names the stable release the submodule is pinned to and the commit that
+# release tag names. It is written to the submodule's .version (gitignored
+# upstream; no trailing newline -- file(READ) keeps one), and cmake runs from
+# inside the submodule (below), so both of upstream's branches see LibreDWG.
+# git describe is NOT used to produce it: CI fetches the submodule shallow,
+# without tags, where describe answers a bare commit id -- the version would
+# then depend on how the checkout was made.
+#
+# The cross-checks FAIL rather than warn. A wrong version string in a
+# shipped library is the very bug this fixes; a build stop whose message
+# names the one-line fix is cheaper than a mislabelled release. Each check
+# runs only where its evidence exists: a source tarball has no .git in the
+# submodule, and a shallow clone has no tags -- then the file is trusted.
+release_file="$root/third-party/libredwg.release"
+if [ ! -f "$release_file" ]; then
+  echo "error: $release_file is missing; it names the LibreDWG release we build" >&2
+  exit 1
+fi
+lr_version="$(sed -n 's/^version[ 	][ 	]*\([^ 	]*\).*$/\1/p' "$release_file" | head -n 1)"
+lr_commit="$(sed -n 's/^commit[ 	][ 	]*\([^ 	]*\).*$/\1/p' "$release_file" | head -n 1)"
+if [ -z "$lr_version" ] || [ -z "$lr_commit" ]; then
+  echo "error: $release_file needs a 'version <tag>' and a 'commit <sha>' line" >&2
+  exit 1
+fi
+if [ -e "$lr/.git" ]; then
+  lr_head="$(git -C "$lr" rev-parse HEAD)"
+  if [ "$lr_head" != "$lr_commit" ]; then
+    echo "error: the libredwg submodule is at $lr_head," >&2
+    echo "       but $release_file records LibreDWG $lr_version at $lr_commit." >&2
+    echo "       Either 'git submodule update' (a stale checkout), or, when moving to a" >&2
+    echo "       new stable release, update that file with the submodule (AGENTS.md," >&2
+    echo "       \"CI -- following LibreDWG stable releases\")." >&2
+    exit 1
+  fi
+  lr_tags="$(git -C "$lr" tag --points-at HEAD 2>/dev/null || true)"
+  if [ -n "$lr_tags" ]; then
+    if ! printf '%s\n' "$lr_tags" | grep -qxF "$lr_version"; then
+      echo "error: $release_file records version $lr_version, but commit $lr_commit" >&2
+      echo "       is tagged: $(printf '%s' "$lr_tags" | tr '\n' ' ')" >&2
+      exit 1
+    fi
+    echo "LibreDWG $lr_version: submodule commit and tag agree with $release_file"
+  else
+    echo "LibreDWG $lr_version: submodule commit agrees with $release_file (no tags fetched to cross-check the name)"
+  fi
+else
+  echo "LibreDWG $lr_version: no git metadata in the submodule; trusting $release_file"
+fi
+if [ "$(cat "$lr/.version" 2>/dev/null || true)" != "$lr_version" ]; then
+  printf '%s' "$lr_version" > "$lr/.version"
+fi
+
 # GCC can print its version while cc1.exe still fails to start when a MinGW
 # runtime DLL is absent from PATH.  Probe the actual compilation pipeline so
 # the failure is actionable instead of appearing later as silent Error 1s.
@@ -111,12 +255,66 @@ fi
 #        job-log cap during the build — hiding any real downstream error.
 #  - -Wno-unused-command-line-argument: clang rejects -fstack-clash-protection.
 #  - -D_DARWIN_C_SOURCE: expose memmem() in <string.h> on macOS (no-op elsewhere).
-cmake -S "$lr" -B "$build" \
-      -DCMAKE_C_COMPILER="$compiler_path" \
-      -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DDISABLE_WERROR=ON \
-      -DCMAKE_C_FLAGS="-w -Wno-unused-command-line-argument -D_DARWIN_C_SOURCE"
-cmake --build "$build" --target redwg \
-      -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+#  - the compiler is echoed exactly as cmake receives it: this argument
+#    has been mis-delivered twice, and a run that prints it diagnoses
+#    itself instead of costing another round trip to a Windows machine.
+# libredwg captures LIBREDWG_SO_VERSION via execute_process(perl …) WITHOUT
+# OUTPUT_STRIP_TRAILING_WHITESPACE, so perl's trailing newline is substituted
+# into the generated src/config.h ( #define LIBREDWG_SO_VERSION "0:14:0<NL>" ),
+# which gcc rejects as "missing terminating character". It only bites where perl
+# exists (GitHub's MSYS2 has it; the Linux CI image does not). Add the strip to
+# the vendored CMakeLists (idempotent; portable sed — no -i, works on BSD too).
+if [ -f "$lr/CMakeLists.txt" ]; then
+  sed 's/OUTPUT_VARIABLE LIBREDWG_SO_VERSION)/OUTPUT_VARIABLE LIBREDWG_SO_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)/' \
+      "$lr/CMakeLists.txt" > "$lr/CMakeLists.txt.tmp.$$" \
+    && mv "$lr/CMakeLists.txt.tmp.$$" "$lr/CMakeLists.txt"
+fi
+
+# The value handed to cmake. On MSYS2/MinGW pass the BASENAME, not the absolute
+# POSIX path: MSYS2 converts a path-shaped argument to Windows form
+# (/mingw64/bin/gcc -> C:/msys64/mingw64/bin/gcc) at the process boundary, and
+# cmake >= 4 then rejects it as "not a full path to an existing compiler tool"
+# (it lacks the .exe and cmake does not re-resolve a full path). The compiler's
+# own directory is already at the FRONT of PATH (above), so the basename
+# resolves to exactly this gcc — the pinning the absolute path intended, with no
+# drive-letter colon to be mistaken for a list separator. Older self-hosted
+# cmake tolerated the converted path; GitHub's cmake 4.x does not.
+cmake_cc="$compiler_path"
+case "$host_uname" in
+  MINGW*|MSYS*|CYGWIN*) cmake_cc="$(basename "$compiler_path")" ;;
+esac
+echo "cmake -DCMAKE_C_COMPILER=[$cmake_cc]"
+# From INSIDE the submodule: upstream resolves `.version' (and, without it,
+# runs git describe) relative to cmake's working directory -- see above.
+( cd "$lr" &&
+  cmake -S . -B "$build" \
+        -DCMAKE_C_COMPILER="$cmake_cc" \
+        -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DDISABLE_WERROR=ON \
+        -DCMAKE_C_FLAGS="-w -Wno-unused-command-line-argument -D_DARWIN_C_SOURCE" )
+if ! grep -qF "#define PACKAGE_VERSION \"$lr_version\"" "$build/src/config.h"; then
+  echo "error: $build/src/config.h does not carry PACKAGE_VERSION \"$lr_version\":" >&2
+  grep 'PACKAGE_VERSION' "$build/src/config.h" >&2 || true
+  exit 1
+fi
+# Build parallelism is capped on Windows, and that is about MEMORY, not
+# speed. libredwg's generated sources (in_dxf.c, decode.c, encode2.c) are
+# enormous, and one cc1 on them can take well over a gigabyte; -j<ncores>
+# on a laptop runs that many at once. On the release-1.8.41 tag it exhausted
+# the Windows box -- four files failed within the same second with
+# "cc1.exe: out of memory allocating ... bytes", which is what a parallel
+# build looks like when it runs out, not a compiler bug.
+#
+# LIBREDWG_BUILD_JOBS overrides both defaults, for a machine with more (or
+# less) headroom than assumed.
+jobs=${LIBREDWG_BUILD_JOBS:-}
+if [ -z "$jobs" ]; then
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) jobs=2 ;;
+        *) jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4) ;;
+    esac
+fi
+echo "building libredwg with -j$jobs"
+cmake --build "$build" --target redwg -j"$jobs"
 
 # Compile the shim, linked against libredwg. Two rpaths so the SAME
 # binary works both in the dev tree (libredwg in $build) and when

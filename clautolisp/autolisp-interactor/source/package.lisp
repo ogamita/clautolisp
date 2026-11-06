@@ -52,6 +52,11 @@ implementations, not here.")
    #:read-line-from-input-context #:read-sexp-from-input-context
    #:unread-line-from-input-context
    #:comma-command-read #:command-read
+   ;; shell escape (bang.issue): both halves are hooks, because this
+   ;; system is dependency-free — running a subprocess and reading the
+   ;; configuration both live above it.
+   #:*shell-escape-character-hook* #:*shell-escape-runner*
+   #:shell-escape-character
    #:input-command #:make-input-command #:input-command-p
    #:input-command-raw #:input-command-tokens
    #:input-command-invocation #:input-command-arguments
@@ -66,9 +71,14 @@ implementations, not here.")
    #:interactor-documentation
    #:activation #:make-activation #:activation-p
    #:activation-interactor #:activation-state
+   #:activation-name #:activation-label #:uniquify-instance-name
    #:*command-interactor* #:*command-activation*
    #:*command-line* #:*command-arguments-text*
    #:*interactor-stack*
+   ;; True while the loop writes a prompt: the dribble omits prompt text
+   ;; but must keep unterminated real output, and only the loop knows
+   ;; which is which (dribble-eof-prompt-recorded.issue).
+   #:*writing-prompt*
    #:push-interactor #:pop-interactor
    #:find-interactor #:find-activation
    ;; the registry: registration + listing, never routing (D7/D8)
@@ -79,4 +89,18 @@ implementations, not here.")
    #:find-interactor-command #:+system-command-word+
    #:call-command #:find-and-run-command #:run-command-line
    #:interactor-loop #:interactor-return
-   #:define-interactor #:define-command #:define-user-command))
+   #:define-interactor #:define-command #:define-user-command
+   ;; interactor templates (windows-and-interactor-templates.issue): a
+   ;; window-instantiable interactor kind + the context its constructor gets
+   #:template-context #:make-template-context #:template-context-p
+   #:template-context-window #:template-context-frame #:template-context-stack
+   #:template-context-target
+   #:template-context-save-continuation #:template-context-quit-continuation
+   #:interactor-template #:interactor-template-p #:make-interactor-template
+   #:interactor-template-name #:interactor-template-display-name
+   #:interactor-template-description #:interactor-template-interactor
+   #:interactor-template-constructor #:interactor-template-config-name
+   #:*interactor-templates* #:register-interactor-template
+   #:find-interactor-template #:list-interactor-templates
+   #:interactor-template-names #:instantiate-interactor-template
+   #:define-interactor-template))

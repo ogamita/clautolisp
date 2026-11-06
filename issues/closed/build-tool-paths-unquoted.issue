@@ -1,0 +1,588 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: build-tool-paths-unquoted — variables holding a program or file path are not quoted
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: schms-ci-and-p3
+
+-*- coding:utf-8 -*-
+
+build-tool-paths-unquoted — variables holding a program or file path are not quoted
+====================================================================================
+
+Reported from: the SCHMS+ CI on a Windows runner (fabrik, project
+dmoe-pop/epure/es/schms), building clautolisp from source in-job.
+2026-08-06.
+
+Symptom
+-------
+
+    $ make build-programs
+    /usr/bin/sh: line 1: C:/Program: No such file or directory
+    make: *** [Makefile:194: build-programs] Error 127
+
+`sh` split the command on the space in `C:/Program Files/Steel Bank
+Common Lisp/sbcl` and went looking for an executable literally named
+`C:/Program`. Exit 127 is "command not found", not a build error.
+
+Windows is only where it surfaced first, because every stock installer
+puts its tool under `C:\Program Files`. **This is not a Windows issue.**
+A POSIX path may contain a space just as well — a checkout under
+`~/Mes projets/`, a macOS `/Volumes/Disque externe/`, a CI workspace
+named after a branch — and any variable holding a program or a file path
+can be set to one by the caller. `SBCL` is not special: it is documented
+as overridable, so `make SBCL="/opt/mes outils/sbcl"` is a legitimate
+invocation that must work.
+
+The rule is therefore general, and has nothing to do with the platform:
+**every variable that holds a program or a file path must be quoted at
+every point of use, in Makefiles and in scripts alike.**
+
+Cause
+-----
+
+The failure above comes from **`$(MAKE)`**, not from `$(SBCL)`. Line 194
+is `build-programs`:
+
+    Makefile:194
+        @for l in $(RELEASE_LISPS); do $(MAKE) build-$$l || exit $$?; done
+
+`make` sets `MAKE` to its own invocation path. On the reporting machine
+that is `C:\Program Files\make-4.4.1-with-guile-w32\bin\make.exe`, so
+`sh` sees `C:/Program` in command position and reports it missing. Note
+that `SBCL ?= sbcl` is the default in every sub-Makefile, so `$(SBCL)`
+was never the spaced value here — an earlier version of this issue said
+otherwise and was wrong.
+
+The same defect nevertheless applies to the tool variables, and will bite
+as soon as a caller uses the documented override:
+
+    autolisp-front-end/Makefile:240
+        $(SBCL) --noinform --no-userinit --non-interactive \
+
+    autolisp-front-end/Makefile:253
+        $(CCL) --no-init --quiet \
+
+With `SBCL` left at its default `sbcl`, found on PATH, this works. With
+`make SBCL="/opt/mes outils/sbcl"` it word-splits exactly like `$(MAKE)`
+does today.
+
+`$(MAKE)` deserves its own mention because it is set by make itself, not
+by the caller: no configuration avoids it, and every recursive recipe is
+affected.
+
+Note that the *diagnostics* around those lines already quote correctly:
+
+    autolisp-front-end/Makefile:157
+        echo "Error: sbcl not found in PATH (looked for '$(SBCL)')"; \
+
+so the fix is to extend to the invocations the care already taken in the
+messages.
+
+RÉOUVERTE — une seconde forme survit au correctif
+--------------------------------------------------
+
+Le correctif de quotage a bien été livré (clautolisp 1.8.27, « quote tool
+paths ») : les six Makefile sont traités, `"$(SBCL)"`, `"$(MAKE)"` et
+`command -v "$(SBCL)"` sont désormais protégés. Ce volet est clos.
+
+Mais le build Windows de SCHMS+ échoue toujours, sur une **seconde forme
+du même défaut, qui survit à un quotage shell correct** :
+
+    $ make build-libraries
+    CMake Error at CMakeLists.txt:2 (project):
+      The CMAKE_C_COMPILER:
+
+        C
+
+      is not a full path and was not found in the PATH.
+
+`C` est `C:/msys64/ucrt64/bin/gcc` tronqué au premier deux-points. Le
+site est `clautolisp/drawing-dwg/build-libredwg.sh:115`, inchangé :
+
+    compiler_path="$(command -v "$compiler" 2>/dev/null || true)"
+    ...
+    cmake -S "$lr" -B "$build" \
+          -DCMAKE_C_COMPILER="$compiler_path" \
+
+Les guillemets shell sont présents et corrects. Ce qui découpe la valeur,
+c'est **CMake**, pour qui `:` est le séparateur de liste dans un argument
+`-D`. Aucun quotage shell n'atteint cela.
+
+Deux correctifs, l'un ou l'autre :
+
+- typer la valeur, pour que CMake cesse d'y voir une liste :
+  `-DCMAKE_C_COMPILER:FILEPATH="$compiler_path"` ;
+- ou lui donner un chemin sans lettre de lecteur,
+  `cygpath -u "$compiler_path"` — le script calcule et affiche déjà cette
+  forme comme « compiler runtime directory » (`/c/msys64/ucrt64/bin`),
+  elle ne coûte rien.
+
+La règle générale énoncée plus haut gagne donc un corollaire : protéger
+un chemin du SHELL ne suffit pas, il doit aussi survivre à ce que l'outil
+destinataire en fait. Les deux-points dans un `-D` de CMake, les
+points-virgules de ses listes, les virgules de certaines expressions de
+générateur découpent toutes des valeurs que le shell avait livrées
+intactes.
+
+Voir aussi `compiler_target` quelques lignes plus bas : il vient de
+`"$compiler_path" -dumpmachine`, donc il hérite du même chemin et de la
+même exposition.
+
+Contrairement au cas `$(MAKE)`, celui-ci n'a **aucun contournement côté
+appelant** : le deux-points naît à l'intérieur du script, entre le `CC`
+que l'appelant pose et l'appel à `cmake`.
+
+Chemin parcouru pour y arriver
+------------------------------
+
+Consigné parce qu'il a coûté plusieurs itérations, et que deux détails
+du script y ont contribué.
+
+Le build échouait d'abord sur « the native MSYS2 MINGW64 compiler is not
+installed » — message qui nomme ce que le script *cherche*, non ce qui
+est installé. La machine a UCRT64, pas MINGW64 : `command -v gcc` y
+répond `/ucrt64/bin/gcc`. Poser `MSYSTEM=MINGW64` ne changeait rien, le
+script ne lisant pas cette variable : il teste `-x /mingw64/bin/gcc` puis
+se rabat sur `$CC` (ligne 39). C'est en posant `CC=/ucrt64/bin/gcc` que
+la troncature CMake est apparue.
+
+D'où deux suggestions annexes, peu coûteuses :
+
+- que la branche MINGW64 considère les sous-systèmes frères (UCRT64,
+  CLANG64) plutôt que le seul `/mingw64/bin/gcc`, ou qu'elle dise
+  lesquels ont été essayés ;
+- que le message nomme ce qui est présent, et pas seulement ce qui
+  manque.
+
+Extent
+------
+
+Two counts, because the honest figure depends on a judgement no script
+can make.
+
+The **confirmed lower bound** — recipe lines interpolating a known tool
+variable (`SBCL`, `CCL`, `LISP`, `CLAUTOLISP`, `ALFE`, `PYTHON`, `EMACS`,
+`PANDOC`) unquoted:
+
+    autolisp-front-end/Makefile   4      autolisp-spec/Makefile    1
+    clautolisp/Makefile           4      autolisp-test/Makefile    1
+    autolisp-benchmark/Makefile   1      documentation/Makefile    1
+
+The **upper bound** — every recipe line with an unquoted `$(VAR)`
+interpolation, all variables, all Makefiles:
+
+    Makefile                     45 / 210 recipe lines
+    clautolisp/Makefile          79 / 266
+    autolisp-test/Makefile       38 / 111
+    autolisp-front-end/Makefile  35 / 173
+    autolisp-benchmark/Makefile  34 /  65
+    autolisp-spec/Makefile       34 /  78
+    documentation/Makefile        3 /   9
+    ────────────────────────────────────
+    total                       268
+
+Most of those 268 are harmless — `$(MAKE)`, a list in a `for`, a numeric
+flag. But the set that *must* be quoted is not a fixed list of names: it
+is every variable that can hold a path, which includes `PREFIX`,
+`DESTDIR`, output files, source files, and directories passed to
+`$(MAKE) -C`. Deciding which is which is a reading task, not a grep.
+
+The three scripts that interpolate the same variables want the same
+review:
+
+    scripts/run-pathname-probe.sh
+    scripts/run-encoding-experiment.sh
+    scripts/verify-bricscad-automation.sh
+
+Worth particular attention, because the failure is silent rather than
+loud: `command -v $(SBCL)` in the HAVE_* probes
+(autolisp-front-end/Makefile:58-59). With a spaced path it does not
+error — it answers about the wrong thing, and the build proceeds on a
+false premise.
+
+Requested
+---------
+
+Quote **every** variable holding a program or a file path, at every point
+of use, in Makefiles and in scripts: `"$(SBCL)"`, `"$(CCL)"`,
+`"$(CLAUTOLISP)"`, `"$(ALFE)"`, `"$(PREFIX)"`, `"$(DESTDIR)"`, target and
+prerequisite paths, directories given to `$(MAKE) -C`. The `command -v`
+probes too.
+
+This is a correctness rule, not a portability accommodation: it makes the
+documented overrides actually usable. A user who sets
+`make SBCL="/opt/mes outils/sbcl"` is doing nothing wrong.
+
+Note that the diagnostics already quote correctly — for instance
+autolisp-front-end/Makefile:157, `looked for '$(SBCL)'`. The fix extends
+to the invocations the care already taken in the messages.
+
+Worth doing rather than working around. The caller-side workaround is to
+set `SBCL=sbcl` and rely on PATH, which works, but it hides the defect
+and it takes away an override the build documents as available.
+
+Suggested test
+--------------
+
+A build with a tool path containing a space — on Linux, no Windows
+needed, which is the point:
+
+    mkdir -p "/tmp/faux outils"
+    ln -s "$(command -v sbcl)" "/tmp/faux outils/sbcl"
+    make build-programs SBCL="/tmp/faux outils/sbcl"
+
+Worth extending to a checkout whose own path contains a space, which
+exercises the target and prerequisite side rather than only the tool
+side.
+
+Why it matters
+--------------
+
+It is what currently stops `build:clautolisp:windows` from succeeding in
+the SCHMS+ pipeline, and with it the whole Windows test lane — the CAD
+tests included, since they need alfe on the machine that has the CAD.
+
+The Linux lane is unaffected *by chance*: `sbcl` happens to be on PATH
+there under a path without spaces. Move the CI workspace under a
+directory with a space, or let anyone use the documented `SBCL=` override
+with such a path, and the same failure appears on Linux.
+
+
+RÉSOLU 2026-08-10 (clautolisp 1.8.27)
+=====================================
+
+105 sites quotés dans les sept Makefiles, plus les quatre sondes
+`command -v`. Portée : toute interpolation en ligne de recette des
+variables d'outil (SBCL, CCL, LISP, CLAUTOLISP, ALFE, PYTHON, EMACS,
+PANDOC) **et de $(MAKE)**, qui est la cause réelle du rapport d'origine
+(`C:/Program Files/make-4.4.1-with-guile-w32/bin/make.exe`).
+
+    Makefile                     54    autolisp-test/Makefile       9
+    clautolisp/Makefile          16    autolisp-spec/Makefile       7
+    autolisp-front-end/Makefile  14    autolisp-benchmark/Makefile  5
+
+Les occurrences déjà protégées ont été laissées telles quelles : le
+correctif saute celles qui sont directement entre guillemets et celles
+qui se trouvent à l'intérieur d'une chaîne déjà ouverte (les
+diagnostics du type `looked for '$(SBCL)'`, que le ticket signalait
+comme déjà corrects).
+
+Les trois scripts nommés par le ticket — run-pathname-probe.sh,
+run-encoding-experiment.sh, verify-bricscad-automation.sh — se sont
+avérés DÉJÀ propres à la relecture : la seule interpolation non nue est
+dans une chaîne diagnostique déjà entre guillemets. Aucune modification.
+
+Preuve avant/après, avec un outil sous un chemin espacé
+(`/…/mes outils/sbcl`) :
+
+    avant :  HAVE_SBCL :=            <- vide
+    après :  HAVE_SBCL := yes
+
+C'est exactement le mode d'échec silencieux que le ticket décrivait pour
+`command -v` : pas d'erreur, une mauvaise réponse, et la build continue
+sur une fausse prémisse. Suite complète après correction : 6321 checks,
+0 échec.
+
+NON FAIT, délibérément : la « borne haute » de 268 interpolations. Le
+ticket la qualifie lui-même de « reading task, not a grep », et la
+majorité est inoffensive ($(MAKE) en position d'argument, listes de
+`for`, drapeaux numériques). Quoter PREFIX/DESTDIR au cas par cas
+demande de distinguer chemin et liste, ce qui mérite sa propre passe
+relue plutôt qu'une réécriture automatique de masse.
+
+
+Encore ouverte au 2026-08-10 : le volet CMake n'est pas corrigé
+===============================================================
+
+Le fichier était marqué DONE alors qu'il contient une section
+« RÉOUVERTE » non traitée. Le volet quotage est bien clos (1.8.27) ; le
+volet CMake ne l'est pas, et il bloque toujours
+`build:clautolisp:windows`. Statut remis à OPEN.
+
+Job 476930 (pipeline 81948), identique au précédent :
+
+    C compiler: C:/msys64/ucrt64/bin/gcc
+    -- The C compiler identification is unknown
+    CMake Error at CMakeLists.txt:2 (project):
+      The CMAKE_C_COMPILER:
+        C
+      is not a full path and was not found in the PATH.
+
+Deux enseignements nouveaux de ce run.
+
+1. Aucun contournement par la forme de CC — confirmé par l'essai
+--------------------------------------------------------------
+
+L'appelant a posé `CC=/ucrt64/bin/gcc`, en forme POSIX, vérifié dans le
+job (« CC=/ucrt64/bin/gcc » au dump d'environnement). Le script a
+pourtant reçu la forme Windows. La cause est en aval de l'appelant : le
+`make` employé est un make **Windows natif**
+(`C:/Program Files/make-4.4.1-with-guile-w32/bin/make`), et la couche
+MSYS convertit les variables d'environnement en franchissant la
+frontière vers un programme natif. Un appelant sous MSYS ne peut donc
+pas garantir la forme de `CC` telle que `build-libredwg.sh` la lira.
+
+Cela confirme la phrase déjà présente plus haut — « aucun contournement
+côté appelant » — en la fondant sur une mesure plutôt que sur un
+raisonnement.
+
+2. La troncature masquait un second refus
+------------------------------------------
+
+Le garde-fou des lignes 64-68 :
+
+    case "$compiler_path" in
+      /ucrt64/*|/clang64/*|/clangarm64/*)
+        echo "error: use the MINGW64/MSVCRT compiler for the native Windows codec"
+
+n'a pas tiré, alors que le compilateur EST celui d'UCRT64 : la valeur
+reçue était `C:/msys64/ucrt64/...`, qui ne filtre pas sur `/ucrt64/*`.
+Le build a donc dépassé un refus qui le visait, pour échouer plus loin
+sur la troncature.
+
+C'est un défaut à part entière, indépendant du premier : **le test de
+sous-système ne reconnaît que la forme POSIX du chemin.** Sur toute
+machine où `CC` arrive en forme Windows — c'est-à-dire dès qu'un make
+natif est dans la chaîne — la protection contre UCRT64/CLANG64 est
+inopérante et silencieuse. Un build ainsi passé produirait un
+`clal_dwg.dll` important des jeux d'API UCRT privés, exactement ce que
+le garde-fou entend interdire ; la vérification `objdump` de la ligne
+149 est le dernier filet, et elle n'intervient qu'après compilation.
+
+Correctif suggéré : normaliser `compiler_path` une fois, tôt, avant tout
+test — `cygpath -u` sous MSYS — puis convertir explicitement à l'endroit
+où CMake l'exige. Les tests portent alors tous sur une forme unique et
+connue, au lieu de dépendre de celle que l'appelant a bien voulu fournir.
+
+CORRECTION DE CAUSE — 2026-08-14 (pjb)
+=======================================
+
+La cause avancée ci-dessus est FAUSSE, et il vaut mieux le dire ici que
+laisser le prochain lecteur y perdre du temps. pjb, depuis Windows :
+
+  « Pour cmake, il y a eu des corrections sur windows. Ce n'est pas une
+    troncation de c:/ qui est assez bien gere par cmake, mais il y avait
+    un probleme pour retrouver CC parmis les differents environnemnt
+    windows. »
+
+Donc :
+
+- CMake gère correctement `C:/…` dans un `-D`. La section « c'est CMake,
+  pour qui `:` est le séparateur de liste » est à écarter, ainsi que le
+  correctif `-DCMAKE_C_COMPILER:FILEPATH=…` qu'elle motivait — il ne
+  répare pas un problème qui n'existe pas.
+- Le vrai sujet est la SÉLECTION du compilateur parmi les sous-systèmes
+  MSYS2 (MSYS, MINGW64, UCRT64, CLANG64), ce que la section « Chemin
+  parcouru » décrivait déjà correctement sans en tirer la conclusion :
+  le script ne cherche que `/mingw64/bin/gcc`, ne lit pas `MSYSTEM`, et
+  son message nomme ce qu'il cherche plutôt que ce qui est installé.
+
+Le message « The CMAKE_C_COMPILER: C is not a full path » reste réel et
+observé ; ce qui est faux, c'est l'explication qu'on en avait donnée. Ce
+qui l'a produit se trouve donc en amont, dans la valeur de `CC` retenue,
+pas dans l'analyse de l'argument par CMake.
+
+Le second défaut identifié plus haut TIENT et reste le plus intéressant :
+le garde-fou `case "$compiler_path" in /ucrt64/*|…` ne reconnaît que la
+forme POSIX du chemin, donc sur toute machine où `CC` arrive en forme
+Windows il est silencieusement inopérant — un build UCRT64 passe un refus
+qui le visait. C'est indépendant de la question CMake.
+
+LE MÉCANISME, TROUVÉ — 2026-08-16 (run-forest-run)
+===================================================
+
+La correction de cause ci-dessus disait OÙ chercher (la sélection de CC)
+sans dire COMMENT `CC` finissait en forme Windows. run-forest-run, que
+pjb a désigné le 2026-08-16 (`poseidon:/home/pjb/src/fabrik`), le dit :
+
+  « Posé depuis PowerShell, la couche MSYS convertit la valeur à l'entrée
+    du processus, et « /ucrt64/bin/gcc » ressort en
+    « C:/msys64/ucrt64/bin/gcc ». »
+
+C'est la pièce qui manquait. La valeur n'est pas mal écrite par
+l'appelant : elle est RÉÉCRITE à la frontière du processus, entre le
+PowerShell du runner et le bash MSYS2. D'où, d'un seul coup :
+
+- pourquoi `CC` arrive en forme Windows alors que le job affiche bien
+  `CC=/ucrt64/bin/gcc` à son dump d'environnement — les deux sont vrais,
+  à deux endroits différents de la chaîne ;
+- pourquoi le garde-fou `case "$compiler_path" in /ucrt64/*|…` est
+  silencieusement inopérant : il teste une forme que la conversion a déjà
+  détruite. Le second défaut « qui TIENT » ci-dessus est donc le MÊME
+  problème vu en aval, pas un défaut indépendant.
+
+Le correctif, tel que run-forest-run l'applique :
+
+1. poser `CC` DU CÔTÉ BASH, en forme POSIX, jamais depuis PowerShell ;
+2. `MSYS2_ENV_CONV_EXCL=CC` pour que la conversion ne le reprenne pas si
+   un outil Windows natif est invoqué ensuite ;
+3. `MSYS2_PATH_TYPE=inherit` avant `bash -l`, sans quoi le profil de
+   connexion REMPLACE le PATH Windows et sbcl disparaît ;
+4. MINGW64 EN TÊTE quel que soit `MSYSTEM` : le codec DWG refuse UCRT64
+   et CLANG64, qui importent des jeux d'API UCRT privés absents du SBCL
+   natif. Retenir « ce qui est installé » serait reprendre le constat
+   pour un critère.
+
+DÉSACCORD À TRANCHER, signalé plutôt que masqué : la correction de cause
+du 2026-08-14 affirme que « ce n'est pas une troncation de c:/ qui est
+assez bien géré par cmake », tandis que le commentaire de
+run-forest-run/scripts/environnement-windows.sh attribue explicitement la
+troncature à CMake — « CMake découpe ses -D sur « : », donc « C:/… » lui
+arrivait tronqué au seul « C » ». Les deux sont de pjb. Le correctif
+retenu ne dépend PAS de l'arbitrage : garder `CC` en forme POSIX supprime
+le deux-points, donc la question de savoir qui le coupe devient sans
+objet. Elle reste ouverte pour la documentation.
+
+CE QUI EST FAIT, ET CE QUI RESTE : clautolisp verse désormais
+`scripts/avec-bash.ps1` et `scripts/environnement-windows.sh` (adaptés de
+run-forest-run) et sa lane `release:windows:x86-64` les utilise, donc la
+release Windows est à l'abri des quatre points ci-dessus. En revanche
+`build-libredwg.sh` lui-même n'est PAS corrigé : son garde-fou reste
+POSIX-seul, et un appelant qui ne passerait pas par ces scripts
+retomberait dans le même trou. C'est ce qui garde ce ticket ouvert.
+
+À rapprocher de `clautolisp/drawing-dwg/tests/msys2-native-toolchain-test.sh`
+(ajouté 2026-08-14) : ce test pilote précisément la sélection par
+`MSYSTEM` et attend des messages de refus par sous-système
+(« must be built from an MSYS2 MINGW64 shell », « Native Windows SBCL/CCL
+cannot safely load ») que le `build-libredwg.sh` du dépôt n'émet pas, et
+une variable `CLAUTOLISP_BUILD_PROBE_ONLY` qu'il ne lit pas (il lit
+`CLAUTOLISP_COMPILER_PROBE_ONLY`). Vérifié par `git log --all -S` : ces
+chaînes n'apparaissent dans aucun commit hors du test lui-même. Le test
+décrit donc le comportement VOULU — celui de cette correction de cause —
+plutôt que le comportement actuel. pjb : « laissons le comme ça, on verra
+sur windows ». Ni ce test ni `scripts/tests/run-emacs-msys2-test.sh` ne
+sont câblés dans un Makefile ou un job CI, donc rien ne les exécute
+aujourd'hui.
+
+
+DONE 2026-08-20 (clautolisp 1.8.62) — la cause corrigée là où elle naît
+-----------------------------------------------------------------------
+
+pjb, avant 1.9.0 : « ok faisons ces trois petits avant 1.9.0 ».
+
+Ce qui gardait ce ticket ouvert est écrit juste au-dessus : « `build-libredwg.sh`
+lui-même n'est PAS corrigé : son garde-fou reste POSIX-seul, et un
+appelant qui ne passerait pas par ces scripts retomberait dans le même
+trou ». C'est fait, et en le faisant on trouve que le trou était plus
+grand que décrit.
+
+**La cause écrite dans ce ticket est fausse, et c'est vérifié.**
+
+Le ticket accusait CMake de traiter `:` comme séparateur de liste dans un
+argument `-D`, et proposait `-DCMAKE_C_COMPILER:FILEPATH=`. Reproduit ici
+sur CMake 3.31.6, avec un projet minimal qui réimprime la valeur reçue :
+
+    cmake -DFOO=C:/msys64/ucrt64/bin/gcc -DBAR:FILEPATH=C:/msys64/ucrt64/bin/gcc
+    -- FOO=[C:/msys64/ucrt64/bin/gcc]
+    -- BAR=[C:/msys64/ucrt64/bin/gcc]
+
+Les deux passent **intacts**, typés ou non. Le découpage vient donc
+d'ailleurs — très probablement de la conversion d'arguments de MSYS2, qui
+traite une valeur contenant un deux-points comme une LISTE de chemins.
+Corriger sur la foi de la cause supposée aurait livré un `:FILEPATH` qui
+ne répare rien, et fermé le ticket sur une illusion.
+
+**Le second défaut, que personne n'avait vu.**
+
+`command -v` rend ce qu'on lui donne. Appelé avec un nom nu il répond
+`/mingw64/bin/gcc` ; appelé avec `CC=C:/msys64/ucrt64/bin/gcc` — ce que
+fait la CI de SCHMS+ — il répond ce chemin Windows tel quel. Or le
+garde-fou qui doit refuser les compilateurs UCRT64/Clang est écrit en
+glob POSIX :
+
+    case "$compiler_path" in
+      /ucrt64/*|/clang64/*|/clangarm64/*) ... refus ...
+
+Vérifié : `C:/msys64/ucrt64/bin/gcc` **ne correspond pas**. Un chemin en
+forme Windows passe donc devant le contrôle qui existe précisément pour
+arrêter ce compilateur-là, et le build échoue plus loin, sur autre chose.
+C'est exactement le cas signalé : SCHMS+ passait un compilateur UCRT64,
+et le script aurait dû le refuser d'emblée avec le message prévu.
+
+**Le correctif : normaliser à l'entrée, pas à chaque usage.**
+
+`build-libredwg.sh` convertit désormais le chemin en forme POSIX
+(`cygpath -u`) juste après `command -v`, au seul point par lequel une
+forme Windows peut entrer, et uniquement sous MSYS2/Cygwin. Une seule
+correction, deux défauts couverts :
+
+- le garde-fou UCRT64 voit enfin ce qu'il doit voir ;
+- plus aucun deux-points n'atteint cmake, donc la question de savoir qui
+  le découpait — CMake ou MSYS2 — cesse de se poser. C'est ce que
+  `:FILEPATH` n'aurait PAS donné : il n'aurait rien fait pour le premier
+  point.
+
+Le reste du script suppose déjà la forme POSIX, et MSYS2 la reconvertit
+sans ambiguïté pour cmake natif, puisque sans deux-points il n'y a plus
+de liste à confondre.
+
+Ajouté aussi, et c'est le vrai remède aux allers-retours : le script
+imprime l'argument tel que cmake le reçoit
+(`cmake -DCMAKE_C_COMPILER=[...]`). Cet argument a été mal livré deux
+fois ; un run qui l'affiche se diagnostique lui-même au lieu de coûter un
+nouvel aller-retour vers une machine Windows.
+
+**Testé ici, sur les quatre cas, avec un `cygpath` bouchon** — la machine
+Windows étant hors ligne, c'est le test que l'on peut faire, et il porte
+sur la logique qui était fausse :
+
+| entrée                          | résultat                                    |
+|---------------------------------|---------------------------------------------|
+| `C:/msys64/ucrt64/bin/gcc`      | normalisé → **le garde-fou UCRT64 se déclenche** (il le manquait) |
+| `/ucrt64/bin/gcc`               | se déclenche, comme avant                   |
+| `/mingw64/bin/gcc`              | accepté, comme avant                        |
+| Linux, `/usr/bin/gcc`           | bloc inerte                                 |
+
+Le motif `?:[/\\]*` est vérifié dans les deux sens : il reconnaît `C:/` et
+`C:\`, et ne mord pas sur un chemin POSIX.
+
+Ce qui reste non vérifié, et il faut le dire : le build Windows réel de
+bout en bout, qui demande le runner Windows — hors ligne au moment où
+ceci est écrit. Ce qui est établi ici, c'est que la logique corrigée se
+comporte comme voulu sur les quatre entrées, et que la cause écrite dans
+le ticket ne tenait pas.
+
+
+LA BORNE HAUTE, FAITE — 2026-08-23 (clautolisp 1.9.4)
+-----------------------------------------------------
+
+Le volet quotage (1.8.27) avait laissé DÉLIBÉRÉMENT « NON FAIT » la
+« borne haute » : les chemins côté cible/prérequis — `PREFIX`,
+`DESTDIR`, les `*_INSTALL_DIR`, les auto-variables employées comme
+chemins — au motif que distinguer chemin et liste « mérite sa propre
+passe relue ». C'est cette passe.
+
+Portée de 1.9.4 (162 lignes, les sept Makefiles) : `install -d` /
+`install -m` sur `"$(BIN_INSTALL_DIR)"`, `"$(LIBEXEC_INSTALL_DIR)"`,
+`"$(DOC/INFO/MAN_INSTALL_DIR)"` et consorts, les répertoires de
+`"$(MAKE)" -C "$dir"`, `"$@"` / `"$<"` / `"$(@D)"`, `"$(BUILD_DIR)"` /
+`"$(TEXFMT_CACHE)"`, les cibles/noms de `ln -sf`, les listes de `rm`, et
+les affectations de valeur des bundles passés aux sous-make
+(`DESTDIR="$(STAGE_...)"`). Conséquence concrète que 1.8.27 ne couvrait
+pas : `make install PREFIX="/opt/mes outils"` et un checkout sous un
+répertoire à espace ne se découpent plus. Laissé splittable à dessein :
+les en-têtes de `for` sur des listes de modules / noms de fichiers /
+globs, et les bundles d'arguments eux-mêmes.
+
+Un vrai défaut résiduel, trouvé par la passe et corrigé ici : le define
+`forward-target-to` du Makefile racine exécutait `$"$(MAKE)" -C $(2)`.
+Le `$` parasite fait développer `$"` comme la variable (vide) nommée
+`"`, si bien que la recette émettait la commande cassée `make"` — à
+guillemet non fermé — pour CHAQUE cible autolisp-test / alfe forwardée.
+Corrigé en `"$(MAKE)" -C "$(2)"`.
+
+Les 21 scripts shell de `scripts/` ont été relus dans la même passe :
+déjà entièrement quotés, aucune modification. Les scripts PowerShell
+(`.ps1`) sont laissés à une passe séparée — leur découpage de mots
+diffère de POSIX `sh`, et la panne d'origine est `sh`.
+
+Vérifié sous Linux avec le test du ticket, un outil sous chemin espacé :
+
+    ln -s "$(command -v sbcl)" "/…/faux outils/sbcl"
+    make build-programs SBCL="/…/faux outils/sbcl"
+
+construit propre (exit 0) de bout en bout ; les sept Makefiles
+re-parsent (`make -np`).

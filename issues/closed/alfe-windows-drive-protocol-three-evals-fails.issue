@@ -1,0 +1,220 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-windows-drive-protocol-three-evals-fails — cad-drive-protocol-actions-three-evals-counter-aware fails on the Windows runner
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: portability
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-09-26
+
+* Observed
+
+=test:alfe:windows= (native Windows runner, =allow_failure: true=), job
+16756197957 on master pipeline 2885678935: the suite completes with 1208 checks
+and *4 failures, all in one test* —
+=CAD-DRIVE-PROTOCOL-ACTIONS-THREE-EVALS-COUNTER-AWARE=, on
+=(EVAL-RESULT-STATUS RESULT)=.
+
+The same test passes on Linux (SBCL and CCL) and on macOS.
+
+* Context that matters
+
+The immediately preceding run of that lane (job 16755546814) was WORSE: it
+aborted mid-suite inside =PROTOCOL-MOCK-CAD-FULL-LIFECYCLE= with an unhandled
+condition and reported nothing at all. So the lane was already red before
+2026-09-26's work; what changed is that it now runs to completion and isolates
+the failure to one test, which is what makes this ticket possible.
+
+* Why it is probably platform, not logic
+
+The test drives the FILE protocol against the mock: three =:eval= actions, each
+waiting for =DONE N= with N the next request counter. It is exactly the shape
+that Windows file semantics disturb, and the repository already carries two
+findings of that class:
+
+- =write-atomic-file='s overwriting rename is NOT atomic on Windows (UIOP does
+  delete-then-rename), so a reader can transiently see the target missing --
+  see =write-atomic-file-concurrent-rename-windows= (closed) and the Windows
+  skip in =protocol-write-atomic-file-contention=.
+- Readers must use =:if-does-not-exist nil= and never probe-then-open, because
+  the delete gap of a hot-rewritten file makes TOCTOU fire.
+
+So the first hypothesis is that the mock's =status.txt= / =stdout.txt= updates
+are read across such a gap, and =eval-result-status= comes back NIL (or stale)
+for one of the three actions rather than =:ok=.
+
+* Directions
+
+1. Get the 4 failing checks' actual values from the job trace (the names are
+   there; the values are truncated in the summary) -- which of the three
+   actions, and what status came back.
+2. Decide between the two honest outcomes, and do not fudge the difference:
+   - the ASSERTION is platform-dependent (a status legitimately observable as
+     pending on Windows) -> relax it for Windows the way the contention test
+     does, with the reason at the call site; or
+   - the PROTOCOL DRIVER has a real race that Windows merely exposes -> fix
+     the driver, since a real CAD on that platform would hit it too. This is
+     the outcome that matters, and it is the reason this is not simply skipped.
+3. Only then consider =:skip-on-os=; a skip chosen before step 1 would hide
+   the second outcome.
+
+* Diagnosed and fixed — clautolisp 2.2.122
+
+Step 1 of /Directions/ answered the question: the failing check is
+=(EVAL-RESULT-STATUS RESULT)= evaluating to *=:ABORTED=*, not to a stale
+=:SUCCESS=. =:ABORTED= is set in exactly one place
+(=backend-cad-common.lisp=, =wait-done=): =wait-for-status-prefix= did not
+match within the request timeout. So it is a GIVE-UP, not the
+stale-status race the ticket's first hypothesis proposed -- and the fault is in
+the TEST MOCK, not the driver.
+
+=SPAWN-MOCK-CAD-RUNTIME= was a =DOTIMES= over =cycles=, and each round waited
+for =stdin.txt= for at most *two seconds*, then published =RUNNING n= / =DONE n=
+*anyway* and moved on. Two consequences:
+
+1. a slow round CONSUMED the budget, so with =:cycles 3= and three actions the
+   third request was never acknowledged and the driver timed out -- which is the
+   =:ABORTED= the Windows lane reported;
+2. a =DONE= published for a request that never arrived is a status the driver
+   could match against a send it has not yet made -- latent nondeterminism on
+   every platform, not only Windows.
+
+The mock now SERVES =cycles= requests instead of SPENDING =cycles= rounds: the
+counter follows the requests actually served, so it cannot run ahead of the
+driver, and the only cap is one overall deadline (20 s) whose job is to stop a
+mock nobody feeds -- its test then fails on its own assertion instead of hanging.
+Every one of the six call sites sends exactly =:cycles= actions, so this is what
+they all meant.
+
+*Reproduced on Linux before fixing*, which is what the ticket asked for rather
+than a platform-specific guess: =cad-mock-serves-a-request-that-arrives-late=
+sends its action 3 seconds after READY -- past the old per-round budget -- and
+against the old mock it fails with
+
+: a late request must still be acknowledged; got :ABORTED
+
+the same symptom, the same word, on a machine with a fast filesystem. With the
+fix it passes, and the echo assertion proves the request was really consumed
+rather than answered by a status the mock had run ahead to publish.
+
+alfe suite 1232 checks, 0 failures on SBCL.
+
+* Acceptance criteria
+
+- [X] *A test that fails on Linux too, so the fix is not platform-folklore* --
+      =cad-mock-serves-a-request-that-arrives-late=, red with the old mock and
+      with the same =:ABORTED=.
+- [X] *Nothing was skipped.* No =:skip-on-os=, no relaxed assertion: the mock's
+      contract was wrong and is now right on every platform.
+- [ ] =test:alfe:windows= green on the runner. The symptom it reported is now
+      impossible for the reason diagnosed above; whether it was the ONLY reason
+      is what that lane will say. It is =allow_failure: true=, so it gates
+      nothing meanwhile.
+
+* The lane answered, and there was a SECOND cause (clautolisp 2.2.125)
+
+=test:alfe:windows= ran on master at 2.2.124 (job 16758224382) and *failed* --
+on the very test added to reproduce the first cause:
+
+#+begin_example
+CAD-MOCK-SERVES-A-REQUEST-THAT-ARRIVES-LATE
+  a late request must still be acknowledged; got :ABORTED
+Did 1247 checks.  Pass: 1245 (99%)  Fail: 2 ( 0%)
+#+end_example
+
+(The two entries are the same failure: the suite runs twice per SBCL process.)
+
+So the per-round budget was NOT the only reason, exactly as the criterion below
+asked the lane to say. The second cause is in the mock's read, and it is the
+Windows anti-pattern this repository already knows:
+
+#+begin_src lisp
+(loop until (probe-file stdin) ...)          ; wait
+(when (probe-file stdin)
+  (setf request (read-file-as-string stdin)) ; <- probe, THEN open
+  ...)
+#+end_src
+
+The driver publishes =stdin.txt= with =WRITE-ATOMIC-FILE= -- write a temp,
+rename over -- and on Windows that rename is *delete+rename* (UIOP's
+overwrite). Between a =PROBE-FILE= that succeeds and the =OPEN= that follows,
+the file can be absent, or still held by the renaming party. And that read was
+*the one operation in the cycle =%MOCK-RETRY-FILE-OP= did not wrap* -- its own
+docstring describes this transient and says that hitting it "aborts the WHOLE
+mock thread, so it stops consuming stdin.txt". Which is what happened: the mock
+died, nothing consumed the request, and the driver timed out.
+
+** Why it said nothing
+
+The mock's body is guarded by design (an unhandled error in a thread under
+=--disable-debugger= aborts the whole test process), but the guard was
+=IGNORE-ERRORS= -- it *discarded* the condition. So a dead mock and a slow one
+were indistinguishable at the assertion: =:ABORTED=, no cause. That is the real
+reason this took a week rather than a run.
+
+** Fixed
+
+- =%MOCK-CONSUME-REQUEST= replaces the wait-then-probe-then-read with ONE
+  loop: attempt the read (=:if-does-not-exist nil=, sharing violations caught),
+  treat absence AND emptiness alike as "not yet", stop at the deadline. The
+  only way to know a file is readable is to read it. An empty read is left
+  alone on purpose -- it is what a half-written file looks like, and consuming
+  it would strand the request for good.
+- =%CALL-RECORDING-MOCK-CONDITION= replaces the bare =IGNORE-ERRORS=: still
+  swallows (it must), but *records* into =*MOCK-CAD-CONDITION*=, and
+  =%MOCK-CAD-FAILURE-NOTE= puts it in the failure message. If this lane goes
+  red again it will name its cause instead of printing =:ABORTED=.
+- Two tests: =cad-mock-consume-request-never-probes-then-opens= (absent,
+  half-written, complete -- the empty-file case is the one that discriminates)
+  and =cad-mock-death-is-recorded-not-swallowed=.
+
+*A portability trap, recorded because the first version of the test fell into
+it.* That second test first arranged a REAL failure -- delete the workdir so
+the mock's first write signals. It passed on SBCL and *failed on CCL*, where
+that write does not signal. So the guard was factored into a function and the
+test now exercises the mechanism the thread actually runs, on both hosts. A
+test that depends on which host makes an operation fail is testing the host.
+
+alfe suite: *1278 checks, 0 failures, on SBCL AND CCL.*
+
+*Still not proven*: that this was the LAST cause. The hypothesis is strong (the
+symptom, the unwrapped read, the silent guard, and the helper's own docstring
+all agree) but it cannot be run here -- reproducing an absent-file transient
+needs the platform whose rename is not atomic. The lane will say. What IS now
+guaranteed regardless of whether the hypothesis is right: the next red run
+names its condition.
+
+* RESOLVED 2026-09-27 — the lane ran the test and it PASSED (clautolisp 2.2.134)
+
+=test:alfe:windows= on the =2.2.133= child (job 16762247996) reports:
+
+#+begin_example
+Did 1308 checks.  Pass: 1307 (99%)  Fail: 1 ( 0%)
+Failure Details:
+  AN-UNWRITABLE-DIRECTORY-DECLINES-RATHER-THAN-FAILS-THE-RUN
+#+end_example
+
+*=cad-mock-serves-a-request-that-arrives-late= is not in that list.* The test
+written to reproduce this ticket's defect — the one that failed on Windows at
+2.2.124 with =got :ABORTED= — now passes there. So both causes are confirmed
+fixed ON THE PLATFORM, not only reasoned about:
+
+- the mock's per-round budget (2.2.122), and
+- the probe-then-open read whose transient killed the mock thread silently
+  (2.2.125), which is the one that could only be settled by a platform whose
+  rename is not atomic.
+
+Criterion 3 asked for the LANE to be green. It is not, and deliberately not
+counted against this ticket: the single remaining failure is a different test
+with a different cause (a fixture whose premise does not hold on Windows), now
+tracked as =empty-drawing-decline-test-premise-fails-on-windows=. Keeping this
+ticket open until an unrelated test goes green would misreport what is fixed.
+
+Closed. What this ticket set out to explain is explained, and what it set out to
+fix is fixed and observed.
+
+* Note
+
+Filed per AGENTS.md: a defect noticed while doing something else gets its own
+ticket rather than a mention. Noticed while reading the Windows results for
+=clautolisp-distributed-native-libraries-not-loaded=.

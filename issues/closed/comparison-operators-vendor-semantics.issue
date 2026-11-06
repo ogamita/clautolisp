@@ -1,0 +1,161 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: comparison-operators-vendor-semantics — probe results for = /= < <= > >= versus the spec
+#+STATUS: DONE (clautolisp 2.2.90 / alfe 2.2.85 / spec 0.14.0, 2026-09-25)
+#+PRIORITY: P1
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: claude/dreamy-ptolemy-uj8mzd
+
+* Context
+
+pjb (2026-09-25): the spec is the golden rule, but where implementations
+differ each dialect reproduces its vendor, with a dialect warning on any
+divergence (between vendors, or between the spec and a vendor);
+clautolisp itself implements the most useful behaviour. So: probe first,
+compare, then decide.
+
+Probe: =autolisp-front-end/tests/scenarios/language/comparison-operators-probe.lsp=
+(clautolisp 2.2.89) — 40 argument cases × 6 operators = 240 observations,
+=OBSERVE <op>.<case> T|nil|error=, op ∈ eq(=) ne(/=) lt le gt ge.
+
+* Runs received (2026-09-25)
+
+| target                      | result                                          |
+|-----------------------------+-------------------------------------------------|
+| BricsCAD, macOS (V26)       | 240 observations                                |
+| BricsCAD V25 fr_FR, Windows | 240 observations, IDENTICAL to macOS            |
+| AutoCAD 2022, Windows       | first run: NO output (only the alfe COM-ProgID warning); re-run: 240 observations |
+| clautolisp macOS / Windows  | an old build (before 2.2.87: no string ordering) — superseded by the Linux 2.2.89 run |
+
+* Findings (BricsCAD, first pass)
+
+** = and /=  — no type error at all
+
+BricsCAD agrees with clautolisp on every === case and every =/== case but
+one:
+- =(= 1 "1")= → nil, =(= 1 "a")= → nil — NOT a type error (spec says error).
+- =(= 'a 'a)= → T, =(= 'a 'b)= → nil, =(= T T)= → T; same list object → T,
+  =equal= lists → nil: identity for non-numbers/non-strings (spec says
+  symbols are out of domain → error). alfe's bootstrap relies on this.
+- =(= nil nil)= → T (spec says nil).
+- =(= "a" "A")= → nil (case-sensitive).
+- =(/= 1 2 1)= → *T* in BricsCAD, nil in clautolisp: BricsCAD's =/= tests
+  ADJACENT pairs (like =<=), clautolisp tests ALL pairs.
+- =(=)=, =(/=)= → error "too few / too many arguments" (clautolisp: error too).
+- one argument: =(= x)=, =(/= x)= → T for any x, nil included.
+
+** < <= > >= — nil is the smallest value, not bottom
+
+The spec's "any nil argument → nil (⊥ propagation)" is WRONG for
+BricsCAD. BricsCAD orders nil BELOW numbers and strings:
+
+| case           | <     | <=    | >     | >=    |
+|----------------+-------+-------+-------+-------|
+| (op nil nil)   | nil   | T     | nil   | T     |
+| (op 1 nil)     | nil   | nil   | T     | T     |
+| (op nil 1)     | T     | T     | nil   | nil   |
+| (op "a" nil)   | nil   | nil   | T     | T     |
+| (op 'a nil)    | nil   | nil   | T     | error |
+| (op 1 "a" nil) | error | error | error | error |
+| (op nil 1 "a") | error | error | error | error |
+
+(clautolisp 2.2.88: nil in every one of these, no error.) The spec's own
+evidence rows — =(< 1 nil) = nil=, =(< "abc" nil) = nil= — are consistent
+with nil-is-smallest, so the ⊥ reading was an over-generalisation. The
+SCHMS loop guard =(<= 48 nil 57)= still gives nil (48 <= nil is false).
+=(> 'a nil)= → T but =(>= 'a nil)= → error looks like an implementation
+accident (>= checked differently from >).
+
+A chain is evaluated left to right with no nil short-circuit: an
+incompatible pair anywhere signals, even with a nil elsewhere.
+
+Other relational rows:
+- number vs string → error: "bad argument type <"a"> ; expected <NUMBER>"
+  (or "<1> ; expected <STRING>" when the string comes first) — agrees with
+  the spec and clautolisp 2.2.88.
+- symbols, T, lists (2+ arguments) → error "expected <NUMBER>" — agrees.
+- strings order by code point, case-sensitive, prefix first — agrees.
+- one argument: T for ANY type (=(< 'a)= → T, =(< nil)= → T): no type
+  check; clautolisp 2.2.88 signals on =(< 'a)= and returns nil on =(< nil)=.
+- no argument: =(<)= → error "too few / too many arguments"; clautolisp
+  returns T.
+
+* AutoCAD 2022 (French, Windows) — 237/240 identical to BricsCAD
+
+AutoCAD agrees with BricsCAD everywhere except three rows:
+
+| case             | AutoCAD 2022 | BricsCAD V25/V26 |
+|------------------+--------------+------------------|
+| (>= 'a nil)      | T            | error            |
+| (> nil 1 "a")    | nil          | error            |
+| (>= nil 1 "a")   | nil          | error            |
+
+AutoCAD compares the chain pair by pair, left to right, and STOPS at the
+first false pair: (> nil 1 "a") never reaches 1 vs "a". BricsCAD raises
+the error anyway, and treats (>= 'a nil) differently from (> 'a nil).
+(< nil 1 "a") errors on both: nil < 1 is true, so 1 vs "a" is reached.
+
+AutoCAD error texts (French build):
+- "type d'argument de comparaison incorrect: 1 \"a\"" — names the pair.
+- "nombre d'arguments insuffisants" — for (=), (<), ...
+
+* The vendor model (both vendors, AutoCAD where they differ)
+
+- === / =/==: any types, never an error. Numbers by value across
+  int/real, strings by content (case-sensitive), anything else by
+  identity (eq). =(= nil nil)= → T. =/== tests ADJACENT pairs:
+  =(/= 1 2 1)= → T.
+- =<= =<== =>= =>==: nil is the SMALLEST value — below every number,
+  string and symbol; nil equals nil. Two non-nil arguments must both be
+  numbers or both strings, else a type error naming the pair.
+- All six: pairwise left to right, stopping at the first false pair;
+  no argument → error "too few arguments"; one argument → T, whatever its
+  type (no check).
+
+* To decide
+
+For each row: spec vs AutoCAD vs BricsCAD vs clautolisp → divergence case
+(AGENTS.md § Dialect Divergence), per-dialect behaviour + warning, and
+what clautolisp does. Then correct the spec (= accepts any type by
+identity; nil ordering; arity; /= pairing), wire the probe as conformance
+scenarios with per-target expectations, and change the code.
+
+* Decision (pjb, 2026-09-25)
+
+Agreed as proposed: the spec follows what both vendors do (case 0, no
+warning); AutoCAD is adopted for the three rows where they differ (case
+2); clautolisp's own dialect gives AutoCAD's answers.
+
+* Resolution (clautolisp 2.2.90 / alfe 2.2.85 / autolisp-spec 0.14.0)
+
+- Code (=clautolisp/autolisp-builtins-core/source/api.lisp=):
+  =relational-order-p= replaces =numeric-order-p= — nil is the smallest
+  value, adjacent pairs left to right stopping at the first false one,
+  no argument an error, one argument T, other non-nil mixtures a type
+  error (=:invalid-comparison-argument=). =/== compares adjacent pairs.
+  The three divergent rows go through =%resolved-comparison-policy=:
+  bricscad → BricsCAD's error + =[comparison-divergence]= warning;
+  strict → AutoCAD's answer + warning; autocad / clautolisp / lax →
+  AutoCAD's answer, silent. A 2-argument comparison never consults the
+  dialect except =(>= x nil)= with x neither a number nor a string.
+- Verified with the built binary: under =--dialect bricscad= the probe
+  reproduces BricsCAD on all 240 observations; under strict / autocad /
+  clautolisp / lax it reproduces AutoCAD on all 240.
+- Spec 0.14.0: "The Comparison Operators" section, the six Function
+  Entries, the Equality Predicates page (ch.3) and the NIL entry (ch.4)
+  rewritten from the probe; =*** clautolisp= notes under =>= and =>==.
+- Tests: =comparison-operators-match-autocad-probe= (all 240 AutoCAD
+  observations), =comparison-operators-bricscad-divergences= (the three
+  rows × five dialects, with warnings), =comparison-operators-type-error-code=,
+  =numeric-order-nil-is-the-smallest-value=; the older =/== and nil-fold
+  assertions updated; the compiler's open-coded corpus extended.
+- Conformance scenarios: =autolisp-front-end/tests/scenarios/language/=
+  =comparison-operators{,-bricscad,-autocad}.sexp=, generated by
+  =generate-comparison-scenarios.lisp=. The clautolisp one passes (240
+  conform); the received vendor outputs classify as BricsCAD 237 conform
+  + 3 known-divergence, AutoCAD 240 conform.
+- Suites: clautolisp (34 suites) and alfe (1082 checks) green under SBCL;
+  the autolisp-test corpus gives identical per-test results before and
+  after.
+- Open follow-up: whether BricsCAD also rejects =(>= '(1) nil)=,
+  =(>= T nil)= — SPEC-UNCERTAIN marker + deferred-spec-research entry.

@@ -2,7 +2,7 @@
 ;;;;
 ;;;; alfe CLI — argument parsing, action sequencing, exit codes.
 ;;;;
-;;;; Specified by ../issues/open/alfe-cli.issue and
+;;;; Specified by ../issues/closed/alfe-cli.issue and
 ;;;; documentation/alfe--specifications.org (sections "Sélection du
 ;;;; moteur et matrice backend × système", "Variables d'environnement",
 ;;;; "Phases de bootstrap", "Invariants testés").
@@ -37,6 +37,7 @@
                 #:prepare-workdir
                 #:start-engine
                 #:eval-plan
+                #:eval-plan-with-action-hooks
                 #:shutdown
                 #:cleanup-workdir
                 #:make-action
@@ -47,11 +48,13 @@
                 #:action-main
                 #:action-interactive
                 #:action-quit
+                #:make-eval-result
                 #:eval-result-status
                 #:eval-result-value
                 #:eval-result-output
                 #:eval-result-error-output
-                #:eval-result-condition)
+                #:eval-result-condition
+                #:eval-result-exit-code)
   (:import-from #:alfe.error
                 #:backend-error
                 #:backend-not-available
@@ -62,7 +65,23 @@
                 #:set-level
                 #:log-debug
                 #:log-verbose
-                #:log-info)
+                #:log-info
+                #:log-warn
+                #:log-error)
+  ;; The plug-in system. alfe.cli drives it (loading, option parsing,
+  ;; hook call sites); alfe.plugin never depends on alfe.cli.
+  (:import-from #:alfe.plugin
+                #:run-hook
+                #:hook-active-p
+                #:with-run-context
+                #:plugin-option-specs
+                #:resolve-plugin-options
+                #:activate-plugin-by-name
+                #:plugin-usage-text
+                #:load-plugins
+                #:prescan-plugin-arguments
+                #:print-plugins
+                #:compile-plugin)
   (:import-from #:clautolisp.autolisp-init-files
                 #:*default-alfe-stems*
                 #:find-init-files
@@ -83,6 +102,7 @@
                 #:cli-options-mode
                 #:cli-options-backend-variant
                 #:cli-options-cad
+                #:cli-options-attach-pid
                 #:cli-options-actions
                 #:cli-options-interactive-p
                 #:cli-options-quit-p
@@ -92,9 +112,14 @@
                 #:cli-options-io-encoding
                 #:cli-options-situation-encodings
                 #:cli-situation-encoding
+                #:cli-situation-encoding-explicit
                 #:encoding-keyword
                 #:cli-options-dwg
-                #:cli-options-epure-p
+                #:cli-options-template
+                #:cli-options-plugin-options
+                #:cli-options-plugins-active
+                #:cli-options-list-plugins-p
+                #:cli-options-compile-plugin
                 #:cli-options-bootstrap-phase
                 #:cli-options-verbosity
                 #:cli-options-workdir
@@ -103,16 +128,22 @@
                 #:cli-options-version-p
                 #:cli-options-list-encodings-p
                 #:cli-options-list-dialects-p
+                #:cli-options-list-hosts-p
                 #:cli-options-list-situations-p
                 #:cli-options-list-cad-programs-p
                 #:cli-options-dry-run-p
+                #:cli-options-print-command-p
                 #:cli-options-no-init-p
                 #:cli-options-no-color-p
                 #:cli-options-keep-workdir-p
                 #:cli-options-write-workdir-path
+                #:cli-options-cad-log
+                #:cli-options-result-files
+                #:cli-options-cleanup-report
                 #:cli-options-main
                 #:cli-options-positional
                 #:make-option-spec
+                #:option-spec-longs
                 #:*common-option-specs*
                 #:parse-arguments-with-spec
                 #:parse-mode
@@ -132,6 +163,7 @@
            #:cli-options-mode
            #:cli-options-backend-variant
            #:cli-options-cad
+           #:cli-options-attach-pid
            #:cli-options-actions
            #:cli-options-interactive-p
            #:cli-options-quit-p
@@ -144,8 +176,14 @@
            #:terminal-encoding-plan
            #:apply-terminal-encoding
            #:resolved-console-encoding
+           #:situation-engine-keywords
+           #:console-is-terminal-p
            #:cli-options-dwg
-           #:cli-options-epure-p
+           #:cli-options-template
+           #:cli-options-plugin-options
+           #:cli-options-plugins-active
+           #:cli-options-list-plugins-p
+           #:cli-options-compile-plugin
            #:cli-options-bootstrap-phase
            #:cli-options-verbosity
            #:cli-options-workdir
@@ -154,9 +192,11 @@
            #:cli-options-version-p
            #:cli-options-list-encodings-p
            #:cli-options-list-dialects-p
+           #:cli-options-list-hosts-p
            #:cli-options-list-situations-p
            #:cli-options-list-cad-programs-p
            #:cli-options-dry-run-p
+           #:cli-options-print-command-p
            #:cli-options-no-init-p
            #:cli-options-no-color-p
            #:cli-options-keep-workdir-p
@@ -169,13 +209,37 @@
            #:print-version
            ;; env-var resolution helpers, exported for tests
            #:env-default
+           ;; --print-command: staged-argv rendering (exported for tests)
+           #:print-command-plan
+           #:format-launch-command
+           #:quote-command-argument
+           #:shell-quote-argument
+           #:windows-quote-argument
            ;; resolution
            #:resolve-backend
+           #:clautolisp-program-requirement
            #:plan-from-options
            ;; transmit-options bridge
            #:cli-options-transmit-bindings-for-alfe))
 
 (in-package #:alfe.cli)
+
+;; The plug-ins are loaded, and their options parsed, before anything else
+;; knows the CLI's own option set, so alfe.plugin needs to be told what the
+;; core options are to refuse a plug-in option that collides with one. Set
+;; below, once *ALFE-OPTION-SPECS* exists.
+
+(defvar *on-error* :quit
+  "The --on-error policy in force for the current RUN, as it governs alfe
+ITSELF. --on-error is the clautolisp program's option (shared spec): under
+--clautolisp the engine applies it to the user's AutoLISP errors (debug stops
+in aldo), in both variants. Independently, and under every backend, it says
+how an unexpected Lisp condition escaping alfe itself is reported: :QUIT --
+also when the option is absent -- prints the one-line `alfe: <condition>' and
+exits; :DEBUG and :IGNORE additionally dump the CL backtrace at the point of
+the error -- the intact stack, captured with HANDLER-BIND before the outer
+HANDLER-CASE unwinds -- so a crash inside alfe itself can be diagnosed without
+a rebuild. Bound per RUN; set by RUN from the parsed option.")
 
 ;;; --- options record --------------------------------------------------
 ;;;
@@ -200,7 +264,7 @@
     (:bootstrap-phase  . "AUTOLISP_BOOTSTRAP_PHASE")
     (:remote-io-mode   . "AUTOLISP_REMOTE_IO_MODE")
     (:dwg              . "AUTOLISP_DWG")
-    (:epure            . "AUTOLISP_EPURE")
+    (:template         . "AUTOLISP_TEMPLATE")
     (:autocad-install  . "AUTOCAD_INSTALL")
     (:autocad-version  . "AUTOCAD_VERSION")
     (:bricscad-install . "BRICSCAD_INSTALL")
@@ -236,20 +300,35 @@ Backend selection (mutually exclusive):
 
 Mode and variant:
   --mode {auto,automation,batch}    How to launch the engine (default: auto).
-  --backend {attach,launch}         Attach to a running CAD or launch a fresh one.
+  --backend {launch,attach}         --autocad/--bricscad: launch a NEW CAD instance
+                                    (default), or attach to the running one
+                                    (implies --mode automation: COM on Windows,
+                                    AppleScript on macOS).
+  --attach-pid PID                  Attach to the running CAD whose process id is
+                                    PID (implies --backend attach).
+  --backend {direct,subprocess}     --clautolisp: run the engine inside alfe (default)
+                                    or as the clautolisp executable. Same meaning for
+                                    every option either way. A run needing the
+                                    clautolisp program itself (a REPL: -i or no
+                                    action; --dribble; --dcl gui|ncurses; --host
+                                    cadtui) runs as the executable by default and
+                                    is a usage error with --backend direct.
 
 Actions (processed in order):
-  -l, --load FILE        Load and evaluate FILE.
+  -l, --load FILE        Load FILE (relative to alfe's invocation directory).
   -x, --eval EXPR        Evaluate EXPR.
   --main FN              Call FN as the script entry point after loading.
   -i, --interactive      Drop into a REPL after the action queue.
   --quit                 Force the engine to shut down after the queue.
 
 Dialect, host, encoding:
-  --dialect NAME         strict (default), autocad-2022, autocad-2026, autocad,
-                         bricscad-v25, bricscad-v26, bricscad, clautolisp, lax.
+  --dialect NAME         strict (default), autocad[-mac][-YEAR], autocad-2022,
+                         autocad-2026, bricscad[-mac|-linux][-vNN], bricscad-v25,
+                         bricscad-v26, clautolisp, lax. Unversioned vendor => last
+                         known version; unqualified platform => windows.
                          Honoured under --clautolisp; ignored under --autocad/--bricscad.
   --list-dialects        Print every --dialect name (strict first, lax last) and exit.
+  --list-hosts           Print the --host backends with a one-line summary and exit.
   --list-situations      Print the encoding situations (source/file/console/…) and exit.
   --list-cad-programs    Scan the host and print each installed CAD with its
                          canonical denotation (acad-2026, bricscad-v26, …), then exit.
@@ -257,7 +336,11 @@ Dialect, host, encoding:
                          (acad-2026, accoreconsole-2022, bricscad-v25-fr_FR,
                          or a bare/partial acad / bricscad / autocad → latest;
                          autocad honours --mode: batch→accoreconsole, else acad).
-  --host {mock,null}     HAL backend (clautolisp only).
+  --host NAME            Host backend of --clautolisp: cador (default: the headless
+                         CAD core), cadtui (the textual UI-tree host) or nihil (no
+                         host). cadtui runs in the clautolisp executable, so alfe
+                         starts it as --backend subprocess. Ignored under
+                         --autocad/--bricscad, where the CAD is the host.
   -E ENC                 Encoding for every situation (shorthand).
   -Esource ENC           Encoding of .lsp files loaded (-l and (load ...)).
   -Efile[-read|-write] ENC   Encoding of files the program opens.
@@ -268,17 +351,39 @@ Dialect, host, encoding:
                          (long forms: --SITUATION-encoding /
                           --SITUATION-{input,output,read,write}-encoding;
                           ENC accepts a -mac/-dos/-unix/-lf/-cr/-crlf suffix.)
+  -Ereplacement R        What a clautolisp write puts in place of a character its
+                         encoding cannot hold: one character, or error, low-byte,
+                         best-fit, escape (\\U+XXXX); default: the dialect's.
+                         Long form --encoding-replacement. Per situation:
+                         -Efile-write-replacement / -Eterminal-out-replacement
+                         (--file-write-encoding-replacement,
+                          --terminal-output-encoding-replacement).
+                         Passed to the clautolisp engine; ignored, with a warning,
+                         under --autocad/--bricscad (each CAD has its own way).
 
 CAD-specific options:
   --dwg FILE             Drawing to open before running the script.
-  --epure                Enable the EPURE plugin hook.
+  --template NAME|PATH   Start from a copy of one of the CAD's own templates
+                         (acad.dwt, Default-m.dwt ...; looked up in the CAD's
+                         template folders) instead of alfe's empty drawing.
+                         Wins over --dwg. Env: AUTOLISP_TEMPLATE.
+
+Plug-ins:
+  --plugin NAME          Activate the installed plug-in NAME (repeatable).
+                         Mirrors $ALFE_PLUGINS.
+  --plugin-path DIR      Add DIR to the plug-in search path (repeatable).
+                         Mirrors $ALFE_PLUGIN_PATH.
+  --no-plugins           Load no plug-in. Mirrors $ALFE_NO_PLUGINS.
+  --list-plugins         Print the installed plug-ins and the search path, then exit.
+  --compile-plugin FILE  Compile the plug-in source FILE for this alfe, then exit.
 
 Bootstrap and runtime:
   --bootstrap-phase {marker,core,log,full}   Truncate the bootstrap.
   --workdir DIR          Override $AUTOLISP_WORKDIR.
   --timeout SECS         Per-action timeout.
-  --no-init, -norc       Skip user init files (~/.alfe{,rc}, ~/.autolisp{,rc},
-                         ~/.config/alfe/init, ~/.config/autolisp/init).
+  --no-init, -norc       Skip the user init files, loaded in this order (all
+                         that exist): ~/.autolisp, ~/.config/autolisp/init.lsp,
+                         ~/.alfe, ~/.config/alfe/init.lsp.
                          Mirrors $AUTOLISP_NO_INIT and $ALFE_NO_INIT.
   --no-color             Disable ANSI colour in AutoLISP value output. Honoured
                          equivalently via $NO_COLOR (https://no-color.org).
@@ -292,7 +397,45 @@ Bootstrap and runtime:
                          to FILE (one line). Lets a caller (e.g. a CI script)
                          locate a --keep-workdir workdir without scraping stdout.
                          Mirrors $AUTOLISP_WRITE_WORKDIR_PATH.
+  --cad-log FILE         --autocad / --bricscad: after the run, copy the CAD's own
+                         command-history log (LOGFILEMODE, which alfe directs
+                         into its workdir) to FILE in UTF-8, decoded per -Elog,
+                         else as measured (a BOM's encoding; windows-1252 on
+                         MS-Windows; auto-detected elsewhere).
+  --result-file FILE     A file the run must have written (a JUnit report...);
+                         repeatable. Checked after the run, before the CAD is
+                         closed: missing, empty, still growing, or an XML file
+                         whose root element is not closed, it fails a run that
+                         would otherwise succeed (exit 66).
+  --cleanup-report FILE  Write the cleanup report of the run's CAD to FILE
+                         (KEY=VALUE lines): the frontier recorded before the
+                         close, then how the CAD this run created ended --
+                         normally or forced, its raw exit code. owned=none when
+                         alfe created no CAD to close.
+  --dribble              Record the session (forms sent, output `;; O:', error
+                         output `;; E:', conditions `;; C:') into
+                         $XDG_STATE_HOME/alfe/dribbles/BACKEND/TIMESTAMP.log.
+                         The header names both versions (alfe and the CAD).
+  --dribble=FILE         Record into FILE (appended when it exists).
+  --dribble-interactors=IS  Which interactors are recorded: t for all, or a
+                         comma-separated list. Forwarded to --clautolisp, where
+                         interactors exist; the CAD backends have none and
+                         record the whole session. Under --clautolisp the
+                         recording is the ENGINE's own REPL transcript.
+  --dcl MODE             --clautolisp: the DCL renderer, as clautolisp's --dcl:
+                         tui (line form), ncurses, gui ($CLAUTOLISP_GUI driver)
+                         or auto (default).
   --dry-run              Print the resolved action plan and exit 0.
+  --print-command        Stage the workdir exactly as a real run would, print
+                         the CAD command line alfe would launch (one shell-ready
+                         line on stdout), then exit 0 WITHOUT launching it.
+                         Requires --autocad or --bricscad (the clautolisp
+                         backend runs in-process and has no command line).
+                         The workdir is deleted on the way out unless
+                         --keep-workdir is given; running the printed command
+                         by hand starts the CAD against the staged workdir, but
+                         nothing drives alfe's side of the file-IPC protocol, so
+                         the engine will boot and then wait.
 
 Diagnostics:
   -v, --verbose          Verbose progress.
@@ -303,6 +446,31 @@ Diagnostics:
                          the most verbose request wins regardless of
                          CLI argument order.
 
+Debugger (aldo; the clautolisp program's options, same spelling and meaning):
+      --on-error POLICY  An uncaught AutoLISP error under --clautolisp: quit
+                         (report it and exit 1; the default of a batch run),
+                         debug (stop in the aldo debugger at the error; the
+                         default of an interactive REPL) or ignore (no
+                         debugger: the AutoLISP *error* handler runs, the
+                         error is reported and the next -l / -x runs; the
+                         run still exits 1). Under
+                         every backend, debug and ignore also make alfe dump
+                         the CL backtrace of an unexpected condition in alfe
+                         itself.
+      --on-interrupt POLICY  Control-C under --clautolisp: debug (break into
+                         aldo; the default), ignore, or quit (exit 130).
+      --on-quit POLICY   (quit) / (exit) under --clautolisp: quit (default) or
+                         debug (enter aldo before unwinding).
+      --debugger-ui UI   The aldo front-end: dumb (alias terminal, tui),
+                         ncurses, or aldb (alias emacs).
+      --aldb-listen [HOST:]PORT  The aldb (Emacs) listener address; implies
+                         --debugger-ui aldb.
+      --aldb-stdio       aldb over stdin/stdout; implies --debugger-ui aldb;
+                         excludes --interactive and --aldb-listen.
+                         All six apply to both --backend variants. The CAD
+                         backends have no aldo: they refuse every one of them
+                         except --on-error (EX_USAGE 64).
+
 Informational:
   -h, --help             Show this help and exit.
   -V, --version          Print version and exit.
@@ -312,6 +480,10 @@ Informational:
 
 (defun print-usage (&optional (stream *standard-output*))
   (write-string *usage-banner* stream)
+  ;; The options of the installed plug-ins, generated from what they
+  ;; registered (empty when none is installed or --no-plugins was given).
+  (let ((plugins (plugin-usage-text)))
+    (when plugins (write-string plugins stream)))
   (finish-output stream))
 
 (defun usage-string ()
@@ -337,7 +509,7 @@ argument parsing so explicit CLI options always win."
         (env-backend (env-default :backend))
         (env-bootstrap (env-default :bootstrap-phase))
         (env-dwg     (env-default :dwg))
-        (env-epure   (env-default :epure))
+        (env-template (env-default :template))
         (env-keep-workdir (env-default :keep-workdir))
         (env-write-workdir-path (env-default :write-workdir-path)))
     (when env-workdir
@@ -360,8 +532,8 @@ argument parsing so explicit CLI options always win."
             (parse-bootstrap-phase env-bootstrap "AUTOLISP_BOOTSTRAP_PHASE")))
     (when env-dwg
       (setf (cli-options-dwg options) env-dwg))
-    (when env-epure
-      (setf (cli-options-epure-p options) t))
+    (when env-template
+      (setf (cli-options-template options) env-template))
     (when env-keep-workdir
       (setf (cli-options-keep-workdir-p options) t))
     (when env-write-workdir-path
@@ -390,10 +562,23 @@ parser's mutual-exclusion semantics for --bricscad/--autocad/
                             (cli-options-backend opts) kind)))
   (setf (cli-options-backend opts) kind))
 
+(defparameter +alfe-hosts+
+  '(("cador" . :cador) ("cadtui" . :cadtui) ("nihil" . :nihil))
+  "The --host names alfe accepts, with the keyword each stands for. The
+keyword is what the rest of alfe, and *AUTOLISP-HOST*, see.")
+
+(defun %parse-alfe-host (value option)
+  (or (cdr (assoc value +alfe-hosts+ :test #'string-equal))
+      (error 'cli-usage-error
+             :option option
+             :message (format nil "Unknown --host ~S (expected ~{~A~^, ~})"
+                              value (mapcar #'car +alfe-hosts+)))))
+
 (defun %make-alfe-option-specs ()
   "Build the alfe-only option-spec list: --mode/--backend/--dwg/
---epure/--workdir/--keep-workdir/--write-workdir-path/--timeout/
---bootstrap-phase/--dry-run/--main/--quit. Also wraps the common dialect-shorthand
+--workdir/--keep-workdir/--write-workdir-path/--timeout/
+--bootstrap-phase/--dry-run/--main/--quit/--plugin*/--list-plugins/
+--compile-plugin. Also wraps the common dialect-shorthand
 specs (--autocad/--bricscad/--clautolisp) with conflict-checking
 handlers so a `--bricscad --autocad` invocation signals cli-usage-
 error rather than silently last-winning."
@@ -447,6 +632,20 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (declare (ignore name))
                (setf (cli-options-cad opts) value)))
+   ;; --attach-pid PID: attach to THAT running CAD instead of launching a new
+   ;; one (alfe-cad-launch-new-by-default). Implies --backend attach; the
+   ;; check against --backend launch and --mode batch is APPLY-CAD-INSTANCE-
+   ;; POLICY's, once every option is parsed, so the order does not matter.
+   (make-option-spec
+    :longs '("--attach-pid") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (let ((pid (ignore-errors (parse-integer value))))
+                 (unless (and pid (plusp pid))
+                   (error 'cli-usage-error
+                          :option name
+                          :message (format nil "~A expects a process id (a positive integer), not ~S"
+                                           name value)))
+                 (setf (cli-options-attach-pid opts) pid))))
    (make-option-spec
     :longs '("--main") :takes-arg-p t
     :handler (lambda (opts value name)
@@ -463,16 +662,55 @@ error rather than silently last-winning."
                      (cli-options-actions opts)
                      (append (cli-options-actions opts)
                              (list (cons :quit t))))))
+   ;; --host: alfe knows three hosts, cador (the default), cadtui and nihil,
+   ;; and passes the choice on to clautolisp as is. This spec comes before
+   ;; the shared one, which still tolerates the retired spellings of the
+   ;; same hosts for the clautolisp executable's sake; alfe does not.
+   (make-option-spec
+    :longs '("--host") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-host opts) (%parse-alfe-host value name))))
    (make-option-spec
     :longs '("--dwg") :takes-arg-p t
     :handler (lambda (opts value name)
                (declare (ignore name))
                (setf (cli-options-dwg opts) value)))
+   ;; --template NAME|PATH: a per-run copy of one of the CAD's own templates
+   ;; as the session's drawing (alfe-template-option; %SESSION-DWG)
    (make-option-spec
-    :longs '("--epure") :takes-arg-p nil
+    :longs '("--template") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-template opts) value)))
+   ;; --plugin NAME activates an installed plug-in that has no flag of its
+   ;; own (or that the caller prefers to name). --plugin-path and
+   ;; --no-plugins are consumed by PRESCAN-PLUGIN-ARGUMENTS in RUN, before
+   ;; the parser exists: what they say decides what is loaded, and the
+   ;; loaded plug-ins are what tell the parser which options are legal. The
+   ;; parser accepts them so that they are not "unknown".
+   (make-option-spec
+    :longs '("--plugin") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (activate-plugin-by-name opts value)))
+   (make-option-spec
+    :longs '("--plugin-path") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore opts value name))))
+   (make-option-spec
+    :longs '("--no-plugins") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore opts value name))))
+   (make-option-spec
+    :longs '("--list-plugins") :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value name))
-               (setf (cli-options-epure-p opts) t)))
+               (setf (cli-options-list-plugins-p opts) t)))
+   (make-option-spec
+    :longs '("--compile-plugin") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-compile-plugin opts) value)))
    (make-option-spec
     :longs '("--bootstrap-phase") :takes-arg-p t
     :handler (lambda (opts value name)
@@ -494,6 +732,17 @@ error rather than silently last-winning."
                (declare (ignore value name))
                (setf (cli-options-dry-run-p opts) t)))
    (make-option-spec
+    :longs '("--print-command") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-print-command-p opts) t)))
+   ;; --on-error, --on-interrupt, --on-quit, --debugger-ui, --aldb-listen
+   ;; and --aldb-stdio are the SHARED specs of *COMMON-OPTION-SPECS*: the
+   ;; clautolisp program's, spelled, parsed and meant the same way
+   ;; (debugger-public-interface-and-on-error.issue, pjb 2026-10-06). RUN
+   ;; sets *ON-ERROR* from the parsed --on-error, and refuses the ones a CAD
+   ;; backend cannot honour (CHECK-DEBUGGER-OPTIONS-FOR-BACKEND).
+   (make-option-spec
     :longs '("--keep-workdir") :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value name))
@@ -502,9 +751,57 @@ error rather than silently last-winning."
     :longs '("--write-workdir-path") :takes-arg-p t
     :handler (lambda (opts value name)
                (declare (ignore name))
-               (setf (cli-options-write-workdir-path opts) value)))))
+               (setf (cli-options-write-workdir-path opts) value)))
+   ;; --cad-log FILE: the `log' encoding situation read back
+   ;; (encoding-situations-cli-options). WRITE-CAD-LOG-IF-ASKED.
+   (make-option-spec
+    :longs '("--cad-log") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-cad-log opts) value)))
+   ;; --result-file FILE (repeatable) / --cleanup-report FILE: the recorded
+   ;; results and the owned-CAD cleanup report
+   ;; (alfe-owned-cad-termination-after-recorded-results). CHECK-RESULT-FILES,
+   ;; WRITE-CLEANUP-REPORT-IF-ASKED.
+   (make-option-spec
+    :longs '("--result-file") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-result-files opts)
+                     (append (cli-options-result-files opts) (list value)))))
+   (make-option-spec
+    :longs '("--cleanup-report") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-cleanup-report opts) value)))
+   ;; --- dribble (alfe-dribble.issue) -------------------------------
+   ;; The slots live in the SHARED cli-options struct, which already
+   ;; carried them ("clautolisp today, alfe planned"); only the specs
+   ;; are per-program, because clautolisp's --dribble and alfe's differ
+   ;; in what they record. Spelled exactly as clautolisp spells them --
+   ;; a user who knows one knows the other.
+   ;;
+   ;; --dribble takes an OPTIONAL value: bare records into the default
+   ;; timestamped file, --dribble=FILE into FILE (appended).
+   (make-option-spec
+    :longs '("--dribble") :shorts nil :takes-arg-p t :optional-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (clautolisp.autolisp-cli:cli-options-dribble opts)
+                     (or value t))))
+   (make-option-spec
+    :longs '("--dribble-interactors") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (clautolisp.autolisp-cli:cli-options-dribble-interactors opts)
+                     (clautolisp.autolisp-cli:parse-dribble-interactors
+                      value name))))))
 
 (defparameter *alfe-option-specs* (%make-alfe-option-specs))
+
+(setf alfe.plugin:*core-option-names-function*
+      (lambda ()
+        (loop for spec in (append *alfe-option-specs* *common-option-specs*)
+              append (option-spec-longs spec))))
 
 (defun %translate-action-cons (cons load-encoding)
   "Convert one (:KIND . PAYLOAD) cons produced by the shared parser
@@ -523,17 +820,19 @@ caller can inspect the result, validate it (RESOLVE-BACKEND), or
 build the action plan (PLAN-FROM-OPTIONS).
 
 Internally delegates to clautolisp.autolisp-cli's spec-driven
-parser with the union of *common-option-specs* + *alfe-option-specs*.
+parser with the union of *common-option-specs* + *alfe-option-specs* + the
+options of the registered plug-ins (which the caller has loaded: see
+LOAD-PLUGINS).
 Post-translation steps fold env-var defaults in and rewrite the
 action conses produced by the shared parser into alfe.backend
 action objects so the rest of alfe (PLAN-FROM-OPTIONS, EVAL-PLAN,
 etc.) sees the legacy shape. The transmit-options installer reads
 through CLI-OPTIONS->TRANSMIT-BINDINGS-FOR-ALFE which translates
 the action objects back to conses on the fly."
-  (let* ((options (make-cli-options)))
+  (let* ((options (make-cli-options :host :cador)))
     (apply-env-defaults options)
     (parse-arguments-with-spec
-     (append *alfe-option-specs* *common-option-specs*)
+     (append *alfe-option-specs* (plugin-option-specs) *common-option-specs*)
      argv
      :initial-options options)
     (setf (cli-options-actions options)
@@ -541,6 +840,12 @@ the action objects back to conses on the fly."
                     (%translate-action-cons
                      a (cli-options-load-encoding options)))
                   (cli-options-actions options)))
+    ;; Command line, then environment, then default; the options of a
+    ;; plug-in that is not active are refused here, as a usage error.
+    (resolve-plugin-options options)
+    ;; The aldb channel rules, as the clautolisp program applies them:
+    ;; --aldb-stdio excludes --interactive and --aldb-listen.
+    (clautolisp.autolisp-cli:validate-debugger-options options)
     options))
 
 (defun %action-object-to-cons (action)
@@ -587,6 +892,56 @@ it here. USAGE-TEXT becomes *AUTOLISP-HELP*."
 ;; uniformly across both tools.
 
 ;;; --- backend resolution ---------------------------------------------
+
+(defun clautolisp-program-requirement (options)
+  "Why the run OPTIONS describe needs the clautolisp PROGRAM -- not only the
+engine alfe embeds -- as (VALUES OPTION REASON), or NIL when it does not.
+
+The embedded engine is the clautolisp runtime; some of what `clautolisp'
+offers is the program's own machinery, built around that runtime, and is not
+in alfe's image (alfe-clautolisp-backend-semantic-parity.issue):
+
+  --host cadtui         the UI-tree layer and its console interactor;
+  an interactive run    the REPL: interactors, comma commands, the aldo
+  (-i, or no action)    debugger an error breaks into, Control-C policy;
+  --dribble[-interactors]  the recorder, which tees that REPL;
+  --dcl gui / ncurses   the GUI and full-screen DCL renderers and their
+                        selection (tui / auto are the line renderer in
+                        both variants: the child's captured stdout is no TTY).
+
+Rather than a second, poorer copy of each in alfe, such a run IS the program's:
+the clautolisp backend runs it as the subprocess variant, so the default and
+--backend subprocess behave identically by construction."
+  (cond ((eq (cli-options-host options) :cadtui)
+         (values "--host" "the cadtui host (--host cadtui)"))
+        ((some (lambda (action) (eq (action-kind action) :interactive))
+               (plan-from-options options))
+         (values "--interactive"
+                 "an interactive session (-i, or no -l / -x / --main / FILE)"))
+        ((clautolisp.autolisp-cli:cli-options-dribble options)
+         (values "--dribble" "a recording (--dribble)"))
+        ((member (clautolisp.autolisp-cli:cli-options-dcl options) '(:gui :ncurses))
+         (values "--dcl"
+                 (format nil "the ~(~A~) DCL renderer (--dcl ~:*~(~A~))"
+                         (clautolisp.autolisp-cli:cli-options-dcl options))))
+        (t nil)))
+
+(defun %clautolisp-variant (options)
+  "The clautolisp engine variant OPTIONS ask for: the --backend one, except
+that a run needing the clautolisp PROGRAM's own machinery
+(CLAUTOLISP-PROGRAM-REQUIREMENT: --host cadtui, an interactive session,
+--dribble, --dcl gui/ncurses) is the program's, so it means the subprocess
+variant. Asking for one of those and --backend direct together is a
+contradiction, and a usage error."
+  (let ((variant (cli-options-backend-variant options)))
+    (multiple-value-bind (option reason) (clautolisp-program-requirement options)
+      (cond ((null option) variant)
+            ((eq variant :direct)
+             (error 'cli-usage-error
+                    :option option
+                    :message (format nil "~A runs in the clautolisp executable, not in alfe's embedded engine: it cannot be combined with --backend direct (leave --backend out, or use --backend subprocess)"
+                                     reason)))
+            (t :subprocess)))))
 
 (defun resolve-backend (options &key (detect-p t))
   "Apply the spec's backend-defaulting algorithm to OPTIONS. Returns
@@ -648,7 +1003,9 @@ conformance scenarios under tests/scenarios/{bricscad,cli}/."
         ;; backend is the clautolisp one, swap in a fresh instance
         ;; tagged with the requested variant. The registered backend
         ;; is the :direct default; we don't mutate it.
-        (let ((variant (cli-options-backend-variant options)))
+        (let ((variant (if (eq selected :clautolisp)
+                           (%clautolisp-variant options)
+                           (cli-options-backend-variant options))))
           (when (and (eq selected :clautolisp)
                      (member variant '(:subprocess :direct)))
             (when (find-symbol "MAKE-CLAUTOLISP-BACKEND"
@@ -744,8 +1101,12 @@ backend: init-file loads first (when the lookup is not gated),
 then PLAN-FROM-OPTIONS. Touches the filesystem (via
 RESOLVE-INIT-FILE-ACTIONS); intended for the live run path and
 the dry-run renderer."
-  (append (resolve-init-file-actions options)
-          (plan-from-options options)))
+  ;; Hook :plan sees the whole plan — init files, user actions and the
+  ;; terminator — so a plug-in can put actions in front of everything (EPUREE
+  ;; does), and --dry-run shows what it did.
+  (run-hook :plan
+            (append (resolve-init-file-actions options)
+                    (plan-from-options options))))
 
 ;;; --- dry-run renderer ----------------------------------------------
 
@@ -769,77 +1130,161 @@ the dry-run renderer."
   (format stream "  actions:~%")
   (dolist (action (effective-plan options))
     (format stream "    - ~A~%" (render-action action)))
+  (dolist (line (run-hook :dry-run-report nil))
+    (format stream "  ~A~%" line))
   (finish-output stream))
+
+;;; --- --print-command ------------------------------------------------
+;;;
+;;; --print-command stages a run for real (workdir, run-common.lsp,
+;;; run.scr / bridge script, …) and prints the CAD command line alfe
+;;; WOULD spawn, instead of spawning it. It is the debugging companion
+;;; to --dry-run: --dry-run resolves nothing and touches no disk;
+;;; --print-command resolves the engine, writes the launch artefacts,
+;;; and therefore prints the exact argv, binary path included.
+;;;
+;;; The printed line goes to *STANDARD-OUTPUT* ALONE (no banner), so
+;;; `cmd=$(alfe --print-command --bricscad …)` is usable directly;
+;;; everything else is logged at :verbose.
+
+(defparameter +shell-safe-characters+
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_@%+=:,./-"
+  "Characters that need no quoting in a POSIX shell word. Deliberately
+conservative: anything outside this set sends the argument through
+single-quote escaping.")
+
+(defun shell-quote-argument (string)
+  "Quote STRING for a POSIX shell (sh/bash). Uses single quotes, with
+the standard `'\\''` trick for an embedded single quote, so the result
+is safe for any byte sequence."
+  (if (and (plusp (length string))
+           (every (lambda (char) (find char +shell-safe-characters+)) string))
+      string
+      (with-output-to-string (out)
+        (write-char #\' out)
+        (loop for char across string
+              do (if (char= char #\')
+                     (write-string "'\\''" out)
+                     (write-char char out)))
+        (write-char #\' out))))
+
+(defun windows-quote-argument (string)
+  "Quote STRING for a Windows command line (cmd.exe / PowerShell's
+argument mode). Double quotes are the only portable grouping there;
+we quote whenever the argument holds whitespace or a shell
+metacharacter, and escape an embedded double quote as \\\"."
+  (if (and (plusp (length string))
+           (notany (lambda (char)
+                     (or (member char '(#\Space #\Tab #\Newline))
+                         (find char "&|<>^\"'`,;=()%!")))
+                   string))
+      string
+      (with-output-to-string (out)
+        (write-char #\" out)
+        (loop for char across string
+              do (when (char= char #\") (write-char #\\ out))
+                 (write-char char out))
+        (write-char #\" out))))
+
+(defun quote-command-argument (string &optional os)
+  "Quote STRING for OS's shell (:WINDOWS → cmd rules, anything else →
+POSIX rules). OS defaults to the host OS as ALFE.BACKEND.CAD-COMMON
+sees it — resolved at call time because that package loads after this
+file, and because the test suite overrides it."
+  (let ((os (or os (uiop:symbol-call :alfe.backend.cad-common :host-os))))
+    (if (eq os :windows)
+        (windows-quote-argument string)
+        (shell-quote-argument string))))
+
+(defun format-launch-command (argv &optional os)
+  "Render ARGV (binary in CAR) as one shell-ready command line, each
+element quoted for OS. This is what --print-command writes to stdout."
+  (format nil "~{~A~^ ~}"
+          (mapcar (lambda (argument) (quote-command-argument argument os))
+                  argv)))
 
 ;;; --- top-level RUN --------------------------------------------------
 
-;;; --- G1: apply the `terminal` situation encoding to alfe's OWN streams ---
-;;;
-;;; -Eterminal[-in|-out] declares the encoding of alfe's own REPL / batch I/O
-;;; with the user. Until now the value was published to AutoLISP code as
-;;; *AUTOLISP-TERMINAL-ENCODING* but never applied to this process's
-;;; *standard-output* / *standard-input*, so the flag was inert (the streams
-;;; kept SBCL's locale default). G1 makes it real: when — and ONLY when — a
-;;; terminal encoding is explicitly requested, rebind alfe's standard streams
-;;; to fresh fd-streams in that encoding. Unset ⇒ nothing changes (the
-;;; behaviour-preserving default the phased plan requires).
+;;; --- G1: the `terminal` situation encoding -- the code is shared ---------
+;;; (clautolisp.autolisp-cli, terminal.lisp) since the clautolisp tool applies
+;;; -Eterminal to its own streams too; these keep alfe's names.
+
+(defun console-is-terminal-p (options)
+  "True when the `console' situation of OPTIONS' run is alfe's own terminal:
+the selected backend is the clautolisp engine (the default, as in
+RESOLVE-BACKEND), whose console is in-process -- the same stream as the
+terminal. A CAD backend (--autocad / --bricscad, or --cad naming one, or an
+$ALFE_BACKEND_OVERRIDE) has a console DEVICE of its own, which -Econsole
+describes; it must not reconfigure alfe's terminal then. Decided from OPTIONS
+alone because the terminal is reconfigured before the backend is resolved."
+  (let ((selected
+          (or (cli-options-backend options)
+              ;; --cad is resolved later (apply-cad-selection); it names a
+              ;; CAD program, so treat it as one.
+              (and (cli-options-cad options) :cad)
+              (let ((override (env-default :override)))
+                (and override
+                     (ignore-errors
+                      (parse-backend-symbol override "$ALFE_BACKEND_OVERRIDE"))))
+              :clautolisp)))
+    (eq selected :clautolisp)))
 
 (defun terminal-encoding-plan (options)
-  "The stream reconfiguration the resolved `terminal` encoding implies for
-alfe's OWN standard streams, as a list of (KEY FD DIRECTION EXTERNAL-FORMAT)
-entries — KEY one of :OUTPUT / :ERROR / :INPUT, FD the OS descriptor,
-EXTERNAL-FORMAT a CL keyword. NIL when -Eterminal was not given. The bare
--Eterminal sets both directions; -Eterminal-out drives stdout+stderr,
--Eterminal-in drives stdin. Pure — so tests assert what a CLI would
-reconfigure without touching real process streams. The line-ending suffix is
-accepted-and-ignored here (terminal I/O is line-buffered), matching the
---list-encodings note."
-  (let ((out (cli-situation-encoding options "terminal" "out"))
-        (in  (cli-situation-encoding options "terminal" "in")))
-    (nconc
-     (when out
-       (let ((ext (encoding-keyword out)))
-         (list (list :output 1 :output ext)
-               (list :error  2 :output ext))))
-     (when in
-       (list (list :input 0 :input (encoding-keyword in)))))))
-
-(defun %make-terminal-fd-stream (fd direction external-format)
-  "A fresh stream over OS descriptor FD with EXTERNAL-FORMAT (DIRECTION is
-:INPUT or :OUTPUT), or NIL when the host CL cannot build one. Only SBCL is
-wired today; other implementations return NIL and the caller warns rather
-than failing."
-  (declare (ignorable fd direction external-format))
-  #+sbcl
-  (sb-sys:make-fd-stream fd
-                         :input  (eq direction :input)
-                         :output (eq direction :output)
-                         :external-format external-format
-                         :buffering (if (eq direction :output) :line :full)
-                         :name "alfe terminal")
-  #-sbcl
-  nil)
+  (clautolisp.autolisp-cli:terminal-encoding-plan
+   options :fold-console (console-is-terminal-p options)))
 
 (defun apply-terminal-encoding (options)
-  "G1 side effect: reconfigure alfe's own *standard-output* / *error-output*
-/ *standard-input* per TERMINAL-ENCODING-PLAN. A no-op when -Eterminal was
-not given. Any failure (unsupported host CL, un-reopenable fd) degrades to a
-warning — it must never abort the run, and the un-reconfigured stream simply
-keeps the locale default."
-  (dolist (entry (terminal-encoding-plan options))
-    (destructuring-bind (key fd direction ext) entry
-      (handler-case
-          (let ((stream (%make-terminal-fd-stream fd direction ext)))
-            (if stream
-                (ecase key
-                  (:output (setf *standard-output* stream))
-                  (:error  (setf *error-output* stream))
-                  (:input  (setf *standard-input* stream)))
-                (warn "alfe: -Eterminal is only implemented on SBCL; ~
-leaving ~(~A~) at the host default." key)))
-        (error (e)
-          (warn "alfe: could not apply -Eterminal (~A) to ~(~A~): ~A"
-                ext key e))))))
+  (clautolisp.autolisp-cli:apply-terminal-encoding
+   options :tool "alfe" :fold-console (console-is-terminal-p options)))
+
+;;; --- section 6 point 1: one START-ENGINE keyword per situation -----------
+;;;
+;;; START-ENGINE used to receive only the two legacy mirrors (:load-encoding =
+;;; source, :io-encoding = terminal). SITUATION-ENGINE-KEYWORDS resolves every
+;;; situation x direction once, here, with the right resolver per boundary:
+;;;   - source / file / log / terminal: CLI-SITUATION-ENCODING -- the bare -E
+;;;     reaches them (they are ours, or follow our choice);
+;;;   - console / cadstdio: CLI-SITUATION-ENCODING-EXPLICIT -- only an option
+;;;     naming them; a bare -E must not reach a product-fixed boundary (a
+;;;     blanket -E UTF-8 once made alfe read accoreconsole's UTF-16LE pipe as
+;;;     UTF-8).
+;;; The terminal pair folds an explicit -Econsole in when the console IS the
+;;; terminal (CONSOLE-IS-TERMINAL-P: the clautolisp engine), with the same
+;;; precedence as the terminal plan, so what alfe applies to its own streams
+;;; and what it forwards to a clautolisp child agree.
+
+(defun situation-engine-keywords (options &key
+                                            (console-is-terminal-p
+                                             (and options
+                                                  (console-is-terminal-p options))))
+  "The START-ENGINE keyword plist for every encoding situation of OPTIONS (a
+cli-options record, or NIL -> every value NIL): :SOURCE-ENCODING
+:FILE-READ-ENCODING :FILE-WRITE-ENCODING :CONSOLE-IN-ENCODING
+:CONSOLE-OUT-ENCODING :CADSTDIO-IN-ENCODING :CADSTDIO-OUT-ENCODING
+:LOG-ENCODING :TERMINAL-IN-ENCODING :TERMINAL-OUT-ENCODING. Each value is the
+canonical encoding name the user asked for, or NIL (the backend default)."
+  (flet ((all (situation &optional direction)
+           (and options (cli-situation-encoding options situation direction)))
+         (explicit (situation &optional direction)
+           (and options
+                (cli-situation-encoding-explicit options situation direction)))
+         (terminal (direction)
+           (and options
+                (clautolisp.autolisp-cli:terminal-situation-encoding
+                 options direction :fold-console console-is-terminal-p))))
+    (list :source-encoding       (all "source")
+          :file-read-encoding    (all "file" "read")
+          :file-write-encoding   (all "file" "write")
+          :console-in-encoding   (explicit "console" "in")
+          :console-out-encoding  (explicit "console" "out")
+          :cadstdio-in-encoding  (explicit "cadstdio" "in")
+          :cadstdio-out-encoding (explicit "cadstdio" "out")
+          :log-encoding          (all "log")
+          :terminal-in-encoding  (terminal "in")
+          :terminal-out-encoding (terminal "out"))))
+
+(defun windows-console-code-page (external-format)
+  (clautolisp.autolisp-cli:windows-console-code-page external-format))
 
 ;;; --- G2: the `console` encoding alfe DECODES the CAD's output AS ---
 ;;;
@@ -850,15 +1295,20 @@ leaving ~(~A~) at the host default." key)))
 ;;; auto-detect cascade — the behaviour-preserving default. A per-backend
 ;;; default (accoreconsole → true UTF-16LE) is deliberately NOT forced here
 ;;; yet: that flip waits on real-runner verification (Phase 2 plan).
+;;;
+;;; Only an option NAMING the console / cadstdio counts (the EXPLICIT
+;;; resolver): the bare -E / --encoding no longer reaches the BricsCAD drain.
+;;; It used to -- -E UTF-8, meant for the source files and alfe's terminal,
+;;; forced the drain to UTF-8 over the auto-detect cascade that reads a
+;;; BricsCAD/Windows cp1252 drain (E3) correctly. AutoCAD already had this
+;;; rule (%AUTOCAD-REQUESTED-STDIO-ENCODING); both CAD drains now agree.
 (defun resolved-console-encoding (options)
-  "The encoding alfe should decode the CAD console output AS — the resolved
-`console`-out / `console` / `cadstdio`-out / `cadstdio` situation, or :AUTO
-when none was requested."
+  "The encoding alfe should decode the CAD console output AS — the explicitly
+requested `console`-out / `console` / `cadstdio`-out / `cadstdio` situation,
+or :AUTO when none was requested (a bare -E does not count)."
   (or (and options
-           (or (cli-situation-encoding options "console" "out")
-               (cli-situation-encoding options "console")
-               (cli-situation-encoding options "cadstdio" "out")
-               (cli-situation-encoding options "cadstdio")))
+           (or (cli-situation-encoding-explicit options "console" "out")
+               (cli-situation-encoding-explicit options "cadstdio" "out")))
       :auto))
 
 ;;; --- backend selection: resolve --cad DENOTATION ---
@@ -910,20 +1360,126 @@ denotation that matches nothing is a usage error listing the way to see them."
                             (setf (uiop:getenv "BRICSCAD_EXE") path))
             (:clautolisp    (%set-backend-checked options :clautolisp "--cad"))))))))
 
+(defun apply-cad-instance-policy (options)
+  "Settle whether a CAD run LAUNCHES a new instance or ATTACHES to a running
+one (alfe-cad-launch-new-by-default, pjb 2026-10-23).
+
+Launching is the default: a batch run -- CI above all -- must not land in a
+CAD somebody else is using, and must not run beside another instance. Attaching
+is asked for explicitly, with --backend attach (the running instance) or
+--attach-pid PID (that one). An attach goes through the CAD's automation
+interface, so it implies --mode automation; --mode batch always starts its own
+CAD process, so the two together are a usage error rather than a silent launch.
+--attach-pid with --backend launch, or with a backend that is not a CAD, is
+one too."
+  (let ((pid (cli-options-attach-pid options))
+        (cad-p (member (cli-options-backend options) '(:autocad :bricscad))))
+    (when pid
+      (when (eq (cli-options-backend-variant options) :launch)
+        (error 'cli-usage-error
+               :option "--attach-pid"
+               :message "--attach-pid attaches to a running CAD; it cannot be combined with --backend launch"))
+      (unless cad-p
+        (error 'cli-usage-error
+               :option "--attach-pid"
+               :message "--attach-pid names a running CAD: it needs --autocad, --bricscad or --cad"))
+      (setf (cli-options-backend-variant options) :attach))
+    (when (and cad-p (eq (cli-options-backend-variant options) :attach))
+      (case (cli-options-mode options)
+        (:auto (setf (cli-options-mode options) :automation))
+        (:batch
+         (error 'cli-usage-error
+                :option (if pid "--attach-pid" "--backend attach")
+                :message "attaching to a running CAD goes through its automation interface (COM on Windows, AppleScript on macOS): it cannot be combined with --mode batch, which always starts a new CAD process"))))
+    options))
+
+(defun %print-alfe-backtrace (condition stream)
+  "Dump CONDITION and the live CL backtrace to STREAM. Used by the
+--on-error debug|ignore policies; portable across SBCL and CCL, and a
+no-op note elsewhere."
+  (format stream "~&alfe[on-error]: ~A~%~%Backtrace:~%" condition)
+  (ignore-errors
+   #+sbcl (sb-debug:print-backtrace :stream stream :count 200)
+   #+ccl  (ccl:print-call-history :stream stream :detailed-p nil)
+   #-(or sbcl ccl)
+   (format stream "  (no backtrace: unsupported CL implementation)~%"))
+  (finish-output stream))
+
+(defun %load-installed-plugins (argv version)
+  "Load the plug-ins ARGV allows: --no-plugins (or $ALFE_NO_PLUGINS) loads
+none and forgets any registered before; --plugin-path adds roots."
+  (multiple-value-bind (directories none) (prescan-plugin-arguments argv)
+    (cond ((alfe.plugin:plugins-disabled-p none)
+           (alfe.plugin:reset-plugins))
+          (t
+           (load-plugins :directories directories
+                         :version (or version "0.0.0"))))))
+
+(defun %compile-plugin-command (file version)
+  "--compile-plugin FILE: compile FILE for this alfe, print where, and return
+the exit status: 0, EX_NOINPUT (66) when FILE cannot be opened, EX_DATAERR
+(65) when it does not compile (or is not named NAME.lisp)."
+  (handler-case
+      (let ((output (compile-plugin file :version (or version "0.0.0"))))
+        (format t "~&~A~%" (uiop:native-namestring output))
+        (finish-output)
+        clautolisp.sysexits:+ex-ok+)
+    (error (condition)
+      (format *error-output* "~&alfe: --compile-plugin: ~A~%" condition)
+      (if (typep condition 'file-error)
+          clautolisp.sysexits:+ex-noinput+
+          clautolisp.sysexits:+ex-dataerr+))))
+
+(defun %condition-phase (condition)
+  (typecase condition
+    (cli-usage-error :usage)
+    (backend-error (alfe.error:backend-error-phase condition))
+    (t :internal)))
+
+(defun %report-error-to-plugins (condition)
+  "Hook :error, at the point of the error (before any unwinding, so the
+--on-error backtrace is untouched). A failing handler must not mask the
+error it was told about."
+  (handler-case (run-hook :error condition :phase (%condition-phase condition))
+    (error (failure)
+      (log-debug "cli: hook :error failed: ~A" failure))))
+
+(defmacro %with-error-hook (&body body)
+  `(handler-bind ((error #'%report-error-to-plugins))
+     ,@body))
+
 (defun run (argv &key version)
   "alfe entry point. ARGV is the argument list *without* the program
 name; VERSION is the version string printed by --version. Returns an
 integer exit code; the executable's MAIN wraps this and calls UIOP:QUIT
 with the result.
 
-The handler chain matches alfe-cli.issue's exit-code table:
-  0 — success
-  1 — user script reported failure (or unexpected condition)
-  2 — CLI-USAGE-ERROR
-  3 — BACKEND-NOT-AVAILABLE
-  4 — BACKEND-BOOTSTRAP-ERROR / BACKEND-PROTOCOL-ERROR"
+The exit statuses are the <sysexits.h> codes (sysexits-exit-statuses.issue;
+the table is in the alfe specification, Exit status):
+  0  — success
+  1  — the user's AutoLISP program failed
+  N  — the program's own (exit N) / (quit N) / autolisp-set-status N
+  64..78 — the condition that stopped the run, mapped by
+       ALFE.ERROR:EXIT-CODE-FOR-CONDITION (EX_USAGE for a usage error,
+       EX_UNAVAILABLE for an engine that is not there, ...)"
   (handler-case
-      (let ((options (parse-arguments argv)))
+      (let ((*on-error* :quit))
+        (handler-bind
+            ((error (lambda (condition)
+                      (when (member *on-error* '(:debug :ignore))
+                        (%print-alfe-backtrace condition *error-output*)))))
+        (let ((options (progn
+                         ;; Plug-ins first: their options are what the
+                         ;; parser must accept.
+                         (%load-installed-plugins argv version)
+                         (let ((options (parse-arguments argv)))
+                           ;; --on-error also governs how alfe reports its
+                           ;; OWN unexpected conditions (see *ON-ERROR*).
+                           (setf *on-error*
+                                 (or (clautolisp.autolisp-cli:cli-options-on-error
+                                      options)
+                                     :quit))
+                           options))))
         (cond
           ((cli-options-help-p options)
            (print-usage)
@@ -937,6 +1493,15 @@ The handler chain matches alfe-cli.issue's exit-code table:
           ((cli-options-list-dialects-p options)
            (clautolisp.autolisp-cli:print-dialects)
            0)
+          ((cli-options-list-hosts-p options)
+           ;; The shared parser has always ACCEPTED --list-hosts and set
+           ;; this slot; with no branch here alfe fell through to its REPL
+           ;; instead of answering (alfe-list-hosts-ignored). ALIASES NIL:
+           ;; alfe takes cador, cadtui and nihil and nothing else, so the
+           ;; shared note about mock / null / none would name spellings it
+           ;; refuses.
+           (clautolisp.autolisp-cli:print-hosts :aliases nil)
+           0)
           ((cli-options-list-situations-p options)
            (clautolisp.autolisp-cli:print-situations
             :backend (cli-options-backend options))
@@ -947,6 +1512,11 @@ The handler chain matches alfe-cli.issue's exit-code table:
            ;; resolve PRINT-CAD-PROGRAMS at call time.
            (uiop:symbol-call :alfe.backend.cad-common :print-cad-programs)
            0)
+          ((cli-options-list-plugins-p options)
+           (print-plugins)
+           0)
+          ((cli-options-compile-plugin options)
+           (%compile-plugin-command (cli-options-compile-plugin options) version))
           (t
            (set-level (cli-options-verbosity options))
            ;; G1: apply the resolved `terminal` encoding to alfe's OWN
@@ -957,6 +1527,8 @@ The handler chain matches alfe-cli.issue's exit-code table:
            ;; Resolve --cad DENOTATION -> backend + $*_EXE override (needs
            ;; --mode, which is now parsed). No-op unless --cad was given.
            (apply-cad-selection options)
+           ;; Launch a new CAD (the default) or attach to a running one.
+           (apply-cad-instance-policy options)
            ;; Once the log level is set, dump the resolved option
            ;; surface at :debug so a `--debug` run shows what the
            ;; parser decided. Mirrors the bash autolisp script's
@@ -999,36 +1571,63 @@ The handler chain matches alfe-cli.issue's exit-code table:
                ;; the action plan and exits 0 — matching the user
                ;; intent of "show me what would happen" rather than
                ;; "verify the engine works".
-               (let ((backend (resolve-backend
-                               options
-                               :detect-p (not (cli-options-dry-run-p options)))))
-                 (cond
-                   ((cli-options-dry-run-p options)
-                    (emit-dry-run options backend)
-                    0)
-                   (t
-                    (run-plan options backend :version-text version)))))))))
-    (cli-usage-error (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      2)
-    (backend-not-available (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      3)
-    (alfe.error:backend-bootstrap-error (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      4)
-    (alfe.error:backend-protocol-error (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      4)
-    (backend-eval-error (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      1)
-    (backend-error (condition)
-      (format *error-output* "~&alfe: ~A~%" condition)
-      (exit-code-for-condition condition))
+               (with-run-context (options :version version)
+                 (%with-error-hook
+                   (run-hook :cli-parsed options)
+                   (let ((backend (resolve-backend
+                                   options
+                                   :detect-p (not (cli-options-dry-run-p options)))))
+                     ;; The debugger options a CAD backend cannot honour are
+                     ;; refused, never silently ignored -- dry run included.
+                     (check-debugger-options-for-backend
+                      options (alfe.backend:backend-name backend))
+                     ;; From here the run's backend is the one really chosen
+                     ;; (an $ALFE_BACKEND_OVERRIDE, a default), which is what
+                     ;; a plug-in's :applies-to is matched against.
+                     (setf (alfe.plugin:context-backend alfe.plugin:*context*)
+                           (alfe.backend:backend-name backend))
+                     (run-hook :backend-selected backend
+                               :options options
+                               :dry-run-p (cli-options-dry-run-p options))
+                     (cond
+                       ((cli-options-dry-run-p options)
+                        (emit-dry-run options backend)
+                        0)
+                       ((cli-options-print-command-p options)
+                        (print-command-plan options backend :version-text version))
+                       (t
+                        (run-plan options backend :version-text version)))))))))))))
+    ;; One report, one mapping for every error that ends the run
+    ;; (sysexits-exit-statuses.issue).
     (error (condition)
       (format *error-output* "~&alfe: ~A~%" condition)
-      1)))
+      (exit-code-for-condition condition))))
+
+(defparameter +cad-refused-debugger-options+
+  '("--on-interrupt" "--on-quit" "--debugger-ui" "--aldb-listen" "--aldb-stdio")
+  "The debugger options a CAD backend (--autocad / --bricscad) refuses. They
+configure aldo, the clautolisp engine's debugger, and the AutoLISP of a CAD runs
+in the CAD, with no aldo: honouring them is impossible and ignoring them would
+lie. --on-error is not among them: under every backend it also governs how
+alfe reports its own unexpected conditions (*ON-ERROR*).")
+
+(defun check-debugger-options-for-backend (options backend-name)
+  "Signal a CLI-USAGE-ERROR when OPTIONS carry a debugger option the backend
+BACKEND-NAME cannot honour (+CAD-REFUSED-DEBUGGER-OPTIONS+ under a CAD
+backend). The clautolisp backend honours them all, in both variants."
+  (when (member backend-name '(:autocad :bricscad))
+    (let ((refused (remove-if-not
+                    (lambda (name)
+                      (member name +cad-refused-debugger-options+ :test #'string=))
+                    (clautolisp.autolisp-cli:given-debugger-options options))))
+      (when refused
+        (error 'cli-usage-error
+               :option (format nil "~{~A~^, ~}" refused)
+               :message
+               (format nil "~:[this option configures~;these options configure~] ~
+aldo, the debugger of the clautolisp engine; the ~(~A~) backend runs AutoLISP in ~
+the CAD, which has no aldo (use --clautolisp, or drop ~:[it~;them~])"
+                       (rest refused) backend-name (rest refused)))))))
 
 (defun effective-dialect (options)
   "Resolve the dialect to run, per alfe-clautolisp-dialect.issue point 1.
@@ -1042,6 +1641,33 @@ takes effect regardless of option order."
     ;; :clautolisp or nil (default backend): honour --dialect, whose
     ;; slot defaults to :strict when the user gave no --dialect.
     (t (cli-options-dialect options))))
+
+(defun %session-dwg (options backend workdir)
+  "The drawing the session starts on: with --template NAME|PATH a copy of
+that template in WORKDIR (alfe-template-option) -- looked up in the folders
+of the backend's CAD, or of the dialect's product under clautolisp --
+else --dwg. An unknown template fails the run with the templates found
+listed (EX_NOINPUT)."
+  (let ((template (cli-options-template options)))
+    (if (null template)
+        (cli-options-dwg options)
+        (let* ((name (alfe.backend:backend-name backend))
+               (product (if (member name '(:autocad :bricscad))
+                            name
+                            (ignore-errors
+                             (clautolisp.autolisp-reader:autolisp-dialect-product
+                              (clautolisp.autolisp-reader:find-autolisp-dialect
+                               (effective-dialect options))))))
+               (source (alfe.template:find-template template product)))
+          (unless source
+            (error 'clautolisp.autolisp-cli:cli-error
+                   :option "--template"
+                   :status clautolisp.sysexits:+ex-noinput+
+                   :message (format nil "no template named ~A~@[ for ~(~A~)~]; the templates found:~:[ none~;~:*~{~%    ~A~}~]"
+                                    template product
+                                    (mapcar #'uiop:native-namestring
+                                            (alfe.template:list-templates product)))))
+          (uiop:native-namestring (alfe.template:copy-template source workdir))))))
 
 (defun %write-workdir-path-file (options workdir)
   "If --write-workdir-path FILE was given, write WORKDIR's absolute path to
@@ -1057,6 +1683,47 @@ run must proceed even if the caller's path-capture file is unwritable."
         (error (e)
           (log-verbose "cli: could not write workdir path to ~S: ~A" path e))))))
 
+(defun %safe-hook (name value &rest details)
+  "Run the hook NAME during teardown. An error in a handler is reported, not
+propagated: shutdown and cleanup must still happen, and the run's own
+outcome must not be replaced by a plug-in's teardown failure."
+  (handler-case (apply #'run-hook name value details)
+    (error (condition)
+      (format *error-output* "~&alfe: warning: hook ~S failed: ~A~%"
+              name condition)
+      nil)))
+
+(defun %eval-plan-with-hooks (session plan)
+  "Evaluate PLAN through EVAL-PLAN-WITH-ACTION-HOOKS, calling :pre-action and
+:post-action around each action. Used only when an active plug-in registered
+one of the two hooks. How the actions are separated is the backend's business:
+the CAD backends evaluate the plan one action at a time and stop at the first
+that fails; the clautolisp backend, in both variants, stops at the action
+boundaries of the ONE run it would make without hooks, so the run -- its state,
+output, stopping point and exit status -- is the same with or without a
+plug-in (alfe-clautolisp-backend-semantic-parity.issue)."
+  (let ((count (length plan)))
+    (eval-plan-with-action-hooks
+     session plan
+     (lambda (action index)
+       (run-hook :pre-action action :index index :count count
+                                    :session session))
+     (lambda (action index result)
+       (run-hook :post-action action :index index :count count
+                                     :session session :result result)))))
+
+(defun %prepare-workdir-or-fail (backend workdir-root)
+  "PREPARE-WORKDIR, with a workdir that cannot be created reported as a
+BACKEND-BOOTSTRAP-ERROR of code :CANNOT-CREATE-WORKDIR, whose exit status
+is EX_CANTCREAT (73) (sysexits-exit-statuses.issue)."
+  (handler-case (prepare-workdir backend workdir-root)
+    (file-error (condition)
+      (error 'alfe.error:backend-bootstrap-error
+             :backend (alfe.backend:backend-name backend)
+             :code :cannot-create-workdir
+             :message (format nil "cannot create the workdir~@[ ~A~]: ~A"
+                              workdir-root condition)))))
+
 (defun run-plan (options backend &key version-text)
   "Drive a real backend through the action plan. Returns the exit code.
 VERSION-TEXT propagates the alfe version string from RUN so backends
@@ -1066,75 +1733,413 @@ engine."
                (cli-options-load-encoding options)
                (cli-options-io-encoding options))
   (let* ((started-at (get-internal-real-time))
-         (workdir (let ((wd (prepare-workdir backend
-                                             (cli-options-workdir options))))
+         ;; The plan first, before a workdir exists or a CAD is launched: a
+         ;; plug-in that cannot build its part of it (EPUREE without ALPM)
+         ;; says so at once, not after a two-minute CAD start.
+         (plan (effective-plan options))
+         (workdir (let ((wd (%prepare-workdir-or-fail
+                             backend (cli-options-workdir options))))
                     (%write-workdir-path-file options wd)
+                    (run-hook :workdir-prepared wd)
                     wd))
-         (session (start-engine backend workdir
-                                :dialect (effective-dialect options)
-                                :host (cli-options-host options)
-                                :mock-input nil
-                                :bootstrap-phase
-                                (cli-options-bootstrap-phase options)
-                                :interactive-p
-                                (cli-options-interactive-p options)
-                                :mode (cli-options-mode options)
-                                :dwg (cli-options-dwg options)
-                                :load-encoding
-                                (cli-options-load-encoding options)
-                                :io-encoding
-                                (cli-options-io-encoding options)
-                                :cli-options options
-                                :version-text version-text)))
-    (unwind-protect
-         (let* ((plan (effective-plan options)))
-           (log-verbose "cli: resolved plan with ~D action~:P" (length plan))
-           (loop for action in plan
-                 for i from 1
-                 do (log-verbose "cli: plan[~D] = ~A"
-                                 i (render-action action)))
-           (let ((result (eval-plan session plan)))
-             ;; The backend contract is: EVAL-PLAN writes live output
-             ;; to *STANDARD-OUTPUT* / *ERROR-OUTPUT* during the call,
-             ;; AND captures a copy in EVAL-RESULT-{OUTPUT,ERROR-OUTPUT}
-             ;; for tests and diagnostics. We do not re-echo the capture
-             ;; here — doing so would double-print everything the backend
-             ;; already wrote to the live streams. Backends that genuinely
-             ;; capture-only (e.g. the file-IPC drivers, which read
-             ;; stdout.txt back from disk *after* the engine wrote it)
-             ;; are responsible for replaying their own capture to the
-             ;; live streams from inside EVAL-PLAN.
-             ;;
-             ;; We intentionally do NOT auto-print EVAL-RESULT-VALUE
-             ;; here. Per the alfe spec ("Action output semantics"),
-             ;; `-x EXPR' / `-l FILE' / `--main FN' are not REPL
-             ;; steps — they are batch evaluations whose value is
-             ;; discarded unless the user wrote an explicit
-             ;; (print …) / (princ …) / (prin1 …). That makes alfe
-             ;; behave identically across all three backends (the CAD
-             ;; backends never had auto-print) and matches AutoLISP's
-             ;; convention where only the top-level REPL prints
-             ;; values automatically.
-             ;;
-             ;; Earlier alfe versions did auto-print the value for the
-             ;; clautolisp backend ("alfe -x '(+ 1 2)' → 3"); that was
-             ;; surprising both because it diverged from the CAD
-             ;; backends and because it produced double output when
-             ;; the user's expression already printed (e.g.
-             ;; "(princ \"hi\")" yielded "hi\"hi\""). The auto-print
-             ;; is removed; users who want the value back must wrap
-             ;; with (print …).
-             (finish-output)
-             (finish-output *error-output*)
-             (let ((exit-code (ecase (eval-result-status result)
-                                (:success  0)
-                                (:failed   1)
-                                (:aborted  1)))
-                   (elapsed (/ (float (- (get-internal-real-time) started-at))
-                               internal-time-units-per-second)))
-               (log-verbose "cli: plan finished status=~S exit=~D elapsed=~,2Fs"
-                            (eval-result-status result) exit-code elapsed)
-               exit-code)))
-      (ignore-errors (shutdown session :reason :cli-exit))
-      (ignore-errors (cleanup-workdir backend workdir
-                                      :keep-p (cli-options-keep-workdir-p options))))))
+         (session (apply #'start-engine backend workdir
+                         :dialect (effective-dialect options)
+                         :host (cli-options-host options)
+                         :mock-input nil
+                         :bootstrap-phase
+                         (cli-options-bootstrap-phase options)
+                         :interactive-p
+                         (cli-options-interactive-p options)
+                         :mode (cli-options-mode options)
+                         :dwg (%session-dwg options backend workdir)
+                         :load-encoding
+                         (cli-options-load-encoding options)
+                         :io-encoding
+                         (cli-options-io-encoding options)
+                         :cli-options options
+                         :version-text version-text
+                         ;; one keyword per encoding situation
+                         ;; (encoding-situations section 6 point 1)
+                         (situation-engine-keywords
+                          options
+                          :console-is-terminal-p
+                          (eq (alfe.backend:backend-name backend) :clautolisp)))))
+    ;; Start recording, for the backends alfe records itself. The clautolisp
+    ;; backend is NOT one of them: its flags were forwarded to the engine, which
+    ;; records its own REPL, and a second alfe-side file would be a poorer copy
+    ;; of the same session (alfe-dribble.issue; pjb's split).
+    (%warn-encoding-replacement-ignored options backend)
+    (%start-dribble-if-asked options version-text)
+    (let ((alfe.backend:*recorded-outcome* nil))
+      (unwind-protect
+           (progn
+             (run-hook :engine-started session)
+             (log-verbose "cli: resolved plan with ~D action~:P" (length plan))
+             (loop for action in plan
+                   for i from 1
+                   do (log-verbose "cli: plan[~D] = ~A"
+                                   i (render-action action)))
+             (let ((result (if (or (hook-active-p :pre-action)
+                                   (hook-active-p :post-action))
+                               (%eval-plan-with-hooks session plan)
+                               (eval-plan session plan))))
+               ;; The backend contract is: EVAL-PLAN writes live output
+               ;; to *STANDARD-OUTPUT* / *ERROR-OUTPUT* during the call,
+               ;; AND captures a copy in EVAL-RESULT-{OUTPUT,ERROR-OUTPUT}
+               ;; for tests and diagnostics. We do not re-echo the capture
+               ;; here — doing so would double-print everything the backend
+               ;; already wrote to the live streams. Backends that genuinely
+               ;; capture-only (e.g. the file-IPC drivers, which read
+               ;; stdout.txt back from disk *after* the engine wrote it)
+               ;; are responsible for replaying their own capture to the
+               ;; live streams from inside EVAL-PLAN.
+               ;;
+               ;; We intentionally do NOT auto-print EVAL-RESULT-VALUE
+               ;; here. Per the alfe spec ("Action output semantics"),
+               ;; `-x EXPR' / `-l FILE' / `--main FN' are not REPL
+               ;; steps — they are batch evaluations whose value is
+               ;; discarded unless the user wrote an explicit
+               ;; (print …) / (princ …) / (prin1 …). That makes alfe
+               ;; behave identically across all three backends (the CAD
+               ;; backends never had auto-print) and matches AutoLISP's
+               ;; convention where only the top-level REPL prints
+               ;; values automatically.
+               ;;
+               ;; Earlier alfe versions did auto-print the value for the
+               ;; clautolisp backend ("alfe -x '(+ 1 2)' → 3"); that was
+               ;; surprising both because it diverged from the CAD
+               ;; backends and because it produced double output when
+               ;; the user's expression already printed (e.g.
+               ;; "(princ \"hi\")" yielded "hi\"hi\""). The auto-print
+               ;; is removed; users who want the value back must wrap
+               ;; with (print …).
+               (finish-output)
+               (finish-output *error-output*)
+               (let ((exit-code (run-hook :exit-code
+                                          ;; The engine's own status when it
+                                          ;; decided one (the clautolisp backend:
+                                          ;; (exit N), a file error), else the
+                                          ;; outcome's.
+                                          ;; :aborted is a CAD that did not
+                                          ;; answer in time: EX_TEMPFAIL.
+                                          (or (eval-result-exit-code result)
+                                              (ecase (eval-result-status result)
+                                                (:success  clautolisp.sysexits:+ex-ok+)
+                                                (:failed   clautolisp.sysexits:+exit-autolisp-error+)
+                                                (:aborted  clautolisp.sysexits:+ex-tempfail+)))
+                                          :result result))
+                     (elapsed (/ (float (- (get-internal-real-time) started-at))
+                                 internal-time-units-per-second)))
+                 ;; The frontier: the results are checked and the outcome
+                 ;; recorded BEFORE the shutdown closes a CAD this run created,
+                 ;; whose own exit is past that point only a diagnostic
+                 ;; (alfe-owned-cad-termination-after-recorded-results).
+                 (let* ((checked (check-result-files (cli-options-result-files options)))
+                        (results-ok (every (lambda (f) (eq (getf f :status) :ok)) checked)))
+                   (when (and (not results-ok) (eql exit-code clautolisp.sysexits:+ex-ok+))
+                     (setf exit-code clautolisp.sysexits:+ex-noinput+))
+                   (setf alfe.backend:*recorded-outcome*
+                         (list :status (eval-result-status result)
+                               :exit-code exit-code
+                               :result-files checked
+                               :results-ok results-ok)))
+                 (log-verbose "cli: plan finished status=~S exit=~D elapsed=~,2Fs"
+                              (eval-result-status result) exit-code elapsed)
+                 exit-code)))
+        (%safe-hook :pre-shutdown session :reason :cli-exit)
+        (let ((cleanup-error nil))
+          (handler-case (shutdown session :reason :cli-exit)
+            (error (condition) (setf cleanup-error condition)))
+          (%safe-hook :post-shutdown session :workdir workdir)
+          (ignore-errors (write-cad-log-if-asked options backend workdir))
+          (write-cleanup-report-if-asked options workdir cleanup-error)
+          (ignore-errors (alfe.dribble:stop-dribble))
+          ;; Failed cleanup is observable and retains the evidence. It must not
+          ;; turn successful assertions into a successful unattended CI job.
+          (ignore-errors (cleanup-workdir backend workdir
+                            :keep-p (or cleanup-error
+                                        (cli-options-keep-workdir-p options))))
+          (when cleanup-error (error cleanup-error)))))))
+
+;;; --- recorded results and the cleanup report -------------------------
+;;; (alfe-owned-cad-termination-after-recorded-results)
+
+(defun %file-octet-length (path)
+  (ignore-errors
+   (with-open-file (in path :element-type '(unsigned-byte 8)) (file-length in))))
+
+(defun xml-document-complete-p (text)
+  "True when TEXT, an XML document, ends by closing its root element: the
+check that a report written by a run that stopped half-way fails. Not a
+validation: only the prolog (<?...?>, comments, <!DOCTYPE>) is skipped and
+the root's end tag (or its self-closing tag) looked for at the very end."
+  (let* ((s (string-right-trim '(#\Space #\Tab #\Return #\Newline) text))
+         (pos (position #\< s)))
+    (loop while pos
+          do (cond ((and (< (1+ pos) (length s)) (char= (char s (1+ pos)) #\?))
+                    (let ((end (search "?>" s :start2 pos)))
+                      (setf pos (and end (position #\< s :start (+ end 2))))))
+                   ((string= "<!--" s :start2 pos :end2 (min (length s) (+ pos 4)))
+                    (let ((end (search "-->" s :start2 pos)))
+                      (setf pos (and end (position #\< s :start (+ end 3))))))
+                   ((and (< (1+ pos) (length s)) (char= (char s (1+ pos)) #\!))
+                    (let ((end (position #\> s :start pos)))
+                      (setf pos (and end (position #\< s :start (1+ end))))))
+                   (t (return))))
+    (when pos
+      (let* ((name-end (or (position-if (lambda (c) (member c '(#\Space #\Tab #\Return #\Newline #\/ #\>)))
+                                        s :start (1+ pos))
+                           (length s)))
+             (name (subseq s (1+ pos) name-end))
+             (tag-end (position #\> s :start pos)))
+        (and (plusp (length name))
+             tag-end
+             (or (and (= tag-end (1- (length s)))
+                      (char= (char s (1- tag-end)) #\/))
+                 (let ((close (format nil "</~A>" name)))
+                   (and (> (length s) (length close))
+                        (string= close s :start2 (- (length s) (length close)))))))))))
+
+(defun check-result-file (path &key (settle 0.2))
+  "Check that the run wrote PATH completely. Returns (:PATH P :STATUS S :SIZE N)
+with S :OK, :MISSING, :EMPTY, :UNSTABLE (its size changed over SETTLE
+seconds: still being written) or :INCOMPLETE (an .xml file whose root
+element is not closed)."
+  (let ((file (probe-file path)))
+    (if (null file)
+        (list :path path :status :missing :size 0)
+        (let ((size (%file-octet-length file)))
+          (when (and size (plusp size) (plusp settle))
+            (sleep settle))
+          (let ((again (%file-octet-length file)))
+            (list :path path
+                  :size (or again 0)
+                  :status (cond ((or (null again) (zerop again)) :empty)
+                                ((not (eql size again)) :unstable)
+                                ((and (equalp (pathname-type file) "xml")
+                                      (not (xml-document-complete-p
+                                            (uiop:read-file-string file :external-format :latin-1))))
+                                 :incomplete)
+                                (t :ok))))))))
+
+(defun check-result-files (paths)
+  "CHECK-RESULT-FILE on each of PATHS (--result-file), each failure reported."
+  (loop for path in paths
+        for checked = (check-result-file path)
+        unless (eq (getf checked :status) :ok)
+          do (log-error "cli: --result-file ~A: ~(~A~)" path (getf checked :status))
+        collect checked))
+
+(defun write-cleanup-report-if-asked (options workdir cleanup-error)
+  "--cleanup-report FILE: copy the cleanup report the backend wrote in WORKDIR
+(ALFE.BACKEND:*CLEANUP-REPORT-FILE-NAME*) to FILE; when it wrote none (no CAD
+of its own to close, or a shutdown that failed before), write one that says so.
+A report that cannot be written is warned about."
+  (let ((file (cli-options-cleanup-report options)))
+    (when file
+      (handler-case
+          (let ((source (and workdir
+                             (probe-file (merge-pathnames
+                                          alfe.backend:*cleanup-report-file-name* workdir)))))
+            (if source
+                (uiop:copy-file source file)
+                (alfe.backend:write-key-value-file
+                 (uiop:parse-native-namestring file)
+                 `(("contract" . 2)
+                   ("owned" . ,(if cleanup-error "unknown" "none"))
+                   ("cleanup" . ,(if cleanup-error
+                                     (string-downcase
+                                      (princ-to-string
+                                       (if (typep cleanup-error 'alfe.error:backend-error)
+                                           (alfe.error:backend-error-code cleanup-error)
+                                           :error)))
+                                     "none"))
+                   ("detail" . ,(and cleanup-error (princ-to-string cleanup-error)))))))
+        (error (e)
+          (log-warn "cli: --cleanup-report ~A cannot be written: ~A" file e))))))
+
+(defun %warn-encoding-replacement-ignored (options backend)
+  "-Ereplacement and its per-situation forms are clautolisp's: a CAD writes an
+unencodable character its own way (AutoCAD the low byte, BricsCAD a best-fit
+or \\U+XXXX; encoding-replacement-character-option), and nothing alfe can pass
+it changes that. Warned, never silently dropped."
+  (let ((given (clautolisp.autolisp-cli:encoding-replacement-option-arguments options)))
+    (when (and given (not (eq (alfe.backend:backend-name backend) :clautolisp)))
+      (log-warn "cli: ~{~A ~A~^ ~} ignored: the ~(~A~) backend writes a character ~
+its encoding cannot hold its own way; the option is clautolisp's."
+                given (alfe.backend:backend-name backend)))))
+
+(defun write-cad-log-if-asked (options backend workdir)
+  "--cad-log FILE: write the CAD's own command-history log of this run
+(ALFE.BACKEND:COLLECT-ENGINE-LOG) to FILE, in UTF-8 with LF line ends. Several
+log files (one per drawing) are written one after the other, each under a
+`==> NAME <==' line. A backend without a CAD log (clautolisp), or a CAD that
+wrote none, is warned about and FILE is not created. Returns FILE's pathname
+when it was written, else NIL."
+  (let ((file (cli-options-cad-log options)))
+    (when file
+      (multiple-value-bind (entries status)
+          (alfe.backend:collect-engine-log backend workdir :cli-options options)
+        (case status
+          (:unsupported
+           (log-warn "cli: --cad-log ~A ignored: the ~(~A~) backend has no CAD log ~
+to collect (clautolisp writes its own LOGFILEMODE log where LOGFILEPATH points; ~
+-Elog sets its encoding)."
+                     file (alfe.backend:backend-name backend))
+           nil)
+          (:none
+           (log-warn "cli: --cad-log ~A: the CAD wrote no log (none in ~A logs/; ~
+BricsCAD on macOS writes none in batch mode, and --bootstrap-phase marker / core ~
+do not turn it on)."
+                     file workdir)
+           nil)
+          (t
+           (handler-case
+               (with-open-file (out file :direction :output
+                                         :if-exists :supersede
+                                         :if-does-not-exist :create
+                                         :external-format :utf-8)
+                 (dolist (entry entries)
+                   (when (rest entries)
+                     (format out "==> ~A <==~%" (car entry)))
+                   (write-string (cdr entry) out)
+                   (unless (or (zerop (length (cdr entry)))
+                               (char= #\Newline
+                                      (char (cdr entry) (1- (length (cdr entry))))))
+                     (terpri out)))
+                 (log-verbose "cli: --cad-log: ~D CAD log file~:P written to ~A"
+                              (length entries) file)
+                 (pathname file))
+             (error (e)
+               (log-warn "cli: --cad-log ~A cannot be written: ~A" file e)
+               nil))))))))
+
+(defun %start-dribble-if-asked (options version-text)
+  "Start alfe's own recording when --dribble was given AND the selected backend
+is one alfe records: the CAD backends. Returns the path, or NIL.
+
+VERSION-TEXT is alfe's own version, threaded from RUN -- alfe.tool owns the
+stamp and loads after this file, so the value is passed in rather than reached
+for.
+
+The clautolisp backend is excluded BY DESIGN, not by omission: its --dribble was
+forwarded into the spawned engine's argv (or, in :direct mode, the engine's own
+recording is already in-process), and the engine's REPL transcript is richer
+than anything alfe could reconstruct from the outside -- it has the prompts, the
+interactor stack, and the values. Recording both would leave two files for one
+session, which is the double-recording the issue's acceptance criteria forbid."
+  (let ((dribble (clautolisp.autolisp-cli:cli-options-dribble options))
+        (kind (cli-options-backend options)))
+    (when (and dribble (member kind '(:autocad :bricscad)))
+      (let ((path (handler-case
+                   (alfe.dribble:start-dribble
+                     :file dribble
+                     :backend kind
+                     :alfe-version version-text
+                     ;; What alfe KNOWS now: the --cad denotation it resolved
+                     ;; (acad-2022, bricscad-v25, …). The engine has not answered
+                     ;; yet and may never; ALFE.DRIBBLE writes `unknown' then, and
+                     ;; the header is not delayed for it -- a transcript that
+                     ;; appeared only after a successful CAD start would be
+                     ;; missing the sessions worth reading.
+                     :cad-version (cli-options-cad options))
+                    ;; A transcript that cannot be created: EX_CANTCREAT
+                    ;; (sysexits-exit-statuses.issue).
+                    (file-error (condition)
+                      (error 'clautolisp.autolisp-cli:cli-error
+                             :option "--dribble"
+                             :message (format nil "cannot create the transcript: ~A"
+                                              condition)
+                             :status clautolisp.sysexits:+ex-cantcreat+)))))
+        (log-verbose "cli: dribble recording into ~A" path)
+        path))))
+
+(defun print-command-plan (options backend &key version-text
+                                                (stream *standard-output*))
+  "Implement --print-command. Returns the exit code (0 on success).
+
+Prepares the workdir and stages every launch artefact exactly as
+RUN-PLAN would — same runtime/bootstrap staging, same run-common.lsp,
+same run.scr or bridge script — then prints the CAD command line alfe
+WOULD spawn and returns, without spawning anything. The argv is
+captured by handing START-ENGINE a :LAUNCHER closure that records its
+argument and returns NIL (the same seam the test suite uses for the
+mock CAD), with :WAIT-FOR-READY NIL since no engine will ever publish
+READY.
+
+Only the CAD backends have a command line; asking for one under
+--clautolisp is a usage error rather than a silent empty answer, so a
+caller doing `cmd=$(alfe --print-command …)` fails loudly.
+
+No SHUTDOWN is performed: nothing was launched, and BricsCAD's
+SHUTDOWN would spend its 5 s waiting for a STOPPED status that cannot
+arrive. The workdir is removed on the way out unless --keep-workdir
+was given — so the printed command references a directory that no
+longer exists unless the user asked to keep it. That is deliberate:
+--print-command must not litter the temp tree by default."
+  (let ((backend-name (alfe.backend:backend-name backend)))
+    (unless (member backend-name '(:autocad :bricscad))
+      (error 'cli-usage-error
+             :option "--print-command"
+             :message
+             (format nil
+                     "applies to the CAD backends (--autocad / --bricscad); ~
+backend ~(~A~) runs in-process and has no external command line."
+                     backend-name)))
+    (let ((captured nil)
+          (directory nil)
+          (keep-p (cli-options-keep-workdir-p options))
+          (workdir (let ((wd (prepare-workdir backend
+                                              (cli-options-workdir options))))
+                     (%write-workdir-path-file options wd)
+                     (run-hook :workdir-prepared wd)
+                     wd)))
+      (unwind-protect
+           (progn
+             (apply #'start-engine backend workdir
+                           :dialect (effective-dialect options)
+                           :host (cli-options-host options)
+                           :mock-input nil
+                           :bootstrap-phase (cli-options-bootstrap-phase options)
+                           :interactive-p (cli-options-interactive-p options)
+                           :mode (cli-options-mode options)
+                           :dwg (%session-dwg options backend workdir)
+                           :load-encoding (cli-options-load-encoding options)
+                           :io-encoding (cli-options-io-encoding options)
+                           :cli-options options
+                           :version-text version-text
+                           :wait-for-ready nil
+                           :launcher (lambda (argv &rest keys)
+                                       (setf captured argv
+                                             directory (getf keys :directory))
+                                       nil)
+                           ;; one keyword per encoding situation (a CAD
+                           ;; backend here: its console is its own device)
+                           (situation-engine-keywords
+                            options
+                            :console-is-terminal-p
+                            (eq (alfe.backend:backend-name backend) :clautolisp)))
+             (unless captured
+               (error 'alfe.error:backend-bootstrap-error
+                      :backend backend-name
+                      :code :no-launch-command
+                      :message
+                      (format nil "Backend ~(~A~) staged the workdir but produced ~
+no launch command line." backend-name)))
+             (log-verbose "cli: --print-command backend ~A, workdir ~A"
+                          backend-name workdir)
+             (log-debug "cli: --print-command argv = ~S" captured)
+             ;; The command line, alone, on stdout: this is the deliverable.
+             ;; A working directory chosen by a plug-in is part of the command:
+             ;; running the line elsewhere would not start the same thing.
+             (format stream "~&~@[cd ~A && ~]~A~%"
+                     (and directory
+                          (quote-command-argument
+                           (uiop:native-namestring directory)))
+                     (format-launch-command captured))
+             (finish-output stream)
+             (unless keep-p
+               (log-verbose "cli: --print-command removing workdir ~A ~
+(pass --keep-workdir to keep the staged artefacts)" workdir))
+             0)
+        (ignore-errors (cleanup-workdir backend workdir :keep-p keep-p))))))

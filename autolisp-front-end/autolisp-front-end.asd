@@ -48,14 +48,20 @@
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-host"
-               "clautolisp/autolisp-mock-host"
+               "clautolisp/cador"
                "clautolisp/autolisp-init-files"
+               "cffi"
                "uiop")
   :serial t
   :components
   ((:file "source/error")
    (:file "source/logging")
+   ;; The dribble recorder is a leaf: it writes a file and knows nothing of
+   ;; backends or the CLI, so it loads before both (alfe-dribble.issue).
+   (:file "source/dribble")
    (:file "source/workdir")
+   (:file "source/template")
+   (:file "source/plugin")
    (:file "source/backend")
    (:file "source/backend-echo")
    (:file "source/cli")))
@@ -65,10 +71,43 @@
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
   :depends-on ("autolisp-front-end/core"
+               ;; INSTALLATION-PREFIXES, *EXECUTABLE-PATHNAME-FUNCTION* and
+               ;; HOST-OS: the installed clautolisp-sbcl is found from the
+               ;; running alfe executable (alfe-installed-subprocess-binary-
+               ;; not-discovered), with the same prefix logic as the assets.
+               "autolisp-front-end/backend-cad-common"
+               ;; Semantic parity with the standalone clautolisp program
+               ;; (alfe-clautolisp-backend-semantic-parity.issue): the
+               ;; in-process engine must carry every subsystem the
+               ;; clautolisp-tool assembles that changes what a program
+               ;; observes. Nothing below these two depends on them, so the
+               ;; program that embeds the engine has to name them, exactly as
+               ;; clautolisp/clautolisp-tool does:
+               ;;  - the AutoLISP-to-CL compiler: without it every hook stays
+               ;;    NIL and the default SPEED 2 silently interprets;
+               ;;  - the DWG codec: without it --dwg FILE.dwg failed with
+               ;;    "no reader codec registered for format :DWG" in the
+               ;;    default --backend direct while --backend subprocess
+               ;;    opened the drawing. The NATIVE library stays lazily
+               ;;    loaded (ensure-shim-loaded runs at the first DWG
+               ;;    conversion), so an alfe without libredwg still starts.
+               "clautolisp/autolisp-compiler"
+               "clautolisp/drawing-dwg"
+               ;;  - the clautolisp program itself, for its debugger run
+               ;;    machinery: alfe shares the debugger options
+               ;;    (--on-error, --on-interrupt, --on-quit, --debugger-ui,
+               ;;    --aldb-listen, --aldb-stdio; debugger-public-interface-
+               ;;    and-on-error.issue, pjb 2026-10-06) and the in-process
+               ;;    engine starts the aldo session, its UIs and the aldb
+               ;;    listener exactly as the program does. It brings usocket
+               ;;    (the aldb TCP listener): a quicklisp dependency, loaded
+               ;;    explicitly by the Makefile and check-spec-coverage.
+               "clautolisp/clautolisp-tool"
                "trivial-gray-streams")
   :serial t
   :components
-  ((:file "source/backend-clautolisp")))
+  ((:file "source/backend-clautolisp")
+   (:file "source/clautolisp-option-contract")))
 
 (asdf:defsystem "autolisp-front-end/file-protocol"
   :description "alfe file-IPC protocol driver shared by the CAD backends."
@@ -85,16 +124,23 @@
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
   :depends-on ("autolisp-front-end/core"
-               "autolisp-front-end/file-protocol")
+               "autolisp-front-end/file-protocol"
+               "babel")                 ; codepage->UTF-8 transcode of -Esource -l sources
   :serial t
   :components
-  ((:file "source/backend-cad-common")
+  ((:file "source/empty-drawing")
+   (:file "source/backend-cad-common")
    ;; The CAD-side runtime + bootstrap helpers are data files consumed
    ;; at run time (the backend stages them into the workdir). Declaring
    ;; them static-file keeps `make install` / `asdf:require-system`
    ;; aware of them for packaging and survives executable image dumps.
    (:static-file "source/runtime/autolisp-bootstrap.lsp")
-   (:static-file "source/runtime/autolisp-remote-io.lsp")))
+   (:static-file "source/runtime/autolisp-remote-io.lsp")
+   ;; empty.dwg is read AT COMPILE TIME into the image by
+   ;; source/empty-drawing.lisp, so unlike the two above it is not needed
+   ;; at run time -- but it IS needed to build, and declaring it keeps it
+   ;; in the source distribution and makes the dependency visible.
+   (:static-file "source/empty.dwg")))
 
 (asdf:defsystem "autolisp-front-end/backend-bricscad"
   :description "alfe backend driving BricsCAD via the file-IPC protocol."
@@ -116,7 +162,8 @@
                "autolisp-front-end/backend-cad-common")
   :serial t
   :components
-  ((:file "source/backend-autocad")))
+  ((:file "source/backend-autocad")
+   (:file "source/backend-autocad-trustedpaths")))
 
 (asdf:defsystem "autolisp-front-end/conformance"
   :description "alfe scenario corpus runner — drives declarative .sexp scenarios through alfe.cli:run and compares captured streams against expectations."
@@ -163,9 +210,15 @@
    (:file "tests/backend-tests")
    (:file "tests/cli-tests")
    (:file "tests/backend-clautolisp-tests")
+   (:file "tests/dribble-tests")
    (:file "tests/file-protocol-tests")
    (:file "tests/backend-cad-tests")
+   (:file "tests/console-flood-tests")
+   (:file "tests/trustedpaths-tests")
+   (:file "tests/empty-drawing-tests")
    (:file "tests/conformance-tests")
+   (:file "tests/plugin-tests")
+   (:file "tests/plugin-shipped-tests")
    (:file "tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

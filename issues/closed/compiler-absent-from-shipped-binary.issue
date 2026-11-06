@@ -1,0 +1,94 @@
+# compiler-absent-from-shipped-binary — the clautolisp executable had no compiler
+
+STATUS: DONE in 2.0.12. Found 2026-08-28 while adding the --optimize CLI
+option, by measuring what the option actually did; fixed the same day.
+
+## Symptom
+
+The `clautolisp` executable contained no compiler. Every SPEED level
+behaved like SPEED 0: `-O0` and `-O3` produced byte-identical behaviour
+and indistinguishable run times.
+
+Measured on the built SBCL image, `(defun fib …) (princ (fib 27))`,
+best of repeated runs:
+
+    before the fix          after the fix
+      -O0   851 ms            -O0   916 ms
+      -O2   845 ms            -O2   734 ms
+      -O3   858 ms            -O3   747 ms
+      ratio 1.00              ratio 1.24
+
+The `before` column is the bug in one line: asking for optimization and
+asking for none took the same time, because neither compiled anything.
+(The two columns are different images and their absolute numbers are not
+comparable; the ratio WITHIN a column is the measurement.)
+
+## Repro
+
+Before the fix, with the built executable:
+
+    clautolisp -O0 -l fib.lsp
+    clautolisp -O3 -l fib.lsp
+
+Same time, to the millisecond.
+
+## Cause
+
+`clautolisp/clautolisp-tool` did not depend on
+`clautolisp/autolisp-compiler`, so the compiler was never loaded into the
+image, so its `(setf *compile-usubr-hook* …)` toplevel forms never ran, so
+every hook the runtime consults to reach the compiler stayed NIL — and a
+NIL hook means `maybe-compile-usubr` returns NIL and the interpreter runs.
+No error, no warning, no diagnostic: the runtime is *designed* to work with
+those hooks unset, because that is exactly the configuration in which the
+compiler has not been loaded.
+
+The dependency inversion that makes the compiler optional is deliberate and
+correct — the runtime and the builtins reach the compiler only through
+hooks, so neither depends on it. What was missing is its consequence:
+because nothing below pulls the compiler in, the program that assembles the
+components has to name it explicitly, and only the test systems did.
+
+## Why ten slices of green tests never caught it
+
+Every compiler test system depends on `clautolisp/autolisp-compiler`
+directly, which is what a test of the compiler must do. So the hooks were
+always installed *in the test image*, and the tests were true — of the test
+image. Nothing in the corpus ever asked the question the user asks, which
+is whether the program on disk has a compiler in it.
+
+This is the same shape of mistake as the CCL failures in 2.0.11, one level
+up: there the tests ran on one host and were reported as if they held for
+both; here they ran in one image and were reported as if they held for the
+program. In both cases the test was not wrong, the extrapolation was.
+
+## Fix
+
+Add `"clautolisp/autolisp-compiler"` to the `:depends-on` of
+`clautolisp/clautolisp-tool` in clautolisp.asd, with a comment recording
+why it cannot be inherited from anything below it.
+
+## The gate
+
+Fixing the dependency does not stop it recurring, so the same commit adds
+one: `make test-shipped-compiler`, which builds the executable and runs
+tools/clautolisp/tests/shipped-compiler-test.sh against it. Three checks:
+CLAL-COMPILE-FILE produces an artefact, the .lap loads and the function it
+defines runs, and `-O speed=0,debug=1` is what (clal-optimization) reports.
+
+The probe is CLAL-COMPILE-FILE rather than a timing comparison because it
+is the one surface that distinguishes "no compiler in this build" from
+every other failure: it signals COMPILER-NOT-AVAILABLE instead of quietly
+falling back. Timing would test the same thing less reliably.
+
+The gate was verified RED before being believed: with the dependency
+removed and the executable rebuilt, it fails on all three .lap checks and
+names the missing line in clautolisp.asd in its output. (The -O check
+still passes there, correctly -- the option plumbing does not depend on
+the compiler being present.) A gate never seen red is not a gate, which
+is the same mistake in miniature as the one this ticket is about.
+
+Wired into both CI lanes (GitLab test:clautolisp:compiler:sbcl, mirrored
+into .github/workflows/ci.yml), together with test-compiler-equivalence
+and test-debug-compiled -- which, it turned out, had never been in CI
+either.

@@ -7,35 +7,38 @@
 ;;;; See autolisp-spec §16 ~clautolisp Extensions~ for the normative
 ;;;; entries.
 
-(defun setup-mock-host-context ()
+(defun setup-cador-context ()
   (clautolisp.autolisp-runtime:reset-default-evaluation-context)
   (let* ((session (clautolisp.autolisp-runtime:evaluation-context-session
                    (clautolisp.autolisp-runtime:current-evaluation-context)))
-         (mock    (clautolisp.autolisp-mock-host:make-mock-host)))
+         (mock    (clautolisp.cador:make-cador)))
     (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
           mock)
     (clautolisp.autolisp-runtime:current-evaluation-context)))
 
 ;;; --- clal-sysvar-list ---------------------------------------------
 
-(test clal-sysvar-list-returns-1836-entries-on-default-mock
-  (setup-mock-host-context)
+(test clal-sysvar-list-returns-the-full-catalogue-plus-extensions
+  ;; 1836 vendor sysvars + the clautolisp extension sysvars
+  ;; (CLAUTOLISPDEFAULTDRAWINGFORMAT and any future ones).
+  (setup-cador-context)
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-list)))
     (is (listp result))
-    (is (= 1836 (length result)))
+    (is (= (+ 1836 (length clautolisp.cador:*clautolisp-extension-sysvar-names*))
+           (length result)))
     (is (every (lambda (x)
                  (typep x 'clautolisp.autolisp-runtime:autolisp-string))
                result))))
 
 (test clal-sysvar-list-is-sorted-lexicographically
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-list))
          (values (mapcar #'clautolisp.autolisp-runtime:autolisp-string-value
                          result)))
     (is (equal values (sort (copy-list values) #'string<)))))
 
 (test clal-sysvar-list-includes-well-known-names
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-list))
          (values (mapcar #'clautolisp.autolisp-runtime:autolisp-string-value
                          result)))
@@ -47,7 +50,7 @@
 ;;; --- clal-sysvar-apropos ------------------------------------------
 
 (test clal-sysvar-apropos-ang-matches-angle-family
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((pattern (clautolisp.autolisp-runtime:make-autolisp-string "ANG"))
          (result  (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos pattern))
          (values  (mapcar #'clautolisp.autolisp-runtime:autolisp-string-value
@@ -59,7 +62,7 @@
     (is (null (member "AUNITS" values :test #'string=)))))
 
 (test clal-sysvar-apropos-is-case-insensitive
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((upper (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos
                  (clautolisp.autolisp-runtime:make-autolisp-string "ANG")))
          (lower (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos
@@ -69,21 +72,24 @@
     (is (= (length upper) (length lower)))
     (is (= (length upper) (length mixed)))))
 
-(test clal-sysvar-apropos-empty-string-returns-all-1836
-  (setup-mock-host-context)
+(test clal-sysvar-apropos-empty-string-returns-all
+  ;; The empty pattern matches every sysvar: 1836 vendor entries plus the
+  ;; clautolisp extension sysvars.
+  (setup-cador-context)
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos
                  (clautolisp.autolisp-runtime:make-autolisp-string ""))))
-    (is (= 1836 (length result)))))
+    (is (= (+ 1836 (length clautolisp.cador:*clautolisp-extension-sysvar-names*))
+           (length result)))))
 
 (test clal-sysvar-apropos-no-match-returns-nil
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos
                  (clautolisp.autolisp-runtime:make-autolisp-string
                   "DEFINITELY_NOT_A_SUBSTRING_OF_ANY_NAME_xyzzy"))))
     (is (null result))))
 
 (test clal-sysvar-apropos-rejects-non-string-pattern
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((signalled-p nil))
     (handler-case
         (clautolisp.autolisp-builtins-core::builtin-clal-sysvar-apropos 42)
@@ -102,9 +108,9 @@
 ;;; Unicode-name form in the helpers' return value.
 
 (defun %install-codepages (sys dwg)
-  "Set up a fresh mock-host context and write SYS / DWG into the
+  "Set up a fresh cador context and write SYS / DWG into the
 host's SYSCODEPAGE / DWGCODEPAGE cells via the launch-time bypass."
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((host (clautolisp.autolisp-runtime:current-evaluation-host)))
     (clautolisp.autolisp-host:host-set-derived-sysvar host "SYSCODEPAGE" sys)
     (clautolisp.autolisp-host:host-set-derived-sysvar host "DWGCODEPAGE" dwg)))
@@ -134,7 +140,7 @@ host's SYSCODEPAGE / DWGCODEPAGE cells via the launch-time bypass."
 (test clal-system-codepage-empty-maps-to-ansi-placeholder
   ;; Pre-Phase-1 hosts left SYSCODEPAGE = ""; the helper renders
   ;; that as "ANSI" so user code never sees the empty placeholder.
-  (setup-mock-host-context) ; SYSCODEPAGE stays at the catalogue's ""
+  (setup-cador-context) ; SYSCODEPAGE stays at the catalogue's ""
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-system-codepage)))
     (is (string= "ANSI"
                  (clautolisp.autolisp-runtime:autolisp-string-value result)))))
@@ -180,7 +186,7 @@ host's SYSCODEPAGE / DWGCODEPAGE cells via the launch-time bypass."
   "Write BOM-BYTES to SNIFF-PATH then return the encoding string
 CLAL-FILE-ENCODING reports for that file."
   (%write-bytes sniff-path (coerce bom-bytes '(vector (unsigned-byte 8))))
-  (setup-mock-host-context)
+  (setup-cador-context)
   (clautolisp.autolisp-runtime:autolisp-string-value
    (clautolisp.autolisp-builtins-core::builtin-clal-file-encoding
     (clautolisp.autolisp-runtime:make-autolisp-string (namestring sniff-path)))))
@@ -222,7 +228,7 @@ CLAL-FILE-ENCODING reports for that file."
   ;; Resolution failure returns AutoLISP nil and sets ERRNO 73, matching
   ;; LOAD's missing-file behaviour. Don't open a fixture; pick a path
   ;; that demonstrably doesn't exist.
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-file-encoding
                  (clautolisp.autolisp-runtime:make-autolisp-string
                   "/this/path/definitely/does/not/exist/0xDEADBEEF.txt"))))
@@ -245,7 +251,7 @@ CLAL-FILE-ENCODING reports for that file."
 (defun %install-codepages-and-capture-mismatch (sys-codepage dwg-codepage)
   "Set SYSCODEPAGE via the launch bypass, then call set-drawing-codepage
 with DWG-CODEPAGE and return the captured enc-* diagnostic string."
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((host (clautolisp.autolisp-runtime:current-evaluation-host))
         (sink (make-string-output-stream)))
     (clautolisp.autolisp-host:host-set-derived-sysvar host "SYSCODEPAGE" sys-codepage)
@@ -270,14 +276,14 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (string= "" diagnostics))))
 
 (test set-drawing-codepage-actually-updates-the-sysvar
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((host (clautolisp.autolisp-runtime:current-evaluation-host))
          (clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
     (clautolisp.autolisp-host:host-set-derived-sysvar host "SYSCODEPAGE" "ANSI_1252")
     (clautolisp.autolisp-builtins-core::set-drawing-codepage "ANSI_1250")
     (is (string= "ANSI_1250"
-                 (clautolisp.autolisp-mock-host::sysvar-cell-value
-                  (clautolisp.autolisp-mock-host:mock-host-sysvar host "DWGCODEPAGE"))))))
+                 (clautolisp.cador::sysvar-cell-value
+                  (clautolisp.cador:cador-sysvar host "DWGCODEPAGE"))))))
 
 ;;; --- enc-unknown-codepage (Phase 8 item 10) ------------------------
 
@@ -320,7 +326,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
        (clautolisp.autolisp-runtime:autolisp-symbol-name object)))
 
 (test aldo-config-default-parses
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((config (clautolisp.autolisp-builtins-core::default-aldo-configuration-value)))
     (is (consp config))
     (is (string= "SEXP" (%aldo-sym-name (%aldo-config-assoc "NAVIGATOR" config))))
@@ -329,7 +335,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (eql 4301 (%aldo-config-assoc "DEFAULT-ALDB-LISTENING-PORT" config)))))
 
 (test aldo-config-lazy-seed
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
     (is (not (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p sym)))
     (let ((value (clautolisp.autolisp-builtins-core::aldo-configuration-value)))
@@ -338,7 +344,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
       (is (string= "SEXP" (%aldo-sym-name (%aldo-config-assoc "NAVIGATOR" value)))))))
 
 (test aldo-config-save-load-roundtrip
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((path (merge-pathnames "aldo-core-roundtrip.conf" (uiop:temporary-directory)))
         (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
     (unwind-protect
@@ -370,7 +376,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
   ;; "]") and the listening address are STRINGS and must be written quoted
   ;; (prin1 semantics). The bug: the save used princ semantics, writing
   ;; (selection ascii [ ]) — not readable back as strings.
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((path (merge-pathnames "aldo-core-strings.conf" (uiop:temporary-directory)))
         (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
     (unwind-protect
@@ -387,7 +393,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
       (ignore-errors (delete-file path)))))
 
 (test aldo-config-file-is-ascii-friendly
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((path (merge-pathnames "aldo-core-ascii.conf" (uiop:temporary-directory)))
         (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
     (unwind-protect
@@ -467,23 +473,23 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
 ;;; CLAL-COMMON-LISP evaluation entry.
 
 (test clal-common-lisp-evaluates-autolisp-form
-  (setup-mock-host-context)
+  (setup-cador-context)
   (is (= 3 (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
             (list (clautolisp.autolisp-runtime:intern-autolisp-symbol "+") 1 2)))))
 
 (test clal-common-lisp-evaluates-string-form
-  (setup-mock-host-context)
+  (setup-cador-context)
   (is (= 42 (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
              (clautolisp.autolisp-runtime:make-autolisp-string "(* 6 7)")))))
 
 (test clal-common-lisp-on-error-ignore-returns-nil
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((common-lisp-user::*clal-on-error* :ignore))
     (is (null (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
                (clautolisp.autolisp-runtime:make-autolisp-string "(error \"x\")"))))))
 
 (test clal-common-lisp-on-error-object-returns-value
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((common-lisp-user::*clal-on-error* 99))
     (is (= 99 (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
                (clautolisp.autolisp-runtime:make-autolisp-string "(error \"x\")"))))))
@@ -497,7 +503,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
    (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP")))
 
 (test clautolisp-drop-installs-and-unbinds-clal-common-lisp
-  (setup-mock-host-context)
+  (setup-cador-context)
   (%reset-clautolisp-drop)
   (let ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP")))
     (is (not (clautolisp.autolisp-runtime:autolisp-symbol-function-bound-p sym)))
@@ -507,7 +513,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (not (clautolisp.autolisp-runtime:autolisp-symbol-function-bound-p sym)))))
 
 (test clautolisp-drop-preserves-user-binding
-  (setup-mock-host-context)
+  (setup-cador-context)
   (%reset-clautolisp-drop)
   (let* ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP"))
          (stub (clautolisp.autolisp-runtime:make-autolisp-string "USER")))
@@ -517,7 +523,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (eq stub (clautolisp.autolisp-runtime:autolisp-symbol-value sym)))))
 
 (test clautolisp-drop-is-idempotent-on-repeated-enable
-  (setup-mock-host-context)
+  (setup-cador-context)
   (%reset-clautolisp-drop)
   (let* ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP"))
          (stub (clautolisp.autolisp-runtime:make-autolisp-string "USER")))
@@ -549,7 +555,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
       (is (equal "hi there" (clautolisp.autolisp-runtime:autolisp-string-value got))))))
 
 (test clal-clipboard-copy-and-paste-sexp-round-trip
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((box (list nil))
          (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
     ;; copy an AutoLISP list; its source text lands on the system clipboard
@@ -562,14 +568,14 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
 (test clal-clipboard-copy-paste-round-trips-through-the-internal-clipboard
   ;; with the :NULL provider the system clipboard is empty, so paste falls back
   ;; to the in-process *clipboard* set by copy (clipboard-interface.org §Public API)
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((clautolisp.sedit:*clipboard-provider* :null))
     (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-copy-sexp (%al-read "(a b c)"))
     (let ((pasted (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-paste-sexp)))
       (is (string-equal "(a b c)" (%al->src pasted))))))
 
 (test clal-clipboard-paste-does-not-evaluate-foreign-text
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((box (list "#.(error \"boom\")"))
          (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
     ;; a malicious read-macro on the clipboard must not run (no error signalled)
@@ -577,7 +583,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
       (is (not (null pasted))))))
 
 (test clal-sedit-quitting-immediately-returns-the-form
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((*standard-input* (make-string-input-stream (format nil "q~%")))
          (*standard-output* (make-string-output-stream))
          (result (clautolisp.autolisp-builtins-core::builtin-clal-sedit
@@ -586,7 +592,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (not (null clautolisp.sedit:*clal-sedit-initial-form*)))))
 
 (test clal-sedit-recalls-a-recorded-definition
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let ((clautolisp.sedit:*sedit-recording* nil))
     (clautolisp.sedit:record-source "(defun bar (x) (* x x))" "<test>")
     (let* ((*standard-input* (make-string-input-stream (format nil "q~%")))
@@ -596,7 +602,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
       (is (string-equal "(defun bar (x) (* x x))" (%al->src result))))))
 
 (test clal-sedit-edits-then-returns-the-modified-form
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((*standard-input* (make-string-input-stream
                             ;; select the body, replace it, then quit
                             (format nil "d~%>>~%replace (* x 2)~%q~%")))
@@ -608,7 +614,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
 (test clal-sedit-debug-prefix-routes-to-the-debug-command-hook
   ;; spec §7: `debug'/`aldo' CMD in the editor runs CMD in the attached session
   ;; via *debug-command-hook* (so `aldo help' shows the debugger help)
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((calls '())
          (clautolisp.autolisp-runtime:*debug-command-hook* (lambda (c) (push c calls) nil))
          (*standard-input* (make-string-input-stream (format nil "nav~%aldo help~%q~%")))
@@ -617,7 +623,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (equal '("help") calls))))
 
 (test clal-sedit-debug-prefix-without-a-debugger-notes-it
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((clautolisp.autolisp-runtime:*debug-command-hook* nil)
          (out (make-string-output-stream))
          (*standard-input* (make-string-input-stream (format nil "aldo help~%q~%")))
@@ -627,7 +633,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
 
 (test clal-sedit-evaluates-a-lisp-form-at-the-prompt
   ;; a (form) at the SEDIT/NAV prompt evaluates and prints, like the REPL
-  (setup-mock-host-context)
+  (setup-cador-context)
   (let* ((out (make-string-output-stream))
          ;; `quote' is a special form — no arithmetic builtins needed here
          (*standard-input* (make-string-input-stream (format nil "(quote 30)~%q~%")))
@@ -684,3 +690,645 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
                (clautolisp.autolisp-runtime:autolisp-string-value
                 (clautolisp.autolisp-runtime:autolisp-symbol-value
                  (clautolisp.autolisp-runtime:intern-autolisp-symbol "*CLAL-CLIPBOARD*")))))))
+
+;;; --- clal-binding family (ncurses-key-bindings.issue) ------------------
+
+(test clal-binding-builtins-forward-to-the-ui-hook
+  ;; The CLAL-BINDING family converts the key to a CL string and forwards to
+  ;; *ui-binding-hook* (installed by the debugger UI). With no UI loaded the
+  ;; builtins are a no-op; here a stub hook records the calls.
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*ui-binding-hook*
+            (lambda (op &rest args) (push (list* op args) calls) "z")))
+      (clautolisp.autolisp-builtins-core::builtin-clal-binding
+       (clautolisp.autolisp-runtime:make-autolisp-string "C-x C-f")
+       (clautolisp.autolisp-runtime:make-autolisp-string "sedit load"))
+      (clautolisp.autolisp-builtins-core::builtin-clal-remove-binding
+       (clautolisp.autolisp-runtime:make-autolisp-string "C-x C-f")))
+    (setf calls (nreverse calls))
+    (is (eq :bind (first (first calls))))
+    (is (equal "C-x C-f" (second (first calls))))            ; key -> CL string
+    (is (equal "sedit load"                                  ; command forwarded
+               (clautolisp.autolisp-runtime:autolisp-string-value (third (first calls)))))
+    (is (eq :unbind (first (second calls))))
+    (is (equal "C-x C-f" (second (second calls))))))
+
+(test clal-binding-is-a-no-op-without-a-ui
+  ;; No debugger UI loaded (hook nil) -> the builtins are harmless no-ops.
+  (let ((clautolisp.autolisp-runtime:*ui-binding-hook* nil))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-binding
+               (clautolisp.autolisp-runtime:make-autolisp-string "z")
+               (clautolisp.autolisp-runtime:make-autolisp-string "continue"))))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-binding-lookup
+               (clautolisp.autolisp-runtime:make-autolisp-string "z"))))))
+
+;;; --- opaque lisp-object handles + clal frame/window/face builtins ------
+
+(test opaque-lisp-object-reports-its-type-and-prints-unreadably
+  (clautolisp.autolisp-runtime:reset-lisp-object-wrappers)
+  (let* ((obj (list :a :b))
+         (w (clautolisp.autolisp-runtime:wrap-lisp-object obj "WINDOW" (lambda () "sedit"))))
+    (is (clautolisp.autolisp-runtime:lisp-object-p w))
+    (is (clautolisp.autolisp-runtime:lisp-object-p w "WINDOW"))
+    (is (not (clautolisp.autolisp-runtime:lisp-object-p w "FRAME")))
+    ;; (type handle) -> WINDOW
+    (is (string= "WINDOW" (clautolisp.autolisp-runtime:autolisp-symbol-name
+                           (clautolisp.autolisp-runtime:autolisp-type w))))
+    (is (search "#<WINDOW \"sedit\"" (prin1-to-string w)))
+    ;; interned: same object -> EQ handle; unwrap round-trips
+    (is (eq w (clautolisp.autolisp-runtime:wrap-lisp-object obj "WINDOW")))
+    (is (eq obj (clautolisp.autolisp-runtime:unwrap-lisp-object w "WINDOW")))))
+
+(test clal-object-builtins-forward-to-the-ui-object-hook
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*ui-object-hook*
+            (lambda (op &rest args) (push (cons op args) calls) op)))
+      (clautolisp.autolisp-builtins-core::builtin-clal-make-window
+       (list (cons (clautolisp.autolisp-runtime:make-autolisp-string "name")
+                   (clautolisp.autolisp-runtime:make-autolisp-string "sedit"))))
+      (clautolisp.autolisp-builtins-core::builtin-clal-frame-list)
+      (clautolisp.autolisp-builtins-core::builtin-clal-define-face
+       (clautolisp.autolisp-runtime:make-autolisp-string "warn")))
+    (setf calls (nreverse calls))
+    (is (eq :make-window (first (first calls))))
+    (is (eq :frame-list (first (second calls))))
+    (is (eq :define-face (first (third calls))))))
+
+(test clal-object-builtins-are-no-ops-without-a-ui
+  (let ((clautolisp.autolisp-runtime:*ui-object-hook* nil))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-make-window nil)))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-frame-list)))))
+
+(test clal-call-with-temp-window-forwards-to-hook
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*ui-object-hook*
+            (lambda (op &rest args) (push (cons op args) calls) :ok)))
+      (is (eq :ok (clautolisp.autolisp-builtins-core::builtin-clal-call-with-temp-window
+                   nil (clautolisp.autolisp-runtime:make-autolisp-string "fn")))))
+    (is (eq :with-temp-window (car (first calls))))))
+
+(test clal-window-op-builtins-forward-to-the-hook
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*ui-object-hook*
+            (lambda (op &rest args) (push (cons op args) calls) op)))
+      (clautolisp.autolisp-builtins-core::builtin-clal-clear-window)
+      (clautolisp.autolisp-builtins-core::builtin-clal-move-cursor-to 2 3)
+      (clautolisp.autolisp-builtins-core::builtin-clal-window-put
+       0 0 (clautolisp.autolisp-runtime:make-autolisp-string "x")))
+    (setf calls (nreverse calls))
+    (is (eq :clear-window (first (first calls))))
+    (is (eq :move-cursor-to (first (second calls))))
+    (is (equal '(2 3) (subseq (rest (second calls)) 0 2)))   ; row col (+ nil window)
+    (is (eq :window-put (first (third calls))))))
+;;; --- clal-optimize / clal-optimization ------------------------------
+;;;
+;;; The optimization qualities are the AutoLISP-facing surface of the
+;;; compiler and the debugger's instrumentation, so what is tested here
+;;; is the ALGEBRA -- which levels, in which relation, produce which
+;;; forks -- not the wording of the list that comes back.
+;;;
+;;;   non-instrumented fork   always present; compiled iff SPEED >= 1
+;;;   instrumented fork       present iff DEBUG >= SPACE; compiled iff SPEED >= 2
+;;;   eager (at definition)   iff SPEED >= 3
+;;;
+;;; Until 2.0.8 SPEED was pinned at 0 and none of this existed to test.
+
+(defun %optimize (text)
+  "Set qualities from an AutoLISP source list, return the resulting alist
+of QUALITY -> level."
+  (clautolisp.autolisp-builtins-core::builtin-clal-optimize
+   (first (clautolisp.autolisp-runtime:read-runtime-from-string text)))
+  (mapcar (lambda (quality)
+            (cons quality
+                  (clautolisp.autolisp-builtins-core::clal-optimization-level
+                   quality)))
+          '(:debug :space :speed)))
+
+(defun %signals-runtime-error-p (thunk)
+  "True iff THUNK signals an AutoLISP runtime error. Written as a
+predicate rather than with FiveAM's SIGNALS because this suite imports
+IS and not SIGNALS, and an unimported FiveAM macro fails at RUN time on
+the branch you expect never to take."
+  (handler-case (progn (funcall thunk) nil)
+    (autolisp-runtime-error () t)))
+
+(defun %signals-error-p (thunk)
+  "True iff THUNK signals a CL ERROR. SET-CLAL-OPTIMIZATION-LEVELS is not an
+AutoLISP builtin -- it is called from the CLI, before any AutoLISP evaluation
+context exists -- so it signals a plain ERROR, not an AUTOLISP-RUNTIME-ERROR."
+  (handler-case (progn (funcall thunk) nil)
+    (error () t)))
+
+(defun %reset-optimization ()
+  (setf clautolisp.autolisp-builtins-core::*clal-optimization*
+        (list (cons :debug 3) (cons :space 0) (cons :speed 2)))
+  (clautolisp.autolisp-builtins-core::apply-clal-optimization))
+
+(test clal-optimize-no-longer-pins-speed-to-zero
+  "The regression test for unpinning SPEED. It was forced back to 0 on
+every call, so that asking for it was silently ineffective -- documented
+as such, because there was no compiler for it to reach. There is now."
+  (%reset-optimization)
+  (unwind-protect
+       (let ((levels (%optimize "((speed 3))")))
+         (is (eql 3 (cdr (assoc :speed levels)))))
+    (%reset-optimization)))
+
+(test speed-decides-which-forks-compile
+  "SPEED 1 compiles the plain fork; the instrumented fork needs SPEED 2.
+Different levels on purpose: compiling the instrumented fork costs a
+second compilation of every function and buys less."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (%optimize "((speed 0))")
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-plain-fork-p)))
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-instrumented-fork-p)))
+         (%optimize "((speed 1))")
+         (is (clautolisp.autolisp-runtime:autolisp-compile-plain-fork-p))
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-instrumented-fork-p)))
+         (%optimize "((speed 2))")
+         (is (clautolisp.autolisp-runtime:autolisp-compile-plain-fork-p))
+         (is (clautolisp.autolisp-runtime:autolisp-compile-instrumented-fork-p))
+         (is (not (clautolisp.autolisp-runtime:autolisp-compile-eagerly-p)))
+         (%optimize "((speed 3))")
+         (is (clautolisp.autolisp-runtime:autolisp-compile-eagerly-p)))
+    (%reset-optimization)))
+
+(test the-instrumented-fork-is-kept-when-debug-is-at-least-space
+  "SPACE is not a switch of its own: it is what DEBUG is weighed against.
+The EQUAL case is the boundary worth pinning -- (DEBUG 3) (SPACE 3) says
+the two matter equally, and the fork is kept."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (%optimize "((debug 3) (space 0))")
+         (is (not (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*)))
+         (%optimize "((debug 3) (space 3))")
+         (is (not (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*))
+             "DEBUG = SPACE dropped the instrumented fork")
+         (%optimize "((debug 0) (space 3))")
+         (is (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*))
+         (%optimize "((debug 0) (space 0))")
+         (is (not (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*))
+             "DEBUG 0 with SPACE 0 asked for no size saving, so the fork stays"))
+    (%reset-optimization)))
+
+(test a-bare-quality-symbol-means-level-three
+  (%reset-optimization)
+  (unwind-protect
+       (let ((levels (%optimize "(speed)")))
+         (is (eql 3 (cdr (assoc :speed levels)))))
+    (%reset-optimization)))
+
+(test unmentioned-qualities-keep-their-level
+  (%reset-optimization)
+  (unwind-protect
+       (let ((levels (%optimize "((speed 1))")))
+         (is (eql 3 (cdr (assoc :debug levels))))
+         (is (eql 0 (cdr (assoc :space levels))))
+         (is (eql 1 (cdr (assoc :speed levels)))))
+    (%reset-optimization)))
+
+(test clal-optimization-reports-what-the-engine-is-actually-doing
+  "Reading back a setting must describe the engine's real configuration.
+While SPEED was pinned this was the documented trap -- you asked for 3
+and read back 0 -- and it is worth a test now that the answer is honest."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (%optimize "((speed 1))")
+         (let ((reported
+                 (clautolisp.autolisp-builtins-core::builtin-clal-optimization)))
+           (is (= 3 (length reported)))
+           (is (equal '("DEBUG" "SPACE" "SPEED")
+                      (mapcar (lambda (entry)
+                                (clautolisp.autolisp-runtime:autolisp-symbol-name
+                                 (first entry)))
+                              reported)))
+           (is (equal '(3 0 1) (mapcar #'second reported)))
+           (is (eql 1 clautolisp.autolisp-runtime:*autolisp-speed-level*))))
+    (%reset-optimization)))
+
+(test clal-optimize-rejects-nonsense
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (is (%signals-runtime-error-p (lambda () (%optimize "((debug 4))")))
+             "a level above 3 was accepted")
+         (is (%signals-runtime-error-p (lambda () (%optimize "((debug -1))")))
+             "a negative level was accepted")
+         (is (%signals-runtime-error-p (lambda () (%optimize "((quickness 3))")))
+             "an unknown quality was accepted")
+         (is (%signals-runtime-error-p (lambda () (%optimize "(42)")))
+             "a non-symbol element was accepted"))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-is-the-same-request-by-another-door
+  "SET-CLAL-OPTIMIZATION-LEVELS is what --optimize / -O calls. It takes
+(QUALITY . LEVEL) conses instead of an AutoLISP list, so that the CLI does
+not build a list only for CLAL-OPTIMIZE to take it apart again -- but it must
+land on exactly the same configuration, because both go through
+APPLY-CLAL-OPTIMIZATION. If these two ever disagreed, the same level would
+mean one thing from the command line and another from AutoLISP."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+          '((:speed . 3) (:debug . 0) (:space . 1)))
+         (is (eql 3 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed)))
+         (is (eql 0 (clautolisp.autolisp-builtins-core::clal-optimization-level :debug)))
+         (is (eql 1 (clautolisp.autolisp-builtins-core::clal-optimization-level :space)))
+         ;; The gates, not just the bookkeeping: DEBUG 0 < SPACE 1 drops the
+         ;; instrumented fork, and SPEED 3 is the eager level.
+         (is (eql 3 clautolisp.autolisp-runtime:*autolisp-speed-level*))
+         (is (null clautolisp.autolisp-runtime:*debug-instrumentation-enabled*)))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-leaves-unmentioned-qualities-alone
+  "An option that mentions SPEED says nothing about DEBUG or SPACE. This is
+what makes `-O2' safe to type: it must not quietly reset the other two."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+          '((:speed . 0)))
+         (is (eql 0 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed)))
+         (is (eql 3 (clautolisp.autolisp-builtins-core::clal-optimization-level :debug)))
+         (is (eql 0 (clautolisp.autolisp-builtins-core::clal-optimization-level :space))))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-applies-pairs-left-to-right
+  "A repeated quality takes its LAST value, so `-O2 -O3' means 3. The CLI
+accumulates occurrences rather than replacing them, so the list handed here
+really can name one quality twice."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+          '((:speed . 2) (:speed . 3)))
+         (is (eql 3 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed))))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-rejects-nonsense
+  "The same range and vocabulary CLAL-OPTIMIZE enforces. The CLI parser
+rejects these first, but this entry point is exported and must not be a way
+around the check."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (is (%signals-error-p
+              (lambda () (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+                          '((:speed . 4)))))
+             "a level above 3 was accepted")
+         (is (%signals-error-p
+              (lambda () (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+                          '((:quickness . 3)))))
+             "an unknown quality was accepted"))
+    (%reset-optimization)))
+
+(test set-clal-optimization-levels-is-all-or-nothing
+  "A bad pair half-way through must leave the qualities exactly as they were.
+Applying the good pairs and then signalling would leave a configuration nobody
+asked for, and the caller would never see it -- it only gets the error."
+  (%reset-optimization)
+  (unwind-protect
+       (progn
+         (is (%signals-error-p
+              (lambda () (clautolisp.autolisp-builtins-core:set-clal-optimization-levels
+                          '((:speed . 0) (:quickness . 3)))))
+             "the bad pair was accepted")
+         (is (eql 2 (clautolisp.autolisp-builtins-core::clal-optimization-level :speed))
+             "SPEED was changed by a call that signalled")
+         (is (eql 2 clautolisp.autolisp-runtime:*autolisp-speed-level*)
+             "the runtime gate was changed by a call that signalled"))
+    (%reset-optimization)))
+
+;;; --- clal-compile-file / clal-compile-system ------------------------
+;;;
+;;; A .lap is a native host FASL, renamed: loadable into a running image
+;;; alongside other applications, and therefore specific to the host Lisp
+;;; and the clautolisp version that built it (pjb, 2026-08-28).
+;;;
+;;; The test that matters is the ROUND TRIP -- compile to an artefact,
+;;; then load the artefact into a FRESH context and run what it defines.
+;;; Checking only that a file appeared would pass for an artefact that is
+;;; empty, or one whose symbols are interned in a table nobody reads.
+
+(defun %write-lsp (pathname text)
+  (with-open-file (out pathname :direction :output
+                                :if-exists :supersede
+                                :if-does-not-exist :create)
+    (write-string text out))
+  pathname)
+
+(defun %eval-here (text)
+  "Evaluate TEXT in the CURRENT context. Not RUN-AUTOLISP-STRING: that
+starts a fresh session, which would discard the definitions a freshly
+loaded artefact just installed."
+  (clautolisp.autolisp-runtime:autolisp-eval
+   (first (clautolisp.autolisp-runtime:read-runtime-from-string text))
+   (clautolisp.autolisp-runtime:current-evaluation-context)))
+
+(defun %as-autolisp-path (pathname)
+  (clautolisp.autolisp-runtime:make-autolisp-string (namestring pathname)))
+
+(defun %fresh-builtin-context ()
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (clautolisp.autolisp-builtins-core:install-core-builtins))
+
+(defun %load-here (pathname)
+  (clautolisp.autolisp-builtins-core::builtin-load (%as-autolisp-path pathname)))
+
+(test clal-compile-file-writes-an-artefact-that-loads-and-runs
+  "The round trip. The artefact must define its functions in whatever
+image loads it -- which is the claim that a printed AUTOLISP-SYMBOL, or
+one read back as a fresh struct, would silently break."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(defun sq (x) (* x x))
+(defun twice (x) (+ x x))")
+    (let* ((lap (make-pathname :type "lap" :defaults p))
+           (result (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+                    (%as-autolisp-path p))))
+      (unwind-protect
+           (progn
+             (is (not (null result)) "clal-compile-file reported failure")
+             (is (not (null (probe-file lap))) "no .lap was written")
+             ;; A FRESH context: nothing the compilation did in this image
+             ;; may be what makes the next assertions pass.
+             (%fresh-builtin-context)
+             (is (not (null (%load-here lap))) "the .lap did not load")
+             (is (eql 81 (%eval-here "(sq 9)")))
+             (is (eql 14 (%eval-here "(twice 7)"))))
+        (ignore-errors (delete-file lap))))))
+
+(test a-loaded-artefact-brings-its-compiled-bodies-with-it
+  "The point of an artefact over its source: the functions arrive already
+compiled, so they never pay the threshold or the host compiler again."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(defun sq3 (x) (* x x))")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (not (null
+                       (clautolisp.autolisp-runtime:autolisp-usubr-compiled-body
+                        (clautolisp.autolisp-runtime:lookup-function
+                         (clautolisp.autolisp-runtime:intern-autolisp-symbol
+                          "SQ3")))))
+                 "a function from a .lap arrived without its compiled body"))
+        (ignore-errors (delete-file lap))))))
+
+(test an-artefact-keeps-the-source-body-so-it-stays-debuggable
+  "Dropping BODY would make artefacts load faster and functions from them
+impossible to instrument. The debugger weaves its fork FROM the body."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(defun sq4 (x) (* x x))")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (not (null
+                       (clautolisp.autolisp-runtime:autolisp-usubr-body
+                        (clautolisp.autolisp-runtime:lookup-function
+                         (clautolisp.autolisp-runtime:intern-autolisp-symbol
+                          "SQ4")))))
+                 "a function from a .lap lost its source body"))
+        (ignore-errors (delete-file lap))))))
+
+(test an-artefact-carries-non-defun-top-level-forms-too
+  "A source file is not only DEFUNs. Whatever else it does at top level
+has to happen when the artefact is loaded, in the same order."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(setq greeting \"hello\")
+(defun greet () greeting)")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (equal "hello"
+                        (clautolisp.autolisp-runtime:autolisp-string-value
+                         (%eval-here "(greet)")))))
+        (ignore-errors (delete-file lap))))))
+
+(defun %doc-of (name)
+  (clautolisp.autolisp-runtime:lookup-documentation
+   (clautolisp.autolisp-runtime:intern-autolisp-symbol name)
+   (clautolisp.autolisp-runtime:current-evaluation-context)))
+
+(test an-artefact-keeps-the-source-documentation
+  "The ;|...|; blocks are the documentation alref-documentation and
+clautolisp-documentation read. A .lap keeps them -- for a top-level DEFUN,
+a top-level SETQ, and a DEFUN nested in a PROGN (run by the interpreter
+from the artefact) -- so a function loaded from its .lap is as documented
+as one loaded from its source."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p ";| Square X. |;
+(defun docsq (x) (* x x))
+;| The greeting. |;
+(setq docgreeting \"hello\")
+(progn
+  ;| Nested. |;
+  (defun docnested () 1))
+(defun docnone () 2)")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (equal '(:function " Square X. ") (%doc-of "DOCSQ")))
+             (is (equal '(:variable " The greeting. ") (%doc-of "DOCGREETING")))
+             (is (equal '(:function " Nested. ") (%doc-of "DOCNESTED")))
+             (is (null (%doc-of "DOCNONE")))
+             (is (eql 49 (%eval-here "(docsq 7)"))))
+        (ignore-errors (delete-file lap))))))
+
+(test findfile-and-vl-file-size-of-the-empty-name-are-nil
+  "The empty name names no file: (findfile \"\") and (vl-file-size \"\") are
+nil on AutoCAD 2022, BricsCAD V25 and V26 (probe-logfile, MR !428). clautolisp
+resolved it to the current directory -- a path, and a size of 0."
+  (%fresh-builtin-context)
+  (is (null (%eval-here "(findfile \"\")")))
+  (is (null (%eval-here "(vl-file-size \"\")"))))
+
+(defun %body-of (name)
+  (clautolisp.autolisp-runtime:autolisp-usubr-body
+   (clautolisp.autolisp-runtime:lookup-function
+    (clautolisp.autolisp-runtime:intern-autolisp-symbol name))))
+
+(test an-artefact-keeps-the-source-positions-for-the-debugger
+  "A function loaded from a .lap is debuggable by line like one loaded from
+its source: loaded with positions tracked (a debugger UI), its body's forms
+carry their source lines. Loaded without, nothing is recorded -- an ordinary
+load of a .lap stays as allocation-free as one of its source -- and compiling
+leaves nothing in the compiling image's tables either."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lsp" :keep nil)
+    (%write-lsp p "(setq x 1)
+(defun possq (x)
+  (setq x (* x x))
+  (+ x 1))")
+    (let ((lap (make-pathname :type "lap" :defaults p)))
+      (unwind-protect
+           (let ((clautolisp.source:*source-position-table* (make-hash-table :test 'eq))
+                 (clautolisp.source:*source-element-position-table* (make-hash-table :test 'eq)))
+             (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+              (%as-autolisp-path p))
+             (is (zerop (hash-table-count clautolisp.source:*source-position-table*))
+                 "compiling the .lap left positions in the compiling image")
+             ;; an ordinary load: nothing recorded
+             (%fresh-builtin-context)
+             (%load-here lap)
+             (is (null (clautolisp.source:position-of (first (%body-of "POSSQ")))))
+             ;; a debug load: the body's forms carry their lines
+             (%fresh-builtin-context)
+             (let ((clautolisp.source:*track-source-positions* t))
+               (%load-here lap))
+             (let ((first-form (clautolisp.source:position-of (first (%body-of "POSSQ"))))
+                   (second-form (clautolisp.source:position-of (second (%body-of "POSSQ")))))
+               (is (not (null first-form)) "no position for the body's first form")
+               (is (not (null second-form)) "no position for the body's second form")
+               (when (and first-form second-form)
+                 (is (eql 3 (clautolisp.source:source-position-start-line first-form)))
+                 (is (eql 4 (clautolisp.source:source-position-start-line second-form)))))
+             (is (eql 26 (%eval-here "(possq 5)"))))
+        (ignore-errors (delete-file lap))))))
+
+(test clal-compile-file-reports-a-missing-file-the-way-load-does
+  (%fresh-builtin-context)
+  (is (null (clautolisp.autolisp-builtins-core::builtin-clal-compile-file
+             (clautolisp.autolisp-runtime:make-autolisp-string
+              "/nonexistent/definitely-not-here.lsp")))))
+
+(test clal-compile-system-needs-an-output-name
+  "There is no sensible default name for an artefact built from several
+sources, so the argument is required rather than guessed at."
+  (%fresh-builtin-context)
+  (is (%signals-runtime-error-p
+       (lambda ()
+         (clautolisp.autolisp-builtins-core::builtin-clal-compile-system
+          nil (list (clautolisp.autolisp-runtime:make-autolisp-string "a.lsp")))))))
+
+(test clal-compile-system-builds-one-artefact-from-several-sources
+  "The reason the system form exists: one compilation over all the files,
+so a call in an earlier file to a function defined in a later one
+resolves -- and one artefact to ship, not one per source."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname a :type "lsp" :keep nil)
+    (uiop:with-temporary-file (:pathname b :type "lsp" :keep nil)
+      (uiop:with-temporary-file (:pathname out :type "lap" :keep nil)
+        ;; A calls B's function; B is compiled second.
+        (%write-lsp a "(defun caller (x) (callee x))")
+        (%write-lsp b "(defun callee (x) (* x 3))")
+        (let ((result
+                (clautolisp.autolisp-builtins-core::builtin-clal-compile-system
+                 (%as-autolisp-path out)
+                 (list (%as-autolisp-path a) (%as-autolisp-path b)))))
+          (is (not (null result)) "clal-compile-system reported failure"))
+        (%fresh-builtin-context)
+        (is (not (null (%load-here out))) "the system .lap did not load")
+        (is (eql 21 (%eval-here "(caller 7)")))))))
+
+(test loading-a-lap-that-is-not-one-fails-with-its-own-diagnostic
+  "A .lap is host- and version-specific by design, so `this file will not
+load' is a normal outcome and needs a message that says why, rather than
+the reader's confusion at finding a FASL where source was expected."
+  (%fresh-builtin-context)
+  (uiop:with-temporary-file (:pathname p :type "lap" :keep nil)
+    (%write-lsp p "this is not a fasl")
+    (is (%signals-runtime-error-p (lambda () (%load-here p))))))
+
+;;;; ----- complete-unit-tests: CLAL-* invoked from AutoLISP -----------------
+;;;; (complete-unit-tests.issue) These CLAL-* operators were already exercised
+;;;; above via direct builtin-clal-* CL calls, but coverage-report.sh credits a
+;;;; builtin only when it appears as a literal (clal-… AutoLISP form head. These
+;;;; tests invoke each from an AutoLISP snippet so the coverage tool sees them,
+;;;; while still pinning a documented return.
+
+(test clal-ui-builtins-invocable-from-autolisp
+  "The CLAL UI / binding / window builtins are callable from AutoLISP and
+return the documented nil with no debug UI attached (complete-unit-tests.issue).
+Hooks forced nil so this holds in the full image too (the UI systems install
+them at load time) — see %with-no-ui-hooks in builtin-tests.lisp."
+  (reset-autolisp-symbol-table)
+  (%with-no-ui-hooks
+    (dolist (form '("(clal-frame-list)"
+                    "(clal-binding \"z\" \"continue\")"
+                    "(clal-binding-lookup \"z\")"
+                    "(clal-remove-binding \"z\")"
+                    "(clal-clear-window)"
+                    "(clal-move-cursor-to 1 1)"
+                    "(clal-window-put 1 1 \"x\")"
+                    "(clal-call-with-temp-window nil '(lambda (w) 1))"))
+      (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+          "~A should return nil with no UI attached" form))))
+
+(test clal-codepage-builtins-from-autolisp
+  "clal-system-codepage / clal-drawing-codepage / clal-codepage-mismatch-p
+invoked from AutoLISP against the cador mock (empty catalogue codepages render
+as the \"ANSI\" placeholder, so sys == dwg → no mismatch)
+(complete-unit-tests.issue)."
+  (is (string= "ANSI" (%reg-str (%vla "(clal-system-codepage)"))))
+  (is (string= "ANSI" (%reg-str (%vla "(clal-drawing-codepage)"))))
+  (is (null (%vla "(clal-codepage-mismatch-p)"))))
+
+(test clal-common-lisp-from-autolisp
+  "clal-common-lisp (installed by CLAUTOLISPDROP) evaluates an AutoLISP form
+and returns its value, invoked as a literal AutoLISP call (complete-unit-tests.issue)."
+  (is (eql 42 (run-autolisp-string
+               "(clal-common-lisp \"(* 6 7)\")"
+               :setup-fn (lambda (ctx)
+                           (declare (ignore ctx))
+                           (install-core-builtins)
+                           (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 1))))))
+
+(test clal-clipboard-builtins-from-autolisp
+  "clal-clipboard-put-text/get-text and copy-sexp/paste-sexp round-trip through
+a mock clipboard provider, invoked from AutoLISP (complete-unit-tests.issue)."
+  (let* ((box (list nil))
+         (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
+    (is (string= "hi there"
+                 (%reg-str (run-autolisp-string
+                            "(clal-clipboard-put-text \"hi there\")(clal-clipboard-get-text)"
+                            :setup-fn #'install-core-into)))))
+  (let* ((box (list nil))
+         (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
+    (is (equal '(1 2 3)
+               (run-autolisp-string
+                "(clal-clipboard-copy-sexp '(1 2 3))(clal-clipboard-paste-sexp)"
+                :setup-fn #'install-core-into)))))
+
+(test clal-compile-builtins-from-autolisp
+  "clal-compile-file / clal-compile-system compile a trivial source to an
+artefact and report success, invoked from AutoLISP (complete-unit-tests.issue;
+needs the compiler, which the test image loads)."
+  (uiop:with-temporary-file (:pathname a :type "lsp" :keep nil)
+    (with-open-file (o a :direction :output :if-exists :supersede)
+      (write-string "(defun sq (x) (* x x))" o))
+    (is (not (null (run-autolisp-string
+                    (format nil "(clal-compile-file \"~A\")" (namestring a))
+                    :setup-fn #'install-core-into)))))
+  (uiop:with-temporary-file (:pathname a :type "lsp" :keep nil)
+    (uiop:with-temporary-file (:pathname out :type "lap" :keep nil)
+      (with-open-file (o a :direction :output :if-exists :supersede)
+        (write-string "(defun cube (x) (* x x x))" o))
+      (is (not (null (run-autolisp-string
+                      (format nil "(clal-compile-system \"~A\" (list \"~A\"))"
+                              (namestring out) (namestring a))
+                      :setup-fn #'install-core-into)))))))

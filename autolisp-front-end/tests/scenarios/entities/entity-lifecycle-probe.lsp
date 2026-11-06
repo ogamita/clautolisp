@@ -11,7 +11,7 @@
 ;;;; UNCHANGED on every target.
 ;;;;
 ;;;; Run it:
-;;;;   clautolisp:            clautolisp --host mock -l entity-lifecycle-probe.lsp
+;;;;   clautolisp:            clautolisp --host cador -l entity-lifecycle-probe.lsp
 ;;;;   via alfe on BricsCAD:  alfe --bricscad -l entity-lifecycle-probe.lsp
 ;;;;   via alfe on AutoCAD:   alfe --autocad  -l entity-lifecycle-probe.lsp
 ;;;;

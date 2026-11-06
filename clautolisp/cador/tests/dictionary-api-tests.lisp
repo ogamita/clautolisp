@@ -1,0 +1,203 @@
+(in-package #:clautolisp.cador.tests)
+
+(in-suite cador-suite)
+
+;;;; cador adapter tests for the named-object dictionary tree,
+;;;; xrecord lifecycle and REGAPP registration.
+
+(defun mk-str (s) (make-autolisp-string s))
+
+(defun make-xrecord-ename (mock &optional (tag "payload"))
+  (host-entmakex mock (list (cons 0 "XRECORD")
+                            (cons 100 "AcDbXrecord")
+                            (cons 1 tag))))
+
+;;; --- namedobjdict / dictadd / dictsearch ------------------------
+
+(test namedobjdict-returns-a-stable-ename
+  (let ((mock (make-cador)))
+    (let ((r1 (host-namedobjdict mock))
+          (r2 (host-namedobjdict mock)))
+      (is (typep r1 'autolisp-ename))
+      (is (string= (autolisp-ename-value r1) (autolisp-ename-value r2))))))
+
+(test dictadd-and-dictsearch-round-trip-an-xrecord
+  (let ((mock (make-cador)))
+    (let ((nod (host-namedobjdict mock))
+          (x   (make-xrecord-ename mock "hello")))
+      (is (eq x (host-dictadd mock nod (mk-str "MYREC") x)))
+      (let ((found (host-dictsearch mock nod (mk-str "MYREC"))))
+        (is (consp found))
+        ;; entget-style: (-1 . ename) head + (0 . "XRECORD")
+        (is (typep (cdr (assoc -1 found)) 'autolisp-ename))
+        (is (string-equal "XRECORD" (autolisp-string-value (cdr (assoc 0 found)))))
+        (is (string= "hello" (autolisp-string-value (cdr (assoc 1 found))))))
+      ;; absent key -> nil (soft failure, no condition)
+      (is (null (host-dictsearch mock nod (mk-str "NOPE"))))
+      ;; duplicate key -> nil
+      (is (null (host-dictadd mock nod (mk-str "MYREC") (make-xrecord-ename mock)))))))
+
+(test dictobjname-returns-member-ename
+  (let ((mock (make-cador)))
+    (let ((nod (host-namedobjdict mock))
+          (x   (make-xrecord-ename mock)))
+      (host-dictadd mock nod (mk-str "K") x)
+      (is (string= (autolisp-ename-value x)
+                   (autolisp-ename-value (host-dictobjname mock nod (mk-str "K")))))
+      (is (null (host-dictobjname mock nod (mk-str "ABSENT")))))))
+
+(test dictsearch-object-feeds-entmod-and-entget
+  (let ((mock (make-cador))
+        (session (clautolisp.autolisp-runtime:evaluation-context-session
+                  (clautolisp.autolisp-runtime:current-evaluation-context))))
+    (let ((nod (host-namedobjdict mock))
+          (x   (make-xrecord-ename mock "v1")))
+      (host-dictadd mock nod (mk-str "K") x)
+      ;; entget on the xrecord ename works
+      (is (consp (host-entget mock x)))
+      ;; entmod that UPDATES an xrecord is the deviant (BricsCAD) behaviour;
+      ;; the autolisp-spec (per AutoCAD) makes it a no-op, so the normative
+      ;; dialects (autocad/clautolisp/strict) would keep the old value
+      ;; (divergence D3). Exercise the update under --lax (deviant, silent),
+      ;; then restore.
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-runtime:set-runtime-session-dialect
+              session (clautolisp.autolisp-reader:find-autolisp-dialect :lax))
+             (host-entmod mock (list (cons -1 x) (cons 0 "XRECORD")
+                                     (cons 100 "AcDbXrecord") (cons 1 "v2")))
+             (is (string= "v2" (autolisp-string-value
+                                (cdr (assoc 1 (host-entget mock x)))))))
+        (clautolisp.autolisp-runtime:set-runtime-session-dialect
+         session (clautolisp.autolisp-reader:autolisp-dialect-strict))))))
+
+;;; --- dictnext enumeration ---------------------------------------
+
+(test dictnext-enumerates-all-members-then-nil
+  (let ((mock (make-cador)))
+    (let ((nod (host-namedobjdict mock)))
+      (host-dictadd mock nod (mk-str "A") (make-xrecord-ename mock "a"))
+      (host-dictadd mock nod (mk-str "B") (make-xrecord-ename mock "b"))
+      (host-dictadd mock nod (mk-str "C") (make-xrecord-ename mock "c"))
+      (let ((seen '()))
+        (loop for e = (host-dictnext mock nod :rewind t) then (host-dictnext mock nod)
+              while e
+              ;; the test's XRECORDs, among the fresh drawing's default
+              ;; entries (cador-entget-subclass-layout-and-record-pointers,
+              ;; item 5), which carry no group 1
+              when (assoc 1 e)
+                do (push (autolisp-string-value (cdr (assoc 1 e))) seen))
+        ;; membership, order-independent
+        (is (null (set-difference seen '("a" "b" "c") :test #'string=)))
+        (is (= 3 (length seen)))))))
+
+;;; --- dictremove / dictrename ------------------------------------
+
+(test dictremove-detaches-and-returns-ename
+  (let ((mock (make-cador)))
+    (let ((nod (host-namedobjdict mock))
+          (x   (make-xrecord-ename mock)))
+      (host-dictadd mock nod (mk-str "K") x)
+      (is (string= (autolisp-ename-value x)
+                   (autolisp-ename-value (host-dictremove mock nod (mk-str "K")))))
+      (is (null (host-dictsearch mock nod (mk-str "K"))))
+      (is (null (host-dictremove mock nod (mk-str "K")))))))
+
+(test dictrename-changes-the-key
+  (let ((mock (make-cador)))
+    (let ((nod (host-namedobjdict mock))
+          (x   (make-xrecord-ename mock)))
+      (host-dictadd mock nod (mk-str "OLD") x)
+      (is (string= "NEW" (autolisp-string-value
+                          (host-dictrename mock nod (mk-str "OLD") (mk-str "NEW")))))
+      (is (null (host-dictsearch mock nod (mk-str "OLD"))))
+      (is (consp (host-dictsearch mock nod (mk-str "NEW")))))))
+
+;;; --- ssget must never return dictionaries / xrecords ------------
+
+(test ssget-x-excludes-non-graphical-objects
+  (let ((mock (make-cador)))
+    (host-entmake mock (list (cons 0 "LINE") (cons 10 '(0.0d0 0.0d0 0.0d0))
+                             (cons 11 '(1.0d0 1.0d0 0.0d0))))
+    (host-namedobjdict mock)                       ; creates the root DICTIONARY
+    (make-xrecord-ename mock)                       ; an XRECORD object
+    (let ((set (host-ssget mock nil :mode (mk-str "X"))))
+      ;; only the one LINE, not the dictionary or the xrecord
+      (is (eql 1 (host-sslength mock set))))))
+
+;;; --- REGAPP ------------------------------------------------------
+
+(test regapp-registers-and-rejects-duplicates
+  (let ((mock (make-cador)))
+    (is (string= "SCHMS" (autolisp-string-value (host-regapp mock (mk-str "SCHMS")))))
+    (is (null (host-regapp mock (mk-str "SCHMS"))))          ; already registered
+    (is (typep (cador-find-table-record mock :appid "SCHMS")
+               'symbol-table-record))))
+
+;;; --- Session isolation: fresh host = fresh drawing --------------
+
+(test dictionaries-are-isolated-between-fresh-hosts
+  (let ((m1 (make-cador))
+        (m2 (make-cador)))
+    (host-dictadd m1 (host-namedobjdict m1) (mk-str "K") (make-xrecord-ename m1))
+    ;; m2's fresh root dictionary has no such entry
+    (is (null (host-dictsearch m2 (host-namedobjdict m2) (mk-str "K"))))))
+
+;;; --- Pointer group codes are ENAMES (cador-entget-pointer-codes-are-handle-strings)
+
+(test dictionary-entry-pointers-are-entgetable-enames
+  (let ((mock (make-cador)))
+    (let ((nod (host-namedobjdict mock))
+          (x   (make-xrecord-ename mock "pointed")))
+      (host-dictadd mock nod (mk-str "PTR") x)
+      ;; (entget (namedobjdict)): every 350/360 entry is an ENAME that
+      ;; entget accepts; the one we added is EQ to the xrecord's ename.
+      (let* ((view (host-entget mock nod))
+             (entries (remove-if-not (lambda (p) (and (consp p) (member (car p) '(350 360))))
+                                     view)))
+        (is (plusp (length entries)))
+        (dolist (p entries)
+          (is (typep (cdr p) 'autolisp-ename))
+          (is (consp (host-entget mock (cdr p)))))
+        (is (member x (mapcar #'cdr entries) :test #'eq))
+        ;; The root dictionary's owner is the null handle: an ename (not
+        ;; a string), whose entget is NIL -- no error. Measured on AutoCAD 2022
+        ;; (2026-10-08); BricsCAD omits the pair (pointer-dialect-tests).
+        (let ((owner (cdr (assoc 330 view))))
+          (is (typep owner 'autolisp-ename))
+          (is (null (host-entget mock owner)))))
+      ;; dictsearch / dictnext member views: the owner 330 is the
+      ;; dictionary's ename, EQ to (namedobjdict).
+      (let ((found (host-dictsearch mock nod (mk-str "PTR"))))
+        (is (eq nod (cdr (assoc 330 found))))
+        (is (typep (cdr (assoc 5 found)) 'autolisp-string)))
+      (let ((walked nil))
+        (loop for v = (host-dictnext mock nod :rewind (null walked))
+              while v
+              do (setf walked t)
+                 (when (eq x (cdr (assoc -1 v)))
+                   (is (eq nod (cdr (assoc 330 v))))))
+        (is (eq t walked))))))
+
+(test xrecord-read-back-has-the-280-flag-before-its-data
+  ;; SCHMS reads an xrecord back with (cddr (member '(100 . "AcDbXrecord")
+  ;; data)), skipping the marker AND the (280 . 1) AutoCAD inserts; without
+  ;; that 280 the first data group was eaten ("Nom de classe attendu").
+  (let* ((mock (make-cador))
+         (nod (host-namedobjdict mock))
+         (x (host-entmakex mock (list (cons 0 "XRECORD")
+                                      (cons 100 "AcDbXrecord")
+                                      (cons 1 "Classe")
+                                      (cons 70 1)))))
+    (host-dictadd mock nod (mk-str "SCHMS") x)
+    (dolist (view (list (host-entget mock x)
+                        (host-dictsearch mock nod (mk-str "SCHMS"))))
+      (let ((payload (member 100 view :key #'car)))
+        (is (string= "AcDbXrecord" (autolisp-string-value (cdr (first payload)))))
+        (is (equal '(280 . 1) (second payload)))
+        (is (eql 1 (car (third payload))))
+        (is (string= "Classe" (autolisp-string-value (cdr (third payload)))))
+        (is (equal '(70 . 1) (fourth payload)))
+        (is (null (nthcdr 4 payload)))
+        ;; no AcDbObject marker anywhere
+        (is (= 1 (count 100 view :key (lambda (p) (and (consp p) (car p))))))))))

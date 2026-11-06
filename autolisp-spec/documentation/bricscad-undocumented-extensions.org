@@ -1,0 +1,243 @@
+# -*- mode: org; coding: utf-8; -*-
+#+TITLE: BricsCAD V26 Undocumented Common-Lisp Extensions
+#+SUBTITLE: Vendor-extensions catalogue (not part of the normative spec)
+#+AUTHOR: Claude Opus 4.8
+#+OPTIONS: toc:3 num:t
+#+TEXINFO_FILENAME: bricscad-undocumented-extensions.info
+#+TEXINFO_DIR_CATEGORY: AutoLISP specification
+#+TEXINFO_DIR_TITLE: bricscad-undocumented-extensions: (bricscad-undocumented-extensions).
+#+TEXINFO_DIR_DESC: BricsCAD V26 undocumented Common-Lisp constructs.
+
+* 1 Purpose and status
+
+This page catalogues the Common-Lisp constructs that BricsCAD V26
+silently accepts even though they appear in *neither* Autodesk's public
+AutoLISP reference *nor* the BricsCAD-specific LISP documentation, and
+records — per construct — what clautolisp does about each.
+
+It is a *vendor-extensions catalogue*, not a normative part of the
+AutoLISP / Visual LISP specification. Nothing here is promoted into
+[[file:autolisp-visual-lisp-specification-draft.org][the spec draft]]; a
+construct listed here is, by definition, an undocumented vendor
+extension whose portability is a hazard, not a guarantee. The companion
+tracking issue is ~issues/open/bricscad-undocumented-clisms.issue~.
+
+* 2 Evidence base
+
+** 2.1 The harvest probe
+
+The probe
+~autolisp-front-end/tests/scenarios/entities/bricscad-extensions-probe.lsp~
+captures each construct's *raw return value* (each result wrapped in its
+own ~princ~, so what is recorded is the form's own return value, not any
+REPL/print-wrap echo). Every construct runs through
+~vl-catch-all-apply~, so an unsupported construct records ~ERROR:<msg>~
+instead of aborting the run. Output is the machine-readable
+~EXTPROBE <KEY>=<VALUE>~ stream, terminated by ~EXTPROBE DONE~.
+
+The probe is registered in the existing vendor-probes drivers
+(~scripts/run-vendor-probes.{sh,ps1}~) as a HARVEST probe — it has no
+per-vendor expectation file, so its transcript is saved as an artifact
+and never gates the pipeline.
+
+** 2.2 The confirming run
+
+Source: ~vendor:probes:bricscad:macos~ (GitLab pipeline on ~master~ @
+~b97d9fd~), run *2026-08-07* against real BricsCAD V26 on the macOS
+runner. Artifact:
+~dist/vendor-probes/bricscad/bricscad-extensions.log~.
+
+Verbatim ~EXTPROBE~ harvest (2026-08-07):
+
+#+begin_example
+EXTPROBE SETQ-99=99          EXTPROBE SETQ-NIL=nil
+EXTPROBE SETF-NIL=2          EXTPROBE SETF-1=2      EXTPROBE SETF-2=2
+EXTPROBE SETF-99=2           EXTPROBE SETF-STRING=2 EXTPROBE SETF-LIST=2
+EXTPROBE SETF-THEN-FOO=nil
+EXTPROBE LET-SUM=3           EXTPROBE LET-PARALLEL=(1 10)
+EXTPROBE LETSTAR-SEQ=ERROR:no function definition <LET*>
+EXTPROBE REST-BINDS=(2 3 4)  EXTPROBE AMP-BINDS=ERROR:too few / too many
+#+end_example
+
+* 3 Constructs
+
+** 3.1 ~setf~
+
+*** Vendor confirmation
+2026-08-07 harvest, keys ~SETF-*~ and ~SETF-THEN-FOO~:
+
+- ~SETF-NIL=2~, ~SETF-1=2~, ~SETF-2=2~, ~SETF-99=2~,
+  ~SETF-STRING=2~, ~SETF-LIST=2~ — every ~(setf foo VALUE)~ returns the
+  *constant* ~2~, whatever the value assigned (nil / 1 / 2 / 99 /
+  ~"hello"~ / ~'(a b)~).
+- ~SETF-THEN-FOO=nil~ — after ~(setf foo 42)~, reading ~foo~ back yields
+  ~nil~: the earlier ~(setq foo nil)~ baseline is unchanged.
+
+*** Observed semantics
+BricsCAD V26's ~setf~ is *not* a ~setq~ alias. It does *not* assign to a
+symbol place at all, and it returns a fixed internal sentinel ~2~
+regardless of argument. It is a quirky non-assigning operation. (This
+also resolves ~deferred-bricscad-setq-nil-returns-2.issue~: the "2" a
+user once mistook for a ~setq~ bug came from a ~setf~ they typed
+instead.)
+
+*** clautolisp recommendation: *DON'T imitate*
+clautolisp must NOT reproduce the "returns 2, assigns nothing" behaviour
+— faking a broken vendor quirk helps no one. clautolisp therefore does
+*not* define ~setf~. Under ~--dialect bricscad~ a ~(setf …)~ form is
+left as an ordinary undefined function (an ~:undefined-function~ error),
+rather than silently faking the sentinel. Should clautolisp ever want a
+~setf~, it must be a clean clautolisp EXTENSION (CL-style generalised
+assignment), never the BricsCAD "2" behaviour. When reached under a
+portable-target dialect it is a candidate for an
+~[ext-bricscad-undocumented]~ diagnostic (see §4; currently TODO, as the
+construct is simply undefined).
+
+** 3.2 ~let~
+
+*** Vendor confirmation
+2026-08-07 harvest, keys ~LET-SUM~ and ~LET-PARALLEL~:
+
+- ~LET-SUM=3~ — ~(let ((x 1) (y 2)) (+ x y))~ ⇒ ~3~.
+- ~LET-PARALLEL=(1 10)~ — with ~x~ set to 10 in the enclosing scope,
+  ~(let ((x 1) (y x)) (list x y))~ ⇒ ~(1 10)~. The ~y~ init-form sees
+  the *outer* ~x~ (= 10), NOT the let's ~x~ (= 1). Had the binding been
+  sequential (a ~let*~), ~y~ would be 1 and the result ~(1 1)~.
+
+*** Observed semantics
+BricsCAD V26 provides a genuine Common-Lisp ~let~ with *parallel*
+binding: all init-forms are evaluated in the enclosing scope, then the
+variables are bound simultaneously; the body is an implicit progn
+returning its last form's value.
+
+*** clautolisp recommendation: *implement (parallel binding)*
+This is the one genuine, cleanly-implementable BricsCAD extension.
+clautolisp implements ~let~ as an AutoLISP special form with CL-style
+parallel binding (~eval-let-form~ in
+~clautolisp/autolisp-runtime/source/api.lisp~):
+
+- Every init-form is evaluated against the *enclosing* scope first
+  (parallel discipline, matching the ~(1 10)~ harvest).
+- The variables are then bound simultaneously in a fresh dynamic frame,
+  which shadows any surrounding binding for the extent of the body and
+  is torn down on both normal and non-local exit — the same discipline
+  as ~foreach~ and the usubr ~/~-locals frame.
+- A binding is either a bare symbol (bound to ~nil~) or a
+  ~(symbol init-form)~ pair; the body is an implicit progn (empty body
+  ⇒ ~nil~).
+
+Availability is dialect-gated. ~let~ is accepted under ~--dialect
+bricscad~ / ~clautolisp~ / ~lax~. Under a portable-target dialect
+(~--dialect strict~ / ~autocad~) it still evaluates but emits the
+~[ext-bricscad-undocumented]~ warning (or errors when
+~--portability-warning-mode error~) — see §4.
+
+** 3.3 ~let*~
+
+*** Vendor confirmation
+2026-08-07 harvest, key ~LETSTAR-SEQ~:
+
+- ~LETSTAR-SEQ=ERROR:no function definition <LET*>~ — evaluating
+  ~(let* ((x 1) (y (+ x 1))) y)~ fails: BricsCAD V26 has no ~let*~.
+
+*** Observed semantics
+~let*~ *does not exist* on BricsCAD V26. This refutes the tracking
+issue's original assumption that ~let*~ was a silent extension
+alongside ~let~.
+
+*** clautolisp recommendation: *not a vendor extension*
+Do NOT add ~let*~ as a BricsCAD extension. clautolisp does *not* register
+~let*~ as a special operator; a ~(let* …)~ form falls through to
+ordinary function dispatch and is an ~:undefined-function~ error (never a
+silently-accepted sequential-binding form). Should clautolisp ever want
+~let*~, it would be a *pure clautolisp extension*, justified on its own
+merits — not a claim of BricsCAD compatibility.
+
+** 3.4 ~&rest~ (rest parameter)
+
+*** Vendor confirmation
+2026-08-07 harvest, key ~REST-BINDS~:
+
+- ~REST-BINDS=(2 3 4)~ — ~((lambda (a &rest r) r) 1 2 3 4)~ ⇒ ~(2 3 4)~.
+
+Bricsys support additionally confirmed ~&rest~ on 2026-06-07.
+
+*** Observed semantics
+BricsCAD V26 accepts the Common-Lisp ~&rest~ spelling (case-insensitive,
+like every AutoLISP symbol) in ~defun~ / ~lambda~ lambda-lists: the
+rest-parameter binds to the proper list of the surplus arguments.
+
+*** clautolisp recommendation: *implemented*
+Already implemented (clautolisp 1.1.16, ~variadic-functions.issue~).
+clautolisp accepts both the ~&rest~ spelling and its own bare-~&~
+spelling as synonyms. Dialect gating is via the existing
+~[lambda-list-extension]~ warning (~emit-lambda-list-extension-warning~):
+silent for ~&rest~ under ~--dialect bricscad~ / ~clautolisp~ / ~lax~;
+warns under ~--dialect strict~ / ~autocad~.
+
+** 3.5 bare ~&~ (rest separator)
+
+*** Vendor confirmation
+2026-08-07 harvest, key ~AMP-BINDS~:
+
+- ~AMP-BINDS=ERROR:too few / too many~ — ~((lambda (a & r) r) 1 2 3 4)~
+  is rejected: BricsCAD V26 does *not* treat a bare ~&~ as a
+  rest-separator (it is read as an ordinary parameter name, so the arity
+  no longer matches).
+
+*** Observed semantics
+The bare ~&~ separator is a clautolisp spelling only; BricsCAD V26 does
+not accept it.
+
+*** clautolisp recommendation: *reject under bricscad*
+clautolisp keeps accepting bare ~&~ as a synonym of ~&rest~ under its own
+~--dialect clautolisp~ (and ~lax~), but under ~--dialect bricscad~ the
+bare ~&~ is flagged non-portable: the existing
+~[lambda-list-extension]~ warning fires for ~&~ (but not ~&rest~) under
+~--dialect bricscad~, matching the harvest. Under ~--dialect strict~ /
+~autocad~ both spellings warn.
+
+* 4 clautolisp dialect diagnostics
+
+The ~[ext-bricscad-undocumented]~ diagnostic
+(~emit-bricscad-undocumented-warning~ in
+~clautolisp/autolisp-runtime/source/api.lisp~) reuses the existing
+portability-warning infrastructure introduced for the lambda-list
+extension (autolisp-spec ch.25):
+
+- *Evaluation-tied*: it fires only when evaluation actually reaches the
+  construct; a guarded (never-reached) occurrence is silent.
+- *Once-per-source-occurrence*: deduped by the source object's identity
+  (for ~let~, the binding-list cons), so a construct re-evaluated in a
+  loop warns at most once per run.
+- *Dialect matrix*:
+  - ~--dialect bricscad~ — silent (native).
+  - ~--dialect clautolisp~ — silent (blessed clautolisp extension).
+  - ~--dialect lax~ — silent (catch-all "accept every vendor extension").
+  - ~--dialect strict~, ~--dialect autocad~ — warn; portable AutoLISP has
+    no such construct.
+- *Escalation knob*: when the active dialect's ~portability-warning-mode~
+  is ~:error~ (default ~:warn~), a non-silent occurrence signals a
+  ~:non-portable-construct~ AutoLISP runtime error instead of printing.
+- Warnings go to ~*error-output*~.
+
+Currently the ~[ext-bricscad-undocumented]~ diagnostic is wired for
+~let~. The bare-~&~ and ~&rest~ cases are covered by the pre-existing
+~[lambda-list-extension]~ diagnostic. ~setf~ and ~let*~ are undefined
+functions in clautolisp (no faking), so they surface as
+~:undefined-function~ rather than a dedicated extension diagnostic — see
+§5.
+
+* 5 Open items / TODO
+
+- *setf / let\* dedicated diagnostic*: ~setf~ and ~let*~ are intentionally
+  left undefined in clautolisp, so a use of either raises
+  ~:undefined-function~ today rather than a targeted
+  ~[ext-bricscad-undocumented]~ note. Emitting the dedicated diagnostic
+  for these would require recognising the names in the undefined-function
+  resolution path (a small hook in ~resolve-unbound-function-or-signal~)
+  without actually defining them. Deferred as low-value: the undefined
+  error already prevents silent BricsCAD-only behaviour.
+- *Bricsys support ticket*: a single ticket asking whether the ~setf~-"2"
+  sentinel is intentional, and whether ~let~ is officially supported /
+  deprecated / undocumented-but-stable, is still wanted.

@@ -16,7 +16,7 @@
 ;;;;                              :host-not-supported runtime error.
 ;;;;                              Default for programs that exercise
 ;;;;                              only the language-level surface.
-;;;;   - MockHost  (Phase 9)   — in-memory deterministic CAD
+;;;;   - cador  (Phase 9)   — in-memory deterministic CAD
 ;;;;                              substrate.
 ;;;;   - LiveHost  (Phase 16)  — bridge to a live BricsCAD or
 ;;;;                              AutoCAD process.
@@ -46,12 +46,47 @@ the NULL-HOST default and signal :host-not-supported."))
 
 (defun signal-host-not-supported (host operation)
   "Raise the standard runtime error for a host backend that does
-not implement OPERATION."
+not implement OPERATION: OPERATION-NOT-SUPPORTED-BY-THIS-HOST, code
+:HOST-NOT-SUPPORTED -- a design boundary (D1 §15)."
   (signal-autolisp-runtime-error
    :host-not-supported
    "Host backend ~A does not support ~A."
    (host-name host)
    operation))
+
+;;; The canonical raisers of the other three HOST-ERROR subclasses (D1 §15).
+;;; Raise through these, not with a bare code, so the message stays uniform.
+
+(defun signal-unavailable-in-headless (host operation)
+  "OPERATION needs a display or a pointer HOST does not have in this
+configuration: UNAVAILABLE-IN-HEADLESS-CONTEXT, code
+:HOST-UNAVAILABLE-HEADLESS -- a design boundary, not a gap."
+  (signal-autolisp-runtime-error
+   :host-unavailable-headless
+   "Host backend ~A cannot perform ~A without a display or pointer."
+   (host-name host)
+   operation))
+
+(defun signal-not-yet-implemented (host operation)
+  "OPERATION is a real gap HOST intends to fill:
+OPERATION-NOT-YET-IMPLEMENTED, code :HOST-NOT-YET-IMPLEMENTED. A probe
+marks it pending, not failing."
+  (signal-autolisp-runtime-error
+   :host-not-yet-implemented
+   "Host backend ~A does not implement ~A yet."
+   (host-name host)
+   operation))
+
+(defun signal-backend-error (host operation reason)
+  "HOST's backend was asked correctly for OPERATION and refused or
+failed, for REASON (a string or a condition): BACKEND-ERROR, code
+:HOST-BACKEND-ERROR."
+  (signal-autolisp-runtime-error
+   :host-backend-error
+   "Host backend ~A failed ~A: ~A"
+   (host-name host)
+   operation
+   reason))
 
 ;;; --- Generic-function declarations ---------------------------------
 ;;;
@@ -59,6 +94,63 @@ not implement OPERATION."
 ;;; surface added in later phases extends this list; existing
 ;;; signatures must not change without a documented migration in
 ;;; the implementation roadmap.
+
+;; Session and document management (D1 Group 1 — cador-multidocument-host).
+;; A host holds zero or more open documents; each carries its own drawing
+;; database. These operations open/close/enumerate them and switch which one
+;; is CURRENT (the one the entity/table/sysvar surface then operates on). A
+;; single-document host is the degenerate case: one document, always current.
+(defgeneric host-open-document (host &optional name)
+  (:documentation "Open a new, empty document (optionally named NAME) and
+return an opaque document KEY identifying it. Does not change the current
+document."))
+(defgeneric host-open-document-from-file (host path &key format read-only)
+  (:documentation "Read the drawing file at PATH (FORMAT, or sniffed: DXF / DWG)
+into a new open document and return its KEY, without making it current (D1
+§3). READ-ONLY marks the document read-only (Save refuses it). A file that
+cannot be read signals BACKEND-ERROR."))
+(defgeneric host-document-of (host handle)
+  (:documentation "The KEY of the open document HANDLE belongs to -- an entity
+name or a COM object -- or NIL when HANDLE carries no document (D1 §3)."))
+(defgeneric host-sysvar-scope (host name)
+  (:documentation "The scope tier of system variable NAME: :DRAWING (saved in
+the drawing, one value per document), :REGISTRY (the application's, persisted
+in the profile) or :NOT-SAVED (the session's); NIL when the host does not
+know NAME (D1 §4, C4)."))
+(defgeneric host-lock-document (host key)
+  (:documentation "Take document KEY's lock and return a lock token (D1 §10).
+Locks nest. On cador a checked no-op: nothing is excluded (one runner), but
+application-context code that modifies a document other than the current one
+without holding its lock is signalled -- the bug a real product would show."))
+(defgeneric host-unlock-document (host key token)
+  (:documentation "Release document KEY's lock taken as TOKEN; T. Releasing a
+lock that is not held signals BACKEND-ERROR (D1 §10)."))
+(defgeneric host-close-document (host key &key save file)
+  (:documentation "Close the document identified by KEY. Returns T if a
+document was closed, NIL if KEY was unknown. Closing the current document is
+the host's decision to define (cador refuses to leave itself with none)."))
+(defgeneric host-activate-document (host key)
+  (:documentation "Make the document identified by KEY the CURRENT document —
+subsequent entity/table/sysvar operations act on it. Returns KEY. Signals if
+KEY is unknown."))
+(defgeneric host-current-document (host)
+  (:documentation "Return the KEY of the current document, or NIL if the host
+has none open."))
+(defgeneric host-document-list (host)
+  (:documentation "Return the list of open document KEYs, in the order they
+were opened (current or not)."))
+(defgeneric host-viewports (host)
+  (:documentation "The viewports of the current layout, as (VPORTS) returns
+them: a list of (ID (LLX LLY) (URX URY)), the current viewport first -- model
+space (TILEMODE 1): the tiled viewports, corners in [0,1] of the screen;
+paper space (TILEMODE 0): viewport 1 (the sheet) then the floating ones, in
+paper units."))
+(defgeneric host-open-startup-drawing (host path)
+  (:documentation "Make the drawing file at PATH the host's FIRST document, in
+place of the untitled startup drawing -- the drawing argument of the command
+line (clautolisp --dwg FILE, as acad.exe FILE / accoreconsole /i FILE). Called
+before any LISP session is linked to HOST. Returns the document KEY; signals
+when the file cannot be read."))
 
 ;; Entity API (autolisp-spec ch.16)
 (defgeneric host-entget    (host ename &optional applist) (:documentation "Return the DXF group-code list for ENAME, or nil. With APPLIST (a list of registered application names, or the wildcard \"*\"), the matching xdata is appended as a trailing (-3 ...) cell; without it the xdata is suppressed."))
@@ -79,6 +171,7 @@ not implement OPERATION."
 (defgeneric host-sslength    (host pickset)           (:documentation "Return the cardinality of PICKSET as a non-negative integer."))
 (defgeneric host-ssmemb      (host pickset ename)     (:documentation "True iff ENAME is a member of PICKSET."))
 (defgeneric host-ssgetfirst  (host)                   (:documentation "Return the host's pickfirst selection."))
+(defgeneric host-entsel     (host prompt)            (:documentation "Pick one object: (ename point), or NIL."))
 (defgeneric host-sssetfirst  (host pickset)           (:documentation "Set the host's pickfirst selection."))
 
 ;; Symbol tables (block, layer, ltype, style, view, ucs, vport, dimstyle, appid)
@@ -101,13 +194,20 @@ not implement OPERATION."
 ;; Registered applications (XData namespaces)
 (defgeneric host-regapp       (host name)              (:documentation "Register the application NAME for XData. Returns NAME on success, nil if already registered."))
 
+;; Command names
+(defgeneric host-getcname (host name)
+  (:documentation "GETCNAME: the other form of the command name NAME (a CL string) -- \"_LINE\" -> the local name, a local name -> \"_LINE\" -- as a CL string, or NIL when HOST does not know the command. The default knows none.")
+  (:method (host name) (declare (ignore host name)) nil))
+
 ;; System variables
 (defgeneric host-getvar (host name)                   (:documentation "Return the value of the named system variable."))
 (defgeneric host-setvar (host name value)             (:documentation "Set the named system variable to VALUE; returns VALUE."))
 (defgeneric host-set-derived-sysvar (host name value) (:documentation "Set a host-derived system variable, bypassing the cell's read-only flag. Used at launch time to populate SYSCODEPAGE / DWGCODEPAGE from the locale-resolved encoding; user code still sees a normal read-only sysvar through host-getvar / host-setvar afterwards. NAME must already exist in the catalogue — this never creates new sysvars."))
-(defgeneric host-define-sysvar (host name kind value read-only-p) (:documentation "Upsert a system-variable cell at launch time. When NAME already exists, set its value and read-only flag (KIND nil keeps the existing kind); otherwise create the cell with KIND / VALUE / READ-ONLY-P. Unlike host-set-derived-sysvar this CAN create new sysvars — used to apply dialect-dependent trust defaults (SECURELOAD / TRUSTEDPATHS read-only-ness) and to register the clautolisp-only trust sysvars. Returns the stored value. Reached only by the clautolisp engine (mock-host); live CAD backends signal not-supported."))
-(defgeneric host-undefine-sysvar (host name) (:documentation "Remove the system-variable cell NAME from HOST at launch time, so a later host-getvar returns nil (unknown name) and host-setvar signals unknown-sysvar — exactly as a real CAD does for a variable it does not have. Used to apply the bricscad dialect's sysvar overlay, which drops the catalogue entries (the catalogue is AutoCAD-2026-derived) for the variables BricsCAD does not define. No-op when NAME is unknown. Returns T when a cell was removed, nil otherwise. Reached only by the clautolisp engine (mock-host); live CAD backends silently no-op."))
-(defgeneric host-sysvar-names (host)                  (:documentation "Return a list of upcased system-variable name strings known to HOST. Live backends ask the engine; mock-host returns the keys of its sysvar table. Used by the CLAL-SYSVAR-LIST / CLAL-SYSVAR-APROPOS clautolisp extensions."))
+(defgeneric host-define-sysvar (host name kind value read-only-p) (:documentation "Upsert a system-variable cell at launch time. When NAME already exists, set its value and read-only flag (KIND nil keeps the existing kind); otherwise create the cell with KIND / VALUE / READ-ONLY-P. Unlike host-set-derived-sysvar this CAN create new sysvars — used to apply dialect-dependent trust defaults (SECURELOAD / TRUSTEDPATHS read-only-ness) and to register the clautolisp-only trust sysvars. Returns the stored value. Reached only by the clautolisp engine (cador); live CAD backends signal not-supported."))
+(defgeneric host-undefine-sysvar (host name) (:documentation "Remove the system-variable cell NAME from HOST at launch time, so a later host-getvar returns nil (unknown name) and host-setvar signals unknown-sysvar — exactly as a real CAD does for a variable it does not have. Used to apply the bricscad dialect's sysvar overlay, which drops the catalogue entries (the catalogue is AutoCAD-2026-derived) for the variables BricsCAD does not define. No-op when NAME is unknown. Returns T when a cell was removed, nil otherwise. Reached only by the clautolisp engine (cador); live CAD backends silently no-op."))
+(defgeneric host-snapshot-sysvars (host) (:documentation "Return an opaque, independent copy of HOST's whole system-variable table, or NIL when HOST has no such table. The snapshot must not share structure with the live table: restoring it later has to undo every intervening define / undefine / setvar. Used to give the sysvar table a dialect-independent BASE, so that a dialect switch can rebuild the dialect-dependent overlay from a clean state instead of trying to invert it (sysvar-table-ignores-runtime-dialect-change.issue). Reached only by the clautolisp engine (cador); other hosts return NIL and the caller then leaves the table alone."))
+(defgeneric host-restore-sysvars (host snapshot) (:documentation "Replace HOST's system-variable table with an independent copy of SNAPSHOT, which must have come from HOST-SNAPSHOT-SYSVARS. Returns T when the table was replaced, NIL when HOST has no table or SNAPSHOT is NIL. The copy matters: restoring the same snapshot twice must give the same result both times, so the caller can replay it at every dialect change."))
+(defgeneric host-sysvar-names (host)                  (:documentation "Return a list of upcased system-variable name strings known to HOST. Live backends ask the engine; cador returns the keys of its sysvar table. Used by the CLAL-SYSVAR-LIST / CLAL-SYSVAR-APROPOS clautolisp extensions."))
 
 ;; Registry (vl-registry-*: Windows registry / macOS defaults; the mock
 ;; host emulates them with a per-user persistent store)
@@ -115,6 +215,12 @@ not implement OPERATION."
 (defgeneric host-registry-write (host key value-name value) (:documentation "Store the string VALUE under registry KEY at VALUE-NAME (NIL = the default value); create the key as needed. Returns VALUE."))
 (defgeneric host-registry-delete (host key value-name) (:documentation "With VALUE-NAME, delete that value under KEY; with NIL, delete the whole KEY and its values. Returns true when something was deleted."))
 (defgeneric host-registry-descendents (host key value-names-p) (:documentation "With VALUE-NAMES-P, the value names stored under KEY; otherwise KEY's immediate sub-key names. A list of strings, or NIL."))
+
+(defgeneric host-layout-names (host)
+  (:documentation "The drawing's PAPER-SPACE layout names in tab order (never \"Model\"), or NIL."))
+(defmethod host-layout-names (host)
+  (declare (ignore host))
+  nil)
 
 ;; Command dispatch
 (defgeneric host-command (host arguments)             (:documentation "Issue an AutoLISP (command ...) sequence. ARGUMENTS is the normalized token-string list produced by the runtime's COMMAND special form: each element is command-line input text; the empty string \"\" is the RETURN token and the one-backslash string \"\\\\\" is the PAUSE token. Returns nil on success."))
@@ -150,17 +256,52 @@ not implement OPERATION."
 (defgeneric host-vlax-invoke-method       (host vla-object name args)  (:documentation "Invoke a method on a COM object."))
 (defgeneric host-vlax-property-available-p(host vla-object name)   (:documentation "True if NAME is an available property on the COM object."))
 (defgeneric host-vlax-method-applicable-p (host vla-object name)   (:documentation "True if NAME is an applicable method on the COM object."))
+(defgeneric host-vlax-get-acad-object     (host)                   (:documentation "Return the top-level application COM object (vlax-get-acad-object). One singleton per host."))
+(defgeneric host-vlax-ename->vla-object   (host ename)             (:documentation "Return the VLA-object wrapping entity ENAME (vlax-ename->vla-object)."))
+(defgeneric host-vlax-vla-object->ename   (host vla-object)        (:documentation "Return the entity ENAME an entity-backed VLA-object wraps (vlax-vla-object->ename), or NIL."))
+(defgeneric host-vlax-erased-p            (host vla-object)        (:documentation "True if the object (entity-backed or COM) has been erased/released (vlax-erased-p)."))
+(defgeneric host-vlax-describe-object     (host vla-object)        (:documentation "Return (values PROPERTY-ALIST METHOD-NAME-LIST) for a COM object; backs vlax-dump-object / -typeinfo-available-p."))
+(defgeneric host-vlax-ldata-put           (host dictionary key value private) (:documentation "Store persistent ldata under DICTIONARY (vlax-ldata-put)."))
+(defgeneric host-vlax-ldata-get           (host dictionary key default private) (:documentation "Read persistent ldata, else DEFAULT (vlax-ldata-get)."))
+(defgeneric host-vlax-ldata-delete        (host dictionary key private) (:documentation "Delete an ldata entry; T if present (vlax-ldata-delete)."))
+(defgeneric host-vlax-ldata-list          (host dictionary private) (:documentation "Alist of (key . value) ldata entries (vlax-ldata-list)."))
+(defgeneric host-vlax-add-cmd             (host global-name function local-name flags) (:documentation "Register a command (vlax-add-cmd); returns the global name string."))
+(defgeneric host-vlax-remove-cmd          (host global-name) (:documentation "Remove a registered command (vlax-remove-cmd); T if present."))
+(defgeneric host-vlax-queueexpr           (host string) (:documentation "Queue a command/Lisp string for async execution (vlax-queueexpr); returns nil."))
+(defgeneric host-vlax-collection-items    (host vla-object) (:documentation "Return a CL list of an ActiveX collection's member VLA-objects; backs vlax-for / vlax-map-collection."))
 
 ;;; --- Base-class fallback methods --------------------------------
 ;;;
 ;;; Every operation has a default method on the base `host` class
 ;;; that signals :host-not-supported. This lets newly-introduced
-;;; backends (e.g. MockHost in Phase 9) inherit a sensible "not
+;;; backends (e.g. cador in Phase 9) inherit a sensible "not
 ;;; yet implemented" failure shape, and lets future hosts override
 ;;; only the operations they support without writing an explicit
 ;;; not-supported method for the rest. NullHost overrides every
 ;;; method explicitly to pin its behaviour.
 
+(defmethod host-open-document     ((host host) &optional name) (declare (ignore name)) (signal-host-not-supported host 'open-document))
+(defmethod host-close-document    ((host host) key &key save file) (declare (ignore key save file)) (signal-host-not-supported host 'close-document))
+(defmethod host-activate-document ((host host) key)           (declare (ignore key)) (signal-host-not-supported host 'activate-document))
+(defmethod host-current-document  ((host host))               (signal-host-not-supported host 'current-document))
+(defmethod host-document-list     ((host host))               (signal-host-not-supported host 'document-list))
+(defmethod host-viewports ((host host)) (signal-host-not-supported host 'viewports))
+(defmethod host-open-document-from-file ((host host) path &key format read-only)
+  (declare (ignore path format read-only))
+  (signal-host-not-supported host 'open-document-from-file))
+(defmethod host-lock-document ((host host) key)
+  (declare (ignore key))
+  (signal-host-not-supported host 'lock-document))
+(defmethod host-unlock-document ((host host) key token)
+  (declare (ignore key token))
+  (signal-host-not-supported host 'unlock-document))
+(defmethod host-document-of ((host host) handle)
+  (declare (ignore handle))
+  (signal-host-not-supported host 'document-of))
+(defmethod host-sysvar-scope ((host host) name)
+  (declare (ignore name))
+  (signal-host-not-supported host 'sysvar-scope))
+(defmethod host-open-startup-drawing ((host host) path) (declare (ignore path)) (signal-host-not-supported host 'open-startup-drawing))
 (defmethod host-entget    ((host host) ename &optional applist) (declare (ignore ename applist)) (signal-host-not-supported host 'entget))
 (defmethod host-entmod    ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmod))
 (defmethod host-entmake   ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmake))
@@ -177,6 +318,7 @@ not implement OPERATION."
 (defmethod host-sslength    ((host host) pickset)         (declare (ignore pickset)) (signal-host-not-supported host 'sslength))
 (defmethod host-ssmemb      ((host host) pickset ename)   (declare (ignore pickset ename)) (signal-host-not-supported host 'ssmemb))
 (defmethod host-ssgetfirst  ((host host))                 (signal-host-not-supported host 'ssgetfirst))
+(defmethod host-entsel      ((host host) prompt)          (declare (ignore prompt)) nil)
 (defmethod host-sssetfirst  ((host host) pickset)         (declare (ignore pickset)) (signal-host-not-supported host 'sssetfirst))
 (defmethod host-tblsearch  ((host host) kind name)        (declare (ignore kind name)) (signal-host-not-supported host 'tblsearch))
 (defmethod host-tblnext    ((host host) kind &key rewind) (declare (ignore kind rewind)) (signal-host-not-supported host 'tblnext))
@@ -194,6 +336,8 @@ not implement OPERATION."
 (defmethod host-set-derived-sysvar ((host host) name value) (declare (ignore name value)) (signal-host-not-supported host 'set-derived-sysvar))
 (defmethod host-define-sysvar ((host host) name kind value read-only-p) (declare (ignore name kind value read-only-p)) (signal-host-not-supported host 'define-sysvar))
 (defmethod host-undefine-sysvar ((host host) name)        (declare (ignore name)) (signal-host-not-supported host 'undefine-sysvar))
+(defmethod host-snapshot-sysvars ((host host))                (declare (ignore host)) nil)
+(defmethod host-restore-sysvars ((host host) snapshot)        (declare (ignore snapshot)) nil)
 (defmethod host-sysvar-names ((host host))                (signal-host-not-supported host 'sysvar-names))
 (defmethod host-registry-read ((host host) key value-name) (declare (ignore key value-name)) (signal-host-not-supported host 'registry-read))
 (defmethod host-registry-write ((host host) key value-name value) (declare (ignore key value-name value)) (signal-host-not-supported host 'registry-write))
@@ -226,3 +370,16 @@ not implement OPERATION."
 (defmethod host-vlax-invoke-method        ((host host) vla-object name args) (declare (ignore vla-object name args)) (signal-host-not-supported host 'vlax-invoke-method))
 (defmethod host-vlax-property-available-p ((host host) vla-object name)   (declare (ignore vla-object name)) (signal-host-not-supported host 'vlax-property-available-p))
 (defmethod host-vlax-method-applicable-p  ((host host) vla-object name)   (declare (ignore vla-object name)) (signal-host-not-supported host 'vlax-method-applicable-p))
+(defmethod host-vlax-get-acad-object      ((host host))                   (signal-host-not-supported host 'vlax-get-acad-object))
+(defmethod host-vlax-ename->vla-object    ((host host) ename)             (declare (ignore ename)) (signal-host-not-supported host 'vlax-ename->vla-object))
+(defmethod host-vlax-vla-object->ename    ((host host) vla-object)        (declare (ignore vla-object)) (signal-host-not-supported host 'vlax-vla-object->ename))
+(defmethod host-vlax-erased-p             ((host host) vla-object)        (declare (ignore vla-object)) (signal-host-not-supported host 'vlax-erased-p))
+(defmethod host-vlax-describe-object      ((host host) vla-object)        (declare (ignore vla-object)) (signal-host-not-supported host 'vlax-describe-object))
+(defmethod host-vlax-ldata-put            ((host host) dictionary key value private) (declare (ignore dictionary key value private)) (signal-host-not-supported host 'vlax-ldata-put))
+(defmethod host-vlax-ldata-get            ((host host) dictionary key default private) (declare (ignore dictionary key default private)) (signal-host-not-supported host 'vlax-ldata-get))
+(defmethod host-vlax-ldata-delete         ((host host) dictionary key private) (declare (ignore dictionary key private)) (signal-host-not-supported host 'vlax-ldata-delete))
+(defmethod host-vlax-ldata-list           ((host host) dictionary private) (declare (ignore dictionary private)) (signal-host-not-supported host 'vlax-ldata-list))
+(defmethod host-vlax-add-cmd              ((host host) global-name function local-name flags) (declare (ignore global-name function local-name flags)) (signal-host-not-supported host 'vlax-add-cmd))
+(defmethod host-vlax-remove-cmd           ((host host) global-name) (declare (ignore global-name)) (signal-host-not-supported host 'vlax-remove-cmd))
+(defmethod host-vlax-queueexpr            ((host host) string) (declare (ignore string)) (signal-host-not-supported host 'vlax-queueexpr))
+(defmethod host-vlax-collection-items     ((host host) vla-object) (declare (ignore vla-object)) (signal-host-not-supported host 'vlax-collection-items))

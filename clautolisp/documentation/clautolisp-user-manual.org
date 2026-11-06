@@ -43,6 +43,30 @@ Both binaries are produced under
 surface. The rest of this manual treats them interchangeably and
 refers to the binary as ~clautolisp~.
 
+* Windows release installation
+
+Extract the Windows binaries and libraries archives into the same directory.
+Use =bin/clautolisp.cmd=, =bin/alfe.cmd= and =bin/read-autolisp.cmd= from
+PowerShell or Command Prompt. MSYS2 and a separate Common Lisp installation
+are not required to run these releases. Keep the directory tree intact:
+the executables carry their non-system runtime DLLs beside them, including
+the dependencies needed by the native DWG codec. Third-party notices and
+package versions are under =share/doc/clautolisp/runtime-licenses/=.
+
+User init files such as =~/.autolisp= use the runtime's home directory.
+For the Windows SBCL release, =HOME= overrides the Windows user profile;
+with =HOME= unset, the Windows user home is used. There is no fallback to
+another home merely because an init file is absent. To persistently select
+the Windows user profile from PowerShell:
+
+#+begin_src powershell
+[Environment]::SetEnvironmentVariable('HOME', $env:USERPROFILE, 'User')
+$env:HOME = $env:USERPROFILE
+#+end_src
+
+The first command affects future sessions; the second affects the current
+session and programs launched from it.
+
 * Modes of Operation
 ~clautolisp~ has three mutually exclusive modes; the mode is
 determined by the operands. In every mode the runtime installs the
@@ -97,16 +121,123 @@ not an expression (at a top-level read the comma is unambiguous —
 AutoLISP has no backquote). Each command has a short key and a word
 form:
 
-| ~,d~ / ~,date~   | print the current date and time (ISO 8601)     |
-| ~,u~ / ~,uptime~ | print how long this clautolisp process has run |
-| ~,h~ / ~,help~   | list the REPL commands                         |
-| ~,q~ / ~,quit~   | exit the REPL (useful when ~(quit)~ is not     |
-|                  | available in the active dialect)               |
+| ~,d~ / ~,date~            | print the current date and time (ISO 8601)     |
+| ~,u~ / ~,uptime~          | print how long this clautolisp process has run |
+| ~,h~ / ~,help~            | list the REPL commands                         |
+| ~,q~ / ~,quit~            | exit the REPL (useful when ~(quit)~ is not     |
+|                           | available in the active dialect)               |
+| ~,s~ / ~,set~ [NAME VALUE]| show the LISP settings, or set one             |
+| ~,settings~               | show the settings across their cascading levels |
+| ~,w~ / ~,write-settings~  | write the LISP settings to =lisp.conf=         |
+| ~,i~ / ~,inspect~ FORM    | inspect the result of evaluating FORM          |
 
 The commands live in a command dictionary of the REPL's /interactor/ —
 the same mechanism behind the debugger's command dictionaries — so the
 vocabulary can grow (and user commands can shadow it) uniformly across
 all the interaction loops.
+
+A command's short key is optional: ~,settings~ has none, because
+~settings~ would take the key ~s~ that ~,set~ already holds, so the
+rarer of two colliding commands is typed in full. Where bare ~,set~
+lists the LISP interactor's resolved values, ~,settings~ shows each
+setting across its cascade levels (built-in default, then =lisp.conf=,
+then =aldo.conf=), marking the one in effect at the REPL — see /Settings
+and configuration/ below. ~,inspect~ opens the interactive object
+inspector (the same one the debugger's ~i~ opens) on the value of FORM.
+
+**** Debugging commands from the REPL
+
+The debugger (/aldo/) is always available beside the REPL, so a subset
+of its commands can be used from the REPL prompt — chiefly to manage
+breakpoints /between/ runs, before or after the code is executed. They
+are ordinary REPL commands (a leading comma); a LISP command of the same
+name shadows them, and the shadowed one is still reachable by the
+~,aldo~ / ~,debug~ prefix (e.g. ~,debug break foo~).
+
+| ~,b~ / ~,break~ FUNC          | breakpoint on the function's entry              |
+| ~,b~ / ~,break~ FUNC.N        | breakpoint on the function's Nth poll point     |
+|                               | (=.0= is the entry; the compound forms follow   |
+|                               | in source order)                                |
+| ~,b~ / ~,break~ FILE:LINE[:COL] | breakpoint at the first poll point at or after |
+|                               | that source position (see below)                |
+| ~,b~ / ~,break~ LINE          | =FILE:LINE= against the current file            |
+| ~,lb~ / ~,list breakpoints~   | list the breakpoints (by poll-point number      |
+|                               | ~ppN~, plus any pending ~lbN~)                  |
+| ~,eb~ / ~,enable breakpoint~ ppN\vert{}ALL  | enable a breakpoint (or all)      |
+| ~,db~ / ~,disable breakpoint~ ppN\vert{}ALL | disable a breakpoint (or all)     |
+| ~,rb~ / ~,remove breakpoint~ ppN\vert{}lbN\vert{}ALL | remove a breakpoint      |
+| ~,cb~ / ~,condition breakpoint~ ppN FORM | fire ppN only when FORM is non-nil   |
+|                               | (bare ~,cb ppN~ clears the condition)           |
+| ~,ib~ / ~,ignore breakpoint~ ppN COUNT | skip the next COUNT hits of ppN        |
+| ~,ls~ / ~,list source~ [FILE\vert{}FUNC] | list source with ~^~ breakpoint      |
+|                               | markers, through the pager                      |
+| ~,bpcmd~ ppN FORM             | evaluate FORM when ppN fires, then continue     |
+|                               | (bare ~,bpcmd ppN~ clears the command)          |
+| ~,trace~ FUNC [FORM]          | trace FUNC's calls: stop-free, printing FORM    |
+|                               | (or the call) on each entry, then continue      |
+| ~,untrace~ [FUNC]             | stop tracing FUNC, or all traced functions      |
+| ~,watch~ VAR [FORM]           | stop when VAR changes, or — with FORM — when     |
+|                               | FORM turns non-nil                              |
+| ~,unwatch~ [VAR]              | remove the watch on VAR, or all watches         |
+| ~,lw~ / ~,list watches~       | list the software watchpoints and their values  |
+
+A =FILE:LINE= breakpoint is /persistent/: it is recorded against the raw
+file position and re-resolved on every load, because an edit may move
+the target. When the file is loaded it is armed at the first poll point
+at or after that line — so a breakpoint on a top-level (non-~defun~)
+form breaks /during/ the load; a reload that moves a breakpoint prints a
+=;; breakpoints changed …= warning, and ~,ls~ shows where each landed.
+A =FUNC.N= breakpoint, by contrast, is relative to the function and
+survives edits above it. ~,ls~ and ~,break FILE:LINE~ set the /current
+file/ that bare ~,break LINE~ and ~,ls~ (no argument) act on.
+
+~,break FUNC~ (or =FUNC.N=) on a function that is /not defined yet/ does
+not fail: it warns and records a *pending* breakpoint, armed as soon as
+the function is defined — at the REPL, or by loading a source or compiled
+file. ~,lb~ lists such a breakpoint as =vbN … (not defined yet)= until it
+arms (then it appears as an ordinary =ppN=); remove it with ~,rb vbN~.
+
+These commands need a debug session, which the interactive REPL always
+has; a non-interactive batch run (~-x~ / ~-l~ without a REPL) reports
+that debugging is not active.
+
+*** The command-history log file (LOGFILEMODE)
+
+As on AutoCAD and BricsCAD, ~(setvar "LOGFILEMODE" 1)~ keeps a log of the
+command line, *one file per drawing*:
+
+- ~LOGFILEPATH~ is the directory. Default:
+  ~$XDG_STATE_HOME/clautolisp/logs/~, or ~~/.local/state/clautolisp/logs/~
+  when ~XDG_STATE_HOME~ is unset or empty (neither vendor's factory
+  location could be measured).
+- ~LOGFILENAME~ (read-only) names the current drawing's file.
+- ~LOGFILEMODE~ and ~LOGFILEPATH~ are preferences: saved in the registry,
+  per product (~HKEY_CURRENT_USER\Software\clautolisp\Variables\<product>~,
+  like ~LISPSYS~), and read at launch.
+- Turning logging off and on again appends to the same file, under a new
+  header; setting ~LOGFILEPATH~ starts new files there. Closing a drawing
+  closes its log.
+
+What is logged, the file's name, its header and its encoding follow the
+active dialect's product, as measured on AutoCAD 2022 and BricsCAD V25 / V26:
+
+| dialect          | LOGFILENAME                                    | logged                         | encoding     |
+|------------------+------------------------------------------------+--------------------------------+--------------|
+| AutoCAD          | ~<path>/<drawing>_1<8 hex>.log~                | the whole command line         | windows-1252 |
+| BricsCAD         | ~<path>/<drawing>_YYYY-MM-DD_HH-MM-SS.log~     | the command channel only       | windows-1252 |
+| BricsCAD (macOS) | ~bricscad.log~ (in ~LOGFILEPATH~)              | the command channel only       | UTF-8        |
+| other dialects   | ~<path>/<drawing>_YYYY-MM-DD_HH-MM-SS.log~     | the whole command line         | UTF-8        |
+
+"The command channel" is cador's prompts, the command echo, its
+~; cador:~ notices and the answers typed after a prompt; "the whole command
+line" adds the REPL's own output (~princ~ ...) and the lines typed at it.
+BricsCAD adds a trailing separator to ~LOGFILEPATH~; AutoCAD keeps it as
+given. ~-Elog ENC~ (~--log-encoding~) chooses the encoding.
+
+"BricsCAD" is a Windows BricsCAD dialect (the unqualified ones, and
+~-win~): like AutoCAD it writes windows-1252 without a byte-order mark, as
+BricsCAD V25 on Windows was measured to do (2026-10-08). The macOS (and
+Linux) BricsCAD dialects write UTF-8.
 
 *** Recording the session: the dribble
 
@@ -187,6 +318,14 @@ produces a dribble file =trace.sexp=:
 Nothing after the ~(clal-dribble)~ line: the toggle closed the file
 before its own result was printed.
 
+~(clal-dribble FILE)~ also works from a batch run (~-l~ / ~-x~, no
+REPL): it records what the following actions write, and a dribble still
+open when the run ends is closed then, its last, unterminated line
+included (before clautolisp 2.2.232 that line was lost). The error
+report of a run that ends in an error comes after the end of the run,
+so it is not recorded. ~alfe --clautolisp~ records the same file
+whether it runs the engine in-process or as this program.
+
 * Debugger
 
 Clautolisp ships an interactive source-level debugger, *aldo*. It steps
@@ -227,16 +366,31 @@ Only *instrumented* functions can be stepped into or stopped in;
 instrument exactly what you want to debug (uninstrumented code runs at
 full speed and is stepped over).
 
+*Leaving from a stop.* At a debugger prompt you have two different exits:
+
+- =q= *abandons the computation* and returns to the toplevel REPL (it
+  confirms first: /really abort? (y/n)/). One =q= is enough — it leaves the
+  navigator and the debugger together, whatever depth you are at.
+- ~(quit)~ / ~(exit [status])~, *evaluated at the prompt*, end the whole
+  program, exactly as they do at =_$=: the process prints =clautolisp:
+  terminated by QUIT= (or =EXIT=) and exits with the status the form carried.
+  Up to clautolisp 2.2.115 this instead killed the process with a host-Lisp
+  backtrace and status 1.
+
 ** The three user interfaces
 
 aldo presents *one* command set through three interchangeable
-interfaces; a feature available in one is available in all.
+interfaces; a feature available in one is available in all. Choose one
+with =--debugger-ui= (or the =*clal-debugger-ui*= variable) — the
+canonical spellings are =dumb=, =ncurses=, and =aldb=; =terminal= and
+=tui= alias =dumb=, and =emacs= aliases =aldb=, matched case-insensitively.
 
-- *TUI* — the line-mode terminal interface. You type a short command
-  token (or an AutoLISP form) and press =RET=. It needs nothing beyond a
-  plain terminal, styles its output with ANSI colour where the terminal
-  allows, and pages long output (see /Settings/ below). It is the
-  fallback that always works, including inside an Emacs ~shell~ buffer.
+- *dumb* — the line-mode terminal interface (=--debugger-ui dumb=; also
+  spelled =terminal= or =tui=). You type a short command token (or an
+  AutoLISP form) and press =RET=. It needs nothing beyond a plain
+  terminal, styles its output with ANSI colour where the terminal allows,
+  and pages long output (see /Settings/ below). It is the fallback that
+  always works, including inside an Emacs ~shell~ buffer.
 - *ncurses* — a full-screen, four-pane interface (stack, source,
   interactor, REPL). Commands fire on a single keypress; you move the
   cursor onto a form and act on it (no line numbers to type). It runs on
@@ -265,13 +419,70 @@ When aldb is selected and Emacs is not yet connected, aldo prints the
 =M-x aldb-connect= line to the terminal and waits — you may instead pick
 the TUI or ncurses there.
 
+** ncurses windows and interactor instances
+
+The four panes are only the ncurses debugger's /default/ layout. Every
+window runs an /interactor/ — the Lisp REPL, the aldo debugger, the
+navigator, sedit, the inspector, the stack browser — and you can open more
+windows, each running a new /instance/ of one of them, with =M-x= (or =,=):
+
+| Command                            | Opens a window running                                       |
+|------------------------------------+--------------------------------------------------------------|
+| =M-x make-lisp-window=             | a new Lisp REPL instance (=e= evaluates, =q= closes)          |
+| =M-x make-aldo-window=             | a new aldo debugger instance on the current stop              |
+| =M-x make-navi-window FORM=        | a read-only structure navigator over FORM                     |
+| =M-x make-sedit-window FORM=       | sedit editing FORM                                            |
+| =M-x make-inspector-window EXPR=   | the inspector on the value of EXPR                            |
+| =M-x make-stack-browser-window=    | a browser over a copy of the current stop's backtrace         |
+
+A missing argument is read in the minibuffer. =M-x windows= lists the
+windows and =M-x interactors= the interactor kinds you can instantiate.
+
+*Instances share the Lisp image, not their state.* There is one Lisp
+evaluator and one debugger per Lisp image; every Lisp REPL instance
+evaluates in that one image, and every aldo instance drives that one
+debugger (as several =slime-mrepl= buffers share one inferior Lisp). So a
+variable you =setq= in one Lisp window is seen from every other, and a
+=c= (continue) typed in any aldo window resumes the program. What belongs
+to each instance is its own:
+
+- a Lisp instance has its own transcript and its own REPL history — =:-=,
+  =:+=, =:*=, =:/= and their =:++= / =:**= / =://= companions refer to the
+  forms and values of /that/ window's turns, not another's;
+- an aldo instance has its own command state — its =display= list, browse
+  stack and step repeat.
+
+Instances are named after their kind, numbered from the second on:
+=Lisp REPL=, =Lisp REPL<2>=, =Aldo debugger<2>=. The REPL you started in
+is =Lisp REPL=, so the debugger's own Lisp pane is =Lisp REPL<2>=.
+
+*Layouts.* =M-x save-layout NAME= records the current arrangement of the
+windows under NAME — including the windows you made, each with the
+command and the argument it was made with; =M-x load-layout NAME= closes
+the windows you made, makes the saved ones again by running those
+commands with those arguments (so a sedit window edits the same form
+again, an inspector window inspects the value of the same expression
+evaluated afresh) and tiles everything as saved. A window that cannot be
+made again — a stack browser when the program is not stopped — is left
+out and its neighbour takes its place. =M-x save-layout-as= asks before
+replacing a layout of the same name, =M-x delete-layout= removes one.
+
+Layouts are kept with the configuration, and saving it stays explicit:
+=M-x save-configuration= writes them to =layouts.conf= (beside
+=aldo.conf= and =lisp.conf=), which is read again at the next start. A
+layout named =debugger= is the one every new ncurses debugger opens with
+at its first stop; without one, you get the four panes.
+
 ** Common commands
 
 The same verbs work in every interface (typed as tokens in the TUI,
 single keys in ncurses/aldb). The most used:
 
 - Execution: ~continue~ (=c=), ~into~ (=i=, step into), ~next~ (=n=,
-  step over), ~out~ (=o=, finish), ~quit~ (=q=, abort the run).
+  step over), ~out~ (=o=, finish), ~quit~ (=q=, abort the run). After a
+  stepping command (=c=/=i=/=n=/=o=) a bare =RET= repeats it — so you can
+  walk through code by tapping Return, gdb-style; any other command
+  cancels the repeat.
 - Breakpoints: ~break~ (=b=) at a form / line; ~list breakpoints~ (=lb=);
   ~enable~ / ~disable~ / ~delete~ / ~condition~ / ~ignore~ a breakpoint.
 - Stack: ~list frames~ (=lf=, the backtrace); the ~frame~ family —
@@ -310,6 +521,12 @@ that runs from a sub-expression out to the file system:
 Browsing never changes what executes; ~print~, ~setq~ and friends always
 act in the current frame.
 
+To *edit* the selected form, ~edit~ (also spelled ~sedit~) opens the sedit
+structural editor on it, at a =SEDIT>= prompt, returning to the navigator
+on quit; the other §1.3 editing words (~insert~, ~replace~, ~wrap~, …) open
+it likewise, performing themselves as the first edit. Edits are installed
+into the running system when you save.
+
 In the navigator every debugger command is also available directly (the
 navigator's dictionary is stacked over the debugger's). Two escape words
 systematize reaching a shadowed command (~debug~ is the debugger
@@ -327,13 +544,43 @@ interactor's alias — ~aldo~ and ~debug~ are interchangeable):
 
 Per-session options are read and set from any interface:
 
-- =,settings= — list every option and its value; =,settings NAME= —
-  print one.
-- =set NAME VALUE= — set one (names and values are case-insensitive).
-  Common options: ~navigator~ (=sexp= | =line=), ~theme~ (=unicode= |
+- =set= — list the interactor's settings and their values; =set NAME
+  VALUE= — set one (names and values are case-insensitive). At the REPL
+  these are the comma commands ~,set~ / ~,set NAME VALUE~; inside the
+  debugger they are ~set~ (no comma), acting on =aldo.conf= rather than
+  =lisp.conf=.
+- =,settings= (REPL) — show every setting across its /cascading levels/
+  (built-in default, then =lisp.conf=, then =aldo.conf=), marking the
+  one in effect here; =,write-settings= persists the interactor's
+  settings.
+- Common options: ~navigator~ (=sexp= | =line=), ~theme~ (=unicode= |
   =ascii= | =white-on-black= | =black-on-white= | =green-on-black= |
-  =attributes=), ~pager~ (=on= | =off=), ~pager-height~,
+  =attributes=), ~pager~ (=on= | =off= | a pager path), ~pager-height~,
   ~source-window-height~, ~value-line-width~, ~break-on-caught~.
+
+The complete set of aldo settings, with their types:
+
+| Setting                          | Type / values                                                     |
+|----------------------------------+-------------------------------------------------------------------|
+| ~navigator~                      | =sexp= \vert{} =line=                                             |
+| ~directory-listing~              | =long= \vert{} =column= \vert{} =short=                           |
+| ~directory-window~               | integer — context lines around the selection                      |
+| ~navigation-history-max~         | integer (1000) — how many previous browse stacks the navigation history keeps; the oldest are dropped past this |
+| ~sedit-on-quit~                  | =auto-save= \vert{} =do-not-save= \vert{} =ask=                   |
+| ~break-on-caught~                | boolean                                                           |
+| ~atom-poll-points~               | boolean (off) — give every evaluated atom (a variable reference or a literal) its own poll point, so the debugger can stop before =a= is read in =(+ a b)=; applies to functions instrumented from then on. Off by default because stepping then stops on every variable and the poll points renumber |
+| ~source-window-height~           | integer                                                           |
+| ~value-line-width~               | integer                                                           |
+| ~pager~                          | =on= \vert{} =off= \vert{} a pager path (an external filter such as =less= / =more=, run on the text) |
+| ~pager-height~                   | integer — the built-in pager's page height                        |
+| ~theme~                          | =unicode= \vert{} =ascii= \vert{} =white-on-black= \vert{} =black-on-white= \vert{} =green-on-black= \vert{} =attributes= |
+| ~default-user-interface~         | =tui= \vert{} =ncurses= \vert{} =aldb=                            |
+| ~default-aldb-listening-address~ | string (=127.0.0.1=) — address the aldb (Emacs) transport listens on when no ~--aldb-listen~ / ~--aldb-stdio~ is given |
+| ~default-aldb-listening-port~    | port (=0= — an OS-chosen free port; set a fixed port for a stable one) |
+
+~decorations~ is not in this table: it is structural (the theme glyphs,
+edited as data in the configuration file) rather than something =set=
+changes.
 
 The configuration lives in an AutoLISP sexp bound to
 ~*clal-aldo-configuration*~, read at start-up from
@@ -349,15 +596,134 @@ is written automatically. Save and reload explicitly:
 The same is available from AutoLISP as ~(clal-save-aldo-configuration)~
 and ~(clal-load-aldo-configuration)~.
 
+*** The REPL has its own configuration, and the two stack
+Configurations stack the way interactors do. The Lisp REPL — the bottom
+interactor — carries its own =lisp.conf= alongside the debugger's
+=aldo.conf=:
+
+- =,set= — list the REPL's settings (each marked =(default)= while you
+  have not overridden it);
+- =,set NAME VALUE= — set one;
+- =,write-settings= — write them to
+  =$XDG_CONFIG_HOME/clautolisp/lisp.conf= (UTF-8). As with =aldo.conf=,
+  nothing is written automatically.
+
+Its first setting is ~sedit-on-quit~ (=auto-save= | =do-not-save= |
+=ask=), governing ~(clal-sedit …)~ invocations made *from the REPL*,
+while aldo's setting of the same name governs debugger-side ones.
+
+*** Running a shell command: the =!= escape
+A line whose *first* character is the shell-escape character sends the
+rest of the line to your =$SHELL=, with standard input, output and error
+*inherited* — so an interactive command can prompt, page, or draw:
+
+#+begin_example
+_$ !pwd
+/Users/pjb/src/ogamita
+_$ !ls -l | less
+#+end_example
+
+This is what ~startapp~ cannot do: it launches a program but does not
+hand it the terminal.
+
+Three details worth knowing:
+
+- *nothing may precede the character*, not even a space — ~ !pwd~ is an
+  ordinary line, not a shell escape. That is what makes the rule
+  unambiguous;
+- a command ending in ~&~ is backgrounded, and a non-interactive shell
+  prints neither the PID nor a job-control notice, so ~echo $!~ is
+  appended for you and the PID is printed. Spaces around the command do
+  not defeat this; ~a && b~ does not end in ~&~ and is left alone;
+- a line ending in a backslash *continues* onto the next, so a long
+  command can be typed over several lines.
+
+The character is the ~shell-escape-character~ setting of the REPL's own
+configuration, ~!~ by default. Set it as a character or as a Unicode
+code point — the second is the way to choose one that is awkward to
+type:
+
+#+begin_example
+_$ ,set shell-escape-character "%"
+_$ ,set shell-escape-character 182
+_$ ,write-settings
+#+end_example
+
+The setting lives in =lisp.conf= because the escape belongs to the Lisp
+interactor. The same character is in force in the debugger and the
+editors too — they read this setting, not one of their own — so the
+escape looks the same wherever you are.
+
+The stacking rule: at the REPL only =lisp.conf= is active; inside the
+debugger *both* are, aldo over lisp. So a setting you did not put in
+=aldo.conf= but did put in =lisp.conf= is taken from =lisp.conf= even at
+the =DBG>= prompt. Writes always go to the *active* interactor's own
+configuration — =set sedit-on-quit …= at =DBG>= changes only aldo's (and
+from then on shadows lisp's), =,set sedit-on-quit …= at the REPL changes
+only lisp's.
+
+Both files record only what you have explicitly set; anything you have
+not touched keeps following the built-in default. That is what makes the
+fall-through above possible — otherwise every key would always look
+"set" on the aldo layer and =lisp.conf= could never be reached from the
+debugger.
+
+*** Editing a configuration file by hand
+The files are meant to be readable, so a saved file also *documents
+itself*: below the settings you actually changed, every remaining
+setting is written out *commented*, at its built-in default value and
+followed by the values it accepts. Uncomment a line and edit its value to
+override it. A freshly saved =lisp.conf= therefore looks like this:
+
+#+begin_example
+;;;; clautolisp lisp.conf - the configuration of the LISP (REPL) interactor.
+;;;;
+;;;; One list of (name . value) settings, read at start-up.
+;;;; Only the settings you changed are stored.  The lines commented
+;;;; out below are at their built-in default: they are listed so you
+;;;; can see what exists -- uncomment one and edit its value to
+;;;; override it.  The accepted values follow each line.
+;;;;
+;;;; Saving (,write-settings) rewrites this file; comments you
+;;;; add by hand are not kept.
+(
+ (sedit-on-quit . do-not-save)
+
+ ;; Defaults -- uncomment a line to set it.
+ ;;(navigator . sexp)               ; sexp | line
+)
+#+end_example
+
+Two consequences worth knowing:
+
+- the commented lines are *documentation, not data*: they are skipped by
+  the reader, so a loaded file still sets only its live entries — the
+  documented defaults do not become explicit settings, and the stacking
+  rule above keeps working;
+- saving *rewrites* the file, so comments you add by hand are not kept.
+
+The values in the file use the file's own syntax rather than =set='s: a
+boolean is written =t= or =nil= there (=on= would read back as a symbol,
+which is true). The generated comments spell out the accepted values for
+each setting, so this is visible on the spot.
+
 ** Long output and the pager
 
 Commands whose output exceeds the screen — =help=, a long
-=list source=, a big value — are shown a page at a time in the TUI when
-~pager~ is =on= (the default on a size-limited terminal; you typically
-turn it =off= under an Emacs ~shell~, which scrolls). The pager accepts
-the familiar =less= keys (=SPACE=/=f= forward, =b= back, =q= quit). The
-ncurses interface uses a scrollable window instead, and aldb relies on
-Emacs's own buffer scrolling.
+=list source= (=,ls= at the REPL), a big value — are shown a page at a
+time in the TUI when ~pager~ is =on= (the default on a size-limited
+terminal; you typically turn it =off= under an Emacs ~shell~, which
+scrolls). The built-in pager accepts the familiar =less= keys (=SPACE=/=f=
+forward, =b= back, =q= quit). The ncurses interface uses a scrollable
+window instead, and aldb relies on Emacs's own buffer scrolling.
+
+Setting ~pager~ to a *pager path* instead of =on=/=off= (e.g. =set pager
+/usr/bin/less=, or a bare =less= found on ~PATH~) sends the text through
+that external filter rather than the built-in pager; ~pager-height~ sizes
+the built-in one. The pager cascades parallel to the interactor stack: the
+REPL's =,ls= pages through the /LISP/ pager (=lisp.conf= over the
+defaults), while inside the debugger output pages through the /aldo/ pager
+(=aldo.conf= over =lisp.conf= over the defaults), so the two can differ.
 
 * sedit and the aldo form navigator
 
@@ -424,15 +790,50 @@ own rules.
 (clal-sedit)                 ; a fresh stand-alone form, starting at nil
 (clal-sedit 'foo)            ; recall and edit the definition of FOO
 (clal-sedit "prog.lsp")      ; edit a file (its first top-level form selected)
-(clal-sedit "~/src/")        ; browse a directory
+(clal-sedit "~/src/")        ; browse a directory (first Lisp/sexp file selected)
 (clal-sedit '(+ 1 2))        ; edit a value as a sexp
 #+end_example
 
 ~clal-sedit~ runs the editor on the terminal and returns the edited object.
 Recall by name works because the interactive REPL *records* every top-level
-form you evaluate, so ~(clal-sedit 'foo)~ finds the ~defun~ / ~setq~ you
-typed. The initial and final forms are left in ~*clal-sedit-initial-form*~ and
+form you evaluate — and a function loaded from a source file is recalled from
+that file — so ~(clal-sedit 'foo)~ finds the ~defun~ / ~setq~ of FOO. The
+initial and final forms are left in ~*clal-sedit-initial-form*~ and
 ~*clal-sedit-last-result*~.
+
+A two-argument form, ~(clal-sedit TYPE OBJECT)~, is explicit about what OBJECT
+means:
+
+#+begin_example
+(clal-sedit 'object X)              ; edit X as a sexp (even if X is a symbol)
+(clal-sedit 'function 'foo)         ; edit FOO in its source file (the defun
+                                    ;   selected), or its definition if it has none
+(clal-sedit 'file '("prog.lsp" foo)); open prog.lsp with the defun of FOO selected
+(clal-sedit 'file '("prog.lsp" 42)) ; open prog.lsp at the form on/after line 42
+(clal-sedit 'file "prog.lsp")       ; a file (created on save if new)
+(clal-sedit 'directory "~/src/")    ; a directory
+#+end_example
+
+*How a path may be spelled.* Wherever sedit takes a file or directory path —
+the ~clal-sedit~ arguments above, and the ~s~, ~w~, ~load~ commands inside the
+editor — the path is normalised before it is used:
+
+- a leading ~~/~ (or a bare ~~~) is expanded to your home directory, on every
+  host Lisp and every platform;
+- a *matched pair of surrounding double quotes* is removed, so a path pasted or
+  typed with the quotes still around it — ~s "~/src/prog.lsp"~ — names the file
+  you meant. Up to clautolisp 2.2.107 such a path resolved to a file literally
+  named ~"~/src/prog.lsp"~, quotes included, under the current directory: the
+  editor silently opened an empty buffer and a save would have created that
+  name.
+
+An absolute path, a relative path and a ~~user/…~ form are used unchanged.
+
+In a directory listing, ~d~ descends — into a sub-directory (read fresh from
+disk) or into a file (opened for editing) — and ~..~ climbs to the parent
+directory. A long listing is *windowed*: at most a screen-height of entries is
+shown around the selection, with ~⋮ (N more above)~ / ~⋮ (N more below)~
+markers for the rest.
 
 ** Editing while debugging
 
@@ -499,8 +900,163 @@ Whatever the dialect selected, all the operators are available. Only
 those that are not specifically inside the set defined by the dialect
 produce warnings when compiled and when used.
 
+For the operators only one vendor provides, that warning is
+=[vendor-operator]=. BricsCAD's =vle-*= family and its other extensions
+belong to BricsCAD, and AutoCAD-only Express Tools functions
+belong to AutoCAD; the specification's Availability sections decide which.
+The shared =acad_strlsort= function runs without a vendor warning. Its
+input length is independent of =MAXSORT=, which limits named-object lists
+in the CAD interface. Initial MAXSORT values are 1000 for AutoCAD,
+clautolisp and lax, and 200 for BricsCAD. Set it to match the size of GUI
+listings when needed; an explicit user value survives dialect switches.
+
+The first call of such an operator prints one notice for the session,
+interpreted or compiled:
+
+#+begin_example
+[vendor-operator] VLE-NTH0 is a BricsCAD-only operator, not portable to strict
+#+end_example
+
+- It is silent under that vendor's own dialects (any =bricscad-…= or
+  =autocad-…= spelling) and under =lax=.
+- It warns under the other vendor's dialects, and under =strict= and
+  =clautolisp=: =clautolisp= is the portable subset plus clautolisp's
+  /own/ extensions, not the vendors'.
+- =(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)= silences it. Any other value,
+  or leaving the variable unset, keeps it on.
+- A dialect whose portability-warning mode is =error= makes it an error.
+
+=error= is a BricsCAD operator (undocumented, present in V26) that
+clautolisp provides as its own too, and AutoCAD has none. It reads
+=ERROR is a BricsCAD-only operator=, warns under =strict= and the AutoCAD
+dialects, and is silent under =bricscad=, =clautolisp= and =lax=. Code
+that must also run on AutoCAD raises an error with an operation that
+fails on every host instead.
+
 Unknown dialect names produce a diagnostic on standard error and exit
 code 1.
+
+*** Where the dialect changes a returned value
+A few operators return a genuinely different value per dialect, because
+the vendors themselves differ. These are behaviour differences, not
+warnings, and they are listed in the AutoLISP Spec entry for each
+operator under its ~*** clautolisp~ note.
+
+- ~(vports)~ / ~-VPORTS~ -- a drawing starts with one tiled viewport, number
+  2 (~CVPORT~ 2; ~TILEMODE~ 0: ~CVPORT~ 1, the sheet then the layout's
+  viewport). ~(command "_.-VPORTS" "2" "_V")~ splits the current viewport:
+  it keeps the right half under the AutoCAD (and every non-BricsCAD)
+  dialect, the left half under the BricsCAD dialects. Every other option
+  measured on the two products follows them too -- ~2~ / ~3~ with each
+  orientation, ~4~, ~SIngle~ (AutoCAD keeps the lowest-numbered viewport
+  other than the current one, BricsCAD the lowest-numbered), ~Toggle~,
+  ~Save~ / ~Restore~ / ~Delete~ -- and ~(setvar "CVPORT" n)~ makes viewport
+  n current. ~Join~ is not implemented. ~(setview nil)~ is an error, except
+  under the BricsCAD dialects (~nil~).
+- *~getcname~.* ~(getcname "_LINE")~ gives the command's local name and
+  ~(getcname "LIGNE")~ its ~"_LINE"~, from tables measured on each product
+  (French so far), in the session's language (~LANG~); under English a
+  command is its own local name. The ~bricscad*~ dialects answer as
+  BricsCAD (no ~.~ / ~'~ prefixes, its own command set), the others as
+  AutoCAD.
+- *The VPORT ~*Active~ record.* ~(entget (tblobjname "VPORT" "*Active"))~
+  lists the viewport's groups (50 ~SNAPANG~, 51 ~VIEWTWIST~, 12 ~VIEWCTR~,
+  14 ~SNAPUNIT~ ...). After a ~setvar~ of one, the ~bricscad*~ dialects
+  show the new value at once, as BricsCAD does; the others the old one
+  until the drawing is saved, as AutoCAD does. Group 72 is 1000 under
+  AutoCAD, 100 under BricsCAD.
+- *How a real prints.* ~prin1~ / ~princ~ / ~print~ / ~vl-prin1-to-string~ /
+  ~vl-princ-to-string~ spell a real as the dialect's product does, as
+  measured: the ~autocad-*~ dialects with six significant digits (~0.333333~,
+  ~1.0e+06~, ~1.0e-05~), the ~bricscad*~ dialects with fifteen
+  (~0.333333333333333~, ~1000000.0~, ~1e-05~); ~clautolisp~, ~strict~ and
+  ~lax~ in clautolisp's own spelling (~0.3333333333333333~, ~1.0e-5~). The
+  first time a printed real is one the two products spell differently, a
+  ~[real-format]~ notice says so (once per session; not under ~lax~;
+  ~(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)~ silences it). ~rtos~ and
+  ~command~ keep the full value.
+- *An explicit ~nil~ file.* ~(princ x nil)~, ~(print x nil)~ and ~(prin1 x
+  nil)~ print to the console, as both vendors document -- except under the
+  ~autocad-*~ dialects, where they are a bad-argument error, as AutoCAD 2022
+  makes them (measured, 2.3.88). A ~[printer-nil-file]~ notice says so once
+  per run under ~autocad-*~ and ~strict~; ~bricscad*~, ~clautolisp~ and
+  ~lax~ are silent. Leave the argument out to print to the console
+  portably: ~(if f (princ x f) (princ x))~.
+- ~(layoutlist)~ -- the paper layouts, never ~"Model"~: sorted by name under
+  the ~autocad-*~ dialects, as AutoCAD 2022 returns them, in tab order
+  otherwise, as BricsCAD does.
+- ~vl-registry-read~ of a ~REG_BINARY~ value — ~(3)~ under the
+  ~autocad-*~ dialects, ~(3 byte ...)~ under the others: AutoCAD 2022
+  returns the type code alone, BricsCAD V26 the bytes too. The other types
+  read the same everywhere (Windows): ~REG_SZ~ a string, ~REG_EXPAND_SZ~
+  the string with its ~%NAME%~ references expanded, ~REG_DWORD~ an
+  integer, ~REG_MULTI_SZ~ ~(7 "s1" "s2" ...)~.
+- *Character codes at ~LISPSYS~ 0.* Under ~autocad-2022~ (or ~-2026~) at
+  ~LISPSYS~ 0, and under every AutoCAD dialect before 2021, ~chr~ /
+  ~ascii~ / ~vl-string->list~ / ~vl-list->string~ / ~vl-string-elt~ /
+  ~vl-string-position~ / ~read-char~ / ~write-char~ treat a code as a byte
+  read in windows-1252, as AutoCAD's MBCS engine does: ~(chr 8364)~ is
+  code 172 (~¬~), ~(chr 128)~ the euro. Under ~bricscad-v25~ / ~-v26~ at
+  ~LISPSYS~ 0 the windows-1252 code wins where there is one: ~(ascii (chr
+  8364))~ is 128. A macOS dialect (~bricscad-macos-v26~), ~LISPSYS~ 1 / 2
+  and ~clautolisp~ use Unicode code points. Measured on the vendors.
+- ~open~'s third (encoding) argument and its ~",ccs=ENC"~ mode suffix are
+  always honoured, under every dialect (lenient, pjb 2026-10-06); where the
+  dialect's vendor would not do the same, ~open~ prints an out-of-dialect
+  warning (~[enc-foreign-dialect]~, or ~[enc-extension-used]~ under
+  ~strict~) saying what the vendor does, as measured by
+  ~probe-open-encoding~ (AutoCAD 2022 at ~LISPSYS~ 0, BricsCAD V25 Windows,
+  BricsCAD V26 macOS):
+
+  | dialect                                | ~(open f "w" "utf8")~     | ~(open f "w" "cp1252")~   | ~(open f "w,ccs=UTF-8")~ |
+  |----------------------------------------+---------------------------+---------------------------+--------------------------|
+  | ~autocad-*~ at ~LISPSYS~ 0, or < 2021  | warn: too many arguments  | warn: too many arguments  | warn: suffix ignored     |
+  | ~autocad-*~ (2021+) at ~LISPSYS~ 1 / 2 | silent (documented)       | warn: not documented      | warn: suffix ignored     |
+  | ~bricscad~ / ~-v25~ / ~-v26~ (Windows) | warn: accepted, no effect | warn: bad argument type   | silent (honoured)        |
+  | ~bricscad-mac~ / ~-linux~              | warn: accepted, no effect | warn: bad argument type   | warn: suffix ignored     |
+  | ~strict~                               | warn: not portable        | warn: not portable        | warn: not portable       |
+  | ~clautolisp~, ~lax~                    | silent                    | silent                    | silent                   |
+
+  Under the Windows BricsCAD dialects only ~,ccs=UTF-8~ and ~,ccs=UTF-16LE~
+  (measured) are silent; another ~ccs~ name warns as unmeasured. The
+  warning is printed at each call (the ~clal-lint-encoding-extensions~
+  lint reports the same); ~(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)~
+  silences it. The file clautolisp writes is the same under every dialect,
+  except that the AutoCAD dialects do what AutoCAD 2022 was measured to do
+  (E1, 2026-10-06; clautolisp 2.2.222): ~(open f "w" "utf8-bom")~ writes a
+  byte-order mark, ~(open f "r" "utf8")~ returns a BOM as the character
+  65279 and stops at the first byte that is not UTF-8, and the default
+  (no encoding argument) read and write follow AutoCAD -- see /Under the
+  AutoCAD dialects, LISPSYS decides/. And the Windows BricsCAD dialects do
+  what BricsCAD V25 was measured to do (clautolisp 2.3.49):
+  ~(open f "w,ccs=UTF-8")~ / ~"w,ccs=UTF-16LE"~ write a byte-order mark
+  first, and an append with the same suffix adds none to an existing file
+  (an append that creates the file writes one, as ~"w"~ does -- unmeasured).
+- ~vl-file-systime~ — the day-of-week element (third position) is
+  ~0~ for Sunday under ~strict~, ~clautolisp~, ~lax~ and the
+  ~autocad-*~ dialects, and ~7~ under ~bricscad-v25~ /
+  ~bricscad-v26~. Monday to Saturday are ~1~..~6~ in every dialect.
+  This is not an arbitrary choice: both vendors' reference pages say
+  only "Monday is day 1 ... and so on" and never state a value for
+  Sunday, so each engine filled that silence its own way — AutoCAD
+  with the POSIX ~struct tm~ numbering, BricsCAD with ISO-8601.
+  clautolisp keeps the POSIX one.
+
+  Because the two values are ~0~ and ~7~, one operation normalises
+  every engine and every dialect:
+
+  #+BEGIN_EXAMPLE
+  (mod day-of-week 7)
+  #+END_EXAMPLE
+
+  ~(mod 0 7)~ and ~(mod 7 7)~ are both ~0~, and Monday to Saturday
+  (~1~..~6~) pass through unchanged, so the result is always the POSIX
+  numbering — Sunday ~0~ through Saturday ~6~ — with no test for which
+  engine or dialect is in use. Read position 3 through ~mod 7~ rather
+  than avoiding it.
+
+  The list has eight elements — the eighth is milliseconds, currently
+  always ~0~.
 
 ** Input selection
 - ~-x EXPRESSION~        :: Evaluate EXPRESSION instead of reading a
@@ -520,14 +1076,80 @@ code 1.
                             list of names (default: ~AUTOLISP~ only).
                             Also sets ~*clal-dribble-interactors*~.
 
+** Optimization
+- ~-O SPEC~, ~--optimize SPEC~ :: Set the optimization qualities
+                            *before anything is loaded*. ~SPEC~ is a
+                            comma-separated list of specifiers, each
+                            one of:
+                            ~QUALITY=N~ (a quality — ~debug~, ~space~
+                            or ~speed~ — at level ~N~, 0..3),
+                            ~QUALITY~ (that quality at level 3), or a
+                            bare ~N~ (shorthand for ~speed=N~).
+                            The option may be repeated; occurrences
+                            accumulate left to right, and a quality you
+                            never mention keeps the level it had.
+- ~-O0~ … ~-O3~          :: Shorthand for ~-O speed=0~ … ~-O speed=3~.
+
+This is the command-line spelling of ~(clal-optimize …)~, and § /The
+clautolisp extensions/ ~CLAL-OPTIMIZE~ explains what the levels mean —
+which of a function's two forks exist and which are compiled. Read the
+result back at any time with ~(clal-optimization)~.
+
+The option exists because ~clal-optimize~ cannot reach the moment that
+matters most. In Common Lisp a ~declaim~ at the top of a file changes
+the qualities for the rest of *that file*, because ~declaim~ has a
+compilation-time effect. AutoLISP has no macros, and no distinction
+between compilation time, load time and run time — so a
+~(clal-optimize '((speed 3)))~ written at the top of a =.lsp= takes
+effect only when that call is *evaluated*, by which time the file it
+was meant to govern has already been read and its ~defun~ s already
+built. Nothing inside the language can set the qualities before the
+first file is loaded. The command line can:
+
+#+BEGIN_SRC sh
+$ clautolisp -O3 -l application.lsp        # compile at definition
+$ clautolisp -O0 -l application.lsp        # interpret everything
+$ clautolisp -O speed=3,debug=0 -l app.lsp # fast, not debuggable
+$ clautolisp -O2 -x '(princ (clal-optimization))'
+((DEBUG 3) (SPACE 0) (SPEED 2))
+#+END_SRC
+
+Note that ~--optimize debug=0~ and ~--debug~ are unrelated: ~--debug~
+is a verbosity flag, while ~debug~ here is an optimization quality —
+whether your functions keep the instrumented fork the debugger needs.
+
+*Host compiler diagnostics are quiet by default.* When a function
+becomes hot (or at ~-O3~, or when ~CLAL-COMPILE-FILE~ writes an
+artefact) clautolisp compiles it with the underlying Common Lisp
+compiler, which would otherwise print its own style warnings, notes and
+progress lines — about *generated* Common Lisp you never wrote — to
+standard error. These are suppressed by default. Passing ~--verbose~ (
+~-v~) or ~--debug~ (~-d~) lets them through, for when you are debugging
+the compiler or a transpilation itself; a genuine compilation *failure*
+is never suppressed, at any verbosity.
+
 ** Debugger (aldo)
-See § /Debugger/ for the semantics; the options in brief:
+See § /Debugger/ for the semantics; the options in brief (alfe accepts
+the same six options, spelled and meant the same, for its =--clautolisp=
+backend in both variants -- see the alfe user manual):
 
 - ~--on-error POLICY~    :: ~quit~ (report and exit — the batch
                             default), ~debug~ (break into aldo — the
                             interactive-REPL default), or ~ignore~ (run
-                            the AutoLISP ~*error*~ handler). Sets
+                            the AutoLISP ~*error*~ handler, report the
+                            error, and go on with the next ~-l~ / ~-x~;
+                            the rest of a ~-l~ file that failed is not
+                            loaded, and the run still exits 1). Sets
                             ~*CLAL-ON-ERROR*~.
+
+                            Before an interactive REPL (~-l~ / ~-x~ ...
+                            ~-i~), an error in one of those actions never
+                            ends the program unless the policy is ~quit~:
+                            under ~debug~ it stops in the debugger, and
+                            once you abort (=q=) or continue, the next
+                            action runs, then the REPL. The option is
+                            not positional: its last occurrence decides
+                            for the whole run.
 - ~--on-interrupt POLICY~ :: What =C-c= (SIGINT) does: ~debug~ (break
                             into aldo at the interrupt point — the
                             default), ~ignore~ (execution resumes), or
@@ -538,7 +1160,10 @@ See § /Debugger/ for the semantics; the options in brief:
                             Windows SBCL build the option has no effect:
                             that build lacks the POSIX-signal API, so
                             the native console Control-C behaviour is
-                            kept.
+                            kept. The CCL build applies it as the SBCL
+                            one does (since 2.2.218; before, a =C-c=
+                            under CCL fell into CCL's own break loop
+                            whatever the policy).
 - ~--on-quit POLICY~     :: What ~(quit)~ / ~(exit)~ does: ~quit~ (the
                             default) or ~debug~ (break into aldo before
                             the stack unwinds; continue quits, abort
@@ -563,34 +1188,687 @@ roadmap) decides where CAD-host effects land. The dialect descriptor
 controls the *language*; the host backend controls the *target*.
 Both axes are independent.
 
-- ~--host NAME~          :: Select the backend. Currently accepted:
-                            ~mock~ (default since 0.0.14): an
-                            in-memory deterministic CAD-database
-                            substitute capable of entget / ssget /
-                            getvar / getstring etc. ~null~: every
-                            CAD-host operation signals
-                            ~:host-not-supported~ — useful for
-                            programs that should not touch a host
-                            at all. ~live~ is reserved for Phase 16.
+- ~--host NAME~          :: Select the host. Currently accepted:
+                            ~cador~ (default): the headless in-process
+                            CAD core — an in-memory deterministic
+                            CAD-database capable of entget / ssget /
+                            getvar / getstring etc. (~mock~ is a
+                            deprecated alias of ~cador~). ~cadtui~: the
+                            full textual UI-tree host layered on the
+                            cador core — it presents the CAD application
+                            (menu bar, drawings, CAD view with entities
+                            and grips, alerts, DCL dialogs, consoles) as
+                            an inspectable, keyboard-drivable tree, and
+                            installs the cadtui DCL renderer so
+                            ~new_dialog~ / ~start_dialog~ dialogs are
+                            mirrored into that tree for headless,
+                            scriptable testing (cador is cadtui's
+                            degenerate ~/application/console~
+                            configuration). ~nihil~: the trivial backend
+                            — every CAD-host operation signals
+                            ~:host-not-supported~ — useful for programs
+                            that should not touch a host at all (~null~ /
+                            ~none~ are deprecated aliases of ~nihil~). A
+                            remote wire host is reserved for a later
+                            phase. Run ~clautolisp --list-hosts~ for the
+                            list with a one-line summary of each.
+- ~--list-hosts~         :: Print the ~--host~ backends, one per line
+                            with a short summary, and exit.
+- ~--dwg FILE~          :: Start on the drawing FILE (DXF or DWG,
+                            sniffed): it is the first open drawing,
+                            current, in place of the untitled
+                            ~Drawing1.dwg~ -- ~DWGNAME~ is the file's
+                            name, ~DWGTITLED~ 1 -- as ~acad.exe FILE~ or
+                            ~accoreconsole /i FILE~ start on it. An
+                            unreadable file, or ~--host nihil~ (no
+                            drawings), is a usage error. Also read by
+                            ~alfe --clautolisp~ (~--dwg~ /
+                            ~$AUTOLISP_DWG~). ~*AUTOLISP-DRAWING*~ holds
+                            the name given.
 - ~--mock-input PATH~    :: Attach the file at PATH as the
-                            MockHost's prompt-stream. Lines are
+                            cador's prompt-stream. Lines are
                             consumed in order by ~getstring~,
                             ~getreal~, ~getint~, ~getpoint~, etc.
                             so headless test rigs can feed
                             deterministic answers to interactive
                             scripts.
+- ~--front-end-bindings FILE~ :: For a front end that runs
+                            clautolisp as its engine: FILE holds the
+                            ~*AUTOLISP-...*~ values the front end
+                            resolved, installed in place of those
+                            this command line would give. ~alfe
+                            --clautolisp --backend subprocess~ passes
+                            it, so a program sees the same values
+                            (~*AUTOLISP-FRONTEND*~ ~ALFE~, alfe's
+                            version, the user's actions, ~PROGRAM~
+                            ~alfe~) as under alfe's in-process engine.
+                            The file is written by the front end;
+                            its format is internal. A missing or
+                            malformed FILE is a usage error.
+- ~--front-end-action-boundaries DIR~ :: For the same front end,
+                            when it observes each action: clautolisp
+                            stops before and after every action (each
+                            ~-l~, ~-x~, and the REPL), tells the front
+                            end through a file in DIR, and waits for
+                            its answer there. ~alfe --clautolisp
+                            --backend subprocess~ passes it when a
+                            plug-in has ~:pre-action~ / ~:post-action~
+                            hooks, so those hooks run between two
+                            actions of ONE run -- state carries from
+                            one action to the next -- as under alfe's
+                            in-process engine. The files are internal;
+                            clautolisp stops waiting when DIR
+                            disappears.
 
 The ~command~ special form (and ~command-s~ / ~vl-cmdf~) routes its
-token sequence through the selected backend's command channel. The
-MockHost has no CAD command engine: it *records* each normalized
-token sequence — strings verbatim, numbers and points in their
-command-line spellings (~"X,Y[,Z]"~ for points), ~""~ as the RETURN
-token, ~"\\"~ (the predefined variable ~pause~) as the PAUSE token —
-on a per-session log, echoes a ~Command: ...~ line, and returns
-~nil~. Read the log back with ~(clal-command-log)~ (see the
-~CLAL-~ extensions below). Under ~--host null~ every ~command~ call
+token sequence through the selected backend's command channel. cador
+*executes* the commands it implements (~LINE~, ~CIRCLE~, ~TRIM~,
+~HATCH~, ~-VPORTS~, ~NEW~ / ~OPEN~ / ~SAVE~ ...: the command chapter of
+the AutoLISP Spec), accepts a few that have no effect headless (~ZOOM~,
+~UCS~ ...) as no-ops, and stops interpreting the tokens, without an
+error, at a command it does not know or one that fails -- leaving a
+~; cador: ... -- the rest of the command sequence is ignored.~ line on the
+console (silenced by ~CMDECHO~ 0). Every normalized token sequence
+— strings verbatim, numbers and points in their command-line spellings
+(~"X,Y[,Z]"~ for points), ~""~ as the RETURN token, ~"\\"~ (the
+predefined variable ~pause~) as the PAUSE token — is also *recorded* on
+a per-session log; ~command~ returns ~nil~. Read the log back with
+~(clal-command-log)~ (see the ~CLAL-~ extensions below). Under
+~--host nihil~ every ~command~ call
 signals ~:host-not-supported~ (~vl-cmdf~ instead returns ~nil~, per
 its T / nil success contract).
+
+*** Angles in DXF files
+
+A DXF file stores entity angles in *degrees*; ~entget~ reports them in
+*radians*, as on AutoCAD and BricsCAD. cador converts when it loads a
+DXF (or a DWG, which goes through DXF) and when it saves one, for: ARC
+50/51; TEXT, ATTRIB, ATTDEF and SHAPE 50/51 (rotation, oblique angle);
+MTEXT 50 and INSERT 50 (rotation); DIMENSION 50-53; VERTEX 50 (curve-fit
+tangent); VIEWPORT 50/51 (snap angle, view twist); HATCH 52 (pattern
+angle), every 53 (one per pattern line) and the 50/51 start / end angles
+of every circular-arc and elliptic-arc boundary edge. The symbol-table
+records ~tblsearch~ and ~tblnext~ return are converted too: VPORT 50/51
+(snap rotation, view twist), VIEW 50 (twist) and STYLE 50 (oblique
+angle). ELLIPSE 41/42 (parameters), a polyline 42 (bulge) and the HATCH
+gradient angle 460 (radians in the file) are not degree angles and are
+copied as they are. The header variables (~$ANGBASE~, ~$SNAPANG~, ...)
+are not converted: cador's ~getvar~ does not read them from the file.
+Up to 2.3.30 the entity angles, and up to 2.3.32 the HATCH,
+VIEWPORT and table-record ones, the
+file values were copied unconverted, so an ARC of 0..90 degrees from a
+vendor DXF read as ~(51 . 90.0)~ (90 radians), and a saved ARC of
+0..pi/2 opened elsewhere as 0..1.57 degrees.
+
+*** DXF pointer group codes under cador
+
+cador stores the drawing's object references as handles, but -- like
+AutoCAD -- ~entget~ returns the DXF *pointer* group codes as entity
+names: 330-339 (soft pointer, e.g. the owner), 340-349 (hard pointer),
+350-359 (soft owner, e.g. a dictionary's entries), 360-369 (hard owner,
+e.g. an extension dictionary), 390-399 (plot style) and 480-481. So does
+every function returning the same view: ~dictsearch~, ~dictnext~,
+~tblsearch~, ~tblnext~ and the lists ~entmake~ / ~entmod~ return. Such an
+ename is ~eq~ to every other ename of the same object, so
+~(entget (cdr (assoc 330 data)))~ follows the owner. Since 2.3.7; before,
+they were handle strings and that ~entget~ failed with ~ENTGET expects an
+ENAME~.
+
+- Still strings: 5 and 105 (the object's own handle) and the xdata 1005
+  handle. 320-329 (arbitrary handles) are strings under the AutoCAD,
+  clautolisp, strict and lax dialects, as on AutoCAD; under the BricsCAD
+  dialects they are entity names, as on BricsCAD.
+- A pointer to an erased object is still the same (~eq~) ename; ~entget~
+  of it returns ~nil~ (both vendors).
+- The null pointer -- the named-object dictionary's owner -- is
+  ~(330 . <Entity name: 0>)~ as on AutoCAD (~entget~ of it is ~nil~); the
+  BricsCAD dialects omit the pair, as BricsCAD does.
+- ~entmake~ / ~entmakex~ / ~entmod~ want an ename in a pointer code (and a
+  string in 320-329 on AutoCAD). A value of the wrong kind there is an
+  error under the AutoCAD and BricsCAD dialects, worded as each vendor
+  words it (~bad DXF group: (340 . "2A")~; ~bad argument type
+  <(340 . "2A")> ; expected ENTITYNAME at [invalid DXF/XED data]~). The
+  clautolisp and strict dialects store it as given with an
+  ~[entmake-pointer-value]~ warning; ~lax~ stores it silently.
+- An XRECORD reads back with ~(280 . 1)~ (the duplicate-record cloning
+  flag) right after its ~(100 . "AcDbXrecord")~ marker, as on both
+  vendors, so code that skips the pair after the marker finds the first
+  data group. A 280 supplied there is listed as given (AutoCAD) or not
+  listed at all (BricsCAD dialects). An XRECORD without the marker is
+  refused (~nil~), except under the BricsCAD dialects and ~lax~, which add
+  marker and flag.
+
+Measured on AutoCAD 2022 and BricsCAD V25 / V26 by
+~probes/sources/probe-entget-pointers.lsp~ (2026-10-08).
+
+*** cadtui localisation dictionaries
+
+Under ~--host cadtui~ the interaction language and the CAD vocabulary are
+localisable (cadtui spec § /Localisation/): the dictionaries are data files
+under ~cadtui/data/locale/<locale>/~, baked into the executable. fr_FR ships
+four: ~verb~ / ~keyword~ (the interaction language: ~=activer(dessins[2])~),
+~command~ (command names, measured with ~getcname~: ~LIGNE~ = ~_LINE~),
+~alias~ (the French ~acad.pgp~), and, since 2.2.229, ~option-keyword~: the
+French option keywords of OFFSET, TRIM, EXTEND, FILLET, CHAMFER, LENGTHEN,
+RECTANG and ZOOM on AutoCAD and on BricsCAD (LENGTHEN, and AutoCAD's RECTANG
+and ZOOM, since 2.3.6),
+each paired with its international keyword *per product* (the two products
+offer different keyword sets: OFFSET's ~Par~ on AutoCAD is ~Passer par le
+point~ on BricsCAD). A French keyword, whole or abbreviated by its capitals
+(~aNnuler~ or ~N~ at an AutoCAD CHAMFER), resolves to the international one
+(~Undo~); a leading ~_~ forces the international form; anything the dictionary
+does not hold passes through unchanged. The French side was measured on
+French installs; the English side comes from the vendors' English command
+references, and the keywords those do not settle (BricsCAD's
+~sélectionner les options (?)~) are left out until measured.
+
+*** The ActiveX / COM object model (~vla-*~ / ~vlax-*~)
+
+Visual LISP exposes the CAD object model through ActiveX. clautolisp
+provides that surface through the host backend:
+
+- The ~vlax-*~ primitives — ~vlax-get-property~, ~vlax-put-property~,
+  ~vlax-invoke-method~, ~vlax-get-acad-object~, object lifecycle
+  (~vlax-create-object~, ~vlax-release-object~, ~vlax-object-released-p~),
+  SAFEARRAY and VARIANT helpers — operate on VLA-objects backed by the
+  selected host. On ~--host mock~ they run against an in-memory COM
+  object graph (~AutoCAD.Application~ with a live ~ActiveDocument~,
+  ~AutoCAD.Document~, …); on ~--host null~ they signal
+  ~:host-not-supported~.
+- The ~vla-*~ *accessors* are resolved **dynamically**, exactly as in
+  Visual LISP: after ~(vl-load-com)~, calling ~(vla-get-<Prop> obj)~
+  reads property ~<Prop>~, ~(vla-put-<Prop> obj v)~ writes it, and
+  ~(vla-<Method> obj args…)~ invokes method ~<Method>~ — the name after
+  the prefix is taken verbatim and matched case-insensitively. There is
+  no fixed list of ~vla-get-Foo~ functions; any property/method name
+  works. Before ~(vl-load-com)~ these names are undefined, and a user
+  ~(defun vla-get-foo …)~ shadows the façade for that name.
+- The *ActiveX enumeration constants* are AutoLISP global variables once
+  ~(vl-load-com)~ has run, as on AutoCAD and BricsCAD, so vendor code such
+  as ~(vla-put-Alignment att acAlignmentMiddleLeft)~ needs no magic
+  numbers. The table is *measured* on AutoCAD 2022 and BricsCAD V25 / V26
+  (~probes/sources/probe-activex-constants.lsp~): 932 constants, 832 of
+  them bound on AutoCAD, all 932 on BricsCAD. Under the AutoCAD dialects
+  clautolisp binds AutoCAD's names and values, under the BricsCAD dialects
+  BricsCAD's; under ~strict~ only the names both bind to the same value;
+  under ~clautolisp~ / ~lax~ every name, AutoCAD's value where the two
+  differ (30 names do: the ~AcViewportScale~ family is off by one,
+  ~acNative~ is 64 on AutoCAD and 60 on BricsCAD). When, as measured:
+  BricsCAD has them from the start of every document, before any
+  ~(vl-load-com)~ (so under the BricsCAD dialects they are bound before
+  ~on_doc_load.lsp~ and ~S::STARTUP~ run); AutoCAD binds them at the
+  first ~(vl-load-com)~ (and so do ~strict~, ~clautolisp~ and ~lax~). On
+  all three a later ~(vl-load-com)~ re-binds nothing -- not even a name
+  the program set to nil -- and a value the program set is never
+  replaced.
+  ~(vl-load-com)~ answers ~nil~ under the AutoCAD dialects, ~T~ otherwise.
+- The document's *collections* are live and drawing-backed:
+  ~(vla-get-blocks doc)~, ~(vla-get-layers doc)~,
+  ~(vla-get-modelspace doc)~ and ~(vla-get-paperspace doc)~ return
+  identity-stable collection objects whose members and ~Count~ are
+  recomputed from the drawing database on each access — a
+  block-record created by ~entmake~, a DXF load or ~Blocks.Add~ is
+  immediately visible. Every collection answers the generic ~Item~
+  method with a 0-based integer index or a case-insensitive name
+  (~(vla-item blocks "*Model_Space")~); a missing item raises an
+  error catchable through ~vl-catch-all-apply~, as the vendor ActiveX
+  exception is. ~Blocks.Add~ / ~Layers.Add~ create table records;
+  ~Delete~ on a block object erases the definition and its owned
+  entities (the ~*Model_Space~ / ~*Paper_Space~ layout blocks refuse,
+  as in AutoCAD). A block object is itself a collection of the
+  entities it owns, so ~vlax-for~ walks block contents; its members
+  are entity-backed VLA-objects that ~vlax-vla-object->ename~
+  round-trips.
+- Layer and linetype objects carry mutable attributes backed by their
+  table records: a ~Layer~ object (from ~Layers.Add~ or ~vla-item~ on
+  the Layers collection) has read/write ~Color~ and ~Linetype~ — both
+  are live views of the layer's DXF groups (62 and 6), so a
+  ~(vla-put-color layer 3)~ is what ~tblsearch "LAYER"~ and ~entget~
+  read back — and ~Layer.Delete~ removes the record (layer ~0~ and the
+  current layer refuse, as in AutoCAD). ~(vla-get-activelayer doc)~
+  returns the current layer and ~(vla-put-activelayer doc layer)~ makes
+  it current (both are the ~CLAYER~ system variable, tracked live).
+  ~(vla-get-linetypes doc)~ is a live collection whose ~Load~ method
+  registers a linetype table record by name (the mock does not parse a
+  ~.lin~ definition file — it registers the name so the linetype
+  resolves).
+- The document's ~Layouts~ collection lists the drawing's layouts -- the
+  paper layout ~Layout1~, then ~Model~, the order ~vlax-for~ walks them in
+  on BricsCAD -- with ~Item~ by name; each ~Layout~ has ~Name~, ~ModelType~,
+  ~TabOrder~ and its ~Block~. ~(vla-get-active doc)~ is ~:vlax-true~ for the
+  active document. ~:vlax-true~ and ~:vlax-false~ are predefined: each is a
+  symbol whose value is itself, so ~(= (vla-get-active doc) :vlax-true)~
+  works as in Visual LISP.
+- *ActiveX Boolean properties* (~Visible~, ~Saved~, ~ReadOnly~, ~IsLayout~,
+  ~IsXRef~, ~HasAttributes~, ~LayerOn~, ~Freeze~, ~Lock~, ~Plottable~, ...)
+  read as ~:vlax-true~ / ~:vlax-false~ (as ~-1~ / ~0~ through ~vlax-get~) and
+  accept ~:vlax-true~ / ~:vlax-false~, ~T~ / ~nil~ or ~-1~ / ~0~ -- the integers
+  not under a macOS dialect, as BricsCAD V26 on macOS refuses them. A Layer
+  object has ~LayerOn~, ~Freeze~, ~Lock~ and ~Plottable~ (its record's 62 sign,
+  70 bits and 290), an entity ~Visible~ (group 60).
+- ~Preferences~: ~(vla-get-supportpath (vla-get-files (vla-get-preferences
+  acad)))~ is the support path ~findfile~ and ~load~ search, its
+  directories joined with ~;~ -- the same string as ~(getenv "ACAD")~, as on
+  the vendors -- and ~vla-put-supportpath~ (or ~(setenv "ACAD" ...)~)
+  changes it. ~(vla-get-activeprofile (vla-get-profiles prefs))~ is the
+  current profile, the ~CPROFILE~ system variable.
+- *Several drawings, each with its own LISP namespace.* ~(command "_.NEW"
+  "")~ and ~(command "_.OPEN" "file.dwg")~ open another drawing, and -- as
+  in AutoCAD -- the switch happens at the next top-level read: the routine
+  that ran the command finishes in its own drawing (its ~entmake~ and
+  ~ssget~ still address it, its variables are still there); the next form
+  typed (or the next ~-x~ / ~-l~) runs in the new drawing, in a namespace of
+  its own -- the built-in functions and variables are there, the previous
+  drawing's variables and ~defun~'s are not. ~vl-propagate~ copies a
+  variable into every drawing, the blackboard (~vl-bb-set~ / ~vl-bb-ref~) is
+  shared, and ~vl-doc-set~ / ~vl-doc-ref~ reach the document namespace.
+  Each drawing also keeps its own selection sets and pickfirst set,
+  ~tblnext~ / ~dictnext~ positions, pending ~initget~, ~vlax-ldata~ and open
+  ~entmake~ runs; and an entity name belongs to its drawing -- ~entget~,
+  ~entmod~, ~entdel~, ~entupd~, ~entnext~, the dictionary functions and
+  ~vlax-ename->vla-object~ given an ename from another open drawing signal
+  ~:cross-document-dereference~ instead of reaching a wrong entity.
+  System variables follow AutoCAD's split: those *saved in the drawing*
+  (520 of them: ~LTSCALE~, ~CLAYER~, the dimension variables, ...) are each
+  drawing's own, a new drawing starting from the template values; the
+  others -- registry, profile and session variables such as ~OSMODE~ -- are
+  the application's, one value for every drawing. ~DWGNAME~ is the
+  drawing's name (~Drawing1.dwg~, ~Drawing2.dwg~ ... until it is saved),
+  ~DWGTITLED~ 1 once it has a file, ~DBMOD~ 1 after a change, back to 0
+  when it is saved.
+  The file commands answer their prompts in order, as with ~FILEDIA~ 0:
+  ~(command "_.QSAVE")~ writes a titled drawing to its file (an untitled
+  one takes a file name), ~"_.SAVE"~ a file name (~""~: the current one),
+  ~"_.SAVEAS"~ an optional format (~"DXF"~ or a release, ~"2018"~ ... ~"2000"~)
+  then a file name; ~"_.CLOSE"~ and ~"_.CLOSEALL"~ take the "Save changes?"
+  answer (~"_Y"~, then a file name if untitled, or ~"_N"~) for a modified
+  drawing, and the next open drawing becomes current; the closed drawing's
+  LISP namespace goes with it. A session always keeps one drawing: closing
+  the last opens a fresh untitled one (AutoCAD is left with none). Saving
+  names the drawing after its file (~DWGNAME~), as ~vla-saveas~ does too.
+  *Startup files, per drawing.* After clautolisp's own init file, the
+  product's startup files found on the support path run as the product runs
+  them: under the AutoCAD dialects ~acad.lsp~ once and ~acaddoc.lsp~ for
+  every drawing (both per drawing when ~ACADLSPASDOC~ is 1), under the
+  BricsCAD dialects ~on_start.lsp~ / ~on_start_default.lsp~ once and
+  ~on_doc_load.lsp~ / ~on_doc_load_default.lsp~ per drawing, under
+  ~clautolisp~ / ~lax~ all of them (~strict~: none); then ~S::STARTUP~ when
+  defined. Each new drawing runs the per-drawing files in its own namespace,
+  plus every file ~(vl-load-all "file.lsp")~ loaded -- that function loads
+  a file into every open drawing and every drawing opened later. A new
+  drawing's namespace starts with the built-in functions and variables and
+  clautolisp's own settings (~*AUTOLISP-DIALECT*~ ...). ~--no-init~ skips the
+  startup files with the init file.
+  *Under ~--host cadtui~* the UI tree mirrors the open documents: every
+  open drawing is a ~drawing~ node under ~/application~ (with its console),
+  a drawing opened by ~NEW~, ~OPEN~ or ~vla-add~ appears at once, the
+  current one is ~/application/active-drawing~ (it changes at the switch
+  time above), and a closed drawing's node goes away. The tree also drives
+  the host: ~=activate(drawings[2])~ makes that drawing current (at the
+  next read, as ~NEW~ does) and ~=close(drawings[2])~ closes it, as the
+  ~CLOSE~ command would.
+- Documents through the object model: ~(vla-get-documents app)~ is a live
+  collection of the open drawings (~Count~, ~Item~, ~vlax-for~).
+  ~(vla-add documents)~ opens a new drawing with its own database and does
+  *not* make it current (as measured on BricsCAD V26); ~(vla-open documents
+  "f.dwg" [:vlax-true])~ reads a file (read-only when asked) and makes it
+  current; ~(vla-activate doc)~ makes a document current; ~(vla-close doc
+  [save [file]])~ closes it; ~vla-get-activedocument~ follows the current
+  drawing and ~vla-put-activedocument~ changes it -- each switch at the
+  time ~NEW~ / ~OPEN~ would (see above). A document's objects -- its
+  ~ModelSpace~, ~Blocks~, ~Layers~, the entities reached through them --
+  address *that* drawing, current or not: ~(vla-addline (vla-get-modelspace
+  other-doc) ...)~ adds to the other drawing. ~Name~, ~FullName~, ~Path~,
+  ~Saved~ (~:vlax-true~ when ~DBMOD~ is 0) and ~ReadOnly~ are the drawing's;
+  ~(vla-saveas doc "path.dwg")~ writes that document's drawing (the format
+  follows the extension) and names it after the file; ~Save~ refuses a
+  read-only document. When the path carries
+  no recognised drawing extension, the format (and version) falls back to
+  the ~CLAUTOLISPDEFAULTDRAWINGFORMAT~ system variable — ~DXF~ by default,
+  seedable from the environment (see /Environment variables/) — or, under
+  a ~--bricscad~ dialect, to BricsCAD's ~SAVEFORMAT~ integer (AutoCAD has
+  no save-format sysvar). The chosen version sets the emitted DXF
+  ~$ACADVER~; the DWG writer carries it through libredwg.
+- *Vendor variable first.* Under a vendor dialect, the vendor's own system
+  variable decides when it has one — BricsCAD's ~BASEFILE~ for the
+  template, ~SAVEFORMAT~ for the format — and the ~CLAUTOLISP…~ variable is
+  the fallback. Whenever a ~CLAUTOLISP…~ variable is what decides, or a
+  program reads or sets one with ~getvar~ / ~setvar~, under any dialect but
+  ~--dialect clautolisp~ and ~--lax~, a ~[clautolisp-sysvar]~ notice says
+  so, once per variable per run: on the vendor's product the variable does
+  not exist, and the program would get another drawing or format there.
+- *A new drawing can be created from a TEMPLATE.* By default a new
+  document is EMPTY, as it always has been. Set the
+  ~CLAUTOLISPNEWDRAWINGTEMPLATE~ system variable to a ~.dxf~ / ~.dwg~ /
+  ~.dwt~ file and a document opened afterwards is created from that
+  drawing's *structure* — its header, symbol table records and
+  ~*Model_Space~ / ~*Paper_Space~ block definitions — with its own name.
+  A relative name is resolved against BricsCAD's ~TEMPLATEPATH~ (the
+  Templates folder) when that is set. Under a ~--bricscad~ dialect
+  BricsCAD's own ~BASEFILE~ takes precedence when it is set.
+
+  This matters for *DWG*: libredwg needs an entity's owner record and a
+  properly formed BLOCKS section, so a drawing assembled from nothing
+  loses its entities through a DWG round trip, while one created from a
+  template keeps them. clautolisp ships such a template (installed as
+  ~share/common-lisp/…/clautolisp/drawing/template/empty-drawing.dxf~);
+  pointing the variable at it is enough:
+
+  #+begin_example
+  (setvar "CLAUTOLISPNEWDRAWINGTEMPLATE" "…/drawing/template/empty-drawing.dxf")
+  #+end_example
+
+  The *startup* document is created before any AutoLISP runs, so for that
+  one the *environment variable* of the same name is the knob (see
+  /Environment variables/). A value that cannot be read is reported on
+  ~*error-output*~ and the document is created empty — a typo in a
+  variable does not end the session, and does not pass unnoticed either.
+- *~command~ runs LISP commands.* A ~C:~ function registered with
+  ~vlax-add-cmd~ is a command ~command~ can run -- an unregistered one is
+  not, as on the vendors. The rest of the ~command~ arguments are its
+  input: its ~getint~, ~getreal~, ~getpoint~, ~getkword~ (which takes a
+  keyword's abbreviation and the ~_~ prefix), ~getstring~, ~entsel~ and
+  ~ssget~ calls consume them in order, ~""~ being RETURN; whatever it leaves
+  goes on as further commands. This is how an add-on command written in
+  AutoLISP -- AutoCAD's ~3darray.lsp~, a vendor's LISP Express Tools --
+  runs: load the file, register the command, and drive it:
+
+  #+begin_example
+  (load "3darray")
+  (vlax-add-cmd "3darray" 'c:3darray)
+  (command "3darray" ss "" "_R" 2 2 2 1 1 1)
+  #+end_example
+
+- *A new drawing's units follow the locale.* A drawing created from
+  nothing gets ~MEASUREMENT~ (and ~MEASUREINIT~) 0, imperial, when the
+  locale is ~en_US~, and 1, metric, otherwise -- the locale being the first
+  non-empty of ~$LC_ALL~, ~$LC_NUMERIC~ and ~$LANG~; with none set (the C
+  locale, or a Windows session) it is metric. ~MEASUREMENT~ picks the
+  pattern file ~HATCH~ uses (ANSI31's lines 0.125 apart in imperial, 3.175
+  in metric). The other drawing variables follow suit, as a drawing made
+  from ~acad.dwt~ or ~acadiso.dwt~ would: ~DIMASZ~ 0.18 or 2.5, ~LIMMAX~
+  12,9 or 420,297, ~INSUNITS~ 1 or 4, ~DIMSTYLE~ ~Standard~ or ~ISO-25~,
+  ~CMLSCALE~ 1 or 20, ~HPNAME~ ~ANSI31~ or ~ANGLE~ -- the values the
+  AutoCAD documentation gives as "Initial value: X (imperial) or Y
+  (metric)" (BricsCAD's for its own variables). A drawing read from a
+  file or created from a template keeps the values in its own header,
+  and ~setvar~ changes them as usual.
+- ~ModelSpace.AddLine~ and ~Block.AddAttribute~ create entities through
+  the object model: ~(vla-addline space start end)~ adds a LINE on the
+  current layer, and ~(vla-addattribute block height mode prompt
+  insertion-point tag value)~ appends an ATTDEF to a block definition so
+  a later ~InsertBlock~ instantiates it. The six arguments are in the
+  vendor's order, as AutoCAD and BricsCAD take them: the *point comes
+  before the tag*, and ~value~ is the attribute's default text. Both
+  return the new entity's VLA-object, and the entity is visible through
+  ~entget~ / ~entlast~ / the block walk exactly as if made with
+  ~entmake~. (Up to 2.2.96 clautolisp read the fourth argument as the tag
+  and the fifth as the point, and ignored ~value~; a call written for
+  AutoCAD failed with "AddAttribute expects a point".)
+- Block definitions are also created the AutoLISP way: ~entmake~ of a
+  ~(0 . "BLOCK")~ header opens a definition run, the entities entmade
+  next belong to it, and the closing ~(0 . "ENDBLK")~ registers the
+  block and returns its *name* (redefining an existing name replaces
+  its contents; ~"*U"~ with flag bit 0 allocates an anonymous name).
+  Block contents never appear in ~ssget "X"~, ~entlast~ or the
+  top-level ~entnext~ walk; ~(entnext (tblobjname "BLOCK" name))~
+  walks the block's own entities (the classic ATTDEF scan), a BLOCK
+  record's ~tblsearch~ / ~tblnext~ view carries the vendors'
+  ~(-2 . <first-entity>)~ walk entry, and ~entget~ works on a
+  symbol-table record's ename.
+- The mock host executes the model-only *drawing commands*: a
+  ~(command "._line" p1 p2 "")~ (and ~CIRCLE~, ~TEXT~ with
+  ~_Justify~, ~DONUT~, ~SOLID~) creates real entities on the current
+  layer — the create-by-command / collect-by-~entlast~ idiom works
+  headless. Every call is still recorded on the command log
+  (~clal-command-log~) and echoed per ~CMDECHO~; commands outside the
+  engine's subset remain record-only.
+- A ~(command ...)~ argument may be a *selection set* (the vendor
+  contract for object-selection prompts): ~(command "._erase" ss "")~
+  erases the set's members (and their subentity runs); ~MOVE~ and
+  ~COPY~ take a selection, a base point and a second point. Entity
+  handles and ~_Last~ work as selection input too.
+- ~ROTATE~ (selection, base point, angle) and ~-BLOCK~ (name, base
+  point, selection) complete the block-factory path: ~-BLOCK~
+  registers the definition and absorbs the selected entities,
+  translated to the base point, out of model space. A leading ~-~ is
+  part of the command's *name* (each console form is defined
+  explicitly), unlike the ~.~ / ~_~ prefixes which are modifiers.
+- Entity ActiveX *properties* read and write the entity's DXF groups:
+  on an entity-backed VLA-object, ~TextString~ / ~TagString~ /
+  ~Layer~ / ~Color~ / ~Height~ / ~Rotation~ (radians, the entget
+  convention) / ~Alignment~ (acAlignment enum) / ~Name~ and
+  ~EffectiveName~ (INSERT) / ~Handle~ and ~ObjectName~ (read-only) /
+  … are live views of the entity data, and the point-valued
+  ~InsertionPoint~ / ~TextAlignmentPoint~ come back as
+  VARIANT-wrapped double SAFEARRAYs —
+  ~(vlax-safearray->list (vlax-variant-value …))~ — and accept
+  ~vlax-3d-point~ results (or plain lists) on writes.
+- *Curve geometry* (since 2.3.8): ~vlax-curve-*~ and the geometric
+  ActiveX properties share one analytic model of LINE, RAY, XLINE,
+  CIRCLE, ARC, LWPOLYLINE and 2D/3D POLYLINE, with the vendor parameter
+  conventions: a LINE's parameter is the distance, a CIRCLE's or an
+  ARC's is the *angle in radians* (an ARC runs from its start angle to
+  its end angle, the latter raised by 2pi when it is not above the
+  former), a polyline's is the vertex index plus the fraction of the
+  segment. Bulge segments are true arcs: their length is R * |theta|
+  with theta = 4 atan(bulge), so ~vlax-curve-getDistAtParam~ /
+  ~getParamAtDist~ / ~getPointAtDist~ / ~getDistAtPoint~ /
+  ~getParamAtPoint~ follow the arc, and a vertex or the exact end of the
+  curve is a valid argument (beyond the ends: see below). ~ArcLength~, ~TotalAngle~, ~Center~, ~Radius~,
+  ~StartAngle~ / ~EndAngle~ (radians), ~StartPoint~ / ~EndPoint~,
+  ~Length~, ~Area~, ~Circumference~, ~Diameter~, ~Angle~, ~Delta~ and
+  ~Closed~ read the same model, and ~ModelSpace.AddArc~ / ~AddCircle~ /
+  ~AddLightWeightPolyline~ with ~GetBulge~ / ~SetBulge~ build curves
+  through the object model; the ~ARC~ command also takes the Center
+  forms (~"_C" center start end~ / ~"_A" degrees~). Up to 2.3.7 an
+  ARC's angles were read as degrees, so its length came out pi/180 too
+  small (R 10, 90 degrees: 0.274 instead of 15.708), the true end point
+  was "not on the curve" (~nil~), and bulges were measured along their
+  chords.
+
+  What happens at and beyond the ends, and off the curve, was measured on
+  AutoCAD 2022 and BricsCAD V25/V26 and follows the PRODUCT of the
+  dialect (AutoCAD's under strict, autocad, clautolisp and lax): a LINE
+  or CIRCLE extrapolates distances and parameters past its ends (AutoCAD
+  wraps a CIRCLE's ~getParamAtDist~ into [0, 2pi)), an ARC does on
+  AutoCAD and answers ~nil~ on BricsCAD, an LWPOLYLINE answers ~nil~
+  (BricsCAD's ~getParamAtDist~ far past an end answers the curve's
+  length), and AutoCAD's 2D POLYLINE refuses a distance at its length. A
+  point counts as on the curve within 1e-10 (AutoCAD's LWPOLYLINE ignores
+  the point's Z; a 2D point is in the curve's plane on AutoCAD, at Z 0 on
+  BricsCAD), and BricsCAD answers 0 rather than ~nil~ for a point off a
+  LINE or a polyline lying at Z 0. A LINE's first derivative is END -
+  START; on a bulge segment the derivative has length R. ~getArea~ of a
+  LINE is 0, and a closed polyline is periodic. ~entmake~ normalises an
+  ARC's angles into [0, 2pi) except under a BricsCAD dialect, which keeps
+  them and measures from the stored start angle. LWPOLYLINE
+  ~Coordinates~ reads and writes the flat x y list.
+- Block references work end-to-end: ~(vla-insertblock space pt name
+  xs ys zs rot)~ creates the INSERT with an ATTRIB per non-constant
+  ATTDEF of the definition (transformed to the placement);
+  ~(vla-getattributes ref)~ returns them as a VARIANT array —
+  or ~(vlax-invoke ref 'GetAttributes)~ as a plain list, since
+  ~vlax-invoke~ / ~vlax-get~ / ~vlax-put~ implement the vendor
+  plain-LISP-data contract. Entity methods ~Move~ / ~Rotate~ /
+  ~Copy~ / ~Delete~ / ~Erase~ / ~Update~ mutate the drawing, and
+  ~(vla-getboundingbox obj 'll 'ur)~ assigns the two quoted output
+  symbols, as the vendors do. The box of a TEXT / ATTRIB / ATTDEF is
+  its glyph ink, the same box ~textbox~ returns, placed at the
+  alignment point and rotated. Both use the Standard font's metrics
+  measured on AutoCAD and BricsCAD: under the default dialects, spaces
+  carry no ink and a box that does not straddle the baseline is
+  reported touching it (AutoCAD); under a BricsCAD dialect the true
+  ink is reported and spaces count to their advance. Characters
+  outside ASCII are measured as =n=.
+- *IntersectWith* (2.3.10): ~(vla-IntersectWith a b option)~ returns the
+  points where entity ~a~ meets entity ~b~ as a VARIANT holding a
+  SAFEARRAY of doubles, flattened ~X1 Y1 Z1 X2 Y2 Z2 ...~ -- read it with
+  ~(vlax-safearray->list (vlax-variant-value r))~. When the objects do not
+  meet the array is *empty* (lower bound 0, upper bound -1), not ~nil~;
+  ~(vlax-invoke a 'IntersectWith b option)~ gives the same points as a
+  plain flat list, or ~nil~. ~option~ is an ~acExtend*~ constant:
+  ~acExtendNone~ (0), ~acExtendThisEntity~ (1, extend ~a~),
+  ~acExtendOtherEntity~ (2, extend ~b~), ~acExtendBoth~ (3).
+  - Supported: LINE, RAY, XLINE, CIRCLE, ARC, ELLIPSE (full or partial),
+    LWPOLYLINE and 2D POLYLINE (each span, a bulged span as its true arc)
+    and 3D POLYLINE, lying in planes parallel to XY (extrusion +Z or -Z).
+    The geometry is exact (an ellipse against a circle or another ellipse
+    to about 1e-9); a 3D line is exact in 3D, so two segments that cross in
+    plan at different heights do not meet (as on both vendors).
+  - Extending: a line becomes the infinite line, a ray the infinite line,
+    an arc its full circle, an elliptical arc its full ellipse. An *open*
+    polyline extends only its first span backwards and its last span
+    forwards (an arc span to its full circle); a closed one does not
+    extend (measured on both vendors).
+  - The points are those AutoCAD 2022 and BricsCAD V25 / V26 return
+    (measured): a tangency is one point, a point reached twice (a crossing
+    exactly at a polyline vertex) is reported once, collinear overlapping
+    lines and concentric circles give no point.
+  - Their *order* is the vendor's, which the reference does not specify
+    and AutoCAD and BricsCAD do not share; clautolisp follows BricsCAD
+    under a BricsCAD dialect and AutoCAD otherwise. On both, a line
+    against a circle gives the point farther from the line's start first;
+    a line against an arc, the points by decreasing offset from the arc's
+    start; two circles or arcs, the point left of the line joining the
+    centres first. AutoCAD computes ~acExtendOtherEntity~ /
+    ~acExtendBoth~ as the argument's ~IntersectWith~ and takes a bulged
+    polyline span as a counter-clockwise arc; BricsCAD takes the span in
+    its direction of travel, and sorts an ellipse's crossings with a
+    circle by X. When the two vendors' orders differ for a call, every
+    dialect but ~--lax~ prints an ~[intersectwith-order]~ warning: do not
+    rely on the order.
+  - With no intersection, the array is empty (bounds 0 and -1);
+    ~vlax-safearray->list~ of it is an *error* on both vendors (and in
+    clautolisp), so test ~(vlax-safearray-get-u-bound arr 1)~ first, or use
+    ~vlax-invoke~, which returns ~nil~. ~vlax-variant-type~ of the result
+    is 8197 (an array of doubles) -- except an empty result under a
+    BricsCAD dialect, 8204 (an array of variants), as BricsCAD returns it;
+    BricsCAD dialects and ~--dialect strict~ print an
+    ~[intersectwith-empty]~ warning then.
+  - AutoCAD's AcCoreConsole has no COM entity objects at all
+    (~vlax-ename->vla-object~ fails there), so ~IntersectWith~ is only
+    available in the GUI product.
+  - SPLINE, meshes, polyface meshes, text, block references, points and
+    every other kind, and entities in a plane not parallel to XY, signal
+    an error ("IntersectWith: AcDbSpline is not a curve IntersectWith
+    handles; clautolisp does not support it."), catchable with
+    ~vl-catch-all-apply~.
+
+Example (headless, against the mock host):
+
+: (vl-load-com)
+: (setq doc (vla-get-activedocument (vlax-get-acad-object)))
+: (vla-get-name doc)            ; => "Drawing.dwg"
+: (setq blocks (vla-get-blocks doc))
+: (vla-get-count blocks)        ; => 2   (*Model_Space, *Paper_Space)
+: (vla-get-name (vla-item blocks 0)) ; => "*Model_Space"
+: (vlax-for b blocks (princ (vla-get-name b)) (princ " "))
+
+** DCL dialogs — renderer selection and the "-" convention
+An AutoLISP program that puts up a DCL dialog (~load_dialog~ /
+~new_dialog~ / ~action_tile~ / ~start_dialog~) is driven by a
+*renderer*. clautolisp ships three:
+
+- the *line (TUI) renderer* — a pure line-oriented rendering of the dialog
+  (paint the tiles, read one command per line), so a dialog runs headless
+  (piped stdin, CI, a script);
+- the *ncurses renderer* — a full-screen terminal rendering of the dialog:
+  the tiles are laid out in 2-D (honouring the ~:row~ / ~:column~ geometry),
+  one tile is focused, and you navigate and edit with keystrokes. It behaves
+  identically to the line renderer — same tile values, same ~$reason~ codes —
+  only the presentation and input differ. Needs a curses backend
+  (~clautolisp-tui-curses~); on a terminal without one it falls back to the
+  line renderer; and
+- the *GUI renderer* — a subprocess GUI driver (e.g. the Qt app in
+  ~tools/clautolisp-gui-qt~) selected with ~--gui CMD~ or the
+  ~$CLAUTOLISP_GUI~ environment variable, speaking a sexp wire protocol.
+
+~--dcl MODE~ chooses between them:
+
+- ~--dcl tui~   :: Force the line / command-line form, even when a GUI
+                   driver is configured. This is clautolisp's spelling of
+                   AutoCAD's ~-command~ convention: in AutoCAD, prefixing a
+                   command with ~-~ runs its command-line (non-dialog)
+                   form; clautolisp has no per-command dispatcher, so the
+                   whole-session ~--dcl tui~ flag requests that form for
+                   every dialog the run puts up. (~terminal~ / ~text~ are
+                   accepted spellings.)
+- ~--dcl ncurses~ :: Force the full-screen ncurses dialog renderer.
+                   (~curses~ is an accepted spelling.) Falls back to the line
+                   renderer when no curses backend is present.
+- ~--dcl gui~   :: Use the subprocess GUI driver. If none is configured
+                   (~--gui~ / ~$CLAUTOLISP_GUI~), clautolisp warns and
+                   falls back to the line TUI.
+- ~--dcl auto~  :: (default) Use the GUI when a driver is configured *and*
+                   stdout is a terminal; else the ncurses renderer when stdout
+                   is a terminal and a curses backend is available; else the
+                   line TUI. So every headless / piped / redirected run —
+                   exactly the ~-command~ scenario — automatically gets the
+                   command-line form with no extra flag, while an interactive
+                   terminal gets the full-screen dialog.
+
+*Driving the line TUI.* The line renderer paints the tile tree, then reads
+one command per line until a button's action calls ~done_dialog~ (or EOF,
+which cancels). A command is:
+
+| input        | effect                                                     | ~$reason~ |
+|--------------+------------------------------------------------------------+-----------|
+| ~KEY~        | activate KEY: press a button, flip a toggle, select a       |         1 |
+|              | radio_button / list item                                    |           |
+| ~KEY=VALUE~  | set KEY's value — an edit_box / slider change (~$reason~ 2), |     2 / 1 |
+|              | or a list_box / popup_list / toggle selection (~$reason~ 1) |           |
+| ~KEY==VALUE~ | double-click select KEY                                     |         4 |
+| ~KEY!~       | KEY loses focus after the edit                              |         3 |
+
+A ~list_box~ / ~popup_list~ value is the selected item's 0-based *index*
+(a name is resolved to its index); ~get_tile~ returns that index string,
+as in AutoCAD/BricsCAD. A ~radio_column~ / ~radio_row~ with its own key
+returns the selected ~radio_button~'s key from ~get_tile~. The predefined
+clusters (~ok_cancel~, ~ok_only~, ~ok_cancel_help~, …) expand into real
+~accept~ / ~cancel~ / ~help~ button tiles, so ~(action_tile "accept" …)~
+is reachable.
+
+*Driving the ncurses dialog.* The ncurses renderer draws the tiles
+full-screen with one tile *focused* (shown in the selection face), and you
+interact with keystrokes. The focus ring is the interactive tiles in source
+order. Keys common to every widget: ~Tab~ (and ~Down~, except inside a list)
+move focus forward, ~Up~ moves it back, ~Esc~ cancels the dialog (status 0),
+and running out of input (EOF) also cancels. Per widget, the focused tile
+responds to:
+
+| widget              | keys                          | effect / ~$reason~                         |
+|---------------------+-------------------------------+--------------------------------------------|
+| button / image_button | ~Enter~ / ~Space~           | fire its action (accept → 1, cancel → 0)   |
+| toggle              | ~Enter~ / ~Space~             | flip ~[ ]~ ↔ ~[x]~ (selection, ~$reason~ 1) |
+| radio_button        | ~Enter~ / ~Space~             | select (mutually exclusive in its cluster) |
+| edit_box            | printable keys / ~Backspace~  | type / delete a character (~$reason~ 2);   |
+|                     |                               | ~Enter~ commits (lost focus, ~$reason~ 3)  |
+| slider              | ~Left~ / ~Right~              | step, clamped to min/max (~$reason~ 2)     |
+| list_box            | ~Up~ / ~Down~                 | move the selection (stores the index);     |
+|                     |                               | the selected row is marked ~>~; ~Tab~ leaves |
+| popup_list          | ~Up~ / ~Down~                 | cycle the selection (shows the item text)  |
+
+The stored tile values and ~$reason~ codes are exactly those of the line
+renderer above — ~get_tile~ returns the same index string for a list, the
+selected key for a ~radio_column~, and so on — so an AutoLISP program behaves
+identically under either terminal renderer. (A ~Space~ typed in a focused
+~edit_box~ is text, not an activation; leave the box with ~Tab~ then act.)
+
+See ~examples/all-widgets/~ (one of every tile type, with a labelled
+value report you can diff against AutoCAD / BricsCAD) and
+~examples/greet~ / ~examples/listpick~.
+
+Each example loads its ~.dcl~ by a *relative* name, so *run it from its own
+directory* — clautolisp resolves a relative ~load_dialog~ against the current
+working directory (in AutoCAD or BricsCAD, put the directory on the support
+path instead). All three run headless:
+
+#+begin_example
+cd examples/greet
+printf 'name=Claude\nshout=1\naccept\n' | clautolisp -norc -q --dcl tui -l greet.lsp
+   => Hello, CLAUDE!
+#+end_example
 
 ** Interactive user input (~get*~ functions)
 AutoCAD and BricsCAD gather the answers to the interactive input
@@ -600,7 +1878,7 @@ drawing editor: a command-line prompt combined with pointer and keyboard
 interaction in the drawing window. That is implicitly a GUI.
 
 clautolisp is a terminal program with no drawing editor. Under the
-MockHost (the default) each ~get*~ call writes its prompt to standard
+cador (the default host) each ~get*~ call writes its prompt to standard
 output and reads one line of text from standard input — a TUI
 interaction. In the interactive REPL that line is what you type at the
 terminal after the calling form; with ~--mock-input PATH~ the lines are
@@ -689,25 +1967,218 @@ no probing:
 #+END_SRC
 
 ** Source-file and terminal encoding
-- ~-e ENC~                :: Set the default source-file encoding for
+- ~-Esource ENC~          :: Set the default source-file encoding for
                              every ~load~ in the session, including
                              nested ~(load …)~ calls from init files.
                              ENC is one of ~utf-8~, ~iso-8859-1~,
                              ~latin-1~, ~windows-1252~, ~cp1252~.
-                             Overrides the dialect default and the
-                             POSIX-locale guess (~LC_ALL~ /
+                             Overrides LISPSYS, the dialect default and
+                             the POSIX-locale guess (~LC_ALL~ /
                              ~LC_CTYPE~ / ~LANG~). Surfaced to user
                              code as the ~*AUTOLISP-FILE-ENCODING*~
-                             global.
-- ~-E ENC~                :: Declared terminal-IO encoding for the
-                             session. Surfaced to user code as the
-                             ~*AUTOLISP-TERMINAL-ENCODING*~ global so
-                             code that emits raw bytes can adapt. No
-                             stream rebinding is performed at the CL
-                             level — set this when your downstream
-                             tooling needs the declared encoding to
-                             match what you actually emit. Same ENC
-                             vocabulary as ~-e~.
+                             global. (The old ~-e~ is gone.)
+- ~-Eterminal ENC~ (~-Eterminal-in~ / ~-Eterminal-out~) :: The
+                             encoding of the REPL's own standard
+                             input / output / error: clautolisp reopens
+                             them in ENC (on Windows it sets the console
+                             code page), as alfe does. Also surfaced to
+                             user code as ~*AUTOLISP-TERMINAL-ENCODING*~.
+- ~-Efile ENC~ (~-Efile-read~ / ~-Efile-write~) :: The encoding ~open~
+                             uses when the program names none (no
+                             encoding argument, no ~ccs=~), surfaced as
+                             ~*AUTOLISP-FILE-READ-ENCODING*~ and
+                             ~*AUTOLISP-FILE-WRITE-ENCODING*~ (empty when
+                             not given; ~setq~-able). They come before
+                             ~*AUTOLISP-FILE-ENCODING*~ and the dialect
+                             default.
+- ~-E ENC~ / ~--encoding ENC~ :: Every situation at once -- ~source~ and
+                             ~terminal~ included; an option naming a
+                             situation wins over it, whatever the order.
+                             An unknown ~-E<name>~ is an error listing
+                             the situations (~--list-situations~).
+- ~-Ereplacement R~ / ~--encoding-replacement R~ :: What a write puts in
+                             place of a character its encoding cannot
+                             hold. See /Characters the encoding cannot
+                             hold/ below. Surfaced as
+                             ~*AUTOLISP-ENCODING-REPLACEMENT*~.
+- ~-Efile-write-replacement R~ / ~--file-write-encoding-replacement R~ :: The
+                             same for the files ~open~ makes only
+                             (~*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*~).
+- ~-Eterminal-out-replacement R~ / ~--terminal-output-encoding-replacement R~ :: The
+                             same for the terminal only
+                             (~*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*~).
+
+*** Characters the encoding cannot hold
+A file written in windows-1252 -- the vendors' default write -- cannot hold
+~(chr 300)~ (Ĭ) or U+4E2D (a CJK ideograph). No CAD signals; each writes something else in its
+place (measured 2026-11-03, catalogue cases 535-545):
+
+| engine                 | ~(write-line (chr 300) f)~ | ~(write-line (strcat "a" (chr 20013) "b") f)~ |
+|------------------------+----------------------------+-------------------------|
+| AutoCAD 2022           | ~,~ (the low byte, 44)     | ~a-b~                   |
+| BricsCAD V25 Windows   | ~I~ (best fit)             | ~a?b~                   |
+| BricsCAD V26 macOS     | ~\U+012C~                  | ~a\U+4E2Db~             |
+
+clautolisp decides with a /replacement policy/, the value R of
+~-Ereplacement~ and of the globals it seeds:
+
+| R           | written in place of the character                                    |
+|-------------+----------------------------------------------------------------------|
+| one char    | that character, e.g. ~?~                                             |
+| ~error~     | nothing: an AutoLISP error, before any of the text is written        |
+| ~low-byte~  | the character whose code is the low byte of the code point (AutoCAD) |
+| ~best-fit~  | the unaccented letter when the encoding has it, else ~?~ (BricsCAD on Windows) |
+| ~escape~    | the characters ~\U+XXXX~ (BricsCAD on macOS)                         |
+
+Without the option, the clautolisp system variable
+~CLAUTOLISPENCODINGREPLACEMENT~ decides -- its initial value is the
+environment variable of the same name, ~""~ (the default) leaving it to the
+dialect -- and then the dialect: each vendor dialect does what its CAD does
+(~--dialect autocad~ keeps the low byte, ~--dialect bricscad~ best-fits on
+Windows and escapes on macOS and Linux -- ~bricscad-mac~, ~bricscad-linux~),
+and ~--dialect clautolisp~ writes the escape, as BricsCAD V26 does: nothing is
+lost and it reads back unambiguously. ~--strict~ and ~--lax~ do as
+~--dialect clautolisp~.
+
+A substitution prints the ~[encoding-replacement]~ warning the first time a
+calling function makes a builtin substitute, under every dialect but ~--lax~
+-- the three CADs disagree, so the text will not read back the same elsewhere
+(the dialect-warnings annex, ~[encoding-replacement]~). Portable code wraps
+such writes, or opens its file in a Unicode encoding.
+
+With ~error~ the write signals an ordinary AutoLISP error: ~*error*~ sees
+it and ~vl-catch-all-apply~ catches it. It names the character and the
+encoding, and nothing of the text is written:
+
+#+BEGIN_SRC autolisp
+(setq *AUTOLISP-ENCODING-REPLACEMENT* "error")
+(setq f (open "log.txt" "w"))            ; windows-1252 under --dialect autocad
+(vl-catch-all-apply 'write-line (list (chr 300) f))
+;; => #<%catch-all-apply-error%>
+;;   "WRITE-LINE: the character U+012C cannot be encoded in CP1252."
+#+END_SRC
+
+The policy is read at each write, so a program may change it:
+~(setq *AUTOLISP-ENCODING-REPLACEMENT* "?")~, or ~'escape~ -- a string or
+a symbol; ~nil~ gives the decision back to the dialect, and a value that names
+no policy is an AutoLISP error at the next write that needs it. The
+per-situation globals ~*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*~ (files
+~open~ makes) and ~*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*~ (the terminal)
+come before ~*AUTOLISP-ENCODING-REPLACEMENT*~, and their options before
+~-Ereplacement~, whatever the order on the command line; all of them come
+before ~CLAUTOLISPENCODINGREPLACEMENT~, which a program may also ~setvar~
+(reading it for the write is not the program's use of it: no
+~[clautolisp-sysvar]~ notice).
+
+It applies to ~write-line~, ~write-char~, ~princ~, ~prin1~, ~print~ and
+~prompt~, on a file ~open~ made -- with or without an encoding argument --
+and on the terminal. An explicit external format that carries its own
+replacement keeps its precedence: ~(open f "w" "(:cp1252 :replacement
+#\\?)")~ writes ~?~ whatever the policy says. A UTF-8 file holds every
+character, so nothing is replaced there. Reading is not concerned: an invalid
+byte sequence in a file read is decoded as described above.
+
+*** Under the AutoCAD dialects, LISPSYS decides
+As on AutoCAD 2021 and later, the default encoding of the source files
+~load~ reads -- and of the files ~open~ opens for *reading* without an
+encoding argument -- is the one ~LISPSYS~ selects: ~1~ or ~2~ (a new
+installation's value), UTF-8; ~0~, the ANSI code page windows-1252, for
+code bases written in it. Before 2021 (~--dialect autocad-2020~ and
+earlier) there is no ~LISPSYS~ and the default is windows-1252.
+
+Two details are AutoCAD's, measured on AutoCAD 2022: at UTF-8 a source file
+that is *not* valid UTF-8 -- an old windows-1252 file -- is read as
+windows-1252 instead of failing, and at windows-1252 a UTF-8 byte-order mark
+is skipped (the rest is still read as windows-1252). Both hold for ~load~
+without an encoding argument; ~(load "x" nil "utf-8")~ means exactly UTF-8.
+
+~open~ follows AutoCAD 2022 too (measured, E1, 2026-10-06; clautolisp
+2.2.222):
+
+| at ~LISPSYS~ 1 / 2         | clautolisp under the AutoCAD dialects                                 |
+|----------------------------+-----------------------------------------------------------------------|
+| ~(open f "w")~             | writes windows-1252 -- at *every* ~LISPSYS~ level, 0 included         |
+| ~(open f "w" "utf8")~      | writes UTF-8, no byte-order mark                                      |
+| ~(open f "w" "utf8-bom")~  | writes a byte-order mark (EF BB BF), then UTF-8                       |
+| ~(open f "r")~             | BOM skipped; UTF-8 if the file is valid UTF-8, else windows-1252      |
+| ~(open f "r" "utf8")~      | strict: a BOM reads as the character 65279, and the data ends at the |
+|                            | first byte that is not UTF-8 (~read-char~ / ~read-line~ return ~nil~) |
+
+So ~LISPSYS~ changes what ~open~ *reads* by default, never what it
+*writes*: AutoCAD writes windows-1252 unless the program asks for ~"utf8"~
+or ~"utf8-bom"~. Under these dialects only ~-Efile-write~ (or ~(setq
+*AUTOLISP-FILE-WRITE-ENCODING* "UTF-8")~) or an explicit ~-Esource~
+change the default write; ~(setq *AUTOLISP-FILE-ENCODING* ...)~ does not.
+At ~LISPSYS~ 0 the default read is plain windows-1252, and AutoCAD rejects
+the encoding argument ("too many arguments"); clautolisp still honours it
+as at 1 / 2, with a warning. ~"utf8-bom"~ writes its mark only with mode
+~"w"~ (an append was not measured). The other dialects (BricsCAD,
+~strict~, ~clautolisp~, ~lax~) are unchanged: no mark for ~"utf8-bom"~,
+and the default read and write follow ~*AUTOLISP-FILE-ENCODING*~.
+
+And as on AutoCAD, ~LISPSYS~ is *persisted*: ~(setvar "LISPSYS" 0)~ saves
+it in the registry -- the Windows registry, the macOS defaults database, or
+~$XDG_CONFIG_HOME/clautolisp/registry.sexp~ on Linux, under
+~HKEY_CURRENT_USER\Software\clautolisp\Variables\AutoCAD~ -- and it
+takes effect at the *next* launch, which reads it back. Each product has its
+own value: an AutoCAD dialect's ~LISPSYS~ does not change the BricsCAD
+dialects. ~-Esource~ still overrides it, and the POSIX locale plays no part
+under the AutoCAD dialects (AutoCAD does not consult it).
+
+#+BEGIN_SRC autolisp
+(setvar "LISPSYS" 0)   ; this code base is windows-1252: from the next launch,
+                       ; (load ...) under --dialect autocad decodes cp1252
+#+END_SRC
+
+*** Writing sources that load on every engine
+If your sources are going to be loaded by a CAD host as well as by
+clautolisp, write them as *UTF-8 with a byte-order mark*. That is the
+one spelling every post-2021 engine identifies without guessing.
+
+The reason is a rule of the CAD engines, not of clautolisp, and it is
+worth knowing because it fails silently. ~open~ gained an encoding
+argument in AutoCAD 2021 and BricsCAD V21 (~"utf8"~, ~"utf8-bom"~,
+~"utf16-bom"~), but ~load~ never did: the encoding of a source file is
+decided by its first bytes alone. With no BOM the host system codepage
+decides — and as Bricsys puts it, "UTF-8 without BOM can not be
+distinguished from normal ANSI".
+
+So a source written as UTF-8 without a mark loads correctly wherever the
+host codepage happens to match the author's, and wrongly elsewhere: on
+macOS, where ~SYSCODEPAGE~ is MAC_ROMAN, the same bytes decode to
+different characters. Nothing raises an error — the file reads, the
+program runs, and the strings are wrong. A BOM removes the guess.
+
+The full rules, with the vendor sources, are in the ~open~ and ~load~
+entries of the AutoLISP specification.
+
+*** Line breaks inside a string literal
+A string literal may span several lines, as in Common Lisp; the line
+break, and the indentation of the lines that follow, are part of the
+string:
+
+#+BEGIN_SRC autolisp
+(setq s "ab
+cd")
+(vl-string->list s)                ; => (97 98 10 99 100)
+#+END_SRC
+
+AutoCAD and BricsCAD read it the same way, and a CR LF line ending is a
+single line feed (code 10) in all three. One case differs: a *carriage
+return alone* (code 13, not followed by a line feed), which a
+half-converted file can hold. ~read~ keeps it in every engine, and so
+does clautolisp, silently. ~load~ keeps it in AutoCAD and turns it into a
+line feed in BricsCAD, so clautolisp's ~load~ follows the dialect -- a
+line feed under ~--dialect bricscad~, the CR everywhere else -- and warns
+in every dialect but ~--lax~:
+
+#+BEGIN_EXAMPLE
+[lone-cr-in-string] menu.lsp:12: a carriage return alone inside a string literal is kept as CR (code 13) here; AutoCAD keeps it, BricsCAD reads it as a line feed
+#+END_EXAMPLE
+
+Write ~\r~ or ~\n~ to say which one you mean. The measurements are in the
+String Literal entry of the AutoLISP specification; the warning is
+described in the dialect-warnings annex.
 
 *** Launch-chain resolution and the degenerate case
 At startup the runtime resolves the file encoding via
@@ -758,12 +2229,294 @@ encoding its source files use.
 The full design rationale is in
 ~issues/closed/encoding-dispatch.issue~ §"Degenerate launch case."
 
+*** Which encodings you actually get (and why it no longer depends on the host)
+Run ~clautolisp --list-encodings~ for the catalogue on the machine in
+front of you. It has up to three sections: the mandatory four, whatever
+else the underlying Common Lisp implementation ships, and — since
+1.8.28 — a *Provided by clautolisp* section.
+
+That last section exists because the codec set a Common Lisp
+implementation ships is its own business, and the two clautolisp
+supports disagree badly. Measured:
+
+| encoding         | SBCL | CCL |
+|------------------+------+-----|
+| CP-1252          | yes  | no  |
+| CP-1250/51/53/54 | yes  | no  |
+| KOI8-R           | yes  | no  |
+| CP-932           | yes  | yes |
+
+So ~(open "f" "w" "CP-1252")~ — an ordinary call naming the historic
+Windows ANSI code page — used to work when clautolisp ran on SBCL and
+signal when it ran on CCL. That is a host artefact leaking into the
+language. clautolisp now carries its own single-octet codec and uses it
+exactly where the host has none, so the same AutoLISP program behaves
+the same way on every host. Nothing changes where the host does ship
+the encoding: the native path is used unchanged.
+
+The built-in codec covers single-octet encodings only. That is the
+range over which a byte offset and a character offset coincide, which
+is what keeps the wrapper exact; it also happens to cover every gap
+measured above. A multi-byte encoding neither the host nor clautolisp
+provides (CP-950, say) still fails, rather than half-working — you get
+an ~enc-unsupported-target~ diagnostic naming it.
+
+*** Encoding names the hosts spell differently
+A codec the host *does* ship can still be out of reach, if the two
+hosts register it under different names. Mac Roman is the case in
+point — and unlike the code pages above it cannot be repaired with a
+codec of our own, because babel (which every table in the built-in
+codec is derived from) ships no Mac Roman mapping at all:
+
+| spelling    | SBCL | CCL | babel |
+|-------------+------+-----+-------|
+| ~MAC-ROMAN~ | yes  | yes | no    |
+| ~MACINTOSH~ | yes  | yes | no    |
+| ~MACROMAN~  | no   | yes | no    |
+
+So — since 1.8.44 — clautolisp normalises the spelling instead, and
+every path that takes an encoding name accepts every spelling in
+circulation: the ~-e~ / ~-E~ options, ~(open path mode ENCODING)~, and
+~(load path [onfailure] ENCODING)~. Case, dashes, underscores and
+spaces are all ignored, so ~"mac-roman"~, ~"MACROMAN"~, ~"Mac Roman"~,
+~"macintosh"~, ~"x-mac-roman"~ and ~"CP-10000"~ all resolve to the
+~:MAC-ROMAN~ external-format both hosts accept.
+
+This matters most on macOS: BricsCAD there reports
+~(getvar "SYSCODEPAGE")~ as ~"MAC_ROMAN"~, so
+
+#+begin_src lisp
+(setq *AUTOLISP-FILE-ENCODING* (getvar "SYSCODEPAGE"))
+#+end_src
+
+is the obvious thing for portable user code to write. Before 1.8.44 it
+resolved to a keyword SBCL does not register, and the next ~LOAD~ died
+with =Undefined external-format: :MACROMAN= — on an SBCL build only.
+
 ** Informational
 - ~--version~            :: Print =clautolisp <version>= on standard
                             output and exit 0. The version is the
                             value of ~clautolisp.tools.clautolisp:*version*~
                             (format ~MAJOR.MINOR.DEVELOP~).
 - ~--help~               :: Print a short usage summary and exit 0.
+- ~--list-dialects~      :: Print every name accepted by ~--dialect~ —
+                            ~strict~ first, ~lax~ last — one per line,
+                            and exit 0. The reliable way to discover
+                            the versioned vendor names rather than
+                            guessing at a spelling.
+- ~--list-situations~    :: Print the encoding *situations* — the
+                            channels settable with
+                            ~-E<situation>[-<dir>]~ or
+                            ~--<situation>[-<dir>]-encoding~ — with
+                            their defaults, and exit 0. Given a backend
+                            flag it prints that backend's defaults and
+                            where each one comes from, which is what
+                            you want when a file reads correctly under
+                            one backend and not another. See
+                            /Source-file and terminal encoding/ above.
+
+* Init files
+
+At startup, before the first ~-l~ / ~-x~ / positional file, and before
+the REPL, clautolisp loads your /init files/: AutoLISP files where you
+put the definitions, variables and settings you want in every session.
+It looks for four of them, in this order, and loads *every one that
+exists* (not only the first found), so a later file can redefine what
+an earlier one defined:
+
+| order | file                                    | shared with alfe |
+|-------+-----------------------------------------+------------------|
+|     1 | =~/.autolisp=                           | yes              |
+|     2 | =~/.config/autolisp/init.lsp=           | yes              |
+|     3 | =~/.clautolisp=                         | no               |
+|     4 | =~/.config/clautolisp/init.lsp=         | no               |
+
+The first two are shared with alfe, which loads them too (alfe's own
+pair is =~/.alfe= and =~/.config/alfe/init.lsp=); put there what both
+programs should see, and in the =clautolisp= pair what only clautolisp
+should see. The =~/.config/= paths are fixed: they do not follow
+=$XDG_CONFIG_HOME=.
+
+*Which file is loaded for each entry.* Each line of the table is a
+/stem/, completed as follows:
+
+- =~/.autolisp= and =~/.clautolisp= may be used as they are, without an
+  extension; when such a file exists, it is the one loaded;
+- otherwise the stem with the extension =.lsp= (=~/.autolisp.lsp=,
+  =~/.clautolisp.lsp=), or a compiled form of it with the extension
+  =.fas=, =.des= or =.vlx= -- the compiled form is chosen only when it is
+  more recent than the =.lsp=, so editing the source makes clautolisp
+  use it again until you recompile;
+- in =~/.config/autolisp/= and =~/.config/clautolisp/=, the file must
+  have an extension: =init.lsp= (or =init.fas=, =init.des=,
+  =init.vlx=); a file named just =init= is ignored.
+
+There are no =rc= variants: =~/.clautolisprc= and =~/.autolisprc= are
+not read. (The =--help= text of clautolisp up to 2.3.25 said otherwise.)
+
+*Skipping them.* ~-norc~ / ~--no-init~ skips all four, as does setting
+=$AUTOLISP_NO_INIT= or =$CLAUTOLISP_NO_INIT= to =1= (or =yes=, =true=,
+=on=). Scripts, Makefiles and tests should always pass ~--no-init~, so
+that a personal init file cannot change their results. The variable
+~*AUTOLISP-NO-INIT*~ tells AutoLISP code whether the init files were
+skipped (see /Image-introspection variables/). When alfe drives
+clautolisp, it passes ~--no-init~ to it: in an alfe session, only
+alfe's init files run.
+
+*Errors.* An init file is loaded like any other file, under the
+selected dialect and source encoding, with ~*AUTOLISP-LOAD-PATHNAME*~
+naming it while it loads. An error in one -- a missing
+parenthesis, a failing call -- stops clautolisp before it runs your
+actions or opens the REPL, with the error message naming the file and
+the line (exit status 65 for a read error). Start with ~--no-init~ to
+get a REPL anyway and fix the file.
+
+*Other startup files.* After the init files, clautolisp runs the CAD
+products' own startup files found on the support path (~acad.lsp~,
+~acaddoc.lsp~, ~on_start.lsp~, ~on_doc_load.lsp~…, depending on the
+dialect; see /Host backend/), then ~S::STARTUP~ when it is defined;
+~--no-init~ skips them too. The REPL and debugger /settings/ are not
+kept in init files but in =lisp.conf= and =aldo.conf= (see
+/Settings and configuration/).
+
+A small init file, for example:
+
+#+begin_src autolisp
+;;; ~/.clautolisp -- loaded by every clautolisp session
+(setq *AUTOLISP-DIALECT* 'clautolisp)   ; clautolisp extensions, no warnings
+(defun c:hello () (princ "Hello!") (princ))
+(princ)
+#+end_src
+
+* Environment variables
+Two kinds live here, and the difference matters: *knobs* you set to
+change what clautolisp does, and *probes* clautolisp reads to find out
+where it is running. Setting a probe is legitimate — it is how you
+correct a wrong guess — but it is not its purpose.
+
+** Knobs
+- ~$CLAUTOLISP_GUI~ :: DCL GUI driver command, used when ~--gui~ is
+  omitted. See /DCL dialogs/ above.
+- ~$CLAUTOLISP_DCL_DEBUG~ :: when set and non-empty, trace the DCL
+  subprocess renderer on standard error, each line prefixed
+  ~[dcl-debug]~. The first thing to set when a dialog does not appear
+  or the driver does not shut down.
+- ~$CLAUTOLISP_BACKGROUND~ :: ~dark~ or ~light~; overrides the detected
+  terminal background. See /Colour output/ above.
+- ~$CLAUTOLISP_DEBUG_PATHMAP~ :: when set to any value, dump the
+  build and run path-mapping frames at startup. See /Paths on Windows/.
+- ~$CLAUTOLISP_DWG_LIBDIR~ :: explicit directory for the DWG codec
+  shared library, tried *first* of all. The way to point clautolisp at a
+  codec you built yourself. The full search order is:
+
+  1. ~$CLAUTOLISP_DWG_LIBDIR~ — your explicit instruction;
+  2. the *running program's own* ~lib/clautolisp/<os>/<arch>/~, found
+     from the program's location, so an unpacked release works wherever
+     it was unpacked;
+  3. the development tree (a checkout's ~drawing-dwg/source/~);
+  4. the installed ASDF source prefix.
+
+  A library shipped beside the program belongs to that program, which is
+  why it outranks a build tree that merely happens to be on the same
+  machine. Running from a checkout you lose nothing: the host Lisp owns
+  no ~lib/clautolisp/…~, so the development tree is still what gets
+  found.
+
+  Each candidate in turn is *loaded*, not merely looked for, and the
+  first one that actually loads wins. A candidate that exists but cannot
+  be used — on MS-Windows, typically a ~clal_dwg.dll~ with no libredwg
+  DLL beside it — is reported on ~*error-output*~ as =skipped the DWG
+  native library … : …=, with the dynamic loader's own words, and the
+  search goes on.
+
+  On MS-Windows the codec's own dependency is pre-loaded from beside it,
+  because a DLL carries no rpath and that directory is not on ~PATH~. Its
+  name is toolchain-dependent — MSYS2 links it ~msys-redwg.dll~, others
+  ~libredwg-0.dll~, ~cygredwg-0.dll~ or ~libredwg.dll~ — so any ~.dll~
+  beside the codec whose name contains ~redwg~ is taken as it. So a broken build neither hides a working codec nor
+  passes unnoticed. When no candidate loads, the error names every one
+  that was tried and why each failed.
+- ~$CLAUTOLISP_PREFIX~ :: the ~$PREFIX~ used to build the trusted
+  search path for ~findtrustedfile~ and secure loading; omitted from
+  the path when unset.
+- ~$CLAUTOLISPCASEINSENSITIVEPATHS~ :: initial value of the system
+  variable of the same name; ~1~ resolves every path against the
+  filesystem without regard to case, and returns real names. See /Paths
+  whose case does not match the disk/. It carries the sysvar's exact
+  name, with no underscores — that is how the variables that seed a
+  system variable are spelled here, as against clautolisp's own
+  ~$CLAUTOLISP_*~ knobs. Honoured under every dialect but ~--strict~,
+  the CAD emulation dialects included.
+- ~$CLAUTOLISPNEWDRAWINGTEMPLATE~ :: initial value of the system
+  variable of the same name — the drawing a *new* document is created
+  from (its header, symbol tables and block definitions), or empty (the
+  default) for the empty document clautolisp has always started with. A
+  relative name is resolved against ~$TEMPLATEPATH~, BricsCAD's Templates
+  folder. This variable, not the sysvar, is what governs the *startup*
+  document, which exists before any AutoLISP can run; the sysvar governs
+  documents opened later in the session. A drawing created from a template
+  keeps its entities through a DWG round trip — see /The ActiveX / COM
+  object model/ above for why.
+- ~$CLAUTOLISPENCODINGREPLACEMENT~ :: initial value of the system variable
+  of the same name: what a write puts in place of a character its encoding
+  cannot hold -- one character, ~error~, ~low-byte~, ~best-fit~ or ~escape~
+  (see /Characters the encoding cannot hold/). Empty, or a value naming no
+  policy, leaves it to the dialect.
+- ~$CLAUTOLISP_REGISTRY_FILE~ :: a file to use as the registry store
+  instead of the platform's real one -- the Windows registry, the macOS
+  defaults database, or ~$XDG_CONFIG_HOME/clautolisp/registry.sexp~ --
+  on every platform. ~vl-registry-read~ / ~-write~, the persisted
+  ~LISPSYS~ and ~TEMPPREFIX~ then read and write that file. The test suites
+  set it, so they never touch a real registry; use it the same way to try
+  a ~LISPSYS~ setting without changing your machine's.
+- ~$CLAUTOLISPDEFAULTDRAWINGFORMAT~ :: initial value of the system
+  variable of the same name — the file format a drawing is *written* in
+  when neither the destination extension nor the drawing itself selects
+  one (~SaveAs~ to a path with no ~.dxf~ / ~.dwg~ suffix, or a
+  never-saved drawing). A *container* — ~DXF~ (ASCII, the default),
+  ~DXFB~ (binary DXF) or ~DWG~ — optionally with a *version*
+  (~DWG-2013~, ~DXF2000~, ~DWG-R12~), case-insensitive; an unrecognised
+  container is taken as ~DXF~, an absent version means the newest. A
+  recognised extension always wins over it. Shared by ~--host cador~ and
+  ~--host cadtui~. Under a ~--bricscad~ dialect the vendor ~SAVEFORMAT~
+  system variable is consulted instead (AutoCAD has no such sysvar). The
+  version sets the emitted DXF ~$ACADVER~ (and, for DWG, is carried through
+  libredwg). Precedence: ~setvar~ > this variable > the ~DXF~ default.
+- ~$AUTOLISP_NO_INIT~, ~$CLAUTOLISP_NO_INIT~ :: equivalent to
+  ~-norc~ / ~--no-init~.
+- ~$NO_COLOR~ :: disable ANSI colour ([[https://no-color.org][no-color.org]]).
+- ~$XDG_CONFIG_HOME~, ~$XDG_CONFIG_DIRS~ :: where ~lisp.conf~ and
+  ~aldo.conf~ are read and written.
+- ~$XDG_DATA_HOME~ :: contributes ~$XDG_DATA_HOME/autolisp/~ to the
+  trusted search path (falling back to ~$HOME/.local/share~).
+- ~$XDG_STATE_HOME~ :: where the default dribble file is written.
+
+** Probes
+- ~$LC_ALL~, ~$LANG~, ~$LC_CTYPE~ :: consulted in that order for the
+  default source and terminal encoding when ~-e~ / ~-E~ are absent.
+- ~$LC_ALL~, ~$LC_TIME~, ~$LANG~ :: consulted in that order for the language
+  of the day and month names that DIESEL's ~edtime~ prints, through
+  ~(menucmd "M=$(edtime,…)")~. A locale starting with ~fr~ gives French
+  (~Mardi, 29 Septembre 2026~), as a French AutoCAD does; any other gives
+  English. AutoCAD names them in its product language, and clautolisp's
+  product language is its locale.
+- ~$COLORFGBG~, ~$TMUX~ :: consulted, after ~$CLAUTOLISP_BACKGROUND~,
+  to work out whether the terminal is dark or light.
+- ~$COLUMNS~ :: the width the debugger's ~:column~ directory listing
+  fills, when it parses as an integer above 20; otherwise 80. A dumb
+  terminal often cannot report its size, which is why this is read at
+  all.
+- ~$MSYSTEM~, ~$OSTYPE~ :: detection inputs for classifying the run
+  environment on Windows (MSYS2 / Cygwin / WSL / native). If
+  ~$CLAUTOLISP_DEBUG_PATHMAP~ shows a classification you did not
+  expect, these are what produced it.
+- ~$HOME~, ~$PATH~, ~$SHELL~ :: the usual meanings. ~$SHELL~ is the
+  shell the ~!~ escape runs your command in.
+
+** Build-time
+- ~$CLAUTOLISP_STRICT_BUILD~ :: when set to 1, a build that produces
+  any non-style warning aborts instead of completing with the warnings
+  merely logged. Read by the build, not by the program.
 
 * Image-introspection variables (~*AUTOLISP-…*~)
 At startup ~clautolisp~ publishes a set of globally-bound variables
@@ -851,20 +2604,36 @@ to subsequent ~boundp~/value lookups.
 
 ** Dynamic — bound only while the matching action runs
 - ~*AUTOLISP-LOAD-PATHNAME*~    :: The pathname of the file being
-                                   loaded by a ~-l~ action. Bound to
-                                   the path string for the duration
-                                   of the ~load~ call; reset to nil
-                                   on return (success or signal).
+                                   loaded, as a string, bound for the
+                                   duration of the load of /any/ file:
+                                   an init file, a ~-l~ or positional
+                                   file, or a file read by ~(load …)~.
+                                   It is always the absolute path,
+                                   even for a ~-l~ or positional file
+                                   named relatively (since 2.3.27).
+                                   nil outside any load.
 - ~*AUTOLISP-EXPRESSION*~       :: The source text of a ~-x~ action,
                                    bound while the expression is
                                    evaluated. Cleared on return.
 - ~*AUTOLISP-INTERACTIVE*~      :: T while the REPL is active.
                                    Cleared on REPL exit.
 
-Code running inside an init file can therefore distinguish "loaded
-because of ~-l init.lsp~" (~*AUTOLISP-LOAD-PATHNAME*~ points at
-~init.lsp~) from "loaded as an init file from the standard search
-path" (~*AUTOLISP-LOAD-PATHNAME*~ is nil).
+The binding of ~*AUTOLISP-LOAD-PATHNAME*~ is dynamic: when a file
+being loaded loads another one, the variable names the inner file while
+it loads, then names the outer file again, and goes back to nil once the
+outermost load returns, whether it ends normally or with an error. A
+file can therefore find the files that sit beside it:
+
+#+begin_src autolisp
+;;; main.lsp -- loads helpers.lsp from its own directory
+(load (strcat (vl-filename-directory *AUTOLISP-LOAD-PATHNAME*)
+              "/helpers.lsp"))
+#+end_src
+
+This works however the outermost file was named: ~-l main.lsp~ from
+its own directory binds the absolute path too. Only the innermost load
+is visible:
+there is no access yet to the stack of the loads in progress.
 
 * Banner
 In REPL mode (and only in REPL mode) ~clautolisp~ prints a one-line
@@ -879,21 +2648,313 @@ current build and the selected ~--dialect~ / ~--host~. Pass
 ~--quiet~ to suppress the banner.
 
 * Exit Codes
-~clautolisp~ uses the following exit codes. They are stable and may
-be relied upon by shell scripts.
+~clautolisp~ exits with the statuses below. They are stable and may be
+relied upon by shell scripts. Apart from 1 and 130, they are the
+semi-standard codes of ~<sysexits.h>~ (see ~sysexits.h(3head)~), used
+with the same values on *every* system, MS-Windows included -- a script
+that tests for 66 works everywhere.
 
-- ~0~  :: Successful completion (file or ~-x~ ran without error;
-          REPL exited cleanly via end-of-input; ~--help~ /
-          ~--version~ printed and exited; an AutoLISP ~exit~ /
-          ~quit~ termination was raised cleanly).
-- ~1~  :: A runtime error escaped the AutoLISP error-handling layer,
-          or the option parser rejected an unknown flag.
-- ~2~  :: The requested file could not be opened (caught Common-Lisp
-          ~file-error~).
+Missing and inaccessible input files both return ~EX_NOINPUT~ (66),
+including host Lisp subclasses of the standard ~file-error~ condition.
+An access error while checking the pathname is reported as permission
+denied, rather than as a missing file. On Windows, diagnostics may include
+the drive added by the host Lisp when resolving a rooted pathname.
+
+| Status | Name             | When                                                                                  |
+|--------+------------------+---------------------------------------------------------------------------------------|
+|    ~0~ | ~EX_OK~          | Success: every ~-l~ / ~-x~ ran; the REPL ended at end of input; ~--help~, ~--version~, the ~--list-...~ options. |
+|    ~1~ |                  | The AutoLISP program failed: a runtime error escaped it (~(/ 1 0)~, an undefined function...). |
+|    /N/ |                  | The program chose /N/: ~(exit N)~, ~(quit N)~, ~(autolisp-set-status N)~ -- passed through unchanged. |
+|   ~64~ | ~EX_USAGE~       | The command line is wrong: an unknown option, a missing argument, a bad option value (~--dialect nonsense~), ~--dwg~ given to a host without drawings (~--host nihil~). |
+|   ~65~ | ~EX_DATAERR~     | An input is not well formed: a ~-l~ file or a ~-x~ expression the reader refuses (unbalanced parenthesis, unterminated string, bytes that are not valid in the source encoding); a ~--dwg~ file that is not a drawing; a malformed ~--front-end-bindings~ file. |
+|   ~66~ | ~EX_NOINPUT~     | An input file cannot be opened -- it does not exist, or is not readable: the ~-l~ file, the ~--dwg~ drawing, the ~--mock-input~ file, the ~--front-end-bindings~ file. |
+|   ~69~ | ~EX_UNAVAILABLE~ | A support file is missing: the DWG native library a ~--dwg~ ~.dwg~ drawing needs. |
+|   ~70~ | ~EX_SOFTWARE~    | An internal error: a fault of clautolisp itself, not of the program it ran. Please report it. |
+|   ~73~ | ~EX_CANTCREAT~   | An output file cannot be created: the ~--dribble~ transcript. |
+|   ~74~ | ~EX_IOERR~       | An input/output error while reading or writing. |
+|  ~130~ |                  | Interrupted: Control-C under the ~quit~ interrupt policy (128 + SIGINT, the shell's own convention). |
+
+The other ~<sysexits.h>~ codes (67 ~EX_NOUSER~, 68 ~EX_NOHOST~, 71
+~EX_OSERR~, 72 ~EX_OSFILE~, 75 ~EX_TEMPFAIL~, 76 ~EX_PROTOCOL~, 77
+~EX_NOPERM~, 78 ~EX_CONFIG~) are never chosen by clautolisp: it looks up
+no user or host, an unreadable input file is ~EX_NOINPUT~ as
+~<sysexits.h>~ says, and a configuration file (~aldo.conf~, ~lisp.conf~)
+that cannot be read is ignored rather than fatal. alfe, which drives CAD
+programs, uses some of them (see the alfe manual).
+
+Why 1 for a failing program, and not a ~<sysexits.h>~ code: the
+~<sysexits.h>~ codes say what kept a program from running properly -- a
+bad command line, a missing input, a broken installation. When the
+command line was right, the files were there and clautolisp worked, but
+the AutoLISP program itself signalled an error, the /program/ failed,
+and 1 is what a failing program conventionally returns (a test runner,
+~false~, ~grep~ finding nothing). Keeping it at 1 also keeps the meaning
+of 1 that scripts and CI jobs already test for.
+
+Before clautolisp 2.2.215 the codes were 1 for a runtime error, a usage
+error and every other failure alike, and 2 for a file that cannot be
+opened. A script that tested for 2 must now test for 66 (and may tell a
+usage error, 64, apart from a failing program, 1).
 
 Within the REPL, individual evaluation errors are reported but do
 *not* terminate the loop; the binary will still exit 0 once stdin
 closes.
+
+** Choosing your own exit status
+The codes above are what clautolisp itself produces. An AutoLISP
+program can also *choose* the status, through a small channel that
+mirrors the one the CAD engines' bootstrap provides — so a single
+~run-tests.lsp~ or ~C:MAIN~ is portable across BricsCAD, AutoCAD and
+clautolisp with no per-engine branch:
+
+- ~(autolisp-set-status N)~ :: record integer ~N~ as the pending exit
+  status, and return it. Nothing terminates.
+- ~(autolisp-status)~ :: read the pending status back; 0 when it was
+  never set.
+- ~(quit [N])~ :: with an argument, terminate with exit code ~N~;
+  without one, terminate with the *pending* status. ~(exit [N])~ takes
+  the same optional argument and behaves identically.
+
+So the status can be decided early and consumed later, which is the
+usual shape of a test script:
+
+#+BEGIN_SRC autolisp
+(autolisp-set-status (if all-tests-passed 0 1))
+;; … more work, possibly in another function …
+(quit)                       ; exits 1 if a test failed
+#+END_SRC
+
+These three are *clautolisp extensions*. They are available under the
+~clautolisp~ dialect and usable under ~lax~; under ~strict~, ~autocad~
+or ~bricscad~ they still work but emit the ~[exit-status-extension]~
+portability diagnostic, like every other out-of-dialect extension (see
+/Errors and Diagnostics/). ~autolisp-set-status~ is deliberately named
+and typed exactly like the CAD-side bootstrap function — minus its
+STATUSFILE write — while ~autolisp-status~ has no vendor counterpart and
+is clautolisp's own way of letting ~quit~ consult the pending value.
+
+Because a program may pick any integer, the guarantee stated above is
+narrower than it looks: the codes above are stable *when clautolisp
+itself decides them*. A script that calls ~quit~ with its own status
+owns the meaning of that code, and a shell caller cannot tell the two
+apart from the exit status alone.
+
+* Paths whose case does not match the disk
+A corpus written on Windows or macOS has never had its path spellings
+checked. Those filesystems fold case, so nothing there sanctions a
+mismatch: a program can write ~DIAL/SIGFIC.LSP~ in one place and
+~dial/sigfic.LSP~ in another and work. Bring it to Linux and it fails:
+
+#+begin_example
+Erreur: LOAD could not locate /…/schms/dial/sigfic.LSP
+#+end_example
+
+— while the file is there, named ~DIAL/SIGFIC.LSP~.
+
+Reading the code does not help. In the incident this feature comes from,
+the path was not a literal at all: it was derived from a class name,
+~/es/schms/dial/sigfic~, whose case is a naming convention with no
+relation to the disk.
+
+** Turning it on
+Set the system variable ~CLAUTOLISPCASEINSENSITIVEPATHS~ to ~1~ and every
+path clautolisp receives is validated against the filesystem without
+regard to case, and returned under its real name:
+
+#+begin_example
+_$ (setvar "CLAUTOLISPCASEINSENSITIVEPATHS" 1)
+1
+_$ (findfile "dial/sigfic.lsp")
+: [path-case]: FINDFILE "dial/sigfic.lsp": found as "DIAL/SIGFIC.LSP" -- the case differs, and only a case-insensitive filesystem forgives it
+"/…/schms/DIAL/SIGFIC.LSP"
+#+end_example
+
+A program can therefore switch it on for itself. To treat a whole corpus
+— a batch of inherited files, a CI job — without editing any of it, use
+the environment variable of the same name:
+
+#+begin_example
+$ CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp run.lsp
+#+end_example
+
+It applies everywhere a path goes in: ~load~, ~open~, ~findfile~, the
+~vl-file-*~ functions, ~vl-directory-files~ and ~vl-mkdir~. A uniform
+rule, so behaviour does not depend on which function you happened to
+call.
+
+** It works under the CAD dialects too
+The system variable exists under *every dialect except ~--strict~*, so
+this works:
+
+#+begin_example
+$ CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp --dialect bricscad-v26 run.lsp
+#+end_example
+
+That is the case that matters most, and it is why the variable is not
+reserved to ~--clautolisp~: you run a corpus under ~--bricscad~ or
+~--autocad~ to exercise it as it will actually run, and a corpus written
+for Windows is exactly the one whose path spellings have never been
+checked by anything.
+
+~--strict~ is the exception. It exists to report what a portable engine
+would refuse, and a path whose case does not match the disk is precisely
+that — so there, the variable does not exist and nothing is folded.
+
+*** Switching dialect at runtime moves the sysvar table with it
+
+~(setq *AUTOLISP-DIALECT* …)~ changes the dialect for everything that
+follows, and *the system-variable table follows too*: leaving ~--strict~
+reveals the clautolisp system variables, and entering the ~bricscad~
+dialect hides the ones BricsCAD does not define. Both directions.
+
+#+begin_example
+$ CLAUTOLISPCASEINSENSITIVEPATHS=1 clautolisp
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")   ; strict: not there
+nil
+_$ (setq *autolisp-dialect* 'bricscad)
+BRICSCAD
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")   ; revealed, and seeded
+1                                              ;   from the environment
+#+end_example
+
+The first time a variable is revealed it is initialised by the full
+precedence — ~setvar~ over the environment over the dialect default — so
+the environment reaches it, exactly as it would have at launch.
+
+*A value you have set is masked, not destroyed.* Passing through a
+dialect that hides the variable makes it invisible for as long as you
+are there; coming back gives you *your* value, not the environment's:
+
+#+begin_example
+_$ (setvar "CLAUTOLISPCASEINSENSITIVEPATHS" 0)
+0
+_$ (setq *autolisp-dialect* 'strict)
+STRICT
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")   ; masked
+nil
+_$ (setq *autolisp-dialect* 'bricscad)
+BRICSCAD
+_$ (getvar "CLAUTOLISPCASEINSENSITIVEPATHS")   ; your 0, not the env's 1
+0
+#+end_example
+
+A remembered value is re-applied *as a ~setvar~ would be*: under a
+dialect where the variable is absent or read-only it stays remembered
+and unapplied, rather than being forced into a cell the emulated engine
+would not have.
+
+*The default stays ~0~ under the CAD dialects as well*, and that is
+deliberate. One could argue that emulating Windows should mean folding
+case by default, since Windows filesystems do; but BricsCAD on Linux is
+not believed to fold case on a case-sensitive filesystem, so folding by
+default would be clautolisp inventing behaviour rather than reproducing
+the engine it emulates. You ask for it, explicitly, or it does not
+happen.
+
+** What it returns is the real name
+~findfile~ hands back the name *on disk*, not the one you asked with.
+This is not a detail: a resolved path is typically stored and used again,
+and returning your spelling would work once and fail on the next round.
+
+** Creating is not resolving
+The two are treated differently, deliberately. For a file that must
+exist, the whole path is resolved. For a file being *created*, the last
+component is taken exactly as you wrote it:
+
+#+begin_example
+_$ (open "Rapport.txt" "w")     ; creates Rapport.txt
+#+end_example
+
+even when a ~RAPPORT.TXT~ is sitting next to it — otherwise you would
+silently overwrite a file you never named. The directories leading to it
+are still resolved, so writing into ~dial/~ works when the disk says
+~DIAL/~. Mode ~"a"~ is the mixed case: an existing file is appended to
+under its real name; a new one is created under the name as written.
+
+** Two entries differing only by case
+On a case-sensitive filesystem ~dial/~ and ~DIAL/~ can both exist. An
+exact match always wins, without ambiguity. Failing that, a single
+case-insensitive match is taken. When several match, clautolisp *refuses
+to choose* and reports an error naming them: reading a file nobody asked
+for would be worse than the failure this feature removes.
+
+** Why it still warns
+The ~[path-case]~ diagnostic is the point, not a nuisance. A strict
+filesystem is the only one that *validates* the case of your paths — in
+the original incident the defect survived macOS development, BricsCAD and
+AutoCAD, because all three fold case, and only the Linux run revealed it.
+The warning keeps both halves: your program runs, and you learn which
+spelling is wrong and what the real name is. Without it the sysvar would
+merely sweep the problem under the carpet.
+
+** Why it is off by default
+The default is ~0~, and not out of timidity. At ~1~ a program reaches
+files an exact spelling would not have reached — ~"/ETC/PASSWD"~ becomes
+readable — so a program building paths from user input has a wider
+surface. Switching it on is a deliberate act of the program or of the
+test harness.
+
+* Paths on Windows
+On macOS and Linux this section does not apply: the mapping layer
+detects an identity environment and every path you write is used
+verbatim. It matters on Windows, where the *same machine* offers
+several incompatible ways to spell the same file.
+
+AutoLISP works with path *strings*, not Common Lisp pathnames — that is
+the vendors' API and clautolisp keeps it. But on Windows a string like
+~/c/work/a.lsp~ is meaningful in an MSYS2 shell, ~/cygdrive/c/work/a.lsp~
+in Cygwin, ~/mnt/c/work/a.lsp~ under WSL and ~C:/work/a.lsp~ to a native
+Windows program — four spellings, one file. clautolisp can also be
+*built* in one of those environments and *run* from another, so the
+form baked into the image at build time need not be the form you type at
+run time.
+
+clautolisp therefore recognises five kinds of environment — ~posix~,
+~native-windows~, ~cygwin~, ~msys2~ and ~wsl~ — and records two frames:
+the *build frame*, frozen into the image when the executable was made,
+and the *run frame*, detected at startup. Paths coming *in* (~open~,
+~load~, the file arguments of the command line) are understood in the
+frame you are actually running in, and paths going *out* — notably
+~findfile~ and ~findtrustedfile~ — are handed back in that same frame.
+The practical consequence is the one you want: *you write paths the way
+your shell spells them*, and a path that clautolisp gives you can be
+pasted straight back into that shell.
+
+The drive mappings are not guessed from convention alone. Cygwin and
+MSYS2 record the truth in ~/etc/fstab~ and WSL reports it through
+~mount~; clautolisp reads whichever applies and *prefers* it, keeping
+the conventional layout (~/cygdrive/c~, ~/c~, ~/mnt/c~) underneath for
+anything the system does not mention. So an MSYS2 installed somewhere
+other than ~C:\msys64~, a mapped network share, or an extra WSL drive
+are all handled, and a machine with no readable mount table still
+starts — it simply falls back to the conventions.
+
+To see how your host was classified, set ~CLAUTOLISP_DEBUG_PATHMAP~ to
+any value; the build and run frames are dumped to standard error at
+startup:
+
+#+BEGIN_EXAMPLE
+$ CLAUTOLISP_DEBUG_PATHMAP=1 clautolisp --version
+build-environment: kind=:MSYS2 drive-style=:POSIX-MOUNT drive-mount-prefix="/"
+    home=… mount-table=…
+    probe=…
+run-environment: kind=:MSYS2 drive-style=:POSIX-MOUNT drive-mount-prefix="/"
+    …
+#+END_EXAMPLE
+
+Each frame reports its ~kind~, how it spells drives, the mount table in
+force, and a ~probe~ plist recording what the detection actually saw —
+including how many entries came from the live system rather than the
+conventions.
+
+This is the first thing to look at if a path that works in your shell is
+not found by ~load~ or ~findfile~: it tells you whether clautolisp
+believes it is in the environment you think it is in.
+
+Two related behaviours are documented elsewhere in this manual: ~".."~
+segments are resolved uniformly and warn outside ~--lax~ (see the
+dialect diagnostics below), and relative paths resolve against the
+launch directory rather than the build directory.
 
 * Errors and Diagnostics
 - Reader errors are produced by the AutoLISP reader and surface as
@@ -909,6 +2970,79 @@ closes.
 
 The exact set of error codes lives in the runtime; see
 ~autolisp-runtime/source/api.lisp~ for the canonical mapping.
+
+** Dialect-portability diagnostics (~lambda-list-extension~, ~ext-bricscad-undocumented~)
+Separate from the encoding diagnostics below, and following the same
+advisory principle: a construct that is not portable across CAD
+vendors still *runs*, but says so on standard error when the active
+dialect targets a host that lacks it.
+
+*How to see them.* Nothing to enable — they print to *standard error*
+during a normal ~clautolisp~ or ~alfe~ run, and no quiet/verbosity
+knob suppresses them. If you have never seen one, that is the
+expected outcome of running under ~--dialect clautolisp~ or ~--lax~,
+which are deliberately quiet; run the same file under ~--strict~ (the
+default) or ~--autocad~ to surface them. Each site reports at most
+once per run, so a loop around a non-portable form warns once, and a
+form that is never reached never warns at all.
+
+*What a diagnostic looks like.* Every one is a single line carrying a
+bracketed *tag*, the place, and what is wrong:
+
+: [lambda-list-extension] drawing.lsp:12 in COMPUTE-AREA: DEFUN `&REST': rest parameter not portable to strict
+
+The *tag* is the stable identifier: it is what to grep for, and what to
+look up. The location is ~FILE:LINE in FUNCTION~ with whichever parts
+are known — the file and line require the source map (a debug load),
+while the function is always reported.
+
+The line is deliberately short, because the explanation belongs
+somewhere it can be as long as it needs to be. Every tag is documented
+in the annex /Dialect portability warnings/
+(~clautolisp-dialect-warnings.org~, shipped with the manual): what the
+construct is, exactly how each engine diverges, why it matters, and the
+reference material. The annex is *generated* from the same register the
+diagnostics are formatted from, so it cannot disagree with what you see
+on screen.
+
+The tags fall into five families:
+
+| Family             | What it means                                                 |
+|--------------------+---------------------------------------------------------------|
+| portability        | a construct one engine has and another does not               |
+| extension notice   | a clautolisp extension used outside ~--dialect clautolisp~     |
+| vendor divergence  | clautolisp follows the spec where a vendor does not           |
+| encoding           | the ~enc-*~ codes — encoding controls and codepages            |
+| trust              | the ~sec-*~ codes — SECURELOAD's warn-and-proceed path         |
+
+*Turning them into errors.* The dialect descriptor carries
+~:portability-warning-mode~, default ~:warn~. Set it to ~:error~ and
+the first non-portable construct actually reached aborts the run with
+a ~:non-portable-construct~ error instead of printing. This is
+non-conforming by design — it changes whether a program runs — so it
+is never a dialect default; it exists for a portability audit, in the
+same spirit as ~:unbound-variable-mode :strict-error~.
+
+*Constructs clautolisp declines to implement.* A few BricsCAD
+constructs are deliberately absent rather than merely unimplemented,
+and calling one prints an ~ext-bricscad-undocumented~ note explaining
+the refusal before the usual undefined-function error:
+
+- ~setf~ — on a real BricsCAD V26 this returns a constant sentinel
+  ~2~ for every value and does *not* assign, so imitating it would
+  propagate a broken operator. If clautolisp ever gains ~setf~ it
+  will be a clean generalised assignment, not this.
+- ~let*~ — BricsCAD has no ~let*~ either, so it is not a vendor
+  extension that anyone's portable code can depend on.
+
+That note is *not* dialect-gated, because the error fires under every
+dialect and a ~--dialect bricscad~ user is the likeliest to be
+surprised — on the real engine, ~setf~ does exist.
+
+The decisions behind all of this live in one table,
+~clautolisp/autolisp-runtime/source/portability.lisp~, which records
+for each construct the dialects whose host provides it, the dialects
+that stay quiet regardless, and the evidence the entry rests on.
 
 ** Encoding-dispatch diagnostics (~enc-*~)
 Each dialect dispatches a distinct diagnostic when user code uses an
@@ -987,17 +3121,15 @@ Currently wired:
   ~--strict~ (~enc-extension-used~), ~--autocad~ /
   ~--bricscad~ (~enc-foreign-dialect~), silent under
   ~--clautolisp~.
-- ~OPEN~ encoding forms, all three routed:
-  - positional ~"utf8"~ / ~"utf8-bom"~ — native under
-    ~--autocad~; foreign under ~--bricscad~ / ~--clautolisp~;
-    extension-used under ~--strict~.
-  - positional ~"UTF-8"~ / ~"UTF-8-BOM"~ / ~"CP-NNNN"~ / … —
-    native under ~--clautolisp~; foreign under ~--autocad~ /
-    ~--bricscad~; extension-used under ~--strict~.
-  - ~,ccs=ENC~ mode-suffix — native under ~--bricscad~;
-    foreign under ~--autocad~ / ~--clautolisp~; extension-used
-    under ~--strict~. The suffix is stripped from the
-    mode-string before CL ~OPEN~ sees it.
+- ~OPEN~ encoding forms (the third argument and the ~,ccs=ENC~
+  mode suffix): ~enc-foreign-dialect~ under a vendor dialect whose
+  vendor would not do the same (measured: AutoCAD 2022 at
+  ~LISPSYS~ 0 rejects any third argument, BricsCAD ignores
+  ~"utf8"~ / ~"utf8-bom"~ and rejects other names, only BricsCAD on
+  Windows honours ~,ccs=~), ~enc-extension-used~ under ~--strict~,
+  silent under ~--clautolisp~ and ~--lax~; the per-dialect table is
+  under /Where the dialect changes a returned value/. The suffix is
+  stripped from the mode-string before CL ~OPEN~ sees it.
 - ~GETVAR~ / ~SETVAR~ on ~LISPSYS~ under every dialect except
   ~--autocad~ (the native dialect of ~LISPSYS~):
   - ~--strict~ -> ~enc-extension-used~.
@@ -1070,6 +3202,16 @@ Both targets reuse the ~read-autolisp~ build harness. The SBCL build
 sets ~:save-runtime-options t~ so the saved core forwards every
 command-line argument to ~clautolisp~ rather than letting SBCL
 intercept ~--help~ or other runtime flags.
+
+~make install~ also installs the Common Lisp sources and the libraries.
+A native library that is missing — in practice the DWG codec, which only
+~clautolisp/drawing-dwg~ needs — does *not* fail the install: everything
+else is installed and a warning names the affected system and the
+commands to add it later. Pass ~REQUIRE_NATIVE_LIBRARIES=1~ to turn that
+warning back into a hard error, which is what you want when an
+incomplete tree is a defect rather than a local inconvenience; the
+release targets pass it, so a published tarball cannot silently ship
+without its codec.
 
 * Versioning
 The version string is stored in
@@ -1207,11 +3349,10 @@ The probing convention for portable code:
 ~command-s~ / ~vl-cmdf~ have routed through the host's command
 channel in this session, oldest first — a list of lists of strings,
 exactly as sent (~""~ = RETURN, ~"\\"~ = PAUSE, points as
-~"X,Y[,Z]"~). Under the MockHost, which has no command engine, this
-log is the whole observable effect of a ~command~ call — the
-deterministic assertion surface for headless test rigs. Raises
+~"X,Y[,Z]"~) — the deterministic assertion surface for headless test
+rigs, next to the drawing the executed commands changed. Raises
 ~:host-not-supported~ under a backend without a command log
-(~--host null~).
+(~--host nihil~).
 
 #+BEGIN_SRC autolisp
 $ clautolisp -x "(progn (command \"._LINE\" (list 0.0 0.0 0.0) (list 10.0 10.0 0.0) \"\") (print (clal-command-log)))"
@@ -1221,7 +3362,7 @@ $ clautolisp -x "(progn (command \"._LINE\" (list 0.0 0.0 0.0) (list 10.0 10.0 0
 *** ~CLAL-SYSVAR-LIST~ -- list every sysvar known to the host
 ~(clal-sysvar-list)~ returns a list of strings: the sysvar names
 the active host (mock or live) reports, sorted in case-sensitive
-ASCII order. On a default ~MockHost~ the list has 1836 entries --
+ASCII order. On a default cador the list has 1836 entries --
 the same universe as the autolisp-spec §16 *System Variables*
 catalogue.
 
@@ -1354,6 +3495,353 @@ a custom user command of the named interactor —
 ~"NAVI"~, ~"LAVI"~, ~"INSPECT"~, ~"AUTOLISP"~) —
 and ~(clal-define-debugger-command NAMES FN [DOC])~ is its deprecated
 ALDO-only equivalent. See /Debugger/ above.
+
+*** ~CLAL-MAKE-FRAME~ / ~CLAL-FRAME-*~ -- debugger-UI frames
+The builtins in this and the following four subsections are the
+AutoLISP surface of the debugger's terminal UI — aldo's frames,
+windows, faces and key maps. They are *no-ops that return ~nil~*
+unless a debugger UI is loaded, so a program that calls them outside
+the debugger degrades quietly. Frames and windows cross into AutoLISP
+as opaque, ~eq~-stable handles (printed ~#<WINDOW "name" …>~,
+~#<TTY-FRAME …>~ / ~#<VDT-FRAME …>~); faces are named by strings.
+
+~(clal-make-frame [OPTIONS])~ creates a frame and adds it to the frame
+list *without* selecting it, returning the new frame handle; OPTIONS
+is an alist of ~name~, ~width~, ~height~, ~(minibuffer . T)~,
+~(device . tty|vdt)~ and, for a vdt frame, ~(screen . TUI-SCREEN)~.
+~(clal-frame-list)~ returns every frame handle. ~(clal-selected-frame)~
+returns the currently selected frame (or ~nil~), and
+~(clal-select-frame FRAME)~ makes FRAME the selected one — entering or
+leaving a vdt frame's 2D mode as needed — and returns FRAME.
+~(clal-delete-frame FRAME)~ removes and deletes FRAME, selecting
+another if it was current, and returns ~nil~. ~(clal-frame-name FRAME)~
+returns FRAME's name as a string.
+
+*** ~CLAL-MAKE-WINDOW~ / ~CLAL-*-WINDOW~ -- debugger-UI windows
+~(clal-make-window [OPTIONS])~ creates a window in the *selected*
+frame, appending it to that frame's window list (the first window
+becomes the frame's selected window), and returns the window handle;
+OPTIONS is an alist of ~(name . STRING)~ and ~(role . :minibuffer)~.
+~(clal-window-list [FRAME])~ returns the windows of FRAME, or of every
+frame when FRAME is omitted, excluding minibuffer windows.
+~(clal-selected-window)~ returns the active window of the selected
+frame (or ~nil~); ~(clal-select-window WINDOW)~ makes WINDOW's frame
+current and WINDOW its selected window, returning WINDOW.
+~(clal-delete-window WINDOW)~ removes WINDOW from its frame and returns
+~nil~. ~(clal-window-name WINDOW)~ returns WINDOW's name as a string.
+~(clal-call-with-temp-window OPTIONS FUNCTION)~ creates a temporary
+window (OPTIONS as for ~clal-make-window~), applies FUNCTION to its
+handle, and deletes the window afterwards even on a non-local exit,
+returning FUNCTION's value.
+
+*** ~CLAL-DEFINE-FACE~ / ~CLAL-FACE-PARAMETERS~ / ~CLAL-LIST-FACES~ -- debugger-UI faces
+~(clal-define-face NAME [FG BG BOLD UNDERLINE INVERT])~ defines or
+redefines the face NAME (a string): FG and BG are colour-name strings
+(~"red"~, ~"white"~, …) or ~nil~, and BOLD, UNDERLINE and INVERT are
+booleans; it returns NAME. ~(clal-face-parameters NAME)~ returns the
+face's display parameters as an assoc list — pairs such as
+~("fg" . "RED")~ and ~("bold" . T)~ — or ~nil~ when NAME is not a face.
+~(clal-list-faces)~ returns the names of all defined faces as a list of
+strings. These are the AutoLISP counterpart of the ~face~ decorations
+configured in ~lisp.conf~ / ~aldo.conf~, resolved per UI to ANSI
+escapes, ncurses attributes or Emacs faces.
+
+*** ~CLAL-CLEAR-WINDOW~ / ~CLAL-MOVE-CURSOR-TO~ / ~CLAL-WINDOW-PUT~ -- drawing into a window
+~(clal-clear-window [WINDOW])~ blanks WINDOW's rectangle (default: the
+selected window) and resets its cursor to ~(0 0)~, returning the window
+handle. ~(clal-move-cursor-to ROW COL [WINDOW])~ moves WINDOW's cursor
+to the window-relative ~(ROW COL)~, clamped to its rectangle, and
+returns the window handle. ~(clal-window-put ROW COL STRING [FACE WINDOW])~
+writes STRING at the window-relative ~(ROW COL)~, clipped to the
+rectangle, in the face named FACE (default the ~normal~ face), and
+returns ~nil~. On a tty frame (a plain terminal with no addressable
+screen) ~clal-clear-window~ and ~clal-window-put~ are no-ops.
+
+*** ~CLAL-BINDING~ / ~CLAL-DEFINE-UI-COMMAND~ -- debugger-UI key bindings and commands
+~(clal-binding KEY COMMAND)~ binds KEY — an Emacs-style key-sequence
+string such as ~"C-x C-f"~ — to COMMAND in the debugger UI's *user*
+keymap, returning KEY; COMMAND is a command name/line (routed through
+the command table) or an AutoLISP function designator or form evaluated
+in the stopped frame. User bindings shadow the built-ins, and prefix
+chains work. ~(clal-remove-binding KEY)~ removes the user binding at KEY
+(reverting to any built-in) and returns ~T~ when one was removed.
+~(clal-binding-lookup KEY)~ returns the command bound at KEY, or ~nil~.
+~(clal-map-bindings FUNCTION)~ calls FUNCTION with ~(KEY-STRING COMMAND)~
+for every user binding, returning ~nil~. ~(clal-define-ui-command NAME FUNCTION)~
+registers a UI command NAME (a string) implemented by the AutoLISP
+FUNCTION — applied to the command's argument string — usable from
+~M-x~, the ~,~ command line and as a ~clal-binding~ target, returning
+NAME. These complement ~clal-define-command~ (above), which adds
+commands to a named interactor.
+
+*** ~CLAL-COMMON-LISP~ / ~CLAL-BACK~ -- drop into a live Common Lisp REPL
+The developer escape hatch out of AutoLISP and into the Common Lisp
+image that is running it. It is *deliberately not available by
+default*: the AutoLISP symbol ~clal-common-lisp~ is unbound until you
+set the read/write sysvar ~CLAUTOLISPDROP~ (default ~0~) to a non-zero
+value, which shadows it with the builtin — saving any binding of your
+own, and restoring it when you set the sysvar back to ~0~. An AutoLISP
+program therefore cannot fall into a CL REPL by accident.
+
+#+BEGIN_SRC autolisp
+_$ (setvar "CLAUTOLISPDROP" 1)
+_$ (clal-common-lisp)                  ; no argument: interactive REPL
+CL-USER> (lisp-implementation-type)
+"SBCL"
+CL-USER> (clal-back 42)                ; leave, yielding 42 to AutoLISP
+42
+_$ (clal-common-lisp "(+ 1 2)")        ; a string: read one form, evaluate it
+3
+#+END_SRC
+
+With no argument it runs an interactive REPL reading in
+~COMMON-LISP-USER~ — leave it with ~(clal-back [VALUE])~, which returns
+~VALUE~ (default nil) as the value of the ~clal-common-lisp~ call, or
+with end of input. With a string argument it reads *one* CL form from
+the string and evaluates it; with any other AutoLISP value it converts
+the value structurally into a CL form and evaluates that.
+
+Values cross the boundary by conversion, and the conversion is where the
+surprises live: integers, reals and nil pass through; strings unwrap and
+re-wrap; AutoLISP symbols are *re-read* with the CL reader under the
+current ~*package*~ and ~*readtable*~, so ~'(foo cl:car :kw)~ arrives as
+~(CL-USER::FOO CL:CAR :KW)~. Coming back, an integer outside the
+AutoLISP range, a circular structure, or an object with no AutoLISP
+counterpart is a CL error rather than a silently truncated value.
+
+An unhandled CL error is governed by ~common-lisp-user::*clal-on-error*~:
+~:debug~ (the default) enters the native CL debugger at the point of the
+error, ~:error~ signals a catchable AutoLISP error that
+~vl-catch-all-apply~ can see, ~:ignore~ yields AutoLISP nil, and any
+other value is returned as the result. Set it to ~:error~ when the drop
+is used from a script that must not stop at a debugger prompt.
+
+*** ~CLAL-OPTIMIZE~ / ~CLAL-OPTIMIZATION~ -- optimization qualities
+~(clal-optimization)~ returns the current qualities as
+~((DEBUG n) (SPACE n) (SPEED n))~; ~(clal-optimize QUALITIES)~ sets them
+and returns the new set. Each element of ~QUALITIES~ is either a bare
+quality symbol — which means level 3 — or a ~(SYMBOL LEVEL)~ pair, and
+any quality you do not mention keeps its current level.
+
+A function has two forks, and the levels decide which of them exist and
+which are compiled. What matters is not each quality on its own but the
+levels, and — for the instrumented fork — how ~DEBUG~ and ~SPACE~ compare:
+
+| fork                            | present when       | compiled when |
+|---------------------------------+--------------------+---------------|
+| the ordinary one                | always             | ~SPEED~ >= 1  |
+| the instrumented one (debugging)| ~DEBUG~ >= ~SPACE~ | ~SPEED~ >= 2  |
+
+So ~SPACE~ is not a switch you turn on; it is what you weigh ~DEBUG~
+against. ~(DEBUG 3) (SPACE 3)~ says the two matter equally and keeps the
+instrumented fork, which is what breakpoints and stepping ride on;
+~(DEBUG 0) (SPACE 3)~ says size wins and drops it, and the debugger can
+then no longer stop inside your functions.
+
+~SPEED~ has one more step. At 1 and 2 a function is compiled once it has
+proved *hot* — called enough times to earn the compilation — so you pay
+nothing for functions that a file defines and never calls. At 3 it is
+compiled at *definition* instead. That is not just sooner: compiling a
+whole file as one unit is what allows optimizations across function
+boundaries, which compiling one function at a time cannot do.
+
+The default is ~((DEBUG 3) (SPACE 0) (SPEED 2))~ — debugging matters
+most, speed next, size not at all.
+
+*~(SPEED 3) (DEBUG 0)~ — lexical locals.* This one combination — as fast
+as possible, and I will not debug it — gives a function a third, *lexical*
+fork when it is worth having: its parameters and ~/~-locals live in
+Common Lisp variables instead of a dynamic frame, so a call binds no
+frame at all. Measured on a hot leaf function called a million times,
+the loop around it ran 1.5x faster (median 832 ms against 540 ms).
+
+It does not change what your program computes. AutoLISP is dynamically
+scoped, so anything a function calls can read or write its locals by
+name — a callee using the name free, ~SET~, ~BOUNDP~, ~EVAL~, a
+redefined builtin. A lexical fork therefore calls directly only
+builtins *audited* as unable to see a local (arithmetic, comparisons,
+list and string operations: ~+ - * / 1+ 1- < > <= >= = /= CAR CDR CADR
+CDDR CAAR CDAR NULL NOT ATOM LISTP ZEROP MINUSP NUMBERP EQ EQUAL CONS
+LIST APPEND LENGTH REVERSE NTH LAST ASSOC MEMBER ABS MIN MAX REM FIX
+FLOAT SQRT EXPT STRCAT STRLEN SUBSTR ASCII CHR ATOI ITOA~), and checks
+at *every call* that the name still names that builtin. Anything else
+is called with the locals put back into a real frame first, and read
+back afterwards — exactly what the callee would have seen. Because that
+costs more than the frame it saves, a function gets a lexical fork only
+when all its calls are to audited builtins: in practice, the leaf
+arithmetic and list functions where hot loops spend their time. A
+function that uses a local as an operator, or rebinds one with ~FOREACH~
+or ~LET~, keeps its ordinary fork.
+
+A lexical fork never runs under a debug session — the debugger shows
+and changes frame bindings at a stop, and this fork has none — so
+turning ~DEBUG~ back up, or starting the debugger, is all it takes to
+see the locals again. It is built only by the eager compilation of
+~SPEED 3~, so set the qualities *before* loading, with ~-O~ /
+~--optimize~ (below). Compiled applications (=.lap=) do not carry
+lexical forks.
+
+To choose the qualities *before* the first file is loaded — which is
+when ~SPEED 3~ matters most, since it governs how a file is compiled as
+it is loaded — use the ~-O~ / ~--optimize~ command-line option; see §
+/Options / Optimization/. A ~(clal-optimize …)~ written inside a =.lsp=
+cannot do this, because it takes effect only when it is evaluated, and
+by then the file containing it has already been built.
+
+#+BEGIN_SRC autolisp
+_$ (clal-optimize '((debug 0) (space 3)))   ; run plain, no instrumentation
+((DEBUG 0) (SPACE 3) (SPEED 2))
+_$ (clal-optimize '((speed 3)))             ; and compile at load time
+((DEBUG 0) (SPACE 3) (SPEED 3))
+_$ (clal-optimize '((speed 0)))             ; interpret everything
+((DEBUG 0) (SPACE 3) (SPEED 0))
+#+END_SRC
+
+Before release 2.0.8 ~SPEED~ was pinned at 0 and setting it was silently
+ineffective, because there was no compiler for it to reach. If you have
+code that reads ~(clal-optimization)~ back and expects a ~SPEED~ of 0,
+that expectation no longer holds.
+
+*** What the compiler compiles, and what it hands back
+Compiling a function does not mean every part of it becomes Common
+Lisp. A form the compiler does not translate is *handed to the
+interpreter* — and it is handed the *whole form*, everything inside it
+included. That is why the question matters to you rather than only to
+the implementation: a construct that falls back takes its **body** with
+it, so the work inside a loop can go on being interpreted inside a
+function you believe you compiled.
+
+Everything whose body is *run as part of evaluating the form* is
+compiled: ~progn~, ~if~, ~cond~, ~and~, ~or~, ~while~, ~repeat~,
+~foreach~, ~let~, ~vlax-for~, ~lambda~, together with ~setq~, ~set~,
+~quote~ and ~function~, and every function call.
+
+These are still handed to the interpreter, deliberately: ~defun~,
+~defun-q~, ~trace~, ~untrace~, ~command~ and ~command-s~. None of them
+un-compiles any work, though for two different reasons.
+
+~trace~, ~untrace~, ~command~ and ~command-s~ have no body at all —
+they take arguments — so each costs one dispatch and that is the whole
+of it. ~command~ is in any case dominated by the host's own work.
+
+~defun~ and ~defun-q~ *do* take a body, and it is worth being exact
+about why handing them over costs nothing: their body is not *run* when
+the form is evaluated, it is *stored*. Evaluating a ~defun~ builds the
+function; the body inside it is executed later, when that function is
+called — and by then it is an ordinary function body, compiled by the
+ordinary rules (once hot at ~SPEED~ 1 and 2, at definition at
+~SPEED~ 3). So a ~defun~ nested inside another function's body is
+interpreted *as a definition*, one dispatch, and the function it
+defines is compiled exactly like any other.
+
+If you are measuring and a function seems not to have gained anything,
+this list is the first thing to check — before this was closed, a loop
+written inside a ~let~ ran no faster compiled than interpreted, because
+the ~let~ fell back and took the loop with it.
+
+*** When the compiler says it is being asked too often
+Past a thousand compilations in one session, clautolisp warns once:
+
+#+BEGIN_EXAMPLE
+clautolisp: the host compiler has now run 1001 times in this image
+(most recently for F). That is far more distinct function bodies than
+a program has, so the same body is probably being compiled repeatedly
+-- which is a bug in what DECIDES to compile, not in the code being
+compiled.
+#+END_EXAMPLE
+
+Nothing is refused and the program continues. The number is deliberately
+absurd rather than tight: the whole clautolisp test suite compiles 56
+bodies, so an honest program does not approach it, and crossing it means
+the same code is being compiled again and again. If you see it, the
+report is worth making — it is far more likely to be a defect in
+clautolisp than in your program.
+
+*** ~CLAL-COMPILE-FILE~ / ~CLAL-COMPILE-SYSTEM~ -- compile an application
+~(clal-compile-file SOURCE [OUTPUT])~ compiles one AutoLISP source file
+into a ~.lap~ compiled application; ~OUTPUT~ defaults to the source name
+with type ~.lap~, beside the source.
+~(clal-compile-system OUTPUT SOURCES)~ compiles a list of sources into a
+single ~.lap~. Both compile; neither loads. Load the result with ~load~
+like any other file.
+
+Compilation preserves the values and local bindings of ~repeat~ and
+~while~, including when the loop supplies a function's return value.
+If an older compiled application signals an unbound loop-result temporary,
+recompile its sources with clautolisp 2.3.83 or later; loading an already
+compiled artifact cannot repair it.
+
+**** What a ~.lap~ is, and what it is not
+A ~.lap~ is a *native host FASL, renamed*. It loads into a running
+clautolisp alongside other applications, in any order — which is what an
+AutoLISP application has to be, and why it is not a saved Lisp image.
+
+Two consequences, both deliberate:
+
+- A ~.lap~ built by an SBCL clautolisp will *not* load in a CCL one, or
+  the reverse.
+- A ~.lap~ is not promised to load in a different clautolisp version.
+
+A portable format would mean inventing a byte-code FASL, and that trade
+is not worth making today. Keep builds for different hosts and versions
+in *different directories*, exactly as the binary releases are kept —
+the file name carries nothing about which build made it. Loading a
+~.lap~ that does not match says so, naming the reason.
+
+**** Why the system form exists
+Compiling several sources together puts them through *one* host
+compilation, so literals can be shared across the whole application and a
+function defined in a later source and called from an earlier one
+resolves without a warning at each forward reference. And it ships as one
+file rather than one per source.
+
+#+BEGIN_SRC autolisp
+_$ (clal-compile-file "geometry.lsp")
+T
+_$ (load "geometry.lap")
+
+_$ (clal-compile-system "myapp.lap" '("geometry.lsp" "commands.lsp"))
+T
+#+END_SRC
+
+Functions arriving from a ~.lap~ come already compiled — they never pay
+the hotness threshold again — and they keep their source body, so they
+stay debuggable -- by line too: the ~.lap~ carries the source positions,
+so under a debugger UI a breakpoint on a line of the source stops in the
+function loaded from the ~.lap~ (an ordinary load records none, as for a
+source file). They keep their documentation too: the ~;| ... |;~ block
+before a ~defun~ or a ~setq~ is written into the ~.lap~ and installed
+when it is loaded, so ~clautolisp-documentation~ (and alref's
+~alref-documentation~ / ~alref-describe~) answer the same from the
+~.lap~ as from the source.
+
+~vlisp-compile~ is the vendor spelling of the same thing: it writes a
+~.lap~ where AutoCAD writes ~.fas~ and BricsCAD writes ~.des~, and
+returns ~T~ when the file was written. Its ~mode~ argument is ignored,
+as in BricsCAD — an *unknown* mode signals, so a typo in a build script
+is not silently absorbed.
+
+*** ~CLAL-COMPILE~ -- build an applicable function object
+~(clal-compile NAME LAMBDA-EXPRESSION)~ compiles a
+~(lambda LAMBDA-LIST . BODY)~ form into an applicable function object,
+weaving the instrumented fork when the current ~DEBUG~ quality is above
+0. ~NAME~ is nil for an anonymous function, or a symbol naming it.
+Anything that is not a ~lambda~ form is a ~:bad-argument~ error.
+
+*** ~CLAL-MODULE-EXTENSION~ -- the host's packaged-artefact extensions
+~(clal-module-extension KIND)~ returns, as a string with a leading dot,
+the file extension clautolisp uses for a packaged artefact — so
+portability layers can *ask* instead of hard-coding a guess. ~KIND~ is
+matched case-insensitively:
+
+- ~"compiled-app"~ :: ~".lap"~ ("Lisp APplication"), the clautolisp
+  analogue of AutoCAD's ~.vlx~ and BricsCAD's ~.des~. The name is
+  clautolisp's own.
+- ~"native-module"~ :: the host operating system's shared-library
+  extension — ~".dll"~ on Windows, ~".dylib"~ on macOS, ~".so"~
+  elsewhere. This is the ~.arx~ / ~.brx~ slot; a clautolisp native
+  module is a shared library loaded by the host Common Lisp, so unlike
+  the vendors' fixed extensions this one is OS-dependent.
 
 The full normative entries for these functions live in
 ~autolisp-spec~ §16 *clautolisp Extensions*; this section is a

@@ -2,6 +2,15 @@
 #
 # run-probes.sh PRODUCT
 #
+# READ FIRST if anything here misbehaves against a real CAD:
+#   documentation/accoreconsole-headless-autolisp.org
+#
+# It documents the traps this script exists inside -- MSYS2 rewriting the
+# /s switch, the CRLF requirement, SECURELOAD, the mandatory ._QUIT, and
+# why results must come from a FILE rather than stdout or an exit code.
+# Five consecutive failures here were three of those, each invisible
+# until the previous one was fixed.
+#
 # Run the probe suite (probes/sources/manifest.txt) inside PRODUCT
 # (autocad | bricscad | clautolisp), writing one record per line to a
 # committed results file:
@@ -24,10 +33,189 @@ set -euo pipefail
 
 product="${1:?usage: run-probes.sh <autocad|bricscad|clautolisp>}"
 
-probes_dir="$(cd "$(dirname "$0")/.." && pwd)"
+# --- preflight: the external tools this harness actually needs --------
+#
+# WHY THIS EXISTS. The Windows runner failed with
+#
+#     run-probes: missing //sources/manifest.txt
+#
+# which was neither about the manifest nor about that path: locating the
+# script had called dirname, dirname was not on PATH, the empty result
+# turned `cd "$(dirname "$0")/.."' into `cd "/.."', and the message
+# described the wrong thing three steps downstream. Locating no longer
+# needs a subprocess -- but EVERYTHING ELSE HERE STILL DOES. sed, awk,
+# mkdir, date and cp are used further in, so a PATH missing one coreutils
+# is a PATH that will fail later and just as obliquely.
+#
+# The environment is normally msys2, where these live in /usr/bin; under
+# a Windows shell that means c:/msys64/usr/bin must be on PATH. When it
+# is not, this says so ONCE, up front, naming what is missing and what
+# PATH was searched -- rather than letting the run die at whichever tool
+# it happens to reach first.
+#
+# cygpath is Windows-only and genuinely optional (cad_arg_path falls back
+# when it is absent), so it is REPORTED but never fatal.
+probe_preflight() {
+  local missing="" tool
+  for tool in awk sed grep sort head cat cp mkdir date basename env; do
+    command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+  done
+  if [ -n "$missing" ]; then
+    echo "run-probes: required tools not found on PATH:$missing" >&2
+    echo "  PATH = $PATH" >&2
+    echo "  uname = $(command -v uname >/dev/null 2>&1 && uname -s || echo '<uname missing too>')" >&2
+    echo "  The environment is normally msys2, where these are in" >&2
+    echo "  /usr/bin; from a Windows shell c:/msys64/usr/bin must be on" >&2
+    echo "  PATH. This is a RUNNER configuration problem, not a probe" >&2
+    echo "  failure -- nothing reached the CAD." >&2
+    exit 2
+  fi
+  command -v cygpath >/dev/null 2>&1 \
+    || echo "run-probes: note - cygpath absent; paths passed to the CAD are used as is." >&2
+
+  # A NOTE, NEVER FATAL: nothing here calls dirname any more, so this
+  # only answers a question the evidence has left open.
+  #
+  # The Windows runner once failed with `missing //sources/manifest.txt'
+  # -- a path that requires $(dirname "$0") to have produced NOTHING,
+  # since a failed cd gives one slash and a backslash path gives a
+  # different directory entirely. But the tools checked above are all
+  # present on that same unchanged runner, and in msys2 dirname lives in
+  # the same /usr/bin as awk and sed. Both cannot be true of a simple
+  # "PATH is short".
+  #
+  # So RECORD what the environment actually is, rather than theorise a
+  # third time. One line, on a run that otherwise says nothing.
+  echo "run-probes: env - \$0=$0 shell=${BASH_VERSION:-?} dirname=$(command -v dirname || echo NOT-FOUND) uname=$(uname -s 2>/dev/null || echo ?)" >&2
+  # PATH too, unconditionally and in full. The Windows runners use
+  # shell=powershell and the scripts then run under /bin/bash, so which
+  # environment that bash actually gets is the open question -- a
+  # non-interactive bash does not source .bashrc, so it need not match
+  # what an interactive `which dirname' reports. pjb is giving the
+  # runner an EXPLICIT environment (2026-09-06); this line is what will
+  # show whether the new one is what was intended, on the first run
+  # rather than after another round of inference.
+  echo "run-probes: env - PATH=$PATH" >&2
+}
+probe_preflight
+
+# WHERE THIS SCRIPT LIVES, without calling dirname.
+#
+# It used to be $(dirname "$0"), and on a Windows runner whose PATH has
+# no coreutils that expands to NOTHING -- so `cd "$(dirname "$0")/.."'
+# became `cd "/.."', which SUCCEEDS and lands at the filesystem root.
+# The script then looked for `//sources/manifest.txt' and reported a
+# missing manifest: a confusing message about the wrong thing, three
+# steps downstream of the actual fault. Parameter expansion needs no
+# external program and cannot fail that way.
+script_dir_of() {
+  local path="$1" dir="${1%/*}"
+  # no slash in the path at all: it was found via PATH or is in CWD
+  if [ "$dir" = "$path" ]; then dir="."; fi
+  printf '%s' "$dir"
+}
+
+probes_dir="$(cd "$(script_dir_of "$0")/.." && pwd)"
+
+# A resolved root of "/" or "" means the computation above went wrong,
+# and every later message would be about the wrong path. Say so HERE,
+# naming what was computed, rather than three steps downstream.
+if [ -z "${probes_dir:-}" ] || [ "$probes_dir" = "/" ]; then
+  echo "run-probes: cannot locate the probes directory." >&2
+  echo "  \$0        = $0" >&2
+  echo "  script dir = $(script_dir_of "$0")" >&2
+  echo "  cwd        = $(pwd)" >&2
+  exit 2
+fi
 repo_root="$(cd "$probes_dir/.." && pwd)"
 sources_dir="$probes_dir/sources"
 manifest="$sources_dir/manifest.txt"
+
+# PROBE_SUITES: run only these manifest entries, space- or
+# comma-separated, matched against the source file name with or without
+# the `probe-' prefix and the `.lsp' suffix -- so PROBE_SUITES=foreach-scope
+# and PROBE_SUITES=probe-foreach-scope.lsp both work. Default: every suite.
+#
+# It exists because the suite was ALL-OR-NOTHING on an engine: one suite
+# that kills the CAD takes every other answer down with it, and there was
+# no way to ask the one question you came for. That is exactly what
+# happened the first time this suite met BricsCAD.
+suite_wanted() {
+  local src="$1" flags="${2:-}" want name
+  name="${src%.lsp}"; name="${name#probe-}"
+  if [[ -z "${PROBE_SUITES:-}" ]]; then
+    # Default run: everything EXCEPT a quarantined suite. See below.
+    [[ "$flags" == *quarantine* ]] && return 1
+    return 0
+  fi
+  for want in ${PROBE_SUITES//,/ }; do
+    want="${want%.lsp}"; want="${want#probe-}"
+    [[ "$name" == "$want" ]] && return 0
+  done
+  return 1
+}
+
+# QUARANTINE, the third manifest field. A suite marked `quarantine' is
+# skipped by a default run and included only when PROBE_SUITES NAMES it.
+#
+# It exists for a suite whose forms are DESIGNED to be rejected -- the
+# load-refusal experiment, where loading the form IS the question, so
+# the syntax cannot be hidden in a string the way every other suite
+# hides it. Such a suite hangs the engine it is aimed at, and a hang
+# takes every other answer in the run down with it. Quarantine is what
+# keeps `make probe' from being a trap on the host the experiment
+# targets, without keeping the experiment out of the repository.
+
+# PROBE_SPLIT_SUITES: load these suites ONE TOP-LEVEL FORM AT A TIME,
+# each form from its own file with its own progress marker. Same name
+# matching as PROBE_SUITES. Default: none -- whole files, as before.
+#
+# WHY. A suite that makes an engine HANG or FAULT while loading writes
+# no record of itself: the marker that would name it comes after the
+# load that never returns, and vl-catch-all-apply cannot catch a dead
+# process. Twice the answer was then guessed, and twice wrongly -- once
+# blaming a suite that had loaded fine, once a form that turned out
+# innocent. Split, the last marker in the file NAMES THE FORM the engine
+# would not take, because the marker before it was already written and
+# closed.
+#
+# It is a diagnostic, not the normal path: N markers per suite is noise
+# in a healthy run, and the fragments only mean anything next to the
+# results. Turn it on for the suite that went quiet.
+split_wanted() {
+  local src="$1" want name
+  [[ -z "${PROBE_SPLIT_SUITES:-}" ]] && return 1
+  name="${src%.lsp}"; name="${name#probe-}"
+  for want in ${PROBE_SPLIT_SUITES//,/ }; do
+    want="${want%.lsp}"; want="${want#probe-}"
+    [[ "$name" == "$want" ]] && return 0
+  done
+  return 1
+}
+
+# Split SRC into one file per top-level form under DESTDIR, printing the
+# fragment paths in order. A top-level form is a line starting in column
+# 0 with `(' plus everything up to the next such line, so the comments
+# BETWEEN two forms travel with the form above them -- inert either way,
+# and it keeps the rule to one line.
+split_into_forms() {
+  local src="$1" destdir="$2" prefix="$3"
+  mkdir -p "$destdir"
+  awk -v prefix="$destdir/$prefix" '
+    function flush(  f) {
+      if (cur == "") return
+      n++
+      f = sprintf("%s-%03d.lsp", prefix, n)
+      printf "%s", cur > f
+      close(f)
+      print f
+      cur = ""
+    }
+    /^\(/ { flush(); cur = pend $0 "\n"; pend = ""; next }
+            { if (cur == "") pend = pend $0 "\n"; else cur = cur $0 "\n" }
+    END     { flush() }
+  ' "$src"
+}
 
 [[ -f "$manifest" ]] || { echo "run-probes: missing $manifest" >&2; exit 2; }
 
@@ -63,21 +251,156 @@ mkdir -p "$run_dir"
 lisp_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
+# A path that a NATIVE CAD can open, from a path this shell understands.
+#
+# Under MSYS2 the two are not the same, and the difference is invisible
+# until it costs a probe run.  MSYS2 converts POSIX paths in process
+# ARGUMENTS at the boundary -- which is why accoreconsole found the .scr
+# passed as `/s /c/Users/...' -- but it cannot convert a path written
+# INSIDE a file.  A generated (load "/c/Users/.../run-probes.lsp") is
+# therefore handed verbatim to AutoCAD, which has no such directory, and
+# the load fails silently: a failed load inside a .scr is not a process
+# failure, so accoreconsole exits 0 and the result file is simply EMPTY.
+#
+# That is exactly how the 2026-08-16 AutoCAD run failed -- engine banner,
+# clean exit, no results, no error naming a path.
+#
+# cygpath -m gives the mixed form (C:/Users/...): a Windows path with
+# forward slashes, which AutoLISP takes without the backslash escaping a
+# native form would need.  Identity anywhere but MSYS2/Cygwin.
+cad_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
+
+# A path for the engine's COMMAND LINE, which is not the same thing.
+#
+# Inside a Lisp file the mixed form (C:/Users/...) is right: forward
+# slashes need no escaping in a string. On a command line it is wrong for
+# accoreconsole, which scans its arguments for `/letter' switches -- so
+# C:/Users/PPBN02261/works/... offers it /U, /P, /w and more, none of
+# which it knows, and it answers by printing its USAGE and ignoring the
+# script. That is what pjb's three failed runs did.
+#
+# The native form (C:\Users\...) has no slashes to misread. Quoted at the
+# substitution site because a Windows path may contain spaces and the
+# runner templates do not quote the placeholder.
+cad_arg_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -w "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
+
+# Emit AutoLISP that appends one progress record to the results file.
+# Raw open/write/close rather than probe-core's recorder, because the
+# whole point is to work when probe-core has NOT loaded.
+emit_step_marker() {
+  local label="$1" expr="${2:-\"\"}"
+  printf '(setq cad-probe--out (open "%s" "a"))\n' \
+         "$(lisp_escape "$(cad_path "$result_file")")"
+  printf '(if cad-probe--out (progn (write-line (strcat "((KIND . \\"step\\") (AT . \\"%s\\") (VALUE . \\"" (vl-princ-to-string %s) "\\"))") cad-probe--out) (close cad-probe--out)))\n' \
+         "$(lisp_escape "$label")" "$expr"
+}
+
 # --- generate the probe wrapper (.lsp) -------------------------------
 {
-  printf '(setq cad-probe-result-file "%s")\n'  "$(lisp_escape "$result_file")"
+  # Every path below is consumed by the CAD, not by this shell, so each
+  # goes through cad_path -- see its comment for what happens otherwise.
+  # SECURELOAD, in the WRAPPER and not only in the .scr: a runner that
+  # hands the wrapper straight to the engine -- the alfe route, which has
+  # no .scr at all -- would otherwise hit SECURELOAD on the nested
+  # (load)s below. Harmless where the .scr already cleared it, and
+  # vl-catch-all-apply'd because an engine without the sysvar must not
+  # die here.
+  printf "(vl-catch-all-apply 'setvar (list \"SECURELOAD\" 0))\n"
+  printf '(setq cad-probe-result-file "%s")\n'  "$(lisp_escape "$(cad_path "$result_file")")"
   printf '(setq cad-probe-platform "%s")\n'      "$(lisp_escape "$platform")"
   printf '(setq cad-probe-product "%s")\n'       "$(lisp_escape "$product")"
-  printf '(setq cad-probe-run-directory "%s")\n' "$(lisp_escape "$run_dir")"
-  printf '(load "%s")\n' "$(lisp_escape "$sources_dir/probe-core.lsp")"
+  printf '(setq cad-probe-run-directory "%s")\n' "$(lisp_escape "$(cad_path "$run_dir")")"
+  # For suites that load committed fixture files (sources/fixtures/).
+  printf '(setq cad-probe-sources-directory "%s/")\n' "$(lisp_escape "$(cad_path "$sources_dir")")"
+  # Write a marker BEFORE anything else can fail, so an empty result file
+  # and a wrapper that started are distinguishable. Without it, "the load
+  # failed" and "a suite died on its first form" look identical from
+  # here: both leave nothing behind.
+  printf '(setq cad-probe--out (open "%s" "w"))\n' \
+         "$(lisp_escape "$(cad_path "$result_file")")"
+  printf '(if cad-probe--out (progn (write-line "((KIND . \\"wrapper-start\\"))" cad-probe--out) (close cad-probe--out)))\n'
+  # WHY EACH LOAD REPORTS ITSELF.
+  #
+  # Twice now a run has left exactly `wrapper-start' and nothing else,
+  # and twice the diagnosis was a guess: the wrapper ran, something in
+  # the loads did not, and the file could not say which. On BricsCAD the
+  # bare engine segfaulted and under alfe it exited 1 in silence, so
+  # neither harness said either.
+  #
+  # LOAD returning NIL is the case that matters: SECURELOAD refuses a
+  # file outside TRUSTEDPATHS, and a repository checkout never is one.
+  # The SETVAR above is wrapped in VL-CATCH-ALL-APPLY, so an engine that
+  # REFUSES to clear SECURELOAD swallows that refusal silently -- and the
+  # run then dies later, opaquely, at the first undefined function.
+  # Recording the sysvar and each load's value turns the next run into an
+  # explanation instead of another guess.
+  printf '(setq cad-probe--out (open "%s" "a"))\n' \
+         "$(lisp_escape "$(cad_path "$result_file")")"
+  printf '(if cad-probe--out (progn (write-line (strcat "((KIND . \\"load-context\\") (SECURELOAD . \\"" (vl-princ-to-string (vl-catch-all-apply (quote getvar) (list "SECURELOAD"))) "\\"))") cad-probe--out) (close cad-probe--out)))\n'
+  # Each load records whether it returned anything. A NIL here is the
+  # whole answer when the run dies at the first undefined function.
+  printf '(setq cad-probe--loaded (vl-catch-all-apply (quote load) (list "%s")))\n' \
+         "$(lisp_escape "$(cad_path "$sources_dir/probe-core.lsp")")"
+  printf '(setq cad-probe--out (open "%s" "a"))\n' \
+         "$(lisp_escape "$(cad_path "$result_file")")"
+  printf '(if cad-probe--out (progn (write-line (strcat "((KIND . \\"load\\") (FILE . \\"probe-core.lsp\\") (VALUE . \\"" (vl-princ-to-string cad-probe--loaded) "\\"))") cad-probe--out) (close cad-probe--out)))\n'
   # Load every suite file from the manifest.
-  while read -r src fn _rest; do
+  while read -r src fn flags; do
     [[ -z "$src" || "$src" == \#* ]] && continue
-    printf '(load "%s")\n' "$(lisp_escape "$sources_dir/$src")"
+    suite_wanted "$src" "$flags" || continue
+    if split_wanted "$src"; then
+      # One form per file, each announcing itself BEFORE AND AFTER: see
+      # split_wanted.
+      #
+      # THE BEFORE MARKER REMOVES AN INFERENCE. With only an after
+      # marker, a fragment that goes quiet says "the previous load
+      # finished" and the rest is deduction: which load was next, from
+      # the wrapper; what was in it, from the fragment file. That is
+      # two steps of reasoning on top of an ABSENCE, and it is how
+      # (foreach e nil 99) came to be named a culprit that pjb then
+      # disproved at the REPL in one line.
+      #
+      # With both markers the file states it: "entering <file>" and
+      # then nothing means the load was ENTERED and did not return.
+      # The path is in the record too, so it need not be recovered from
+      # the wrapper.
+      frag_n=0
+      while read -r frag; do
+        frag_n=$((frag_n + 1))
+        emit_step_marker "entering $src form $frag_n ($(basename "$frag"))" \
+                         "\"$(lisp_escape "$(cad_path "$frag")")\""
+        printf '(setq cad-probe--loaded (vl-catch-all-apply (quote load) (list "%s")))\n' \
+               "$(lisp_escape "$(cad_path "$frag")")"
+        emit_step_marker "loaded $src form $frag_n ($(basename "$frag"))" \
+                         "cad-probe--loaded"
+      done < <(split_into_forms "$sources_dir/$src" "$run_dir/fragments" "${src%.lsp}")
+    else
+      printf '(setq cad-probe--loaded (vl-catch-all-apply (quote load) (list "%s")))\n' \
+             "$(lisp_escape "$(cad_path "$sources_dir/$src")")"
+      emit_step_marker "loaded $src" "cad-probe--loaded"
+    fi
   done < "$manifest"
+  # Is the recorder even THERE? A load that returned without defining
+  # anything and a load that defined everything look identical from the
+  # outside, and that ambiguity is what two rounds of guessing cost.
+  emit_step_marker "begin-run-defined-p" "(if cad-probe-begin-run 1 0)"
   printf '(cad-probe-begin-run)\n'
-  while read -r src fn _rest; do
+  emit_step_marker "begin-run-returned"
+  while read -r src fn flags; do
     [[ -z "$src" || "$src" == \#* ]] && continue
+    suite_wanted "$src" "$flags" || continue
     printf '(%s)\n' "$fn"
   done < "$manifest"
   printf '(cad-probe-end-run)\n'
@@ -87,8 +410,44 @@ json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 # --- generate the CAD script (.scr) that loads the wrapper -----------
 # A CAD command script evaluates a leading-paren line as AutoLISP.
 {
-  printf '(load "%s")\n' "$(lisp_escape "$wrapper_file")"
+  # The two princ lines are INSTRUMENTATION, and they earn their place.
+  #
+  # A CAD script that loads nothing looks exactly like one that loads
+  # everything: accoreconsole prints its banner, shows a few `Commande:'
+  # prompts, and quits 0 either way. The 2026-08-16 AutoCAD runs produced
+  # an empty result file twice, and the console gave no way to tell
+  # whether the (load …) had even been reached.
+  #
+  # So the script now says so itself. In the console trace:
+  #   neither line          -> the .scr was not executed as AutoLISP
+  #   only "loading"        -> the wrapper was reached and the load failed
+  #   both lines            -> the wrapper ran; look at the result file
+  # SECURELOAD has been 1 by default since AutoCAD 2014 and refuses
+  # (load) of a file outside TRUSTEDPATHS -- a repository checkout never
+  # is one. Wrapped in vl-catch-all-apply because an engine without that
+  # sysvar must not die here.
+  printf "(vl-catch-all-apply 'setvar (list \"SECURELOAD\" 0))\n"
+  printf '(princ "\\ncad-probe: loading wrapper\\n")\n'
+  printf '(load "%s")\n' "$(lisp_escape "$(cad_path "$wrapper_file")")"
+  printf '(princ "\\ncad-probe: wrapper returned\\n")\n'
+  # Without an explicit quit the engine sits on its prompt and the caller
+  # has to time it out. `._QUIT': `.' bypasses any redefinition, `_' is
+  # the language-independent form -- this machine runs a French AutoCAD.
+  # `_Y' answers the save-the-drawing question that follows.
+  printf '._QUIT _Y\n'
 } > "$script_file"
+
+# A CAD script is read LINE BY LINE by the engine's script reader, and on
+# Windows that reader expects CRLF. Written from MSYS2 the file is LF-only
+# -- verified on the 2026-08-16 run, od showed no \r anywhere -- and the
+# engine then advances its prompts without evaluating anything: script
+# consumed, nothing run, exit 0.
+#
+# Only the .scr needs this. The .lsp it loads is read by the AutoLISP
+# READER, which does not care about line endings.
+if command -v cygpath >/dev/null 2>&1; then
+    sed -i 's/$/\r/' "$script_file"
+fi
 
 write_metadata() {
   cat > "$metadata_file" <<EOF
@@ -106,23 +465,203 @@ EOF
 
 write_metadata "prepared" 0
 
+# The engine is a NATIVE program, so the file it is pointed at must be
+# named in ITS path form -- and MSYS2 will not do this one for us: its
+# argument converter treats an argument beginning with `/' followed by a
+# letter as a WINDOWS SWITCH, so `/c/Users/...' is passed through
+# untouched.
+#
+# Then the NATIVE form, not the mixed one: see cad_arg_path. Quoted here
+# because a Windows path may contain spaces and the templates do not
+# quote the placeholder.
+#
+# CORRECTION to an earlier reading of this: accoreconsole prints its
+# USAGE TEXT on every run, good or bad. It is NOT a sign of a malformed
+# command line, and treating it as one sent this diagnosis down a false
+# path once already.
+# __DRAWING_FILE__: a drawing OF THIS RUN'S OWN, copied into the run
+# directory from the one committed beside alfe's loader.
+#
+# Two reasons, and the first is the one that blocked this suite. BricsCAD
+# was invoked with a script and NO DOCUMENT, and it segfaulted before a
+# single probe record on both platforms -- while alfe, which always hands
+# it a drawing, works. alfe's own launcher says why: "Open a drawing with
+# the app: no document, no command line, nowhere for the keystrokes to
+# land."
+#
+# The second is why it is a COPY rather than the file itself: pjb,
+# 2026-08-30 -- passing the same drawing to successive runs produces
+# modal "already in use, open read-only?" dialogs when a previous CAD
+# left a lock, and a modal in a batch run is a hung run. The run
+# directory is already unique per invocation, so a drawing written there
+# is nobody else's. This is the same rule alfe now follows in its own
+# workdir (issues/closed/empty-ressource.issue); the probe harness is a
+# second caller of the same idea, not a second implementation of it --
+# the bytes come from the one committed file.
+#
+# PROBE_TEMPLATE: run on a copy of one of the CAD's OWN templates instead
+# (a NAME looked up where the products keep them, or a PATH). empty.dwg was
+# written by a French AutoCAD 2005: what a probe reads of a drawing's
+# defaults on it is that file's, not a new drawing's (alfe-template-option).
+# A .dwt and a .dwg share the format; the copy is named .dwg so the CAD
+# opens it as a drawing, with no units dialog.
+template_roots() {
+  local v
+  for v in LOCALAPPDATA APPDATA PROGRAMFILES ProgramW6432 PROGRAMDATA; do
+    [[ -n "${!v:-}" ]] || continue
+    if command -v cygpath >/dev/null 2>&1; then
+      cygpath -u "${!v}"
+    else
+      printf '%s\n' "${!v}"
+    fi
+  done
+  printf '%s\n' "$HOME/Library/Application Support/Bricsys" "/Applications"
+}
+# Only the probed product's folders: thalassa has AutoCAD 2026 too, and its
+# acad.dwt is no BricsCAD template. The user's own templates (AppData,
+# Application Support) come before the installation's.
+template_path_pattern() {
+  case "$product" in
+    autocad)  printf '%s\n' '*autodesk*' ;;
+    bricscad) printf '%s\n' '*brics*' ;;
+    *)        printf '%s\n' '*' ;;
+  esac
+}
+# The product's own folders: a root that is one already (Application
+# Support/Bricsys), else the root's top-level folders the pattern names
+# (AppData/Local/Bricsys, Program Files/Autodesk, BricsCAD V26.app). The
+# search used to walk each whole root to depth 9 and filter on the path
+# afterwards: 12m45s through %LOCALAPPDATA% on PF5S26B (job 17450398554).
+product_dirs() {
+  local root pattern
+  pattern="$(template_path_pattern)"
+  while IFS= read -r root; do
+    [[ -d "$root" ]] || continue
+    shopt -s nocasematch
+    if [[ "$root" == $pattern ]]; then
+      shopt -u nocasematch
+      printf '%s\n' "$root"
+    else
+      shopt -u nocasematch
+      find "$root" -mindepth 1 -maxdepth 1 -type d -iname "$pattern" 2>/dev/null
+    fi
+  done < <(template_roots)
+}
+find_template() {
+  local name="$1" dir hit
+  if [[ "$name" == */* && -f "$name" ]]; then printf '%s\n' "$name"; return 0; fi
+  while IFS= read -r dir; do
+    hit="$(find "$dir" -maxdepth 8 -type f -iname "$name" 2>/dev/null | head -n 1)"
+    if [[ -n "$hit" ]]; then printf '%s\n' "$hit"; return 0; fi
+  done < <(product_dirs)
+  return 1
+}
+drawing_file=""
+template_file=""
+if [[ -n "${PROBE_TEMPLATE:-}" ]]; then
+  if template_source="$(find_template "$PROBE_TEMPLATE")"; then
+    template_file="$run_dir/template.dwg"
+    cp -f "$template_source" "$template_file"
+    echo "run-probes: template $PROBE_TEMPLATE -> $template_source" >&2
+    # The alfe route (BricsCAD) has no __DRAWING_FILE__: alfe opens
+    # $AUTOLISP_DWG instead of its embedded empty.dwg (backend-bricscad).
+    AUTOLISP_DWG="$(cad_arg_path "$template_file")"
+    export AUTOLISP_DWG
+  else
+    echo "run-probes: no template named $PROBE_TEMPLATE; the templates found:" >&2
+    while IFS= read -r dir; do
+      find "$dir" -maxdepth 8 -type f -iname '*.dwt' 2>/dev/null
+    done < <(product_dirs) | sort -u | sed 's/^/    /' >&2
+    exit 2
+  fi
+fi
+if [[ "$runner_template" == *__DRAWING_FILE__* ]]; then
+  if [[ -n "$template_file" ]]; then
+    drawing_file="$template_file"
+  else
+    drawing_source="$repo_root/autolisp-front-end/source/empty.dwg"
+    if [[ -f "$drawing_source" ]]; then
+      drawing_file="$run_dir/empty.dwg"
+      cp -f "$drawing_source" "$drawing_file"
+    else
+      echo "run-probes: no empty drawing at $drawing_source; launching without one" >&2
+    fi
+  fi
+fi
+
 cmd="$runner_template"
-cmd="${cmd//__PROBE_FILE__/$wrapper_file}"
-cmd="${cmd//__SCRIPT_FILE__/$script_file}"
+cmd="${cmd//__PROBE_FILE__/\"$(cad_arg_path "$wrapper_file")\"}"
+cmd="${cmd//__SCRIPT_FILE__/\"$(cad_arg_path "$script_file")\"}"
+if [[ -n "$drawing_file" ]]; then
+  cmd="${cmd//__DRAWING_FILE__/\"$(cad_arg_path "$drawing_file")\"}"
+else
+  # No drawing to give: drop the placeholder rather than pass an empty
+  # quoted argument, which BricsCAD would read as a filename.
+  cmd="${cmd//__DRAWING_FILE__/}"
+fi
 
 echo "run-probes: $product on $platform" >&2
 echo "  runner : $cmd" >&2
 echo "  output : $run_rel/results.sexp" >&2
 
 set +e
-bash -lc "$cmd"
+# MSYS2 rewrites the SWITCHES, not just the paths: `/s' is handed to the
+# engine as `S:\' and `/i' as `I:\', so accoreconsole receives arguments
+# it cannot parse and answers by printing its usage. That is the real
+# reason every AutoCAD attempt printed the usage banner -- and it is a
+# documented MSYS2 behaviour, not something to be deduced from a trace.
+#
+# Disarming the conversion is what makes /s reach the engine as /s. The
+# paths still have to be converted by hand, which is what cad_path (mixed
+# form, inside Lisp) and cad_arg_path (native form, on the command line)
+# do above.
+#
+# Harmless off MSYS2: both variables are simply unread there.
+MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 bash -lc "$cmd"
 exit_code=$?
 set -e
 
-if [[ $exit_code -eq 0 && -s "$result_file" ]]; then
+# A run is COMPLETE only if it reached its end record. Non-empty is not
+# enough: the wrapper writes a `wrapper-start' marker before anything can
+# fail, so a suite that dies on its first form still leaves a file behind.
+# Checking for run-end is what tells "it ran" from "it started".
+if [[ -s "$result_file" ]] && grep -q 'run-end' "$result_file"; then
+  # A COMPLETE result (reached its run-end record) is a SUCCESS regardless of the
+  # runner's exit code: a probe that yields a result succeeds; a non-zero exit
+  # here is a PROBE OBSERVATION (e.g. a load refusal, or a suite assertion the
+  # vendor did not satisfy), not a failure to run (pjb 2026-09-10). The runner's
+  # code is still recorded in the metadata for the record.
   write_metadata "completed" "$exit_code"
+elif [[ $exit_code -eq 0 && -s "$result_file" ]]; then
+  write_metadata "incomplete" "$exit_code"
+  echo "run-probes: NOTE — the wrapper started but never reached its end record." >&2
+  echo "  A suite stopped the run early; the partial results are kept:" >&2
+  echo "    $result_file" >&2
+  # PROBE_ANY_RESULT_IS_SUCCESS: an EXPERIMENT suite (e.g. load-refusal) is
+  # meant to record whatever the engine does — up to and including stopping
+  # early with no end record — so a non-empty result IS the outcome and the
+  # job passes. Normal suites keep the strict rule: an incomplete run fails.
+  [[ -n "${PROBE_ANY_RESULT_IS_SUCCESS:-}" ]] || exit 1
 else
   write_metadata "failed" "$exit_code"
+  # An EMPTY result file after a CLEAN exit is the failure mode worth
+  # naming, because it looks like success: the engine started, printed
+  # its banner, ran nothing and quit 0.  A failed (load …) inside a .scr
+  # is not a process failure, so the exit code cannot be trusted alone.
+  # It used to be a WARNING, and the run went on to a `git add' of a file
+  # that does not exist, ending in a bare "fatal: pathspec … did not
+  # match any files" -- a message about git, for a problem about paths.
+  if [[ $exit_code -eq 0 && ! -s "$result_file" ]]; then
+    echo "run-probes: ERROR — the runner exited 0 but wrote NO results." >&2
+    echo "  The engine ran and produced nothing, which usually means the" >&2
+    echo "  generated wrapper could not be loaded. On Windows the classic" >&2
+    echo "  cause is a path form: a native CAD cannot open /c/Users/...," >&2
+    echo "  only C:/Users/... (this script converts them with cygpath -m)." >&2
+    echo "  Look at the generated files, they are kept:" >&2
+    echo "    $script_file" >&2
+    echo "    $wrapper_file" >&2
+    exit 1
+  fi
   echo "run-probes: WARNING — runner exit $exit_code, result file $( [[ -s $result_file ]] && echo non-empty || echo EMPTY )." >&2
 fi
 
@@ -143,4 +682,20 @@ else
 fi
 
 echo "Probe run directory: $run_dir"
+# A complete result (run-end present) is a success even when the runner exited
+# non-zero — see the "completed" branch above.
+if [[ -s "$result_file" ]] && grep -q 'run-end' "$result_file"; then
+  exit 0
+fi
+# PROBE_ANY_RESULT_IS_SUCCESS: for an EXPERIMENT suite (load-refusal) the
+# engine is EXPECTED to stop before run-end — a crash, a hang the timeout
+# kills, or a load that never returns — and the captured partial result is
+# the whole point. Any NON-EMPTY result then counts as success regardless
+# of the runner's exit code: the artefact is the outcome (pjb 2026-09-11,
+# "ensure the probe is successful whatever the outcome"). A run that
+# produced NOTHING at all still keeps the failing code — no result is the
+# one real failure.
+if [[ -n "${PROBE_ANY_RESULT_IS_SUCCESS:-}" ]] && [[ -s "$result_file" ]]; then
+  exit 0
+fi
 exit "$exit_code"

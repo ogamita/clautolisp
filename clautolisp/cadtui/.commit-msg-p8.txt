@@ -1,0 +1,32 @@
+clautolisp 2.2.55: cadtui phase 8 — visual screen render backend seam
+
+Phase 8 is the spec's OPTIONAL visual backend, whose load-bearing requirement is
+"reuse EXACTLY the §5 interpreter". This lands that guarantee as a testable seam
+rather than an untestable curses widget layer:
+
+- render.lisp: *screen-renderer* (a backend indirection) with a headless,
+  deterministic text-screen-renderer over the CLOS tree — a laid-out view (header,
+  the menu bar as one line, the drawings list with the active one starred, the
+  active drawing's bands / cad-view entity-count+viewport / console prompt, or the
+  application console when no drawing is active), distinct from dump-node's
+  address-oriented structural dump.
+- render-screen / render-screen-to-string, and ui-step, which drives one input
+  line through the UNCHANGED interpret-line and then re-renders — the whole of a
+  visual backend's event-loop body, proving Phase 8 reuses the §5 interpreter
+  verbatim rather than forking a grammar.
+
+A concrete curses backend (widgets over tui-core, gated out of the default test
+image exactly like the debugger's ncurses UI) is a thin drop-in for
+*screen-renderer* and is left as a deliberately-deferred, low-value/untestable
+follow-up (recorded in cadtui/CLAUDE.md, which now marks the whole cadtui module
+complete for its headless scope and lists the remaining out-of-scope items:
+CAD-command locale dictionaries needing CAD runners, the --locale CLI flag, the
+Phase-5 block/text bbox, and the live-console start_dialog producer).
+
+Tests: new render-tests (text screen of menu+drawings+active detail, the
+no-drawing application-console screen, ui-step reusing interpret-line and
+re-rendering, and the replaceable renderer seam). Full make -C clautolisp
+test-sbcl green. alfe 2.2.63 tracks.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01XDPCe5o6LJkv4CR2FvYauz

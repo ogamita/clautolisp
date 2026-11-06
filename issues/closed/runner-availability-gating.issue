@@ -1,0 +1,171 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: runner-availability-gating — auto-start native (macOS/Windows) jobs only when their runner is online
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: infra
+#+DEPENDS: RUNNER_STATUS_TOKEN (a CI/CD variable pjb must add)
+#+BRANCH: feature-runner-availability-gating
+
+* Context
+
+The macOS/Windows CI runners are intermittent laptops. Native jobs
+therefore can't simply be `when: on_success`: when the runner is offline
+they pile up as stuck-pending jobs and (if not allow_failure) redden the
+pipeline. Until now the manual jobs (vendor:probes, verify:*, pathname:*,
+benchmark, release) never auto-ran even when the runner WAS online, and
+the test:* jobs auto-ran on master but piled up when the runner was down.
+
+pjb's request: two "is-the-runner-up?" probes, from which the native jobs
+depend so they launch AUTOMATICALLY when the runner is online, and fall
+back to MANUAL when it is offline (manual trigger always available).
+
+* Problem / GitLab constraint
+
+`rules:` are evaluated at pipeline-CREATION time and cannot see a probe
+job's runtime result in the same pipeline. So "on_success if online else
+manual" via rules needs the runner status known at creation — impossible
+for a same-pipeline probe. Two viable shapes:
+  - a parent→child pipeline (detect job passes MACOS/WINDOWS=online var to
+    a child whose native jobs use rules on it) — clean, but moves every
+    native job into a child YAML (big refactor; breaks parent↔child
+    needs:/artifacts);
+  - an ORCHESTRATOR that keeps every native job `when: manual` (so offline
+    == the manual fallback) and, from the always-on Linux runner, `play`s
+    the manual jobs whose runner is online.
+
+* Implemented (orchestrator, chosen for zero disruption)
+
+- scripts/ci-autostart-native-runners.py + the `.pre` job
+  `autostart:native-runners` in .gitlab-ci.yml. It queries
+  GET /projects/:id/runners?tag_list={macos,windows} for an online runner,
+  then `play`s this pipeline's manual jobs carrying that tag. Excludes
+  release:* / benchmark:*. FAIL-SAFE: no token / API error => plays
+  nothing => every native job stays manual (today's behaviour). Validated:
+  the runners API filters by tag and reports online/offline correctly;
+  glab ci lint is green.
+
+* To activate (pjb)
+
+1. Add a CI/CD variable RUNNER_STATUS_TOKEN = a project access token with
+   `api` scope (playing a job is a write; read_api is not enough). Masked;
+   protected if auto-start should only happen on protected refs (note: an
+   MR pipeline from a non-protected branch then won't get the token, so its
+   native jobs stay manual — acceptable, or make it unprotected).
+2. Watch a pipeline: online runners => their native manual jobs auto-start;
+   offline => they stay manual.
+
+* Follow-ups
+
+- Phase 2 (optional): flip test:* (.platform-test-common) and the encoding
+  jobs from `on_success` to `when: manual` so they too fall back to manual
+  (no stuck-pending) when the runner is offline, and are auto-started by
+  this orchestrator when online. Deferred until the token is confirmed, so
+  master test coverage is not left manual-without-auto in the interim.
+- Tune SKIP_PREFIXES (or add a per-job marker) if some native jobs should
+  NOT auto-run on every push (e.g. the AutoCAD probes while unlicensed).
+
+* Acceptance criteria
+
+- With RUNNER_STATUS_TOKEN set: native manual jobs whose runner is online
+  start automatically; offline ones stay manual; pipeline never reddens or
+  piles up because of an offline laptop.
+- Without the token: identical to today (all native jobs manual).
+
+* UPDATE 2026-08-07 — orchestrator-play abandoned; child pipeline adopted
+
+The orchestrator-play approach (v1) was tried on master (pipeline
+2740098321) with the token set. The probe CORRECTLY reported
+`online native runners: ['macos', 'windows']`, but it played 0 jobs.
+Root cause (empirical): a GitLab `when: manual` job only reaches the
+`manual` (playable) status once its STAGE is active and its `needs:` are
+satisfied — until then it is `created`, and `POST .../jobs/:id/play`
+cannot start it. At `.pre` (and even a minute later) the native jobs were
+`created`, not `manual` (only build:alfe:* had become manual). The
+pipeline jobs API also does not expose each job's `when:`, so
+"will-be-manual" jobs can't be pre-identified. A single early play-pass
+therefore cannot start a cascade of jobs that only become manual later.
+=> orchestrator-play is structurally unable to do the job; removed
+(scripts/ci-autostart-native-runners.py deleted).
+
+CHOSEN (pjb, 2026-08-07): the child-pipeline design. Parent
+detect:runners (scripts/ci-detect-runners.py) writes a dotenv
+MACOS_RUNNER/WINDOWS_RUNNER=online|offline; native:pipeline triggers the
+child .gitlab/native.yml passing those vars; the child's native jobs use
+rules: evaluated at the CHILD's creation (vars now known) => on_success
+when online, `manual` when offline. No `strategy: depend` (a manual-only
+child must not hang the parent). Still fail-safe (no token => offline =>
+manual). First jobs migrated: conformance:pathname-mapping:{macos,windows}
+(self-contained, no needs) as the end-to-end proof; the rest of the native
+jobs (test:*, verify:*, vendor:probes:* + build:alfe:* deps, pathname:*,
+encoding:*, benchmark:*, release:*) migrate incrementally, each validated
+on a real pipeline. Release-tag pipelines: native jobs are on_success
+(mandatory) via the `$CI_COMMIT_TAG` rule; a `strategy: depend` may be
+wanted on the trigger for tag pipelines so the release waits for them
+(follow-up).
+
+
+Statut 2026-08-10 — implémenté, en attente d'une variable CI/CD
+--------------------------------------------------------------
+
+Le mécanisme est en place et vérifié sur master : le job `.pre`
+`detect:runners` (scripts/ci-detect-runners.py) publie MACOS_RUNNER /
+WINDOWS_RUNNER via un artefact dotenv, `native:pipeline` déclenche le
+pipeline enfant .gitlab/native.yml, et les gates `.gate-{macos,windows}-{hard,soft}`
+y basculent en `when: on_success` dès que la variable vaut "online",
+avec repli `when: manual` sinon (et `allow_failure: false` sur un tag
+release pour les gates `hard`).
+
+Il ne reste donc aucun travail de dépôt : le fail-safe fait que sans
+RUNNER_STATUS_TOKEN (portée api) tout reste `manual`, c'est-à-dire le
+comportement d'avant — jamais un faux "online". Le statut passe de TODO
+à BLOCKED sur cette variable, que pjb doit ajouter dans les CI/CD
+settings du projet.
+
+
+* DONE 2026-08-20 — la variable a été ajoutée, et le mécanisme est OBSERVÉ
+
+Le ticket était BLOCKED en attente de =RUNNER_STATUS_TOKEN=. La variable
+existe désormais, et le comportement n'est plus déduit du code : il est
+mesuré sur une pipeline réelle, la 2777241866 de master (2026-08-20
+18:58 UTC), qui a eu la bonne fortune de tomber sur un runner en ligne
+et un runner hors ligne EN MÊME TEMPS — c'est-à-dire exactement le cas
+que les critères d'acceptation demandent de distinguer.
+
+=detect:runners= a publié :
+
+: MACOS_RUNNER=online
+: WINDOWS_RUNNER=offline
+
+et dans le pipeline enfant, sans intervention :
+
+| runner  | état    | jobs natifs                                        |
+|---------+---------+----------------------------------------------------|
+| macOS   | online  | =pending= — démarrés tout seuls (build:alfe:macos, test:*:macos, harvest:sysvars, vendor:probes, pathname:probe, path-sysvars:probe, encoding:experiment, verify:vl-registry, conformance:pathname-mapping) |
+| Windows | offline | =manual= — repli, aucun job coincé en pending       |
+
+Les trois critères d'acceptation sont donc satisfaits, et chacun par une
+observation plutôt que par lecture du YAML :
+
+- les jobs manuels dont le runner est en ligne démarrent seuls : OUI,
+  les macOS sont partis sans que personne ne clique ;
+- ceux dont le runner est hors ligne restent manuels : OUI, les trois
+  sondes Windows ;
+- la pipeline ne rougit pas et ne s'empile pas à cause d'un portable
+  éteint : OUI — aucun =stuck_pending= dans cette pipeline.
+
+** Ce que la journée a appris en plus, et qui n'est pas dans les critères
+
+Le repli =manual= ne protège que les pipelines créées PENDANT que le
+runner est hors ligne. Un runner qui s'éteint PENDANT un job donne autre
+chose : dans la pipeline précédente (2776267840, 13:17), Windows était
+en ligne à la création, =path-sysvars:probe:bricscad:windows= a donc
+démarré, puis la machine a disparu — le job est mort en
+=server_timeout_running= au bout de 1800 s exactement, avec une trace
+VIDE, et les deux sondes AutoCAD qui attendaient le runner à
+concurrence 1 sont mortes en =stuck_pending_no_matching_runners=.
+
+Ce n'est pas un défaut de la porte : à la création, la décision prise
+était juste. Mais cela veut dire qu'un portable qui s'éteint au mauvais
+moment coûte encore trois jobs et une demi-heure de runner exclusif, et
+c'est =cad-runner-wedged-by-modal-dialog= qui porte ce sujet, pas
+celui-ci.

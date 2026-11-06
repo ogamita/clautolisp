@@ -27,8 +27,9 @@
 ;;   $PREFIX/share/emacs/site-lisp/autolisp-spec/alref.el is added
 ;;   to load-path by site-load.el (or by the user's init file).
 ;;   The variable `alref-spec-directory' must point at the
-;;   $PREFIX/share/autolisp-spec/ data root. The default below
-;;   tries `/opt/share/autolisp-spec/' first, then a sibling-of-
+;;   $PREFIX/share/doc/autolisp-spec/ data root (the pages ship
+;;   alongside the html and org/pdf docs). The default below tries
+;;   `/opt/local/share/doc/autolisp-spec/' first, then a sibling-of-
 ;;   this-elisp-file path so a freshly-built tree works without
 ;;   any setq.
 
@@ -77,21 +78,21 @@ data root. Return the first existing directory, or nil if none
 match — the user will need to set `alref-spec-directory' by hand.
 
 Candidates in priority order:
-  - sibling-of-this-elisp-file via ../../autolisp-spec/, which
-    resolves under $PREFIX/share/autolisp-spec/ when alref.el is
+  - sibling-of-this-elisp-file via ../../../doc/autolisp-spec/, which
+    resolves under $PREFIX/share/doc/autolisp-spec/ when alref.el is
     installed at $PREFIX/share/emacs/site-lisp/autolisp-spec/
-  - /opt/local/share/autolisp-spec/  (MacPorts; repo default
+  - /opt/local/share/doc/autolisp-spec/  (MacPorts; repo default
     PREFIX)
-  - /usr/local/share/autolisp-spec/  (Homebrew)
-  - /usr/share/autolisp-spec/        (system-wide)"
+  - /usr/local/share/doc/autolisp-spec/  (Homebrew)
+  - /usr/share/doc/autolisp-spec/        (system-wide)"
   (let ((candidates
          (list
-          (expand-file-name "../../autolisp-spec/"
+          (expand-file-name "../../../doc/autolisp-spec/"
                             (file-name-directory
                              (or load-file-name buffer-file-name "")))
-          "/opt/local/share/autolisp-spec/"
-          "/usr/local/share/autolisp-spec/"
-          "/usr/share/autolisp-spec/")))
+          "/opt/local/share/doc/autolisp-spec/"
+          "/usr/local/share/doc/autolisp-spec/"
+          "/usr/share/doc/autolisp-spec/")))
     (cl-loop for dir in candidates
              when (file-directory-p dir)
              return (file-name-as-directory dir))))
@@ -107,7 +108,8 @@ neither the custom var nor any default location is populated."
 ;;
 ;; symbols.txt is one line per documented symbol:
 ;;   SYMBOL\tKIND\tBASENAME\tFLAGS
-;; KIND is the prose-name of the entry kind (Function / Reader Syntax /
+;; KIND is the prose-name of the entry kind (Function / Command / System
+;; Variable / Reader Syntax /
 ;; Special Operator / Variable / Macro / Type). BASENAME is the on-disk
 ;; stem (filename without extension); appended to pages/ → .txt, html/
 ;; → .html, etc. FLAGS is the ABC availability column ('A' AutoCAD,
@@ -137,11 +139,19 @@ Used by `alref-reload' to know what to re-read.")
           (when (string-match
                  "^\\([^\t]+\\)\t\\([^\t]+\\)\t\\([^\t]+\\)\\(?:\t\\(.*\\)\\)?$"
                  line)
-            (puthash (match-string 1 line)
-                     (list (match-string 2 line)
-                           (match-string 3 line)
-                           (or (match-string 4 line) ""))
-                     table)))
+            ;; A name documented twice (LOAD: a function and a command)
+            ;; keeps its first page -- the chapters' order puts the
+            ;; function first -- under the bare name, and the others
+            ;; under "NAME <Kind>", so completion offers both.
+            (let ((name (match-string 1 line))
+                  (entry (list (match-string 2 line)
+                               (match-string 3 line)
+                               (or (match-string 4 line) ""))))
+              (puthash (if (gethash name table)
+                           (format "%s <%s>" name (car entry))
+                         name)
+                       entry
+                       table))))
         (forward-line 1)))
     table))
 

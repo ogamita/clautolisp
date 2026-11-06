@@ -1,0 +1,356 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-plugin-epure-windows-validation — run --epure against real AutoCAD and BricsCAD on the Windows runner
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: cad-runtime
+#+DEPENDS: windows-access, alfe-plugin-epure
+#+BRANCH: feat-cad-orphan-sweep
+
+* Context
+
+=alfe-plugin-epure= is asserted only against the mock CAD, =--print-command=
+and an OS override: no Windows, no EPURE install, no CAD in the session that
+wrote it. Two assumptions came from the legacy wrapper and were never
+re-verified:
+
+1. a =._SCRIPT= nested in a =/b= script gives control back to the outer
+   script, so the line after it — =(load run-common.lsp)= — runs;
+2. under AutoCAD COM, =SendCommand("._SCRIPT …")= followed by
+   =SendCommand("(load …)")= runs them in that order.
+
+Also unverified: dropping =/Automation= for EPURE is right (EPURE loads a
+CUIX and menus); the default control-script paths for the current EPURE
+year; the GUI staying usable after the run-time is loaded.
+
+* Proposal
+
+On the Windows runner with EPURE installed: run =alfe --bricscad --epure
+-x '(princ "ok")'= and the AutoCAD equivalent; keep the workdir
+(=--keep-workdir=) and read =run.scr= / =bridge-*.vbs= / =debug.log=. Fix
+the plug-in accordingly (the alternative to a nested =._SCRIPT= is COM
+=SendCommand=, already supported by the same hooks). Record the outcome in
+the user manual's EPURE section.
+
+* Acceptance criteria
+
+- Both CADs run an =-x= under EPURE and exit with the script's status.
+- The manual states what was verified, on which CAD/EPURE versions.
+
+* First run on the Windows runner — 2026-09-25
+
+=verify:epure:windows=, job 16731487278, with EPURE 2022_b installed
+(pjb confirmed the install that day). alfe 2.2.87.
+
+#+begin_example
+  --autocad  --epure : exit 0, marker PRESENT
+  --bricscad --epure : exit 4, marker ABSENT
+#+end_example
+
+** AutoCAD: works
+
+COM automation, AutoCAD 2022. The action ran and alfe exited with its
+status. That is consistent with assumption 2 (SendCommand order), though
+it does not prove it: nothing here would have distinguished a
+=._SCRIPT= that ran late from one that ran in order.
+
+** BricsCAD: hung at BOOTING, and the cause is ours
+
+BricsCAD V25 fr_FR, =/b= batch script. Status stayed =BOOTING= for the
+full 300 s; =protocol/stdout.txt= and =stderr.txt= were empty, so
+=run-common.lsp= never loaded. The emitted =run.scr=:
+
+#+begin_example
+(setq alfe-scr-mark (open ".../run-scr-started.txt" "w"))
+...
+._SCRIPT
+C:/Users/PPBN02261/AppData/Roaming/sncf/epure/epure 2022_b/control_path_epure_2022.scr
+(load ".../run-common.lsp")
+#+end_example
+
+THE PATH IS NOT QUOTED, AND IT CONTAINS A SPACE -- =epure 2022_b=. That
+line is the answer to =SCRIPT='s prompt, and an answer ends at a space,
+so BricsCAD received =...\epure= and then had =2022_b\control_...scr= as
+its next input. AutoCAD never met this because the COM branch of the
+same plug-in has always wrapped the path in =Chr(34)=: one path, two
+spellings, and only one of them quoted.
+
+The test that covered this line had the bug written into it -- it used a
+path with a space (=epure 2022_b=, the real shape) and asserted the
+UNQUOTED form.
+
+** Fix — alfe 2.2.88
+
+=(:scr ... (list "._SCRIPT" (format nil "\\"~A\\"" script)))=, and both
+tests now demand the quoted form: the hook's lines, and the =run.scr=
+actually emitted. alfe SBCL and CCL 1097 checks, 0 failures.
+
+The probe now also dumps =run-scr-started.txt=, written by the first
+line of =run.scr=. Its presence separates "the script never ran" from
+"the nested =._SCRIPT= never gave control back" -- the two readings of a
+BricsCAD sitting at BOOTING, and the evidence assumption 1 needs.
+
+** The EPURE API question, answered 2026-09-27 — and the answer is vendor-independent
+
+=verify:epure-api:windows= ran on PF5S26B (job 16761201252, clautolisp 2.2.129),
+four invocations. Its own summary:
+
+#+begin_example
+================ summary (T twice is the pass)
+  --autocad  --epure, -x as typed          : exit 4, T x0
+  --autocad  --epure, from a file (verbose): exit 1, T x0
+  --bricscad --epure, -x as typed          : exit 1, T x0
+  --bricscad --epure, from a file (verbose): exit 1, T x0
+#+end_example
+
+The three =exit 1= runs all *reached READY and evaluated the request* — AutoCAD
+in 30.95 s, BricsCAD in 24.24 s, both entering
+=autolisp-protocol-server-loop= — and all three failed the SAME way:
+
+: ERROR protocol request 1: while loading ...alfe-epure-api.lsp
+:   (form starting at line 1) at line 1, column 1:
+:   no function definition: TOUTES_OPTIONS
+
+*So the engines are fine and the EPURE API is not there.* =toutes_options= is
+undefined in the session on BOTH vendors, which is the useful part: it is not an
+AutoCAD-specific problem, not a COM problem, and not a protocol problem. Loading
+the EPURE application is not making its AutoLISP API visible to the session alfe
+drives — the question this job exists to ask.
+
+That reframes what is left. The earlier open item ("confirm BricsCAD reaches the
+marker") is answered in passing: BricsCAD reaches READY and runs a form, so the
+=._SCRIPT= control does hand back. What is NOT answered is whether =--epure=
+actually loads the application at all, or loads it into a context whose symbols
+the protocol session cannot see — and those are different fixes, so the next run
+must distinguish them rather than re-ask the same question.
+
+The =exit 4= run is unrelated: a transient COM rejection before READY, fixed
+under =alfe-autocad-hung-instance-blocks-com-bootstrap= (the document calls
+after =TouchApp= were unguarded). Same job, different defect.
+
+** ANSWERED 2026-09-27 by the symbol probe — and it is a THIRD possibility
+
+=verify:epure-api:windows= with =scripts/epure-symbol-probe.lsp= (job
+16762746801, clautolisp 2.2.133). The probe ran on both engines:
+
+#+begin_example
+--autocad  --epure, symbol probe
+  EPURE-PROBE total-symbols=5680
+  EPURE-PROBE epure-like-symbols=29
+  EPURE-PROBE named=(nil nil)
+  EPURE-PROBE sample=(FICHIERLOGEPURE SCHMS_LOG_EVENEMENT_EPURE
+                      SNCF:EPURE:REG:ENV:SET SNCF:EPURE:GETENV:SET
+                      SNCF:EPURE:GETENV:GET COM_DOSSIERLOCALEPURE ...)
+  EPURE-PROBE verdict=defined-under-other-names
+
+--bricscad --epure, symbol probe
+  EPURE-PROBE total-symbols=6852
+  EPURE-PROBE epure-like-symbols=40
+  EPURE-PROBE named=(NIL NIL)
+  EPURE-PROBE sample=(FICHIERLOGEPURE C:COM_MODIFEPURECOM
+                      EPURE3D_SELECTIONNE_OBJETS C:COM_APROPOSEPURE EPURE_REG
+                      C:EPURE3D_SELECTION *EPURE-CUI* EPURE EPURE-CMD
+                      SNCF:EPURE:...)
+  EPURE-PROBE verdict=defined-under-other-names
+#+end_example
+
+*EPURE loads, and the session can see it.* Twenty-nine EPURE symbols under
+AutoCAD, forty under BricsCAD, with unmistakably real names —
+=SNCF:EPURE:GETENV:GET=, =C:COM_APROPOSEPURE=, =*EPURE-CUI*=, =EPURE-CMD=. So
+neither of the two cases this probe was built to separate is what happened:
+the application is not missing, and it is not out of view.
+
+*The two functions the API test calls are simply not among them.*
+=named=(nil nil)= says =TOUTES_OPTIONS= and =F_DATEHEURE_UTC= are undefined in a
+session where forty other EPURE symbols are defined. So the test is asking for
+the wrong names — or for names belonging to something =--epure= does not load
+(=SCHMS_LOG_EVENEMENT_EPURE= in the AutoCAD sample suggests SCHMS+ symbols are
+in scope there too, so the boundary between the two applications is worth
+establishing rather than assumed).
+
+*This is a question for pjb*, because the two names came from him
+(2026-09-25): are =toutes_options= / =f_DateHeure_UTC= EPURE's own API, or
+SCHMS+'s? If the latter, the job is testing the wrong layer and needs either an
+EPURE function that exists (the sample offers candidates) or =--load-app= for
+the application that defines them.
+
+Worth noting the two engines load DIFFERENT subsets — 29 against 40 — which is
+itself a fact for the epic: whatever function the test settles on has to exist
+on both, or the job needs a per-engine expectation.
+
+The probe's own design held up: the =verdict= line plus a bounded sample made
+the answer legible without reading AutoLISP, and the negative control under
+clautolisp (=nothing-defined=) is what proved the probe could tell the cases
+apart at all.
+
+** pjb answered, and the probe was asking too small a question (2.2.139)
+
+pjb, 2026-09-27: "toutes_options is EPURE; you may have a look at EPURE API
+looking into epuree ~claude/src/pjb/epuree/".
+
+Confirmed in that tree. =toutes_options= is defined at =src/comu.lsp:2515=
+(=(defun toutes_options (x / ch) …)=), documented in
+=manual/reference/api-reference.md= as *Module: COM*, host scope
+=bricscad, autocad=, signature =toutes_options(options) -> string=, and it is
+loaded by =src/loader.lsp= through =epuree:bundle-load-first= over
+=lisp/comu.lsp= / =comu.lsp= / =src/comu.lsp= / =dist/epuree/lisp/comu.lsp=.
+So it is real, public, and supposed to be there on both engines.
+
+*So the earlier conclusion — "the test is asking for the wrong names" — was
+wrong, and the probe was the reason: it asked only for the two names the test
+calls.* Meanwhile it had FOUND =SNCF:EPURE:REG:ENV:SET=, which is itself in
+EPURE's public API catalogue (=tests/unit/public-api-catalog.lsp=, 422 names,
+generated from =spec/api/public-api.yaml=). Part of the public API is loaded and
+part is not, and "which part" is the question that distinguishes a missing module
+from a missing library — different faults, different fixes.
+
+The probe now runs a CENSUS over 24 catalogue names spread evenly through those
+422, spanning modules (=com_startup=, =com_version=, =dateheureutc=, =interr=,
+=fld=, =getbloc=, =dos_chdir=, =f_nom_date=, =schme_sauvegrd=, =Annuaire=, …),
+and reports =api-present=, =api-absent= and a verdict of =library-absent= /
+=library-partial= / =library-complete=. A mixture NAMES the modules that did not
+load, which is what the next run needs to say.
+
+Two self-inflicted bugs caught by the local negative control rather than by a
+queued CAD job, both worth the line they cost:
+
+- =DEFVAR= is Common Lisp; AutoLISP has no such function, and the file died with
+  "Undefined AutoLISP function DEFVAR" under clautolisp. =SETQ= at top level.
+- the probe counted its OWN new variable =*ALFE-EPURE-API-SAMPLE*= as an
+  EPURE-like symbol and reported =defined-under-other-names= on a session with no
+  EPURE at all. The exclusion was =ALFE-*= — a prefix — and this name starts with
+  a star. It now matches =*ALFE*= anywhere. That is the SECOND time the probe saw
+  itself, by a second name shape; a probe that can see itself answers the wrong
+  question.
+
+Negative control green again: under clautolisp, =verdict=nothing-defined= and
+=api-verdict=library-absent=.
+
+** ANSWERED 2026-09-27 17:31Z: one file, =Sauvprm.lsp=, is not loaded — on both engines
+
+The census ran (job 16763989248, on MR !325's child — the first attempt, 16763561700,
+was on a MASTER child and my own next merge cancelled it; see AGENTS.md § /where to
+PLAY a manual CAD job/, which exists because of that). Result, both engines:
+
+#+begin_example
+--autocad  --epure  epure-like-symbols=29  api-sample=24 present=9 absent=15  library-partial
+--bricscad --epure  epure-like-symbols=40  api-sample=24 present=9 absent=15  library-partial
+
+api-present=(dateheureutc com_startup com_version com_savecont com_way
+             SNCF:Epure:Reg:Env:Set dos_chdir com_tl_continu schme_sauvegrd)
+api-absent =(toutes_options f_DateHeure_UTC epuree-directory epure-version
+             epure-directory interr affiche_message identite fld rempl getbloc
+             pose f_nom_date Annuaire ConvertAuto)
+#+end_example
+
+*The public API loaded is IDENTICAL on AutoCAD and BricsCAD* — same nine present,
+same fifteen absent — although the engines carry different amounts of EPURE
+plumbing (29 against 40 EPURE-like symbols: BricsCAD has more CUI and command
+symbols). So the fault is vendor-independent, and the difference seen earlier was
+plumbing, not API.
+
+*Mapped onto the vendor sources* (=~/src/pjb/epuree/resources/upstream/=, not
+epuree's consolidated =src/core.lsp= / =src/comu.lsp=, which do not reflect how the
+vendor loads):
+
+| present name       | vendor file                     |
+|--------------------+---------------------------------|
+| =com_startup=        | =COM/lisp/SNCF_startup.lsp=       |
+| =com_savecont=, =com_way=, =com_tl_continu= | =COM/lisp/SNCF_Com.lsp= |
+| =schme_sauvegrd=     | =COM/gestsauv/Sauvegrd.lsp=       |
+
+| absent name          | vendor file                  |
+|----------------------+------------------------------|
+| =toutes_options=     | =COM/gestsauv/Sauvprm.lsp=     |
+| =f_DateHeure_UTC=    | =COM/gestsauv/Sauvprm.lsp=     |
+| =f_nom_date=         | =COM/gestsauv/Sauvprm.lsp=     |
+
+*All three absent save-option functions — including BOTH names the API test calls —
+live in ONE file, =COM/gestsauv/Sauvprm.lsp=.* Its sibling =Sauvegrd.lsp=, in the same
+directory, IS loaded. =resources/resource-manifest.tsv= says what separates them:
+=Sauvegrd.lsp= is the "Save-orchestrator source"; =Sauvprm.lsp= is the
+"Save-parameters source" and ships with its own =SAUVPRM.DCL= ("Dialog declarations
+for Sauvprm"). =toutes_options= renders the enabled save options as a summary string
+— a helper of that dialog.
+
+So:
+
+- EPURE is NOT failing to load: its startup and save-orchestration layer is there on
+  both engines;
+- the test is NOT asking for wrong names: =toutes_options= is EPURE's (Module COM,
+  per the API reference, and per pjb);
+- *it is calling two functions from a module that nothing in a fresh session has
+  loaded yet* — the save-parameters dialog module, which EPURE presumably loads when
+  the dialog is first opened. This is the demand-loading hypothesis, now localised to
+  one file.
+
+What I could not see: the mechanism that loads =Sauvprm.lsp= in production. The
+upstream tree in epuree is the readable source subset; it contains no
+=(load … Sauvprm)=, no =autoload=, no =.mnl=, so the trigger lives in the vendor
+install's menu or startup files.
+
+The other absent core helpers (=interr=, =affiche_message=, =identite=, =fld=,
+=rempl=, =getbloc=) are consolidated into epuree's =src/core.lsp=, and no vendor
+=defun= for them turned up in =resources/upstream= — so in the vendor they live in a
+file outside that subset, also not loaded at startup. Worth knowing before choosing
+replacement test functions from that group.
+
+** Resolved 2026-09-28 — validated by pjb
+
+pjb chose option 3 below: test the startup layer. "Let's use atoms-family on
+com_way and com_tl_continu" (both in =COM/lisp/SNCF_Com.lsp=), and then, having
+run it by hand on the runner:
+
+#+begin_quote
+alfe -norc --$CAD --epure -x '(print (com_way "\\foo"))' works on windows with
+bricscad and autocad when no other cad is running. (alfe 2.2.134) So let's
+validate it for now.
+#+end_quote
+
+The job agrees. =verify:epure-api:windows= on MR !330 (alfe 2.2.141, job
+16772551022): the symbol probe found =com_way= and =com_tl_continu= on AutoCAD
+AND BricsCAD, and BricsCAD's run from a file printed =T= twice. The other
+failures in that job were not EPURE's:
+
+- AutoCAD's run from a file: the COM bridge exited at BOOTING after 130 s
+  (exit 4, ATTACHED=0 CREATED=0), right after the previous run's CAD was
+  killed — pjb's "when no other cad is running". The script now waits for
+  every CAD process to be gone before the next launch.
+- Both =-x= runs: zero bytes of output, exit 1. Windows PowerShell's
+  =Start-Process -ArgumentList= joins an array with spaces and quotes
+  nothing, so alfe received =(print=, =(and=, ... as separate arguments. The
+  script now builds the command line itself, quoted by the
+  CommandLineToArgvW rules.
+
+Found while validating: clautolisp's ATOMS-FAMILY matched string names
+case-sensitively (atoms-family-string-names-case-sensitive, fixed 2.2.141).
+
+Documented in the alfe manual, /The EPURE plug-in/, /What has been verified,
+and where/. What stays unverified is listed below and does not block the
+plug-in's use: pjb validated it.
+
+** Still open (not blocking; recorded when the issue was closed)
+
+- [ ] *pjb: how should the API test reach =Sauvprm.lsp='s functions?* Three honest
+      options, and the choice is about what "EPURE's API answers inside an alfe
+      session" should mean:
+      1. =(load "Sauvprm")= explicitly before calling — tests the functions, not
+         EPURE's loading;
+      2. trigger the save-parameters command that loads it in production — tests
+         what a user actually gets, if the command can run headless;
+      3. test the startup-loaded layer instead (=com_startup=, =com_savecont=,
+         =dateheureutc=, …) — tests that =--epure= brings EPURE up, which is what
+         the plug-in is for.
+- *Distinguish "EPURE never loaded" from "EPURE loaded out of view".* ANSWERED
+  above: neither. Kept for the record of what the probe was for. Probe
+  =atoms-family= for a name EPURE defines, and dump whether its .lsp/.vlx was
+  loaded at all, before assuming either. =vl-catch-all-apply= cannot trap an
+  unbound-symbol error, so the existence check has to be =atoms-family= (the
+  lesson already recorded for the vendor probes).
+- Re-run =verify:epure:windows= with 2.2.88 and confirm BricsCAD reaches
+  the marker. Only then is assumption 1 answered.
+- Assumption 2 (COM =SendCommand= order) is consistent with AutoCAD's
+  result but not isolated by it.
+- The remaining unverified points from the Proposal above -- dropping
+  =/Automation= for EPURE, the control-script defaults for the current
+  EPURE year, the GUI staying usable after the runtime loads -- were not
+  examined by this run.

@@ -1,0 +1,291 @@
+Title: BricsCAD macOS automation: open -a app docPath knocks an already-running instance back to the Welcome page
+Status: RESOLVED 2026-09-12. All four fixes here (docPath/existing-
+  document check, document-init settle delay, startup-dialog dismissal,
+  and the DETECT fix that made the fresh-per-run empty.dwg actually take
+  effect) confirmed together, live, unattended:
+  scripts/verify-bricscad-automation.sh phase 1 PASSED cleanly on the
+  first attempt with these in place, BricsCAD healthy afterward. Full
+  write-up on the parent ticket's Round 10,
+  issues/closed/alfe-bricscad-automation-macos-osascript.issue — closed
+  alongside it
+Priority: P3
+Type: bug
+Depends: issues/closed/alfe-bricscad-automation-macos-osascript.issue
+
+* What
+
+Found live (2026-09-12) while verifying the Round 8 injection hardening
+in alfe-bricscad-automation-macos-osascript.issue. The AppleScript
+launcher's LAUNCHCOMMAND (built by %APPLESCRIPT-LAUNCH-COMMAND in
+autolisp-front-end/source/backend-bricscad.lisp) does:
+
+  do shell script "open -a " & quoted form of appPath & " " & quoted form of docPath
+
+whenever a template path was discovered — unconditionally, with no check
+for whether BricsCAD is already running. When BricsCAD IS already
+running with a document open (a realistic, common case: alfe re-run
+against the same long-lived instance during iterative testing, or a user
+who already had BricsCAD open before invoking alfe), this call can knock
+the main window back to its "Début" (Start/Welcome) tab instead of
+reusing the existing document or opening docPath as expected — confirmed
+by screenshot: the "BricsCAD Lite" window's active tab changed from
+"Dessin1" to "Début" immediately after a launcher run, with no new
+document tab created for docPath at all.
+
+The console window (Historique des invites) remains visually present
+after this, but typing into it then does nothing — no corruption, just
+total silence, no error surfaced anywhere. This produced several
+seemingly-random live-test failures during Round 8 that were eventually
+traced to this, not to the keystroke-injection layer (which was
+separately confirmed reliable via hand-written diagnostic scripts that
+never called `open -a docPath` a second time against a running
+instance).
+
+* Why this matters now
+
+Round 6 (2026-08-14 predecessor decision, referenced in this ticket's
+own history) deliberately REMOVED a `set running to exists (processes
+whose name is "bricscad")' probe from the template, reasoning that
+`open -a` is idempotent for ACTIVATION and no process-name check was
+needed. That reasoning holds for activation — but this round found it
+does NOT extend to the DOCUMENT-OPENING side effect: `open -a app
+docPath` behaves differently (and disruptively) when the app already has
+a document open versus a cold start. The two concerns were conflated;
+activation should stay probe-free, but opening a document should not be
+attempted blindly against a session that may already have one.
+
+* Suggested fix (not yet implemented)
+
+  - Detect whether BricsCAD is already running (a real process check is
+    warranted here specifically, unlike the activation case) and, if so,
+    emit LAUNCHCOMMAND as `open -a appPath' alone (no docPath) — the
+    existing "already open" branch this function already has for when no
+    template is discovered at all (see %APPLESCRIPT-LAUNCH-COMMAND's
+    `bundle' vs `(and bundle template-path)' branches) — rather than
+    conditioning solely on "was a template discovered".
+  - Verify live: with BricsCAD already running and a document open,
+    confirm the Welcome page is never shown and the existing document
+    (or console) stays usable.
+  - Also verify the COLD-START case still works: BricsCAD not yet
+    running, docPath should still be passed so a fresh launch has a
+    document (and therefore a command line) to type into — this is the
+    scenario %APPLESCRIPT-LAUNCH-COMMAND's docstring already documents
+    as the reason docPath is passed at all ("no document, no command
+    line, nowhere for the keystrokes to land").
+
+* Notes / constraints
+
+  - Machine-only, like its parent ticket: needs a live macOS + BricsCAD
+    session to verify.
+  - Do not re-litigate the keystroke-injection layer here — Round 8 of
+    the parent ticket separately hardened and re-verified that machinery
+    (window-focus detection, content verification, corrupted-input
+    guards, Dock-collision-safe clicking, exception handling throughout);
+    this ticket is specifically about the launch/document-opening step
+    that runs before any of that.
+
+* References
+
+  - issues/closed/alfe-bricscad-automation-macos-osascript.issue (Round 8:
+    how this was found, and the six-plus-two injection-layer fixes made
+    in the same session)
+  - autolisp-front-end/source/backend-bricscad.lisp
+    - %APPLESCRIPT-LAUNCH-COMMAND (~line 1150) — builds LAUNCHCOMMAND
+    - EMIT-LAUNCHER-APPLESCRIPT — calls it and fills in docPath
+
+* Round 9 — pjb + Claude, live at the machine, 2026-09-12 (same day, continued)
+
+** Fix implemented, refined once after a live edge case, then live-confirmed
+
+First cut: check whether BricsCAD is already RUNNING (`exists (processes
+whose name contains "bricscad")`) and skip docPath if so. Emitted
+correctly, all existing + one new test green — but the FIRST live test
+against a freshly-launched, running-but-no-document-yet BricsCAD (sitting
+on its own Start page, exactly the state a cold launch passes through)
+showed the bug this coarse check introduces: `alreadyRunning` was true
+(the process existed) so docPath got skipped, leaving no document and
+therefore no console to type into — the very problem docPath exists to
+solve, just reached a different way.
+
+Refined to check something more specific: does a document/console window
+ALREADY EXIST — the same exclusion-by-product-name signal
+FINDCONSOLEWINDOW already uses (a standard window whose name does not
+contain "bricscad", which stays constant and untranslated regardless of
+which document is open) — rather than mere process existence. This
+correctly covers all three cases: not running at all, running with
+nothing open yet, and running with a document open — docPath is passed
+in the first two, skipped only in the third.
+
+Verified live: with BricsCAD running and freshly at its Start page (no
+document), the fixed launcher's LAUNCHCOMMAND correctly opened
+Default-mm.dwt as a new tab (confirmed by screenshot — the tab appeared,
+bold/active). This is the core fix working as intended.
+
+** Also found: the console panel can still be CLOSED right after
+LAUNCHCOMMAND opens a fresh document, and the existing F2-fallback (from
+alfe-bricscad-automation-macos-osascript.issue Round 6) did not reliably
+reveal it in that exact sequence, even though the identical F2 keystroke
+sent by hand moments later worked immediately. Diagnosed as a timing
+issue: "BricsCAD is the frontmost PROCESS" says nothing about whether a
+just-opened DOCUMENT has finished initializing its UI (ribbon, console
+panel) enough to act on F2. Added a `delay 1.5` immediately after the
+frontmost-wait succeeds and before the console-finding logic runs — a
+pragmatic fixed bound, not genuine polling for document-readiness (a
+further refinement, not attempted this round).
+
+** Full end-to-end re-verification blocked by a recurring environmental
+hang, not a code issue
+
+After the settle-delay fix, BricsCAD became unresponsive again during
+the very next live run — same signature as the hang documented in
+alfe-bricscad-automation-macos-osascript.issue Round 8 (process pegged
+near 100% CPU, System Events itself still responsive but reports ZERO
+windows for the process), but this time after only ~9 minutes of heavy
+scripted interaction on a freshly-launched instance, versus hours for
+the first occurrence. Two independent occurrences in one day, both
+following sustained rapid synthetic clicks/keystrokes/AX queries,
+suggests this BricsCAD installation/session genuinely degrades under
+that kind of load rather than the first occurrence being a fluke.
+Force-quit and left there rather than relaunching a third time this
+round — further live confirmation of the settle-delay fix (and a full,
+uninterrupted READY->request->DONE cycle through
+scripts/verify-bricscad-automation.sh) is the natural next step for a
+fresh session, ideally a SHORT one specifically to test whether hang
+avoidance correlates with session duration/event volume as
+alfe-bricscad-automation-macos-osascript.issue Round 7 already
+speculated.
+
+** Net effect
+
+The docPath/Welcome-page bug this ticket is about is FIXED and the core
+mechanism verified live (document correctly opened only when needed).
+The settle-delay addition is implemented and reasoned but not yet
+independently confirmed live due to the hang. Tests: alfe SBCL suite
+654/654 green.
+
+** Continued (same day): the ACTUAL acceptance script surfaced a third,
+distinct root cause — a stack of startup dialogs
+
+Ran scripts/verify-bricscad-automation.sh fresh (no BricsCAD running
+beforehand) to get a clean, minimal-interaction end-to-end read. Batch
+control PASSED (engine/runner healthy); automation still FAILED, status
+stuck at BOOTING. Live inspection found BricsCAD sitting on its own
+"BricsCAD Launcher" workspace-selection dialog — a genuinely cold launch
+on this installation shows this BEFORE the Start page is even reachable.
+This is exactly the "a modal or first-run dialog owns input" hypothesis
+from the very first version of alfe-bricscad-automation-macos-osascript
+— not eliminated after all, just not reachable in earlier rounds because
+BricsCAD had already been run past it once already-running instances
+were being reused throughout most of this investigation.
+
+Confirmed live that pressing Return dismisses it (via its own
+default/highlighted button, no button-name hard-coding needed) — and
+revealed a SECOND dialog right behind it: "Fichier de verrouillage Dwl
+trouvé" (lock-file-found), because this session's own repeated
+force-quits had left the Default-mm.dwt template's .dwl lock file
+behind. Also a realistic scenario in production, not just a testing
+artefact: any alfe automation run that gets killed abnormally while
+BricsCAD has a template open leaves exactly this behind for the NEXT
+run. Return dismisses this one too, via its own default button.
+
+Neither dialog is reachable by FINDCONSOLEWINDOW (both correctly
+EXCLUDED from ever being mistaken for the console by its own
+name-exclusion logic — they just never get treated as one either), and
+the existing frontmost-wait only confirms BricsCAD ITSELF is frontmost,
+which a dialog belonging to that same process already satisfies.
+
+Fixed: DISMISSSTARTUPDIALOGS, called once after the settle delay and
+before the main injection loop — up to 5 bounded Return presses, each
+followed by a FINDCONSOLEWINDOW check that stops the loop as soon as one
+succeeds. Safe when no dialog is actually present: Return then lands on
+BricsCAD's own idle console prompt, a harmless no-op there, never on
+some unrelated foreground application (it only runs after the
+frontmost-wait above already confirmed BricsCAD has focus).
+
+Live re-verification of the FULL fix stack (docPath check + settle delay
++ dialog dismissal together) was interrupted by a THIRD occurrence of the
+recurring hang documented above and in the parent ticket's Round 8 — this
+time within roughly two minutes of resumed scripted interaction. Three
+occurrences in one extended session, each following a burst of automated
+GUI activity regardless of what that activity specifically was (manual
+dialog probing, a full launcher run, simple typed tests), makes this look
+like a property of this specific BricsCAD Lite V26 installation/build
+under ANY sustained rapid interaction — worth checking in a future
+session whether it reproduces under rapid HUMAN interaction too (which
+would point at the build/installation rather than anything
+automation-specific), and whether inserting longer pauses between
+automated actions measurably delays it.
+
+Tests: 4 new checks (MACOS-LAUNCHER-APPLESCRIPT-DISMISSES-STARTUP-
+DIALOGS), alfe SBCL suite 658/658 green. The dialog-dismissal mechanism
+itself is implemented and logically sound, and its two constituent
+Return-dismissals were each individually confirmed live (by hand,
+in-sequence) — what remains is a live run of the mechanism as CALLED
+FROM the actual script back-to-back with everything else, which the
+recurring hang has not yet allowed to complete.
+
+** Continued (same day, pjb): the lock-file dialog's ROOT cause was
+already meant to be fixed — and wasn't, because of a second bug
+
+pjb, on seeing the lock-file dialog: "apparently there's a locked file
+it tries to load at launch time (the drawing you give it?). I guess we
+must expect various different dialogs on launch." Right on both counts.
+On the first: autolisp-front-end already has empty-drawing.lisp
+(issues/open/empty-ressource.issue, 2026-08-30), built for EXACTLY this
+— write a FRESH empty.dwg into each run's own unique, cleaned-up-after
+workdir, specifically so no two runs ever share (and therefore can never
+lock each other out of) the same file. It was never actually taking
+effect for the automation path: DISCOVER-BRICSCAD-TEMPLATE (used by
+DETECT, which runs once at backend-construction time, before any
+per-invocation workdir exists) has no workdir to try the fresh-drawing
+step with, so it silently fell through to the SHARED vendor template —
+and DETECT cached that as the backend's TEMPLATE-PATH. Every later,
+correctly workdir-aware call in START-ENGINE's automation branch checks
+that cached value FIRST (as it legitimately should, so a real override
+wins) and therefore never reached its own fresh-per-run discovery below
+it — dead code in practice, despite its own comment already correctly
+saying "a drawing of this run's own, in this run's workdir".
+
+Net effect: every run, cold or warm, was silently sharing the ONE vendor
+Default-mm.dwt template all along — precisely the failure mode
+empty-ressource.issue was written to eliminate, just never actually
+wired up for this path. An automation run killed abnormally while that
+shared file was open (exactly what happened repeatedly this session)
+leaves it .dwl-locked for every subsequent run, cold or warm.
+
+Fixed at the root, not just reacted to: DISCOVER-BRICSCAD-TEMPLATE gained
+an ALLOW-VENDOR-FALLBACK keyword (default T); DETECT now passes NIL for
+it, so the backend's cached TEMPLATE-PATH is honestly NIL unless the user
+actually asked for something explicit (an env var), rather than DETECT's
+own non-explicit vendor-template guess masquerading as one. Every
+downstream call site is UNCHANGED (still checks the cached value first,
+correctly) — with DETECT no longer polluting that slot, the fresh,
+workdir-aware discovery underneath is reached for real. Verified via
+`alfe --print-command` (no live BricsCAD needed to check this):
+docPath now resolves to "<this run's own workdir>/empty.dwg", not the
+shared vendor template.
+
+This does not replace DISMISSSTARTUPDIALOGS above — pjb's second point
+stands: "various different dialogs" on a cold launch (the workspace
+picker, at minimum) are a separate thing this fix does not touch, and
+Return-dismissal remains the reactive safety net for whatever modal
+still shows up despite the file itself no longer being shareable. The
+two are complementary: this fix removes the MOST COMMON self-inflicted
+cause of a stray dialog (a shared, lockable file); DISMISSSTARTUPDIALOGS
+handles whatever else appears regardless.
+
+An existing test (BRICSCAD-WINDOWS-BATCH-ARGV-HAS-SINGLE-AUTOMATION-
+BEFORE-B) caught a first, wrong attempt at this fix immediately: naively
+reordering the `or' at each CALL SITE (fresh-discovery-first) broke the
+case where a caller legitimately sets an EXPLICIT template-path directly
+(as that test does, simulating a real override) — with workdir-first
+ordering, auto-discovery would have shadowed even a genuine explicit
+choice, and as a side effect the test run wrote a real file to /tmp
+outside its own sandbox. Reverted both call-site edits back to their
+original shape; the actual bug was never the `or' order, it was DETECT
+handing a non-explicit guess to slots every caller has to trust ARE
+explicit when non-nil.
+
+Tests: 3 new checks (DISCOVER-BRICSCAD-TEMPLATE-SKIPS-VENDOR-FALLBACK-
+WHEN-ASKED, DETECT-DOES-NOT-CACHE-A-VENDOR-TEMPLATE-PATH, DETECT-STILL-
+CAPTURES-AN-EXPLICIT-TEMPLATE-OVERRIDE), alfe SBCL suite 661/661 green.

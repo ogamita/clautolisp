@@ -1,0 +1,53 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: atoms-family-string-names-case-sensitive — (atoms-family 1 '("com_way")) answered nil for a defined COM_WAY
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: feat-epure-api-test-atoms-family
+
+* Context
+
+pjb, 2026-09-28: "let's use atoms-family on com_way and com_tl_continu.
+Replace the tests to validate." scripts/verify-epure-api.ps1 now asks
+
+#+begin_src autolisp
+  (print (and (car (atoms-family 1 (quote ("com_way"))))))
+  (print (and (car (atoms-family 1 (quote ("com_tl_continu"))))))
+#+end_src
+
+The EPURE census (scripts/epure-symbol-probe.lsp, alfe-plugin-epure-windows-validation)
+had asked ATOMS-FAMILY about lowercase names on AutoCAD 2022 and BricsCAD V25
+and found com_way / com_tl_continu present on both: the vendors match
+string names without regard to case.
+
+* Problem
+
+Validating the new expressions locally, under clautolisp with both functions
+DEFUNed, printed =nil nil=. builtin-atoms-family looked the string up with
+FIND-AUTOLISP-SYMBOL exactly as given, but the reader stores symbols under the
+canonical (upcased, by default) name, so "com_way" never met COM_WAY. The
+same list given as SYMBOLS answered T, since those were read, and folded.
+
+Repro (before):
+
+#+begin_src autolisp
+  (defun com_way (x) x)
+  (atoms-family 1 '("com_way"))   ; => (nil)      vendors: a hit, non-nil
+  (atoms-family 1 '(com_way))     ; => ("COM_WAY")
+#+end_src
+
+* Resolution
+
+Resolved clautolisp 2.2.141. A string element is looked up as given, then
+upcased, then downcased -- the exact name first, so a symbol interned under
+a :preserve reader still wins over a folded homonym -- and the answer is the
+resolved symbol's own name (format 1) or the symbol itself (format 0).
+Test builtin-atoms-family-string-names-ignore-case (builtin-tests.lisp); the
+two EPURE expressions now print T T with the functions defined and nil nil
+without them.
+
+Not measured: the exact CASE of the string a vendor returns for a
+lowercase query. clautolisp returns the stored name ("COM_WAY"), as the
+AutoCAD reference example (atoms-family 1 '("CAR" "CDR" "XYZ")) does; the
+EPURE test only asks whether it is non-nil.

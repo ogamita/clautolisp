@@ -73,13 +73,19 @@
       (is (string= x2 (dictionary-member-handle d root "GAMMA")))
       (is (null (dictionary-member-handle d root "BETA"))))))
 
-(test dictionary-preserves-insertion-order
+(test dictionary-lists-its-entries-in-key-order
+  ;; as the CADs list a dictionary, whatever the insertion order (the
+  ;; vendor-template test, entget-pointers section 12)
   (let ((d (make-drawing)))
     (let ((root (entity-handle-id (ensure-root-dictionary d))))
-      (dolist (k '("K1" "K2" "K3"))
+      (dolist (k '("K3" "k1" "K2"))
         (dictionary-add-entry d root k (%make-xrecord d)))
-      (is (equal '("K1" "K2" "K3")
-                 (mapcar #'car (dictionary-object-entries d root)))))))
+      (is (equal '("k1" "K2" "K3")
+                 (mapcar #'car (dictionary-object-entries d root))))
+      (is (equal '("k1" "K2" "K3")
+                 (loop for (code . value) in (dictionary-data-sorted
+                                              (entity-handle-data (find-dictionary d root)))
+                       when (eql code 3) collect value))))))
 
 (test find-dictionary-rejects-non-dictionary
   (let ((d (make-drawing)))

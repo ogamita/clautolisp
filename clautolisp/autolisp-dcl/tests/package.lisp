@@ -37,6 +37,9 @@
                 #:dcl-runtime-mode-tile
                 #:dcl-runtime-find-tile
                 #:dcl-runtime-fire-action
+                #:dcl-runtime-start-list
+                #:dcl-runtime-add-list
+                #:dcl-runtime-end-list
                 #:dcl-dialog-tile
                 #:dcl-dialog-status
                 #:install-default-renderer

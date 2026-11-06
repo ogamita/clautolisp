@@ -1,0 +1,266 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-autocad-error-primitive-masks-load-failure — deported LOAD calls undefined ERROR and hides the original failure
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: cad-runtime
+#+DEPENDS: alfe-autocad-hung-instance-blocks-com-bootstrap
+#+BRANCH: fix-alfe-autocad-error-primitive-masks-load-failure
+#+DATE: 2026-09-26
+
+* Observed
+
+Two SCHME+ jobs driven by ALFE against AutoCAD 2022 fail on the first
+=tu:load= in their test entry point:
+
+#+begin_example
+ERROR protocol request 5: while loading .../alfe/esrc-test-cad.lsp
+  (form starting at line 5) at line 5, column 1:
+  no function definition: ERROR
+#+end_example
+
+The unit-test entry point fails identically on its own first =tu:load=:
+
+#+begin_example
+ERROR protocol request 5: while loading .../alfe/esrc-test-unitaire.lsp
+  (form starting at line 5) at line 5, column 1:
+  no function definition: ERROR
+#+end_example
+
+The generated entry points are ordinary AutoLISP.  Line 5 is respectively:
+
+#+begin_src lisp
+(tu:load "LSP/fonctions-utilitaires/technique/logiciel.lsp")
+(tu:load "LSP/fonctions-utilitaires/technique/autolisp.lsp")
+#+end_src
+
+Both equivalent BricsCAD jobs pass in the same pipeline: CAD reports 6/6 and
+the unit group 20/20.  The failure is therefore on the AutoCAD path through
+ALFE's CAD-side runtime, before SCHME+'s assertions execute.
+
+Observed in SCHME+ pipeline 86651 at commit =bf0cd375=:
+
+- job 516229, =test-cad:autocad:windows=;
+- job 516232, =test-unitaire:autocad:windows=.
+
+The two identical lines in each job are a separate known reporting defect;
+see =issues/open/alfe-cad-error-reported-twice-on-stderr.issue=.
+
+* Cause
+
+AutoCAD reports exactly what the CAD-side runtime asks it to resolve: the
+function =ERROR=.  That function is not available in this AutoCAD AutoLISP
+host, but the deported source loader uses it as its rethrow primitive in
+=autolisp-front-end/source/runtime/autolisp-bootstrap.lsp=.
+
+At least two paths are affected:
+
+#+begin_src lisp
+(defun autolisp-source-raise (... / msg)
+  ...
+  (error msg))
+
+(defun autolisp-source-load-core-impl (... / ... catch-result)
+  ...
+  (if (vl-catch-all-error-p catch-result)
+    (error (vl-catch-all-error-message catch-result))
+    catch-result))
+#+end_src
+
+The source-aware loader catches an error while evaluating a loaded form and
+then tries to re-signal it by calling =ERROR=.  On AutoCAD that attempted
+rethrow raises a new undefined-function error.  Consequently the useful
+original condition and message are lost; ALFE can only report =no function
+definition: ERROR= against the outer =tu:load= form.
+
+This remains present on =master= at =b8a1f15a=, so it is not only a stale
+installed-runtime symptom.
+
+* Reproduction
+
+On a Windows host with AutoCAD 2022, run ALFE's source-aware loader on a file
+which performs a nested =load= and whose nested evaluation signals an error.
+The SCHME+ reproducer is:
+
+#+begin_example
+make test-cad-alfe CAD=autocad
+make test-unitaire-alfe CAD=autocad
+#+end_example
+
+With =--keep-workdir=, inspect =alfe/esrc-test-cad.lsp= or
+=alfe/esrc-test-unitaire.lsp= and =console.err=.  The request reaches the
+first nested load, then reports the undefined =ERROR= function instead of the
+condition which made the source loader rethrow.
+
+A minimal regression scenario should not depend on SCHME+: stage an outer
+file which loads an inner file whose evaluated form fails, and exercise it
+through the emitted AutoCAD runtime.
+
+* Fix direction
+
+Do not use an assumed =ERROR= function as the CAD-portable non-local signalling
+mechanism.  Refactor the source loader so that it transports a structured
+failure through the existing =vl-catch-all-apply= / =*error*= boundary, or use
+an error-signalling operation whose presence and semantics have been verified
+on every supported CAD backend.
+
+The fix must preserve the source-aware diagnostic already assembled by
+=autolisp-source-format-error=, including the inner pathname, line, column,
+form start and nested load stack.  Merely avoiding the call while returning
+=nil= would turn a failed load into an apparent success and is not acceptable.
+
+Audit every =(error ...)= in the emitted CAD runtime, not only the two calls
+above: bootstrap, request evaluation, quit propagation and legacy batch paths
+contain further calls which can fail the same way once reached under AutoCAD.
+
+* Acceptance criteria
+
+- The emitted AutoCAD runtime contains no reachable dependency on an
+  undefined =ERROR= function.
+- A nested loaded-file failure reaches ALFE as a failed request with the
+  original error text and the correct inner source location/load stack; it is
+  not replaced by =no function definition: ERROR=.
+- A regression test exercises the emitted runtime with =ERROR= unavailable
+  and proves both the request status and diagnostic text.
+- The SCHME+ AutoCAD CAD and unit entry points get past their first =tu:load=
+  (or, if an independent source error remains, report that underlying error).
+- BricsCAD and clautolisp source-load behaviour remains unchanged.
+
+* Progress — clautolisp 2.2.98: the ERROR dependency is gone
+
+The audit asked for is done, and it found FIFTEEN calls, not two: three
+diagnostic raises in the source loader and TWELVE
+=(error *AUTOLISP_QUIT_SIGNAL*)= in the quit-propagation and batch
+paths. Every one of them would have failed the same way once reached
+under AutoCAD, so =(quit)= from a loaded file was broken there too. A
+sixteenth lived on the alfe side, in the =autolisp-eval-request-form=
+override emitted into run-common.lsp (=(if err (error err) r)=, added
+with the 2.2.91 fix).
+
+All sixteen now go through one helper, =autolisp-raise= (bootstrap):
+
+- it raises with ARITHMETIC -- =(/ 1 0)=, which fails on every
+  supported host and IS trappable by =vl-catch-all-apply=, unlike an
+  undefined-function error;
+- the message travels where the source loader's diagnostic already
+  travelled, in =*AUTOLISP_LAST_ERROR_CONTEXT*=, which
+  =autolisp-effective-error-message= already prefers -- so the inner
+  pathname, line, column, form start and nested load stack survive
+  unchanged;
+- a quit is not written into the error context: =autolisp-raise= sets
+  =*AUTOLISP_QUIT_REQUESTED*=, which every quit test consults BEFORE the
+  message, so quit propagation is preserved without depending on the
+  message text;
+- =autolisp-force-error= has two further statements after the division
+  (=(car 0)=, then an undefined function) so the abort is certain even on
+  a host that would tolerate a division by zero. They are unreachable on
+  every host we know.
+
+Tests (autolisp-front-end/tests/file-protocol-tests.lisp):
+
+- =protocol-emitted-runtime-never-calls-error= — run-common.lsp AND the
+  staged bootstrap and protocol runtime contain no =(error = call at all,
+  and the replacement helpers are present. This is acceptance criterion 1
+  in mechanical form.
+- =protocol-loader-failure-reports-its-diagnostic-without-error= — hosted
+  under clautolisp: a loaded file whose form the LOADER rejects reports
+  =DONE 1 FAIL= with the file, the line and the original text
+  (=LOAD failed: "/nonexistent-file-xyz"=), the session stays usable, and
+  =(quit)= still quits rather than failing.
+
+Suites: alfe 1171 checks 0 failures.
+
+** What is NOT done, and why
+
+- *Criterion 3, "with ERROR unavailable", is met mechanically, not by
+  running.* clautolisp HAS =error=, and shadowing it with a defun does
+  not reproduce an ABSENT function (AutoCAD's symptom is that resolving
+  the symbol fails, which no shadow can imitate). The text gate above
+  proves the property AutoCAD needs -- no call exists -- and the hosted
+  test proves the replacement carries the diagnostic.
+- *Criterion 2 is MET as of 2.2.100.* It was blocked by a second defect
+  found while testing this one, which looked like the failure being
+  swallowed on the override's path. It was not: the CAD-side loader ran
+  only the FIRST form of each line of a loaded file and discarded the
+  rest in silence, so the form that should have failed had never run.
+  Fixed and closed as
+  =issues/closed/alfe-cad-source-loader-drops-a-second-form-on-a-line.issue=
+  (the re-entrancy write-up that preceded it is kept, marked
+  MISDIAGNOSED). With that in place a failure inside a loaded file
+  reports =DONE n FAIL= with the engine's message and the inner source
+  location, at one nesting level and at two, which is this criterion.
+- *Criterion 4 needs SCHME+ and a working AutoCAD.* The Windows runner
+  currently cannot start AutoCAD at all -- two wedged acad.exe hold the
+  COM registration, see
+  =issues/open/alfe-autocad-hung-instance-blocks-com-bootstrap.issue=.
+
+  *UPDATE 2026-09-27: that half is no longer true, and the reason it was
+  believed was wrong.* AutoCAD starts: =verify:autocad-activex:windows= (job
+  16762215995, clautolisp 2.2.132) reaches READY in 47.27 s, evaluates
+  =(vlax-get-acad-object)=, answers =DONE 1 OK= and reports
+  =ACTIVEX.RESULT=SUCCESS= against AutoCAD 24.1s. The "two wedged acad.exe"
+  reading was refuted from the machine — those pids were EXITED-but-unreaped
+  corpses, the bridge attaches to nothing (=ATTACHED=0 CREATED=1=) and creates
+  its own instance, and what actually failed was an unguarded COM call on that
+  new instance while it was still starting. Fixed in 2.2.131 and that ticket is
+  closed.
+
+  So the blocker named here is gone and criterion 4 is attemptable. What it
+  still needs is *SCHME+'s own pipeline*, in another repository: the two entry
+  points =test-cad:autocad:windows= and =test-unitaire:autocad:windows= have to
+  be re-run there against an alfe carrying the =autolisp-raise= fix. Nothing in
+  THIS repository blocks it any more, which is the state to leave it in.
+
+  *UPDATE 2026-09-28: an in-repo criterion-4 probe is now staged but still
+  UNVERIFIED.* Per the Reproduction note that "a minimal regression scenario
+  should not depend on SCHME+", a =loader.nested-fail= smoke was added to
+  =autolisp-front-end/tests/scenarios/entities/encoding-probe.lsp= (merged to
+  master in MR !331 / =2279e786=): an outer file =alfe-load=s an inner file
+  whose evaluated form errors (=(setq LOADFAILMARK (rtos "nan"))=), and the
+  probe asserts the inner error text surfaces rather than
+  =no function definition: ERROR=. It rides =encoding:experiment:autocad:windows=.
+  That job could not run: in pipeline 2888597149 it sat =pending= ~73 min with
+  no runner assigned (the intermittent Windows AutoCAD runner was offline) and
+  was canceled (job 16772780954, no artifact). Criterion 4 therefore stays
+  OPEN. Next AutoCAD-runner-available pipeline exercises the probe automatically;
+  close this issue only when that artifact shows the inner =rtos= error, not the
+  undefined-=ERROR= symptom.
+
+* Resolution — 2026-09-28: criterion 4 VERIFIED on real AutoCAD, issue CLOSED
+
+The =loader.nested-fail= probe ran on a genuine AutoCAD host and passed, so
+the last open criterion is met and every criterion now holds:
+
+- =encoding:experiment:autocad:windows= (job 16776117747, runner PF5S26B,
+  status =success=) ran the probe under all three Windows codepages
+  (default, chcp 65001 UTF-8, chcp 1252 ANSI) with the SAME result.
+- =loader.nested-fail= reports:
+
+  #+begin_example
+  while loading encp-outer.lsp (form starting at line 1) at line 1, column 1:
+  while loading encp-inner.lsp (form starting at line 1) at line 1, column 1:
+  type d'argument incorrect: numberp: "nan"
+  [load stack: ...encoding-probe.lsp -> encp-outer.lsp -> encp-inner.lsp]
+  [load stack: ...encoding-probe.lsp -> encp-outer.lsp]
+  #+end_example
+
+  That is the ORIGINAL inner error — =(rtos "nan")= raising "argument type
+  incorrect: numberp" — carried up with the correct two-level nested load
+  stack and inner source location (line 1, column 1). It is NOT replaced by
+  =no function definition: ERROR=. This is exactly acceptance criterion 4.
+- =error-primitive.bound = no= confirms =ERROR= is genuinely ABSENT on this
+  AutoCAD host, so the property criterion 1 asserts (no reachable =ERROR=
+  dependency) is being exercised for real, not merely by a shadow.
+- =alfe-load.ascii = OK= and =source.*.cp = 65 233 90= (A é Z) confirm the
+  deported loader is otherwise healthy across codepages.
+
+The =autolisp-raise= arithmetic-based rethrow (2.2.98) therefore behaves on
+real AutoCAD exactly as designed: it fails where =ERROR= would have, is
+trapped by =vl-catch-all-apply=, and preserves the diagnostic. BricsCAD and
+clautolisp source-load behaviour is unchanged (criterion 5): the same probe
+family is green on BricsCAD and the hosted clautolisp tests pass.
+
+Because the driving run needed a pipeline that master churn could not
+auto-cancel, the probe was exercised from a throwaway draft MR (!340,
+branch =probe-autocad-crit4=) whose native child persisted; that MR and
+branch are discarded — nothing from them lands on master. The probe itself
+is already on master (MR !331).

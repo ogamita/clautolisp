@@ -50,7 +50,8 @@ DESTDIR ?=
 SUBPROJECT_NAME := autolisp-spec
 
 .PHONY: all build documentation clean-pdf probe-autocad probe-bricscad probes \
-        pages html info paged install uninstall clean-build
+        pages html info paged install uninstall clean-build \
+        check-info-export-equivalence
 
 all: documentation
 
@@ -66,7 +67,7 @@ build: paged documentation  ## Build PDFs + paged HTML/Info derivatives (everyth
 documentation: $(PDF_FILES) $(SPEC_PDF_VERSIONED)
 
 $(SPEC_PDF_VERSIONED): $(SPEC_PDF)
-	cp -f $< $@
+	cp -f "$<" "$@"
 
 # ---------------------------------------------------------------------
 # Paged spec build — splits the canonical org file into per-section
@@ -81,21 +82,31 @@ $(SPEC_PDF_VERSIONED): $(SPEC_PDF)
 pages: $(PAGES_DIR)/.stamp  ## Emit one .txt per * chapter and ** subsection under build/pages/.
 
 $(PAGES_DIR)/.stamp: $(SPEC_ORG) scripts/build-paged-spec.el
-	$(EMACS) --batch --script scripts/build-paged-spec.el \
-		$(SPEC_ORG) $(PAGES_DIR) text
-	@touch $@
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch --script scripts/build-paged-spec.el \
+		"$(SPEC_ORG)" "$(PAGES_DIR)" text
+	@touch "$@"
 
 html: $(HTML_DIR)/.stamp  ## Render every section + the index/symbol pages as HTML.
 
 $(HTML_DIR)/.stamp: $(BUILD_DIR)/.org-stamp scripts/build-paged-html.el
-	$(EMACS) --batch --script scripts/build-paged-html.el $(BUILD_DIR)
-	@touch $@
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch --script scripts/build-paged-html.el "$(BUILD_DIR)"
+	@touch "$@"
 
 info: $(INFO_DIR)/autolisp-spec.info  ## Build the .info manual from the spec.
 
+# How much of the spec the equivalence check exports. Node naming is a
+# per-node property, so a few thousand nodes exercise it exactly as well as
+# forty thousand -- and the whole file, exported by the STOCK code the check
+# has to run for comparison, is the 51 minutes the override exists to avoid.
+EQUIV_LINES ?= 6000
+
+check-info-export-equivalence:  ## Fail unless the fast node index exports byte-identical texi.
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch --script \
+		scripts/check-info-export-equivalence.el "$(SPEC_ORG)" $(EQUIV_LINES)
+
 $(INFO_DIR)/autolisp-spec.texi: $(SPEC_ORG) scripts/build-paged-info.el
-	$(EMACS) --batch --script scripts/build-paged-info.el \
-		$(SPEC_ORG) $(BUILD_DIR)
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch --script scripts/build-paged-info.el \
+		"$(SPEC_ORG)" "$(BUILD_DIR)"
 
 $(INFO_DIR)/autolisp-spec.info: $(INFO_DIR)/autolisp-spec.texi
 	# Strict build: --force / --no-validate are NOT needed any
@@ -104,21 +115,41 @@ $(INFO_DIR)/autolisp-spec.info: $(INFO_DIR)/autolisp-spec.texi
 	# 38191-38192 of the spec org pre-fix) has been wrapped in a
 	# #+begin_example block with the leading stars comma-escaped
 	# (',*'), which org's parser unescapes at export time.
-	$(MAKEINFO) --no-split $< -o $@
+	"$(MAKEINFO)" --no-split "$<" -o "$@"
 
-paged: pages html info  ## Build every paged derivative (pages + html + info).
+# Which paged derivatives `paged' builds. All three by default, and every
+# lane now uses the default -- the knob is kept for a caller who wants one
+# derivative, not as a workaround.
+#
+# It WAS a workaround. Measured on a real documentation job
+# (doc-build-info-export-quadratic): the per-section split is 5 s for 3022
+# pages, the HTML render 2 min 38, and the Info export was FIFTY-ONE
+# MINUTES -- 94% of the job -- so the merge-request lane passed
+# `pages html' and left the manual to the release lane.
+#
+# The cause was not the size of the spec but ox-texinfo naming its nodes
+# against a growing alist, which is quadratic in the number of nodes;
+# scripts/spec-texinfo-fast-node.el replaces that lookup and the export
+# takes 60 s. With the hour gone the workaround is gone with it, and every
+# lane builds the manual again -- which also restores something the
+# workaround had quietly cost: while only the release lane built it, a
+# spec edit that broke the Info build could only be discovered ON a
+# release.
+SPEC_PAGED_TARGETS ?= pages html info
+
+paged: $(SPEC_PAGED_TARGETS)  ## Build the paged derivatives named by SPEC_PAGED_TARGETS (default: pages + html + info).
 
 # Intermediate: emit the per-section .org pages that HTML and Info
 # both consume. The stamp file pegs the rebuild trigger to the spec
 # org's mtime.
 $(BUILD_DIR)/.org-stamp: $(SPEC_ORG) scripts/build-paged-spec.el
-	$(EMACS) --batch --script scripts/build-paged-spec.el \
-		$(SPEC_ORG) $(BUILD_DIR)/org org
-	@mkdir -p $(BUILD_DIR)
-	@touch $@
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch --script scripts/build-paged-spec.el \
+		"$(SPEC_ORG)" "$(BUILD_DIR)/org" org
+	@mkdir -p "$(BUILD_DIR)"
+	@touch "$@"
 
 clean-build:  ## Remove every paged derivative under build/.
-	rm -rf $(BUILD_DIR)
+	rm -rf "$(BUILD_DIR)"
 
 # ---------------------------------------------------------------------
 # Install / uninstall.
@@ -128,15 +159,17 @@ clean-build:  ## Remove every paged derivative under build/.
 #
 #   $(PREFIX)/share/doc/autolisp-spec/           org + pdf reference docs
 #   $(PREFIX)/share/doc/autolisp-spec/html/      HTML manual (browse-able)
-#   $(PREFIX)/share/info/                        autolisp-spec.info (info dir)
-#   $(PREFIX)/share/autolisp-spec/pages/         plain-text pages (data files
+#   $(PREFIX)/share/doc/autolisp-spec/pages/     plain-text pages (data files
 #                                                the alref libraries read)
+#   $(PREFIX)/share/info/                        autolisp-spec.info (info dir)
 #   $(PREFIX)/share/emacs/site-lisp/autolisp-spec/    alref.el
 #   $(PREFIX)/share/autolisp/site-lisp/autolisp-spec/ alref.lsp
 #
-# pages/ stays under share/autolisp-spec/ rather than share/doc/
-# because both alref libraries treat it as data (open it for read,
-# parse the index, etc.), not as readable docs.
+# pages/ ships under share/doc/autolisp-spec/ alongside the html/ and
+# the org/pdf docs, so the whole spec — readable docs and the plain-text
+# pages the alref libraries read as data — lives under one doc root. The
+# alref libraries' default spec-data root points there (see alref.lsp
+# *alref-root* and alref.el alref--default-spec-directory).
 
 DOC_INSTALL_DIR   := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 DATA_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/$(SUBPROJECT_NAME)
@@ -147,8 +180,8 @@ LISP_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/autolisp/site-lisp/$(SUBPROJECT_N
 .PHONY: install install-programs install-documentation install-alref-libs uninstall
 
 install: build  ## Install the autolisp-spec documentation into $$PREFIX (build first; sudo-friendly).
-	$(MAKE) install-programs
-	$(MAKE) install-documentation
+	"$(MAKE)" install-programs
+	"$(MAKE)" install-documentation
 
 # The alref reference libraries (alref.el for Emacs, alref.lsp for the
 # AutoLISP runtime) are BOTH data the docs ship AND programs we run
@@ -158,27 +191,27 @@ install: build  ## Install the autolisp-spec documentation into $$PREFIX (build 
 # is a deliberate duplicate — idempotent file-copy, no build needed.
 install-alref-libs:
 	@if [ -d emacs ]; then \
-	  install -d $(EMACS_INSTALL_DIR); \
-	  for f in emacs/*.el; do [ -f "$$f" ] && install -m 0644 "$$f" $(EMACS_INSTALL_DIR)/; done; \
+	  install -d "$(EMACS_INSTALL_DIR)"; \
+	  for f in emacs/*.el; do [ -f "$$f" ] && install -m 0644 "$$f" "$(EMACS_INSTALL_DIR)/"; done; \
 	fi
 	@if [ -d autolisp ]; then \
-	  install -d $(LISP_INSTALL_DIR); \
-	  for f in autolisp/*.lsp; do [ -f "$$f" ] && install -m 0644 "$$f" $(LISP_INSTALL_DIR)/; done; \
+	  install -d "$(LISP_INSTALL_DIR)"; \
+	  for f in autolisp/*.lsp; do [ -f "$$f" ] && install -m 0644 "$$f" "$(LISP_INSTALL_DIR)/"; done; \
 	fi
 
 install-programs: install-alref-libs  ## Install the alref reference libraries (alref.lsp / alref.el) — run separately from the docs.
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-documentation: install-alref-libs  ## Install the autolisp-spec docs (.org/.pdf/HTML/Info/pages + alref libs).
-	install -d $(DOC_INSTALL_DIR)/html
-	install -d $(DATA_INSTALL_DIR)/pages
-	install -d $(INFO_INSTALL_DIR)
-	@if [ -d $(HTML_DIR)  ]; then cp -R $(HTML_DIR)/.  $(DOC_INSTALL_DIR)/html/;  fi
-	@if [ -d $(PAGES_DIR) ]; then cp -R $(PAGES_DIR)/. $(DATA_INSTALL_DIR)/pages/; fi
-	@if [ -f $(INFO_DIR)/autolisp-spec.info ]; then \
-	  install -m 0644 $(INFO_DIR)/autolisp-spec.info $(INFO_INSTALL_DIR)/; \
-	  $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" \
-	    $(INFO_DIR)/autolisp-spec.info 2>/dev/null \
+	install -d "$(DOC_INSTALL_DIR)/html"
+	install -d "$(DOC_INSTALL_DIR)/pages"
+	install -d "$(INFO_INSTALL_DIR)"
+	@if [ -d "$(HTML_DIR)"  ]; then cp -R "$(HTML_DIR)/."  "$(DOC_INSTALL_DIR)/html/";  fi
+	@if [ -d "$(PAGES_DIR)" ]; then cp -R "$(PAGES_DIR)/." "$(DOC_INSTALL_DIR)/pages/"; fi
+	@if [ -f "$(INFO_DIR)/autolisp-spec.info" ]; then \
+	  install -m 0644 "$(INFO_DIR)/autolisp-spec.info" "$(INFO_INSTALL_DIR)/"; \
+	  "$(INSTALL_INFO)" --info-dir="$(INFO_INSTALL_DIR)" \
+	    "$(INFO_DIR)/autolisp-spec.info" 2>/dev/null \
 	    || echo "[skip] install-info dir update for autolisp-spec.info"; \
 	fi
 	@for f in documentation/autolisp-visual-lisp-specification-draft.org \
@@ -187,16 +220,16 @@ install-documentation: install-alref-libs  ## Install the autolisp-spec docs (.o
 	          documentation/autolisp-reference-notes.org \
 	          $(BUILD_DIR)/documentation/autolisp-reference-notes.pdf \
 	          documentation/autolisp-spec-user-manual.org; do \
-	  if [ -f $$f ]; then install -m 0644 $$f $(DOC_INSTALL_DIR)/; fi; \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" "$(DOC_INSTALL_DIR)/"; fi; \
 	done
 	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the spec install from $$PREFIX.
-	rm -rf $(DOC_INSTALL_DIR) $(DATA_INSTALL_DIR) \
-	       $(EMACS_INSTALL_DIR) $(LISP_INSTALL_DIR)
-	@$(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" \
+	rm -rf "$(DOC_INSTALL_DIR)" "$(DATA_INSTALL_DIR)" \
+	       "$(EMACS_INSTALL_DIR)" "$(LISP_INSTALL_DIR)"
+	@"$(INSTALL_INFO)" --remove --info-dir="$(INFO_INSTALL_DIR)" \
 	  autolisp-spec.info 2>/dev/null || true
-	rm -f $(INFO_INSTALL_DIR)/autolisp-spec.info
+	rm -f "$(INFO_INSTALL_DIR)/autolisp-spec.info"
 
 # Runner templates must contain:
 # - __PROBE_FILE__ for the generated probe wrapper
@@ -226,7 +259,7 @@ export TEXMFVAR := $(TEXFMT_CACHE)
 ifeq ($(LATEX_COMPILER),xelatex)
 TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
 $(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
-	@mkdir -p $(TEXFMT_CACHE)
+	@mkdir -p "$(TEXFMT_CACHE)"
 	fmtutil -user --byfmt xelatex
 else
 TEX_FMT_DEP :=
@@ -239,8 +272,8 @@ endif
 # org export writes next to the .org; we move the result under build/ (mirroring
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
-	@mkdir -p $(@D)
-	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
+	@mkdir -p "$(@D)"
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf

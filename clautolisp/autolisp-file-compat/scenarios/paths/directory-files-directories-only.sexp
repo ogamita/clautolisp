@@ -8,4 +8,4 @@
  :current-directory "./"
  :builtin-name "VL-DIRECTORY-FILES"
  :arguments ("." "*" -1)
- :expected-value (:predicate :unordered-strings ("subdir")))
+ :expected-value (:predicate :unordered-strings ("." ".." "subdir")))

@@ -1,0 +1,229 @@
+(in-package #:clautolisp.cadtui)
+
+;;;; Per-console runtime: namespace + scheduled-context + line queue (Phase 4).
+;;;;
+;;;; Each drawing's console runs its AutoLISP on the cador-2 cooperative
+;;;; scheduler (autolisp-runtime/scheduler.lisp), never a second scheduler:
+;;;;   ui-console  <->  a thread-backed scheduled-context on the session's
+;;;;                    document-scheduler
+;;;;   the console's evaluation-context carries the drawing's isolated
+;;;;                    document-namespace (per-document isolation is already a
+;;;;                    runtime guarantee — the anti-BricsCAD contract, spec
+;;;;                    §"Communication inter-dessins")
+;;;;   ui-console lignes-en-attente = a park-mailbox: the type-ahead line queue.
+;;;;
+;;;; Slice 1 lands the plumbing (namespace, context, queue) with NO live thread:
+;;;; the context's thunk (the read-eval loop) and the blocking park-aware read
+;;;; are slice 2; delivery and the REPL rules are slice 3. Single-document /
+;;;; batch cador sessions never call this, so they stay scheduler-free and
+;;;; thread-free (the no-regression guard).
+
+(defun ensure-session-scheduler (session)
+  "The session's document-scheduler, creating and installing one if absent.
+A single-document/batch session that never opens a second console keeps
+SESSION-SCHEDULER nil and stays thread-free."
+  (or (session-scheduler session)
+      (setf (session-scheduler session) (make-document-scheduler))))
+
+(defun make-console-context (session console
+                             &key (document-key (string (gensym "DOC")))
+                                  (thunk nil))
+  "Build the runtime backing for CONSOLE on SESSION: a fresh isolated
+document-namespace keyed by DOCUMENT-KEY, an evaluation-context over it, and a
+scheduled-context (THUNK is its read-eval loop, supplied in slice 2; NIL leaves
+it a plain context that spawns no thread). Registers the namespace on the
+session and the context on the session scheduler, gives CONSOLE its line queue,
+and stores the context in CONSOLE. Returns the scheduled-context."
+  (let* ((namespace (make-document-namespace :name document-key))
+         (evaluation-context (make-evaluation-context
+                              :session session
+                              :current-document namespace
+                              :current-namespace namespace))
+         (scheduler (ensure-session-scheduler session))
+         (scheduled-context (make-scheduled-context
+                             :context evaluation-context
+                             :document-key document-key
+                             ;; default = the console read-eval loop (rules 2/3);
+                             ;; a caller may supply its own thunk (tests do).
+                             :thunk (or thunk (lambda () (%console-loop console))))))
+    (setf (document-namespace-host-document-key namespace) document-key)
+    (register-runtime-session-document session namespace :copy-propagated-p nil)
+    (scheduler-register-context scheduler scheduled-context)
+    (setf (ui-context console) scheduled-context
+          (ui-lignes-en-attente console) (make-park-mailbox))
+    scheduled-context))
+
+(defun console-namespace (console)
+  "CONSOLE's isolated document-namespace, or NIL when it has no context."
+  (let ((sc (ui-context console)))
+    (and sc (evaluation-context-current-namespace (scheduled-context-context sc)))))
+
+(defun console-queue (console)
+  "CONSOLE's type-ahead line queue (a park-mailbox), or NIL."
+  (ui-lignes-en-attente console))
+
+(defun deliver-line-to-console (console line)
+  "Push a pass-through LINE onto CONSOLE's type-ahead queue (non-blocking); the
+console's AutoLISP thread consumes it at its next read, in arrival order. A
+console with no queue silently drops the line (nothing is reading it)."
+  (let ((queue (console-queue console)))
+    (when queue (park-mailbox-push queue line)))
+  line)
+
+;;; --- The park-aware blocked read (Phase 4 slice 2) ----------------
+;;;
+;;; Called ON the console's own scheduled-context thread. If a line is already
+;;; queued (type-ahead) it is returned at once; otherwise the context yields the
+;;; single-runner slot and PARKS until a line arrives — reusing the cador-2
+;;; park-to-driver machinery (scheduler-park), so the blocking pop runs on the
+;;; driver thread, never on the runner (D1 §13.1). Returns the line, or :exit
+;;; when the context is torn down while parked.
+
+(defun console-read-line (console)
+  "Read the next pass-through line delivered to CONSOLE, blocking (via a park) if
+the queue is empty. Must be called on CONSOLE's scheduled-context thread."
+  (let* ((sc (ui-context console))
+         (queue (console-queue console))
+         (session (evaluation-context-session (scheduled-context-context sc)))
+         (scheduler (session-scheduler session))
+         ;; non-blocking poll: return a queued line at once (type-ahead).
+         (immediate (park-mailbox-pop queue 0)))
+    (if (not (eq immediate :timeout))
+        immediate
+        ;; empty: park until the driver delivers a line and serves the read.
+        (scheduler-park scheduler sc (lambda () (park-mailbox-pop queue))))))
+
+(defun start-console (console)
+  "Spawn and start CONSOLE's scheduled-context thread (its read-eval loop). The
+context must already carry a thunk (make-console-context). Returns the context."
+  (let* ((sc (ui-context console))
+         (session (evaluation-context-session (scheduled-context-context sc)))
+         (scheduler (session-scheduler session)))
+    (scheduler-spawn-context scheduler sc (scheduled-context-thunk sc))
+    (scheduler-start scheduler sc)
+    sc))
+
+;;; --- REPL rules 2/3 + the read-eval loop (Phase 4 slice 3) --------
+;;;
+;;; Per popped pass-through line (spec §5.6): a line beginning with ( is a Lisp
+;;; expression evaluated in THIS console's isolated namespace (rule 2 — the
+;;; anti-BricsCAD isolation); anything else is a CAD command name (rule 3),
+;;; for which Phase 4 records a stand-in — live command execution is Phase 5/6.
+;;; Rule 1 (a blocked AutoLISP read taking priority) is console-read-line's park.
+
+;;; --- Spec 5.6 rule 3: a bare line is a CAD command line ----------------
+;;;
+;;; At REPL level a line beginning with "(" is Lisp (rule 2); the REPL's own
+;;; prefixes ("," commands, "!" shell) keep their meaning; anything else is a
+;;; CAD command line (rule 3): its first word is the command, and -- as at the
+;;; vendors' command line, where SPACE is ENTER -- the following words are its
+;;; inputs, the end of the line a final RETURN. (A program blocked in a read
+;;; never sees this reader: rule 1 is served inside the REPL's evaluation.)
+
+(defvar *cad-command-known-p* nil
+  "NIL, or a function (NAME) telling whether NAME is a CAD command the engine
+knows; the CLI sets it from the CAD core. NIL means every name is known.")
+
+(defun cad-command-line-p (line)
+  "Whether LINE, at REPL level, is a CAD command line (rule 3)."
+  (let ((text (string-left-trim '(#\Space #\Tab) line)))
+    (and (plusp (length text))
+         (not (find (char text 0) "(,!;'\"")))))
+
+(defun cad-command-line-name (line)
+  "The command name of the CAD command LINE: its first word, upcased, the
+\".\" / \"_\" prefixes removed."
+  (let* ((text (string-left-trim '(#\Space #\Tab) line))
+         (end (position-if (lambda (c) (member c '(#\Space #\Tab))) text)))
+    (string-upcase (string-left-trim "._" (subseq text 0 end)))))
+
+(defun %autolisp-string-literal (string)
+  (with-output-to-string (out)
+    (write-char #\" out)
+    (loop for c across string
+          do (when (member c '(#\" #\\)) (write-char #\\ out))
+             (write-char c out))
+    (write-char #\" out)))
+
+(defun cad-command-line-source (line)
+  "The AutoLISP source that runs the CAD command LINE: its words as the
+inputs of one (command ...), a final \"\" for the RETURN that ends the
+line, and (princ) so nothing is echoed -- as at the vendors' prompt."
+  (let ((words (loop with text = (string-trim '(#\Space #\Tab) line)
+                     with start = 0
+                     for pos = (position-if (lambda (c) (member c '(#\Space #\Tab)))
+                                            text :start start)
+                     for word = (subseq text start (or pos (length text)))
+                     when (plusp (length word)) collect word
+                     while pos do (setf start (1+ pos)))))
+    (format nil "(progn (command~{ ~A~} \"\") (princ))"
+            (mapcar #'%autolisp-string-literal words))))
+
+(defun %console-record (console text)
+  "Append TEXT to CONSOLE's output buffer (a list of lines, in order)."
+  (setf (ui-stream-buffer console)
+        (append (ui-stream-buffer console) (list text)))
+  text)
+
+(defun %console-eval-lisp (console line)
+  "Evaluate LINE (a Lisp expression) in CONSOLE's isolated evaluation-context."
+  (let* ((sc (ui-context console))
+         (evaluation-context (scheduled-context-context sc))
+         (forms (read-runtime-from-string line :source-name "<cadtui-console>")))
+    (autolisp-eval-toplevel-progn forms evaluation-context)))
+
+(defun %console-repl-step (console line)
+  "Apply REPL rules 2/3 to one pass-through LINE on CONSOLE."
+  (let ((trimmed (string-left-trim '(#\Space #\Tab) line)))
+    (cond
+      ((zerop (length trimmed)) nil)
+      ;; rule 2: a Lisp expression, evaluated in this console's namespace.
+      ((char= (char trimmed 0) #\()
+       (%console-eval-lisp console trimmed)
+       (%console-record console (format nil "=> ~A" trimmed)))
+      ;; rule 3: a CAD command line -- the SAME classification and source as
+      ;; the REPL-hosted console (no second copy of the logic), evaluated in
+      ;; this console's namespace.
+      ((cad-command-line-p trimmed)
+       (let ((name (cad-command-line-name trimmed)))
+         (if (and *cad-command-known-p* (not (funcall *cad-command-known-p* name)))
+             (%console-record console
+                              (format nil "Unknown command \"~A\".  Press F1 for help." name))
+             (progn
+               (%console-eval-lisp console (cad-command-line-source trimmed))
+               (%console-record console (format nil "Command: ~A" trimmed))))))
+      (t nil))))
+
+(defun %console-loop (console)
+  "The console's read-eval loop, run on its scheduled-context thread: read a
+pass-through line (parking when none) and apply the REPL rules, until :exit.
+An eval error is recorded and the loop survives (a REPL never dies on a slip)."
+  (loop
+    (let ((line (console-read-line console)))
+      (when (eq line :exit) (return))
+      (handler-case (%console-repl-step console line)
+        (error (condition)
+          (%console-record console (format nil "error: ~A" condition)))))))
+
+;;; --- Active-drawing switch (Phase 4 slice 4a) ---------------------
+;;;
+;;; Switching the active drawing changes focus and the runtime current document
+;;; in lock-step (firing *document-activation-hook*). It does NOT scheduler-start
+;;; the target's console thread: console threads are parked at their reads
+;;; (suspended by construction) and only ever run when the driver serves a line
+;;; for their drawing, so the single-runner invariant holds without any explicit
+;;; suspend/resume here (spec §"Modèle d'exécution"). A drawing whose console has
+;;; no live context (a pre-Phase-4 tree) is left as a pure tree reorder.
+
+(defun activate-drawing-document (drawing)
+  "If DRAWING's console has a live context, make its document namespace the
+runtime session's current document (lock-step with the host activation hook).
+Returns the namespace, or NIL when there is no live console context."
+  (let* ((console (find :console (ui-children drawing) :key #'ui-role))
+         (sc (and console (ui-context console))))
+    (when sc
+      (let* ((evaluation-context (scheduled-context-context sc))
+             (session (evaluation-context-session evaluation-context))
+             (namespace (evaluation-context-current-document evaluation-context)))
+        (set-runtime-session-current-document session namespace)
+        namespace))))

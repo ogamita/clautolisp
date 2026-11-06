@@ -9,6 +9,34 @@
                 #:results-status
                 #:test)
   (:import-from #:clautolisp.autolisp-runtime
+                ;; Dialect-portability knowledge base (ch.25). Imported
+                ;; by name like everything else here: this package
+                ;; :uses only CL, so a MISSING name fails at run time as
+                ;; an undefined-function rather than at compile time.
+                #:find-portability-construct
+                #:map-portability-constructs
+                #:portability-construct-label
+                #:portability-construct-native-in
+                #:portability-construct-supported-p
+                #:portability-construct-silent-p
+                #:portability-construct-tag
+                ;; The register of dialect warnings, keyed by [tag].
+                #:find-dialect-warning
+                #:map-dialect-warnings
+                #:dialect-warning-tag
+                #:dialect-warning-kind
+                #:dialect-warning-title
+                #:dialect-warning-message
+                #:dialect-warning-example
+                #:dialect-warning-dialects
+                #:dialect-warning-rationale
+                #:dialect-warning-references
+                #:dialect-warning-tags
+                #:unregistered-construct-tags
+                #:unregistered-diagnostic-codes
+                #:render-dialect-warnings-annex
+                #:*enc-diagnostic-codes*
+                #:*secureload-diagnostic-codes*
                 #:autolisp-runtime-error
                 #:autolisp-runtime-error-code
                 #:autolisp-runtime-error-details
@@ -55,10 +83,16 @@
                 #:find-runtime-session-document
                 #:function-cell-function
                 #:intern-autolisp-symbol
+                #:register-special-operator
+                #:unregister-special-operator
                 #:lookup-documentation
                 #:lookup-function
                 #:lookup-variable
                 #:make-document-namespace
+                #:make-blackboard-namespace
+                #:namespace-binding-cell
+                #:binding-cell-value
+                #:binding-cell-bound-p
                 #:make-evaluation-context
                 #:make-autolisp-string
                 #:make-autolisp-subr
@@ -85,6 +119,45 @@
                 #:runtime-session-blackboard-namespace
                 #:runtime-session-current-document
                 #:set-runtime-session-current-document
+                ;; cador-2 slice 2a: cooperative scheduler
+                #:*document-activation-hook*
+                #:session-scheduler
+                #:document-namespace-host-document-key
+                #:make-document-scheduler
+                #:make-scheduled-context
+                #:scheduled-context-context
+                #:scheduled-context-status
+                #:scheduled-context-document-key
+                #:scheduled-context-saved-env
+                #:scheduled-context-pending-break
+                #:scheduler-register-context
+                #:scheduler-context-list
+                #:scheduler-current-context
+                #:scheduler-activate
+                #:scheduler-request-break
+                #:scheduler-pending-break-p
+                #:scheduler-observe-break
+                #:scheduled-context-thread
+                #:scheduled-context-mailbox
+                #:scheduled-context-thunk
+                ;; slice 3f: interactive-input parking
+                #:scheduler-on-context-thread-p
+                #:scheduler-park
+                #:scheduler-await-park
+                #:scheduler-serve-park
+                ;; slice 3g: per-document correlation forest
+                #:scheduled-context-correlation-stack
+                #:scheduler-push-correlation
+                #:scheduler-pop-correlation
+                #:scheduler-correlation-depth
+                #:with-host-request
+                #:scheduler-spawn-context
+                #:scheduler-start
+                #:scheduler-resume
+                #:scheduler-switch
+                #:make-park-mailbox
+                #:park-mailbox-push
+                #:park-mailbox-pop
                 #:separate-vlx-namespace-name
                 #:set-default-evaluation-context
                 #:set-autolisp-errno

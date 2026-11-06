@@ -1,0 +1,150 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-dribble — the alfe half of the dribble feature
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: -
+#+BRANCH: feature-alfe-dribble
+
+* Context
+
+=dribble.issue= specified the feature for *both* clautolisp and alfe
+(with whatever backend CAD). The clautolisp half shipped in 1.5.11 and
+was verified end-to-end on 2026-08-11 (clautolisp 1.8.28); that ticket
+is now closed. This one carries the alfe half, which is not started.
+
+Verified 2026-08-11: =grep -rn dribble --include='*.lisp'
+autolisp-front-end/= matches **zero** files. Nothing exists yet, so
+this is greenfield rather than a gap-filling exercise.
+
+* Problem
+
+An alfe session driving AutoCAD or BricsCAD produces exactly the kind
+of interaction transcript a dribble is for — arguably more valuable
+than the clautolisp one, since a CAD session is harder to reproduce.
+Today there is no way to record it.
+
+** Scope, per pjb (2026-08-11)
+
+"dribble sur alfe signifie que la fonction travaille avec bricscad et
+autocad. alfe --clautolisp surement l'implemente deja dans clautolisp."
+
+That is the right split, and it makes the two backend families
+genuinely different pieces of work:
+
+- =--clautolisp= backend: the engine already dribbles. The work is a
+  *pass-through* — forward the flag into the spawned argv.
+  =BUILD-SUBPROCESS-ARGV= (=autolisp-front-end/source/backend-clautolisp.lisp=,
+  l.767) already does exactly this for =-Esource=, so there is a
+  worked precedent to copy; today it forwards nothing dribble-related.
+  For the *direct* (in-process) clautolisp variant the recording is
+  already in-process and needs less still. One caveat: the spawned
+  engine is launched with =--no-init= because "the front-end owns
+  bootstrap/init policy", so the flag must come from alfe's own CLI,
+  not from the user's rc.
+- =bricscad= / =autocad= backends: nothing exists to forward to. These
+  engines have no dribble of their own, so the recording has to be
+  built on the alfe side from what alfe already sees of the
+  conversation. This is the substance of the ticket.
+
+* Proposal
+
+Mirror the clautolisp half, whose implementation is the reference:
+=clautolisp/tools/clautolisp/source/dribble.lisp= (tee/echo Gray
+streams, write-time interactor filtering, O/E/C tagging), driven by the
+shared CLI spec in =clautolisp/autolisp-cli=, which already carries the
+option slots — =cli-options-dribble= and
+=cli-options-dribble-interactors= exist and their comment already reads
+"clautolisp today, alfe planned". So the parser work may be close to
+zero; the work is the alfe-side wiring.
+
+From =dribble.issue=, the alfe-specific requirements:
+
+- CLI: =--dribble=, =--dribble=FILE=, =--dribble-interactors=IS= on the
+  alfe CLI.
+- Default path: =${XDG_STATE_HOME}/alfe/dribbles/${BACKEND}/YYYYMMDDTHHMMSS.log=
+  where =${BACKEND}= is =clautolisp=, =bricscad= or =autocad= — note
+  the per-backend subdirectory, which the clautolisp path has no
+  counterpart for.
+- Header: =;; H: alfe $alfe_version clautolisp|bricscad|autocad $cad_version=
+  — two version numbers, unlike clautolisp's one. Getting
+  =$cad_version= means asking the live backend, so decide what the
+  header says when the backend has not answered yet (or at all).
+- Same interaction-block format: raw input, then =;; O:= / =;; E:= /
+  =;; C:= lines, same line-interleaving rule.
+- Append to an existing file.
+
+* Open question
+
+What counts as an "interactor" on the alfe side, for the CAD backends.
+The clautolisp filter keys off
+=clautolisp.interactor:*interactor-stack*=, which a session driving
+BricsCAD or AutoCAD does not have in the same shape. Either map alfe's
+own phases onto interactor names, or declare =--dribble-interactors=
+meaningful only for the clautolisp backend (where it is forwarded and
+the engine applies it itself) and record everything for the CAD ones.
+
+The second reading follows naturally from pjb's split above and is the
+recommendation unless a use case for CAD-side filtering shows up.
+Worth settling before writing code.
+
+* Acceptance criteria
+
+- =alfe --dribble= against each available backend produces a file at
+  the documented per-backend path with the two-version =;; H:= header.
+- Against =--clautolisp=, the flag reaches the spawned engine and the
+  transcript is the engine's own (no double recording).
+- =--dribble=FILE= writes FILE; an existing file is appended to.
+- O/E/C tagging and the interleaving rule match the clautolisp output
+  byte for byte for an equivalent session.
+- Documented in the alfe user manual and RELEASE_NOTES.org.
+
+* Resolved — clautolisp 2.2.124 / alfe 2.2.124 (2026-09-27)
+
+Shipped. The open question above was settled the recommended way:
+=--dribble-interactors= is meaningful only for the =--clautolisp=
+backend, where it is *forwarded* and the engine applies its own
+=*interactor-stack*= filter; the CAD backends have no such stack and
+record everything. The flag is accepted in every case rather than
+rejected, so a script does not have to know which backend it drives.
+
+What was added:
+
+- =autolisp-front-end/source/dribble.lisp= (new, package
+  =alfe.dribble=): =start-dribble=, =stop-dribble=,
+  =record-input=/=record-output=/=record-error-output=/=record-condition=,
+  and =default-dribble-path=. The chunk recorder keeps =*open-tag*= /
+  =*open-text*= so a partial line from one channel is continued rather
+  than re-tagged, which is the interleaving rule the clautolisp half
+  applies — the two transcripts read the same for an equivalent
+  session.
+- The header is =;; H: alfe <alfe-version> <backend> <cad-version>=
+  with the backend name downcased. When the backend has not answered a
+  version query yet, the third field is written as =?=: the header is
+  emitted at =start-dribble= time, before the first round trip, and a
+  transcript that names its backend but not yet its build is more
+  useful than one that waits (or lies).
+- Default path
+  =${XDG_STATE_HOME}/alfe/dribbles/<backend>/YYYYMMDDTHHMMSS.log=,
+  per-backend subdirectory as specified; =$XDG_STATE_HOME= falls back
+  to =~/.local/state=. An existing file is appended to.
+- CLI: =--dribble=, =--dribble FILE=, =--dribble-interactors IS= on
+  alfe's own spec, in =--help= and in the man page.
+- =--clautolisp --backend subprocess=: =build-subprocess-argv= forwards
+  both flags, so the engine records its own richer REPL transcript and
+  alfe records nothing (no double recording).
+- =--clautolisp --backend direct= (the default): =(clal-dribble …)= is
+  a documented no-op in-process, because clautolisp's dribble is a REPL
+  tee owned by the clautolisp *program* and attached through an
+  internal hook that alfe's in-process engine does not install. Rather
+  than appear to record and produce nothing, alfe warns on
+  =*error-output*= and names the two working answers (=--backend
+  subprocess=, or run =clautolisp= directly). This is the one
+  acceptance criterion deliberately not met as literally written, and
+  the manual says so in the same words.
+- =autolisp-front-end/tests/dribble-tests.lisp= (new): 14 tests over
+  the header, the default path, append semantics, the O/E/C tagging and
+  interleaving, the forwarded-flag argv, and the direct-mode warning.
+- Documented in =autolisp-front-end/documentation/alfe-user-manual.org=
+  (with the direct-mode limitation and its reason), the man page, and
+  =RELEASE_NOTES.org=.

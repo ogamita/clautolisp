@@ -69,3 +69,15 @@
             (setvar "ANGBASE" 1.5707963267948966)
             (= (getvar "ANGBASE") 1.5707963267948966)))
   T)
+
+(deftest "sysvar-snapang-setvar-takes-radians"
+  ;; SNAPANG is the second radians-valued angular sysvar (spec SETVAR
+  ;; radians note): setvar stores radians, getvar returns radians,
+  ;; regardless of the AUNITS display unit.
+  '((operator . "SNAPANG") (area . "sysvar") (profile . strict))
+  '(progn (setvar "AUNITS" 0)
+          (setvar "SNAPANG" 1.5707963267948966)
+          (let ((result (= (getvar "SNAPANG") 1.5707963267948966)))
+            (setvar "SNAPANG" 0.0)         ;; restore
+            result))
+  T)

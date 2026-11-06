@@ -18,10 +18,38 @@ ROOT_DIR := $(shell pwd)
 CLAUTOLISP_ROOT := $(ROOT_DIR)/../clautolisp
 CLAUTOLISP_ASD := $(CLAUTOLISP_ROOT)/clautolisp.asd
 ALFE_ASD := $(ROOT_DIR)/autolisp-front-end.asd
+
+# Native (C:/...) forms of the .asd paths handed to the SBCL/CCL engine below:
+# on Windows msys `pwd' yields `/c/...', which native-Windows Lisp
+# asdf:load-asd cannot resolve, so the system never registers and test-system
+# reports "Component not found". cygpath -m on Windows, identity elsewhere
+# (same idiom as the TEX_*_SEARCH paths further down).
+ifneq ($(filter MINGW% MSYS% CYGWIN%,$(shell uname -s)),)
+CLAUTOLISP_ASD_NATIVE := $(shell cygpath -m "$(CLAUTOLISP_ASD)")
+ALFE_ASD_NATIVE       := $(shell cygpath -m "$(ALFE_ASD)")
+else
+CLAUTOLISP_ASD_NATIVE := $(CLAUTOLISP_ASD)
+ALFE_ASD_NATIVE       := $(ALFE_ASD)
+endif
+# Executable suffix, applied AT BUILD TIME (pjb, 2026-08-16: "On
+# MS-Windows, we should generate all the executables with .exe
+# extension"). Empty on POSIX.
+#
+# alfe had no such notion at all: `make build-alfe-sbcl' produced an
+# extensionless tools/alfe/bin/alfe-sbcl even on Windows. The MSYS2 shell
+# runs that, PowerShell does not -- and the CI jobs are PowerShell.
+#
+# Defined here, ahead of the variables that use it. HOST_UNAME is a `?='
+# so the Windows branch can be exercised from a POSIX host --
+#   make -n HOST_UNAME=MINGW64_NT-10.0
+# -- which is the only way to check it without the machine.
+HOST_UNAME ?= $(shell uname -s)
+EXE := $(if $(filter MINGW% MSYS% CYGWIN%,$(HOST_UNAME)),.exe,)
+
 ALFE_TOOL_DIR := tools/alfe
 ALFE_BIN_DIR := $(ALFE_TOOL_DIR)/bin
-ALFE_SBCL := $(ALFE_BIN_DIR)/alfe-sbcl
-ALFE_CCL  := $(ALFE_BIN_DIR)/alfe-ccl
+ALFE_SBCL := $(ALFE_BIN_DIR)/alfe-sbcl$(EXE)
+ALFE_CCL  := $(ALFE_BIN_DIR)/alfe-ccl$(EXE)
 # The build script lives under tools/alfe/ alongside source/ and bin/.
 ALFE_GENERATE := $(ALFE_TOOL_DIR)/generate-alfe.lisp
 # Honour the parent project's shared cache so ASDF reuses fasls
@@ -42,8 +70,8 @@ SUBPROJECT_NAME := autolisp-front-end
 # Same convention as clautolisp/Makefile: the user-facing 'build' and
 # 'install' walk this list; per-impl 'build-sbcl' / 'build-ccl'
 # variants are strict (error when their impl is missing).
-HAVE_SBCL := $(shell command -v $(SBCL) >/dev/null 2>&1 && echo yes)
-HAVE_CCL  := $(shell command -v $(CCL)  >/dev/null 2>&1 && echo yes)
+HAVE_SBCL := $(shell command -v "$(SBCL)" >/dev/null 2>&1 && echo yes)
+HAVE_CCL  := $(shell command -v "$(CCL)"  >/dev/null 2>&1 && echo yes)
 AVAILABLE_IMPLEMENTATIONS :=
 ifeq ($(HAVE_SBCL),yes)
   AVAILABLE_IMPLEMENTATIONS += sbcl
@@ -104,7 +132,7 @@ TEST_SYSTEM ?= autolisp-front-end
 .PHONY: help all documentation test test-sbcl test-ccl \
         build build-sbcl build-ccl probe-check \
         build-alfe-sbcl build-alfe-ccl clean-pdf clean \
-        conformance check-spec-coverage \
+        conformance conformance-harness-tests check-spec-coverage \
         test-alfe-sbcl-clautolisp test-alfe-ccl-clautolisp \
         test-alfe-sbcl-bricscad-macos test-alfe-ccl-bricscad-macos \
         test-alfe-sbcl-bricscad-windows test-alfe-ccl-bricscad-windows \
@@ -144,14 +172,14 @@ build-sbcl:  ## Strictly build the SBCL alfe image (errors if sbcl is missing).
 	  echo "Error: sbcl not found in PATH (looked for '$(SBCL)')"; \
 	  exit 2; \
 	fi
-	$(MAKE) build-alfe-sbcl
+	"$(MAKE)" build-alfe-sbcl
 
 build-ccl:  ## Strictly build the CCL alfe image (errors if ccl is missing).
 	@if [ "$(HAVE_CCL)" != "yes" ]; then \
 	  echo "Error: ccl not found in PATH (looked for '$(CCL)')"; \
 	  exit 2; \
 	fi
-	$(MAKE) build-alfe-ccl
+	"$(MAKE)" build-alfe-ccl
 
 documentation: $(PDF_FILES) $(INFO_FILES)  ## Render every documentation/*.org into a PDF and .info via Emacs org-export.
 
@@ -176,7 +204,7 @@ export TEXMFVAR := $(TEXFMT_CACHE)
 ifeq ($(LATEX_COMPILER),xelatex)
 TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
 $(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
-	@mkdir -p $(TEXFMT_CACHE)
+	@mkdir -p "$(TEXFMT_CACHE)"
 	fmtutil -user --byfmt xelatex
 else
 TEX_FMT_DEP :=
@@ -188,8 +216,8 @@ endif
 # org export writes next to the .org; we move the result under build/ (mirroring
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
-	@mkdir -p $(@D)
-	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
+	@mkdir -p "$(@D)"
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 	    --eval "(setq org-confirm-babel-evaluate nil)" \
 	    --eval "(setq org-export-with-broken-links t)" \
 	    --eval "(require 'ox-latex)" \
@@ -202,18 +230,18 @@ $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@rm -f "$(<:.org=.tex)"
 
 $(BUILD_DIR)/%.texi: %.org
-	@mkdir -p $(@D)
-	$(EMACS) --batch \
+	@mkdir -p "$(@D)"
+	sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 	    --eval '(progn (require (quote ox-texinfo)) (setq org-export-with-broken-links t))' \
 	    --visit "$<" \
 	    --funcall org-texinfo-export-to-texinfo
 	@mv -f "$(<:.org=.texi)" "$@"
 
 $(BUILD_DIR)/%.info: $(BUILD_DIR)/%.texi
-	$(MAKEINFO) --no-split -o $@ $<
+	"$(MAKEINFO)" --no-split -o "$@" "$<"
 
 clean-pdf:  ## Remove every generated PDF / .info / .texi under build/ (keeps .org sources).
-	rm -rf $(BUILD_DIR)
+	rm -rf "$(BUILD_DIR)"
 
 # ---------------------------------------------------------------------
 # Test targets — mirror clautolisp/Makefile so both subprojects share
@@ -224,28 +252,52 @@ test: test-sbcl  ## Run the alfe FiveAM suite under SBCL.
 
 test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "usocket" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
-		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
+		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)'
 
-test-ccl:  ## Run the alfe FiveAM suite under CCL.
+# CCL EXIT STATUS (issues/open/ccl-test-lanes-cannot-fail.issue).
+# Without --batch, CCL does not exit on an unhandled error in an --eval:
+# it carries on, and a trailing (ccl:quit) then exits 0 -- so a failing
+# test, a failing load, or a failing build all looked GREEN. Measured:
+# that invocation exits 0 on an error; with --batch it exits 255.
+#   - every CCL invocation below takes --batch, so an error ANYWHERE
+#     fails the step;
+#   - the test lanes also quit with an explicit status (pjb), which
+#     turns a signalled test failure into exit 1 rather than relying on
+#     the error path alone.
+#
+# TEST_TIMEOUT (seconds, 0 = none): a guard OUTSIDE the Lisp process
+# (ccl-protocol-write-atomic-file-contention-hangs). The suite's own watchdog
+# (120 s, file-protocol-tests) cannot fire when the whole process freezes --
+# the x86 CCL under Rosetta stalls at 0 % CPU, every thread stopped -- so the
+# run is killed from outside and the step fails (exit 142, SIGALRM) instead
+# of hanging the lane. perl, not timeout(1): macOS ships no GNU timeout.
+TEST_TIMEOUT ?= 3600
+WITH_TEST_TIMEOUT = $(if $(filter-out 0,$(TEST_TIMEOUT)),perl -e 'alarm shift; exec @ARGV or die "exec: $$!"' $(TEST_TIMEOUT))
+test-ccl:  ## Run the alfe FiveAM suite under CCL (killed after TEST_TIMEOUT s).
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(CCL) --no-init --quiet \
+	$(WITH_TEST_TIMEOUT) "$(CCL)" --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "usocket" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
-		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
-		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)' \
-		--eval '(ccl:quit)'
+		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
+		--eval '(ccl:quit (handler-case (progn (asdf:test-system "$(TEST_SYSTEM)" :verbose t) 0) (error (e) (format *error-output* "~&~A~%" e) 1)))'
 
 # ---------------------------------------------------------------------
 # Executable build — mirrors clautolisp/Makefile's build-clautolisp-*
@@ -256,7 +308,7 @@ test-ccl:  ## Run the alfe FiveAM suite under CCL.
 
 build-alfe-sbcl:  ## Build tools/alfe/bin/alfe-sbcl via save-lisp-and-die.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(ALFE_GENERATE)" \
@@ -264,7 +316,7 @@ build-alfe-sbcl:  ## Build tools/alfe/bin/alfe-sbcl via save-lisp-and-die.
 
 build-alfe-ccl:  ## Build tools/alfe/bin/alfe-ccl via save-application.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(CCL) --no-init --quiet \
+	"$(CCL)" --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(ALFE_GENERATE)" \
@@ -277,26 +329,38 @@ build-alfe-ccl:  ## Build tools/alfe/bin/alfe-ccl via save-application.
 # producing a focused summary without the surrounding unit-test
 # output.
 
-conformance:  ## Run the alfe scenario corpus and exit non-zero on any failure.
+conformance: conformance-harness-tests  ## Run the alfe scenario corpus and exit non-zero on any failure.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "usocket" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
-		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
+		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-front-end/tool-run-alfe-conformance")' \
 		--eval '(alfe.tools.run-alfe-conformance:main nil)'
 
+# The vendor harness compares a probe's OBSERVE lines against the scenario's
+# expectations through scripts/compare-observations.py. That comparator is
+# not exercised by the Lisp suite, and when it silently failed to decode a
+# UTF-16 log the harness reported "backend unreachable or probe crashed"
+# about probes that had emitted 101 perfectly good observations. Run its
+# tests wherever the conformance corpus runs.
+conformance-harness-tests:  ## Test the probe-comparison harness itself.
+	sh ../scripts/tests/compare-observations-encoding-test.sh
+
 check-spec-coverage:  ## Assert every CLI option in the spec is covered by ≥1 scenario.
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--load scripts/check-spec-coverage.lisp
 
 clean: clean-pdf  ## Remove built executables and generated PDFs.
-	rm -f $(ALFE_SBCL) $(ALFE_CCL)
+	rm -f "$(ALFE_SBCL)" "$(ALFE_CCL)"
 
 # ---------------------------------------------------------------------
 # Per-backend smoke tests for the built alfe binaries.
@@ -320,34 +384,44 @@ clean: clean-pdf  ## Remove built executables and generated PDFs.
 # the OS guard only handles the "obviously wrong platform" case.
 
 test-alfe-sbcl-clautolisp: $(ALFE_SBCL)  ## alfe-sbcl --clautolisp smoke test (any OS).
-	"$(ALFE_SBCL)" --clautolisp -x '(+ 1 2)'
+	"$(ALFE_SBCL)" --no-init --clautolisp -x '(+ 1 2)'
 
 test-alfe-ccl-clautolisp: $(ALFE_CCL)  ## alfe-ccl --clautolisp smoke test (any OS).
-	"$(ALFE_CCL)" --clautolisp -x '(+ 1 2)'
+	"$(ALFE_CCL)" --no-init --clautolisp -x '(+ 1 2)'
+
+# The CCL kernel removes -d/--debug from argv before alfe runs; the built
+# executable must still see them (alfe-ccl-executable-drops-log-output).
+SHIPPED_DEBUG_FLAG_TEST := ../clautolisp/tools/clautolisp/tests/shipped-debug-flag-test.sh
+
+test-alfe-sbcl-debug-flag: $(ALFE_SBCL)  ## Assert the built alfe-sbcl receives -d/--debug.
+	"$(SHIPPED_DEBUG_FLAG_TEST)" "$(ALFE_SBCL)" --no-init --clautolisp -x '(princ 1)'
+
+test-alfe-ccl-debug-flag: $(ALFE_CCL)  ## Assert the built alfe-ccl receives -d/--debug.
+	"$(SHIPPED_DEBUG_FLAG_TEST)" "$(ALFE_CCL)" --no-init --clautolisp -x '(princ 1)'
 
 test-alfe-sbcl-bricscad-macos: $(ALFE_SBCL)  ## alfe-sbcl --bricscad smoke test (macOS).
 	@$(call require-os-darwin,$@); \
-	 "$(ALFE_SBCL)" --bricscad -x '(princ (+ 1 2))'
+	 "$(ALFE_SBCL)" --no-init --bricscad -x '(princ (+ 1 2))'
 
 test-alfe-ccl-bricscad-macos: $(ALFE_CCL)  ## alfe-ccl --bricscad smoke test (macOS).
 	@$(call require-os-darwin,$@); \
-	 "$(ALFE_CCL)" --bricscad -x '(princ (+ 1 2))'
+	 "$(ALFE_CCL)" --no-init --bricscad -x '(princ (+ 1 2))'
 
 test-alfe-sbcl-bricscad-windows: $(ALFE_SBCL)  ## alfe-sbcl --bricscad smoke test (Windows).
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --bricscad -x '(princ (+ 1 2))'
+	 "$(ALFE_SBCL)" --no-init --bricscad -x '(princ (+ 1 2))'
 
 test-alfe-ccl-bricscad-windows: $(ALFE_CCL)  ## alfe-ccl --bricscad smoke test (Windows).
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_CCL)" --bricscad -x '(princ (+ 1 2))'
+	 "$(ALFE_CCL)" --no-init --bricscad -x '(princ (+ 1 2))'
 
 test-alfe-sbcl-autocad-windows: $(ALFE_SBCL)  ## alfe-sbcl --autocad smoke test (Windows).
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --autocad -x '(princ (+ 1 2))'
+	 "$(ALFE_SBCL)" --no-init --autocad -x '(princ (+ 1 2))'
 
 test-alfe-ccl-autocad-windows: $(ALFE_CCL)  ## alfe-ccl --autocad smoke test (Windows).
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_CCL)" --autocad -x '(princ (+ 1 2))'
+	 "$(ALFE_CCL)" --no-init --autocad -x '(princ (+ 1 2))'
 
 # Dependencies — if the alfe binary doesn't exist, build it first.
 # Use the existing build-alfe-* targets so the recipe stays in one
@@ -355,10 +429,10 @@ test-alfe-ccl-autocad-windows: $(ALFE_CCL)  ## alfe-ccl --autocad smoke test (Wi
 # directly; the binary file targets here are real files, so make
 # rebuilds only when missing.
 $(ALFE_SBCL):
-	$(MAKE) build-alfe-sbcl
+	"$(MAKE)" build-alfe-sbcl
 
 $(ALFE_CCL):
-	$(MAKE) build-alfe-ccl
+	"$(MAKE)" build-alfe-ccl
 
 # ---------------------------------------------------------------------
 # Install / uninstall.
@@ -378,80 +452,158 @@ $(ALFE_CCL):
 
 BIN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/bin
 LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
+# EXE (the .exe suffix on Windows) is defined near ALFE_SBCL above, since
+# the build variables need it too -- the extension is applied when the
+# binary is BUILT, not only when it is installed. It was defined twice
+# for a moment; one definition is enough, and it has to come first.
+# The install rules below still guard with `case "$dest" in *.exe) ;;'
+# so a name that already carries it is not given a second one.
 DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 MAN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/man/man1
+# CAD-side runtime assets. The automation/batch backends stage
+# autolisp-bootstrap.lsp + autolisp-remote-io.lsp into the engine workdir;
+# DISCOVER-{BOOTSTRAP,RUNTIME}-LSP (backend-cad-common.lisp) find them under
+# <prefix>/share/alfe/runtime/, the prefix being derived AT RUN TIME from the
+# running executable's location (bin/ or below libexec/), after $ALFE_*_LSP
+# and before the source tree (alfe-installed-runtime-prefix-discovery.issue).
+# The path is share/alfe/runtime (not share/$(SUBPROJECT_NAME)): the code
+# and the fixed *-lsp-fallback-paths* both name it.
+RUNTIME_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/alfe/runtime
+
+# The plug-ins alfe ships (plugins/NAME/NAME.lisp), installed as plug-in
+# roots' NAME/ directories: alfe finds them from PREFIX (see the spec
+# chapter "Plug-ins"). Each also gets its compiled form,
+# NAME.VERSION-IMPL.plugin, made by the alfe just installed.
+PLUGIN_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/clautolisp/plug-in
 
 INSTALL_BINARIES_sbcl := $(ALFE_SBCL)
 INSTALL_BINARIES_ccl  := $(ALFE_CCL)
-INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARIES_$(impl)))
+# INSTALL_LISPS narrows that to the Lisps actually BUILT: the root
+# stage-programs builds only $(RELEASE_LISPS) and passes it here, so a
+# stale image of a Lisp it did not build (an old *-ccl left in bin/) is
+# not shipped -- nor used to compile the plug-ins against current source.
+INSTALL_LISPS ?= $(AVAILABLE_IMPLEMENTATIONS)
+INSTALL_BINARIES := $(foreach impl,$(INSTALL_LISPS),$(INSTALL_BINARIES_$(impl)))
 
-.PHONY: install install-programs install-documentation uninstall
+.PHONY: install install-programs install-plugins install-documentation uninstall
 
-install: build  ## Install built alfe binaries + docs into $$PREFIX (build first; sudo-friendly).
-	$(MAKE) install-programs
-	$(MAKE) install-documentation
+install: build  ## Install built alfe binaries + plug-ins + docs into $$PREFIX (build first; sudo-friendly).
+	"$(MAKE)" install-programs
+	"$(MAKE)" install-documentation
 
-install-programs:  ## Install just the alfe executables (no docs).
-	install -d $(BIN_INSTALL_DIR)
-	install -d $(LIBEXEC_INSTALL_DIR)
+install-programs:  ## Install the alfe executables + the plug-ins it ships (no docs). `make install-programs` alone is now the complete "programs" phase: the root Makefile's stage-programs / release-programs, which invoke only this target per subproject, pick the plug-ins up for free.
+	install -d "$(BIN_INSTALL_DIR)"
+	install -d "$(LIBEXEC_INSTALL_DIR)"
 	@for exe in $(INSTALL_BINARIES); do \
 	  if [ -x "$$exe" ]; then \
-	    install -m 0755 "$$exe" $(BIN_INSTALL_DIR)/ ; \
-	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/" ; \
+	    dest="$$(basename "$$exe")" ; case "$$dest" in *.exe) ;; *) dest="$$dest$(EXE)" ;; esac ; \
+	    install -m 0755 "$$exe" "$(BIN_INSTALL_DIR)/$$dest" ; \
+	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/$$dest" ; \
 	  else \
 	    echo "[skip]     $$exe (not built — run build-programs first)" ; \
 	  fi ; \
 	done
-	@# Bare-name `alfe' symlink pointing at the user's preferred
-	@# CL impl. Relative target so the install tree stays
-	@# relocatable across machines/staging dirs.
+	@# Bare-name `alfe' launcher pointing at the user's preferred CL
+	@# impl. On POSIX a relative symlink keeps the tree relocatable;
+	@# on Windows PowerShell can't execute an MSYS symlink, so copy a
+	@# real alfe.exe instead.
 	@if [ -n "$(DEFAULT_LISP)" ]; then \
-	  target="alfe-$(DEFAULT_LISP)" ; \
+	  target="alfe-$(DEFAULT_LISP)$(EXE)" ; \
 	  if [ -x "$(BIN_INSTALL_DIR)/$$target" ]; then \
-	    ln -sf "$$target" "$(BIN_INSTALL_DIR)/alfe" ; \
-	    echo "linked:    $(BIN_INSTALL_DIR)/alfe -> $$target" ; \
+	    if [ -n "$(EXE)" ]; then \
+	      cp -f "$(BIN_INSTALL_DIR)/$$target" "$(BIN_INSTALL_DIR)/alfe$(EXE)" ; \
+	      echo "copied:    $(BIN_INSTALL_DIR)/alfe$(EXE) <- $$target (Windows: PowerShell can't exec an MSYS symlink)" ; \
+	    else \
+	      ln -sf "$$target" "$(BIN_INSTALL_DIR)/alfe" ; \
+	      echo "linked:    $(BIN_INSTALL_DIR)/alfe -> $$target" ; \
+	    fi ; \
 	  else \
-	    echo "[skip]     $(BIN_INSTALL_DIR)/alfe (target $$target not installed)" ; \
+	    echo "[skip]     $(BIN_INSTALL_DIR)/alfe$(EXE) (target $$target not installed)" ; \
 	  fi ; \
 	else \
 	  echo "[skip]     bare alfe symlink (DEFAULT_LISP is empty)" ; \
 	fi
+	@# CAD-side runtime assets — required for the AutoCAD/BricsCAD automation
+	@# and batch backends to bootstrap the engine. Without these, an installed
+	@# alfe (env vars unset, dumped image = no vendored copy beside the code)
+	@# cannot locate autolisp-bootstrap.lsp / autolisp-remote-io.lsp and the
+	@# backend fails at start ("no bootstrap/runtime LSP found").
+	install -d "$(RUNTIME_INSTALL_DIR)"
+	@for f in source/runtime/autolisp-bootstrap.lsp source/runtime/autolisp-remote-io.lsp; do \
+	  if [ -f "$$f" ]; then \
+	    install -m 0644 "$$f" "$(RUNTIME_INSTALL_DIR)/" ; \
+	    echo "installed: $$f -> $(RUNTIME_INSTALL_DIR)/" ; \
+	  else \
+	    echo "[skip]     $$f (missing)" ; \
+	  fi ; \
+	done
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+	@# Plug-ins compile against the alfe just installed above (install-plugins
+	@# runs "$$installed --compile-plugin ...") — a prerequisite would run it
+	@# too early, before the binaries exist, so it is a recursive make call
+	@# at the end of this recipe instead, after everything else here.
+	"$(MAKE)" install-plugins
+
+install-plugins:  ## Install the plug-ins alfe ships (epure, epuree) and compile them with the installed alfe.
+	@for dir in plugins/*/ ; do \
+	  name="$$(basename "$$dir")" ; \
+	  install -d "$(PLUGIN_INSTALL_DIR)/$$name" ; \
+	  install -m 0644 "$$dir$$name.lisp" "$(PLUGIN_INSTALL_DIR)/$$name/" ; \
+	  echo "installed: $$dir$$name.lisp -> $(PLUGIN_INSTALL_DIR)/$$name/" ; \
+	done
+	@# A compiled plug-in is valid for one alfe version and one Common Lisp
+	@# implementation, so compile with each alfe that was installed. --no-plugins:
+	@# compiling must not depend on what happens to be installed already.
+	@for exe in $(INSTALL_BINARIES); do \
+	  installed="$(BIN_INSTALL_DIR)/$$(basename "$$exe")" ; \
+	  case "$$installed" in *.exe) ;; *) installed="$$installed$(EXE)" ;; esac ; \
+	  if [ -x "$$installed" ]; then \
+	    for source in plugins/*/*.lisp ; do \
+	      name="$$(basename "$$source" .lisp)" ; \
+	      "$$installed" --no-init --no-plugins --compile-plugin "$(PLUGIN_INSTALL_DIR)/$$name/$$name.lisp" || exit 1 ; \
+	    done ; \
+	  else \
+	    echo "[skip]     compiled plug-ins for $$exe (not installed)" ; \
+	  fi ; \
+	done
+	@echo "plug-ins installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-documentation:  ## Install just the alfe documentation (org/pdf/info/man). PDFs/Info come from build/.
-	install -d $(DOC_INSTALL_DIR)
+	install -d "$(DOC_INSTALL_DIR)"
 	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
-	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" "$(DOC_INSTALL_DIR)/" ; fi ; \
 	done
-	install -d $(INFO_INSTALL_DIR)
+	install -d "$(INFO_INSTALL_DIR)"
 	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
+	    install -m 0644 "$$f" "$(INFO_INSTALL_DIR)/" ; \
 	    echo "installed: $$f -> $(INFO_INSTALL_DIR)/" ; \
-	    installed="$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
-	    $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
+	    installed="$(INFO_INSTALL_DIR)/$$(basename "$$f")" ; \
+	    "$(INSTALL_INFO)" --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
 	      || echo "[skip] install-info dir update for $$installed" ; \
 	  fi ; \
 	done
-	install -d $(MAN_INSTALL_DIR)
+	install -d "$(MAN_INSTALL_DIR)"
 	@for f in documentation/man/*.1 tools/*/documentation/man/*.1; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0644 "$$f" $(MAN_INSTALL_DIR)/ ; \
+	    install -m 0644 "$$f" "$(MAN_INSTALL_DIR)/" ; \
 	    echo "installed: $$f -> $(MAN_INSTALL_DIR)/" ; \
 	  fi ; \
 	done
 	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the alfe install from $$PREFIX.
-	rm -f $(BIN_INSTALL_DIR)/alfe $(BIN_INSTALL_DIR)/alfe-sbcl $(BIN_INSTALL_DIR)/alfe-ccl
+	rm -f "$(BIN_INSTALL_DIR)/alfe" "$(BIN_INSTALL_DIR)/alfe-sbcl" "$(BIN_INSTALL_DIR)/alfe-ccl"
 	@for f in $(INFO_FILES); do \
-	  base="$$(basename $$f)" ; \
-	  $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$base" 2>/dev/null \
+	  base="$$(basename "$$f")" ; \
+	  "$(INSTALL_INFO)" --remove --info-dir="$(INFO_INSTALL_DIR)" "$$base" 2>/dev/null \
 	    || true ; \
 	  rm -f "$(INFO_INSTALL_DIR)/$$base" ; \
 	done
 	@for f in documentation/man/*.1 tools/*/documentation/man/*.1; do \
-	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename $$f)" ; fi ; \
+	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename "$$f")" ; fi ; \
 	done
-	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
+	rm -f "$(RUNTIME_INSTALL_DIR)/autolisp-bootstrap.lsp" "$(RUNTIME_INSTALL_DIR)/autolisp-remote-io.lsp"
+	@for dir in plugins/*/ ; do rm -rf "$(PLUGIN_INSTALL_DIR)/$$(basename "$$dir")" ; done
+	rm -rf "$(LIBEXEC_INSTALL_DIR)" "$(DOC_INSTALL_DIR)" "$(RUNTIME_INSTALL_DIR)"

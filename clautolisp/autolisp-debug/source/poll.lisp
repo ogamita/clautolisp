@@ -35,6 +35,28 @@ The default continues. A session installs a handler that reports the hit
 and blocks for the debugger's command (spec §8). This function IS the
 debugger/UI boundary in Phase 1–2.")
 
+(defconstant +clal-poll-return-tag+ '%clal-poll-return
+  "CATCH tag by which the debugger supplies a value for the INNERMOST
+instrumented form (spec §10.1, `return\').
+
+It was a RESTART -- CLAL-POLL-RETURN, established by RESTART-CASE around
+every instrumented form. A restart is the idiomatic mechanism and it is
+inspectable, so the swap was measured and put to pjb rather than taken
+quietly (issues/closed/poll-point-restart-cost.issue); he chose the speed,
+on the ground that nothing enumerates restarts here -- checked: there is
+no COMPUTE-RESTARTS anywhere in the product, and the only two users find
+this one BY NAME and invoke it.
+
+THROW reaches the innermost matching CATCH, which is the innermost poll
+point, so nesting and recursion need nothing extra: a recursive function
+has one catch per activation and the innermost is the one that wins. And
+`is one established?\' -- which FIND-RESTART used to answer by returning
+NIL -- is (PLUSP (THREAD-DEBUG-INFO-POLL-DEPTH TI)), maintained by
+DEBUG-POLL-ENTER/EXIT around exactly this CATCH.
+
+The :ABORT directives beside it already unwind by THROW to CLAL-ABORT, so
+this is the mechanism the file already used for the other resolution.")
+
 (declaim (inline poll-point))
 (defun poll-point (fid form-id when)
   "Poll point called before/after every instrumented form. No-op unless a
@@ -43,8 +65,17 @@ debugged thread has armed a step or set a breakpoint covering this point
   (let ((ti *thread-debug-info*))
     (when (and ti (thread-debug-info-debug-flag ti)            ; (a) fast path
                (not (thread-debug-info-jump-target ti)))       ; jumping ⇒ no stops
-      (setf (thread-debug-info-current-pp ti) (cons fid form-id))
-      (let* ((step (step-request-fires-p ti when))
+      (setf (thread-debug-info-current-pp-fid ti) fid
+            (thread-debug-info-current-pp-form-id ti) form-id
+            (thread-debug-info-current-pp-valid-p ti) t)
+      ;; The three tests below are each guarded by the slot that makes them
+      ;; possible, so a program merely RUNNING under a session -- no step
+      ;; armed, no breakpoint here, no watches -- pays three slot reads
+      ;; rather than three calls. The Bloom summary and the watches list
+      ;; were already guarded this way; the step request was not, and it is
+      ;; consulted on every poll point of every instrumented form.
+      (let* ((step (and (thread-debug-info-step-request ti)
+                        (step-request-fires-p ti when)))
              (bp (and (not step)
                       (summary-test ti fid form-id)            ; (b) Bloom
                       (find-active-breakpoint ti fid form-id when)))
@@ -97,9 +128,9 @@ current poll point and run the UI command loop, applying its resume directive
 stop. Returns NIL."
   (let ((ti *thread-debug-info*))
     (when (and ti (thread-debug-info-debug-flag ti))
-      (let* ((pp (thread-debug-info-current-pp ti))
-             (fid (if pp (car pp) 0))
-             (form-id (if pp (cdr pp) 0))
+      (let* ((valid (thread-debug-info-current-pp-valid-p ti))
+             (fid (if valid (thread-debug-info-current-pp-fid ti) 0))
+             (form-id (if valid (thread-debug-info-current-pp-form-id ti) 0))
              (metadata (metadata-for-function-id fid)))
         (apply-resume-directive
          ti (funcall *debug-hit-handler*
@@ -175,12 +206,12 @@ stop, not just an error stop."
        (request-jump ti fid form-id)))
     ((and (consp directive) (eq (first directive) :continue-with-return))
      ;; `return FORM' at a normal (non-error) stop: make the innermost
-     ;; instrumented form return VALUE via its CLAL-POLL-RETURN restart
-     ;; (spec §1 return / §10.1). Mirrors APPLY-ERROR-DIRECTIVE; declines
-     ;; (resumes normally) when no instrumented form encloses the stop.
-     (let ((restart (find-restart 'clal-poll-return)))
-       (when restart
-         (invoke-restart restart (coerce-from-cl (second directive))))))
+     ;; instrumented form return VALUE (spec §1 return / §10.1). Mirrors
+     ;; APPLY-ERROR-DIRECTIVE; declines (resumes normally) when no
+     ;; instrumented form encloses the stop, which is what a poll depth of
+     ;; zero means.
+     (when (plusp (thread-debug-info-poll-depth ti))
+       (throw +clal-poll-return-tag+ (coerce-from-cl (second directive)))))
     (t nil))
   directive)
 
@@ -191,36 +222,58 @@ stop, not just an error stop."
 ;;;; maintains the form-depth and shadow call-stack used by stepping and
 ;;;; the snapshot (stepping.lisp). FID and K are literal integers.
 
-(defparameter +poll-operator-name+ "%CLAL-POLL")
+(defun call-with-poll-point (fid form-id context thunk)
+  "Run THUNK as the body of poll point FORM-ID of function FID.
+
+THE poll protocol, in one place. There are two ways to reach it and they
+must not drift apart: EVAL-POLL-FORM, which evaluates a woven %CLAL-POLL
+node with the interpreter, and compiled instrumented code, which was
+transpiled from the same node and supplies the inner form as already-
+compiled Common Lisp. Both hand the inner value in as a THUNK, so what
+happens AROUND it -- shadow stack, poll points, jumps, the restart -- is
+written once."
+  (let ((ti *thread-debug-info*))
+    (if (and ti (thread-debug-info-debug-flag ti))
+        ;; debugged thread: maintain depths + shadow stack, kept balanced
+        ;; on non-local exit by unwind-protect. The CLAL-POLL-RETURN
+        ;; restart lets the debugger's *error* handler supply a value for
+        ;; the innermost instrumented form (continue-with-return, §10.1).
+        (progn
+          (debug-poll-enter ti fid form-id context)
+          (unwind-protect
+               (catch +clal-poll-return-tag+
+                   (progn
+                     (poll-point fid form-id :before)
+                     ;; Form-level jump (§1): skip this form's body entirely
+                     ;; when it is neither the target nor on the path to it.
+                     ;; A skipped form contributes NIL. JUMP-DISPOSITION
+                     ;; clears the jump when this poll point IS the target.
+                     ;;
+                     ;; The JUMP-TARGET slot is read HERE rather than left to
+                     ;; the two functions, which both begin by reading it and
+                     ;; doing nothing when it is NIL. That is the case on
+                     ;; every poll point of every program that is not
+                     ;; mid-jump -- which is all of them, nearly all the time
+                     ;; -- and it was costing two full calls per instrumented
+                     ;; form to establish. Same answers: JUMP-DISPOSITION
+                     ;; cannot return :SKIP with no target, and
+                     ;; JUMP-EXIT-CHECK does nothing with none.
+                     (if (and (thread-debug-info-jump-target ti)
+                              (eq (jump-disposition ti fid form-id) :skip))
+                         nil
+                         (prog1 (funcall thunk)
+                           (when (thread-debug-info-jump-target ti)
+                             (jump-exit-check ti fid form-id))
+                           (poll-point fid form-id :after)))))
+            (debug-poll-exit ti form-id)))
+        ;; not a debugged thread (e.g. eval-in-frame with *debugging*
+        ;; rebound, or a stray woven form): just evaluate.
+        (funcall thunk))))
 
 (defun eval-poll-form (arguments context)
   (destructuring-bind (fid form-id inner) arguments
-    (let ((ti *thread-debug-info*))
-      (if (and ti (thread-debug-info-debug-flag ti))
-          ;; debugged thread: maintain depths + shadow stack, kept balanced
-          ;; on non-local exit by unwind-protect. The CLAL-POLL-RETURN
-          ;; restart lets the debugger's *error* handler supply a value for
-          ;; the innermost instrumented form (continue-with-return, §10.1).
-          (progn
-            (debug-poll-enter ti fid form-id context)
-            (unwind-protect
-                 (restart-case
-                     (progn
-                       (poll-point fid form-id :before)
-                       ;; Form-level jump (§1): skip this form's body entirely
-                       ;; when it is neither the target nor on the path to it.
-                       ;; A skipped form contributes NIL. JUMP-DISPOSITION
-                       ;; clears the jump when this poll point IS the target.
-                       (if (eq (jump-disposition ti fid form-id) :skip)
-                           nil
-                           (prog1 (autolisp-eval inner context)
-                             (jump-exit-check ti fid form-id)
-                             (poll-point fid form-id :after))))
-                   (clal-poll-return (value) value))
-              (debug-poll-exit ti form-id)))
-          ;; not a debugged thread (e.g. eval-in-frame with *debugging*
-          ;; rebound, or a stray woven form): just evaluate.
-          (autolisp-eval inner context)))))
+    (call-with-poll-point fid form-id context
+                          (lambda () (autolisp-eval inner context)))))
 
 (defvar *poll-operator-registered* nil)
 
@@ -228,6 +281,10 @@ stop, not just an error stop."
   "Install the %CLAL-POLL special operator (idempotent)."
   (unless *poll-operator-registered*
     (register-special-operator +poll-operator-name+ #'eval-poll-form)
+    ;; Let compiled instrumented code reach the same protocol. The runtime
+    ;; calls this through *COMPILED-POLL-HOOK* rather than naming the debug
+    ;; package, exactly as it does for instrumenting and for compiling.
+    (setf *compiled-poll-hook* #'call-with-poll-point)
     (setf *poll-operator-registered* t)))
 
 (ensure-poll-operator)

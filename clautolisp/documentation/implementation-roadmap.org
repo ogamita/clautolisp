@@ -1124,7 +1124,7 @@ DXF reader's multiline-string handling and ~.dwt~ probe support.
 *** Phase 17e — libredwg submodule + DWG codec [DONE — read; write best-effort]
 *Goal:* read/write DWG via the vendored, self-built GNU libredwg.
 *Status:* libredwg is vendored as a pinned git submodule
-(~clautolisp/third-party/libredwg~ @ 0.13.3), built by us (cmake;
+(~clautolisp/third-party/libredwg~ @ 0.14), built by us (cmake;
 ~make build-libredwg~), and reached in-process through a thin CFFI'd
 C shim (~drawing-dwg/source/clal_dwg.c~) that converts DWG<->DXF —
 the Phase-17c DXF codec is the interchange. The optional
@@ -1140,7 +1140,7 @@ needs CFFI + the built shim) registers the ~:dwg~ codec, so
   hand-built drawing's DXF is not yet rich enough for libredwg's DXF
   reader (exact write fidelity / minimal-DXF import is follow-up).
 Decision + build/licence notes:
-~issues/open/drawing-codec-libredwg-submodule.issue~.
+~issues/closed/drawing-codec-libredwg-submodule.issue~.
 
 *** Phase 17f — Multi-document host + NEW/OPEN/SAVE/CLOSE
 *Goal:* a host holds a *set* of open drawings + an active
@@ -1150,7 +1150,7 @@ that set. clautolisp (and alfe) gain a *drawing argument* naming
 the initial drawing. These commands must honour real AutoCAD
 semantics — they do *not* resume the calling routine inline;
 divergences are decided and documented in
-~issues/open/deferred-document-lifecycle-command-semantics.issue~.
+~issues/closed/deferred-document-lifecycle-command-semantics.issue~.
 
 *** Phase 17g — ObjectDBX / COM veneer
 *Goal:* the out-of-namespace, headless drawing surface AutoLISP

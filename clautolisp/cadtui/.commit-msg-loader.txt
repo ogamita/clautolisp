@@ -1,0 +1,34 @@
+clautolisp 2.2.56: cadtui locale dictionaries as data files + loader
+
+Closes the headless half of the Phase-7 CAD-locale work
+(issues/open/cadtui-locale-data-format-and-loader): a locale dictionary is now
+DATA, not code, exactly as the spec fixes it.
+
+- Data tree: cadtui/data/locale/<locale>/<category>.sexp, one alist of
+  (international . local) per file, the file name naming the category — verb /
+  keyword for the interaction language (which we author), and command /
+  option-keyword / alias for the CAD vocabulary (probe-measured, see the sibling
+  issues). Adding a language or a category is adding a file, never touching code.
+- locale.lisp: the previously-inline fr_FR/de_DE/es_ES interaction dictionaries
+  now live in those files. A %embed-locale-tree macro READS the whole tree at
+  compile time and bakes it into the fasl, so the built image carries the
+  dictionaries with no runtime file dependency; load-locale-data-from-directory
+  reloads a tree at runtime (e.g. after a fresh probe drop) without a rebuild.
+  The three CAD categories are first-class dictionaries on the same generic
+  engine; every lookup identity-falls-back to the international form so partial
+  data never fails.
+
+Recorded (cadtui/CLAUDE.md): the runners' BricsCAD is a FRENCH install, so
+getcname there yields real fr_FR command names (the authoritative source for
+command.sexp); getcname is a nil stub in clautolisp, so --clautolisp is only a
+mechanical dry-run. The getcname/pgp/option-keyword probe + converter that fill
+command.sexp/alias.sexp/option-keyword.sexp land next. ASDF caveat: editing a
+.sexp does not auto-recompile locale.lisp (clean CI build is fine; touch
+locale.lisp in dev).
+
+Tests: locale-tests gains the CAD-command category (a first-class dictionary with
+international fallback) and the shipped-tree loader. Full make -C clautolisp
+test-sbcl green. alfe 2.2.64 tracks.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01XDPCe5o6LJkv4CR2FvYauz

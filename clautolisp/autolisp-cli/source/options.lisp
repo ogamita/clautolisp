@@ -19,6 +19,7 @@
   (mode             :auto)            ; A   :auto / :automation / :batch
   (backend-variant  nil)              ; A   :attach / :launch / :direct / :subprocess
   (cad              nil)              ; A   --cad DENOTATION (alfe backend selection)
+  (attach-pid       nil)              ; A   --attach-pid PID: attach to that running CAD
   ;; Dialect + host
   (dialect          :strict)          ; AC  :strict / :autocad-2026 / :bricscad-v26 / :clautolisp
   (host             :mock)            ; AC  :mock / :null (default :mock)
@@ -27,9 +28,21 @@
   (io-encoding      nil)              ; AC  = the `terminal' situation (-Eterminal); mirrored for downstream
   (situation-encodings nil)           ; AC  alist (KEY . canonical-enc): KEY = "all" | "<situation>" | "<situation>/<dir>"
                                       ;     built by the -E<situation>[-<dir>] / --<situation>-encoding family
-  ;; Drawing + plugin
-  (dwg              nil)              ; A
-  (epure-p          nil)              ; A
+  (encoding-replacements nil)         ; AC  alist (KEY . policy-name): KEY = "all" | "file/write" | "terminal/out"
+                                      ;     built by -Ereplacement / -Efile-write-replacement / -Eterminal-out-replacement
+  ;; Drawing
+  (dwg              nil)              ; AC  --dwg FILE: the first drawing
+  (template         nil)              ; A   --template NAME|PATH: a copy of a CAD template (alfe)
+  ;; Plug-ins (alfe). The options a plug-in defines are parsed into
+  ;; PLUGIN-OPTIONS, an alist (NAME . PLIST) of plug-in name -> plist of
+  ;; option key -> value, resolved (command line, then environment, then
+  ;; default) once parsing is done; PLUGINS-ACTIVE lists the names of the
+  ;; plug-ins in force for the run, in activation order. Both are filled by
+  ;; alfe.plugin; clautolisp itself has no plug-ins and leaves them NIL.
+  (plugin-options   nil)              ; A
+  (plugins-active   nil)              ; A
+  (list-plugins-p   nil)              ; A   --list-plugins
+  (compile-plugin   nil)              ; A   --compile-plugin FILE (string)
   ;; Bootstrap
   (bootstrap-phase  :full)            ; A   :marker / :core / :log / :full
   ;; REPL + lifecycle
@@ -45,8 +58,17 @@
   (list-encodings-p nil)              ; AC  --list-encodings
   (list-dialects-p  nil)              ; AC  --list-dialects
   (list-situations-p nil)             ; AC  --list-situations
+  (list-hosts-p     nil)              ; AC  --list-hosts
   (list-cad-programs-p nil)           ; AC  --list-cad-programs (alfe)
   (dry-run-p        nil)              ; A
+  (print-command-p  nil)              ; A   --print-command: stage the workdir as
+                                      ;     usual, print the CAD command line that
+                                      ;     WOULD be launched, then exit without
+                                      ;     launching. Unlike --dry-run (which
+                                      ;     resolves nothing and touches no disk),
+                                      ;     this needs a real backend and a real
+                                      ;     workdir, so the printed argv is the
+                                      ;     exact one alfe would spawn.
   (no-init-p        nil)              ; AC
   (no-color-p       nil)              ; AC
   (keep-workdir-p   nil)              ; A
@@ -54,10 +76,23 @@
                                       ;     workdir is prepared, write its
                                       ;     absolute path to FILE (for CI to
                                       ;     locate a --keep-workdir workdir).
+  (cad-log          nil)              ; A   --cad-log FILE: after the run, the CAD's
+                                      ;     own command-history log (LOGFILEMODE),
+                                      ;     decoded per -Elog, copied to FILE.
+  (result-files     nil)              ; A   --result-file FILE, repeatable, in
+                                      ;     order: files the run must have
+                                      ;     written, checked complete after it.
+  (cleanup-report   nil)              ; A   --cleanup-report FILE: the owned-CAD
+                                      ;     cleanup report, copied to FILE.
   ;; Clautolisp-only
   (mock-input       nil)              ; C   --mock-input PATH (string)
   (gui              nil)              ; C   --gui CMD          (string)
+  (dcl              :auto)            ; C   --dcl tui|gui|auto — DCL renderer selection
   (trace-p          nil)              ; C   --trace
+  ;; --optimize / -O: the accumulated ((QUALITY . LEVEL) …) pairs, in the
+  ;; order written. NIL = the option was never given, which is NOT the same
+  ;; as "all qualities at 0": an absent option must leave every level alone.
+  (optimization     nil)              ; C   --optimize / -O QUALITY=N,…
   ;; Dribble (dribble.issue; clautolisp today, alfe planned)
   (dribble          nil)              ; C   --dribble / --dribble=FILE → t / FILE (string)
   (dribble-interactors nil)           ; C   --dribble-interactors=IS → :all / list of name strings
@@ -66,10 +101,21 @@
   (on-error         nil)              ; C   --on-error quit|debug|ignore     → :quit/:debug/:ignore
   (on-interrupt     nil)              ; C   --on-interrupt debug|ignore|quit → :debug/:ignore/:quit
   (on-quit          nil)              ; C   --on-quit debug|quit             → :debug/:quit
-  (user-interface   nil)              ; C   --debugger-ui tui|ncurses|aldb   → :tui/:ncurses/:aldb
+  (user-interface   nil)              ; C   --debugger-ui dumb|ncurses|aldb  → :dumb/:ncurses/:aldb (terminal/tui alias dumb; emacs aliases aldb)
   (aldb-address     nil)              ; C   --aldb-listen [HOST:]PORT — the HOST part (string)
   (aldb-port        nil)              ; C   --aldb-listen [HOST:]PORT — the PORT part (integer or service-name string)
-  (aldb-stdio-p     nil))             ; C   --aldb-stdio → t
+  (aldb-stdio-p     nil)              ; C   --aldb-stdio → t
+  ;; --front-end-bindings FILE: the *AUTOLISP-...* bindings a driving front
+  ;; end (alfe --backend subprocess) resolved, to install INSTEAD of the ones
+  ;; this program would derive from its own argv
+  ;; (alfe-clautolisp-backend-semantic-parity.issue).
+  (front-end-bindings nil)            ; C   --front-end-bindings FILE → FILE (string)
+  ;; --front-end-action-boundaries DIR: the directory through which the
+  ;; program tells a driving front end where each action begins and ends, and
+  ;; waits for it there, so the front end's per-action plug-in hooks run at the
+  ;; same points of the run as in its in-process engine
+  ;; (alfe-clautolisp-backend-semantic-parity.issue).
+  (front-end-action-boundaries nil))  ; C   --front-end-action-boundaries DIR → DIR (string)
 
 ;;; --- value parsers ----------------------------------------------------
 ;;;
@@ -109,21 +155,60 @@
                           value)))))
 
 (defun parse-host (value option)
-  (cond ((string-equal value "mock") :mock)
+  ;; cador  = the headless CAD core (was named "mock"); "mock" is a deprecated
+  ;;          alias of cador.
+  ;; cadtui = the full textual UI-tree host layered on the cador core (menus,
+  ;;          drawings, cad-view, DCL dialogs mirrored into the tree); cador is
+  ;;          its degenerate /application/console configuration.
+  ;; nihil  = the trivial backend; null/none are deprecated aliases of nihil.
+  (cond ((string-equal value "cador") :cador)
+        ((string-equal value "mock") :cador)
+        ((string-equal value "cadtui") :cadtui)
+        ((string-equal value "nihil") :nihil)
         ((string-equal value "null") :null)
         ((string-equal value "none") :null)
         (t (error 'cli-usage-error
                   :option option
                   :message
-                  (format nil "Unknown --host ~S (expected mock/null)" value)))))
+                  (format nil "Unknown --host ~S (expected cador/cadtui/nihil; mock=alias of cador, null/none=aliases of nihil; see --list-hosts)" value)))))
+
+(defparameter *host-descriptions*
+  '(("cador"  . "Headless CAD core: the /application/console tree (default).")
+    ("cadtui" . "Full textual UI-tree host on the cador core: menus, drawings,")
+    (""       . "          CAD view, and DCL dialogs mirrored into an inspectable tree.")
+    ("nihil"  . "Trivial backend: no CAD host at all.")
+    (";aliases" . "mock = cador; null, none = nihil."))
+  "Host name -> one-line summary, for --list-hosts (spec: cador is a degenerate
+cadtui). A key of \"\" continues the previous host's description; a key starting
+with ';' is a trailing note.")
+
+(defun print-hosts (&key (stream *standard-output*) (aliases t))
+  "Print the --host values with a one-line summary each, for --list-hosts.
+ALIASES NIL omits the trailing aliases note: alfe takes cador, cadtui and
+nihil and NOTHING else, so telling its users about mock / null / none
+would name spellings it refuses (alfe-list-hosts-ignored)."
+  (format stream "Available --host backends:~%")
+  (loop for (name . desc) in *host-descriptions*
+        do (cond ((string= name "")
+                  (format stream "  ~A~%" desc))
+                 ((and (plusp (length name)) (char= (char name 0) #\;))
+                  (when aliases
+                    (format stream "  aliases: ~A~%" desc)))
+                 (t (format stream "  ~8A ~A~%" name desc))))
+  (values))
 
 (defun parse-dialect (value option)
-  "Validate a --dialect VALUE against the reader's dialect registry
-(strict / autocad-2022 / autocad-2026 / autocad / bricscad-v25 /
-bricscad-v26 / bricscad / clautolisp / lax; an unversioned vendor name
-maps to the last known version) and return it as a keyword. The keyword
-is resolved to a descriptor downstream by FIND-AUTOLISP-DIALECT, so
-aliases stay aliases here."
+  "Validate a --dialect VALUE against the reader's dialect registry and
+return it as a keyword. Accepted: the enumerated names (strict /
+autocad-2022 / autocad-2026 / autocad / autocad-mac / bricscad-v25 /
+bricscad-v26 / bricscad / bricscad-mac / bricscad-linux / clautolisp /
+lax) AND derived platform+version spellings — a product optionally
+suffixed with a platform (`-mac' / `-linux', windows being the default)
+and/or a version (autocad-2027, autocad-mac-2027, bricscad-mac-v26).
+An unversioned vendor name maps to the last known version; an
+unqualified platform means windows. The keyword is resolved to a
+descriptor downstream by FIND-AUTOLISP-DIALECT, so aliases stay aliases
+here (dialect-platform-version-axis.issue)."
   (if (clautolisp.autolisp-reader:find-autolisp-dialect value)
       (intern (string-upcase value) :keyword)
       (error 'cli-usage-error
@@ -245,16 +330,137 @@ names/aliases, yielding the list of name strings."
                       (format nil "~A got no interactor names in ~S" option value)))
              (nreverse names)))))
 
-(defun parse-user-interface (value option)
-  "The --debugger-ui selection: tui (the line/terminal UI; `terminal' and
-`dumb' are accepted spellings), ncurses, or aldb (the Emacs front-end;
-`emacs' is an accepted spelling)."
-  (cond ((string-equal value "tui")     :tui)
-        ((or (string-equal value "terminal") (string-equal value "dumb")) :tui)
-        ((string-equal value "ncurses") :ncurses)
-        ((or (string-equal value "aldb") (string-equal value "emacs")) :aldb)
+(defun parse-dcl-mode (value option)
+  "The --dcl DCL-renderer selection: tui (force the line / command-line form —
+the clautolisp spelling of AutoCAD's `-command' convention), ncurses (the
+full-screen terminal dialog renderer), gui (the subprocess GUI renderer), or
+auto (GUI when a driver is configured and stdout is a TTY; else the ncurses
+renderer on a TTY when a curses backend is available; else the line TUI — so
+every headless / piped run gets the line form). `terminal' / `text' are
+accepted spellings of tui; `curses' is an accepted spelling of ncurses."
+  (cond ((or (string-equal value "tui")
+             (string-equal value "terminal")
+             (string-equal value "text")) :tui)
+        ((or (string-equal value "ncurses")
+             (string-equal value "curses")) :ncurses)
+        ((string-equal value "gui")  :gui)
+        ((string-equal value "auto") :auto)
         (t (error 'cli-usage-error
                   :option option
                   :message
-                  (format nil "Unknown ~A value ~S (expected tui/ncurses/aldb)"
+                  (format nil "Unknown --dcl mode ~S (expected tui/ncurses/gui/auto)"
+                          value)))))
+
+(defun parse-user-interface (value option)
+  "The --debugger-ui selection. The canonical spellings are =dumb=, =ncurses=,
+and =aldb=; =terminal= and =tui= are accepted aliases of =dumb=, and =emacs= of
+=aldb=. Matching is case-insensitive. Returns the canonical keyword :dumb,
+:ncurses, or :aldb."
+  (cond ((or (string-equal value "dumb")
+             (string-equal value "terminal")
+             (string-equal value "tui"))      :dumb)
+        ((string-equal value "ncurses")       :ncurses)
+        ((or (string-equal value "aldb")
+             (string-equal value "emacs"))    :aldb)
+        (t (error 'cli-usage-error
+                  :option option
+                  :message
+                  (format nil "Unknown ~A value ~S (expected dumb/ncurses/aldb; ~
+terminal and tui alias dumb, emacs aliases aldb)"
                           option value)))))
+
+;;; --- --optimize / -O --------------------------------------------------
+;;;
+;;; The CLI spelling of AutoLISP's (CLAL-OPTIMIZE '((SPEED 3) …)).
+;;;
+;;; The option exists because the AutoLISP surface cannot reach the moment
+;;; that matters most. In Common Lisp a DECLAIM in a file changes the
+;;; qualities for the rest of that file, because DECLAIM is a macro with a
+;;; compilation-time side effect. AutoLISP has neither macros nor a
+;;; distinction between compilation-time, load-time and run-time effects, so
+;;; a (CLAL-OPTIMIZE …) at the top of a .lsp takes effect only once that call
+;;; is EVALuated -- by which time the file it was meant to govern has already
+;;; been read and its DEFUNs already built. Nothing inside the language can
+;;; set the qualities BEFORE the first file is loaded; the command line can.
+;;;
+;;; The grammar mirrors CLAL-OPTIMIZE's rather than inventing a second
+;;; vocabulary for the same thing:
+;;;
+;;;   QUALITY=N   set QUALITY (debug/space/speed) to level N (0..3)
+;;;   QUALITY     the quality at level 3   (= CLAL-OPTIMIZE's bare symbol)
+;;;   N           shorthand for speed=N    (`-O2' reads as it does everywhere)
+;;;
+;;; Several specifiers may be comma-separated, and the option may be repeated;
+;;; both accumulate left to right, and a quality never mentioned keeps the
+;;; level it had. So `-O speed=3 -O debug=0' and `-O speed=3,debug=0' are the
+;;; same request, and neither says anything about SPACE.
+;;;
+;;; The result is the pairs, not the effect: this package must not know what a
+;;; level MEANS (that algebra lives in one place, APPLY-CLAL-OPTIMIZATION in
+;;; the builtins), and alfe links against this parser without linking against
+;;; the AutoLISP runtime at all.
+
+(defparameter *optimization-qualities* '(("debug" . :debug)
+                                         ("space" . :space)
+                                         ("speed" . :speed))
+  "The quality names accepted by --optimize, mapped to their keywords. The
+same three CLAL-OPTIMIZE accepts, deliberately: one vocabulary, two spellings.")
+
+(defun %parse-optimization-level (text option specifier)
+  "Parse TEXT as an optimization level 0..3, or signal a CLI-USAGE-ERROR
+naming OPTION and the offending SPECIFIER."
+  (multiple-value-bind (n end) (parse-integer text :junk-allowed t)
+    (unless (and n (= end (length text)) (<= 0 n 3))
+      (error 'cli-usage-error
+             :option option
+             :message (format nil "~A got a bad level in ~S (expected an integer 0..3)"
+                              option specifier)))
+    n))
+
+(defun %parse-optimization-specifier (specifier option)
+  "Parse one --optimize specifier into (QUALITY . LEVEL)."
+  (let* ((equals (position #\= specifier))
+         (name   (string-trim " " (if equals (subseq specifier 0 equals) specifier)))
+         (level  (and equals (string-trim " " (subseq specifier (1+ equals))))))
+    (cond
+      ;; QUALITY=N
+      (equals
+       (let ((quality (cdr (assoc name *optimization-qualities* :test #'string-equal))))
+         (unless quality
+           (error 'cli-usage-error
+                  :option option
+                  :message (format nil "Unknown optimization quality ~S in ~S (expected debug, space or speed)"
+                                   name specifier)))
+         (cons quality (%parse-optimization-level level option specifier))))
+      ;; QUALITY -- level 3, as a bare symbol means in CLAL-OPTIMIZE.
+      ((assoc name *optimization-qualities* :test #'string-equal)
+       (cons (cdr (assoc name *optimization-qualities* :test #'string-equal)) 3))
+      ;; N -- speed=N.
+      ((and (plusp (length name)) (every #'digit-char-p name))
+       (cons :speed (%parse-optimization-level name option specifier)))
+      (t
+       (error 'cli-usage-error
+              :option option
+              :message (format nil "Unknown --optimize specifier ~S (expected QUALITY, QUALITY=N or N)"
+                               specifier))))))
+
+(defun parse-optimize (value option)
+  "The --optimize / -O value: a comma-separated list of specifiers, yielding
+a list of (QUALITY . LEVEL) pairs in the order written."
+  (when (or (null value) (zerop (length (string-trim " " value))))
+    (error 'cli-usage-error
+           :option option
+           :message (format nil "~A needs a value: QUALITY, QUALITY=N or N (0..3)" option)))
+  (let ((pairs '()) (start 0))
+    (loop
+      (let* ((comma (position #\, value :start start))
+             (specifier (string-trim " " (subseq value start comma))))
+        (when (plusp (length specifier))
+          (push (%parse-optimization-specifier specifier option) pairs))
+        (unless comma (return))
+        (setf start (1+ comma))))
+    (unless pairs
+      (error 'cli-usage-error
+             :option option
+             :message (format nil "~A got no specifiers in ~S" option value)))
+    (nreverse pairs)))

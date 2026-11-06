@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: opendcl-conformance — scenario corpus, spec chapter, coverage tracker
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: opendcl.plan
+#+BRANCH: -
+
 opendcl-conformance — scenario corpus, spec chapter, coverage tracker
 =====================================================================
 

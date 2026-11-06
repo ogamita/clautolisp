@@ -1,3 +1,11 @@
+;;;; The independent tui-core module (TUI module spec §10) lives in its own
+;;;; standalone .asd. Load it here at read time so that every dependent naming
+;;;; "tui-core" (the umbrella clautolisp system, the ncurses UI, the curses /
+;;;; charms backends) resolves it — in every context that loads clautolisp.asd,
+;;;; with no source-registry configuration required.
+(asdf:load-asd (merge-pathnames "autolisp-debug-ui-tui/tui-core.asd"
+                                (or *load-truename* *default-pathname-defaults*)))
+
 (asdf:defsystem "clautolisp"
   :description "Aggregate clautolisp implementation systems."
   :author "Codex"
@@ -7,7 +15,8 @@
                "clautolisp/autolisp-runtime"
                "clautolisp/drawing"
                "clautolisp/autolisp-host"
-               "clautolisp/autolisp-mock-host"
+               "clautolisp/cador"
+               "clautolisp/cadtui"
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
@@ -19,7 +28,7 @@
                "clautolisp/autolisp-interactor"
                "clautolisp/autolisp-debug-ui"
                "clautolisp/autolisp-debug-ui-dumb"
-               "clautolisp/autolisp-debug-ui-tui"
+               "tui-core"
                "clautolisp/autolisp-debug-ui-ncurses")
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/tests")))
@@ -31,12 +40,18 @@
   :description "AutoLISP reader subsystem for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("uiop")
+  :depends-on ("uiop"
+               ;; Source of truth for the single-octet code-page tables
+               ;; the built-in codec falls back to when the host CL ships
+               ;; no codec of its own (cp1252-codec-host-independent).
+               "babel"
+               "trivial-gray-streams")
   :serial t
   :components
   ((:file "autolisp-reader/source/package")
    (:file "autolisp-reader/source/model")
    (:file "autolisp-reader/source/dialect")
+   (:file "autolisp-reader/source/external-format")
    (:file "autolisp-reader/source/input")
    (:file "autolisp-reader/source/tokenizer")
    (:file "autolisp-reader/source/parser")
@@ -62,17 +77,56 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/configuration"
+  :description "Where clautolisp's configuration files live (XDG resolution)."
+  :author "Claude"
+  :license "AGPL-3.0"
+  :depends-on ("uiop")
+  :serial t
+  :components
+  ((:file "configuration/source/package")
+   (:file "configuration/source/xdg"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/configuration/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-compiler"
+  :description "AutoLISP-to-Common-Lisp transpiler (compiler.issue, Tier 2)."
+  :author "Claude"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "autolisp-compiler/source/package")
+   (:file "autolisp-compiler/source/transpile")
+   (:file "autolisp-compiler/source/compile-function")
+   (:file "autolisp-compiler/source/compile-file"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-compiler/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
 (asdf:defsystem "clautolisp/autolisp-runtime"
   :description "Core AutoLISP runtime object model for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-reader" "clautolisp/autolisp-source-map" "uiop")
+  :depends-on ("clautolisp/autolisp-reader" "clautolisp/autolisp-source-map" "uiop"
+               "bordeaux-threads")
   :serial t
   :components
   ((:file "autolisp-runtime/source/package")
+   (:file "autolisp-runtime/source/pathname-mapping")
    (:file "autolisp-runtime/source/model")
    (:file "autolisp-runtime/source/terminal-color")
+   (:file "autolisp-runtime/source/portability")
+   (:file "autolisp-runtime/source/text-metrics")
+   (:file "autolisp-runtime/source/operator-availability")
+   (:file "autolisp-runtime/source/operator-versions")
    (:file "autolisp-runtime/source/api")
+   (:file "autolisp-runtime/source/scheduler")
    (:file "autolisp-runtime/source/ontology"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-runtime/tests")))
@@ -89,7 +143,10 @@
   :components
   ((:file "autolisp-host/source/package")
    (:file "autolisp-host/source/protocol")
-   (:file "autolisp-host/source/null-host"))
+   (:file "autolisp-host/source/nihil")
+   ;; analytic curve model shared by vlax-curve-* and the cador ActiveX
+   ;; geometric properties (cador-curve-length-and-sampling.issue)
+   (:file "autolisp-host/source/curve-geometry"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-host/tests")))
   :perform (asdf:test-op (op system)
@@ -103,7 +160,8 @@
   :depends-on ("clautolisp/autolisp-runtime")
   :serial t
   :components
-  ((:file "drawing/source/package")
+  ((:static-file "drawing/template/empty-drawing.dxf")
+   (:file "drawing/source/package")
    (:file "drawing/source/model")
    (:file "drawing/source/conditions")
    (:file "drawing/source/api")
@@ -137,7 +195,9 @@
   :description "Tests for the clautolisp DWG codec (libredwg)."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/drawing-dwg" "fiveam")
+  ;; cador: the default objects the CADs listed for their own templates, which
+  ;; a vendor .dwt read here is checked against (dwg-reads-vendor-templates)
+  :depends-on ("clautolisp/drawing-dwg" "clautolisp/cador" "fiveam")
   :serial t
   :components
   ((:file "drawing-dwg/tests/package")
@@ -149,32 +209,79 @@
                          (uiop:symbol-call :clautolisp.drawing.dwg.tests
                                            :run-all-tests)))
 
-(asdf:defsystem "clautolisp/autolisp-mock-host"
-  :description "In-memory deterministic CAD-database backend (MockHost) for clautolisp."
+(asdf:defsystem "clautolisp/cador"
+  :description "In-memory deterministic CAD-database backend (cador) for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-host" "clautolisp/autolisp-runtime"
-               "clautolisp/drawing")
+               "clautolisp/drawing" "cffi" "babel")
   :serial t
   :components
-  ((:file "autolisp-mock-host/source/package")
-   (:file "autolisp-mock-host/source/model")
-   (:file "autolisp-mock-host/source/sysvar-catalogue")
-   (:file "autolisp-mock-host/source/sysvars")
-   (:file "autolisp-mock-host/source/api")
-   (:file "autolisp-mock-host/source/entity-api")
-   (:file "autolisp-mock-host/source/selection-api")
-   (:file "autolisp-mock-host/source/dictionary-api")
-   (:file "autolisp-mock-host/source/table-api")
-   (:file "autolisp-mock-host/source/sysvar-api")
-   (:file "autolisp-mock-host/source/registry-api")
-   (:file "autolisp-mock-host/source/bricscad-sysvar-overrides")
-   (:file "autolisp-mock-host/source/prompt-api")
-   (:file "autolisp-mock-host/source/command-api")
-   (:file "autolisp-mock-host/source/com-progids")
-   (:file "autolisp-mock-host/source/vlax-api"))
+  ((:file "cador/source/package")
+   (:file "cador/source/model")
+   (:file "cador/source/document-api")
+   (:file "cador/source/sysvar-catalogue")
+   (:file "cador/source/template-defaults")
+   (:file "cador/source/sysvar-scopes")
+   (:file "cador/source/sysvars")
+   (:file "cador/source/api")
+   (:file "cador/source/entity-api")
+   (:file "cador/source/selection-api")
+   (:file "cador/source/default-objects")
+   (:file "cador/source/dictionary-api")
+   (:file "cador/source/table-api")
+   (:file "cador/source/sysvar-api")
+   (:file "cador/source/registry-native")
+   (:file "cador/source/registry-api")
+   (:file "cador/source/bricscad-sysvar-overrides")
+   (:file "cador/source/command-log")
+   (:file "cador/source/prompt-api")
+   (:file "cador/source/command-api")
+   (:file "cador/source/command-geometry")
+   (:file "cador/source/intersect")
+   (:file "cador/source/command-draw")
+   (:file "cador/source/command-modify")
+   (:file "cador/source/command-array")
+   (:file "cador/source/command-edit")
+   (:file "cador/source/command-hatch")
+   (:file "cador/source/command-builtins")
+   (:file "cador/source/command-file")
+   (:file "cador/source/viewports")
+   (:file "cador/source/getcname")
+   (:file "cador/source/com-progids")
+   (:file "cador/source/vlax-api"))
   :in-order-to ((asdf:test-op
-                 (asdf:test-op "clautolisp/autolisp-mock-host/tests")))
+                 (asdf:test-op "clautolisp/cador/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/cadtui"
+  :description "Textual UI-tree host presenting CAD objects and the CAD
+application for headless interactive/scriptable testing (generalises cador)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime" "clautolisp/autolisp-dcl"
+               "clautolisp/autolisp-interactor" "clautolisp/drawing")
+  :serial t
+  :components
+  ((:file "cadtui/source/package")
+   (:file "cadtui/source/model")
+   (:file "cadtui/source/dump")
+   (:file "cadtui/source/builders")
+   (:file "cadtui/source/menu-band")
+   (:file "cadtui/source/address")
+   (:file "cadtui/source/classify")
+   (:file "cadtui/source/parser")
+   (:file "cadtui/source/dcl-bridge")
+   (:file "cadtui/source/console-runtime")
+   (:file "cadtui/source/cad-view")
+   (:file "cadtui/source/locale")
+   (:file "cadtui/source/dispatch")
+   (:file "cadtui/source/console-interactor")
+   (:file "cadtui/source/render"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/cadtui/tests")))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          :success))
@@ -183,7 +290,7 @@
   :description "Dialog Control Language (DCL) implementation for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime")
+  :depends-on ("clautolisp/autolisp-runtime" "tui-core")
   :serial t
   :components
   ((:file "autolisp-dcl/source/package")
@@ -192,7 +299,8 @@
    (:file "autolisp-dcl/source/runtime")
    (:file "autolisp-dcl/source/sexp-wire")
    (:file "autolisp-dcl/source/subprocess-renderer")
-   (:file "autolisp-dcl/source/terminal"))
+   (:file "autolisp-dcl/source/terminal")
+   (:file "autolisp-dcl/source/ncurses-renderer"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-dcl/tests")))
   :perform (asdf:test-op (op system)
@@ -203,16 +311,26 @@
   :description "Initial core builtin registry for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime"
+  :depends-on ("clautolisp/configuration" "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-sedit"
+               ;; clal-sedit recalls a file-loaded function's source by its
+               ;; recorded position (POSITION-OF); sedit-bugs-and-design.issue.
+               "clautolisp/autolisp-source-map"
                "uiop")
   :serial t
   :components
   ((:file "autolisp-builtins-core/source/package")
    (:file "autolisp-builtins-core/source/secureload")
-   (:file "autolisp-builtins-core/source/api"))
+   ;; the measured ActiveX constant table (generated from probe-activex-
+   ;; constants runs; cador-activex-enumeration-constants-unbound).
+   (:file "autolisp-builtins-core/source/activex-constants-table")
+   (:file "autolisp-builtins-core/source/api")
+   (:file "autolisp-builtins-core/source/diesel")
+   ;; the source-file editing module (sedit-bugs-and-design.issue) — after api,
+   ;; it uses the AutoLISP printer defined there.
+   (:file "autolisp-builtins-core/source/source-file"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-builtins-core/tests")))
   :perform (asdf:test-op (op system)
@@ -237,11 +355,18 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/sysexits"
+  :description "The process exit statuses (sysexits.h) shared by clautolisp, read-autolisp and alfe."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :components
+  ((:file "autolisp-cli/source/sysexits")))
+
 (asdf:defsystem "clautolisp/read-autolisp"
   :description "Command-line reader validation tool for AutoLISP source."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-reader" "uiop")
+  :depends-on ("clautolisp/autolisp-reader" "clautolisp/sysexits" "uiop")
   :serial t
   :components
   ((:file "autolisp-reader/tools/read-autolisp/source/package")
@@ -252,7 +377,8 @@
   :description "Shared CLI option parser + *AUTOLISP-…* variable installer for clautolisp and alfe."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime"
+  :depends-on ("clautolisp/sysexits"
+               "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
                ;; for APPLY-DIALECT-TRUST-SYSVAR-DEFAULTS, the launch-time
                ;; dialect-dependent SECURELOAD / TRUSTEDPATHS overlay.
@@ -260,7 +386,9 @@
                ;; for APPLY-BRICSCAD-DIALECT-SYSVARS, the launch-time
                ;; bricscad-dialect sysvar overlay (drops the AutoCAD-only
                ;; catalogue entries BricsCAD does not define).
-               "clautolisp/autolisp-mock-host")
+               "clautolisp/cador"
+               ;; terminal.lisp: the Windows console code page (-Eterminal).
+               "cffi")
   :serial t
   :components
   ((:file "autolisp-cli/source/package")
@@ -269,12 +397,35 @@
    (:file "autolisp-cli/source/options")
    (:file "autolisp-cli/source/spec")
    (:file "autolisp-cli/source/parser")
-   (:file "autolisp-cli/source/transmit"))
+   (:file "autolisp-cli/source/debugger")
+   (:file "autolisp-cli/source/interrupt")
+   (:file "autolisp-cli/source/terminal")
+   (:file "autolisp-cli/source/transmit")
+   (:file "autolisp-cli/source/engine"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-cli/tests")))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          :success))
+
+(asdf:defsystem "clautolisp/autolisp-cli/tests"
+  :description "FiveAM tests for the shared CLI layer (launch-time host
+identity / TEMPPREFIX stamping, option value parsers)."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-cli"
+               "clautolisp/cador"
+               "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-cli/tests/package")
+   (:file "autolisp-cli/tests/test-harness")
+   (:file "autolisp-cli/tests/cli-launch-tests")
+   (:file "autolisp-cli/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-cli.tests
+                                           :run-all-tests)))
 
 (asdf:defsystem "clautolisp/clautolisp-tool"
   :description "Standalone AutoLISP evaluator built on top of the clautolisp runtime."
@@ -283,13 +434,43 @@
   :depends-on ("clautolisp/autolisp-reader"
                "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
-               "clautolisp/autolisp-mock-host"
+               "clautolisp/cador"
+               "clautolisp/cadtui"
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-init-files"
+               ;; The AutoLISP-to-CL compiler (compiler.issue). It has to be
+               ;; listed HERE, and nowhere lower: the runtime and the builtins
+               ;; reach the compiler only through hooks
+               ;; (*COMPILE-USUBR-HOOK* and friends), which is what keeps them
+               ;; from depending on it -- so nothing below pulls it in, and
+               ;; the program that assembles them has to. Without this line
+               ;; the shipped executable had no compiler at all: every hook
+               ;; stayed NIL, which the runtime reads as "interpret", so
+               ;; every SPEED level behaved like SPEED 0 and nothing warned
+               ;; -- while the test systems, which depend on the compiler
+               ;; directly as a test of it must, all passed.
+               "clautolisp/autolisp-compiler"
+               ;; The DWG codec (clautolisp-distributed-native-libraries-not-
+               ;; loaded). It has to be listed HERE, for the same reason as
+               ;; the compiler above: nothing below depends on it, so the
+               ;; program that assembles them has to, and without this line
+               ;; the shipped executable had the drawing CORE but not the code
+               ;; that REGISTERS the :DWG reader/writer -- so a complete
+               ;; installation, native libraries and all, still answered "no
+               ;; writer codec registered for format :DWG". The NATIVE library
+               ;; stays lazily loaded (ensure-shim-loaded defers
+               ;; cffi:load-foreign-library to the first conversion), so
+               ;; baking the Lisp side in costs nothing at startup and a
+               ;; binaries-only install still runs -- it reports a missing
+               ;; native library when a DWG operation is actually attempted.
+               "clautolisp/drawing-dwg"
                ;; REPL comma-commands (interactors): ,date ,uptime ,help ,quit
                "clautolisp/autolisp-interactor"
+               ;; the *AUTOLISP* REPL interactor + lisp window template now live
+               ;; in this library; the tool installs its rich per-turn hooks.
+               "clautolisp/autolisp-repl"
                ;; aldo debugger: the run loop can start a debug session under
                ;; --debugger-ui / --on-error debug (debugger §10).
                "clautolisp/autolisp-debug"
@@ -297,26 +478,53 @@
                "clautolisp/autolisp-debug-ui"
                "clautolisp/autolisp-debug-ui-dumb"
                "clautolisp/autolisp-debug-ui-ncurses"
+               ;; aldb (Emacs) RPC shim — registers the :aldb / :emacs UIs so
+               ;; --aldb-stdio drives the debugger over the process stdin/stdout.
+               "clautolisp/autolisp-debug-ui-emacs"
+               ;; aldb TCP listener (--aldb-listen, debugger §10): the run loop
+               ;; opens a socket and drives the emacs-ui over the accepted
+               ;; connection. NB new quicklisp dep — bake into the Dockerfile +
+               ;; CI pre-warm/setup-lisp loaders (clautolisp-quicklisp-ci-deps).
+               "usocket"
                ;; dribble tee/echo streams (dribble.issue)
                "trivial-gray-streams"
+               ;; the aldo companion thread runs beside the REPL (the lisp
+               ;; environment's debugger runs on its own thread).
+               "bordeaux-threads"
                "uiop")
   :serial t
   :components
   ((:file "tools/clautolisp/source/package")
    (:file "tools/clautolisp/source/version")
    (:file "tools/clautolisp/source/dribble")
+   ;; the sleeping-aldo interactor: a subset of aldo's breakpoint commands
+   ;; usable from the Lisp REPL when the full debugger is not active
+   ;; (aldo-command-from-repl.issue); repl-loop pushes it below *AUTOLISP*.
+   (:file "tools/clautolisp/source/sleeping-aldo")
    (:file "tools/clautolisp/source/main")))
 
 (asdf:defsystem "clautolisp/clautolisp-tool/tests"
   :description "FiveAM tests for the clautolisp tool (dribble streams and logic)."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/clautolisp-tool" "fiveam")
+  ;; usocket + bordeaux-threads: the aldb live-socket integration test drives a
+  ;; real listener over a client socket in a second thread (both reach here
+  ;; transitively via clautolisp-tool; named explicitly for the socket test).
+  :depends-on ("clautolisp/clautolisp-tool" "fiveam" "usocket" "bordeaux-threads")
   :serial t
   :components
   ((:file "tools/clautolisp/tests/package")
    (:file "tools/clautolisp/tests/dribble-tests")
    (:file "tools/clautolisp/tests/debugger-options-tests")
+   (:file "tools/clautolisp/tests/interrupt-tests")
+   (:file "tools/clautolisp/tests/optimize-option-tests")
+   (:file "tools/clautolisp/tests/dwg-option-tests")
+   (:file "tools/clautolisp/tests/exit-status-tests")
+   (:file "tools/clautolisp/tests/encoding-option-tests")
+   (:file "tools/clautolisp/tests/transmit-tests")
+   (:file "tools/clautolisp/tests/aldo-conf-tests")
+   (:file "tools/clautolisp/tests/debugger-ui-switch-tests")
+   (:file "tools/clautolisp/tests/aldb-socket-tests")
    (:file "tools/clautolisp/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -360,7 +568,9 @@
   :components
   ((:file "autolisp-host/tests/package")
    (:file "autolisp-host/tests/test-harness")
-   (:file "autolisp-host/tests/null-host-tests")
+   (:file "autolisp-host/tests/nihil-tests")
+   (:file "autolisp-host/tests/host-error-tests")
+   (:file "autolisp-host/tests/curve-geometry-tests")
    (:file "autolisp-host/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -387,28 +597,66 @@
                          (uiop:symbol-call :clautolisp.drawing.tests
                                            :run-all-tests)))
 
-(asdf:defsystem "clautolisp/autolisp-mock-host/tests"
-  :description "Tests for the clautolisp MockHost data carriers."
+(asdf:defsystem "clautolisp/cador/tests"
+  :description "Tests for the clautolisp cador data carriers."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-mock-host" "fiveam")
+  ;; autolisp-builtins-core: registry-native-tests checks the builtins'
+  ;; conversion of native registry values
+  ;; (cador-tests-reference-builtins-core-without-depending-on-it.issue).
+  :depends-on ("clautolisp/cador" "clautolisp/autolisp-builtins-core" "fiveam")
   :serial t
   :components
-  ((:file "autolisp-mock-host/tests/package")
-   (:file "autolisp-mock-host/tests/test-harness")
-   (:file "autolisp-mock-host/tests/model-tests")
-   (:file "autolisp-mock-host/tests/entity-api-tests")
-   (:file "autolisp-mock-host/tests/selection-tests")
-   (:file "autolisp-mock-host/tests/dictionary-api-tests")
-   (:file "autolisp-mock-host/tests/prompt-tests")
-   (:file "autolisp-mock-host/tests/command-tests")
-   (:file "autolisp-mock-host/tests/vlax-tests")
-   (:file "autolisp-mock-host/tests/reactor-tests")
-   (:file "autolisp-mock-host/tests/sysvar-catalogue-tests")
-   (:file "autolisp-mock-host/tests/run"))
+  ((:file "cador/tests/package")
+   (:file "cador/tests/test-harness")
+   (:file "cador/tests/model-tests")
+   (:file "cador/tests/document-tests")
+   (:file "cador/tests/entity-api-tests")
+   (:file "cador/tests/selection-tests")
+   (:file "cador/tests/dictionary-api-tests")
+   (:file "cador/tests/prompt-tests")
+   (:file "cador/tests/command-tests")
+   (:file "cador/tests/vlax-tests")
+   (:file "cador/tests/pointer-dialect-tests")
+   (:file "cador/tests/getcname-tests")
+   (:file "cador/tests/entity-defaults-tests")
+   (:file "cador/tests/xrecord-payload-tests")
+   (:file "cador/tests/intersect-tests")
+   (:file "cador/tests/reactor-tests")
+   (:file "cador/tests/sysvar-catalogue-tests")
+   (:file "cador/tests/registry-native-tests")
+   (:file "cador/tests/command-log-tests")
+   (:file "cador/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
-                         (uiop:symbol-call :clautolisp.autolisp-mock-host.tests
+                         (uiop:symbol-call :clautolisp.cador.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/cadtui/tests"
+  :description "Tests for the cadtui UI-tree host."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/cadtui" "fiveam" "bordeaux-threads")
+  :serial t
+  :components
+  ((:file "cadtui/tests/package")
+   (:file "cadtui/tests/test-harness")
+   (:file "cadtui/tests/model-tests")
+   (:file "cadtui/tests/dump-tests")
+   (:file "cadtui/tests/address-tests")
+   (:file "cadtui/tests/classify-tests")
+   (:file "cadtui/tests/parser-tests")
+   (:file "cadtui/tests/dispatch-tests")
+   (:file "cadtui/tests/dcl-tests")
+   (:file "cadtui/tests/console-tests")
+   (:file "cadtui/tests/cad-view-tests")
+   (:file "cadtui/tests/menu-band-tests")
+   (:file "cadtui/tests/locale-tests")
+   (:file "cadtui/tests/render-tests")
+   (:file "cadtui/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.cadtui.tests
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-dcl/tests"
@@ -430,6 +678,51 @@
                          (uiop:symbol-call :clautolisp.autolisp-dcl.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/configuration/tests"
+  :description "Tests for the configuration-file resolution module."
+  :author "Claude"
+  :license "AGPL-3.0"
+  ;; Depends on the debug UI on purpose: the property under test is that
+  ;; the UI re-exports THIS module's symbols rather than defining its own.
+  :depends-on ("clautolisp/configuration" "clautolisp/autolisp-debug-ui" "fiveam")
+  :serial t
+  :components
+  ((:file "configuration/tests/package")
+   (:file "configuration/tests/test-harness")
+   (:file "configuration/tests/xdg-tests")
+   (:file "configuration/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.configuration.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/autolisp-compiler/tests"
+  :description "Tests for the AutoLISP-to-Common-Lisp transpiler."
+  :author "Claude"
+  :license "AGPL-3.0"
+  ;; The debug system is a TEST-only dependency, and only for the
+  ;; instrumented transpiler variant: producing an instrumented body is
+  ;; the debugger's job, so testing that the compiler translates one
+  ;; requires the debugger to weave it first. The compiler itself does
+  ;; NOT depend on the debugger -- they meet in the runtime, through
+  ;; *COMPILED-POLL-HOOK*.
+  :depends-on ("clautolisp/autolisp-compiler" "clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-debug" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-compiler/tests/package")
+   (:file "autolisp-compiler/tests/test-harness")
+   (:file "autolisp-compiler/tests/equivalence-tests")
+   (:file "autolisp-compiler/tests/function-body-tests")
+   (:file "autolisp-compiler/tests/open-coded-tests")
+   (:file "autolisp-compiler/tests/instrumented-tests")
+   (:file "autolisp-compiler/tests/lexical-locals-tests")
+   (:file "autolisp-compiler/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-compiler.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/autolisp-runtime/tests"
   :description "Tests for the clautolisp AutoLISP runtime object model."
   :author "Codex"
@@ -440,8 +733,11 @@
   ((:file "autolisp-runtime/tests/package")
    (:file "autolisp-runtime/tests/test-harness")
    (:file "autolisp-runtime/tests/model-tests")
+   (:file "autolisp-runtime/tests/scheduler-tests")
+   (:file "autolisp-runtime/tests/multidocument-conformance-tests")
    (:file "autolisp-runtime/tests/evaluator-tests")
    (:file "autolisp-runtime/tests/ontology-tests")
+   (:file "autolisp-runtime/tests/pathname-mapping-tests")
    (:file "autolisp-runtime/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -453,7 +749,12 @@
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-builtins-core"
-               "clautolisp/autolisp-mock-host"
+               "clautolisp/cador"
+               ;; builtin-hooks-isolation-tests drives the cador suite's
+               ;; own environment (install-core-builtins-leaks-com-hooks-
+               ;; across-suites).
+               "clautolisp/cador/tests"
+               "clautolisp/cadtui"
                "fiveam")
   :serial t
   :components
@@ -463,9 +764,22 @@
    (:file "autolisp-builtins-core/tests/drawing-data-tests")
    (:file "autolisp-builtins-core/tests/errno-coupling-tests")
    (:file "autolisp-builtins-core/tests/exit-status-tests")
+   (:file "autolisp-builtins-core/tests/vendor-operator-tests")
+   (:file "autolisp-builtins-core/tests/diesel-tests")
    (:file "autolisp-builtins-core/tests/clal-extensions-tests")
+   (:file "autolisp-builtins-core/tests/lisp-command-tests")
+   (:file "autolisp-builtins-core/tests/operator-version-tests")
    (:file "autolisp-builtins-core/tests/secureload-dialect-tests")
+   (:file "autolisp-builtins-core/tests/sysvar-dialect-tracking-tests")
    (:file "autolisp-builtins-core/tests/encoding-roundtrip-tests")
+   (:file "autolisp-builtins-core/tests/encoding-replacement-tests")
+   (:file "autolisp-builtins-core/tests/path-dotdot-tests")
+   (:file "autolisp-builtins-core/tests/lone-cr-in-string-tests")
+   (:file "autolisp-builtins-core/tests/case-insensitive-paths-tests")
+   (:file "autolisp-builtins-core/tests/source-file-tests")
+   (:file "autolisp-builtins-core/tests/multidocument-tests")
+   (:file "autolisp-builtins-core/tests/intersectwith-tests")
+   (:file "autolisp-builtins-core/tests/builtin-hooks-isolation-tests")
    (:file "autolisp-builtins-core/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -531,6 +845,7 @@
    (:file "autolisp-debug/source/metadata")
    (:file "autolisp-debug/source/breakpoints")
    (:file "autolisp-debug/source/virtual-breakpoints")
+   (:file "autolisp-debug/source/line-breakpoints")
    (:file "autolisp-debug/source/watch")
    (:file "autolisp-debug/source/jump")
    (:file "autolisp-debug/source/snapshot")
@@ -616,6 +931,7 @@
    (:file "autolisp-sedit/tests/session-tests")
    (:file "autolisp-sedit/tests/modes-tests")
    (:file "autolisp-sedit/tests/clipboard-tests")
+   (:file "autolisp-sedit/tests/template-tests")
    (:file "autolisp-sedit/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -632,7 +948,8 @@
    (:file "autolisp-interactor/source/command")
    (:file "autolisp-interactor/source/parse")
    (:file "autolisp-interactor/source/input")
-   (:file "autolisp-interactor/source/interactor"))
+   (:file "autolisp-interactor/source/interactor")
+   (:file "autolisp-interactor/source/template"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-interactor/tests")))
   :perform (asdf:test-op (op system)
@@ -650,17 +967,49 @@
    (:file "autolisp-interactor/tests/parse-tests")
    (:file "autolisp-interactor/tests/command-tests")
    (:file "autolisp-interactor/tests/interactor-tests")
+   (:file "autolisp-interactor/tests/shell-escape-tests")
+   (:file "autolisp-interactor/tests/template-tests")
    (:file "autolisp-interactor/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (uiop:symbol-call :clautolisp.interactor.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-repl"
+  :description "The AutoLISP REPL interactor (*AUTOLISP*) and the lisp window template, as a library so a Lisp window is instantiable below the tool (windows-and-interactor-templates.issue). Rich per-turn behaviour is injected by the clautolisp tool through hooks."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime" "clautolisp/autolisp-interactor")
+  :serial t
+  :components
+  ((:file "autolisp-repl/source/package")
+   (:file "autolisp-repl/source/repl"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-repl/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-repl/tests"
+  :description "FiveAM tests for the AutoLISP REPL interactor library."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-repl" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-repl/tests/package")
+   (:file "autolisp-repl/tests/repl-tests")
+   (:file "autolisp-repl/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.repl.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/autolisp-debug-ui"
   :description "Debugger UI protocol + session lifecycle (debugger §17, §21–§24)."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime"
+  :depends-on ("clautolisp/configuration" "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-debug"
                "clautolisp/autolisp-inspect"
                "clautolisp/autolisp-interactor"
@@ -668,6 +1017,7 @@
   :serial t
   :components
   ((:file "autolisp-debug-ui/source/package")
+   (:file "autolisp-debug-ui/source/print-syntax")
    (:file "autolisp-debug-ui/source/protocol")
    (:file "autolisp-debug-ui/source/session")
    (:file "autolisp-debug-ui/source/settings")
@@ -759,31 +1109,33 @@
                          (uiop:symbol-call :clautolisp.debug.tests
                                            :run-all-tests)))
 
-(asdf:defsystem "clautolisp/autolisp-debug-ui-tui"
-  :description "Thin terminal-UI abstraction + mock backend for the ncurses debugger UI (debugger §19.3)."
-  :author "Codex"
-  :license "AGPL-3.0"
-  :depends-on ()
-  :serial t
-  :components
-  ((:file "autolisp-debug-ui-tui/source/package")
-   (:file "autolisp-debug-ui-tui/source/tui"))
-  :in-order-to ((asdf:test-op
-                 (asdf:test-op "clautolisp/autolisp-debug-ui-ncurses/tests")))
-  :perform (asdf:test-op (op system)
-                         (declare (ignore op system))
-                         :success))
+;; The tui-core module lives in its own standalone system (TUI module spec §10);
+;; see autolisp-debug-ui-tui/tui-core.asd, loaded at the top of this file so
+;; dependents that name "tui-core" resolve without source-registry setup.
 
 (asdf:defsystem "clautolisp/autolisp-debug-ui-ncurses"
   :description "Four-pane ncurses debugger UI on the tui abstraction (debugger §19)."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-debug-ui"
-               "clautolisp/autolisp-debug-ui-tui")
+               "tui-core"
+               ;; the ncurses UI routes ,<line> minibuffer commands through the
+               ;; shared ALDO command vocabulary (dumb UI-RUN-COMMAND with its
+               ;; output redirected into a pane); reuse rather than reimplement.
+               "clautolisp/autolisp-debug-ui-dumb"
+               ;; sedit runs live in a window: instantiate + drive its interactor
+               ;; template (windows-and-interactor-templates.issue).
+               "clautolisp/autolisp-interactor"
+               "clautolisp/autolisp-sedit"
+               ;; the repl pane runs a live *AUTOLISP* instance over the shared
+               ;; evaluator (the relocated REPL interactor + "lisp" template).
+               "clautolisp/autolisp-repl")
   :serial t
   :components
   ((:file "autolisp-debug-ui-ncurses/source/package")
-   (:file "autolisp-debug-ui-ncurses/source/ncurses-ui"))
+   (:file "autolisp-debug-ui-ncurses/source/layout")
+   (:file "autolisp-debug-ui-ncurses/source/ncurses-ui")
+   (:file "autolisp-debug-ui-ncurses/source/config-persist"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-debug-ui-ncurses/tests")))
   :perform (asdf:test-op (op system)
@@ -841,13 +1193,24 @@
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader/tests"
+               ;; The interactor framework had its own test system and its
+               ;; own suite, but was never listed here — so INTERACTOR-SUITE
+               ;; had never run in CI (found 2026-08-15 while adding the
+               ;; shell-escape tests of bang.issue: the new tests reported
+               ;; neither pass nor fail, because nothing invoked them).
+               "clautolisp/autolisp-interactor/tests"
+               "clautolisp/autolisp-repl/tests"
                "clautolisp/autolisp-source-map/tests"
                "clautolisp/autolisp-runtime/tests"
                "clautolisp/drawing/tests"
                "clautolisp/autolisp-host/tests"
-               "clautolisp/autolisp-mock-host/tests"
+               "clautolisp/cador/tests"
+               "clautolisp/cadtui/tests"
                "clautolisp/autolisp-dcl/tests"
                "clautolisp/autolisp-builtins-core/tests"
+               "clautolisp/autolisp-compiler/tests"
+               "clautolisp/configuration/tests"
+               "clautolisp/autolisp-cli/tests"
                "clautolisp/autolisp-file-compat/tests"
                "clautolisp/autolisp-init-files/tests"
                "clautolisp/autolisp-debug/tests"
@@ -862,17 +1225,29 @@
                          (progn
                            (uiop:symbol-call :clautolisp.autolisp-reader.tests
                                              :run-all-tests)
+                           (uiop:symbol-call :clautolisp.interactor.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.repl.tests
+                                             :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-runtime.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.drawing.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-host.tests
                                              :run-all-tests)
-                           (uiop:symbol-call :clautolisp.autolisp-mock-host.tests
+                           (uiop:symbol-call :clautolisp.cador.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.cadtui.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-dcl.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-compiler.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.configuration.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-cli.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-file-compat.tests
                                              :run-all-tests)

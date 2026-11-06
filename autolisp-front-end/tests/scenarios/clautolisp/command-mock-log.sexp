@@ -5,7 +5,7 @@ normalized token sequence on the per-session command log
 comma-separated coordinates, \"\" as the RETURN token. The
 CLAL-COMMAND-LOG extension reads the log back, oldest first."
  :classification :clautolisp-only
- :argv ("--clautolisp" "--host" "mock" "-x"
+ :argv ("--clautolisp" "--host" "cador" "-x"
         "(progn (command \"._LINE\" (list 0.0 0.0 0.0) (list 10.0 10.0 0.0) \"\") (print (clal-command-log)))")
  :expected-exit 0
  :expected-stdout-includes ("._LINE" "0.0,0.0,0.0" "10.0,10.0,0.0")

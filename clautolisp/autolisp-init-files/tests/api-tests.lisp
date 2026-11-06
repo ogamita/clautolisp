@@ -67,7 +67,19 @@ unmodified mtime when neither path applies."
          (uiop:run-program
           (list "powershell" "-NoProfile" "-Command"
                 (format nil "(Get-Item '~A').LastWriteTime = (Get-Date).AddSeconds(-~D)"
-                        (namestring p) seconds-older))))))
+                        (namestring p) seconds-older)))))
+      (t
+       ;; Any other POSIX host — notably CCL, which has no SB-POSIX::UTIME.
+       ;; Without this branch the back-date was a silent no-op there, so the
+       ;; "older" fixture kept the same mtime as the "newer" one and the
+       ;; newest-wins init-file tests failed (ccl-suite-failures.issue).
+       ;; Shell out to touch(1): GNU coreutils (the CCL CI lane is Linux)
+       ;; accepts -d @UNIXEPOCH.
+       (let ((target-unix (- (get-universal-time) seconds-older 2208988800)))
+         (ignore-errors
+           (uiop:run-program
+            (list "touch" "-d" (format nil "@~D" target-unix) (namestring p))
+            :ignore-error-status t)))))
     p))
 
 ;;; --- env-true-p ----------------------------------------------------
@@ -214,7 +226,7 @@ file system."
 
 (test default-stems-have-four-slots
   "Each default stem list has exactly four entries, matching the
-contract in issues/open/init-files.issue. The XDG slots
+contract in issues/closed/init-files.issue. The XDG slots
 (positions 2 and 4) have REQUIRE-EXTENSION-P set; the HOME slots
 do not."
   (is (= 4 (length *default-clautolisp-stems*)))

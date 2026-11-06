@@ -1,0 +1,57 @@
+#+TITLE: Host CL compiler diagnostics leak on stdout/stderr
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+BRANCH: fix-host-compiler-diagnostics-leak
+
+Host CL compiler diagnostics leak on stdout/stderr
+
+== Symptom ==
+
+Running an AutoLISP program prints Common Lisp compiler chatter the user
+never asked for: SBCL/CCL style warnings, optimization notes and progress
+lines about *generated* Common Lisp they did not write. It surfaces during
+ordinary execution, not only when compiling an artefact.
+
+== Cause ==
+
+The AutoLISP→CL compiler (compiler.issue) hands transpiled bodies to the host
+Common Lisp compiler:
+
+- lazily, when a function crosses *AUTOLISP-COMPILATION-THRESHOLD* — so it
+  fires mid-run, on the call that made a function hot;
+- eagerly at SPEED 3 (the LOAD is wrapped in one WITH-COMPILATION-UNIT);
+- and when CLAL-COMPILE-FILE writes a .lap artefact.
+
+Each of those calls (compile-usubr / compile-instrumented-usubr /
+compile-autolisp-form / compile-file, and the runtime's eager
+WITH-COMPILATION-UNIT) let the host compiler narrate on *error-output*.
+COMPILE-FILE already passed :VERBOSE NIL :PRINT NIL, but that only stops the
+progress lines, not the style warnings and notes.
+
+== Fix (clautolisp 2.2.82) ==
+
+New runtime facility (autolisp-runtime):
+
+- ~*emit-host-compiler-diagnostics*~ — NIL by default (muffle).
+- ~with-muffled-host-compiler~ / ~call-with-muffled-host-compiler~ — bind
+  *COMPILE-VERBOSE* / *COMPILE-PRINT* NIL and muffle WARNING (covers style
+  warnings and CCL compiler-warnings) and, on SBCL, SB-EXT:COMPILER-NOTE.
+  Errors are NOT muffled — a real compilation failure still signals, so the
+  callers' :FAILED handling and COMPILE-FILE's FAILUREP are unaffected.
+
+Every host compile site is wrapped: the runtime's eager WITH-COMPILATION-UNIT
+and the compiler's compile-usubr / compile-instrumented-usubr /
+compile-autolisp-form / compile-autolisp-files-to-lap.
+
+The clautolisp CLI raises ~*emit-host-compiler-diagnostics*~ to T under
+--verbose / --debug (main.lisp, the run-time LET around RUN-WITH-INPUT), for
+someone debugging the compiler itself.
+
+== Resolved ==
+
+DONE — clautolisp 2.2.82 (2026-09-23). Tests in
+autolisp-runtime/tests/evaluator-tests.lisp (the
+with-muffled-host-compiler-* group, incl. an SBCL compile-note case);
+runtime suite 950/950 and compiler suite 396/396 green. Documented in the
+clautolisp user manual (--verbose / --debug) and RELEASE_NOTES.org.

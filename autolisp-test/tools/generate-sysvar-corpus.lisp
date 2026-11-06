@@ -92,6 +92,11 @@ default, or NIL when no literal can be expressed."
          (t (format nil "'~A" arg)))))
     (t (format nil "~A" form))))
 
+;;; Documented read-only, yet ACCEPTED by AutoCAD 2022, BricsCAD V25 and V26
+;;; (errno-setvar-accepted-by-vendors): (setvar NAME 0) returns 0 instead of
+;;; signalling.
+(defparameter *read-only-but-writable* '("ERRNO"))
+
 (defun emit-coverage-entry (out rec)
   (let* ((name      (getf rec :name))
          (type-kw   (getf rec :type))
@@ -108,8 +113,19 @@ default, or NIL when no literal can be expressed."
             name profile)
     (format out "  '(type (getvar ~S))~%" name)
     (format out "  '~A)~%~%" (string-downcase (symbol-name al-type)))
+    ;; Read-only sysvars the products accept a setvar on.
+    (when (and read-only
+               (member name *read-only-but-writable* :test #'string-equal))
+      (format out "(deftest ~S~%"
+              (format nil "sysvar-~A-setvar-accepted-although-read-only"
+                      test-name-base))
+      (format out "  '((operator . ~S) (area . \"sysvar\") (profile . ~A))~%"
+              name profile)
+      (format out "  '(setvar ~S 0)~%" name)
+      (format out "  0)~%~%"))
     ;; Read-only sysvars: assert setvar signals.
-    (when read-only
+    (when (and read-only
+               (not (member name *read-only-but-writable* :test #'string-equal)))
       (format out "(deftest-error ~S~%"
               (format nil "sysvar-~A-setvar-readonly-signals"
                       test-name-base))

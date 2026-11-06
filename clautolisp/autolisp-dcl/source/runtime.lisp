@@ -23,16 +23,35 @@ errtile, retirement_button, …")
   (setf (gethash name *predefined-tiles*) builder)
   name)
 
+(defun predefined-tile-name (tile)
+  "The registry key for TILE's class. The parser turns the DCL class
+name `ok_cancel' into the keyword :OK-CANCEL (underscores → dashes,
+upcased); the registry is keyed by the original underscore spelling
+(\"ok_cancel\"). Undo the transform so the lookup matches: downcase and
+map dashes back to underscores. (The registry is EQUALP, so case is
+already folded, but dash vs. underscore is not.)"
+  (substitute #\_ #\-
+              (string-downcase (string (dcl-tile-type tile)))))
+
 (defun expand-predefined-tile (tile)
   "If TILE is a reference to a predefined class (no children, no
-local attributes), expand it into the registered template."
-  (let ((builder (gethash (string (dcl-tile-type tile))
-                          *predefined-tiles*)))
+local attributes), expand it into the registered template. Recurses so
+a cluster whose template itself contains predefined references expands
+fully. Predefined buttons (ok_button/cancel_button/help_button) and
+clusters (ok_only/ok_cancel/ok_cancel_help/…) become real :button and
+:row tiles that BOTH renderers walk — no more <ok-cancel> placeholder."
+  (let ((builder (gethash (predefined-tile-name tile) *predefined-tiles*)))
     (cond
       ((and builder
             (null (dcl-tile-children tile))
             (null (dcl-tile-attributes tile)))
-       (funcall builder))
+       (let ((expanded (funcall builder)))
+         ;; The template's children may themselves be predefined
+         ;; references (a cluster built from ok_button etc.); expand
+         ;; them too so nothing predefined survives into the instance.
+         (setf (dcl-tile-children expanded)
+               (mapcar #'expand-predefined-tile (dcl-tile-children expanded)))
+         expanded))
       (t tile))))
 
 ;;; --- Renderer protocol ------------------------------------------
@@ -90,7 +109,11 @@ state machine.")
 
 ;;; --- Source / dialog tables ------------------------------------
 
-(defparameter *next-dcl-id* 0)
+(defparameter *next-dcl-id* 1
+  "The next DCL handle. Starts at 1: Autodesk documents load_dialog as
+returning \"a positive integer value (dcl_id) if successful, or a negative
+integer\" on failure, so 0 must never be a handle
+(clautolisp-load-dialog-first-id-is-zero.issue).")
 (defparameter *loaded-sources* (make-hash-table :test #'eql))
 (defparameter *active-dialogs* (make-hash-table :test #'eql))
 
@@ -356,30 +379,46 @@ clear the batch state. Returns nil."
       (setf *current-list-operation* nil)))
   nil)
 
+(defun dcl-reason-code (reason)
+  "Map a renderer REASON keyword to the AutoLISP $reason integer code:
+1 = tile selected, 2 = value changed (edit in progress), 3 = focus lost,
+4 = double-click. An integer passes through; anything else defaults to 1."
+  (case reason
+    (:reason-selected     1)
+    (:reason-changed      2)
+    (:reason-lost-focus   3)
+    (:reason-double-click 4)
+    (t (if (integerp reason) reason 1))))
+
 (defun dcl-runtime-fire-action (dialog key value reason)
   "Invoked by the renderer when a tile fires its action. Looks up
 the registered AutoLISP callback (a list of forms or a callable)
-and invokes it. Sets *$key$*, *$value$*, *$reason$* per the
-AutoLISP DCL contract. Records VALUE in the dialog's state map
-so that subsequent (get_tile KEY) returns what the user just
-entered. The callback may call done_dialog; afterwards
-`dcl-dialog-finished-p` is t."
+and invokes it. Binds the DCL reserved variables $key / $value /
+$reason / $data per the AutoLISP DCL contract. Records VALUE in the
+dialog's state map so that subsequent (get_tile KEY) returns what the
+user just entered. The callback may call done_dialog; afterwards
+`dcl-dialog-finished-p` is t.
+
+NB the reserved names have NO trailing `$' — the reader upcases the
+source `$value' to the symbol $VALUE. They were interned as \"$VALUE$\"
+etc., which no user source ever reads, so `$value' came back nil and
+every action that consulted it (the greet example) lost the tile value."
   ;; Update the value state before firing the callback so that
   ;; (get_tile key) inside the callback observes the new value.
   (when (stringp value)
     (setf (gethash key (dcl-dialog-state dialog)) value))
   (let* ((callback (gethash key (dcl-dialog-actions dialog)))
-         (key-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$KEY$"))
-         (value-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$VALUE$"))
-         (reason-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$REASON$"))
-         (data-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$DATA$")))
+         (key-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$KEY"))
+         (value-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$VALUE"))
+         (reason-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$REASON"))
+         (data-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$DATA")))
     (when callback
       (clautolisp.autolisp-runtime:set-variable
        key-symbol (clautolisp.autolisp-runtime:make-autolisp-string key))
       (clautolisp.autolisp-runtime:set-variable
        value-symbol (clautolisp.autolisp-runtime:make-autolisp-string (or value "")))
       (clautolisp.autolisp-runtime:set-variable
-       reason-symbol reason)
+       reason-symbol (dcl-reason-code reason))
       (clautolisp.autolisp-runtime:set-variable
        data-symbol (or (gethash key (dcl-dialog-client dialog)) nil))
       (cond
@@ -415,7 +454,32 @@ entered. The callback may call done_dialog; afterwards
      (make-dcl-tile :type :row
                     :children (mapcar (lambda (c) (funcall c)) children)))))
 
-;; Real DCL ships these in BASE.DCL; we hard-code the canonical few.
+(defun register-predefined-column (name children)
+  (register-predefined-tile name
+   (lambda ()
+     (make-dcl-tile :type :column
+                    :children (mapcar (lambda (c) (funcall c)) children)))))
+
+(defun %predefined (name)
+  "A thunk that instantiates the predefined tile NAME (used to compose
+clusters out of other predefined tiles)."
+  (lambda () (funcall (gethash name *predefined-tiles*))))
+
+(defun register-predefined-errtile (name)
+  "The errtile: a text tile keyed \"error\" that dialogs write messages
+into via (set_tile \"error\" \"...\"). BASE.DCL flags it is_error_tile."
+  (register-predefined-tile name
+   (lambda ()
+     (make-dcl-tile :type :text
+                    :key "error"
+                    :attributes (list (cons "label" "")
+                                      (cons "is_error_tile" t))))))
+
+;; Real DCL ships these in BASE.DCL; we hard-code the canonical set:
+;; the three buttons, the errtile, and the ok_* clusters composed of
+;; them. Every one expands into real :button / :text / :row / :column
+;; tiles at dialog-load time, so both the terminal and the Qt renderer
+;; see actual accept / cancel / help / error tiles.
 (eval-when (:load-toplevel :execute)
   (register-predefined-button "ok_button"
                                :label "OK" :is-default t :key "accept")
@@ -423,14 +487,19 @@ entered. The callback may call done_dialog; afterwards
                                :label "Cancel" :is-cancel t :key "cancel")
   (register-predefined-button "help_button"
                                :label "Help" :is-help t :key "help")
+  (register-predefined-errtile "errtile")
   (register-predefined-row "ok_only"
-                            (list (lambda ()
-                                    (funcall (gethash "ok_button"
-                                                       *predefined-tiles*)))))
+                            (list (%predefined "ok_button")))
   (register-predefined-row "ok_cancel"
-                            (list (lambda () (funcall (gethash "ok_button" *predefined-tiles*)))
-                                  (lambda () (funcall (gethash "cancel_button" *predefined-tiles*)))))
+                            (list (%predefined "ok_button")
+                                  (%predefined "cancel_button")))
   (register-predefined-row "ok_cancel_help"
-                            (list (lambda () (funcall (gethash "ok_button" *predefined-tiles*)))
-                                  (lambda () (funcall (gethash "cancel_button" *predefined-tiles*)))
-                                  (lambda () (funcall (gethash "help_button" *predefined-tiles*))))))
+                            (list (%predefined "ok_button")
+                                  (%predefined "cancel_button")
+                                  (%predefined "help_button")))
+  (register-predefined-column "ok_cancel_err"
+                            (list (%predefined "ok_cancel")
+                                  (%predefined "errtile")))
+  (register-predefined-column "ok_cancel_help_errtile"
+                            (list (%predefined "ok_cancel_help")
+                                  (%predefined "errtile"))))

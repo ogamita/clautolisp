@@ -40,6 +40,20 @@ esac
 endef
 
 ROOT_DIR := $(shell pwd)
+# The corpus never writes a real registry / defaults database (SETVAR of
+# LISPSYS persists): the host uses this sexp store on every platform.
+export CLAUTOLISP_REGISTRY_FILE ?= $(ROOT_DIR)/.cache/test-registry.sexp
+
+# Paths PASSED TO the clautolisp / alfe engine (as *autolisp-test-root*, the
+# harness `-l' path, TRUSTEDPATHS) must be NATIVE: on Windows those engines run
+# native and cannot resolve the msys `/c/...' form `pwd' yields there — only
+# `C:/...'. cygpath -m converts on Windows; identity elsewhere. (make/bash keep
+# ROOT_DIR itself, in msys form, for filesystem operations.)
+ifneq ($(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),)
+ROOT_DIR_NATIVE := $(shell cygpath -m "$(ROOT_DIR)")
+else
+ROOT_DIR_NATIVE := $(ROOT_DIR)
+endif
 
 # Path to alfe-sbcl / alfe-ccl. Used by the CAD-driven targets that
 # load the harness through a real BricsCAD/AutoCAD engine via the
@@ -51,6 +65,20 @@ ALFE_CCL  := $(ALFE_ROOT)/tools/alfe/bin/alfe-ccl
 CLAUTOLISP_ROOT := $(ROOT_DIR)/../clautolisp
 CLAUTOLISP_ASD := $(CLAUTOLISP_ROOT)/clautolisp.asd
 AUTOLISP_TEST_ASD := $(ROOT_DIR)/autolisp-test.asd
+
+# Native (C:/...) forms of the .asd paths handed to asdf:load-asd below. On
+# Windows msys `pwd' yields `/c/...', which native-Windows SBCL/CCL cannot
+# resolve, so load-asd never registers the system and test-system reports
+# "Component not found". cygpath -m on Windows, identity elsewhere (same idiom
+# as ROOT_DIR_NATIVE above and the front-end Makefile). Consumed as
+# `#P"$(..._NATIVE)"' so the reader gets a native pathname, not a namestring.
+ifneq ($(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),)
+CLAUTOLISP_ASD_NATIVE   := $(shell cygpath -m "$(CLAUTOLISP_ASD)")
+AUTOLISP_TEST_ASD_NATIVE := $(shell cygpath -m "$(AUTOLISP_TEST_ASD)")
+else
+CLAUTOLISP_ASD_NATIVE   := $(CLAUTOLISP_ASD)
+AUTOLISP_TEST_ASD_NATIVE := $(AUTOLISP_TEST_ASD)
+endif
 CLAUTOLISP_SBCL := $(CLAUTOLISP_ROOT)/tools/clautolisp/bin/clautolisp-sbcl
 CLAUTOLISP_CCL  := $(CLAUTOLISP_ROOT)/tools/clautolisp/bin/clautolisp-ccl
 XDG_CACHE_HOME ?= $(CLAUTOLISP_ROOT)/.cache
@@ -79,7 +107,7 @@ PDF_FILES := $(patsubst %.org,$(BUILD_DIR)/%.pdf,$(DOCUMENTATION_ORG))
 HARNESS_SNIPPET := \
   (setq *clautolisp-version* "0.x") \
   (setq *autolisp-test-debug-p* nil) \
-  (setq *autolisp-test-root* "$(ROOT_DIR)/") \
+  (setq *autolisp-test-root* "$(ROOT_DIR_NATIVE)/") \
   (vl-catch-all-apply (quote setvar) (list "TRUSTEDPATHS" (strcat *autolisp-test-root* "..."))) \
   (load (strcat *autolisp-test-root* "harness/run.lsp")) \
   (autolisp-test-run-all)
@@ -90,7 +118,7 @@ HARNESS_SNIPPET := \
 HARNESS_DEBUG_SNIPPET := \
   (setq *clautolisp-version* "0.x") \
   (setq *autolisp-test-debug-p* T) \
-  (setq *autolisp-test-root* "$(ROOT_DIR)/") \
+  (setq *autolisp-test-root* "$(ROOT_DIR_NATIVE)/") \
   (vl-catch-all-apply (quote setvar) (list "TRUSTEDPATHS" (strcat *autolisp-test-root* "..."))) \
   (load (strcat *autolisp-test-root* "harness/run.lsp")) \
   (autolisp-test-run-all)
@@ -144,13 +172,13 @@ test: harness-self-test test-clautolisp-sbcl
 # repro). Loads run.lsp then the self-test, which exits non-zero on
 # any failed check.
 HARNESS_SELFTEST_SNIPPET := \
-  (setq *autolisp-test-root* "$(ROOT_DIR)/") \
+  (setq *autolisp-test-root* "$(ROOT_DIR_NATIVE)/") \
   (vl-catch-all-apply (quote setvar) (list "TRUSTEDPATHS" (strcat *autolisp-test-root* "..."))) \
   (load (strcat *autolisp-test-root* "harness/run.lsp")) \
   (load (strcat *autolisp-test-root* "harness/self-test.lsp"))
 
 harness-self-test: $(CLAUTOLISP_SBCL)  ## Harness regression tests (detection + matrix; guards the recap-crash bug).
-	"$(CLAUTOLISP_SBCL)" -x '$(HARNESS_SELFTEST_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc -x '$(HARNESS_SELFTEST_SNIPPET)'
 
 # --- Path 1: the standalone clautolisp executable ------------------
 # The executables under clautolisp/tools/clautolisp/bin/ are built
@@ -159,25 +187,25 @@ harness-self-test: $(CLAUTOLISP_SBCL)  ## Harness regression tests (detection + 
 # a runtime fix.
 
 $(CLAUTOLISP_SBCL): $(CLAUTOLISP_SOURCES)
-	$(MAKE) -C $(CLAUTOLISP_ROOT) build-clautolisp-sbcl
+	"$(MAKE)" -C "$(CLAUTOLISP_ROOT)" build-clautolisp-sbcl
 
 $(CLAUTOLISP_CCL): $(CLAUTOLISP_SOURCES)
-	$(MAKE) -C $(CLAUTOLISP_ROOT) build-clautolisp-ccl
+	"$(MAKE)" -C "$(CLAUTOLISP_ROOT)" build-clautolisp-ccl
 
 build-clautolisp-sbcl: $(CLAUTOLISP_SBCL)
 build-clautolisp-ccl:  $(CLAUTOLISP_CCL)
 
 test-clautolisp-sbcl: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-sbcl-debug: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" -x '$(HARNESS_DEBUG_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc -x '$(HARNESS_DEBUG_SNIPPET)'
 
 test-clautolisp-ccl: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-ccl-debug: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" -x '$(HARNESS_DEBUG_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc -x '$(HARNESS_DEBUG_SNIPPET)'
 
 # --- Path 2: SBCL/CCL + ASDF driver --------------------------------
 # Loads the autolisp-test/clautolisp-driver system, which installs
@@ -187,42 +215,42 @@ test-clautolisp-ccl-debug: $(CLAUTOLISP_CCL)
 
 test-asdf-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit --non-interactive \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
-		--eval '(asdf:load-asd "$(AUTOLISP_TEST_ASD)")' \
+		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(AUTOLISP_TEST_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
 		--eval '(autolisp-test.clautolisp-driver:run-autolisp-test-suite)'
 
 test-asdf-sbcl-debug:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(SBCL) --noinform --no-userinit \
+	"$(SBCL)" --noinform --no-userinit \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
-		--eval '(asdf:load-asd "$(AUTOLISP_TEST_ASD)")' \
+		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(AUTOLISP_TEST_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
 		--eval '(autolisp-test.clautolisp-driver:run-autolisp-test-suite :debug t)'
 
 test-asdf-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(CCL) --no-init --quiet \
+	"$(CCL)" --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
-		--eval '(asdf:load-asd "$(AUTOLISP_TEST_ASD)")' \
+		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(AUTOLISP_TEST_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
 		--eval '(autolisp-test.clautolisp-driver:run-autolisp-test-suite)' \
 		--eval '(ccl:quit)'
 
 test-asdf-ccl-debug:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	$(CCL) --no-init --quiet \
+	"$(CCL)" --no-init --quiet \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
-		--eval '(asdf:load-asd "$(AUTOLISP_TEST_ASD)")' \
+		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(AUTOLISP_TEST_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
 		--eval '(autolisp-test.clautolisp-driver:run-autolisp-test-suite :debug t)'
 
@@ -247,7 +275,7 @@ export TEXMFVAR := $(TEXFMT_CACHE)
 ifeq ($(LATEX_COMPILER),xelatex)
 TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
 $(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
-	@mkdir -p $(TEXFMT_CACHE)
+	@mkdir -p "$(TEXFMT_CACHE)"
 	fmtutil -user --byfmt xelatex
 else
 TEX_FMT_DEP :=
@@ -260,8 +288,8 @@ endif
 # org export writes next to the .org; we move the result under build/ (mirroring
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
-	@mkdir -p $(@D)
-	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
+	@mkdir -p "$(@D)"
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" sh ../scripts/run-emacs.sh "$(EMACS)" --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
@@ -269,7 +297,7 @@ $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@rm -f "$(<:.org=.tex)"
 
 clean-pdf:
-	rm -rf $(BUILD_DIR)
+	rm -rf "$(BUILD_DIR)"
 
 # ---------------------------------------------------------------------
 # autolisp-test × clautolisp × dialect matrix
@@ -294,28 +322,28 @@ clean-pdf:
 # the harness entry point only needs editing one place.
 
 test-clautolisp-sbcl-strict: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc --dialect strict -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-sbcl-clautolisp: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc --dialect strict -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-sbcl-bricscad: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" --dialect bricscad-v26 -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc --dialect bricscad-v26 -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-sbcl-autocad: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" --dialect autocad-2026 -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc --dialect autocad-2026 -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-ccl-strict: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc --dialect strict -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-ccl-clautolisp: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc --dialect strict -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-ccl-bricscad: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" --dialect bricscad-v26 -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc --dialect bricscad-v26 -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-ccl-autocad: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" --dialect autocad-2026 -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc --dialect autocad-2026 -x '$(HARNESS_SNIPPET)'
 
 # Aggregate: every dialect against one implementation.
 test-clautolisp-sbcl-all: \
@@ -345,7 +373,7 @@ test-clautolisp-all: test-clautolisp-sbcl-all test-clautolisp-ccl-all
 # The recipes assume alfe-sbcl is built (see autolisp-front-end's
 # build-alfe-sbcl). The actual real-CAD drive is itself gated by
 # the matching $BRICSCAD_EXE / $AUTOCAD_EXE; without those, alfe's
-# DETECT phase will exit 3 and the test reports the engine as
+# DETECT phase will exit 69 (EX_UNAVAILABLE) and the test reports the engine as
 # unavailable.
 
 # alfe driving the autolisp-test harness inside a CAD engine.
@@ -353,36 +381,36 @@ test-clautolisp-all: test-clautolisp-sbcl-all test-clautolisp-ccl-all
 # autolisp-test-run-all entry) and asks alfe to evaluate the entry
 # point. The CAD-side runtime publishes status transitions; alfe's
 # eval-plan waits for DONE between each action.
-ALFE_HARNESS_LOAD := -l "$(ROOT_DIR)/harness/run.lsp"
+ALFE_HARNESS_LOAD := -l "$(ROOT_DIR_NATIVE)/harness/run.lsp"
 ALFE_HARNESS_RUN  := -x "(autolisp-test-run-all)"
 
 test-bricscad-macos-strict:
 	@$(call require-os-darwin,$@); \
-	 "$(ALFE_SBCL)" --bricscad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --bricscad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-bricscad-macos-bricscad:
 	@$(call require-os-darwin,$@); \
-	 "$(ALFE_SBCL)" --bricscad --dialect bricscad-v26 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --bricscad --dialect bricscad-v26 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-bricscad-macos: test-bricscad-macos-strict test-bricscad-macos-bricscad
 
 test-bricscad-windows-strict:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --bricscad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --bricscad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-bricscad-windows-bricscad:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --bricscad --dialect bricscad-v26 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --bricscad --dialect bricscad-v26 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-bricscad-windows: test-bricscad-windows-strict test-bricscad-windows-bricscad
 
 test-autocad-windows-strict:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --autocad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --autocad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-autocad-windows-autocad:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --autocad --dialect autocad-2026 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --autocad --dialect autocad-2026 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-autocad-windows: test-autocad-windows-strict test-autocad-windows-autocad
 
@@ -414,15 +442,15 @@ INSTALL_INFO        ?= install-info
 .PHONY: install install-programs install-documentation uninstall
 
 install: build  ## Install harness + tests + docs into $$PREFIX (build first; sudo-friendly).
-	$(MAKE) install-programs
-	$(MAKE) install-documentation
+	"$(MAKE)" install-programs
+	"$(MAKE)" install-documentation
 
 install-programs:  ## Install just the autolisp-test harness + tests (no docs).
-	install -d $(LIBEXEC_INSTALL_DIR)/harness
-	install -d $(LIBEXEC_INSTALL_DIR)/tests
+	install -d "$(LIBEXEC_INSTALL_DIR)/harness"
+	install -d "$(LIBEXEC_INSTALL_DIR)/tests"
 	@if [ -d harness ]; then \
 	  for f in harness/*.lsp; do \
-	    [ -f "$$f" ] && install -m 0644 "$$f" $(LIBEXEC_INSTALL_DIR)/harness/ ; \
+	    [ -f "$$f" ] && install -m 0644 "$$f" "$(LIBEXEC_INSTALL_DIR)/harness/" ; \
 	  done ; \
 	fi
 	@if [ -d tests ]; then \
@@ -437,27 +465,27 @@ install-programs:  ## Install just the autolisp-test harness + tests (no docs).
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 install-documentation:  ## Install just the autolisp-test documentation.
-	install -d $(DOC_INSTALL_DIR)
+	install -d "$(DOC_INSTALL_DIR)"
 	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
-	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" "$(DOC_INSTALL_DIR)/" ; fi ; \
 	done
-	install -d $(INFO_INSTALL_DIR)
+	install -d "$(INFO_INSTALL_DIR)"
 	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
-	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
-	    installed="$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
-	    $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
+	    install -m 0644 "$$f" "$(INFO_INSTALL_DIR)/" ; \
+	    installed="$(INFO_INSTALL_DIR)/$$(basename "$$f")" ; \
+	    "$(INSTALL_INFO)" --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
 	      || echo "[skip] install-info dir update for $$installed" ; \
 	  fi ; \
 	done
 	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the autolisp-test install from $$PREFIX.
-	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
+	rm -rf "$(LIBEXEC_INSTALL_DIR)" "$(DOC_INSTALL_DIR)"
 	@for f in documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
-	    $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
+	    "$(INSTALL_INFO)" --remove --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
 	      || true ; \
-	    rm -f "$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
+	    rm -f "$(INFO_INSTALL_DIR)/$$(basename "$$f")" ; \
 	  fi ; \
 	done

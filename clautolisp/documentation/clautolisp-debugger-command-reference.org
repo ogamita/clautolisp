@@ -260,6 +260,21 @@ the dumb terminal, having no cursor, types the LOC or opens the sedit-style
 selection sub-mode (§2). Each command entry lists *both* spellings — the
 keystroke-UI cursor form and the typed form — under this rule.
 
+* 0.1 Debugging from the plain REPL (sleeping-aldo)
+
+The full debugger runs at a stop. When no stop is active, a *subset* of aldo's
+breakpoint/watch commands is still available at the ordinary Lisp REPL through
+the *sleeping-aldo* interactor, as comma-commands reached with the =,aldo= /
+=,debug= prefix (or directly when the name does not collide with a REPL
+command): =,break=, =,lb= (list breakpoints), =,eb= / =,db= (enable/disable),
+=,rb= (remove), =,cb= (condition), =,ib= (ignore), =,ls= (list source),
+=,bpcmd=, =,trace= / =,untrace=, =,watch= / =,unwatch=, =,lw= (list watches),
+and =,help=. A =FILE:LINE= breakpoint set here is *persistent* (re-resolved on
+load); a breakpoint on a not-yet-defined function is listed as =vbN … (not
+defined yet)= and a pending =FILE:LINE= as =lbN … pending= until it arms. See
+the user manual (“Debugging commands from the REPL”) for the full table. Every
+command below is these same commands, presented at a stop.
+
 * 1. Execution control (run / step / resume)
 
 ** continue
@@ -318,7 +333,7 @@ keystroke-UI cursor form and the typed form — under this rule.
   closing a debug session. clautolisp assumes it is *always* debugging: when
   the AutoLISP system boots, the *aldo debugger thread is started right away
   and stays ready* for the lifetime of the process (see the architecture in
-  =issues/open/debugger-public-interface-and-on-error.issue= and the
+  =issues/closed/debugger-public-interface-and-on-error.issue= and the
   sequence diagram =clautolisp/documentation/aldo-architecture.png= /
   =aldo-debugger-interaction.puml=). gdb's =run= — launch the program under
   the debugger — has no analogue: the program is *already* running under
@@ -350,7 +365,15 @@ keystroke-UI cursor form and the typed form — under this rule.
     aborting cancels it. The QUIT event cannot be ignored.
   - The debugger's *other* CLI options select the UI and configure the aldb
     channel — =--debugger-ui=, =--aldb-listen=, =--aldb-stdio= (§10
-    *Selecting the user interface*).
+    *Selecting the user interface*). The AutoLISP variable
+    =*CLAL-DEBUGGER-UI*= mirrors =--debugger-ui= and is re-read LIVE at each
+    stop, so =(setq *clal-debugger-ui* 'dumb)= selects the UI — canonical
+    =dumb= / =ncurses= / =aldb= (with =terminal= / =tui= aliasing =dumb= and
+    =emacs= aliasing =aldb=, matched case-insensitively) — used at the NEXT
+    debugger entry — e.g. =(foreach *clal-debugger-ui* '(dumb ncurses aldb)
+    (clal-break))= enters the debugger successively on the dumb terminal,
+    ncurses, and aldb. An unrecognised value warns (each time) and falls back
+    to the dumb UI.
 - backing: =[have]= for the engine entry (=*debug-hit-handler*= +
   poll-point dispatch already implement "invoke the debugger at a poll
   point"), the =clal-break= / =clal-invoke-debugger= builtins,
@@ -990,7 +1013,7 @@ debugging disabled.
 - The *only* use of OS threads inside clautolisp is an implementation
   technicality — the aldo debugger runs in its own thread, alternating with
   the single main (debuggee) thread through a mutex (see the architecture in
-  =issues/open/debugger-public-interface-and-on-error.issue=). That is
+  =issues/closed/debugger-public-interface-and-on-error.issue=). That is
   invisible to the AutoLISP programmer: it is not an addressable "thread" to
   list or select, just the mechanism by which the one debuggee is paused and
   resumed. There is one debuggee, hence no per-thread breakpoints and no
@@ -1082,6 +1105,19 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     *Terminal styling* for how they render).
   - break-on-caught — stop on a /caught/ error too (=*break-on-caught-error*=,
     §2 =catch=); default off.
+  - =atom-poll-points= — =on= / =off= (=set atom-poll-points on=): give every
+    *atom* in an evaluated position — a variable reference or a literal — its
+    own poll point, so the debugger can stop /before/ =a= is read in =(+ a b)=,
+    or before a function's bare return value =z=. Default *off*, because it
+    changes what a step stops on (every variable) and renumbers the poll points
+    (=func.INDEX=, =LINE.K=, =ppN=). Names that are not evaluated get none:
+    SETQ's places, FOREACH's variable, an operator. =break LINE= still means
+    the *statement* on that line — atoms are skipped unless the line holds
+    nothing else — so designate an atom with =LINE:COL=, =LINE.K= or =ppN=. It
+    is read when a function is *instrumented* (on its first debugged call), so
+    it applies to functions instrumented from then on; one already instrumented
+    keeps its poll points, and its breakpoints with them.
+    (instrumenter-no-pollpoints-on-atoms)
   - =source-window-height= — how many source lines =list source= shows around
     the stop (=set source-window-height N=); an integer, default *24*.
   - =value-line-width= — the width, in characters, of a *single-line* value
@@ -1101,9 +1137,10 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     terminal height is known, else =pager-height= alone (the terminal size is
     often unavailable on a dumb terminal). With neither available, the built-in
     fallback of *24* lines is used.
-  - =default-user-interface= — which UI the debugger uses on entry: =tui=
-    (the *TUI*, on a line-mode terminal), =ncurses= (the full-screen UI), or
-    =aldb= (the Emacs UI). This is the *persisted default*; the *current* value
+  - =default-user-interface= — which UI the debugger uses on entry: =dumb=
+    (the line-mode terminal UI; =terminal= / =tui= alias it), =ncurses= (the
+    full-screen UI), or =aldb= (the Emacs UI; =emacs= aliases it). This is the
+    *persisted default*; the *current* value
     =user-interface= (set by the CLI, §10) overrides it for one run without
     being saved. See §10 *Selecting the user interface*.
   - =default-aldb-listening-address= — the address aldb listens on for the
@@ -1239,6 +1276,17 @@ interchangeable on read; =clal-save-aldo-configuration= writes back whichever
 the in-memory value holds, so a user who prefers an ASCII file keeps glyphs as
 code points. (Unicode decorations apply only where the build supports Unicode;
 the =ascii= theme is the always-available fallback.)
+
+*A saved file documents itself.* =,settings save= writes the settings you
+changed as live data, then every setting you left alone *commented out*, at
+its built-in default and followed by the values it accepts — so the file can
+be edited by hand without this reference beside it. The commented lines are
+documentation, not data: the reader skips them, so loading such a file sets
+only its live entries, and the settings shown at their default stay
+unset (which is what keeps the aldo-over-lisp fall-through of =lisp.conf=
+working). Saving rewrites the file; comments added by hand are not kept.
+Values there use the file's syntax rather than =set='s — a boolean is =t= or
+=nil=, since =off= would read back as a (true) symbol.
 
 - backing: =[new]= — =*clal-aldo-configuration*=, the XDG load/search, the two
   =clal-*= functions, the save / reload subcommands, the =theme= selector, and
@@ -1668,7 +1716,8 @@ via poll-point body suppression (see =jump LINE=, §1).
 One command set, three input surfaces (spec §17 keeps UIs interchangeable),
 all driven by the same =read → check-commands → eval → print= loop:
 
-- *TUI (line-mode terminal):* every command is a typed token (=c=, =lf=,
+- *dumb (line-mode terminal) — selector =dumb= (aliases =terminal= / =tui=):*
+  every command is a typed token (=c=, =lf=,
   =break 12=, or a bare =(form)=) terminated by RET. No prefix ambiguity — the
   whole token is read before dispatch. "Dumb" for *input* only: its *output* is
   styled with ANSI colour/inverse where the terminal allows (see *Terminal
@@ -1738,21 +1787,31 @@ The effective UI on entry is the *current* =user-interface= if present, else
 The *first* time control reaches the debugger it reads =user-interface= (else
 =default-user-interface=) and activates that UI:
 
-- *aldb — not yet connected.* aldo prints, on the program's terminal, the Emacs
-  command to connect, and *waits* — for the connection, or for the user to pick
-  a terminal UI instead:
+- *aldb — not yet connected.* With no aldb transport configured, aldb defaults
+  to a TCP listener on =127.0.0.1= and an *OS-chosen free port* (never stdio — a
+  hijacked stdio is a poor default; pin a fixed port with =--aldb-listen= or the
+  =default-aldb-listening-port= setting). aldo prints, on the program's terminal,
+  the Emacs commands to connect — first loading the shipped =aldb.el= if needed —
+  and *waits* for the connection, or for the user to pick a terminal UI instead:
   #+begin_example
   ARITHMETIC ERROR: division by zero
-  Aldo debugger activated, please use emacs aldb to connect:
-      M-x aldb-connect RET 127.0.0.1:4301 RET
+  Aldo debugger activated, connect from Emacs aldb:
+      M-x load-file RET /path/to/aldb.el RET
+      M-x aldb-connect RET 127.0.0.1 RET 51763 RET
   Alternatively, select a terminal or ncurses user interface,
     1) TUI
     2) ncurses
   Debugger UI?
   #+end_example
-  When aldb connects, the terminal input is cancelled, terminal control reverts
-  to the suspended program, and debugging proceeds in aldb. (Typing =1= / =2=
-  switches to the tui / ncurses UI for this session instead.)
+  =aldb-connect= prompts for the host and port separately (the actual free port
+  is the one printed). The =load-file= path is the installed client,
+  =$PREFIX/share/emacs/site-lisp/clautolisp/aldb.el= (=make install-emacs=), or
+  the in-tree =autolisp-debug-ui-emacs/emacs/aldb.el= from a checkout; once it is
+  on Emacs's =load-path= a plain =(require 'aldb)= suffices. When aldb connects,
+  the terminal input is cancelled,
+  terminal control reverts to the suspended program, and debugging proceeds in
+  aldb. (Typing =1= / =2= switches to the tui / ncurses UI for this session
+  instead.)
 - *aldb — already connected.* Nothing appears on the terminal; aldb is simply
   messaged and Emacs raises the aldb buffer.
 - *ncurses.* The UI runs on the terminal's *alternate screen*, so on resume the

@@ -1,0 +1,527 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-2-multidocument-runtime — N documents, isolated engines, shared blackboard, cooperative coroutine scheduler
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: feature
+#+DEPENDS: cador-1-split-nihil-cador (closed)
+#+BRANCH: cador-multidocument
+
+* Context
+
+Sub-task 2 of the =cador-multidocument-host= epic (§5, §6 C1–C8, and the
+analysis document's §4.2 invariant "one runner, N parked contexts").
+Developed on its OWN branch (=cador-multidocument=) in parallel with
+sub-task 1, per the owner.
+
+* Problem
+
+cador must present a multi-document world to AutoLISP, matching AutoCAD /
+BricsCAD MDI semantics, on a single-runner cooperative model — without a
+global Lisp environment (C1) and without concurrent per-document
+execution (C2).
+
+* Proposal (owner's design, to be specified then implemented)
+
+- **N document images.** Each open drawing is a document with its OWN
+  AutoLISP namespace: separate value/function cells, a separate AutoLISP
+  engine (evaluation context), and a distinct loaded Lisp program set.
+  Switching document switches the active namespace + the active drawing.
+- **Shared blackboard, one heap.** A single AutoLISP heap is kept for the
+  whole session; the blackboard (=vl-bb-ref= / =vl-bb-set=) is shared
+  across documents WITHOUT copying values between per-document heaps —
+  there is one heap, so blackboard values are shared by identity, not
+  duplicated (values only, never functions — C3).
+- **Per-document drawing.** Each namespace owns its drawing (the cador
+  entity DB); entity handles / selection sets / ldata are
+  document-tagged, cross-document dereference signals (C5).
+- **Scheduler = cooperative coroutines.** One thread per document, but run
+  as a coroutine (the aldo signal/park handoff model): at most one
+  evaluation runs at any instant, any number parked (C2, C8 — no worker
+  thread is *required*, but the per-document thread is the coroutine
+  carrier). One aldo (debugger) instance per document ⇒ ~2 threads per
+  document total (the document runner + its aldo), used cooperatively.
+- **Park/resume points.** Reuse the debugger's poll-point / signal-park
+  machinery; specify where a document parks and what resuming restores;
+  a host call outstanding at a park is the hazard to handle (epic §1.2b).
+
+* Non-negotiable (from the epic §6)
+
+C1 no global env; C2 no concurrent per-document execution; C3 blackboard
+values-only; C5 document-tagged handles; C8 single-runner, no mandatory
+worker thread.
+
+* Acceptance criteria
+
+- [ ] N documents open concurrently, each with an isolated namespace +
+      engine + loaded program set + drawing.
+- [ ] Blackboard values shared across documents via the one shared heap,
+      no copying; functions rejected.
+- [ ] Cooperative scheduler: exactly one running context, others parked;
+      document switch parks the current and resumes the target.
+- [ ] One aldo instance per document; the coroutine handoff mirrors the
+      same-image two-thread debugger design.
+- [ ] Cross-document handle dereference signals; per-document drawing
+      isolation holds.
+- [ ] Conformance probes (E1 symbol identity, E2 blackboard sharing) run
+      against cador.
+
+* Notes
+
+Depends on cador-1 (the host must be named cador and own the entity DB
+first) and on the D1/D2 specification (cador-3) for the formal
+autolisp↔host protocol the scheduler and namespace model realise.
+
+* Implementation plan (proposed 2026-09-13, pending cador-3 sign-off)
+
+Grounded in a full read of the current tree. *The namespace/blackboard half
+is already ~80% built in the runtime; the new work is host-side per-document
+isolation and the cooperative scheduler.* What exists today:
+
+- =runtime-session= already owns =document-namespaces= (name→namespace), one
+  =blackboard-namespace=, =propagated-symbols=, =current-document=
+  (=autolisp-runtime/source/model.lisp:193=); =document-namespace= has
+  per-document =bindings=/=reactors= and a lifecycle =state=
+  (=:loading/:loaded/:active/:inactive/:closing/:closed=, =model.lisp:115=).
+- Document switching exists: =register-runtime-session-document=,
+  =set-runtime-session-current-document= (=autolisp-runtime/source/api.lisp:632,665=).
+- Blackboard shares by identity and rejects functions (C3):
+  =blackboard-ref/set= (=api.lisp:1012/1019=), =VL-BB-REF/VL-BB-SET=
+  (=autolisp-builtins-core/source/api.lisp:288-304=).
+- The =drawing= class is a self-contained, multi-instance-ready DB with
+  =COPY-DRAWING= (=clautolisp/drawing/source/model.lisp:71=).
+- The park/handoff primitive exists as the debugger's two-thread design
+  (=autolisp-debug/source/session.lisp=, =breakpoints.lisp:88-114=:
+  =run-debugged-thread=, =queue-hit-handler=, inbound/outbound blocking
+  queues, =thread-debug-info=).
+
+The gaps: the =cador= host holds ONE =active-drawing= plus session-global
+state (=model.lisp:64=; the code comments already call the next step
+"Phase 17f"); there is no cooperative coroutine scheduler outside the
+debugger; handles are not document-tagged; E1/E2 probes do not exist; and the
+normative =clautolisp-multidocument-analysis.org= (R1–R21/E1–E10) was not
+found in this worktree.
+
+** Slice 1 — host holds a set of drawings (the "Phase 17f" the code names)
+No scheduler; single-document behaviour stays byte-identical (one entry in the
+map). Pure implementation, not spec-gated.
+- Replace =cador='s =active-drawing= slot with a =documents= map (keyed by the
+  runtime =document-namespace=) + an =active-document= pointer
+  (=clautolisp/cador/source/model.lisp:63-69=). The delegation shims
+  =cador-entities/-tables/-sysvars/…= (=model.lisp:210-241=) are the single
+  seam to re-point at "the active document's drawing".
+- Move per-drawing session state (=ename-cache= — already tracks its drawing
+  at =:189=; =ldata-store=, =picksets=, =pickfirst=, =open-complex/block=
+  handles, iterators) into a per-document record.
+- Tag enames/picksets with their owning document; cross-document dereference
+  signals (C5).
+- Add minimal document-management host generics
+  (=host-open-document/host-activate-document/host-document-list=,
+  =autolisp-host/source/protocol.lisp=) and have
+  =set-runtime-session-current-document= drive =host-activate-document= in
+  lock-step (the runtime↔host document link).
+- Assert *E1* (symbol identity across documents — already testable via the
+  namespace model) and *E2* (blackboard sharing — already true by identity).
+- Lands acceptance bullets: N isolated documents, shared blackboard no-copy,
+  per-document drawing isolation, C1/C3/C5. Defers C2/C8.
+
+** Slice 2 — cooperative coroutine scheduler (spec-gated on cador-3 §13/D2 I.2)
+- Generalise the debugger's inbound/outbound blocking-queue handoff into a
+  single-runner scheduler: N parked contexts, at most one running (C2/C8),
+  park/resume on document switch.
+- Specify and honour the park-with-an-outstanding-host-call hazard (epic
+  §1.2b): what a resume restores, and that a host call in flight at a park is
+  either forbidden or completed-then-parked.
+- One aldo instance per document; the coroutine carrier reuses the two-thread
+  design (~2 threads/document, cooperatively).
+- Do this AFTER cador-3 pins the formal protocol (this slice realises it).
+
+** Slice 3 — conformance probes + CI
+- Land E1/E2 as runnable probes against cador (locate or recreate
+  =clautolisp-multidocument-analysis.org='s E-numbering first); wire into the
+  test aggregate. Verify with =make -C clautolisp test-sbcl= (full image, per
+  the "test the shipped artefact" rule).
+
+** Sequencing / dependencies
+Slice 1 can start now (no spec blocker). Slice 2 waits on cador-3 (!192,
+under review). Each slice is its own MR with its issue-flow close note; the
+epic-level acceptance is met only after Slice 3. This plan is provisional
+until cador-3's D2 §I.2 scheduler decision is signed off.
+
+** Slice 1a DONE (2026-09-13) — the host document registry + Group-1 generics
+
+The first landable increment of Slice 1 is in: cador now holds a SET of open
+documents with an active pointer, and the D1 Group-1 document-management
+generics exist.
+
+- =autolisp-host/source/protocol.lisp=: new generics =host-open-document=,
+  =host-close-document=, =host-activate-document=, =host-current-document=,
+  =host-document-list=, each with the =:host-not-supported= base fallback
+  (so =nihil= correctly refuses them); exported from the package.
+- =cador/source/model.lisp=: added the =documents= slot (ordered
+  (KEY . DRAWING) alist) and =active-document-key=. =active-drawing= stays the
+  current pointer every delegation shim reads, so single-document behaviour is
+  unchanged.
+- =cador/source/document-api.lisp= (new): =initialize-instance :after= seeds
+  the registry with the initial drawing as the first current document; the five
+  generics manage it. Uniquifies colliding names; refuses to close the last
+  document; activating a closed current document reactivates a remaining one.
+- Tests: =cador/tests/document-tests.lisp= (8 tests) — one-current-at-start,
+  open-without-switching, name uniquification, activate switches the active
+  drawing, activate-unknown signals, *entity-database isolation between
+  documents* (E1/C5 core), close-and-reactivate, close-last-refused.
+- Verified with the full image: =make -C clautolisp test-sbcl= exit 0.
+
+Deliberately deferred to the next increment(s): migrating per-document
+*session* state (picksets, ldata-store, iterators) off the host into the
+per-document record; making cross-document handle dereference *signal* (C5's
+strong form — today it fails safe: an unknown handle in the current drawing
+returns nil, and =ename-cache-drawing= already prevents cross-drawing aliasing);
+the runtime =document-namespace= <-> host-document link; and the cooperative
+scheduler (Slice 2, spec-gated). cador-2 stays OPEN.
+
+** Slice 2a DONE (2026-09-13) — single-runner scheduler skeleton + host lock-step seam
+
+The first increment of Slice 2 (the cooperative scheduler): the STATE MACHINE
+and the runtime->host current-document seam, modeled *without* threads or real
+parking. Legitimate because a batch cador run parks nowhere (D2 §I.2), so
+continuation capture and the park-with-outstanding-host-call hazard are
+deferred with the slots that will carry them.
+
+- =autolisp-runtime/source/scheduler.lisp= (new): =document-scheduler= (ordered
+  contexts + a RUNNING pointer) and =scheduled-context= (context, document-key,
+  status :runnable/:running/:parked, plus reserved CONTINUATION / PENDING-BREAK
+  / SAVED-ENV slots for later slices). =scheduler-register-context=,
+  =scheduler-context-list=, =scheduler-current-context=, and =scheduler-activate=
+  — the core transition that demotes the previous runner, promotes the target,
+  installs its evaluation context, and switches the runtime current document in
+  lock-step. =%assert-single-runner= is the executable form of C2 (signals
+  :scheduler-invariant if two contexts are ever :running). No thread is created
+  — the debugger's two-thread rendezvous is the hosted case; cador's model is
+  continuation capture (R21).
+- =autolisp-runtime/source/model.lisp=: added =scheduler= slot to
+  =runtime-session= and =host-document-key= to =document-namespace=, both nil by
+  default (single-document sessions unchanged).
+- =autolisp-runtime/source/api.lisp=: =*document-activation-hook*= (nil by
+  default) + a guarded call in =set-runtime-session-current-document=, the
+  dependency-inversion seam a host/driver layer installs to activate the
+  matching host document — the runtime never names cador. Returns the document.
+- Tests: =autolisp-runtime/tests/scheduler-tests.lisp= (5) — register/list,
+  single-runner enforcement across activations, activation follows the current
+  document, the activation hook fires in lock-step (hook restored via
+  unwind-protect), and the no-regression guard (a fresh session has no
+  scheduler and the hook is nil).
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+Deferred to Slice 2b/next: INSTALLING the hook in the cador/driver layer (so a
+real runtime document switch drives =host-activate-document=) and its
+cross-system integration test; then real continuation-capture parking, the
+per-context dynamic-env save/restore, and the deferred-break discipline for the
+outstanding-host-call hazard; then Slice 3 (E1/E2 probes, wire host).
+
+** Slice 2b DONE (2026-09-13) — the runtime->host lock-step is now wired
+
+The =*document-activation-hook*= seam from 2a is now INSTALLED, so a runtime
+document switch actually drives the host.
+
+- =autolisp-host/source/nihil.lisp=: installs, at load (beside the existing
+  =*default-runtime-host*= / =*host-command-function*= installs), a
+  host-agnostic =*document-activation-hook*= —
+  =activate-host-document-for-namespace=: when the switched-to document carries
+  a =host-document-key= and the session carries a host, it calls the generic
+  =host-activate-document=. A no-op for single-document / host-less sessions
+  (key nil), so installing it globally is safe; it uses only the generic, so it
+  works for any host that implements activation (cador today).
+- Test (=cador/tests/document-tests.lisp=):
+  =runtime-current-document-switch-drives-cador-active-drawing= — two runtime
+  namespaces linked to two cador documents, in a session whose host is that
+  cador; switching the runtime current document flips
+  =cador-active-drawing= to the matching document, both ways. Proves the seam
+  end-to-end.
+- Fixed a cross-suite hazard 2b exposed: the 2a scheduler hook-test had
+  =setf=-then-restore-to-nil on =*document-activation-hook*=, which — now that
+  the host layer installs a real hook — would clobber it for every later suite.
+  =%with-fresh-active-context= now REBINDS the hook (and the active context), so
+  the installed hook survives; the =single-document-session-has-no-scheduler=
+  guard no longer asserts the hook is nil.
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+Remaining for the scheduler proper: real continuation-capture parking, the
+per-context dynamic-env save/restore, and the deferred-break discipline; then
+Slice 3.
+
+** Slice 2c DONE (2026-09-13) — per-context saved-env round-trip + deferred-break
+
+The two self-contained, synchronously-testable halves of the park/resume
+contract, without real continuation capture (a batch cador run parks nowhere,
+D2 §I.2).
+
+- =autolisp-runtime/source/scheduler.lisp=: =%scheduler-save-env= /
+  =%scheduler-restore-env= wired into =scheduler-activate= — the demoted runner
+  saves its per-context runtime globals into =saved-env=, the promoted context
+  restores them. Slice 2c carries exactly one such global, =*current-form*= (a
+  per-evaluation runtime global that lives OUTSIDE the evaluation-context);
+  everything already inside the context / namespace (current doc/ns, =*error*=,
+  dynamic-frame) keeps riding the existing =*active-evaluation-context*= swap. A
+  nil =saved-env= (a never-run context) restores nothing, so first activation
+  and the single-document path are untouched.
+- Deferred-break discipline (=pending-break=): =scheduler-request-break= sets
+  the flag on a target (or the running context); =scheduler-observe-break= is
+  the poll point — it clears and reports the running context's break once, and
+  a break on a non-running context is NOT observed until that context is
+  activated (the deferral). No async interrupt: this is the cooperative half of
+  the outstanding-host-call hazard (D1 §13.5).
+- Tests (=autolisp-runtime/tests/scheduler-tests.lisp=, +4): save/restore
+  round-trip of =*current-form*= across switches; restore is a no-op for a
+  never-run context; request-break on target and on the running context;
+  observe clears-once and defers a non-running context's break. The test macro
+  now also rebinds =*current-form*= so nothing leaks.
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+Explicitly deferred to Slice 3: real continuation capture (the =continuation=
+slot); per-document CMDECHO (host/session-scoped today — belongs behind
+=host-activate-document=, not the runtime scheduler); vl-enable-user-cancel
+(no state exists to save until the builtin stores a flag); and the per-document
+correlation stack (§13.4 — not built; lands with the §13 park/resume protocol).
+
+** Slice 3a DONE (2026-09-13) — E1/E2 conformance probes against cador
+
+The remaining cador-2 acceptance criterion (conformance probes E1 symbol
+identity, E2 blackboard sharing) is met as deterministic FiveAM tests. E1/E2
+are defined in =clautolisp/documentation/clautolisp-multidocument-analysis.org=
+(E1 lines 452-454, E2 456-458) — the doc DOES exist (an earlier note in the
+cador-3 D2 reconciliation that it was "not found" was mistaken; to be corrected
+there).
+
+- =autolisp-runtime/tests/multidocument-conformance-tests.lisp= (new, 5 tests,
+  =autolisp-runtime-suite=):
+  - E1 symbol OBJECT is process-global (=eq= of the same interned name);
+  - E1 per-document VALUE cells are independent (=document-namespace-set/-ref=);
+  - E1 switching document switches the visible value (through the real
+    =scheduler-activate= path, wrapped in =%with-fresh-active-context=);
+  - E1/A1 the blackboard round-trips the symbol object across documents;
+  - E2 the blackboard SHARES by identity across documents (=eq=, no copy).
+- Pure runtime properties (per-document namespaces + the one per-session
+  blackboard), so they live in the runtime suite; cador holds drawings, not
+  lisp namespaces. Hermetic — most use explicit contexts / namespaces, no
+  global state; the one switch test uses the existing rebind macro.
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+Found while writing E1/E2 (flagged, deferred): *C3 is not enforced* —
+=blackboard-set= / =builtin-vl-bb-set= do not reject a function value, though
+D2 §I.5 decides they must. A =callable-value-p= guard in those two is a small
+separate code change (a "Slice 3b" candidate), NOT added here so E1/E2 stay
+pure-observation.
+
+** Slice 3b DONE (2026-09-13) — C3 blackboard function-rejection enforced
+
+- =autolisp-builtins-core/source/api.lisp= =builtin-vl-bb-set=: after the
+  symbol-arg check, reject a callable value (=callable-value-p= — subr, user
+  function, or lambda-form) with :blackboard-function-value. Enforces C3 / D2
+  §I.5 "the blackboard is values-only; storing a function signals."
+- =callable-value-p= exported from autolisp-runtime + imported into
+  builtins-core.
+- Test =vl-bb-set-rejects-a-function-value-c3= (builtin-tests.lisp): a plain
+  value stores; a lambda-form value signals :blackboard-function-value.
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+** Slice 3 boundary — what remains needs cador-4's interactive/wire host
+
+Batch-completable Slice 3 work done: E1/E2 (3a), C3 (3b). Still headless-doable
+and candidates for follow-up increments: per-document CMDECHO (host-side, behind
+=host-activate-document=) and =vl-enable-user-cancel= per-context state (the
+builtin is a no-op today). But two Slice-3 items are STRUCTURALLY gated on an
+interactive/out-of-process host (cador-4), not deferrable-by-choice:
+- *Real continuation-capture parking.* The spec models park = continuation
+  capture (D2 §I.2). Common Lisp has no portable first-class continuations, and
+  C8/R21 forbid cador from REQUIRING a worker thread (the debugger's two-thread
+  handoff is the hosted case only). A batch cador run has no park points at all
+  (D2 §I.2). So real parking has no in-image realization; it arrives with the
+  wire host, where suspension is the round-trip itself.
+- *The §13.4 correlation stack* rides in with that same §13 park/resume wire
+  protocol.
+These belong to cador-4 (the epic's wire-host sub-task), not cador-2's batch
+scheduler. cador-2 stays OPEN pending that decision.
+
+** Slice 3c DONE (2026-09-13) — per-document sysvars confirmed
+
+Per-document CMDECHO turned out to need no code: =cador-sysvar= reads
+=(cador-sysvars host)= = the ACTIVE drawing's header variables
+(=cador/source/sysvars.lisp:126=), so since slice 1a made each document its own
+drawing, every sysvar (CMDECHO included) is already per-document. Added
+=cador-sysvars-are-per-document= (=cador/tests/document-tests.lisp=): CMDECHO=0
+set in document A does not leak to B and survives a round-trip through B.
+=make -C clautolisp test-sbcl= exit 0. =vl-enable-user-cancel= is a deliberate
+no-op (SIGINT-based, holds no state by design), so there is nothing to make
+per-document there.
+
+** CORRECTION (pjb, 2026-09-13) — real parking is NOT wire-host-gated
+
+The "Slice 3 boundary" note above is superseded. pjb: *our continuations are
+our threads, parked on a condition variable* — a parked context is a thread
+blocked on its condition; to resume it, notify that condition and have the
+current thread wait on its own. That is the debugger's blocking-queue
+rendezvous (=autolisp-debug .../session.lisp=, =breakpoints.lisp= bq-push /
+bq-pop), and the condvar handoff itself enforces at-most-one-running (C2/C8 —
+the per-document thread is the cooperative coroutine carrier, not a concurrent
+worker). So real continuation-capture parking IS implementable in-image and is
+back IN SCOPE for cador-2 (thread + condition-variable handoff), being designed
+now. The correlation stack still follows the §13 park/resume protocol. cador-2
+is NOT being closed with parking deferred.
+
+** Slice 3d DONE (2026-09-13) — continuations as parked threads (rendezvous)
+
+Real parking, in-image, per pjb's model: a context's continuation is its
+THREAD, parked on a condition variable.
+
+- =autolisp-runtime/source/scheduler.lisp=: =scheduled-context= gains =thread=
+  (the continuation) and =mailbox=; =document-scheduler= gains a =lock=. New
+  =park-mailbox= primitive (lock + condvar + token FIFO, timeout-capable) — a
+  private reimplementation of the debugger's blocking-queue, because
+  autolisp-debug depends on autolisp-runtime and reuse would invert the
+  dependency. =scheduler-spawn-context= makes a thread born PARKED (blocks on
+  its mailbox, then runs its thunk when resumed); =scheduler-start= /
+  =scheduler-resume= wake a context; =scheduler-switch= (called by the running
+  thread) marks the transition under the lock, wakes the target, then parks
+  itself — the condvar rendezvous is the single-runner mutual exclusion (C2/C8);
+  =%scheduler-set-running= asserts the invariant on every transition.
+- =bordeaux-threads= added to the autolisp-runtime system deps (already a
+  repo-wide dep; the test system inherits it).
+- Added ALONGSIDE the synchronous state machine: =scheduler-activate= is
+  untouched, so single-document (no scheduler) spawns no thread and the earlier
+  synchronous tests are unchanged.
+- Tests (=scheduler-tests.lisp=, +3, all timeout-guarded with unwind-protect
+  teardown so no thread leaks across the FiveAM double run): spawn-born-parked +
+  start-runs-it; two threads hand off with the strict interleaving that proves
+  exactly one runs at a time; scheduler-activate spawns no thread.
+- Verified: =make -C clautolisp test-sbcl= exit 0.
+
+Remaining to fully realise parking on the CAD path (later increments): fold the
+thread rendezvous INTO =scheduler-activate= (spawn/switch driven by the real
+document switch, with the global-vs-per-thread specials installed under the
+handoff lock), wire real park points (get-family prompts, prompting host-command)
+to =scheduler-switch=, and the §13.4 correlation stack.
+
+** Slice 3e DONE (2026-09-13) — thread rendezvous folded into scheduler-activate
+
+=scheduler-activate= becomes the single entry every caller uses and dispatches
+on the target context's new =thunk= slot:
+- =thunk= nil → the pure synchronous state machine of slices 2a-2c, byte-for-byte
+  (extracted as =%scheduler-activate-synchronous= over a shared
+  =%scheduler-install-context= helper). Single-document and every scripted/batch
+  cador run take this path — they park nowhere (D2 §I.2) — so NO thread is
+  spawned there. =scheduler-activate-spawns-no-thread= still passes verbatim.
+- =thunk= set → the thread rendezvous: from the driver thread, lazily
+  =scheduler-spawn-context= + =scheduler-start=; from a running context's OWN
+  thread (=%on-context-thread-p=), hand off via =scheduler-switch=.
+- Env install (active context + restore-env + current-document lock-step, firing
+  =*document-activation-hook*=) now runs ON the woken thread. Each context thread
+  establishes thread-local bindings of the two per-evaluation process-globals
+  (=*active-evaluation-context*=, =*current-form*=) at birth, so install-on-wake
+  SETFs are private — no cross-thread leak, and the FiveAM double run stays
+  isolated. =scheduler-switch= saves env before parking, reinstalls on :run
+  resume, returns without reinstalling on :exit (teardown).
+- Tests (=scheduler-tests.lisp=, +4, timeout-guarded, thread-torn-down): driver
+  bootstrap; activate-from-context-thread routes through switch with strict
+  interleaving; per-thread env install; mixed bare/thread-backed scheduler. The
+  9 synchronous scheduler tests + E1/E2 conformance pass verbatim.
+- Verified: =make -C clautolisp test-sbcl= exit 0 (33 suites, Fail: 0). MR !206.
+
+Remaining: wire real park points (get-family prompts / prompting host-command)
+to the rendezvous (3f), and the §13.4 correlation forest (3g).
+
+** Slice 3f DONE (2026-09-13) — interactive-input parking (park-to-runner)
+
+The real park points are cador's interactive reads. =scheduler-switch= hands to a
+SPECIFIC successor; a context parking for input has none, so it yields to the
+DRIVER (the launcher/REPL thread, or in tests the test body) via a new
+per-scheduler =driver-mailbox=.
+
+- =autolisp-runtime/source/scheduler.lisp=: =document-scheduler= gains
+  =driver-mailbox= (created lazily via =%scheduler-driver-mailbox= — the struct
+  default cannot forward-reference =make-park-mailbox=). New primitives:
+  =scheduler-park= (SC's own thread: save env, mark :parked + clear RUNNING so
+  zero contexts run — C2 holds with a nil runner — notify the driver with
+  =(:park sc request)=, then block on SC's mailbox; on resume re-promote +
+  reinstall and return the response, on :exit return :exit for teardown);
+  =scheduler-await-park= (driver: block for the next =(:park …)=);
+  =scheduler-serve-park= (driver: run REQUEST on the DRIVER thread — the blocking
+  read never touches the runner, D1 §13.1 — then resume SC; does not touch
+  RUNNING). =scheduler-on-context-thread-p= exposes the parking-capable check.
+- =cador/source/prompt-api.lisp=: new =%prompt-input-status= classifies a stream
+  =:eof= / =:ready= / =:would-block= via =read-char-no-hang= (which on a string
+  stream returns a char or :eof and NEVER nil → batch classifies :ready/:eof
+  only, never :would-block: the CI-determinism guard). =read-prompt-line= and
+  =host-grread= now park only on the interactive :would-block branch, through
+  =%cador-maybe-park-read=, which reaches the scheduler via the per-thread active
+  evaluation context (NOT a host back-pointer — one cador host is shared across
+  documents) and degrades to a plain synchronous read when there is no scheduler
+  or the caller is not on a context thread. No cador model slot, no api.lisp
+  hook, no cador package export change: cador calls INTO the runtime (the reverse
+  of the activation-hook inversion).
+- =cador/source/command-api.lisp=: comment at =host-command= — it reads no prompt
+  stream, so no prompting-host-command park point exists yet (D1 §13.5 future);
+  when added it routes through the same seam.
+- Tests: runtime (+5, =scheduler-tests.lisp=): notify+resume-with-response;
+  runner cleared while parked then restored; request runs on the driver thread
+  not the runner; :exit unwinds without reinstall; on-context-thread predicate.
+  cador (+4, =prompt-tests.lisp=): string streams classify synchronously (batch
+  parks nowhere); scripted read stays synchronous; bridge degrades without a
+  scheduler; end-to-end park+resume through =%cador-maybe-park-read= on a
+  scheduler-backed context thread. All timeout-guarded + thread-torn-down; all
+  existing tests unchanged.
+- Verified: =make -C clautolisp test-sbcl= exit 0 (Fail: 0). MR !NNN.
+
+Seam for 3g (correlation forest §13.4): REQUEST is opaque to the scheduler; the
+notification names WHICH sc parked and SERVE takes an explicit sc, so a later
+driver may arbitrate among N parked contexts and carry a per-document
+correlation stack without changing these signatures.
+
+Remaining: the §13.4 per-document correlation forest (3g).
+
+** Slice 3g DONE (2026-09-13) — per-document correlation forest (§13.4)
+
+The last parking slice. A host request may nest (a host op triggers AutoLISP,
+e.g. a reactor callback), and that nesting can interleave across documents (A
+parked while the runner resumes B, which nests). So correlation state is ONE
+stack PER document context, keyed by document (never a global stack), and rides
+on the context so it is preserved across park/resume (§13.5).
+
+- =autolisp-runtime/source/scheduler.lisp=: =scheduled-context= gains
+  =correlation-stack= (a LIFO of (OP . ARGS) frames). Primitives
+  =scheduler-push-correlation= / =scheduler-pop-correlation= /
+  =scheduler-correlation-depth=, and a =with-host-request (scheduler frame)=
+  macro that records a frame on the RUNNING context for the dynamic extent of a
+  body (popping on unwind) and is inert when no context is running.
+- Scope: this lands the per-context stack and its discipline — the seam the wire
+  host's envelope discriminator (R10, §13.6) routes responses by. Wiring push/pop
+  into live host generics arrives with reactors / the wire host (deferred per
+  pjb); nothing to wire in the mock host yet, and forcing =scheduler-park='s
+  opaque REQUEST into an (OP . ARGS) was explicitly avoided (3f seam preserved).
+- Tests (=scheduler-tests.lisp=, +5): LIFO push/pop; with-host-request nests +
+  unwinds; with-host-request no-op without a runner; and the forest property —
+  while A is parked with a frame in flight, B runs and pushes its OWN frames
+  (A's depth seen as 1 from B, B reaches 2), and A's frame is intact on resume.
+- Verified: =make -C clautolisp test-sbcl= exit 0 (Fail: 0). MR !NNN.
+
+** Parking arc COMPLETE (3e–3g). The cooperative single-runner scheduler now
+folds the thread rendezvous into =scheduler-activate= (3e), parks real
+interactive reads to the driver (3f), and keeps a per-document correlation forest
+(3g). Deferred to the wire host (pjb): serialisation/envelope (§13.6), a full
+driver/event loop, prompting =host-command=, and wiring correlation frames into
+live host generics. Next: cadtui.
+
+* Closed 2026-09-28 (pjb: "close cador-2")
+
+Everything in scope is built and tested: the host document registry and the
+Group-1 generics (slice 1a), the single-runner scheduler and its lock-step with
+the host (2a-2c), the E1/E2 conformance probes against cador (3a), blackboard
+function rejection (3b), per-document sysvars (3c), and real parking as threads
+parked on a condition variable -- pjb's model -- with the per-document
+correlation forest (3d-3g).
+
+The items pjb deferred to the wire host are not dropped: they move to
+=cador-4-epic-remainder= (section "From cador-2"), which is where the wire host
+lives -- envelope serialisation (D1 13.6), a full driver/event loop, a
+prompting =host-command=, and wiring correlation frames into live host
+generics. The specs D1/D2 were refreshed against this implementation in the
+same change (cador-3).

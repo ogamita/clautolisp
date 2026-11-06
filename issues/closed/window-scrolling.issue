@@ -1,0 +1,78 @@
+In ncurses windows,
+
+There should be a backend buffer containing the text displayed (containing the decorations (ansi codes, etc)).
+
+This buffer has L lines and C columns (maximum length of line).
+
+The window in which it's displayed has H lines and W columns.
+
+When L>H or C>W to see the whole buffer we must scroll.
+
+There's a scrolling point (Sl Sc) which indicates the first line and first columns displayed in the topleft corner of the windows.
+
+These commands apply only on the active windows.
+
+| key   | alt key | alt key 2  | description   | command             |
+|-------+---------+------------+---------------+---------------------|
+| C-w > | C-x >   | C-<prior>  | increments Sc | window-scroll-right |
+| C-w > | C-x <   | C-<next>   | decrements Sc | window-scroll-left  |
+| C-w v | C-v     | <kp-next>  | increments Sl | window-scroll-up    |
+| C-w ^ | M-v     | <kp-prior> | decrement Sl  | window-scroll-down  |
+
+Prefix C-u N let us specify the number of lines or columns to increment or decrement.
+Otherwise some default value is used.
+Scrolling is bound to the current backend text size minus the current window size.
+If one or the other changes, the next scrolling command may skip to adjust Sl or Sc.
+
+Let's add a key / command to display the key bindings:
+
+| key   | description              | command           |
+|-------+--------------------------+-------------------|
+| C-h m | Display key binding help | help-key-bindings |
+
+Note: for window commands, let's add:
+
+| key   | alt key | description                            | command      |
+|-------+---------+----------------------------------------+--------------|
+| C-w o | C-x o   | swap active window between two windows | window-other |
+
+window-other uses a saved active window initialized to nil
+
+When the saved active window is nil, then save the current active
+window, and activates the next-window.
+
+When the saved active window is not nil, then activates the saved
+active window, and reset it to nil.
+
+
+For other window commands, with a C-w something key binding, let's add a C-x something key binding.
+
+
+* Implemented (2026-09-12, clautolisp 2.2.6 / alfe 2.2.14)
+
+Done and tested (ncurses-suite):
+- C-w >/</v/^ scroll the active window (with C-x aliases; C-x is a C-w alias).
+- C-v scrolls up, M-v scrolls down (the Emacs aliases) — global on the active
+  window (C-v in WINDOW-MANAGER-KEY, M-v in RUN-META-COMMAND).
+- C-u N count prefix: after C-w, `C-u DIGITS <cmd>' multiplies the scroll
+  (and resize) step by N; a bare C-u means 4 (HANDLE-WINDOW-COMMAND).
+- C-h m help (help-key-bindings), C-w o window-other.
+
+Deferred (needs terminal key-code decoding + a real terminal, not headlessly
+testable): the "alt key 2" bindings C-<prior> / C-<next> / <kp-next> /
+<kp-prior>. curses.lisp currently decodes only the arrow keys (:up/:down/
+:left/:right); PageUp/PageDown + Ctrl/keypad variants are not mapped, and
+whether a given terminal even delivers them distinctly varies. Adding them
+means mapping KEY_PPAGE/KEY_NPAGE (and the Ctrl/keypad escape sequences) in
+curses.lisp and verifying at a real terminal.
+
+* UPDATE 2026-09-12: the "alt key 2" keys ARE implemented after all.
+
+curses.lisp now decodes KEY_PPAGE/KEY_NPAGE -> :page-up/:page-down and the
+keypad page keys KEY_A3/KEY_C3 -> :kp-page-up/:kp-page-down, and
+WINDOW-MANAGER-KEY scrolls the active window on them (<prior>/<next> =
+right/left, <kp-prior>/<kp-next> = down/up). Tested headlessly by feeding
+those symbols to the mock screen (the reader maps curses codes to symbols;
+tests feed the symbols). The only terminal-dependent part is whether a given
+terminal physically distinguishes Ctrl+Page from plain Page / keypad Page;
+the code maps whatever distinct codes ncurses keypad mode delivers.

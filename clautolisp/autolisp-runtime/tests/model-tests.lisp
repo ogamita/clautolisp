@@ -501,19 +501,21 @@
                                             (if (< left right)
                                                 (intern-autolisp-symbol "T")
                                                 nil))))
+    ;; Each yields its last body value (while-repeat-return-nil; the spec,
+    ;; AutoCAD's reference and BricsCAD V26 measured): the final SETQ's.
     (set-variable count 0)
-    (is (null
-         (autolisp-eval
-          (list while-symbol
-                (list less-symbol count 3)
-                (list setq-symbol count (list plus-symbol count 1))))))
+    (is (eql 3
+             (autolisp-eval
+              (list while-symbol
+                    (list less-symbol count 3)
+                    (list setq-symbol count (list plus-symbol count 1))))))
     (is (= 3 (autolisp-symbol-value count)))
     (set-variable count 0)
-    (is (null
-         (autolisp-eval
-          (list repeat-symbol
-                4
-                (list setq-symbol count (list plus-symbol count 2))))))
+    (is (eql 8
+             (autolisp-eval
+              (list repeat-symbol
+                    4
+                    (list setq-symbol count (list plus-symbol count 2))))))
     (is (= 8 (autolisp-symbol-value count)))))
 
 (test autolisp-eval-lambda
@@ -748,6 +750,26 @@
               3))))
     (is (= 0 (autolisp-errno)))))
 
+(test debug-error-snapshot-hook-captures-onto-the-condition
+  ;; The debugger installs *DEBUG-ERROR-SNAPSHOT-HOOK* so each
+  ;; autolisp-runtime-error captures the debugger's stack at the SIGNAL point
+  ;; (via the DEBUG-SNAPSHOT slot's :initform, evaluated by make-condition) —
+  ;; immune to any handler-case that unwinds it before the debugger runs
+  ;; (aldo-no-frames-through-higher-order-builtins).
+  (let ((clautolisp.autolisp-runtime:*debug-error-snapshot-hook* (lambda () :captured-here)))
+    (is (eq :captured-here
+            (clautolisp.autolisp-runtime:autolisp-runtime-error-debug-snapshot
+             (make-condition 'autolisp-runtime-error :code :x :message "m")))))
+  ;; No hook (the default, no debug session) ⇒ no capture, no cost.
+  (let ((clautolisp.autolisp-runtime:*debug-error-snapshot-hook* nil))
+    (is (null (clautolisp.autolisp-runtime:autolisp-runtime-error-debug-snapshot
+               (make-condition 'autolisp-runtime-error :code :x :message "m")))))
+  ;; A hook that raises must not break condition creation (it is ignored).
+  (let ((clautolisp.autolisp-runtime:*debug-error-snapshot-hook*
+          (lambda () (error "hook blew up"))))
+    (is (null (clautolisp.autolisp-runtime:autolisp-runtime-error-debug-snapshot
+               (make-condition 'autolisp-runtime-error :code :x :message "m"))))))
+
 ;;; --- POSIX locale probe (LC_ALL / LC_CTYPE / LANG) ------------------
 
 (test parse-locale-encoding-string-maps-common-encodings
@@ -763,6 +785,50 @@ external-format."
   (is (eq :ascii        (clautolisp.autolisp-runtime:parse-locale-encoding-string "us-ascii")))
   (is (null             (clautolisp.autolisp-runtime:parse-locale-encoding-string nil)))
   (is (null             (clautolisp.autolisp-runtime:parse-locale-encoding-string ""))))
+
+;;; --- host-divergent encoding spellings (macroman-encoding-name.issue)
+
+(test resolve-encoding-spelling-alias-folds-mac-roman-spellings
+  "Every Mac Roman spelling in circulation — the CL ones, Python's
+`mac_roman', BricsCAD/macOS's SYSCODEPAGE value `MAC_ROMAN', and the
+CP-10000 number — resolves to :MAC-ROMAN, the one keyword BOTH hosts
+accept (SBCL has no :MACROMAN; CCL has all three spellings)."
+  (dolist (spelling '("mac-roman" "MAC-ROMAN" "macroman" "MACROMAN"
+                      "mac_roman" "MAC_ROMAN" "Mac Roman"
+                      "macintosh" "MACINTOSH" "x-mac-roman" "cp10000"))
+    (multiple-value-bind (canonical keyword)
+        (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias spelling)
+      (is (string= "MAC-ROMAN" canonical)
+          "RESOLVE-ENCODING-SPELLING-ALIAS(~S) canonical name" spelling)
+      (is (eq :mac-roman keyword)
+          "RESOLVE-ENCODING-SPELLING-ALIAS(~S) keyword" spelling)))
+  ;; A name the hosts agree on is none of this function's business.
+  (is (null (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias "utf-8")))
+  (is (null (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias "cp1252")))
+  (is (null (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias "")))
+  (is (null (clautolisp.autolisp-runtime:resolve-encoding-spelling-alias nil))))
+
+(test parse-locale-encoding-string-maps-mac-roman-to-the-portable-spelling
+  "LOAD's positional [encoding] argument goes through
+PARSE-LOCALE-ENCODING-STRING, so `(load f \"macroman\")' — what ALPM's
+generated CAD-vendor systems ask for — must not intern the :MACROMAN
+keyword SBCL rejects."
+  (dolist (spelling '("macroman" "mac-roman" "MAC_ROMAN" "macintosh"))
+    (is (eq :mac-roman
+            (clautolisp.autolisp-runtime:parse-locale-encoding-string spelling))
+        "PARSE-LOCALE-ENCODING-STRING(~S)" spelling))
+  ;; The pass-through for genuinely unknown names is unchanged.
+  (is (eq :not-an-encoding
+          (clautolisp.autolisp-runtime:parse-locale-encoding-string
+           "not-an-encoding"))))
+
+(test mac-roman-external-format-is-available-on-this-host
+  "The keyword the alias table emits must be one the running CL can
+actually open a stream in. babel ships no Mac Roman table, so the
+single-octet fallback cannot cover a host that lacks the codec — the
+alias is the whole repair, and this test is what notices if a host ever
+drops the spelling."
+  (is (clautolisp.autolisp-reader:external-format-available-p :mac-roman)))
 
 (test parse-posix-locale-extracts-encoding-suffix
   "PARSE-POSIX-LOCALE pulls the .ENCODING suffix out of a full
@@ -1085,3 +1151,139 @@ test runner can't re-enable the probe."
              'clautolisp.autolisp-runtime::probe-terminal-background-via-osc11)
             probe-fn)
       (setf (uiop:getenv "CLAUTOLISP_PROBE_OSC11") env-before))))
+
+;;;; A frame's bindings: the CHAIN, and the hash table it promotes to.
+;;;;
+;;;; A frame's bindings used to be an alist of (symbol . binding). They are
+;;;; a chain of the bindings themselves now, linked by their NEXT slots:
+;;;; the alist's two conses per entry were paying to record a symbol the
+;;;; binding already carried, and removing them took 18% off everything a
+;;;; compiled call allocates.
+;;;;
+;;;; These tests go at the representation directly rather than through
+;;;; AutoLISP source, because that is what changed -- and because the
+;;;; PROMOTION path, which a frame takes once it holds more bindings than a
+;;;; linear walk searches cheaply, had no test at all before this and is
+;;;; not reachable from any ordinary program: it needs more than a dozen
+;;;; locals in one function.
+
+(defun %frame-binding-count (name)
+  (clautolisp.autolisp-runtime.internal::autolisp-symbol-dynamic-binding-count
+   (intern-autolisp-symbol name)))
+
+(defun %local-name (index)
+  (format nil "LOCAL-~2,'0D" index))
+
+(test a-frame-binds-and-resolves-past-the-promotion-limit
+  "Bind more symbols in one frame than the linear-search limit, so the
+frame promotes itself to a hash table half way through, and require every
+one of them -- those bound before the promotion and those after -- to
+resolve to its own value."
+  (reset-autolisp-symbol-table)
+  (let* ((context (default-evaluation-context))
+         (count (* 2 clautolisp.autolisp-runtime::*dynamic-frame-alist-limit*)))
+    (push-dynamic-frame context)
+    (dotimes (index count)
+      (bind-dynamic-variable (intern-autolisp-symbol (%local-name index)) index context))
+    (dotimes (index count)
+      (is (eql index (lookup-variable (intern-autolisp-symbol (%local-name index)) context))
+          "~A resolved wrongly across the promotion boundary" (%local-name index)))
+    ;; the frame knows exactly the symbols it bound, whichever
+    ;; representation it ended up in
+    (let ((symbols (clautolisp.autolisp-runtime::frame-bound-symbols
+                    (evaluation-context-dynamic-frame context))))
+      (is (eql count (length symbols)))
+      (dotimes (index count)
+        (is (not (null (member (intern-autolisp-symbol (%local-name index)) symbols)))
+            "~A is missing from the frame's symbols" (%local-name index))))
+    (pop-dynamic-frame context)
+    ;; and every count is released, from the hash-table representation too
+    (dotimes (index count)
+      (is (zerop (%frame-binding-count (%local-name index)))
+          "~A was still counted after its frame was popped" (%local-name index)))))
+
+(test rebinding-a-symbol-in-one-frame-replaces-rather-than-adds
+  "A frame holds at most one binding per symbol -- (defun f (a / a) ...) is
+legal -- so binding the same name twice must REPLACE. The value must be
+the newest, the frame must list the symbol once, and the live-binding
+count must be one, not two: it is decremented once when the frame is
+popped, and an over-count would leave that symbol walking the frame chain
+for the rest of the session."
+  (reset-autolisp-symbol-table)
+  (let* ((context (default-evaluation-context))
+         (symbol (intern-autolisp-symbol "DUP")))
+    (push-dynamic-frame context)
+    (bind-dynamic-variable symbol 1 context)
+    (bind-dynamic-variable symbol 2 context)
+    (is (eql 2 (lookup-variable symbol context)))
+    (is (eql 1 (%frame-binding-count "DUP")))
+    (is (equal (list symbol)
+               (clautolisp.autolisp-runtime::frame-bound-symbols
+                (evaluation-context-dynamic-frame context))))
+    (pop-dynamic-frame context)
+    (is (zerop (%frame-binding-count "DUP")))))
+
+(test rebinding-past-the-promotion-limit-also-replaces
+  "The same rule in the other representation. Replacement is written twice
+-- once for the chain, once for the hash table -- so it is checked twice."
+  (reset-autolisp-symbol-table)
+  (let* ((context (default-evaluation-context))
+         (count (* 2 clautolisp.autolisp-runtime::*dynamic-frame-alist-limit*))
+         (symbol (intern-autolisp-symbol (%local-name 0))))
+    (push-dynamic-frame context)
+    (dotimes (index count)
+      (bind-dynamic-variable (intern-autolisp-symbol (%local-name index)) index context))
+    (bind-dynamic-variable symbol :replaced context)
+    (is (eq :replaced (lookup-variable symbol context)))
+    (is (eql 1 (%frame-binding-count (%local-name 0))))
+    (is (eql count (length (clautolisp.autolisp-runtime::frame-bound-symbols
+                            (evaluation-context-dynamic-frame context)))))
+    (pop-dynamic-frame context)
+    (is (zerop (%frame-binding-count (%local-name 0))))))
+
+(test bindings-in-nested-frames-shadow-innermost-first
+  "The chain is per frame; the frames are a chain of their own. An inner
+binding must win, and popping must reveal the outer one -- unchanged."
+  (reset-autolisp-symbol-table)
+  (let* ((context (default-evaluation-context))
+         (symbol (intern-autolisp-symbol "SHADOWED")))
+    (push-dynamic-frame context)
+    (bind-dynamic-variable symbol :outer context)
+    (push-dynamic-frame context)
+    (bind-dynamic-variable symbol :inner context)
+    (is (eq :inner (lookup-variable symbol context)))
+    (is (eql 2 (%frame-binding-count "SHADOWED")))
+    (pop-dynamic-frame context)
+    (is (eq :outer (lookup-variable symbol context)))
+    (is (eql 1 (%frame-binding-count "SHADOWED")))
+    (pop-dynamic-frame context)
+    (is (zerop (%frame-binding-count "SHADOWED")))))
+
+(test load-file-inherits-session-reader-dialect
+  ;; SCHMS CAD sampling uses 1e-6 in a nested LOAD. Strict tokenization
+  ;; used to turn this literal into an unbound symbol instead of a real;
+  ;; since the sunset campaign's B3 probe (2026-10-28: "1e3" is 1000.0 on
+  ;; AutoCAD 2022 and BricsCAD V25 / V26) every token mode reads it as the
+  ;; real, so it is a number under every dialect and token mode.
+  (reset-autolisp-symbol-table)
+  (let ((path (merge-pathnames
+               (format nil "load-dialect-~36R.lsp" (random (expt 36 6)))
+               (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (stream path :direction :output :if-exists :supersede)
+             (write-line "(quote 1e-6)" stream))
+           (dolist (name '(:bricscad-v26 :bricscad-v25))
+             (let* ((session (make-runtime-session
+                              :dialect (clautolisp.autolisp-reader:find-autolisp-dialect name)))
+                    (context (make-evaluation-context :session session))
+                    (value (autolisp-load-file-in-context path context)))
+               (is (numberp value))
+               (when (numberp value) (is (< (abs (- value 1d-6)) 1d-15)))
+               ;; an explicitly requested strict token mode reads it alike
+               (is (numberp (autolisp-load-file-in-context path context :token-mode :strict)))))
+           (let ((context (make-evaluation-context
+                           :session (make-runtime-session
+                                     :dialect (clautolisp.autolisp-reader:autolisp-dialect-strict)))))
+             (is (numberp (autolisp-load-file-in-context path context)))))
+      (when (probe-file path) (delete-file path)))))
