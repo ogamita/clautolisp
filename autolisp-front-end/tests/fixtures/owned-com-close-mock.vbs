@@ -1,7 +1,7 @@
 Option Explicit
-Dim fso, app, doc, created, runFile, statusFile, errFile, scenario
-Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription, lifeFailureStream
-Dim attempts, closed, quitCalled
+Dim fso, app, doc, modelDoc, created, runFile, statusFile, errFile, scenario
+Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription, lifeFailureStream, lifeState, lifeIdle, lifeQuitSent
+Dim attempts, closed, quitCalled, busyPolls
 Set fso=CreateObject("Scripting.FileSystemObject")
 scenario=WScript.Arguments(1)
 lifeRoot=WScript.Arguments(0)
@@ -13,13 +13,15 @@ lifeHelper="unused"
 lifeIdentity="unused"
 Set lifeStream=fso.CreateTextFile(lifeRequest, True)
 lifeStream.Close
-Set doc=New MockDoc
+Set modelDoc=New MockDoc
+Set doc=modelDoc
 Set app=New MockApp
 Set lifeShell=New MockShell
 created=(scenario <> "attached")
 attempts=0
 closed=False
 quitCalled=False
+busyPolls=0
 Sub AppendLine(path, text)
  Dim stream
  Set stream=fso.OpenTextFile(path, 8, True)
@@ -32,6 +34,7 @@ Class MockDoc
   attempts=attempts+1
   If scenario="persistent" Or attempts<=2 Then Err.Raise -2147418111, , "simulated busy COM"
   closed=True
+  If scenario="unwinding" Then busyPolls=2
  End Sub
 End Class
 Class MockDocs
@@ -39,14 +42,29 @@ Class MockDocs
   If closed Then Count=0 Else Count=1
  End Property
  Function Item(index)
-  Set Item=doc
+  Set Item=modelDoc
  End Function
 End Class
+Class MockState
+ Property Get IsQuiescent
+  If busyPolls>0 Then
+   busyPolls=busyPolls-1
+   IsQuiescent=False
+  Else
+   IsQuiescent=True
+  End If
+ End Property
+End Class
 Class MockApp
+ Function GetAcadState
+  Set GetAcadState=New MockState
+ End Function
  Property Get Documents
   Set Documents=New MockDocs
  End Property
  Sub Quit
+  If Not (doc Is Nothing) Or Not (lifeDoc Is Nothing) Then Err.Raise 5, , "document reference retained across Quit"
+  If busyPolls>0 Then Err.Raise 5, , "Quit during document unwind"
   quitCalled=True
  End Sub
 End Class

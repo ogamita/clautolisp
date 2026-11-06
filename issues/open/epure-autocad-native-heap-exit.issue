@@ -34,3 +34,15 @@ BricsCAD job 571366 reached RESTORED and 23/23 but native close was refused
 because 2.3.97 read AutoCAD-only com-flags.txt. The shared bridge in 2.3.98
 writes its own ownership flags for both engines. This is an ALFE regression,
 not a BricsCAD native exit result, and is unrelated to AutoCAD 0xBABE.
+
+* 2026-11-06 qualification with calibrated normal exit
+Two stock AutoCAD R24.1.203.0.0 safe-mode launches without EPURE (job572688,
+ordinary and Automation) exited47806/BABE after successful COM Quit, without
+force. ALFE99 recognizes only this acad.exe SHA-256 for BABE, not arbitrary
+binaries. Job572696 then passed23/23, reachedRESTORED and restored its profile
+and installation, but the retained kernel handle reportedC0000005, PID376,
+FILETIME134384301259637093. It correctly failed, without a normality marker.
+The contemporaneous Application event query returned no matching events; this
+does not negate the kernel exit observation. No native module is attributed.
+ALFE100 makes Close/release/quiescent/Quit separate steps, matching the successful
+stock diagnostic; its causal effect on this native fault remains to be tested.

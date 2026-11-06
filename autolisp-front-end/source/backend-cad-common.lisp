@@ -1873,7 +1873,7 @@ do {
 ")
 (defparameter *owned-com-capture-vbs*
   "' Keep this exact COM reference; never rediscover an arbitrary ROT instance.
-Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription, lifeFailureStream
+Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription, lifeFailureStream, lifeState, lifeIdle, lifeQuitSent
 Set lifeShell = CreateObject(\"WScript.Shell\")
 lifeRoot = fso.GetParentFolderName(runFile)
 lifeHelper = fso.BuildPath(lifeRoot, \"owned-cad-process.ps1\")
@@ -1907,23 +1907,40 @@ End If
         WScript.Quit 1
       End If
       AppendLine errFile, \"OWNED-COM-CLOSE quiescent before document close\"
-      ' The native command can still be unwinding after RESTORED.
-      ' Bound retries on this exact application; never rediscover or kill one.
+      ' Trust and runtime settings are restored. Do not retain the startup
+      ' document reference across application teardown.
+      Set doc = Nothing
+      Set lifeDoc = Nothing
+      lifeQuitSent = False
       For lifeAttempt = 1 To 40
         On Error Resume Next
         Err.Clear
-        For lifeIndex = app.Documents.Count - 1 To 0 Step -1
-          Set lifeDoc = app.Documents.Item(lifeIndex)
-          lifeDoc.Close False
-          If Err.Number <> 0 Then Exit For
-        Next
-        If Err.Number = 0 Then Call app.Quit
+        lifeIdle = False
+        Set lifeState = Nothing
+        Set lifeState = app.GetAcadState
+        If Err.Number = 0 Then lifeIdle = lifeState.IsQuiescent
+        Set lifeState = Nothing
+        If Err.Number = 0 And lifeIdle Then
+          lifeIndex = app.Documents.Count
+          If Err.Number = 0 Then
+            If lifeIndex > 0 Then
+              Set lifeDoc = app.Documents.Item(lifeIndex - 1)
+              lifeDoc.Close False
+              Set lifeDoc = Nothing
+            Else
+              Call app.Quit
+              If Err.Number = 0 Then lifeQuitSent = True
+            End If
+          End If
+        End If
         lifeError = Err.Number
         lifeDescription = Err.Description
         Err.Clear
         On Error GoTo 0
-        If lifeError = 0 Then Exit For
-        AppendLine errFile, \"OWNED-COM-CLOSE attempt=\" & lifeAttempt & \" error=\" & lifeError & \" description=\" & lifeDescription
+        If lifeQuitSent Then Exit For
+        If lifeError <> 0 Then AppendLine errFile, \"OWNED-COM-CLOSE attempt=\" & lifeAttempt & \" error=\" & lifeError & \" description=\" & lifeDescription
+        ' Each document close can start asynchronous cleanup. Recheck idle on
+        ' the NEXT pass before another document or Quit, even without a COM error.
         WScript.Sleep 250
       Next
       ' Quit may need the last automation references released before exit.
@@ -2149,7 +2166,7 @@ Return a verifier and a release function. Attached instances are not closed."
 
 (defparameter *owned-cad-native-exit-opener* #'open-owned-cad-native-exit-proof)
 
-(defun close-owned-com-bridge (workdir &key (timeout 35))
+(defun close-owned-com-bridge (workdir &key (timeout 65))
   "Request Quit on the startup bridge's object, then require process-exit proof.
 The bridge never quits an attached object. No process is killed here."
   (multiple-value-bind (verify release)

@@ -3007,3 +3007,15 @@ The native identity step records the executable fingerprint before Quit;
 unknown binaries still require zero. Raw kernel results remain in
 native-exit-code.txt. Successful classification alone publishes
 native-exit-normal.txt. No heap-corruption or access-violation code is accepted.
+
+* Private diagnostic 2.3.100
+Owned COM closure now releases the startup document reference before closing,
+closes one document per pass, releases that reference immediately, and rechecks
+IsQuiescent on the next pass before another document or Quit. The stock baseline
+showed a transient call rejection between Close and Quit. A native mock now
+requires asynchronous document cleanup to finish and all document references to
+be released before Quit. Forty bounded passes remain; the outer wait is65seconds
+to cover the30second initial readiness,10seconds of passes and20second process wait.
+The calibrated binary-specific BABE contract is unchanged. The C0000005 observed
+in job572696 remains a failing native exit; this ordering correction does not
+establish its cause or claim that a native component defect is resolved.
