@@ -72,9 +72,65 @@
            #:eval-result-output
            #:eval-result-error-output
            #:eval-result-condition
-           #:eval-result-exit-code))
+           #:eval-result-exit-code
+           ;; the recorded run, for a shutdown that outlives its engine
+           #:*recorded-outcome*
+           #:*cleanup-report-file-name*
+           #:write-key-value-file
+           #:read-key-value-file
+           #:key-value))
 
 (in-package #:alfe.backend)
+
+;;; --- the recorded run (alfe-owned-cad-termination-after-recorded-results)
+
+(defvar *recorded-outcome* nil
+  "The run's outcome once alfe has decided it, before SHUTDOWN: a plist
+(:STATUS S :EXIT-CODE N :RESULT-FILES (...) :RESULTS-OK B), or NIL while
+none is (a plan that ended in an error). The CLI binds it around a run; a
+backend whose shutdown ends a CAD process it created writes it down as the
+frontier past which that process's own exit is a diagnostic, not the result.")
+
+(defparameter *cleanup-report-file-name* "owned-cad-cleanup-report.txt"
+  "The KEY=VALUE cleanup report a backend writes in its workdir when its
+shutdown ends a CAD it owns; alfe --cleanup-report FILE copies it out.")
+
+;;; KEY=VALUE files, written whole: the handshake and report files of the
+;;; owned-CAD close, read by alfe, its PowerShell helper and CI scripts alike.
+
+(defun %one-line (value)
+  (substitute-if #\Space (lambda (c) (member c '(#\Return #\Newline)))
+                 (if (null value) "" (princ-to-string value))))
+
+(defun write-key-value-file (path pairs)
+  "Write PAIRS, ((KEY . VALUE) ...), to PATH as KEY=VALUE lines followed by
+end=1, through a temporary file renamed onto PATH: a reader sees all of it
+or nothing. A NIL value is written empty."
+  (let ((tmp (uiop:parse-native-namestring
+              (concatenate 'string (uiop:native-namestring path) ".tmp"))))
+    (with-open-file (out tmp :direction :output :if-exists :supersede
+                             :if-does-not-exist :create :external-format :utf-8)
+      (loop for (key . value) in pairs
+            do (format out "~A=~A~%" key (%one-line value)))
+      (write-line "end=1" out))
+    (uiop:rename-file-overwriting-target tmp path)
+    path))
+
+(defun read-key-value-file (path)
+  "The ((KEY . VALUE) ...) of the KEY=VALUE file at PATH, without its end=1;
+NIL while the file is absent or incomplete (not yet ending with end=1)."
+  (let ((text (ignore-errors (and (probe-file path) (uiop:read-file-string path)))))
+    (when text
+      (let ((pairs (loop for line in (uiop:split-string text :separator '(#\Newline))
+                         for trimmed = (string-trim '(#\Space #\Tab #\Return) line)
+                         for eq = (position #\= trimmed)
+                         when (and eq (plusp eq))
+                           collect (cons (subseq trimmed 0 eq) (subseq trimmed (1+ eq))))))
+        (when (equal (car (last pairs)) '("end" . "1"))
+          (butlast pairs))))))
+
+(defun key-value (pairs key)
+  (cdr (assoc key pairs :test #'string=)))
 
 ;;; --- backend registry ------------------------------------------------
 

@@ -72,7 +72,7 @@ Une responsabilite de composant n'est pas etablie par un code de sortie seul.
 - Aucun evenement Application correspondant n'a ete trouve pour certains crashs ;
   cette absence n'invalide pas le code observe au handle du processus.
 - Une lecture partielle du fichier close-owned.result est suivie separement par
-  [[file:../open/alfe-owned-com-close-reads-partial-result.issue][l'issue de publication du resultat COM]] ; les acquittements doivent etre atomiques.
+  [[file:../closed/alfe-owned-com-close-reads-partial-result.issue][l'issue de publication du resultat COM]] ; les acquittements doivent etre atomiques.
 
 * Capture X72 et comparaison PF5 : faits et limites
 ** PF5, investigation separee
