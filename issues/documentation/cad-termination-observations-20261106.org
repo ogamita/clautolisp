@@ -1,0 +1,127 @@
+#+TITLE: Bilan des incidents CAD/EPURE et decision de terminaison ALFE
+#+DATE: 2026-11-06
+
+* Portee et decision
+Bilan des travaux SCHME !318, !324 et !339 et des observations partagees avec
+le chat SCHMS/PF5. Decision de Pascal : arreter les recherches sur les crashs
+des composants tiers sans sources, conserver les preuves et implementer le
+contournement [[file:../open/alfe-owned-cad-termination-after-recorded-results.issue][ALFE apres resultats persistants et restauration acquittee]].
+Pas de nouvelle capture ou comparaison demandee. Les dumps restent prives,
+hors Git et hors artefacts GitLab publics ; seuls leurs identifiants figurent ici.
+Une responsabilite de composant n'est pas etablie par un code de sortie seul.
+
+* Processus survivants et journal reutilise
+- Des instances AutoCAD/BricsCAD COM subsistent apres la fin des assertions ou
+  du bridge ; fermer cscript ne garantit pas la fermeture de l'application COM.
+  Certaines n'ont plus de fenetre visible. La seule presence d'un PID ne suffit
+  pas a l'attribuer a un job ; utiliser creation/SID/session et manifeste.
+- Le runtime emis observe dans le job SCHME 558399 sortait de SHUTDOWN sans
+  restauration LOGFILEPATH. Pendant le demarrage COM 558401, un ancien journal
+  unitaire a ete recree. BricsCAD PID12836 etait correle a ce nouveau job.
+- Des git clean et le hook externe preparer-checkout ont echoue avant checkout
+  sur bricscad.log (Invalid argument/fichier utilise). Des lectures partagees
+  READ_OK n'ont pas prouve que la suppression etait possible. Ne pas attribuer
+  tous ces echecs a un verrou sans preuve specifique.
+- Les repertoires par job et l'exclusion des anciens workdirs limitent les
+  collisions mais ne corrigent ni l'etat de profil persistant ni les orphelins.
+- Un chemin de journal restaure vers un ancien repertoire disparu a empeche la
+  restauration native. Le harnais partage 5a502b67 prepare un repertoire existant
+  dans le profil jetable propre au job. Cela est distinct du crash natif suivant.
+
+* Demarrage EPURE et dialogues
+- Des dialogues Nouveautes EPURE/SCHME ont bloque le demarrage ou le retour de
+  controle sous BricsCAD et AutoCAD ; un affichage SCHME comportait du mojibake.
+  FILEDIA/CMDDIA=0 ne neutralisent pas les DCL. REPORTERROR=0 ne supprime pas
+  tous les dialogues fatals/Windows. Aucun correctif universel revendique.
+- Traces SCHME 558226 BricsCAD et 558315 AutoCAD : 5/5, NOP com:nouveautes
+  persistant appele et conserve a travers les chargements differes. La these
+  d'une restauration trop precoce n'a pas ete observee. BricsCAD possedait deja
+  un callback a la premiere observation, AutoCAD non ; pas de cause DCL etablie.
+- PID7240 concernait SCHMS 558230 : timeout BOOTING avant READY, chemin distinct
+  sans garde avant controle. Ne pas extrapoler l'attribution a notre job SCHME.
+- Le bootstrap SCHME a melange contexte SCHMSPLUS et repertoire SCHME, avec LOAD
+  entre mais retour nil ; la selection native et sa finalisation explicite ont
+  ete corrigees et qualifiees. Le message fin du bootstrap seul ne prouve ni
+  reprise du script de test, ni completion du protocole, ni disparition du CAD.
+- Session RDP deconnectee, lenteur CreateObject/DCOM, et ouverture de dessin
+  avant etat quiescent ont aussi produit des blocages avant READY. Ces echecs
+  anterieurs aux resultats ne seront pas acceptes par le contournement final.
+
+* COM, restauration et codes natifs
+- Rejets COM/RPC lors de Close/Quit : attendre l'etat quiescent entre actions
+  a permis le diagnostic stock. Les mocks ne suffisent pas a prouver la fermeture
+  reelle ; conserver les echecs natifs et les manifestes de restauration.
+- SCHME 571366/ALFE97 : fermeture BricsCAD refusee par lecture de com-flags.txt
+  propre a AutoCAD. C'est une regression ALFE, distincte d'un crash tiers.
+- SCHME 571171/ALFE96 : 23/23, RESTORED, close-owned.result0, profil et installation
+  restaures, mais handle natif conserve : C0000374 (corruption de tas), PID12788.
+  Les marqueurs de bridge ne prouvaient pas une sortie native normale.
+- AutoCAD stock sans EPURE, SCHME 572688 : deux ouvertures/fermetures, ordinaire
+  et Automation, sorties naturelles 47806/0xBABE, sans force, profils restaures.
+  Binaire R24.1.203.0.0, acad.exe SHA-256
+  3ecef808da8af146efb33298a339b9e575023b90d6af4670f33283ad56cdebb8.
+  BABE n'est donc pas un crash a lui seul pour ce binaire ; aucun contrat
+  universel de tous les AutoCAD n'est deduit de ces deux essais.
+- ALFE99 a calibre ce BABE seulement pour ce hash. SCHME 572696 : 23/23 et
+  RESTORED/restaurations completes, mais C0000005, donc echec du gate strict.
+  572698 AutoCAD-GEP a sorti BABE ; 572697/572699 BricsCAD ont sorti zero.
+- ALFE100 (experience privee 0c8a72aa) a separe Close/release/quiescence/Quit :
+  572838 AutoCAD 23/23 mais C0000005 ; 572839/572841 BricsCAD ont echoue la
+  fermeture. Pas de correctif causal prouve ; rollback101 prepare localement,
+  non publie. Ne pas confondre essais de mock verts et qualification native.
+- Aucun evenement Application correspondant n'a ete trouve pour certains crashs ;
+  cette absence n'invalide pas le code observe au handle du processus.
+- Une lecture partielle du fichier close-owned.result est suivie separement par
+  [[file:../closed/alfe-owned-com-close-reads-partial-result.issue][l'issue de publication du resultat COM]] ; les acquittements doivent etre atomiques.
+
+* Capture X72 et comparaison PF5 : faits et limites
+** PF5, investigation separee
+Le chat de comparaison a rapporte un acces apres liberation d'etat MFC dans
+un essai COM/PageHeap sans ALFE. La pile implique AFX_MAINTAIN_STATE2,
+_AFX_THREAD_STATE, CThreadSlotData::DeleteValues et AfxTermExtensionModule.
+L'analyse hors ligne relie ce chemin au dechargement de SNCFEG_Traverses64.dll ;
+les sources correspondantes manquent. Ce resultat ne prouve pas que X72 a
+exactement le meme defaut. Les versions MFC different, donc leurs offsets ne
+sont pas interchangeables. Le compte rendu PF5 est conserve par l'autre chat.
+
+** X72, SCHME 572962, 6 novembre 2026
+Replay fige SCHME4df4e7e6 / ALFE1000c8a72aa, instance attribuee PID14020,
+session2, garde de session vide et provenance verifiees.
+- Attachement ProcDump : 11:21:17.781 UTC, avant toute demande de fermeture.
+- JUnit present ; close-owned.request ecrit a 11:22:03.9233593 UTC.
+- Exception C0000005 a 11:22:08 UTC, environ quatre secondes apres la demande.
+- Dump fini a 11:23:11 UTC, 1176332824 octets, SHA-256
+  746b3a3022d8205ced029722e625a824d6449e85fd083a3301954325228ae290.
+- L'ecriture du dump a dure environ 62 secondes ; close-owned.result=1,
+  sortie sous debogueur FFFFFFFF. Ce replay n'est pas une fermeture qualifiee
+  et ne fournit pas un code de sortie naturelle comparable sans reserve.
+- Le moniteur a rencontre Cannot create a file when that file already exists,
+  inventaire modules incomplet ; les metadonnees PowerShell ont gonfle le recu.
+  Ne pas confondre ces defauts du collecteur avec une cause du crash CAD.
+- SNCFEG_Traverses64.dll etait chargee lors du precedent replay 572838, hash
+  94dce16359ace59ed3d270251ec4fab1595ad602dbf6b99c554d6f6ab8959be7.
+  Presence seule, pas attribution causale. Aucun dump X72 n'a ete analyse avec
+  une pile concluante ; la comparaison PF5 demeure incomplete.
+- Le chat d'analyse hors ligne a ete arrete par un filtrage automatique ; aucun
+  resultat de pile X72 n'est revendique et aucun contournement du filtre demande.
+- Apres l'essai : aucun CAD ni ProcDump restant ; installation et profil
+  restaures par le helper existant, taches ponctuelles supprimees, IFEO inchange,
+  admissions des pools 232/233 retablies. Le helper ponctuel a necessite Git
+  dans son PATH local ; aucun environnement permanent modifie.
+
+* Resultats metier et qualification
+Les assertions EPURE-GEP dependent de donnees historiques absentes. Leur seul
+code d'echec d'assertion autorise reste distinct des erreurs d'execution,
+timeouts, JUnit absent et erreurs de nettoyage. Les suites locales ont produit
+23/23 dans plusieurs essais sans garantir la fermeture native.
+La politique stricte precedente a laisse SCHME !339 non qualifiee. La nouvelle
+decision est un changement de contrat a implementer et valider, pas une
+qualification retroactive ou un remplacement des resultats par des simulations.
+
+* Conservation et arret des investigations
+Coordination close : pas de nouvel essai CAD, capture, deploiement ou recherche
+de cause demande pour ces crashs. Conserver traces, dumps prives et sauvegardes.
+Aucun merge, pipeline annule ou processus inconnu termine pendant la capture.
+L'implementation ALFE est suivie par la nouvelle issue P1 ; ses tests doivent
+verifier la frontiere, la terminaison bornee et la restauration, plutot que
+chercher a garantir le comportement interne de bibliotheques tierces.

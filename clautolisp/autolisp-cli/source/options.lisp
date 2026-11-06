@@ -79,6 +79,11 @@
   (cad-log          nil)              ; A   --cad-log FILE: after the run, the CAD's
                                       ;     own command-history log (LOGFILEMODE),
                                       ;     decoded per -Elog, copied to FILE.
+  (result-files     nil)              ; A   --result-file FILE, repeatable, in
+                                      ;     order: files the run must have
+                                      ;     written, checked complete after it.
+  (cleanup-report   nil)              ; A   --cleanup-report FILE: the owned-CAD
+                                      ;     cleanup report, copied to FILE.
   ;; Clautolisp-only
   (mock-input       nil)              ; C   --mock-input PATH (string)
   (gui              nil)              ; C   --gui CMD          (string)

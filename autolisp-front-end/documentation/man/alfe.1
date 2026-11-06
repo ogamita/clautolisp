@@ -197,6 +197,23 @@ else as measured: a byte-order mark's encoding, windows-1252 on
 MS-Windows, auto-detected elsewhere. No log (BricsCAD on macOS in batch
 mode), or the clautolisp backend: a warning, and no file.
 .TP
+.BR \-\-result-file " " \fIFILE\fR
+A file the run must have written (a JUnit report...); repeatable.
+Checked after the run, before a CAD the run created is closed: missing,
+empty, still growing, or an XML document whose root element is not
+closed, it turns a successful run into exit 66. A failed run keeps its
+own status.
+.TP
+.BR \-\-cleanup-report " " \fIFILE\fR
+Write the cleanup report to FILE, as KEY=VALUE lines: the frontier
+recorded before the close (outcome, result files, restoration), then how
+the CAD this run created ended -- normally or terminated, its raw exit
+code. Past that frontier the CAD's exit code does not change the run's
+status; a CAD still running, or one alfe cannot identify with certainty,
+fails the run.
+.B owned=none
+when alfe created no CAD to close.
+.TP
 .BR \-\-write-workdir-path " " \fIFILE\fR
 After the workdir is prepared, write its absolute path to FILE, one
 line. Lets a caller locate a
