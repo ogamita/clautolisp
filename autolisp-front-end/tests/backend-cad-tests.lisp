@@ -4319,6 +4319,21 @@ WScript.Echo \"PASS \" & scenario
               (is (= 0 code))
               (is (search (concatenate 'string "PASS " case) stdout))))))))
 
+(test owned-cad-native-normality-is-scoped-to-measured-autocad-binary
+  (let ((digest "3ECEF808DA8AF146EFB33298A339B9E575023B90D6AF4670F33283AD56CDEBB8"))
+    (is (string= "autocad-R24.1.203.0.0-stock-baseline"
+                 (alfe.backend.cad-common::classify-owned-cad-native-exit #xBABE "acad.exe" digest)))
+    (is (string= "zero-exit"
+                 (alfe.backend.cad-common::classify-owned-cad-native-exit 0 "other.exe" "unknown")))
+    (signals alfe.error:backend-protocol-error
+      (alfe.backend.cad-common::classify-owned-cad-native-exit #xBABE "bricscad.exe" digest))
+    (signals alfe.error:backend-protocol-error
+      (alfe.backend.cad-common::classify-owned-cad-native-exit #xBABE "acad.exe" "different-binary"))
+    (signals alfe.error:backend-protocol-error
+      (alfe.backend.cad-common::classify-owned-cad-native-exit #xC0000374 "acad.exe" digest))
+    (signals alfe.error:backend-protocol-error
+      (alfe.backend.cad-common::classify-owned-cad-native-exit #xC0000005 "acad.exe" digest))))
+
 (test owned-com-native-exit-kernel-fixtures
   #+(or win32 windows mswindows)
   (with-cad-test-directories

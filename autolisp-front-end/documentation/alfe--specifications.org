@@ -2891,10 +2891,14 @@ uses its exact application reference; created instances close normally and are
 validated by PID plus creation time, attached instances only release the bridge.
 The atomic close-owned.result contains zero only after successful cleanup.
 Before publishing close-owned.request, retain the validated owned incarnation's
-kernel handle. A signalled handle and native exit code zero are mandatory;
+kernel handle. A signalled handle and a validated normal native exit are mandatory;
 transport success or PID disappearance alone SHALL NOT qualify cleanup.
-Persist the observed native code in native-exit-code.txt. Unknown, nonzero and
-timeout results SHALL fail. Attached applications are never closed.
+Zero qualifies. The calibrated AutoCAD R24.1.203.0.0 acad.exe with SHA-256
+3ECEF808DA8AF146EFB33298A339B9E575023B90D6AF4670F33283AD56CDEBB8
+also qualifies for 0xBABE, measured after clean stock Quit without EPURE.
+No other nonzero result or binary SHALL receive that exception. Preserve the raw
+code and executable metadata; publish native-exit-normal.txt only after validation.
+Heap corruption, unknown codes and timeout results SHALL fail. Attached applications are never closed.
 No final STOPPED from a process already exited is required. All acknowledgement
 and process-exit waits are bounded. Batch engines retain SHUTDOWN/STOPPED, with
 restoration preceding STOPPING.

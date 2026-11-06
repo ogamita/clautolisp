@@ -2996,3 +2996,14 @@ The common bridge also persists CREATED/ATTACHED decisions for both engines.
 The 2.3.97 native verifier wrongly depended on AutoCAD's legacy flags file,
 which BricsCAD did not emit. Identity, creation time, SID and session checks
 remain mandatory before acquiring the handle and requesting closure.
+
+* Private diagnostic 2.3.99
+The blanket zero-only native-exit rule was too strict for the measured stock
+AutoCAD R24.1.203.0.0. Two clean safe-mode openings and COM closures without
+EPURE (baseline job 572688, ordinary and Automation launches) returned 0xBABE.
+ALFE recognizes that code only for acad.exe with SHA-256
+3ECEF808DA8AF146EFB33298A339B9E575023B90D6AF4670F33283AD56CDEBB8.
+The native identity step records the executable fingerprint before Quit;
+unknown binaries still require zero. Raw kernel results remain in
+native-exit-code.txt. Successful classification alone publishes
+native-exit-normal.txt. No heap-corruption or access-violation code is accepted.

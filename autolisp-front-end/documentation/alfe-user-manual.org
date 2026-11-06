@@ -2336,10 +2336,16 @@ requires disappearance of the captured window's process identity (PID plus UTC
 creation ticks), within 20 seconds. An absent final protocol SHUTDOWN/STOPPED
 message is normal after this owned process exits. Before asking the bridge to
 close, alfe retains a kernel handle after checking the PID, owner SID, session
-and creation time. Cleanup requires that handle to signal and native exit code
-zero. =native-exit-code.txt= records the observed decimal code, PID and creation
-file time. A nonzero code (including a heap-corruption exit), an unknown code
-or a timeout fails cleanup even if the transport reported close result zero. A COM disconnection alone
+and creation time. Cleanup requires that handle to signal and a recognized
+normal native exit. Zero is normal for all engines. The measured stock AutoCAD
+R24.1.203.0.0 binary (SHA-256
+=3ECEF808DA8AF146EFB33298A339B9E575023B90D6AF4670F33283AD56CDEBB8=)
+also returns =0xBABE= after clean Quit without EPURE; this exception requires
+both =acad.exe= and that exact binary fingerprint. No other nonzero code or
+binary is accepted. =native-exit-code.txt= preserves the raw code and identity;
+=native-exit-identity.json= records the executable metadata. Only successful
+classification publishes =native-exit-normal.txt=. Heap-corruption exits,
+unknown results and timeouts still fail despite a zero transport result. A COM disconnection alone
 is not sufficient, and a timeout or failed restoration fails the invocation.
 Only the bridge subprocess is terminated on failure; the cleanup does not kill
 an unrelated CAD. Failure preserves the work directory for diagnosis.

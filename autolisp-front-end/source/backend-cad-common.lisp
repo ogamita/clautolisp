@@ -1853,7 +1853,11 @@ if($Operation -eq 'Identity') {
  $row=Get-CimInstance Win32_Process -Filter ('ProcessId='+$identity.pid)
  $owner=Invoke-CimMethod -InputObject $row -MethodName GetOwnerSid
  if($owner.ReturnValue -ne 0 -or $owner.Sid -ne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -or $cad.SessionId -ne (Get-Process -Id $PID).SessionId){throw 'Owned CAD SID or session differs.'}
- Write-Output ('{0} {1}' -f $identity.pid,$cad.StartTime.ToUniversalTime().ToFileTimeUtc())
+ $executable=$cad.MainModule.FileName
+ $executableName=[IO.Path]::GetFileName($executable)
+ $digest=(Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash
+ @{pid=$cad.Id;startTicks=$identity.startTicks;executable=$executable;executableName=$executableName;executableSha256=$digest;fileVersion=$cad.MainModule.FileVersionInfo.FileVersion} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path (Split-Path -Parent $IdentityFile) 'native-exit-identity.json') -Encoding UTF8
+ Write-Output ('{0} {1} {2} {3}' -f $identity.pid,$cad.StartTime.ToUniversalTime().ToFileTimeUtc(),$executableName,$digest)
  exit 0
 }
 $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
@@ -2045,8 +2049,20 @@ End If
   (unless (and (integerp code) (zerop code))
     (error 'backend-protocol-error :backend :cad :phase :shutdown
            :code :owned-cad-native-exit-failed
-           :message (format nil "The owned CAD exited abnormally: ~D (0x~8,'0X)." code code)))
+           :message (format nil "The owned CAD native exit is not recognized as normal: ~D (0x~8,'0X)." code code)))
   t)
+
+(defun classify-owned-cad-native-exit (code executable-name executable-sha256)
+  "Recognize a normal exit only under the measured native binary contract.
+Stock AutoCAD R24.1.203.0.0 returned BABE after clean Quit without EPURE,
+both ordinary and Automation launches (isolated baseline, 2026-11-06).
+A different binary, engine or code gets no exception to the zero-exit rule."
+  (if (and (eql code #xBABE)
+           (string-equal executable-name "acad.exe")
+           (string-equal executable-sha256
+                         "3ECEF808DA8AF146EFB33298A339B9E575023B90D6AF4670F33283AD56CDEBB8"))
+      "autocad-R24.1.203.0.0-stock-baseline"
+      (progn (require-owned-cad-native-zero code) "zero-exit")))
 
 (defun open-owned-cad-native-exit-proof (workdir)
   "Hold the validated incarnation's kernel handle BEFORE requesting Quit.
@@ -2077,8 +2093,10 @@ Return a verifier and a release function. Attached instances are not closed."
       (unless (eql status 0)
         (error "Cannot validate owned CAD identity before close: ~A" diagnostic))
       (let* ((fields (remove "" (uiop:split-string output :separator '(#\Space #\Tab #\Return #\Newline)) :test #'string=))
-             (pid (and (= (length fields) 2) (parse-integer (first fields))))
-             (filetime (and pid (parse-integer (second fields)))))
+             (pid (and (= (length fields) 4) (parse-integer (first fields))))
+             (filetime (and pid (parse-integer (second fields))))
+             (executable-name (third fields))
+             (executable-sha256 (fourth fields)))
         (unless (and pid (plusp pid) filetime (plusp filetime))
           (error "Invalid owned CAD identity response."))
         (cffi:use-foreign-library owned-cad-kernel32)
@@ -2117,8 +2135,15 @@ Return a verifier and a release function. Attached instances are not closed."
                         (let ((value (cffi:mem-ref code :uint32)))
                           (with-open-file (out (merge-pathnames "native-exit-code.txt" workdir)
                                                :direction :output :if-exists :supersede)
-                            (format out "~D~%PID=~D~%FILETIME=~D~%" value pid filetime))
-                          (require-owned-cad-native-zero value))))
+                            (format out "~D~%PID=~D~%FILETIME=~D~%EXECUTABLE=~A~%SHA256=~A~%"
+                                    value pid filetime executable-name executable-sha256))
+                          (let ((contract (classify-owned-cad-native-exit
+                                           value executable-name executable-sha256)))
+                            ;; Publish normality only AFTER validating the raw kernel result.
+                            (with-open-file (out (merge-pathnames "native-exit-normal.txt" workdir)
+                                                 :direction :output :if-exists :supersede)
+                              (format out "NORMAL~%CONTRACT=~A~%" contract)))
+                          t)))
                     #'release))
               (unless retained (release)))))))))
 
