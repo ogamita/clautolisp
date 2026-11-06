@@ -28,7 +28,7 @@
 ;;; --- harness ---------------------------------------------------------
 
 (defun %case-host (&optional (value 1))
-  "A fresh clautolisp-dialect MockHost installed as the session host,
+  "A fresh clautolisp-dialect cador installed as the session host,
 with CLAUTOLISPCASEINSENSITIVEPATHS set to VALUE."
   (clautolisp.autolisp-runtime:reset-default-evaluation-context)
   (let* ((session (clautolisp.autolisp-runtime:evaluation-context-session
@@ -287,7 +287,7 @@ would prove nothing here")))
 ;;; nothing changed.
 
 (defun %dialect-host (dialect &optional getenv)
-  "A fresh MockHost with DIALECT's sysvar defaults applied."
+  "A fresh cador with DIALECT's sysvar defaults applied."
   (let ((mock (clautolisp.cador:make-cador)))
     (if getenv
         (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults

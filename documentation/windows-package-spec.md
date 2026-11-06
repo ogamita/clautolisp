@@ -152,6 +152,23 @@ setup, and have it derive paths from `%~dp0` (its own location), never absolute.
 
 ## 7. Runtime dependencies
 
+The current multi-platform dispatch layout keeps Windows executables under
+`libexec/clautolisp/binaries/windows/<arch>/`. Apply DLL adjacency there,
+rather than moving those executables into `bin/`: `bin/*.cmd` are launchers.
+At staging time, `scripts/bundle-windows-dlls.sh` recursively inspects every
+EXE and DLL import with GNU objdump. Windows system DLLs and API sets remain
+system-provided; all other imports must resolve and be shipped. MSYS2 and
+Cygwin runtime imports are forbidden. Native library dependencies are also
+copied beside the dispatch executables, so loading the DWG codec does not
+depend on the user's PATH. Package versions and license notices accompany
+redistributed DLLs under `share/doc/clautolisp/runtime-licenses/`.
+
+Before a Windows release succeeds, `scripts/test-windows-release.ps1`
+extracts the actual binaries and libraries ZIPs together into a path with
+spaces. It runs all three launchers with HOME absent, only Windows directories
+on PATH, and a temporary Windows user home. It verifies init loading,
+evaluation, and a non-empty native DWG save from an unrelated working directory.
+
 ### 7.1 C runtime (app-local deployment)
 If any shipped exe or DLL is built against the MSVC runtime, either:
 - ship the redistributable DLLs **app-locally** in `bin/` (e.g.

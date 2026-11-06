@@ -174,7 +174,7 @@ if ($living.Count -gt 0) {
     }
     Write-Host "cad sweep: they hold the COM registration, so every AutoCAD"
     Write-Host "cad sweep: session would fail with a rejected call instead."
-    Write-Host "cad sweep: see issues/open/alfe-autocad-hung-instance-blocks-com-bootstrap.issue"
+    Write-Host "cad sweep: see issues/closed/alfe-autocad-hung-instance-blocks-com-bootstrap.issue"
     # A job that does not touch AutoCAD is not affected by any of the above: a
     # wedged acad.exe owns the AutoCAD.Application registration, which a
     # BricsCAD session neither asks for nor shares. Such jobs declare

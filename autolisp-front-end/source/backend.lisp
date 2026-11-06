@@ -3,7 +3,7 @@
 ;;;; Abstract backend protocol for alfe. The generics below are the
 ;;;; *uniform* surface alfe.cli calls into; concrete backends specialise
 ;;;; them while alfe.cli stays backend-agnostic. The spec for this
-;;;; surface is ../issues/open/alfe-backend-interface.issue.
+;;;; surface is ../issues/closed/alfe-backend-interface.issue.
 ;;;;
 ;;;; The package also defines:
 ;;;;
@@ -36,11 +36,13 @@
            #:prepare-workdir
            #:start-engine
            #:eval-plan
+           #:eval-plan-with-action-hooks
            #:read-output
            #:send-input
            #:request-control
            #:shutdown
            #:cleanup-workdir
+           #:collect-engine-log
            ;; session struct + accessors
            #:session
            #:make-session
@@ -69,9 +71,66 @@
            #:eval-result-value
            #:eval-result-output
            #:eval-result-error-output
-           #:eval-result-condition))
+           #:eval-result-condition
+           #:eval-result-exit-code
+           ;; the recorded run, for a shutdown that outlives its engine
+           #:*recorded-outcome*
+           #:*cleanup-report-file-name*
+           #:write-key-value-file
+           #:read-key-value-file
+           #:key-value))
 
 (in-package #:alfe.backend)
+
+;;; --- the recorded run (alfe-owned-cad-termination-after-recorded-results)
+
+(defvar *recorded-outcome* nil
+  "The run's outcome once alfe has decided it, before SHUTDOWN: a plist
+(:STATUS S :EXIT-CODE N :RESULT-FILES (...) :RESULTS-OK B), or NIL while
+none is (a plan that ended in an error). The CLI binds it around a run; a
+backend whose shutdown ends a CAD process it created writes it down as the
+frontier past which that process's own exit is a diagnostic, not the result.")
+
+(defparameter *cleanup-report-file-name* "owned-cad-cleanup-report.txt"
+  "The KEY=VALUE cleanup report a backend writes in its workdir when its
+shutdown ends a CAD it owns; alfe --cleanup-report FILE copies it out.")
+
+;;; KEY=VALUE files, written whole: the handshake and report files of the
+;;; owned-CAD close, read by alfe, its PowerShell helper and CI scripts alike.
+
+(defun %one-line (value)
+  (substitute-if #\Space (lambda (c) (member c '(#\Return #\Newline)))
+                 (if (null value) "" (princ-to-string value))))
+
+(defun write-key-value-file (path pairs)
+  "Write PAIRS, ((KEY . VALUE) ...), to PATH as KEY=VALUE lines followed by
+end=1, through a temporary file renamed onto PATH: a reader sees all of it
+or nothing. A NIL value is written empty."
+  (let ((tmp (uiop:parse-native-namestring
+              (concatenate 'string (uiop:native-namestring path) ".tmp"))))
+    (with-open-file (out tmp :direction :output :if-exists :supersede
+                             :if-does-not-exist :create :external-format :utf-8)
+      (loop for (key . value) in pairs
+            do (format out "~A=~A~%" key (%one-line value)))
+      (write-line "end=1" out))
+    (uiop:rename-file-overwriting-target tmp path)
+    path))
+
+(defun read-key-value-file (path)
+  "The ((KEY . VALUE) ...) of the KEY=VALUE file at PATH, without its end=1;
+NIL while the file is absent or incomplete (not yet ending with end=1)."
+  (let ((text (ignore-errors (and (probe-file path) (uiop:read-file-string path)))))
+    (when text
+      (let ((pairs (loop for line in (uiop:split-string text :separator '(#\Newline))
+                         for trimmed = (string-trim '(#\Space #\Tab #\Return) line)
+                         for eq = (position #\= trimmed)
+                         when (and eq (plusp eq))
+                           collect (cons (subseq trimmed 0 eq) (subseq trimmed (1+ eq))))))
+        (when (equal (car (last pairs)) '("end" . "1"))
+          (butlast pairs))))))
+
+(defun key-value (pairs key)
+  (cdr (assoc key pairs :test #'string=)))
 
 ;;; --- backend registry ------------------------------------------------
 
@@ -149,6 +208,12 @@ pathname."))
                                           interactive-p mode dwg
                                           load-encoding
                                           io-encoding
+                                          source-encoding
+                                          file-read-encoding file-write-encoding
+                                          console-in-encoding console-out-encoding
+                                          cadstdio-in-encoding cadstdio-out-encoding
+                                          log-encoding
+                                          terminal-in-encoding terminal-out-encoding
                                           cli-options version-text)
   (:documentation
    "Bring BACKEND up to the READY state under WORKDIR, returning a
@@ -157,11 +222,24 @@ clautolisp this binds an evaluation context; for CAD backends this
 writes the runtime LSP, launches the engine, and polls status.txt
 until READY.
 
-LOAD-ENCODING, when non-nil, is the user-facing CLI string from
-`-e ENC' (e.g. \"utf-8\"). Backends that can honour a session-wide
-source-file encoding apply it to their runtime; backends that
-can't (CAD-resident engines whose AutoLISP runtime owns the
-encoding policy) ignore it.
+The encoding SITUATIONS (encoding-situations-cli-options.issue, section 6
+point 1) arrive one keyword per situation x direction, each the canonical
+encoding name the user asked for (e.g. \"UTF-8\") or NIL for the backend
+default: SOURCE-ENCODING (-Esource), FILE-READ-ENCODING / FILE-WRITE-ENCODING
+(-Efile[-read|-write]), CONSOLE-IN-ENCODING / CONSOLE-OUT-ENCODING
+(-Econsole[-in|-out]), CADSTDIO-IN-ENCODING / CADSTDIO-OUT-ENCODING
+(-Ecadstdio[-in|-out]), LOG-ENCODING (-Elog) and TERMINAL-IN-ENCODING /
+TERMINAL-OUT-ENCODING (-Eterminal[-in|-out]). ALFE.CLI:SITUATION-ENGINE-KEYWORDS
+builds them: the bare -E / --encoding reaches source, file, log and terminal
+but never console or cadstdio (product-fixed boundaries), and when the backend
+is the clautolisp engine an explicit -Econsole is folded into the terminal
+pair (its console is its terminal). A backend honours the situations it can
+and ignores (or warns about) the others.
+
+LOAD-ENCODING / IO-ENCODING are the legacy mirrors of SOURCE-ENCODING /
+TERMINAL-*-ENCODING (the `source' / `terminal' resolution with the bare -E),
+kept for compatibility with callers that pass only them; a backend prefers
+the per-situation keyword when it is given.
 
 CLI-OPTIONS is the fully-parsed CLAUTOLISP.AUTOLISP-CLI:CLI-OPTIONS
 struct (or NIL). When non-NIL, the backend installs the matching
@@ -177,6 +255,20 @@ own *AUTOLISP-…* globals from its own argv."))
   (:documentation
    "Execute an action PLAN (list of action records built by
 ALFE.BACKEND:MAKE-ACTION) against SESSION. Returns an EVAL-RESULT."))
+
+(defgeneric eval-plan-with-action-hooks (session plan before-action after-action)
+  (:documentation
+   "Execute PLAN against SESSION as EVAL-PLAN does, calling BEFORE-ACTION with
+(ACTION INDEX) before each action and AFTER-ACTION with (ACTION INDEX RESULT)
+after it, INDEX counting the actions of PLAN from 1 and RESULT the action's own
+EVAL-RESULT. Returns the EVAL-RESULT of the whole plan. alfe's :PRE-ACTION and
+:POST-ACTION plug-in hooks are called through it.
+
+The default method evaluates PLAN one action at a time (one EVAL-PLAN call per
+action) and stops at the first action that does not succeed. A backend that can
+stop at the action boundaries of ONE run specialises it, so that the run is the
+one EVAL-PLAN would make -- the clautolisp backend does, in both of its
+variants (alfe-clautolisp-backend-semantic-parity.issue)."))
 
 (defgeneric read-output (session &key timeout)
   (:documentation
@@ -209,6 +301,21 @@ handle for the CLI's exit-trace renderer."))
 Default method delegates to ALFE.WORKDIR:REMOVE-WORKDIR — backends
 override only when they have extra cleanup (e.g. a lock-file the
 CAD process might still hold)."))
+
+(defgeneric collect-engine-log (backend workdir &key cli-options)
+  (:documentation
+   "The engine's own command-history log (LOGFILEMODE) of the run that used
+WORKDIR, read after the engine has shut down and before the workdir is removed
+(alfe --cad-log; the `log' encoding situation). Returns (values ENTRIES
+STATUS): ENTRIES a list of (NAME . TEXT), one per log file in the order the
+engine wrote them, TEXT decoded per -Elog (else the backend's measured
+default) with LF line ends; STATUS :COLLECTED, :NONE (the engine wrote no
+log) or :UNSUPPORTED (the backend has no CAD log for alfe to collect -- the
+default)."))
+
+(defmethod collect-engine-log ((backend backend) workdir &key cli-options)
+  (declare (ignore workdir cli-options))
+  (values '() :unsupported))
 
 (defmethod backend-display-name :around ((backend backend))
   (or (call-next-method) (backend-name backend)))
@@ -312,4 +419,32 @@ non-NIL, is the originating ALFE.ERROR:BACKEND-ERROR."
   (value         nil)
   (output        "" :type string)
   (error-output  "" :type string)
-  (condition     nil))
+  (condition     nil)
+  ;; The process exit status the ENGINE itself decided, or NIL to derive it
+  ;; from STATUS. Set by the clautolisp backend, both variants alike: (exit
+  ;; N) / (quit N) / an AUTOLISP-SET-STATUS, a file error (EX_NOINPUT) --
+  ;; the statuses of CLAUTOLISP.AUTOLISP-CLI:ENGINE-EXIT-STATUS, what the
+  ;; clautolisp program exits with (alfe-clautolisp-backend-semantic-
+  ;; parity.issue).
+  (exit-code     nil))
+
+(defmethod eval-plan-with-action-hooks (session plan before-action after-action)
+  (let ((results '()))
+    (loop for action in plan
+          for index from 1
+          do (funcall before-action action index)
+             (let ((result (eval-plan session (list action))))
+               (push result results)
+               (funcall after-action action index result)
+               (unless (eq (eval-result-status result) :success)
+                 (return))))
+    (setf results (nreverse results))
+    (let ((last (car (last results))))
+      (make-eval-result
+       :status (if last (eval-result-status last) :success)
+       :value (and last (eval-result-value last))
+       :output (apply #'concatenate 'string (mapcar #'eval-result-output results))
+       :error-output (apply #'concatenate 'string
+                            (mapcar #'eval-result-error-output results))
+       :condition (and last (eval-result-condition last))
+       :exit-code (and last (eval-result-exit-code last))))))

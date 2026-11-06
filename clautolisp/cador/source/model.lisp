@@ -1,6 +1,6 @@
 (in-package #:clautolisp.cador)
 
-;;;; MockHost data carriers and the MockHost class.
+;;;; cador data carriers and the cador class.
 ;;;;
 ;;;; Phase 9 introduced these structures; Phase 17a extracted the
 ;;;; *drawing-resident* carriers — ENTITY-HANDLE, SYMBOL-TABLE-RECORD,
@@ -9,8 +9,8 @@
 ;;;; from this package) so older callers and tests are unaffected.
 ;;;;
 ;;;; What remains in this file are the *session / host* carriers that
-;;;; are not part of a drawing — PICKSET and MOCK-COM-OBJECT — and the
-;;;; MOCK-HOST class. MockHost now holds an ACTIVE-DRAWING and delegates
+;;;; are not part of a drawing — PICKSET and CADOR-COM-OBJECT — and the
+;;;; CADOR class (once MOCK-HOST). cador now holds an ACTIVE-DRAWING and delegates
 ;;;; its entity / table / sysvar surface to it; the historical
 ;;;; accessors (cador-entities, cador-tables, cador-sysvars,
 ;;;; cador-creation-order, cador-next-handle-counter,
@@ -26,13 +26,13 @@
 
 ;;; --- COM object (session state) ---------------------------------
 
-(defstruct mock-com-object
-  "In-memory COM-object record for MockHost. PROGID is the
+(defstruct cador-com-object
+  "In-memory COM-object record for cador. PROGID is the
 ProgID string the object was created from. PROPERTIES is a
 case-insensitive hash-table from name string to current value
 (populated initially from the *com-progids* template, mutated by
 vlax-put-property). METHODS is a case-insensitive hash-table from
-name string to a (lambda (mock object args) -> value) closure
+name string to a (lambda (host object args) -> value) closure
 that implements the method. RELEASED-P is set by
 vlax-release-object."
   (id          (gensym "COM-") :type t)
@@ -56,9 +56,14 @@ vlax-release-object."
   ;; NAME — *Model_Space / *Paper_Space / a user block). Their members
   ;; and Count are recomputed from the drawing on each access, so
   ;; entmake / DXF loads / Add / Delete are always reflected.
-  (collection-kind nil))
+  (collection-kind nil)
+  ;; The document this object belongs to (a document KEY), :APPLICATION for
+  ;; the application-level objects (Application, Documents, Preferences), or
+  ;; NIL before registration. Every access to the object runs with that
+  ;; document's drawing current (multi-document slice 5).
+  (document-key nil))
 
-;;; --- MockHost ---------------------------------------------------
+;;; --- cador ---------------------------------------------------
 
 ;;; --- the template a new drawing is created from --------------------
 ;;;
@@ -110,9 +115,9 @@ $CLAUTOLISPNEWDRAWINGTEMPLATE names, when that is readable -- else the empty
 shell clautolisp has always started with. TEMPLATE is an argument so the choice
 can be tested without setting an environment variable."
   (if template
-      (clautolisp.drawing:make-drawing-from-template :name "Drawing.dwg"
+      (clautolisp.drawing:make-drawing-from-template :name "Drawing1.dwg"
                                                      :template template)
-      (make-drawing :name "Drawing.dwg")))
+      (make-drawing :name "Drawing1.dwg")))
 
 (defclass cador (host)
   ((active-drawing           :initform (%startup-drawing)
@@ -121,8 +126,6 @@ can be tested without setting an environment variable."
 AutoLISP entity / table / sysvar surface currently operates on. A
 CLAUTOLISP.DRAWING:DRAWING. Phase 17a holds exactly one; Phase 17f
 will grow a set of open drawings with this as the active pointer.")
-   (picksets                 :initform (make-hash-table :test #'eq)
-                             :reader   cador-picksets)
    (vla-objects              :initform (make-hash-table :test #'eq)
                              :reader   cador-vla-objects)
    (prompt-stream            :initform nil
@@ -149,33 +152,10 @@ the CLAL-COMMAND-LOG extension.")
                              :documentation "Reverse-order list of
 recorded transient-graphics calls (grdraw / grtext / grvecs /
 grclear / redraw). Tests inspect this; production code does not.")
-   (pickfirst                :initform nil
-                             :accessor cador-pickfirst
-                             :documentation "The session's
-pickfirst selection set, as set by ssgetfirst / sssetfirst.")
-   (tblnext-iterators        :initform (make-hash-table :test #'eq)
-                             :accessor cador-tblnext-iterators
-                             :documentation "Per-kind iterator
-state for tblnext. Maps a table-kind keyword to the remaining
-list of records that subsequent (tblnext KIND) calls will
-return. Cleared / reset when (tblnext KIND :rewind t).")
-   (dictnext-iterators       :initform (make-hash-table :test #'equal)
-                             :accessor cador-dictnext-iterators
-                             :documentation "Per-dictionary iterator
-state for dictnext. Maps a dictionary hex-handle string to the
-remaining list of (KEY . MEMBER-HANDLE) entries that subsequent
- (dictnext DICT) calls will return. Rebuilt on first reference or on
- (dictnext DICT :rewind t), matching the tblnext contract.")
-   (pending-initget          :initform nil
-                             :accessor cador-pending-initget
-                             :documentation "Per-host scratch slot
-for the most recent INITGET call. Bound to an `initget-state`
-object; consumed and cleared by the next get* invocation, matching
-AutoLISP's documented one-shot semantics.")
    (com-objects              :initform (make-hash-table :test #'equal)
                              :reader   cador-com-objects
                              :documentation "Hash-table mapping a
-unique COM-object id (string) to a MOCK-COM-OBJECT struct. The
+unique COM-object id (string) to a CADOR-COM-OBJECT struct. The
 AutoLISP-visible VLA-object wraps that id.")
    (next-com-counter         :initform 0
                              :accessor cador-next-com-counter
@@ -187,66 +167,34 @@ COM-object ids.")
 singleton AutoCAD.Application returned by (vlax-get-acad-object),
 or NIL before the first call. Lazily created together with its
 ActiveDocument so the vla-get-activedocument chain resolves.")
-   (live-collection-ids      :initform (make-hash-table :test #'equalp)
-                             :reader   cador-live-collection-ids
-                             :documentation "Identity map for the
-drawing-backed (live) COM objects: a stable key string (\"BLOCKS\",
-\"LAYERS\", \"BLOCK:<name>\", \"LAYER:<name>\") -> COM-object id, so
-repeated vla-get-blocks / Item calls return the same VLA object, as
-vendor ActiveX does.")
-   (entity-vla-map           :initform (make-hash-table :test #'equal)
-                             :accessor cador-entity-vla-map
-                             :documentation "Entity hex-handle string ->
-COM-object id of its vlax-ename->vla-object wrapper, so repeated
-conversions of the same entity yield the same (identity-stable) VLA
-object and vlax-vla-object->ename round-trips.")
-   (ldata-store              :initform (make-hash-table :test #'equal)
-                             :accessor cador-ldata-store
-                             :documentation "Persistent vlax-ldata store:
-maps a (DICT-KEY . PRIVATE-P) namespace string to an alist of
-(entry-key . value). DICT-KEY is the dictionary's identity (COM id or
-global-dictionary name). Survives for the host's lifetime — the headless
-CAD analogue of ldata stored in the drawing.")
+   (pending-input            :initform '()
+                             :accessor cador-pending-input
+                             :documentation "The COMMAND tokens a LISP
+command (registered with vlax-add-cmd) has not consumed yet: its get*,
+entsel and ssget calls take their input from here first, as the vendors
+feed a LISP command the rest of the (command ...) arguments.")
    (registered-commands      :initform '()
                              :accessor cador-registered-commands
                              :documentation "Reverse-order list of
 (global-name local-name . function) registered by vlax-add-cmd, and the
 queue fed by vlax-queueexpr. Headless has no interactive command line, so
 this records registrations/queued expressions for introspection.")
-   (open-complex-handle      :initform nil
-                             :accessor cador-open-complex-handle
-                             :documentation "The hex handle of the
-complex entity (a POLYLINE or an INSERT) whose subentity run is
-currently open, or NIL. When an entmake/entmakex creates a POLYLINE
-or an INSERT, its handle is recorded here; each following VERTEX /
-ATTRIB subentity gets its owner (group 330) set to this handle
-unless the caller supplied one, matching the AutoCAD/BricsCAD
-create-sequence contract. A SEQEND closes the run (clears the
-slot). This is session state, not drawing state.")
-   (open-block-definition    :initform nil
-                             :accessor cador-open-block-definition
-                             :documentation "The block-definition run
-opened by an entmake of a (0 . \"BLOCK\") header, as (NAME . HEADER),
-or NIL. While open, every entmade entity is owned by NAME (not model
-space); the closing (0 . \"ENDBLK\") registers the definition in the
-:block-record table + the drawing's block registry and clears the
-slot, per the vendor entmake block-creation contract. Session state.")
-   (ename-cache              :initform (make-hash-table :test #'equal)
-                             :accessor cador-ename-cache
-                             :documentation "Interns AutoLISP ENAMEs by
-hex-handle string so that every producer (entget, entlast, entnext,
-handent, ssname, entmakex ...) yields the SAME (EQ) ename object for a
-given handle within a drawing. Vendor AutoLISP has this identity —
- (eq (entlast) (entlast)) is T and the EQ-based idioms (member ename
-list), (eq ename (car sel)) work. Keyed and drained per drawing via
-ENAME-CACHE-DRAWING. See HANDLE->ENAME. (ename-eq-identity.issue)")
-   (ename-cache-drawing      :initform nil
-                             :accessor cador-ename-cache-drawing
-                             :documentation "The DRAWING object the
-ENAME-CACHE is currently valid for. When the active drawing is replaced
- (a future multi-drawing session), HANDLE->ENAME notices the identity
-change and clears the cache so handles from a closed drawing can never
-alias a fresh drawing's entities.")
+   (document-sessions        :initform (make-hash-table :test #'equal)
+                             :reader   cador-document-sessions
+                             :documentation "Document KEY -> DOC-SESSION: the
+per-document session state (picksets, pickfirst, iterators, initget, ldata,
+open entmake runs, the ename cache, the COM identity maps). Multi-document
+slice 2: they were host-global, shared by every drawing.")
+   (document-com-ids         :initform (make-hash-table :test #'equal)
+                             :reader   cador-document-com-ids
+                             :documentation "Document KEY -> COM id of its
+AutoCAD.Document object (identity-stable, one per open document).")
+   (untitled-counter         :initform 1
+                             :accessor cador-untitled-counter
+                             :documentation "The number of the last untitled
+drawing name handed out (Drawing1.dwg is the startup drawing's): AutoCAD numbers
+them for the whole session, so the next NEW after Drawing1 is Drawing2 even once
+Drawing1 has been saved under another name.")
    (documents                :initform '()
                              :accessor cador-documents
                              :documentation "Open documents as an ORDERED
@@ -267,9 +215,86 @@ backend for clautolisp. Holds an active CLAUTOLISP.DRAWING:DRAWING
 COM objects, prompt streams, transient-graphics log, iterators —
 that is not part of a drawing."))
 
+;;; --- Per-document session state (multi-document slice 2) ---------
+;;;
+;;; What AutoCAD keeps per document besides the drawing database: the
+;;; selection sets and the pickfirst set, the tblnext / dictnext iterators,
+;;; the pending INITGET, the vlax-ldata, the open entmake runs (complex entity,
+;;; block definition), the ename identity cache and the COM identity maps.
+;;; The accessors keep their names and read the ACTIVE document's record, so
+;;; every caller follows the current document unchanged.
+
+(defstruct doc-session
+  (read-only nil)
+  (picksets (make-hash-table :test #'eq))
+  (pickfirst nil)
+  (tblnext-iterators (make-hash-table :test #'eq))
+  (dictnext-iterators (make-hash-table :test #'equal))
+  (pending-initget nil)
+  (live-collection-ids (make-hash-table :test #'equalp))
+  (entity-vla-map (make-hash-table :test #'equal))
+  (ldata-store (make-hash-table :test #'equal))
+  (open-complex-handle nil)
+  (open-block-definition nil)
+  (ename-cache (make-hash-table :test #'equal))
+  (ename-cache-drawing nil)
+  ;; D1 §10: how many times the document's lock is held (a checked no-op).
+  (lock-count 0)
+  ;; The shape files LOAD (the command) loaded into this drawing.
+  (shape-files '())
+  ;; The tiled (model space) viewports, the current one first: a list of
+  ;; (ID LLX LLY URX URY). NIL until first asked: viewports.lisp.
+  (model-viewports nil)
+  ;; -VPORTS Toggle: the layout the first Toggle maximised, or NIL.
+  (viewport-toggle nil)
+  ;; -VPORTS Save / Restore: name -> the saved layout, (vports) order.
+  (viewport-configurations (make-hash-table :test #'equalp))
+  ;; command-log.lisp: the document's LOGFILENAME (kept until LOGFILEPATH
+  ;; changes) and its open log stream, or NIL.
+  (log-name nil)
+  (log-stream nil)
+  ;; (DRAWING . name -> handle): the BLOCK entity handles of the blocks whose
+  ;; header carries none (*Model_Space ...), for that drawing (entity-api).
+  (block-entity-handles nil)
+  ;; (DRAWING . owner handle -> its extension dictionary's handle): the
+  ;; measured ones a fresh drawing has (dictionary-api).
+  (extension-dictionaries nil))
+
+(defun cador-document-session (host &optional (key (cador-active-document-key host)))
+  "The DOC-SESSION of document KEY (default: the current one), made on first use."
+  (let ((table (cador-document-sessions host))
+        (key (or key "")))
+    (or (gethash key table)
+        (setf (gethash key table) (make-doc-session)))))
+
+(defmacro %define-document-session-accessor (name slot)
+  `(progn
+     (defun ,name (host) (,slot (cador-document-session host)))
+     (defun (setf ,name) (new host) (setf (,slot (cador-document-session host)) new))))
+
+(%define-document-session-accessor cador-picksets doc-session-picksets)
+(%define-document-session-accessor cador-pickfirst doc-session-pickfirst)
+(%define-document-session-accessor cador-tblnext-iterators doc-session-tblnext-iterators)
+(%define-document-session-accessor cador-dictnext-iterators doc-session-dictnext-iterators)
+(%define-document-session-accessor cador-pending-initget doc-session-pending-initget)
+(%define-document-session-accessor cador-live-collection-ids doc-session-live-collection-ids)
+(%define-document-session-accessor cador-entity-vla-map doc-session-entity-vla-map)
+(%define-document-session-accessor cador-ldata-store doc-session-ldata-store)
+(%define-document-session-accessor cador-open-complex-handle doc-session-open-complex-handle)
+(%define-document-session-accessor cador-open-block-definition doc-session-open-block-definition)
+(%define-document-session-accessor %cador-block-entity-handle-cell doc-session-block-entity-handles)
+(%define-document-session-accessor %cador-extension-dictionary-cell doc-session-extension-dictionaries)
+(%define-document-session-accessor cador-ename-cache doc-session-ename-cache)
+(%define-document-session-accessor cador-ename-cache-drawing doc-session-ename-cache-drawing)
+(%define-document-session-accessor %cador-lock-count doc-session-lock-count)
+(%define-document-session-accessor cador-shape-files doc-session-shape-files)
+(%define-document-session-accessor %cador-model-viewports doc-session-model-viewports)
+(%define-document-session-accessor %cador-viewport-toggle doc-session-viewport-toggle)
+(%define-document-session-accessor %cador-viewport-configurations doc-session-viewport-configurations)
+
 ;;; --- Active-drawing delegation ----------------------------------
 ;;;
-;;; Before Phase 17a these were slots on MOCK-HOST. They now forward
+;;; Before Phase 17a these were slots on MOCK-HOST, now CADOR. They now forward
 ;;; to the active drawing so every existing caller (entity-api,
 ;;; table-api, sysvar-api, api, and the test suite) keeps working
 ;;; unchanged. The names are deliberately preserved.
@@ -306,3 +331,7 @@ that is not part of a drawing."))
 
 (defun (setf cador-named-object-dictionary) (new host)
   (setf (drawing-named-object-dictionary (cador-active-drawing host)) new))
+
+(defvar *cador-in-lisp-command* nil
+  "True while COMMAND runs a LISP command registered with vlax-add-cmd:
+CMDACTIVE reads 1 then (bricscad-dialect-sysvar-parity, Phase 3).")

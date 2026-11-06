@@ -1,11 +1,11 @@
 (in-package #:clautolisp.cador)
 
-;;;; COM ProgID registry for MockHost (Phase 13).
+;;;; COM ProgID registry for cador (Phase 13).
 ;;;;
 ;;;; Each ProgID maps to a TEMPLATE that vlax-create-object copies
-;;;; into a new mock-com-object: a property alist (name -> initial
+;;;; into a new cador-com-object: a property alist (name -> initial
 ;;;; value) and a method alist (name -> handler closure). Programs
-;;;; running against the mock host can introspect AutoCAD's COM
+;;;; running against cador can introspect AutoCAD's COM
 ;;;; surface without a real CAD process.
 ;;;;
 ;;;; The seed registry covers a small set of ProgIDs commonly
@@ -29,15 +29,15 @@ hash-table from each ALIST.")
     (incf (cador-next-com-counter host))
     (format nil "COM-~D" n)))
 
-(defun build-mock-com-object (host progid)
-  "Construct a fresh mock-com-object from the *com-progids*
+(defun build-cador-com-object (host progid)
+  "Construct a fresh cador-com-object from the *com-progids*
 template for PROGID. Returns nil if PROGID is unknown."
   (let ((template (gethash progid *com-progids*)))
     (and template
          (let* ((id (cador-allocate-com-id host))
-                (object (make-mock-com-object :id id :progid progid))
-                (props (mock-com-object-properties object))
-                (methods (mock-com-object-methods object)))
+                (object (make-cador-com-object :id id :progid progid))
+                (props (cador-com-object-properties object))
+                (methods (cador-com-object-methods object)))
            (loop for (name value) on (getf template :properties) by #'cddr
                  do (setf (gethash name props) value))
            (loop for (name handler) on (getf template :methods) by #'cddr
@@ -66,7 +66,7 @@ type-library ProgIDs. Idempotent."
                      "Preferences"     nil)
    :methods    (list "Quit" (lambda (host object args)
                               (declare (ignore host args))
-                              (setf (mock-com-object-released-p object) t)
+                              (setf (cador-com-object-released-p object) t)
                               nil)
                      "ListArx" (lambda (host object args)
                                  (declare (ignore host object args))
@@ -92,7 +92,7 @@ type-library ProgIDs. Idempotent."
                      "Application"      nil)
    :methods    (list "Close"   (lambda (host object args)
                                  (declare (ignore host args))
-                                 (setf (mock-com-object-released-p object) t)
+                                 (setf (cador-com-object-released-p object) t)
                                  nil)
                      "Save"    (lambda (host object args)
                                  (declare (ignore host object args))
@@ -101,7 +101,7 @@ type-library ProgIDs. Idempotent."
                                  (declare (ignore host))
                                  (let ((name (first args)))
                                    (setf (gethash "Name"
-                                                  (mock-com-object-properties object))
+                                                  (cador-com-object-properties object))
                                          name)
                                    nil))))
   ;; A minimal Layers collection so simple introspection works.
@@ -113,7 +113,7 @@ type-library ProgIDs. Idempotent."
                               nil)))
   *com-progids*)
 
-;; Populate at load time so MockHost users get the defaults
+;; Populate at load time so cador users get the defaults
 ;; without an extra step.
 (eval-when (:load-toplevel :execute)
   (populate-default-com-progids))

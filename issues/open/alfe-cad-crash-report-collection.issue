@@ -1,0 +1,84 @@
+#+TITLE: ALFE : conserver les rapports et dumps de crash CAO dans le workdir avant nettoyage
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: enhancement
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-11-02
+
+* Demande et contexte
+
+Lorsqu’AutoCAD se plante, le dialogue proposant d’envoyer un rapport à
+Autodesk peut rester ouvert. Les données de crash et dumps produits à cette
+occasion doivent être récupérés par ALFE pour l’analyse, avant de fermer le
+dialogue et de nettoyer les processus du job. Demande explicite de pjb.
+
+Cette fonctionnalité complète la fermeture des moteurs possédés décrite dans
+[[file:alfe-cad-owned-com-teardown.issue][alfe-cad-owned-com-teardown]] et le traitement des échecs avant READY dans
+[[file:autocad-com-bootstrap-timeout-leaves-detached-engine.issue][autocad-com-bootstrap-timeout-leaves-detached-engine]]. Elle reste à implémenter ;
+la présence d’un JUnit valide n’est pas une preuve d’absence de crash.
+
+* Comportement attendu
+
+** Découvrir et attribuer les données de crash
+
+- Repérer les rapports, dumps et journaux produits par AutoCAD et son
+  rapporteur de crash, et prévoir le même contrat pour BricsCAD et WER.
+- Déterminer les emplacements effectifs pour la version du moteur et le
+  compte du job : répertoires temporaires du job, configuration du rapporteur,
+  emplacements Autodesk, CrashDumps et files WER lorsqu’ils sont disponibles.
+  Ne pas supposer un chemin universel ni le profil du compte administrateur.
+- Corréler les fichiers et les événements au moteur possédé par l’invocation :
+  PID et date de création, compte/SID, session, marqueur privé du job,
+  métadonnées du rapport et identité des processus rapporteurs associés.
+  Un simple nom de fichier ou un horodatage voisin ne suffit pas à attribuer
+  un rapport. Ne pas collecter ou supprimer les données d’un autre job.
+
+** Copier avant de fermer et conserver les preuves
+
+- Dans le traitement d’échec/finally, collecter avant tout acquittement du
+  dialogue de crash, arrêt du rapporteur, destruction du moteur ou effacement
+  du TEMP/workdir source. Ne pas déclencher l’envoi du rapport à Autodesk.
+- Attendre de façon bornée les fichiers écrits tardivement ; gérer les
+  fichiers encore ouverts et les copies partielles. Compléter la collecte
+  après terminaison si nécessaire, sans bloquer indéfiniment le nettoyage.
+- Copier les fichiers attribués dans =workdir/crash/=, sans déplacer ni
+  modifier les originaux. Préserver les noms sans collisions entre rapports.
+- Écrire un manifeste : chemin source, copie relative, taille, SHA-256,
+  horodatages, moteur/version, job, PID/date de création, compte/session,
+  lien avec le rapporteur, méthode d’attribution et état de copie.
+- Conserver aussi les événements de crash corrélés, l’invocation exacte,
+  la phase du protocole, le dernier statut des tests, le code de sortie natif
+  et la méthode de fermeture (normale ou forcée).
+- Rendre visibles les absences, accès refusés, fichiers verrouillés,
+  délais dépassés et éventuelles limites de taille. Ne jamais annoncer une
+  collecte complète si un dump manque ou a été tronqué.
+- Publier ce sous-répertoire avec les artefacts du job, succès ou échec des
+  assertions, y compris si le crash arrive après l’écriture du JUnit.
+
+** Ne pas masquer le crash par le résultat des tests
+
+Un crash confirmé du moteur doit rendre ALFE et le job non nuls même si les
+assertions ont toutes réussi et le JUnit est valide. Conserver le JUnit réel
+sans réécrire des assertions réussies en assertions échouées ; signaler
+séparément l’échec de cycle de vie et le chemin des diagnostics collectés.
+Une erreur de collecte ne doit ni masquer le crash ni empêcher le nettoyage
+borné des seuls processus positivement possédés par le job.
+
+* Critères d’acceptation et tests
+
+- Fixture déterministe : un moteur/rapporteur possédé écrit un rapport et un
+  dump puis attend sur un dialogue ; les copies sont complètes avant la
+  fermeture et survivent à la suppression des fichiers temporaires source.
+- Couvrir écriture retardée, fichier verrouillé, absence de dump, erreur de
+  copie et collision de noms ; vérifier les délais bornés et le manifeste.
+- Laisser des fichiers anciens et ceux d’un autre job/compte dans les mêmes
+  emplacements : ils doivent rester intacts et hors de la collecte attribuée.
+- Simuler un crash après cinq assertions réussies et un JUnit valide :
+  conserver les cinq succès, les preuves natives et les dumps, mais exiger
+  un code de sortie ALFE/job non nul et un diagnostic explicite de crash.
+- Couvrir aussi échec avant READY, annulation et fermeture sans crash ; une
+  simple boîte informative de nouveautés ne doit pas être classée crash.
+- Qualifier ensuite sur Windows avec AutoCAD et BricsCAD : vérifier les
+  emplacements réellement utilisés, les preuves d’attribution et les
+  artefacts récupérés après disparition du moteur et du rapporteur.

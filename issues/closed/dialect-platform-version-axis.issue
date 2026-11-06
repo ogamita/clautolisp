@@ -1,0 +1,357 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: Dialect platform + version axis (autocad vs autocad-mac, version suffixes)
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: dialect-design
+#+DEPENDS: -
+#+BRANCH: -
+
+Dialect platform + version axis (autocad vs autocad-mac, version suffixes)
+=========================================================================
+
+Summary
+-------
+
+pjb's SECURELOAD trust-model spec revision
+(clautolisp-secureload-trust-model-spec.org, commit ad748c2) introduces
+a general requirement that exceeds the trust model: the --dialect
+option must carry a PLATFORM and a VERSION, not just a product.
+
+  --dialect autocad           windows, latest known (currently 2027)
+  --dialect autocad-mac       macOS,   latest known (currently 2027)
+  --dialect autocad-2022      windows, version 2022
+  --dialect autocad-mac-2027  macOS,   version 2027
+
+Rule (verbatim from the spec):
+
+  "As a general rule for the questions of reference, all the versions of
+   autocad or bricscad documentations need to be scanned to identify the
+   differences and also the availability of features, from one version
+   to the other; the --dialect option may be specified down to the
+   version. If the version is not specified, we have to select the
+   latest version known."
+
+Motivation / first concrete consumer
+------------------------------------
+
+TRUSTEDPATHS subfolder recursion:
+- "\..." is accepted by AutoCAD on all platforms.
+- "/..." is accepted by clautolisp AND by AutoCAD-mac, but must be
+  FLAGGED (a warning) on AutoCAD-windows.
+
+So the trust model already needs to know platform (mac vs windows) to
+decide whether "/..." warns. The SECURELOAD work currently assumes the
+existing keyword set (:autocad-2026 == windows) and accepts "/..."
+everywhere without the windows warning; that warning is deferred to
+this issue.
+
+Scope
+-----
+
+1. Dialect naming: extend the dialect keyword space with a platform
+   facet (autocad / autocad-mac; presumably bricscad / bricscad-mac /
+   bricscad-linux too) and an optional version facet. Decide the
+   canonical keyword form (e.g. :autocad, :autocad-mac, :autocad-2022,
+   :autocad-mac-2027) and the "latest known" resolution.
+
+2. CLI: parse the new --dialect spellings (options.lisp parse-dialect,
+   spec.lisp) and the shorthands; keep --autocad / --bricscad meaning
+   "latest known windows".
+
+3. Reader/runtime dialect descriptor: carry platform + version so
+   builtins can branch on them (current-evaluation-dialect already
+   returns a descriptor).
+
+4. Feature/version matrix: a data-driven table of which features /
+   sysvars / behaviours exist in which product+platform+version, sourced
+   from scanning every AutoCAD / BricsCAD version's reference docs
+   (this is large; do it incrementally, driven by probes -- see
+   probes/ and `make probe`).
+
+5. Migrate existing dialect keywords: :autocad-2026 / :bricscad-v26 are
+   the current placeholders; reconcile them with the new scheme.
+
+Relation to other work
+-----------------------
+
+- SECURELOAD/TRUSTEDPATHS trust model (system-variables.issue, the
+  secureload spec): consumes platform for the "/..." warning. The trust
+  model is being implemented against the current keywords with a
+  forward-compatible hook; this issue supplies the real platform axis.
+- "BricsCAD silent => assume AutoCAD-like + add a probe" (spec open
+  questions) feeds the feature matrix.
+- The CAD probe harness (probes/, make probe) is the mechanism to
+  populate the per-version feature/behaviour matrix from ground truth.
+
+Status: OPEN, design needed. Surfaced 2026-06-25 from the spec revision.
+Not blocking the secureload phases, which proceed on the current
+keywords.
+
+Progress (2026-08-06) — branch feature-dialect-platform-version-axis
+--------------------------------------------------------------------
+
+DONE
+- Dialect descriptor gained PRODUCT (:autocad/:bricscad/nil), PLATFORM
+  (:windows/:macos/:linux/nil) and VERSION (integer/nil) facets, with
+  public accessors autolisp-dialect-product / -platform / -version
+  (autolisp-reader/source/dialect.lisp + api.lisp + package.lisp).
+  The enumerated vendor descriptors carry them (autocad-2026 ->
+  :autocad/:windows/2026, autocad-2022 -> 2022, bricscad-v26 ->
+  :bricscad/:windows/26, bricscad-v25 -> 25); strict/clautolisp/lax
+  stay neutral (all nil).
+- Derived-spelling resolution in FIND-AUTOLISP-DIALECT: a product,
+  optionally suffixed with a platform (-mac / -linux; windows default)
+  and/or a version (autocad-2027, autocad-mac-2027, bricscad-linux,
+  bricscad-mac-v26). Omitted version -> "latest known" (per
+  *autolisp-dialect-latest-version*, autocad 2026 / bricscad 26 to
+  match the existing aliases). Derived descriptors are cached
+  (EQ-stable). Legacy keywords (:autocad-2026 / :bricscad-v26) and the
+  bare-product aliases resolve unchanged via the named-dialect alist.
+  AutoCAD years < 2025 keep the legacy ISO-8859-1 default encoding.
+- CLI: parse-dialect (shared autolisp-cli, so alfe inherits it) accepts
+  the new spellings and keywordises them verbatim; --list-dialects gains
+  :autocad-mac / :bricscad-mac / :bricscad-linux; help text updated in
+  the clautolisp tool and the alfe front-end. --autocad / --bricscad
+  shorthands still mean latest-known windows.
+- FIRST CONCRETE CONSUMER: the "/..." vs "\..." subfolder-recursion
+  rule. autolisp-path-has-forward-slash-ellipsis-p +
+  emit-forward-slash-ellipsis-portability-warning
+  (autolisp-runtime/source/api.lisp), platform-gated to :windows: warns
+  ([path-slash-ellipsis]) on autocad / autocad-2026 (windows), silent on
+  autocad-mac (:macos) and on the neutral profiles (strict / clautolisp
+  / lax, platform nil). Wired into builtin-findfile alongside the
+  existing [path-dotdot] warning; honours portability-warning-mode
+  :error and dedups once-per-path-per-run.
+- Feature/version matrix SCAFFOLD: *autolisp-feature-matrix* (row shape
+  FEATURE PRODUCT PLATFORM MIN-VERSION VALUE, most-specific-row-wins) +
+  dialect-feature / dialect-feature-for lookup, with a few seed rows
+  (default-utf8-encoding, forward-slash-ellipsis-ok). Clearly marked for
+  incremental population from docs/probes — NOT exhaustively populated.
+- Tests (all headless, FiveAM, 0 failures): autolisp-reader/tests
+  (descriptor facets, latest-known / mac / explicit-version resolution,
+  pre-2025 encoding, unknown-spelling nil, feature-matrix lookup);
+  autolisp-cli/tests (parse-dialect platform+version spellings);
+  autolisp-builtins-core/tests (the "/..."-predicate + platform-gated
+  warn-on-autocad-windows / silent-on-mac+neutral, through findfile).
+
+TODO (incremental, out of this pass)
+- Populate the feature/version matrix from real AutoCAD/BricsCAD doc
+  scans + probes (scope item 4); wire more builtins to dialect-feature.
+- Extend the "/..." (and the deferred platform-dependent ".."
+  BACK-vs-UP) behaviour to open/load if desired, and verify against
+  real CAD on native runners (see CI note in the PR/report).
+- Consider bumping *autolisp-dialect-latest-version* autocad -> 2027
+  once 2027 is characterised (spec text cites 2027 as latest).
+
+Rehomed here (2026-08-06): deferred ".." path-semantics alternative
+---------------------------------------------------------------------
+From cad-path-dotdot-resolution.issue (now CLOSED): clautolisp currently
+does POSIX-UP for ".." on every platform and warns on any ".." outside
+--lax (shipped 1.7.5). The probe matrix showed the native Windows CADs
+(AutoCAD-Windows, BricsCAD-Windows) instead do syntactic-BACK, while
+macOS BricsCAD and clautolisp everywhere do UP. A deferred alternative
+was recorded but not scheduled: make clautolisp FOLLOW THE PLATFORM —
+BACK on Windows, UP on Unix — so it matches whichever native CAD runs
+beside it, at the cost of cross-OS clautolisp consistency. This is a
+platform-dependent path-semantics choice on the same platform axis as the
+"/..."-warns-on-autocad-windows case above, hence tracked here. Revisit if
+the Windows divergence proves a problem in practice; not scheduled now.
+
+
+Decision (pjb, 2026-10-03)
+--------------------------
+"we only have 2022 to test; more recent versions we only have the web
+reference, so for now, let's say 2022 is the last known." So: NO bump to
+2027 -- nothing newer than what we can test is declared characterised.
+
+Open point raised back to pjb the same day, before changing anything:
+*autolisp-dialect-latest-version* is (:autocad . 2026) today, and taking
+it to 2022 is not one constant. Bare --dialect autocad is an ENUMERATED
+alias of the :autocad-2026 descriptor (UTF-8 source default) and does not
+read the constant; only DERIVED spellings do (autocad-mac, ...), and a
+derived version < 2025 switches them to the ISO-8859-1 source default
+(dialect.lisp %synthesize-dialect). Lowering only the constant would make
+`autocad' and `autocad-mac' disagree. Choices: (a) record 2022 as the
+last TESTED release and keep 2026 as the behavioural template (the 2026
+web reference is what the catalogue was built from); or (b) make 2022 the
+latest known everywhere, bare `autocad' included -- a behaviour change
+(single-byte source default under --dialect autocad).
+
+DECIDED (pjb, 2026-10-03): option (a). 2022 is recorded as the last TESTED
+AutoCAD; 2026 stays the behavioural template and the value of
+*autolisp-dialect-latest-version* (docstring updated). And a standing rule:
+"when we have definite reference material specifying differences between
+versions, we must implement them in different dialect versions, even if we
+can't test them (yet). Possibly, we may write probes, and hope users will
+contribute later probe results on their versions." Recorded in AGENTS.md,
+"Dialect versions and products". Remaining work of this ticket is therefore
+concrete: harvest the documented version differences (doc scans) into the
+feature/version matrix and implement each behind the version facet, with a
+probe per difference.
+
+
+Documented version differences: harvested and first implemented (2026-10-04, clautolisp 2.2.173)
+------------------------------------------------------------------------------------------------
+
+Doc scan (Autodesk "What's New or Changed with AutoLISP",
+help.autodesk.com/cloudhelp/<year>/ENU/AutoCAD-AutoLISP/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm,
+"About AutoLISP Compatibility" GUID-31FD1A96...; BricsCAD release notes
+boa.bricscad.octave.com/common/releasenotes.jsp and the DevRef history
+pages V11-V22.htm). The documented differences, by release:
+
+AutoCAD: 2013 vlax-machine-product-key (vlax-product-key obsolete) / 2014
+findtrustedfile, showHTMLModalWindow, SECURELOAD + TRUSTEDPATHS +
+TRUSTEDDOMAINS + LEGACYCODESEARCH, findfile searches trusted paths / 2016
+osnap "qui" invalid -> nil; getcfg / setcfg obsolete; signed LSP/FAS/VLX /
+2017 CDATE / DATE / TD* no longer to the millisecond; EPDFSHX -> PDFSHX /
+2019 LOCALE ISO-639 ("en" in the doc; measured "FR" on 2022) instead of
+"ENU" / 2020 INSERT -> Blocks palette / 2021 LISPSYS (initial 1; 0 = MBCS VL
+IDE, 1 = Unicode VS Code, 2 = Unicode, MBCS FAS); Unicode LSP sources;
+(open f mode ["utf8"|"utf8-bom"]); Unicode semantics of ascii / chr /
+strlen / substr / read-char / vl-string-* / vl-list->string etc. under
+LISPSYS 1 / 2024 LT gets AutoLISP (no vlax-create-object & co.) / 2025
+acet-load-expresstools / 2015, 2017-2020, 2022, 2026, 2027: no new or
+changed functions. Mac: no ActiveX (vla- / vlax- / vlr- absent); the vl-
+string / file functions present since 2011.
+BricsCAD: V17 (open f "r,ccs=UTF-8|UTF-16LE|UNICODE") / V18.1 Unicode
+ascii / chr, (ver) "10.0", tiny doubles print "0.0", dos_command / V19.1
+(load "x.vlx"/"x.fas") as (load "x") / V19.2 vle-enableserverbusy / V20.1
+UTF-8 / UTF-16LE LSP with BOM, vle-vector-*, (div) removed / V21.1 property
+functions, vl-infp / vl-nanp, grvecs in DCS / V22 vla-PostCommand,
+vle-file-encoding, (vl-cmdf) returns T / nil / V23.1 LISPSYS (BOM-less
+UTF-8), vl-subent-*, vle-sunid / V24 vl-local-undo-*, UTF-8 DCL,
+vle-file->list UTF-8, findfile nil on trailing spaces / V25.1 menu-macro
+LISP always evaluated, vle-vector-to2d, LISPINIT=0 only with SDI=1 / V26.1
+(mod) and (round) REMOVED; 26.2 chars > 255 written as \U+nnnn to ANSI
+files.
+
+IMPLEMENTED in 2.2.173:
+  - autolisp-runtime/source/operator-versions.lisp: *VERSION-GATED-OPERATORS*
+    (19 rows, sources cited) and the `[version-operator]' notice (registered
+    tag; annex regenerated): a gated operator called under a dialect of its
+    product whose version lacks it warns, once per operator; :error mode
+    errors; versionless dialects never warn. E.g. acet-load-expresstools
+    under autocad-2022; mod / round under bricscad-v26. The nil stubs are
+    gated too.
+  - Feature matrix rows :lispsys (AutoCAD 2021+, BricsCAD 23+; GETVAR
+    "LISPSYS" -> nil before) and :locale-form (AutoCAD 2019+ upper-case
+    language "FR", measured; BricsCAD "fr_FR"). BricsCAD's LISPSYS default
+    0 (both harvests).
+  - probes/sources/probe-versions.lsp: the gated operators' presence,
+    LISPSYS, LOCALE, (ver) -- for AutoCAD 2022 / BricsCAD V26 now, and for
+    users of other versions to contribute.
+
+LEFT (larger, each its own slice):
+  - The 2021 Unicode string semantics (ascii / chr / strlen / substr /
+    vl-string-* ...) under LISPSYS 0 vs 1, and AutoCAD < 2021 behaving as
+    LISPSYS 0 (MBCS).
+  - OPEN's third argument "utf8" / "utf8-bom" (AutoCAD 2021+) vs BricsCAD's
+    "r,ccs=UTF-8" mode spelling.
+  - osnap "qui" -> nil from 2016; (vl-cmdf) -> T / nil from BricsCAD V22.2;
+    BricsCAD V18.1 tiny-double printing; LOCALE's pre-2019 three-letter form
+    (needs the code table measured).
+  - QUESTION FOR PJB, not changed: *autolisp-feature-matrix* says AutoLISP
+    source became UTF-8 by default in AutoCAD 2025 (:default-utf8-encoding,
+    citing autolisp-spec ch.7). The Autodesk 2021 pages say LISPSYS (initial
+    value 1 = Unicode) and Unicode LSP sources arrived in 2021. Moving the
+    boundary to 2021 would change the source default of the autocad-2021 ..
+    -2024 dialects -- an encoding-consolidation decision.
+
+Measured (2026-10-04, probe-versions, AutoCAD 2022 job 16921684058, BricsCAD
+V26 job 16921684059): acet-load-expresstools ABSENT on AutoCAD 2022 (the
+2025 gate holds); mod / round ABSENT on BricsCAD V26 (the removal holds);
+LOCALE "FR" / "fr_FR"; BricsCAD LISPSYS 0. NOTE: AutoCAD 2022 reports LISPSYS
+0 on the CI machine where the doc says the initial value is 1 -- one machine
+(its registry may carry a changed value) against the documentation, so the
+autocad dialects keep 1; a second AutoCAD machine would settle it.
+showhtmlmodalwindow is absent from AutoCAD 2022's CONSOLE (accoreconsole has
+no UI) -- not a contradiction of the 2014 gate. vl-infp / vl-nanp exist on
+AutoCAD 2022: filed as vl-infp-vl-nanp-exist-on-autocad.
+ANSWERED (pjb 2026-10-04): "the default source encoding depends on LISPSYS.
+Indeed, a new autocad installation will have LISPSYS=1; the users typically
+set it [to 0] when they have windows-1252 code bases. ... We can align to
+autocad, but we must read back the LISPSYS setting from persistent memory
+(the registry)." Done in 2.2.175: the spec's encoding rule is "LISPSYS
+decides, from 2021" (the forum-sourced 2025 note superseded); LISPSYS is
+persisted per product in the host registry store and read at launch; the
+AutoCAD dialects derive the source / file default from it, ahead of the
+locale (end-to-end on the executable: a cp1252 file decodes under LISPSYS 0,
+fails as UTF-8 under 1). The :default-utf8-encoding matrix row (unused by
+the runtime) is left for the encoding-consolidation cleanup.
+
+
+Remainder measured and implemented (2026-10-04, clautolisp 2.2.181)
+-------------------------------------------------------------------
+
+probe-triage2 (AutoCAD 2022 Windows job 16923993438, BricsCAD V25 Windows
+16923993442 and V26 macOS 16923993439), all at LISPSYS 0 -- the Windows
+runner has BricsCAD V25 (corrected 2026-10-05); V26 on Windows is unmeasured
+and the bricscad-v26 dialect assumes V25's cp1252 behaviour there:
+
+| form                                | AutoCAD 2022 | BricsCAD V26 Win | BricsCAD V26 macOS |
+|-------------------------------------+--------------+------------------+--------------------|
+| (ascii (chr 128))                   | 128          | 128              | 128                |
+| (ascii (chr 8364))                  | 172          | 128              | 8364               |
+| (strlen (chr 8364))                 | 1            | 1                | 1                  |
+| (vl-string->list (chr 8364))        | (172)        | (128)            | (8364)             |
+| (osnap p "_end") / "_qui,_end"      | nil / nil    | same point twice | nil / nil          |
+| (vl-cmdf "_.LINE" ... "")           | T            | T                | T                  |
+| (open f "w" "utf8")                 | ERROR "too many arguments" | FILE | FILE          |
+
+DONE:
+  - The 2021 Unicode string semantics: %character-code-mode -- :byte
+    (AutoCAD Windows, before 2021 or LISPSYS 0: a code reduced to a
+    windows-1252 byte), :cp1252 (BricsCAD Windows, LISPSYS 0), else
+    Unicode -- for chr / ascii / vl-string->list / vl-list->string /
+    vl-string-elt / vl-string-position / read-char / write-char.
+  - OPEN's third argument: refused (wrong number of arguments) under
+    AutoCAD before 2021 or the :byte mode; BricsCAD takes it.
+  - (vl-cmdf) -> nil under BricsCAD dialects before V22 (release notes);
+    T otherwise (measured on both).
+  - osnap "qui": BricsCAD measured to ignore it; AutoCAD headless cannot
+    tell (nil for every mode); clautolisp's osnap is a nil stub -- the
+    documented AutoCAD 2016 rule ("qui" -> nil) holds trivially.
+  - By the way: the LISPSYS foreign-dialect warning no longer fires under
+    the BricsCAD dialects (BricsCAD has LISPSYS from V23, measured 0).
+  Spec: *** Measured + *** clautolisp in ASCII, CHR, VL-STRING->LIST,
+  OPEN, VL-CMDF, OSNAP.
+
+LEFT: BricsCAD V18.1 tiny-double printing; LOCALE's pre-2019 three-letter
+form (needs the code table measured); AutoCAD at LISPSYS 1 measured (the CI
+machine is at 0) -- the Unicode side is documented, not measured.
+
+
+Resolved (2026-10-25, clautolisp 2.3.60 - 2.3.62, MR !489)
+-----------------------------------------------------------
+
+The LEFT list above, done:
+- AutoCAD at LISPSYS 1, MEASURED: probe:lispsys1:autocad:windows (job
+  17450350669) set LISPSYS 1, measured in fresh sessions (a fresh session
+  read 1 first), set it back to 0 and checked two fresh sessions read 0 (pjb:
+  "Ok for LISPSYS 1, but restore it to 0 afterwards"). The values match E1
+  (2026-10-06): (ascii (chr 8364)) 8364, OPEN's third argument works, plain
+  "r" reads cp1252 and UTF-8 alike, "r" "utf8" keeps a BOM and stops at a
+  bad byte -- implemented since 2.2.222 (autocad-open-encoding-lispsys-
+  divergence). ",ccs=" and unknown names stay lenient + warned (pjb
+  2026-10-06). Nothing to change.
+- LOCALE before 2019 (2.3.60): the three-letter LOCALE_SABBREVLANGNAME code
+  ("FRA", "ENU"), documented, not measured.
+- BricsCAD V18.1 "tiny doubles print 0.0": not what V25 / V26 do. Measured
+  instead how both print reals (probe-versions): AutoCAD %.6g with a point in
+  the mantissa (0.333333, 1.0e+06, 1.0e-05), BricsCAD %.15g (0.333333333333333,
+  1000000.0, 1e-05). pjb: "keep the 3 variants ... provide the dialect
+  formatting ... in strict, use clautolisp format, just as in lax ... and
+  document it". 2.3.62: AUTOLISP-PRINT-REAL spells a real per the dialect's
+  product for PRIN1 / PRINC / PRINT / VL-PRIN*-TO-STRING (RTOS and COMMAND
+  keep the full value); [real-format], once per session, not under lax, when
+  the two products spell a printed real differently. Tests
+  REAL-PRINTING-FOLLOWS-THE-DIALECT-PRODUCT,
+  REAL-FORMAT-NOTICE-ONCE-WHERE-THE-PRODUCTS-DIFFER; spec PRIN1 (Measured +
+  clautolisp) and its siblings; manual; dialect-warnings annex.
+
+Also on this MR: the default objects keyed by dialect version (2.3.61, pjb:
+"this is why we distinguish versions too in dialects").
+
+The open-ended items (populate the matrix as differences are measured; the
+optional "/..." extension to OPEN / LOAD) are
+issues/open/deferred-dialect-matrix-population.issue.

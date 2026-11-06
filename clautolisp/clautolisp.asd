@@ -122,6 +122,9 @@
    (:file "autolisp-runtime/source/model")
    (:file "autolisp-runtime/source/terminal-color")
    (:file "autolisp-runtime/source/portability")
+   (:file "autolisp-runtime/source/text-metrics")
+   (:file "autolisp-runtime/source/operator-availability")
+   (:file "autolisp-runtime/source/operator-versions")
    (:file "autolisp-runtime/source/api")
    (:file "autolisp-runtime/source/scheduler")
    (:file "autolisp-runtime/source/ontology"))
@@ -140,7 +143,10 @@
   :components
   ((:file "autolisp-host/source/package")
    (:file "autolisp-host/source/protocol")
-   (:file "autolisp-host/source/nihil"))
+   (:file "autolisp-host/source/nihil")
+   ;; analytic curve model shared by vlax-curve-* and the cador ActiveX
+   ;; geometric properties (cador-curve-length-and-sampling.issue)
+   (:file "autolisp-host/source/curve-geometry"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-host/tests")))
   :perform (asdf:test-op (op system)
@@ -189,7 +195,9 @@
   :description "Tests for the clautolisp DWG codec (libredwg)."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/drawing-dwg" "fiveam")
+  ;; cador: the default objects the CADs listed for their own templates, which
+  ;; a vendor .dwt read here is checked against (dwg-reads-vendor-templates)
+  :depends-on ("clautolisp/drawing-dwg" "clautolisp/cador" "fiveam")
   :serial t
   :components
   ((:file "drawing-dwg/tests/package")
@@ -202,28 +210,44 @@
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/cador"
-  :description "In-memory deterministic CAD-database backend (MockHost) for clautolisp."
+  :description "In-memory deterministic CAD-database backend (cador) for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-host" "clautolisp/autolisp-runtime"
-               "clautolisp/drawing")
+               "clautolisp/drawing" "cffi" "babel")
   :serial t
   :components
   ((:file "cador/source/package")
    (:file "cador/source/model")
    (:file "cador/source/document-api")
    (:file "cador/source/sysvar-catalogue")
+   (:file "cador/source/template-defaults")
+   (:file "cador/source/sysvar-scopes")
    (:file "cador/source/sysvars")
    (:file "cador/source/api")
    (:file "cador/source/entity-api")
    (:file "cador/source/selection-api")
+   (:file "cador/source/default-objects")
    (:file "cador/source/dictionary-api")
    (:file "cador/source/table-api")
    (:file "cador/source/sysvar-api")
+   (:file "cador/source/registry-native")
    (:file "cador/source/registry-api")
    (:file "cador/source/bricscad-sysvar-overrides")
+   (:file "cador/source/command-log")
    (:file "cador/source/prompt-api")
    (:file "cador/source/command-api")
+   (:file "cador/source/command-geometry")
+   (:file "cador/source/intersect")
+   (:file "cador/source/command-draw")
+   (:file "cador/source/command-modify")
+   (:file "cador/source/command-array")
+   (:file "cador/source/command-edit")
+   (:file "cador/source/command-hatch")
+   (:file "cador/source/command-builtins")
+   (:file "cador/source/command-file")
+   (:file "cador/source/viewports")
+   (:file "cador/source/getcname")
    (:file "cador/source/com-progids")
    (:file "cador/source/vlax-api"))
   :in-order-to ((asdf:test-op
@@ -299,7 +323,11 @@ application for headless interactive/scriptable testing (generalises cador)."
   :components
   ((:file "autolisp-builtins-core/source/package")
    (:file "autolisp-builtins-core/source/secureload")
+   ;; the measured ActiveX constant table (generated from probe-activex-
+   ;; constants runs; cador-activex-enumeration-constants-unbound).
+   (:file "autolisp-builtins-core/source/activex-constants-table")
    (:file "autolisp-builtins-core/source/api")
+   (:file "autolisp-builtins-core/source/diesel")
    ;; the source-file editing module (sedit-bugs-and-design.issue) — after api,
    ;; it uses the AutoLISP printer defined there.
    (:file "autolisp-builtins-core/source/source-file"))
@@ -327,11 +355,18 @@ application for headless interactive/scriptable testing (generalises cador)."
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/sysexits"
+  :description "The process exit statuses (sysexits.h) shared by clautolisp, read-autolisp and alfe."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :components
+  ((:file "autolisp-cli/source/sysexits")))
+
 (asdf:defsystem "clautolisp/read-autolisp"
   :description "Command-line reader validation tool for AutoLISP source."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-reader" "uiop")
+  :depends-on ("clautolisp/autolisp-reader" "clautolisp/sysexits" "uiop")
   :serial t
   :components
   ((:file "autolisp-reader/tools/read-autolisp/source/package")
@@ -342,7 +377,8 @@ application for headless interactive/scriptable testing (generalises cador)."
   :description "Shared CLI option parser + *AUTOLISP-…* variable installer for clautolisp and alfe."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime"
+  :depends-on ("clautolisp/sysexits"
+               "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
                ;; for APPLY-DIALECT-TRUST-SYSVAR-DEFAULTS, the launch-time
                ;; dialect-dependent SECURELOAD / TRUSTEDPATHS overlay.
@@ -350,7 +386,9 @@ application for headless interactive/scriptable testing (generalises cador)."
                ;; for APPLY-BRICSCAD-DIALECT-SYSVARS, the launch-time
                ;; bricscad-dialect sysvar overlay (drops the AutoCAD-only
                ;; catalogue entries BricsCAD does not define).
-               "clautolisp/cador")
+               "clautolisp/cador"
+               ;; terminal.lisp: the Windows console code page (-Eterminal).
+               "cffi")
   :serial t
   :components
   ((:file "autolisp-cli/source/package")
@@ -359,7 +397,11 @@ application for headless interactive/scriptable testing (generalises cador)."
    (:file "autolisp-cli/source/options")
    (:file "autolisp-cli/source/spec")
    (:file "autolisp-cli/source/parser")
-   (:file "autolisp-cli/source/transmit"))
+   (:file "autolisp-cli/source/debugger")
+   (:file "autolisp-cli/source/interrupt")
+   (:file "autolisp-cli/source/terminal")
+   (:file "autolisp-cli/source/transmit")
+   (:file "autolisp-cli/source/engine"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-cli/tests")))
   :perform (asdf:test-op (op system)
@@ -474,7 +516,11 @@ identity / TEMPPREFIX stamping, option value parsers)."
   ((:file "tools/clautolisp/tests/package")
    (:file "tools/clautolisp/tests/dribble-tests")
    (:file "tools/clautolisp/tests/debugger-options-tests")
+   (:file "tools/clautolisp/tests/interrupt-tests")
    (:file "tools/clautolisp/tests/optimize-option-tests")
+   (:file "tools/clautolisp/tests/dwg-option-tests")
+   (:file "tools/clautolisp/tests/exit-status-tests")
+   (:file "tools/clautolisp/tests/encoding-option-tests")
    (:file "tools/clautolisp/tests/transmit-tests")
    (:file "tools/clautolisp/tests/aldo-conf-tests")
    (:file "tools/clautolisp/tests/debugger-ui-switch-tests")
@@ -523,6 +569,8 @@ identity / TEMPPREFIX stamping, option value parsers)."
   ((:file "autolisp-host/tests/package")
    (:file "autolisp-host/tests/test-harness")
    (:file "autolisp-host/tests/nihil-tests")
+   (:file "autolisp-host/tests/host-error-tests")
+   (:file "autolisp-host/tests/curve-geometry-tests")
    (:file "autolisp-host/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -550,10 +598,13 @@ identity / TEMPPREFIX stamping, option value parsers)."
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/cador/tests"
-  :description "Tests for the clautolisp MockHost data carriers."
+  :description "Tests for the clautolisp cador data carriers."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/cador" "fiveam")
+  ;; autolisp-builtins-core: registry-native-tests checks the builtins'
+  ;; conversion of native registry values
+  ;; (cador-tests-reference-builtins-core-without-depending-on-it.issue).
+  :depends-on ("clautolisp/cador" "clautolisp/autolisp-builtins-core" "fiveam")
   :serial t
   :components
   ((:file "cador/tests/package")
@@ -566,9 +617,15 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "cador/tests/prompt-tests")
    (:file "cador/tests/command-tests")
    (:file "cador/tests/vlax-tests")
+   (:file "cador/tests/pointer-dialect-tests")
+   (:file "cador/tests/getcname-tests")
+   (:file "cador/tests/entity-defaults-tests")
+   (:file "cador/tests/xrecord-payload-tests")
+   (:file "cador/tests/intersect-tests")
    (:file "cador/tests/reactor-tests")
    (:file "cador/tests/sysvar-catalogue-tests")
-   (:file "cador/tests/subprocess-encoding-tests")
+   (:file "cador/tests/registry-native-tests")
+   (:file "cador/tests/command-log-tests")
    (:file "cador/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -693,6 +750,11 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-builtins-core"
                "clautolisp/cador"
+               ;; builtin-hooks-isolation-tests drives the cador suite's
+               ;; own environment (install-core-builtins-leaks-com-hooks-
+               ;; across-suites).
+               "clautolisp/cador/tests"
+               "clautolisp/cadtui"
                "fiveam")
   :serial t
   :components
@@ -702,13 +764,22 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-builtins-core/tests/drawing-data-tests")
    (:file "autolisp-builtins-core/tests/errno-coupling-tests")
    (:file "autolisp-builtins-core/tests/exit-status-tests")
+   (:file "autolisp-builtins-core/tests/vendor-operator-tests")
+   (:file "autolisp-builtins-core/tests/diesel-tests")
    (:file "autolisp-builtins-core/tests/clal-extensions-tests")
+   (:file "autolisp-builtins-core/tests/lisp-command-tests")
+   (:file "autolisp-builtins-core/tests/operator-version-tests")
    (:file "autolisp-builtins-core/tests/secureload-dialect-tests")
    (:file "autolisp-builtins-core/tests/sysvar-dialect-tracking-tests")
    (:file "autolisp-builtins-core/tests/encoding-roundtrip-tests")
+   (:file "autolisp-builtins-core/tests/encoding-replacement-tests")
    (:file "autolisp-builtins-core/tests/path-dotdot-tests")
+   (:file "autolisp-builtins-core/tests/lone-cr-in-string-tests")
    (:file "autolisp-builtins-core/tests/case-insensitive-paths-tests")
    (:file "autolisp-builtins-core/tests/source-file-tests")
+   (:file "autolisp-builtins-core/tests/multidocument-tests")
+   (:file "autolisp-builtins-core/tests/intersectwith-tests")
+   (:file "autolisp-builtins-core/tests/builtin-hooks-isolation-tests")
    (:file "autolisp-builtins-core/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

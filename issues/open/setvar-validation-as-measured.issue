@@ -1,0 +1,30 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: setvar-validation-as-measured -- SETVAR range checks, ERRNO codes, return value and symbol names as AutoCAD / BricsCAD do
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: divergence
+#+DEPENDS: windows-runner-sunset-probe-campaign
+#+BRANCH: -
+#+DATE: 2026-10-28
+
+Measured by the sunset campaign's B4 probe (probe-setvar-edges.lsp,
+2026-10-28: AutoCAD 2022 job 17540963671, BricsCAD V25 Windows 17540963675,
+V26 macOS 17540963672); the table is in the spec's SETVAR "Tested
+Behaviour". clautolisp:
+
+1. checks no range: (setvar "CMDECHO" 2), (setvar "LUNITS" 7),
+   (setvar "OSMODE" -1) are accepted, where both products refuse them
+   (AutoCAD ERRNO 22, BricsCAD 0), leaving the variable unchanged; USERI1
+   40000 is clamped to 32767 (AutoCAD refuses, BricsCAD wraps to -25536);
+   OSMODE 70000 is kept (AutoCAD refuses, BricsCAD wraps to 4464). Needs the
+   variables' ranges: in the sysvar catalogue, harvested where possible
+   (sunset batch B5, the sysvar read-only and default sweep, is the place).
+2. ERRNO: 1 for a read-only name (both: 20), 1 for an unknown one (both: 0),
+   4 for a bad type (AutoCAD 87, BricsCAD 0).
+3. returns the STORED value (CMDECHO 1.0 -> 1); both return the value GIVEN
+   (1.0, and USERR1 2 -> 2).
+4. refuses a symbol name: (setvar 'OSMODE 1) works on both.
+5. CMDECHO 0.7: stored as 0 (BricsCAD's); AutoCAD refuses (ERRNO 87).
+6. SNAPBASE '(1 2 3) on a 2D variable: stored 3D; AutoCAD refuses, BricsCAD
+   keeps (1.0 2.0).
+Product-specific points (2, 5, 6, the wrap) behind the dialect's product.

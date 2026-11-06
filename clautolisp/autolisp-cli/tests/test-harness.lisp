@@ -4,7 +4,7 @@
 (in-suite autolisp-cli-suite)
 
 (defun setup-mock-evaluation-context ()
-  "Install a fresh evaluation context backed by a default MockHost and
+  "Install a fresh evaluation context backed by a default cador and
 return it. Mirrors the builtins-core fixture of the same name — the
 launch-time transmit helpers (APPLY-CLAUTOLISP-HOST-IDENTITY,
 APPLY-TEMPPREFIX-DEFAULT, …) need a runtime context whose host is a

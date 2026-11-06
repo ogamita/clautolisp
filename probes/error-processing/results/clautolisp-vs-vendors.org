@@ -1,0 +1,234 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: catalogue cases where clautolisp differs from the vendor its dialect models
+
+* --dialect autocad vs AutoCAD 2022 (106)
+
+| # | expression | vendor / clautolisp | vendor | clautolisp |
+|---+---+---+---+---|
+| 17 | =(exp 1000)= | value / ERROR | ~(VALUE inf.0)~ | ~(ERROR "AutoLISP builtin EXP signaled an error: arithmetic error FLOATING-POINT-…~ |
+| 19 | =(fix 1e20)= | value / ERROR | ~(VALUE 1.0e+20)~ | ~(ERROR "FIX result is outside the AutoLISP 32-bit integer range: 100000000000000…~ |
+| 20 | =(fix -1e20)= | value / ERROR | ~(VALUE -1.0e+20)~ | ~(ERROR "FIX result is outside the AutoLISP 32-bit integer range: -10000000000000…~ |
+| 21 | =(+ 2147483647 1)= | value / ERROR | ~(VALUE -2147483648)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 22 | =(* 65536 65536)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 42949672…~ |
+| 23 | =(- -2147483648 1)= | value / ERROR | ~(VALUE -2.14748e+09)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: -2147483…~ |
+| 24 | =(abs -2147483648)= | value / probe-failure | ~(VALUE 2.14748e+09)~ | ~(VALUE (TYPE-ERROR "No AutoLISP runtime type designator is defined for 214748364…~ |
+| 30 | =(max)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "AutoLISP builtin MAX signaled an error: invalid number of arguments: 0")~ |
+| 31 | =(min)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "AutoLISP builtin MIN signaled an error: invalid number of arguments: 0")~ |
+| 34 | =(gcd 0 0)= | ERROR / value | ~(ERROR "argument incorrect: 0")~ | ~(VALUE 0)~ |
+| 36 | =(lsh 1 40)= | value / ERROR | ~(VALUE 256)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 10995116…~ |
+| 46 | =(-)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "AutoLISP builtin - signaled an error: invalid number of arguments: 0")~ |
+| 47 | =(/)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "AutoLISP builtin / signaled an error: invalid number of arguments: 0")~ |
+| 49 | =(/ 0)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "Division by zero in /.")~ |
+| 57 | =(atoi "99999999999")= | value / probe-failure | ~(VALUE 2147483647)~ | ~(VALUE (TYPE-ERROR "No AutoLISP runtime type designator is defined for 999999999…~ |
+| 60 | =(atof "1e999")= | value / ERROR | ~(VALUE inf.0)~ | ~(ERROR "AutoLISP builtin ATOF signaled an error: arithmetic error FLOATING-POINT…~ |
+| 62 | =(rtos 1.0 9)= | ERROR / value | ~(ERROR "valeur d'argument incorrecte: mode rtos: 9")~ | ~(VALUE "1")~ |
+| 63 | =(rtos 1.0 2 -1)= | ERROR / value | ~(ERROR "valeur d'argument incorrecte: Pr�cision rtos: -1")~ | ~(VALUE "1")~ |
+| 67 | =(distof "1" 9)= | ERROR / value | ~(ERROR "valeur d'argument incorrecte: mode distof: 9")~ | ~(VALUE 1.0)~ |
+| 70 | =(angtos 1.0 9)= | ERROR / value | ~(ERROR "valeur d'argument incorrecte: mode angtos: 9")~ | ~(VALUE "57")~ |
+| 71 | =(cvunit 1 "inch" "nosuchunit")= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "Undefined AutoLISP function CVUNIT.")~ |
+| 83 | =(equal 1.0 1.05 nil)= | ERROR / nil | ~(ERROR "type d'argument incorrect: numberp: nil")~ | ~(VALUE nil)~ |
+| 99 | =(ascii "")= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "ASCII expects a non-empty string.")~ |
+| 103 | =(chr -1)= | value / ERROR | ~(VALUE "�")~ | ~(ERROR "CHR code does not designate a valid character: -1.")~ |
+| 109 | =(vl-string-search "a" "abc" 99)= | ERROR / nil | ~(ERROR "valeur d'argument incorrecte: string position out of range 99")~ | ~(VALUE nil)~ |
+| 121 | =(vl-list->string '(300))= | ERROR / value | ~(ERROR "code caract�re de la liste incorrect: 300")~ | ~(VALUE "CASE 121 (vl-list->string '(300)) => (VALUE "\U+300")~ |
+| 133 | =(read "1e999")= | value / ERROR | ~(VALUE inf.0)~ | ~(ERROR "READ failed to parse input: READER-ERROR on #<dynamic-extent STRING-INPU…~ |
+| 159 | =(append '(1) 2)= | ERROR / value | ~(ERROR "type d'argument incorrect: listp 2")~ | ~(VALUE (1 . 2))~ |
+| 180 | =(subst 1 2 3)= | ERROR / value | ~(ERROR "type d'argument incorrect: consp 3")~ | ~(VALUE 3)~ |
+| 192 | =(nth 0 nil)= | ERROR / nil | ~(ERROR "type d'argument incorrect: consp nil")~ | ~(VALUE nil)~ |
+| 213 | =(boundp 1)= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "Expected an AutoLISP symbol, got 1.")~ |
+| 214 | =(boundp nil)= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "Expected an AutoLISP symbol, got NIL.")~ |
+| 216 | =(atoms-family 2)= | value / ERROR | ~(VALUE ("VL-CONSP" "LISPED" "*MERR*" "*PUSH-ERROR-USING-COMMAND*" "VL-ACAD-DEFUN…~ | ~(ERROR "ATOMS-FAMILY format flag must be 0 or 1, got 2.")~ |
+| 228 | =(vl-acad-defun 'pcat-unbound-fn)= | value / ERROR | ~(VALUE 2095)~ | ~(ERROR "AutoLISP builtin VL-ACAD-DEFUN signaled an error: invalid number of argu…~ |
+| 230 | =(setq)= | ERROR / nil | ~(ERROR "erreur de syntaxe")~ | ~(VALUE nil)~ |
+| 241 | =((lambda (g) (g)) (function (lambda () 1)))= | ERROR / value | ~(ERROR "fonction incorrecte: (quote #<SUBR @0000013ea8c60cf0 -lambda->)")~ | ~(VALUE 1)~ |
+| 243 | =((lambda (g) (g)) '(lambda () 1))= | ERROR / value | ~(ERROR "fonction incorrecte: (LAMBDA nil 1)")~ | ~(VALUE 1)~ |
+| 250 | =(mapcar (lambda (x) x) '(1))= | ERROR / value | ~(ERROR "fonction incorrecte: #<SUBR @0000013ea8c6f138 -lambda->")~ | ~(VALUE (1))~ |
+| 265 | =(distance '(0 0) '(1))= | ERROR / value | ~(ERROR "type d'argument incorrect: point 2D/3D: (1)")~ | ~(VALUE 1.0)~ |
+| 268 | =(distance nil '(1 1))= | ERROR / value | ~(ERROR "type d'argument incorrect: point 2D/3D: nil")~ | ~(VALUE 1.41421)~ |
+| 273 | =(inters '(0 0) '(1 0) '(2 1) '(2 2) nil)= | value / nil | ~(VALUE (2.0 0.0))~ | ~(VALUE nil)~ |
+| 278 | =(trans '(0 0 0) 0 *t*)= | value / ERROR | ~(VALUE (0.0 0.0 0.0))~ | ~(ERROR "TRANS TO must be an integer or an entity-name list, got <Entity name: 20…~ |
+| 280 | =(osnap nil "_end")= | ERROR / nil | ~(ERROR "type d'argument incorrect: point 2D/3D: nil")~ | ~(VALUE nil)~ |
+| 281 | =(textbox nil)= | ERROR / value | ~(ERROR "liste entget non d�finie")~ | ~(VALUE ((0.0 0.0 0.0) (0.0 0.0 0.0)))~ |
+| 288 | =(entnext nil)= | ERROR / value | ~(ERROR "type d'argument incorrect: lentityp nil")~ | ~(VALUE ENAME)~ |
+| 292 | =(entmake '((0 . "BOGUS")))= | nil / value | ~(VALUE nil)~ | ~(VALUE ((0 . "BOGUS")))~ |
+| 295 | =(entmakex (list '(0 . "LINE") (cons 10 nil) '(11 5.0 5.0 0.0…= | ERROR / value | ~(ERROR "groupe DXF incorrect: (10)")~ | ~(VALUE ENAME)~ |
+| 296 | =(entmakex '((0 . "LINE") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0) (…= | nil / value | ~(VALUE nil)~ | ~(VALUE ENAME)~ |
+| 297 | =(entmakex '((0 . "LINE") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0) (…= | nil / value | ~(VALUE nil)~ | ~(VALUE ENAME)~ |
+| 300 | =(entmakex '((0 . "TEXT") (10 0.0 0.0 0.0) (40 . 1.0) (1 . "x…= | nil / value | ~(VALUE nil)~ | ~(VALUE ENAME)~ |
+| 301 | =(entmod nil)= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "ENTMOD requires the modified entity's (-1 . <ENAME>) entry in the data l…~ |
+| 302 | =(entmod '((0 . "LINE")))= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "ENTMOD requires the modified entity's (-1 . <ENAME>) entry in the data l…~ |
+| 303 | =(entmod (subst '(8 . "") (assoc 8 (entget *l*)) (entget *l*)…= | nil / value | ~(VALUE nil)~ | ~(VALUE ((-1 . <Entity name: 1B>) (0 . "LINE") (330 . <Entity name: 10>) (5 . "1B…~ |
+| 304 | =(entmod (subst '(62 . 999) '(62 . 999) (append (entget *l*) …= | nil / value | ~(VALUE nil)~ | ~(VALUE ((-1 . <Entity name: 1B>) (0 . "LINE") (330 . <Entity name: 10>) (5 . "1B…~ |
+| 322 | =(tblsearch "BOGUS" "0")= | ERROR / nil | ~(ERROR "fonction rejet�e par AutoCAD: argument(s) incorrects de la fonction de t…~ | ~(VALUE nil)~ |
+| 325 | =(tblnext "BOGUS")= | ERROR / nil | ~(ERROR "fonction rejet�e par AutoCAD: argument(s) incorrects de la fonction de t…~ | ~(VALUE nil)~ |
+| 339 | =(setvar "OSMODE" 99999)= | ERROR / value | ~(ERROR "param�tre de la variable AutoCAD rejet�: \"OSMODE\" 99999")~ | ~(VALUE 99999)~ |
+| 340 | =(setvar "OSMODE" -1)= | ERROR / value | ~(ERROR "param�tre de la variable AutoCAD rejet�: \"OSMODE\" -1")~ | ~(VALUE -1)~ |
+| 341 | =(setvar "CLAYER" "PCAT_NOPE_LAYER")= | ERROR / value | ~(ERROR "param�tre de la variable AutoCAD rejet�: \"CLAYER\" \"PCAT_NOPE_LAYER\""…~ | ~(VALUE "PCAT_NOPE_LAYER")~ |
+| 343 | =(setvar "CECOLOR" "999")= | ERROR / value | ~(ERROR "param�tre de la variable AutoCAD rejet�: \"CECOLOR\" \"999\"")~ | ~(VALUE "999")~ |
+| 344 | =(setvar "LUPREC" 99)= | ERROR / value | ~(ERROR "param�tre de la variable AutoCAD rejet�: \"LUPREC\" 99")~ | ~(VALUE 99)~ |
+| 376 | =(vlax-curve-getFirstDeriv *l* 25.0)= | value / nil | ~(VALUE (10.0 0.0 0.0))~ | ~(VALUE nil)~ |
+| 378 | =(vlax-curve-getEndParam *t*)= | ERROR / nil | ~(ERROR "valeur d'argument incorrecte: AcDbCurve 47")~ | ~(VALUE nil)~ |
+| 380 | =(vlax-curve-getEndParam *dead*)= | ERROR / nil | ~(ERROR "valeur d'argument incorrecte: AcDbCurve 48")~ | ~(VALUE nil)~ |
+| 382 | =(vlax-curve-getArea *t*)= | ERROR / nil | ~(ERROR "valeur d'argument incorrecte: AcDbCurve 47")~ | ~(VALUE nil)~ |
+| 383 | =(vlax-curve-isClosed *t*)= | ERROR / nil | ~(ERROR "valeur d'argument incorrecte: AcDbCurve 47")~ | ~(VALUE nil)~ |
+| 384 | =(vlax-curve-getStartPoint *t*)= | ERROR / nil | ~(ERROR "valeur d'argument incorrecte: AcDbCurve 47")~ | ~(VALUE nil)~ |
+| 389 | =(command-s "_PCATNOSUCHCMD")= | ERROR / nil | ~(ERROR "Erreur inconnue de (command-s).")~ | ~(VALUE nil)~ |
+| 392 | =(command-s "_LINE" "pas-un-point" "")= | CRASH / nil | ~CRASH~ | ~(VALUE nil)~ |
+| 394 | =(command "_LINE" nil)= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "COMMAND argument must be a string, number, point list, entity name, or s…~ |
+| 397 | =(command-s "_LAYER" "_S" "PCAT_NOPE_LAYER" "")= | CRASH / nil | ~CRASH~ | ~(VALUE nil)~ |
+| 399 | =(command-s "_CIRCLE" '(0 0) -5)= | CRASH / nil | ~CRASH~ | ~(VALUE nil)~ |
+| 408 | =(vlax-ename->vla-object *dead*)= | nil / value | ~(VALUE nil)~ | ~(VALUE VLA-OBJECT)~ |
+| 415 | =(vlax-property-available-p *lo* 'PcatBogus)= | ERROR / nil | ~(ERROR "type d'argument incorrect: VLA-OBJECT nil")~ | ~(VALUE nil)~ |
+| 416 | =(vlax-method-applicable-p *lo* 'PcatBogus)= | ERROR / nil | ~(ERROR "type d'argument incorrect: VLA-OBJECT nil")~ | ~(VALUE nil)~ |
+| 427 | =(vlax-erased-p *lo*)= | ERROR / nil | ~(ERROR "impossible de trouver l'ID de l'objet: nil")~ | ~(VALUE nil)~ |
+| 447 | =(read-line nil)= | ERROR / nil | ~(ERROR "type d'argument incorrect: FILE nil")~ | ~(VALUE nil)~ |
+| 448 | =(read-char nil)= | ERROR / nil | ~(ERROR "type d'argument incorrect: FILE nil")~ | ~(VALUE nil)~ |
+| 455 | =(load "pcat_nonexistent_zz")= | ERROR / value | ~(ERROR "La commande CHARGER n'a pas abouti: \"pcat_nonexistent_zz\"")~ | ~(VALUE )~ |
+| 456 | =(load "pcat_nonexistent_zz" 'pcat-fail)= | value / ERROR | ~(VALUE PCAT-FAIL)~ | ~(ERROR "Undefined AutoLISP function PCAT-FAIL.")~ |
+| 473 | =(new_dialog "pcat_nope" 1)= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "No DCL source is loaded under handle 1.")~ |
+| 474 | =(new_dialog "pcat_nope" 99999)= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "No DCL source is loaded under handle 99999.")~ |
+| 475 | =(set_tile "x" "y")= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "SET_TILE: no DCL dialog is currently active.")~ |
+| 476 | =(get_tile "x")= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "GET_TILE: no DCL dialog is currently active.")~ |
+| 479 | =(start_list "x")= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "START_LIST: no DCL dialog is currently active.")~ |
+| 480 | =(add_list "x")= | nil / value | ~(VALUE nil)~ | ~(VALUE "x")~ |
+| 482 | =(mode_tile "x" 1)= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "MODE_TILE: no DCL dialog is currently active.")~ |
+| 483 | =(action_tile "x" "(princ)")= | nil / ERROR | ~(VALUE nil)~ | ~(ERROR "ACTION_TILE: no DCL dialog is currently active.")~ |
+| 484 | =(get_attr "x" "y")= | value / nil | ~(VALUE "")~ | ~(VALUE nil)~ |
+| 486 | =(vl-registry-read "HKEY_NOPE\\x")= | ERROR / nil | ~(ERROR "racine de la cl� de registre incorrecte: \"HKEY_NOPE\"")~ | ~(VALUE nil)~ |
+| 493 | =(arxload "pcat_nonexistent")= | ERROR / nil | ~(ERROR "ARXLOAD a �chou�")~ | ~(VALUE nil)~ |
+| 494 | =(arxload "pcat_nonexistent" 'pcat-fail)= | value / nil | ~(VALUE PCAT-FAIL)~ | ~(VALUE nil)~ |
+| 496 | =(menucmd nil)= | ERROR / value | ~(ERROR "type d'argument incorrect: stringp nil")~ | ~(VALUE "")~ |
+| 497 | =(menucmd "Gbogus.ID_Nope=~")= | nil / value | ~(VALUE nil)~ | ~(VALUE "")~ |
+| 499 | =(grdraw nil nil 1)= | ERROR / nil | ~(ERROR "type d'argument incorrect: point 2D/3D: nil")~ | ~(VALUE nil)~ |
+| 509 | =(- -2147483648)= | value / ERROR | ~(VALUE 2.14748e+09)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 510 | =(- 0 -2147483648)= | value / ERROR | ~(VALUE 2.14748e+09)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 515 | =(* -1 -2147483648)= | value / ERROR | ~(VALUE 2.14748e+09)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 516 | =(/ -2147483648 -1)= | value / ERROR | ~(VALUE 2.14748e+09)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 517 | =(fix 2147483648.0)= | value / ERROR | ~(VALUE 2.14748e+09)~ | ~(ERROR "FIX result is outside the AutoLISP 32-bit integer range: 2147483648.")~ |
+| 519 | =(fix -2147483649.0)= | value / ERROR | ~(VALUE -2.14748e+09)~ | ~(ERROR "FIX result is outside the AutoLISP 32-bit integer range: -2147483649.")~ |
+| 520 | =(1- -2147483648)= | value / ERROR | ~(VALUE -2.14748e+09)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: -2147483…~ |
+| 521 | =(type (1- -2147483648))= | value / ERROR | ~(VALUE REAL)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: -2147483…~ |
+| 522 | =(atoi "2147483648")= | value / probe-failure | ~(VALUE 2147483647)~ | ~(VALUE (TYPE-ERROR "No AutoLISP runtime type designator is defined for 214748364…~ |
+| 528 | =(lsh 1 31)= | value / ERROR | ~(VALUE -2147483648)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 529 | =(lsh 1 32)= | value / ERROR | ~(VALUE 1)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 42949672…~ |
+
+* --dialect bricscad vs BricsCAD V26 (115)
+
+| # | expression | vendor / clautolisp | vendor | clautolisp |
+|---+---+---+---+---|
+| 12 | =(expt 0 -1)= | value / ERROR | ~(VALUE inf.0)~ | ~(ERROR "EXPT result is undefined for 0^-1.")~ |
+| 13 | =(expt 0.0 -1)= | value / ERROR | ~(VALUE inf.0)~ | ~(ERROR "EXPT result is undefined for 0.0d0^-1.")~ |
+| 14 | =(expt -8.0 (/ 1.0 3))= | value / ERROR | ~(VALUE nan.0)~ | ~(ERROR "AutoLISP builtin EXPT signaled an error: The value\n                    …~ |
+| 17 | =(exp 1000)= | value / ERROR | ~(VALUE inf.0)~ | ~(ERROR "AutoLISP builtin EXP signaled an error: arithmetic error FLOATING-POINT-…~ |
+| 19 | =(fix 1e20)= | value / ERROR | ~(VALUE 1e+20)~ | ~(ERROR "FIX result is outside the AutoLISP 32-bit integer range: 100000000000000…~ |
+| 20 | =(fix -1e20)= | value / ERROR | ~(VALUE -1e+20)~ | ~(ERROR "FIX result is outside the AutoLISP 32-bit integer range: -10000000000000…~ |
+| 21 | =(+ 2147483647 1)= | value / ERROR | ~(VALUE 2147483648)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 22 | =(* 65536 65536)= | value / ERROR | ~(VALUE 4294967296)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 42949672…~ |
+| 23 | =(- -2147483648 1)= | value / ERROR | ~(VALUE -2147483649)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: -2147483…~ |
+| 24 | =(abs -2147483648)= | value / probe-failure | ~(VALUE 2147483648)~ | ~(VALUE (TYPE-ERROR "No AutoLISP runtime type designator is defined for 214748364…~ |
+| 30 | =(max)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "AutoLISP builtin MAX signaled an error: invalid number of arguments: 0")~ |
+| 31 | =(min)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "AutoLISP builtin MIN signaled an error: invalid number of arguments: 0")~ |
+| 36 | =(lsh 1 40)= | value / ERROR | ~(VALUE 256)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 10995116…~ |
+| 46 | =(-)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "AutoLISP builtin - signaled an error: invalid number of arguments: 0")~ |
+| 47 | =(/)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "AutoLISP builtin / signaled an error: invalid number of arguments: 0")~ |
+| 49 | =(/ 0)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "Division by zero in /.")~ |
+| 57 | =(atoi "99999999999")= | value / probe-failure | ~(VALUE 99999999999)~ | ~(VALUE (TYPE-ERROR "No AutoLISP runtime type designator is defined for 999999999…~ |
+| 60 | =(atof "1e999")= | value / ERROR | ~(VALUE inf.0)~ | ~(ERROR "AutoLISP builtin ATOF signaled an error: arithmetic error FLOATING-POINT…~ |
+| 62 | =(rtos 1.0 9)= | ERROR / value | ~(ERROR "bad argument type <9> ; expected <INTEGER> at [rtos]")~ | ~(VALUE "1")~ |
+| 70 | =(angtos 1.0 9)= | ERROR / value | ~(ERROR "bad argument type <9> ; expected <INTEGER> at [angtos]")~ | ~(VALUE "57")~ |
+| 71 | =(cvunit 1 "inch" "nosuchunit")= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "Undefined AutoLISP function CVUNIT.")~ |
+| 83 | =(equal 1.0 1.05 nil)= | ERROR / nil | ~(ERROR "bad argument type <NIL> ; expected <NUMBER> at [equal]")~ | ~(VALUE nil)~ |
+| 95 | =(strcat nil)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "STRCAT expects an AutoLISP string, got NIL.")~ |
+| 99 | =(ascii "")= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "ASCII expects a non-empty string.")~ |
+| 103 | =(chr -1)= | value / ERROR | ~(VALUE "��")~ | ~(ERROR "CHR code does not designate a valid character: -1.")~ |
+| 104 | =(chr 65.5)= | value / ERROR | ~(VALUE "A")~ | ~(ERROR "CHR expects a 32-bit AutoLISP integer, got 65.5d0.")~ |
+| 111 | =(vl-string-subst nil "a" "b")= | value / ERROR | ~(VALUE "b")~ | ~(ERROR "VL-STRING-SUBST expects an AutoLISP string, got NIL.")~ |
+| 133 | =(read "1e999")= | value / ERROR | ~(VALUE inf.0)~ | ~(ERROR "READ failed to parse input: READER-ERROR on #<dynamic-extent STRING-INPU…~ |
+| 149 | =(nth 1.5 '(1 2))= | value / ERROR | ~(VALUE 2)~ | ~(ERROR "NTH expects a non-negative AutoLISP integer index, got 1.5d0.")~ |
+| 152 | =(last '(1 . 2))= | value / ERROR | ~(VALUE 1)~ | ~(ERROR "LAST expects a proper list, got (1 . 2).")~ |
+| 157 | =(reverse '(1 . 2))= | CRASH / ERROR | ~CRASH~ | ~(ERROR "REVERSE expects a proper list, got (1 . 2).")~ |
+| 159 | =(append '(1) 2)= | ERROR / value | ~(ERROR "bad argument type <2> ; expected <LIST> at [append]")~ | ~(VALUE (1 . 2))~ |
+| 160 | =(append '(1 . 2) '(3))= | value / ERROR | ~(VALUE (1 3))~ | ~(ERROR "APPEND expects a proper list, got (1 . 2).")~ |
+| 172 | =(apply '+ '(1 . 2))= | value / ERROR | ~(VALUE 1)~ | ~(ERROR "AutoLISP builtin APPLY signaled an error: Attempt to use VALUES-LIST on …~ |
+| 192 | =(nth 0 nil)= | ERROR / nil | ~(ERROR "bad argument type <NIL> ; expected <CONS> at [nth]")~ | ~(VALUE nil)~ |
+| 195 | =(foreach x 1 x)= | value / ERROR | ~(VALUE 1)~ | ~(ERROR "FOREACH list argument must evaluate to a proper list, got 1.")~ |
+| 196 | =(foreach x '(1 . 2) x)= | value / ERROR | ~(VALUE 1)~ | ~(ERROR "AutoLISP builtin EVAL signaled an error: The value\n                    …~ |
+| 213 | =(boundp 1)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "Expected an AutoLISP symbol, got 1.")~ |
+| 214 | =(boundp nil)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "Expected an AutoLISP symbol, got NIL.")~ |
+| 216 | =(atoms-family 2)= | value / ERROR | ~(VALUE ("VLA-PUT-INVISIBLE" "VLA-PUT-CLIPPINGENABLED" "VLR-DEEPCLONE-REACTOR" "A…~ | ~(ERROR "ATOMS-FAMILY format flag must be 0 or 1, got 2.")~ |
+| 217 | =(vl-symbol-value nil)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "Expected an AutoLISP symbol, got NIL.")~ |
+| 227 | =(function pcat-unbound-fn)= | ERROR / value | ~(ERROR "bad argument type <PCAT-UNBOUND-FN> ; expected <FUNCTION> at [function]"…~ | ~(VALUE PCAT-UNBOUND-FN)~ |
+| 228 | =(vl-acad-defun 'pcat-unbound-fn)= | value / ERROR | ~(VALUE T)~ | ~(ERROR "AutoLISP builtin VL-ACAD-DEFUN signaled an error: invalid number of argu…~ |
+| 230 | =(setq)= | ERROR / nil | ~(ERROR "too few / too many arguments at [SETQ]")~ | ~(VALUE nil)~ |
+| 243 | =((lambda (g) (g)) '(lambda () 1))= | ERROR / value | ~(ERROR "improper DEFUN argument list :  <\\\"LAMBDA\\\">")~ | ~(VALUE 1)~ |
+| 259 | =(*error* "x")= | value / nil | ~(VALUE #<UNBOUND-VALUE>)~ | ~(VALUE nil)~ |
+| 260 | =(vl-bt)= | value / nil | ~(VALUE ("\n; ----- LISP : Call Stack -----" "[0]...C:PCAT" "[1].....PCAT-RUN-CAS…~ | ~(VALUE nil)~ |
+| 265 | =(distance '(0 0) '(1))= | ERROR / value | ~(ERROR "bad argument type <(1)> ; expected <LIST> at [distance]")~ | ~(VALUE 1.0)~ |
+| 268 | =(distance nil '(1 1))= | ERROR / value | ~(ERROR "bad argument type <NIL> ; expected <LIST> at [distance]")~ | ~(VALUE 1.4142135623731)~ |
+| 273 | =(inters '(0 0) '(1 0) '(2 1) '(2 2) nil)= | value / nil | ~(VALUE (2.0 0.0))~ | ~(VALUE nil)~ |
+| 276 | =(trans '(0 0 0) 0 99)= | nil / value | ~(VALUE NIL)~ | ~(VALUE (0.0 0.0 0.0))~ |
+| 278 | =(trans '(0 0 0) 0 *t*)= | value / ERROR | ~(VALUE (0.0 0.0 0.0))~ | ~(ERROR "TRANS TO must be an integer or an entity-name list, got <Entity name: 20…~ |
+| 279 | =(osnap '(0 0) "_bogus")= | value / nil | ~(VALUE (0.0 0.0 0.0))~ | ~(VALUE nil)~ |
+| 280 | =(osnap nil "_end")= | ERROR / nil | ~(ERROR "bad argument type <NIL> ; expected <LIST> at [osnap]")~ | ~(VALUE nil)~ |
+| 281 | =(textbox nil)= | ERROR / value | ~(ERROR "bad argument type <NIL> ; expected <LIST> at [textbox]")~ | ~(VALUE ((0.0 0.0 0.0) (0.0 0.0 0.0)))~ |
+| 288 | =(entnext nil)= | ERROR / value | ~(ERROR "bad argument type <NIL> ; expected ENTITYNAME at [entnext]")~ | ~(VALUE ENAME)~ |
+| 292 | =(entmake '((0 . "BOGUS")))= | nil / value | ~(VALUE NIL)~ | ~(VALUE ((0 . "BOGUS")))~ |
+| 295 | =(entmakex (list '(0 . "LINE") (cons 10 nil) '(11 5.0 5.0 0.0…= | ERROR / value | ~(ERROR "bad argument type <(10)> ; expected <LIST> at [invalid DXF/XED data]")~ | ~(VALUE ENAME)~ |
+| 301 | =(entmod nil)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "ENTMOD requires the modified entity's (-1 . <ENAME>) entry in the data l…~ |
+| 302 | =(entmod '((0 . "LINE")))= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "ENTMOD requires the modified entity's (-1 . <ENAME>) entry in the data l…~ |
+| 303 | =(entmod (subst '(8 . "") (assoc 8 (entget *l*)) (entget *l*)…= | nil / value | ~(VALUE NIL)~ | ~(VALUE ((-1 . <Entity name: 1B>) (0 . "LINE") (5 . "1B") (330 . <Entity name: 10…~ |
+| 312 | =(ssget "BOGUS")= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "cador does not yet support ssget mode \"BOGUS\"; accepted modes are \"X\…~ |
+| 322 | =(tblsearch "BOGUS" "0")= | ERROR / nil | ~(ERROR "invalid table name")~ | ~(VALUE nil)~ |
+| 325 | =(tblnext "BOGUS")= | ERROR / nil | ~(ERROR "invalid table name")~ | ~(VALUE nil)~ |
+| 335 | =(getvar nil)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "GETVAR expects an AutoLISP string, got NIL.")~ |
+| 339 | =(setvar "OSMODE" 99999)= | ERROR / value | ~(ERROR " <99999>")~ | ~(VALUE 99999)~ |
+| 340 | =(setvar "OSMODE" -1)= | ERROR / value | ~(ERROR " <-1>")~ | ~(VALUE -1)~ |
+| 341 | =(setvar "CLAYER" "PCAT_NOPE_LAYER")= | ERROR / value | ~(ERROR " <\\\"PCAT_NOPE_LAYER\\\">")~ | ~(VALUE "PCAT_NOPE_LAYER")~ |
+| 343 | =(setvar "CECOLOR" "999")= | ERROR / value | ~(ERROR " <\\\"999\\\">")~ | ~(VALUE "999")~ |
+| 344 | =(setvar "LUPREC" 99)= | ERROR / value | ~(ERROR " <99>")~ | ~(VALUE 99)~ |
+| 376 | =(vlax-curve-getFirstDeriv *l* 25.0)= | value / nil | ~(VALUE (10.0 0.0 0.0))~ | ~(VALUE nil)~ |
+| 378 | =(vlax-curve-getEndParam *t*)= | ERROR / nil | ~(ERROR "Property not available <\\\"\\\"> at [vlax-curve-getendparam]")~ | ~(VALUE nil)~ |
+| 380 | =(vlax-curve-getEndParam *dead*)= | value / nil | ~(VALUE 1.4142135623731)~ | ~(VALUE nil)~ |
+| 382 | =(vlax-curve-getArea *t*)= | ERROR / nil | ~(ERROR "Property not available <\\\"\\\"> at [vlax-curve-getarea]")~ | ~(VALUE nil)~ |
+| 383 | =(vlax-curve-isClosed *t*)= | ERROR / nil | ~(ERROR "Property not available <\\\"\\\"> at [vlax-curve-isclosed]")~ | ~(VALUE nil)~ |
+| 384 | =(vlax-curve-getStartPoint *t*)= | ERROR / nil | ~(ERROR "Property not available <\\\"\\\"> at [vlax-curve-getstartpoint]")~ | ~(VALUE nil)~ |
+| 394 | =(command "_LINE" nil)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "COMMAND argument must be a string, number, point list, entity name, or s…~ |
+| 395 | =(command-s "_LINE" '(0 0) nil)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "COMMAND argument must be a string, number, point list, entity name, or s…~ |
+| 442 | =(vla-getboundingbox *lo* 'a 'b)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "Undefined AutoLISP function VLA-GETBOUNDINGBOX.")~ |
+| 447 | =(read-line nil)= | ERROR / nil | ~(ERROR "bad argument type <NIL> ; expected FILE at [read-line]")~ | ~(VALUE nil)~ |
+| 448 | =(read-char nil)= | ERROR / nil | ~(ERROR "bad argument type <NIL> ; expected FILE at [read-char]")~ | ~(VALUE nil)~ |
+| 455 | =(load "pcat_nonexistent_zz")= | ERROR / nil | ~(ERROR "LOAD failed:  <\\\"\\\\\"pcat_nonexistent_zz\\\\\"\\\">")~ | ~(VALUE nil)~ |
+| 473 | =(new_dialog "pcat_nope" 1)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "No DCL source is loaded under handle 1.")~ |
+| 474 | =(new_dialog "pcat_nope" 99999)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "No DCL source is loaded under handle 99999.")~ |
+| 475 | =(set_tile "x" "y")= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "SET_TILE: no DCL dialog is currently active.")~ |
+| 476 | =(get_tile "x")= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "GET_TILE: no DCL dialog is currently active.")~ |
+| 479 | =(start_list "x")= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "START_LIST: no DCL dialog is currently active.")~ |
+| 480 | =(add_list "x")= | nil / value | ~(VALUE NIL)~ | ~(VALUE "x")~ |
+| 482 | =(mode_tile "x" 1)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "MODE_TILE: no DCL dialog is currently active.")~ |
+| 483 | =(action_tile "x" "(princ)")= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "ACTION_TILE: no DCL dialog is currently active.")~ |
+| 484 | =(get_attr "x" "y")= | value / nil | ~(VALUE "")~ | ~(VALUE nil)~ |
+| 488 | =(startapp nil)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "STARTAPP expects an AutoLISP string, got NIL.")~ |
+| 490 | =(vl-bb-ref nil)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "VL-BB-REF expects an AutoLISP symbol, got NIL.")~ |
+| 491 | =(vl-doc-ref nil)= | nil / ERROR | ~(VALUE NIL)~ | ~(ERROR "VL-DOC-REF expects an AutoLISP symbol, got NIL.")~ |
+| 493 | =(arxload "pcat_nonexistent")= | ERROR / nil | ~(ERROR "ARXLOAD failed")~ | ~(VALUE nil)~ |
+| 494 | =(arxload "pcat_nonexistent" 'pcat-fail)= | ERROR / nil | ~(ERROR "ARXLOAD failed")~ | ~(VALUE nil)~ |
+| 496 | =(menucmd nil)= | ERROR / value | ~(ERROR "bad argument type <NIL> ; expected <STRING> at [menucmd]")~ | ~(VALUE "")~ |
+| 497 | =(menucmd "Gbogus.ID_Nope=~")= | nil / value | ~(VALUE NIL)~ | ~(VALUE "")~ |
+| 498 | =(grtext -99 "x")= | value / nil | ~(VALUE "x")~ | ~(VALUE nil)~ |
+| 499 | =(grdraw nil nil 1)= | ERROR / nil | ~(ERROR "bad argument type <NIL> ; expected <LIST> at [grdraw]")~ | ~(VALUE nil)~ |
+| 504 | =(vl-get-resource "pcat_nope")= | value / nil | ~(VALUE "")~ | ~(VALUE nil)~ |
+| 509 | =(- -2147483648)= | value / ERROR | ~(VALUE 2147483648)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 510 | =(- 0 -2147483648)= | value / ERROR | ~(VALUE 2147483648)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 515 | =(* -1 -2147483648)= | value / ERROR | ~(VALUE 2147483648)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 516 | =(/ -2147483648 -1)= | value / ERROR | ~(VALUE 2147483648)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 517 | =(fix 2147483648.0)= | value / ERROR | ~(VALUE 2147483648.0)~ | ~(ERROR "FIX result is outside the AutoLISP 32-bit integer range: 2147483648.")~ |
+| 519 | =(fix -2147483649.0)= | value / ERROR | ~(VALUE -2147483649.0)~ | ~(ERROR "FIX result is outside the AutoLISP 32-bit integer range: -2147483649.")~ |
+| 520 | =(1- -2147483648)= | value / ERROR | ~(VALUE -2147483649)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: -2147483…~ |
+| 521 | =(type (1- -2147483648))= | value / ERROR | ~(VALUE INT)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: -2147483…~ |
+| 522 | =(atoi "2147483648")= | value / probe-failure | ~(VALUE 2147483648)~ | ~(VALUE (TYPE-ERROR "No AutoLISP runtime type designator is defined for 214748364…~ |
+| 523 | =(itoa 2147483648)= | value / ERROR | ~(VALUE "2147483648")~ | ~(ERROR "ITOA expects a 32-bit AutoLISP integer, got 2.147483648d9.")~ |
+| 526 | =(gcd 2147483648 6)= | value / ERROR | ~(VALUE 2)~ | ~(ERROR "GCD expects a 32-bit AutoLISP integer, got 2.147483648d9.")~ |
+| 527 | =(logand 2147483648 1)= | value / ERROR | ~(VALUE 0)~ | ~(ERROR "LOGAND expects a 32-bit AutoLISP integer, got 2.147483648d9.")~ |
+| 528 | =(lsh 1 31)= | value / ERROR | ~(VALUE -2147483648)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 21474836…~ |
+| 529 | =(lsh 1 32)= | value / ERROR | ~(VALUE 1)~ | ~(ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 42949672…~ |
+

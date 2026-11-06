@@ -325,7 +325,12 @@ and/or a version (`autocad-2027', `autocad-mac-2027',
   '((:autocad . 2026) (:bricscad . 26))
   "The `latest known' release per product, used when --dialect names a
 bare product (or a platform variant) without a version. Bump these as
-newer AutoCAD / BricsCAD releases are characterised. Kept at the values
+newer AutoCAD / BricsCAD releases are characterised. AutoCAD 2026 is
+the BEHAVIOURAL TEMPLATE (the web reference the catalogue was built
+from); 2022 is the last version we can TEST (pjb, 2026-10-03: no bump
+to 2027). Version differences the vendor documents are implemented
+behind the version facet even when untestable -- see AGENTS.md
+'Dialect versions and products'. Kept at the values
 the enumerated aliases already resolve to so existing resolution does
 not shift.")
 
@@ -482,7 +487,43 @@ platform+version spelling (dialect-platform-version-axis.issue):
     ;; forward-slash spelling. (First platform-gated consumer; see
     ;; EMIT-FORWARD-SLASH-ELLIPSIS-PORTABILITY-WARNING.)
     (:forward-slash-ellipsis-ok :autocad :macos   nil t)
-    (:forward-slash-ellipsis-ok :autocad :windows nil nil))
+    (:forward-slash-ellipsis-ok :autocad :windows nil nil)
+    ;; LISPSYS: AutoCAD 2021 "New sysvar LISPSYS" (initial value 1;
+    ;; help.autodesk.com 2021 GUID-1853092D...); BricsCAD V23.1.05 "Added
+    ;; support for (getvar "LISPSYS")". Absent before (getvar -> nil).
+    (:lispsys :autocad  t 2021 t)
+    (:lispsys :autocad  t nil  nil)
+    (:lispsys :bricscad t 23   t)
+    (:lispsys :bricscad t nil  nil)
+    ;; LOCALE: AutoCAD 2019 "now returns a code that contains a two or
+    ;; more-letter abbreviation" (ISO 639 language) instead of ENU / FRA;
+    ;; measured on AutoCAD 2022, French: "FR" (job 16921381038). BricsCAD
+    ;; returns "fr_FR" (harvests 16913315157 / 16921381045).
+    (:locale-form :autocad  t 2019 :language)
+    ;; Before 2019, the three-letter abbreviation Windows' GetLocaleInfo
+    ;; gives with LOCALE_SABBREVLANGNAME (AutoCAD's documented LOCALE:
+    ;; "ENU", "FRA" ...). Documented, not measured (no AutoCAD < 2019 here).
+    (:locale-form :autocad  t nil  :abbreviation)
+    (:locale-form :bricscad t nil  :language-territory)
+    ;; When a lifecycle command (NEW / OPEN) run inside a routine switches
+    ;; drawing (probe-documents, 2026-10-05). BricsCAD V26 macOS (job
+    ;; 16932759882): at once -- the same routine's DWGNAME is the new
+    ;; drawing's, its variables still its own namespace's. AutoCAD 2022
+    ;; (job 16932759881): the routine stays in its drawing (DWGNAME unchanged),
+    ;; the switch at the next top-level read, as documented for MDI.
+    (:document-switch :autocad  t nil  :deferred)
+    (:document-switch :bricscad t nil  :drawing-immediate)
+    ;; What a write puts in place of a character the target encoding cannot
+    ;; hold (encoding-replacement-character-option, catalogue cases 535-545,
+    ;; 2026-11-03). No vendor signals. AutoCAD 2022 keeps the LOW BYTE of the
+    ;; code point (U+012C -> ","); BricsCAD V25 Windows best-fits to the code
+    ;; page with "?" for the rest (WideCharToMultiByte: U+012C -> "I");
+    ;; BricsCAD V26 macOS writes the escape \U+012C. The BricsCAD split is
+    ;; taken to be the PLATFORM's (Windows' conversion API), not the version's:
+    ;; only V25-Windows and V26-macOS were measured, and Linux is unmeasured.
+    (:encoding-replacement :autocad  t        nil :low-byte)
+    (:encoding-replacement :bricscad :windows nil :best-fit)
+    (:encoding-replacement :bricscad t        nil :escape))
   "SEED feature/version matrix — see the block comment above for the row
 shape and the incremental-population contract. Query via
 DIALECT-FEATURE.")

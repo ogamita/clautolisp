@@ -160,26 +160,23 @@ annex generator and for any `--list-dialect-warnings' style report."
  :example ": [lambda-list-extension] drawing.lsp:12 in COMPUTE-AREA: DEFUN `&REST': rest parameter not portable to strict"
  :dialects
  "Portable AutoLISP has NO rest parameter: a defun/lambda lambda list is
-`required* [/ locals*]' and nothing else. The two spellings differ:
+`required* [/ locals*]' and nothing else.
 
-- `&REST' is a real, undocumented BricsCAD extension (V25 and V26) --
-  confirmed by harvest, EXTPROBE REST-BINDS=(2 3 4). Silent under
-  --dialect bricscad-v25 / bricscad-v26.
-- `&' is clautolisp's own historical spelling and is native NOWHERE:
-  the same harvest had BricsCAD REJECT it (\"too few / too many
-  arguments\"). It therefore warns under every dialect except
-  clautolisp and lax.
+`&REST' is a real, undocumented BricsCAD extension (V25 and V26) --
+confirmed by harvest, EXTPROBE REST-BINDS=(2 3 4) -- and clautolisp
+provides it. Silent under --dialect bricscad-v25 / bricscad-v26,
+clautolisp and lax; --strict and the AutoCAD dialects warn.
 
---dialect clautolisp is silent for both (they are its blessed
-extensions); --dialect lax is silent for everything; --strict and the
-AutoCAD dialects warn for both."
+A bare `&' is NOT a rest separator: it is an ordinary symbol, and in a
+lambda list an ordinary parameter name. It was clautolisp's own early
+proposal; BricsCAD has `&REST' and rejects `&' (\"too few / too many
+arguments\"), and AutoCAD wants neither (pjb, 2026-10-23)."
  :rationale
  "A function written with a rest parameter will not load on AutoCAD at
-all, and one written with `&' will not load on BricsCAD either. The
-warning fires when the defun/lambda is EVALUATED, so a guarded branch
-that is never reached never warns."
+all. The warning fires when the defun/lambda is EVALUATED, so a guarded
+branch that is never reached never warns."
  :references
- '(("clautolisp: the governing issue" . "issues/open/clautolisp-dialect-portability-warnings.issue")
+ '(("clautolisp: the governing issue" . "issues/closed/clautolisp-dialect-portability-warnings.issue")
    ("clautolisp: harvest evidence" . "autolisp-spec/documentation/bricscad-undocumented-extensions.org")
    ("clautolisp: normative rules" . "autolisp-spec chapter 25, \"Normative Rules: Dialect Portability Warnings\"")))
 
@@ -251,6 +248,40 @@ meaning changes when the program moves."
    ("Autodesk: open (AutoLISP), 2024 ENU" . "https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-AutoLISP-Reference/files/GUID-089A323F-21FF-4337-99A9-375758E23BA4.htm")))
 
 (register-dialect-warning
+ :tag "lone-cr-in-string"
+ :title "Lone carriage return inside a string literal"
+ :message "a carriage return alone inside a string literal is ~A here; AutoCAD keeps it, BricsCAD reads it as a line feed"
+ :arguments "what this dialect makes of it (\"kept as CR (code 13)\" or \"read as LF (code 10)\")"
+ :example ": [lone-cr-in-string] menu.lsp:12: a carriage return alone inside a string literal is kept as CR (code 13) here; AutoCAD keeps it, BricsCAD reads it as a line feed"
+ :dialects
+ "Only LOAD is concerned: a source file holding a CR (code 13) that is
+not followed by an LF, written literally between the double quotes of a
+string. A CR LF pair is read as one LF by every engine and is not
+reported, nor is a `\\r' escape.
+
+- AutoCAD (2022, Windows) keeps the CR: the string holds code 13.
+- BricsCAD (V25 Windows, V26 macOS) reads it as a line feed: code 10.
+
+No vendor document covers it, so the specification adopts neither
+(an unresolved divergence): --dialect autocad keeps the CR,
+--dialect bricscad turns it into an LF, and --dialect clautolisp and
+--strict keep it, as READ does in every engine. All of them warn; only
+--lax is silent (it keeps the CR).
+
+READ on a string holding a lone CR is NOT reported: every engine keeps
+the CR there."
+ :rationale
+ "A lone CR in a source file is almost always an accident -- an editor
+or a transfer that half-converted the line endings -- and the two
+engines then build different strings from the same file, with nothing
+visible in the source to say so. Write `\\r' or `\\n' to say which
+one you mean."
+ :references
+ '(("clautolisp: the probed matrix" . "issues/closed/lone-cr-in-string-literal.issue")
+   ("clautolisp: the probe" . "probes/sources/probe-multiline-string.lsp")
+   ("Vendor documentation" . "NONE -- neither the Autodesk nor the Bricsys reference says whether a string literal may span lines; behaviour established by probing.")))
+
+(register-dialect-warning
  :tag "path-slash-ellipsis"
  :title "Forward-slash `/...' subfolder-recursion wildcard"
  :message "~A ~S: `/...' needs the back-slash spelling on AutoCAD-Windows"
@@ -305,7 +336,7 @@ Warning keeps both -- the run proceeds, and the developer learns which
 spelling is wrong and what the real name is. Without it the sysvar would
 merely sweep the problem under the carpet."
  :references
- '(("clautolisp: the request and its incident" . "issues/open/case-insensitive-pathname-resolution.issue")
+ '(("clautolisp: the request and its incident" . "issues/closed/case-insensitive-pathname-resolution.issue")
    ("clautolisp: the `..' warning this is modelled on" . "issues/closed/cad-path-dotdot-resolution.issue")))
 
 ;;; ------------------------------------------------------------------
@@ -353,6 +384,113 @@ arguments error on the vendor engines."
  '(("clautolisp: emitted by" . "clautolisp/autolisp-builtins-core/source/api.lisp, the TERPRI builtin")))
 
 (register-dialect-warning
+ :tag "errno-setvar"
+ :title "SETVAR on the read-only ERRNO"
+ :kind :portability
+ :message "(setvar \"ERRNO\" ~A) is accepted by AutoCAD and BricsCAD although both document ERRNO as read-only; clautolisp writes the session errno"
+ :arguments "the value written"
+ :example ": [errno-setvar] in RUN-CASE: (setvar \"ERRNO\" 0) is accepted by AutoCAD and BricsCAD although both document ERRNO as read-only; clautolisp writes the session errno"
+ :dialects
+ "Both vendors document ERRNO as read-only, and both ACCEPT it: AutoCAD
+2022 (accoreconsole), BricsCAD V25 (Windows) and BricsCAD V26 (macOS) ran
+the error-processing catalogue, which resets ERRNO with (setvar \"ERRNO\"
+0) before each of its cases; a refusal would have stopped it at the first.
+The next failing builtin sets ERRNO again, as usual.
+
+So every dialect writes the session errno and SETVAR returns the value.
+Like [vl-catch-all-apply-arity], this is an UNDOCUMENTED tolerance that
+every engine has, and relying on it is flagged: the notice fires under
+--dialect autocad, --dialect bricscad and --strict (pjb, 2026-11-03: \"with
+warning\"); --clautolisp and --lax are silent. Once per run."
+ :rationale
+ "A documented read-only variable that the engines happen to accept today
+is not a promise for tomorrow's version. The (setvar \"ERRNO\" 0) idiom
+before a call that may fail is common and works everywhere measured; the
+notice only says that no vendor guarantees it."
+ :references
+ '(("clautolisp: the ticket" . "issues/closed/errno-setvar-accepted-by-vendors.issue")
+   ("clautolisp: the measurement" . "probes/error-processing/probe-error-catalogue.lsp")
+   ("Autodesk: ERRNO (System Variable)" . "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-08E19480-F87B-46E9-9C37-64693F95F680")
+   ("Bricsys: ERRNO system variable" . "https://help.bricsys.com/en-us/document/system-variable-reference/e/errno-system-variable")))
+
+(register-dialect-warning
+ :tag "encoding-replacement"
+ :title "Character the target encoding cannot hold"
+ :kind :portability
+ :message "~A: U+~4,'0X has no representation in ~A; ~S written in its place, and each CAD writes something different"
+ :arguments "WHO (the builtin, e.g. \"WRITE-LINE\"), the character's code, the encoding, the text written instead"
+ :example ": [encoding-replacement] in LOG-RESULT: WRITE-LINE: U+012C has no representation in CP1252; \",\" written in its place, and each CAD writes something different"
+ :dialects
+ "A character the target encoding cannot hold -- (chr 300) written through a
+windows-1252 file -- is never an error on the vendor engines, and each does
+something different with it (error-processing catalogue, cases 535-545,
+2026-11-03):
+
+- AutoCAD 2022 keeps the LOW BYTE of the code point: U+012C becomes \",\"
+  (44), U+4E2D becomes \"-\" (45). It does so already in CHR, so the file
+  only follows.
+- BricsCAD V25 on Windows best-fits to the code page, the Windows
+  WideCharToMultiByte default: U+012C becomes \"I\", U+4E2D becomes \"?\".
+- BricsCAD V26 on macOS writes the eight characters \\U+012C.
+
+The specification adopts none. Each dialect behaves as its product
+(pjb's rule, error-processing-per-dialect.issue section 7): --dialect autocad
+keeps the low byte; --dialect bricscad best-fits on Windows and escapes on
+macOS and Linux; --dialect clautolisp, --strict and --lax write the escape,
+as BricsCAD V26 does -- nothing is lost and it reads back unambiguously. The
+-Ereplacement / --encoding-replacement option, the
+*AUTOLISP-ENCODING-REPLACEMENT* global and the CLAUTOLISPENCODINGREPLACEMENT
+system / environment variable choose for every dialect, =error= included (an
+AutoLISP error vl-catch-all-apply catches, before anything is written).
+
+Every dialect but --lax warns, the first time a calling function makes a
+builtin substitute -- even when the user chose the policy: the text will not
+read back the same on another engine. Portable code wraps the write, or
+writes an explicit Unicode file."
+ :rationale
+ "Except for the escape, the substitution loses the character. A program that depends on writing
+characters outside its file's encoding behaves differently on every engine;
+write such files with an explicit Unicode encoding -- (open f \"w\" \"utf8\")
+on AutoCAD at LISPSYS 1 or 2, \"w,ccs=UTF-8\" on BricsCAD -- or keep to the
+code page's characters."
+ :references
+ '(("clautolisp: the ticket" . "issues/closed/encoding-replacement-character-option.issue")
+   ("clautolisp: the measurement" . "probes/error-processing/probe-error-catalogue.lsp")
+   ("clautolisp: the user manual" . "clautolisp-user-manual.org, \"Source-file and terminal encoding\"")
+   ("Microsoft: WideCharToMultiByte (best-fit)" . "https://learn.microsoft.com/en-us/windows/win32/api/stringapiset/nf-stringapiset-widechartomultibyte")))
+
+(register-dialect-warning
+ :tag "printer-nil-file"
+ :title "PRINC / PRINT / PRIN1 with an explicit NIL file"
+ :kind :portability
+ :message "(~(~A~) X nil): an explicit NIL file argument is documented by AutoCAD and BricsCAD (output to the command line) but rejected by AutoCAD 2022 (\"bad argument type: FILE nil\"); ~A"
+ :arguments "the operator, and what clautolisp does under the dialect"
+ :example ": [printer-nil-file] in REPORT: (princ X nil): an explicit NIL file argument is documented by AutoCAD and BricsCAD (output to the command line) but rejected by AutoCAD 2022 (\"bad argument type: FILE nil\"); clautolisp rejects it, as AutoCAD does"
+ :dialects
+ "Both references allow an explicit NIL file: Autodesk types the argument
+\"File or nil\", Bricsys says \"if omitted or NIL is used, output goes to
+command line\", and BricsCAD V26 (macOS) does so (measured 2026-11-04).
+AutoCAD 2022 (accoreconsole, LISPSYS 0) rejects it for all three printers,
+\"type d'argument incorrect: FILE nil\" (measured 2026-11-04): the
+product contradicts its own reference, so the specification keeps the
+documented behaviour as normative.
+
+--dialect autocad (every version) reproduces AutoCAD's error and warns;
+--strict prints to the command line and warns; --dialect bricscad,
+--clautolisp and --lax print to the command line silently. The
+one-argument call (princ X) is the same everywhere and never warns. Once
+per run."
+ :rationale
+ "Code that passes NIL to mean \"the console\" -- a helper taking an
+optional file, called without one -- works on BricsCAD and stops AutoCAD
+2022 at the first print. The portable spelling is to omit the argument:
+(if f (princ x f) (princ x))."
+ :references
+ '(("clautolisp: the ticket" . "issues/closed/autocad-output-explicit-nil-file-rejected.issue")
+   ("Autodesk: princ (AutoLISP)" . "https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7DDA298B-A97C-49C9-94BA-46C77B50AE99.htm")
+   ("Bricsys: princ" . "https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/princ.htm")))
+
+(register-dialect-warning
  :tag "clautolisp-sysvar"
  :title "clautolisp-only system variable"
  :kind :extension-notice
@@ -391,6 +529,86 @@ and names the vendor's own variable where there is one."
    ("clautolisp: the decision" . "issues/closed/clal-drawing-sysvars-silent-out-of-dialect.issue")
    ("clautolisp: emitted by" . "clautolisp/cador/source/sysvars.lisp, sysvar-api.lisp")))
 
+(register-dialect-warning
+ :tag "vendor-operator"
+ :title "vendor-only operator called out of its dialect"
+ :kind :portability
+ :message "~A is a ~A-only operator, not portable to ~(~A~)"
+ :arguments "the operator's name, the vendor that owns it (AutoCAD or BricsCAD), the dialect name"
+ :example ": [vendor-operator] in PARSE-CSV: VLE-STRING-SPLIT is a BricsCAD-only operator, not portable to strict"
+ :dialects
+ "clautolisp implements operators of BOTH vendors -- BricsCAD's VLE-*
+family and its other extensions, AutoCAD's ACAD_* and Express Tools
+functions where it can -- and every one of them is callable whatever the
+dialect (clautolisp user manual, \"Dialect selection\": \"all the
+operators are available; only those that are not specifically inside the
+set defined by the dialect produce warnings\").
+
+WHICH operators belong to one vendor only is the specification's call: the
+`*** Availability' section of each Function Entry, compiled into
+autolisp-runtime/source/operator-availability.lisp (generated; a wrong row
+is corrected in the spec, then regenerated). An operator of a vendor warns,
+per the spec's chapter 25 case 1 (an extension warns in every dialect
+except its owner's and lax):
+
+- under the OTHER vendor's dialects (a BricsCAD operator under
+  --dialect autocad-*, and the reverse);
+- under --dialect strict (the portable subset) and --dialect clautolisp
+  (strict plus clautolisp's OWN extensions -- not the vendors');
+- never under its owner's dialects (any bricscad-* or autocad-*
+  spelling, matched on the PRODUCT, so bricscad-mac is BricsCAD), and
+  never under --lax.
+
+A few vendor-only operators are ADOPTED by clautolisp as its own extension
+as well (*CLAUTOLISP-ADOPTED-OPERATORS*, today only ERROR, which BricsCAD has
+and AutoCAD lacks): they keep their vendor owner, and are silent under
+--clautolisp too, so they warn only where they are missing -- the other
+vendor's dialects -- and under strict.
+
+Once per operator per session, at its first CALL (interpreted or
+compiled), never at read time. (setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)
+silences it; portability-warning-mode :error makes it an error instead."
+ :rationale
+ "A program that calls VLE-STRING-SPLIT runs on clautolisp and on
+BricsCAD, and fails with `no function definition' on AutoCAD. The notice
+says so at the first call, where the program still runs, rather than on the
+customer's AutoCAD."
+ :references
+ '(("autolisp-spec: ch.25 Dialect Portability Warnings, case 1 (Extension)" . "autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org")
+   ("clautolisp: the table (generated)" . "clautolisp/autolisp-runtime/source/operator-availability.lisp")
+   ("clautolisp: the ticket" . "issues/closed/deferred-clautolisp-out-of-dialect-warnings.issue")
+   ("clautolisp: ERROR, adopted from BricsCAD" . "issues/closed/clautolisp-error-silent-under-autocad.issue")))
+
+(register-dialect-warning
+ :tag "version-operator"
+ :title "operator not in the dialect's version of the product"
+ :kind :portability
+ :message "~A is not in ~(~A~): ~A"
+ :arguments "the operator's name, the dialect name, when the vendor added or removed it"
+ :example ": [version-operator] in LOAD-ET: ACET-LOAD-EXPRESSTOOLS is not in autocad-2022: added in AutoCAD 2025"
+ :dialects
+ "A dialect may name a VERSION of its product (autocad-2022, bricscad-v25;
+dialect-platform-version-axis). Some operators appeared, or were removed, in
+a given release, per the vendor's documentation -- the table in
+autolisp-runtime/source/operator-versions.lisp, each row citing its source
+(pjb 2026-10-03: documented version differences are implemented in the
+dialect versions even where they cannot be tested yet). A call of such an
+operator under a dialect of that product whose version lacks it warns;
+dialects without a version (strict, clautolisp, lax) never do.
+
+Once per operator per session, at its first CALL. (setq
+*AUTOLISP-WARN-OUT-OF-DIALECT* nil) silences it; portability-warning-mode
+:error makes it an error instead."
+ :rationale
+ "A program that calls ACET-LOAD-EXPRESSTOOLS runs on AutoCAD 2025 and fails
+with `no function definition' on AutoCAD 2022. Under --dialect autocad-2022
+the notice says so at the first call."
+ :references
+ '(("Autodesk: What's New or Changed with AutoLISP" . "https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-AutoLISP/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm")
+   ("Bricsys: release notes" . "https://boa.bricscad.octave.com/common/releasenotes.jsp")
+   ("clautolisp: the table" . "clautolisp/autolisp-runtime/source/operator-versions.lisp")
+   ("clautolisp: the ticket" . "issues/open/dialect-platform-version-axis.issue")))
+
 ;;; ------------------------------------------------------------------
 ;;; :vendor-divergence — clautolisp follows the spec, a vendor does not
 ;;; ------------------------------------------------------------------
@@ -418,6 +636,39 @@ from ENTMAKE with no other sign. Adding the markers works on both."
  :references
  '(("clautolisp: emitted by" . "clautolisp/cador/source/entity-api.lisp, EMIT-ENTMAKE-MARKER-DIVERGENCE-WARNING")
    ("clautolisp: divergence register" . "issues/open/vendor-probe-autocad-bricscad-divergences.issue")))
+
+(register-dialect-warning
+ :tag "real-format"
+ :title "a real AutoCAD and BricsCAD print differently"
+ :kind :vendor-divergence
+ :message "this real prints as ~A on AutoCAD and as ~A on BricsCAD (~A in clautolisp's own spelling)"
+ :arguments "the AutoCAD spelling, the BricsCAD spelling, clautolisp's"
+ :example ": [real-format] in SHOW: this real prints as 0.333333 on AutoCAD and as 0.333333333333333 on BricsCAD (0.3333333333333333 in clautolisp's own spelling)"
+ :dialects
+ "PRIN1, PRINC, PRINT and the VL-PRIN*-TO-STRING functions spell a real
+the way the dialect's product does -- measured on AutoCAD 2022 and BricsCAD
+V25 / V26 (probe-versions, 2026-10-25): AutoCAD prints six significant
+digits (C %.6g, a point always in the mantissa: 0.333333, 1.0e+06,
+1.0e-05), BricsCAD fifteen (C %.15g: 0.333333333333333, 1000000.0, 1e-05);
+clautolisp, strict and lax keep clautolisp's own spelling (pjb, 2026-10-25:
+\"keep the 3 variants\"). Neither vendor's choice follows from a format
+specifier, so a program whose output depends on it is not portable.
+
+The notice fires, under every dialect but lax, the first time a printed
+real is one the two products spell differently -- more than six significant
+digits, or outside the range where both print it plainly. Once per session.
+(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil) silences it; portability-warning-
+mode :error makes it an error instead. RTOS and COMMAND tokens are not
+concerned: they keep the full value."
+ :rationale
+ "A report or a file written with PRINC shows 0.333333 on AutoCAD and
+0.333333333333333 on BricsCAD -- and a program that READs it back gets a
+different number on each. RTOS (with an explicit precision) is the portable
+way to print a real."
+ :references
+ '(("clautolisp: the printer" . "clautolisp/autolisp-runtime/source/api.lisp, AUTOLISP-PRINT-REAL")
+   ("clautolisp: the measurement" . "probes/sources/probe-versions.lsp")
+   ("clautolisp: the ticket" . "issues/open/dialect-platform-version-axis.issue")))
 
 (register-dialect-warning
  :tag "vl-catch-all-apply-arity"
@@ -504,6 +755,38 @@ completes is the related, deferred check."
    ("clautolisp: normative rules" . "autolisp-spec chapter 25, \"Normative Rules: Dialect Portability Warnings\"")))
 
 (register-dialect-warning
+ :tag "entmake-pointer-value"
+ :title "ENTMAKE / ENTMAKEX / ENTMOD with a handle string in a pointer group code"
+ :kind :portability
+ :message "~A: ~A -- AutoCAD and BricsCAD refuse this group (a pointer code takes an ENAME, AutoCAD's 320-329 a handle string); clautolisp stores it as given, which is not portable."
+ :arguments "the operator (ENTMAKE / ENTMAKEX / ENTMOD) and the offending pair"
+ :example ": [entmake-pointer-value] ENTMAKEX: (340 . \"2A\") -- AutoCAD and BricsCAD refuse this group (a pointer code takes an ENAME, AutoCAD's 320-329 a handle string); clautolisp stores it as given, which is not portable."
+ :dialects
+ "MEASURED 2026-10-08 (probes/sources/probe-entget-pointers.lsp; AutoCAD
+2022 job 17026569911, BricsCAD V25 job 17026569912, BricsCAD V26 job
+17026569913): both vendors SIGNAL AN ERROR when ENTMAKEX or ENTMOD receives
+a handle string in a pointer group code (330-369, 390-399, 480-481) --
+AutoCAD \"bad DXF group: (340 . \\\"2A2\\\")\", BricsCAD \"bad argument
+type <(340 . \\\"95\\\")> ; expected ENTITYNAME at [invalid DXF/XED
+data]\". 320-329 differ: AutoCAD wants a string there and refuses an ename;
+BricsCAD wants an ename and refuses a string. clautolisp before 2.3.7 stored
+the handle string, and entget returned it as a string.
+
+- --dialect autocad-* / bricscad-* -- the vendor's error, worded as the
+  vendor words it; silent otherwise.
+- --dialect clautolisp -- store the value as given, and WARN.
+- --strict -- store it, and WARN.
+- --lax -- store it, silent."
+ :rationale
+ "A program that builds a pointer from (cdr (assoc 5 ...)) instead of the
+ename works on cador and fails on both CADs; the warning names the pair before
+a real CAD job does."
+ :references
+ '(("clautolisp: emitted by" . "clautolisp/cador/source/entity-api.lisp, EMIT-ENTMAKE-POINTER-VALUE-WARNING")
+   ("clautolisp: the probe that measured both engines" . "probes/sources/probe-entget-pointers.lsp")
+   ("clautolisp: issue" . "issues/closed/cador-entget-pointer-codes-are-handle-strings.issue")))
+
+(register-dialect-warning
  :tag "entmod-nongraphical"
  :title "ENTMOD on a non-graphical object"
  :kind :vendor-divergence
@@ -552,7 +835,7 @@ that looks unusual. The warning names the hazard; the dialect switch lets
 BricsCAD-targeted code get BricsCAD's answer."
  :references
  '(("clautolisp: emitted by" . "clautolisp/autolisp-runtime/source/api.lisp, EMIT-FOREACH-EMPTY-BODY-DIVERGENCE-WARNING")
-   ("clautolisp: the ticket" . "issues/open/foreach-empty-body-return-diverges.issue")))
+   ("clautolisp: the ticket" . "issues/closed/foreach-empty-body-return-diverges.issue")))
 
 (register-dialect-warning
  :tag "read-leading-comment"
@@ -597,7 +880,7 @@ object on AutoCAD, NIL on BricsCAD, for the identical string. The
 warning surfaces that before it becomes a `nil where NAME was' bug
 several calls later."
  :references
- '(("clautolisp: the governing issue" . "issues/open/read-string-does-not-skip-comments.issue")
+ '(("clautolisp: the governing issue" . "issues/closed/read-string-does-not-skip-comments.issue")
    ("clautolisp: emitted by" . "clautolisp/autolisp-builtins-core/source/api.lisp, EMIT-READ-LEADING-COMMENT-WARNING")
    ("Autodesk: read (AutoLISP), 2026 CHS" . "https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm")
    ("Bricsys: read (DevRef V26)" . "https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/read.htm")))
@@ -634,7 +917,7 @@ is ignored and the file is decoded with the default. The diagnostic is
 the only sign."
  :references
  '(("clautolisp: authoritative descriptions" . "issues/closed/encoding-dispatch.issue, section \"Diagnostics\"")
-   ("clautolisp: the situation model" . "issues/open/encoding-situations-cli-options.issue")))
+   ("clautolisp: the situation model" . "issues/closed/encoding-situations-cli-options.issue")))
 
 (register-dialect-warning
  :tag "enc-extension-used"
@@ -710,7 +993,7 @@ situation with a different remedy."
  :arguments "varies by call site"
  :example ": [enc-lispsys-out-of-range] (setvar \"LISPSYS\" 3): valid values are 0 (legacy MBCS), 1, or 2 (Unicode)."
  :dialects
- "LISPSYS is an AutoCAD-only sysvar selecting how AutoLISP source files
+ "LISPSYS (AutoCAD 2021+, BricsCAD V23+) is the sysvar selecting how AutoLISP source files
 are decoded: 0 is legacy MBCS (the host codepage), 1 and 2 are Unicode.
 Any other value is out of range.
 
@@ -724,7 +1007,7 @@ changes from persisting."
  "A program that sets LISPSYS expecting an immediate effect gets none,
 with no error. Two levels of silence stacked on each other."
  :references
- '(("clautolisp: measured behaviour" . "issues/open/encoding-situations-cli-options.issue, experiment E1")
+ '(("clautolisp: measured behaviour" . "issues/closed/encoding-situations-cli-options.issue, experiment E1")
    ("clautolisp: authoritative descriptions" . "issues/closed/encoding-dispatch.issue, section \"Diagnostics\"")))
 
 (register-dialect-warning
@@ -957,10 +1240,11 @@ is not the catalogue's business and never warns."
  :summary "LET* does not exist on BricsCAD V26 either; it is not a vendor extension."
  :evidence +bricscad-harvest-evidence+)
 
-;;; The two rest-parameter spellings. These predate the catalogue; since
-;;; pjb's 2026-08-14 ruling their message text comes from the register's
-;;; "lambda-list-extension" entry like every other, and these entries
-;;; carry only the support decision.
+;;; The rest-parameter separator. It predates the catalogue; since pjb's
+;;; 2026-08-14 ruling its message text comes from the register's
+;;; "lambda-list-extension" entry like every other, and this entry carries
+;;; only the support decision. The bare `&' had an entry too; since pjb's
+;;; 2026-10-23 ruling it is no separator but an ordinary symbol.
 
 (register-portability-construct
  :label "&REST"
@@ -970,19 +1254,6 @@ is not the catalogue's business and never warns."
  :native-in '(:bricscad-v25 :bricscad-v26)
  :silent-in '(:clautolisp :lax)
  :summary "Rest parameter in a defun/lambda lambda-list, spelled &REST."
- :evidence +bricscad-harvest-evidence+)
-
-(register-portability-construct
- :label "&"
- :kind :provided
- :tag "lambda-list-extension"
- ;; EXTPROBE AMP-BINDS=ERROR:too few / too many -- BricsCAD REJECTS
- ;; the bare ampersand, so unlike &REST it is native to no vendor.
- ;; clautolisp still accepts it (its own historical spelling), which
- ;; is exactly why it warns everywhere except clautolisp/lax.
- :native-in '()
- :silent-in '(:clautolisp :lax)
- :summary "Rest parameter spelled with a bare &; accepted by clautolisp only, rejected by BricsCAD."
  :evidence +bricscad-harvest-evidence+)
 
 ;;; ==================================================================

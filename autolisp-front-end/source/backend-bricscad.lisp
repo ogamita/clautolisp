@@ -1,7 +1,7 @@
 ;;;; autolisp-front-end/source/backend-bricscad.lisp
 ;;;;
 ;;;; The BricsCAD backend — Phase 3 of the alfe rollout. Specified
-;;;; by ../issues/open/alfe-backend-bricscad.issue and the spec's
+;;;; by ../issues/closed/alfe-backend-bricscad.issue and the spec's
 ;;;; "Backend bricscad" section.
 ;;;;
 ;;;; BricsCAD's AutoLISP REPL lives behind a GUI, so alfe drives it
@@ -81,6 +81,8 @@
                 #:windows-glob-existing-files
                 #:vbs-escape
                 #:applescript-escape
+                #:cad-com-mode
+                #:check-com-attach-pid
                 #:expand-plugin-slots
                 #:launcher-lines
                 #:call-launcher
@@ -99,7 +101,9 @@
                 #:launcher-state-description
                 #:kill-engine-process
                 #:cad-argument-path
-                #:launcher-exit-code)
+                #:launcher-exit-code
+                #:make-console-capture
+                #:console-capture-launch-keys)
   (:import-from #:alfe.logging
                 #:log-debug
                 #:log-verbose
@@ -269,7 +273,7 @@ Order, and the reason for it:
      and NIL is returned instead (see below for why a caller would ask
      for that).
 
-Step 2 is new (issues/open/empty-ressource.issue, pjb 2026-08-30) and it
+Step 2 is new (issues/closed/empty-ressource.issue, pjb 2026-08-30) and it
 replaces the previous default of pointing every run at ONE shared file.
 Sharing produced MODAL DIALOGS -- \"in use by another instance\", \"open
 read-only?\" -- when a previous CAD still held the lock or had modified
@@ -586,7 +590,7 @@ turned it into the un-runnable `do shell script \"\"open -a \"\" & ...'."
                              status-path
                              error-path
                              debug-path
-                             (com-mode "auto"))
+                             (com-mode "launch"))
   "Write the BricsCAD VBScript bridge to PATH, with placeholders
 substituted from the provided session paths."
   (let ((text (alfe.plugin:run-hook
@@ -595,7 +599,8 @@ substituted from the provided session paths."
                ;; lines are VBScript already and must not be quote-doubled.
                (expand-plugin-slots
                 (substitute-placeholders
-                 *bridge-bricscad-vbs-template*
+                 (alfe.backend.cad-common::instrument-owned-com-bridge
+                  *bridge-bricscad-vbs-template* path)
                  `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
@@ -622,13 +627,37 @@ substituted from the provided session paths."
 -- surfaces that exit code and stderr now instead of waiting out the READY
 -- timeout (alfe-bricscad-automation-macos).
 
+global cadPid, exePath
 set runLspFile to \"${RUNLSPFILE}\"
 set appPath to \"${APPPATH}\"
 set docPath to \"${DOCPATH}\"
+set exePath to \"${EXEPATH}\"
+set cadPid to 0
 
--- Launch-or-activate in one step. `open -a' is idempotent: it activates an
--- already-running copy rather than starting a second one, so no process-name
--- probing is needed.
+-- WHICH BricsCAD (alfe-cad-launch-new-by-default, 2026-10-23). Several may
+-- run under the same process name -- this run's, an earlier run's, a
+-- person's -- so every step below addresses ONE process by its unix id,
+-- cadPid, which LAUNCHCOMMAND settles: the instance it STARTED (the
+-- default, `open -n'), the one `open -a' brings forward (--backend
+-- attach), or the one named (--attach-pid). Measured by probe
+-- cad-instances on BricsCAD V26 macOS: a second launch is a second live
+-- process, and System Events makes any one of several same-named
+-- processes frontmost by unix id.
+on cadPids()
+  try
+    return paragraphs of (do shell script \"pgrep -U $(id -u) -f \" & quoted form of exePath)
+  on error
+    return {}
+  end try
+end cadPids
+
+on cadProcess()
+  tell application \"System Events\" to return first application process whose unix id is cadPid
+end cadProcess
+
+-- Launch (or attach), and settle cadPid. `open -a' alone is idempotent: it
+-- activates an already-running copy rather than starting a second one --
+-- which is why a LAUNCH uses `open -n -a'.
 --
 -- The previous template did probe, and was wrong twice over: it wrote
 -- `set running to exists (processes whose name is \"bricscad\")', but
@@ -651,13 +680,17 @@ ${LAUNCHCOMMAND}
 -- AppleScript's `contains' is case-insensitive, so this matches the process
 -- whatever the bundle calls itself (\"BricsCAD\", \"bricscad\", \"BricsCAD V26\").
 set frontApp to \"\"
+set frontPid to 0
 set focused to false
 repeat ${STARTUPWAIT} times
   try
     tell application \"System Events\"
-      set frontApp to name of first application process whose frontmost is true
+      set frontmost of (my cadProcess()) to true
+      set frontProc to first application process whose frontmost is true
+      set frontApp to name of frontProc
+      set frontPid to unix id of frontProc
     end tell
-    if frontApp contains \"bricscad\" then
+    if frontPid = cadPid then
       set focused to true
       exit repeat
     end if
@@ -668,14 +701,14 @@ end repeat
 -- Record what actually had focus, so a failure says where the keystrokes went
 -- rather than leaving us to guess.
 try
-  do shell script \"printf '%s\\\\n' \" & quoted form of (\"frontmost=\" & frontApp & \" focused=\" & (focused as text)) & \" > \" & quoted form of \"${FOCUSLOG}\"
+  do shell script \"printf '%s\\\\n' \" & quoted form of (\"frontmost=\" & frontApp & \" pid=\" & frontPid & \" target=\" & cadPid & \" focused=\" & (focused as text)) & \" > \" & quoted form of \"${FOCUSLOG}\"
 end try
 
 if not focused then
   -- Do NOT type into someone else's window. Exiting non-zero makes alfe abort
   -- the READY wait at once (LAUNCHER-FAILED) and report this message, instead
   -- of spending the whole timeout on a run that cannot succeed.
-  error \"BricsCAD never became frontmost within ${STARTUPWAIT}s (frontmost was \\\"\" & frontApp & \"\\\"); refusing to send keystrokes to another application.\" number 1
+  error \"BricsCAD (process \" & cadPid & \") never became frontmost within ${STARTUPWAIT}s (frontmost was \\\"\" & frontApp & \"\\\", process \" & frontPid & \"); refusing to send keystrokes to another application.\" number 1
 end if
 
 -- \"BricsCAD is the frontmost PROCESS\" (just confirmed) says nothing
@@ -779,7 +812,7 @@ on findConsoleWindow(procName)
   -- than crash the whole script uncaught.
   try
     tell application \"System Events\"
-      tell process procName
+      tell (my cadProcess())
         repeat with w in windows
           try
             set wName to name of w
@@ -920,8 +953,8 @@ on consoleStillFocused(procName)
   set ok to false
   try
     tell application \"System Events\"
-      if (name of first process whose frontmost is true) contains procName then
-        if (value of attribute \"AXMain\" of (value of attribute \"AXFocusedWindow\" of process procName)) then
+      if (unix id of first process whose frontmost is true) = cadPid then
+        if (value of attribute \"AXMain\" of (value of attribute \"AXFocusedWindow\" of (my cadProcess()))) then
           set ok to true
         end if
       end if
@@ -1026,7 +1059,7 @@ on recoverConsole(procName)
   -- one place that is already busy telling the human something went
   -- wrong.
   try
-    tell application \"System Events\" to set frontmost of process procName to true
+    tell application \"System Events\" to set frontmost of (my cadProcess()) to true
   end try
   set w to my findConsoleWindow(procName)
   if w is not missing value then
@@ -1071,7 +1104,7 @@ repeat while (attemptNum <= attemptLimit) and (not succeeded)
   if cmdWin is missing value and not triedF2 then
     set triedF2 to true
     try
-      tell application \"System Events\" to tell process procName to key code 120 -- F2
+      tell application \"System Events\" to tell (my cadProcess()) to key code 120 -- F2
     end try
     delay 0.5
     set cmdWin to my findConsoleWindow(procName)
@@ -1227,7 +1260,7 @@ FRACTION of the console window's own height, not a fixed offset from its
 bottom edge, so it cannot land on the macOS Dock when the window happens
 to sit low on screen. Requires an interactive session and Accessibility
 permission for the process running osascript. See
-issues/open/alfe-bricscad-automation-macos-osascript.issue.")
+issues/closed/alfe-bricscad-automation-macos-osascript.issue.")
 
 (defun macos-app-bundle-for (executable-path)
   "The .app bundle enclosing EXECUTABLE-PATH — e.g.
@@ -1255,7 +1288,28 @@ bundle name, not by the unix binary's name."
                           :name nil :type nil :version nil
                           :defaults path)))))))
 
-(defun %applescript-launch-command (executable-path &optional template-path)
+(defparameter +applescript-has-doc-check+
+  "set alreadyHasDoc to false
+try
+  tell application \"System Events\"
+    tell (my cadProcess())
+      repeat with w in windows
+        try
+          if (subrole of w is \"AXStandardWindow\") and (name of w is not missing value) and ((length of (name of w)) > 0) and ((name of w) does not contain \"bricscad\") then
+            set alreadyHasDoc to true
+            exit repeat
+          end if
+        end try
+      end repeat
+    end tell
+  end tell
+end try"
+  "AppleScript setting alreadyHasDoc: does the process cadPid already show a
+document/console window -- the exclusion-by-product-name signal of
+FINDCONSOLEWINDOW.")
+
+(defun %applescript-launch-command (executable-path &optional template-path
+                                    &key (policy :launch) pid)
   "The AppleScript fragment the launcher uses to bring BricsCAD up.
 Prefers the enclosing .app bundle with `open -a' (the supported way to
 launch a macOS GUI app); falls back to running the binary directly in
@@ -1294,36 +1348,76 @@ it, whether that is because BricsCAD is not running yet or because it is
 running with nothing open. Nor is this a return to the reserved-word
 `running' process probe Round 6 removed for plain ACTIVATION — `open -a'
 alone stays genuinely idempotent there; this only decides the SEPARATE,
-non-idempotent docPath side effect on that same call."
-  (let ((bundle (macos-app-bundle-for executable-path)))
-    (cond
-      ((and bundle template-path)
-       "set alreadyHasDoc to false
-try
-  tell application \"System Events\"
-    if exists (processes whose name contains \"bricscad\") then
-      tell process \"bricscad\"
-        repeat with w in windows
-          try
-            if (subrole of w is \"AXStandardWindow\") and (name of w is not missing value) and ((length of (name of w)) > 0) and ((name of w) does not contain \"bricscad\") then
-              set alreadyHasDoc to true
-              exit repeat
-            end if
-          end try
-        end repeat
-      end tell
+non-idempotent docPath side effect on that same call.
+
+WHICH INSTANCE (alfe-cad-launch-new-by-default, pjb 2026-10-23). POLICY
+:LAUNCH (the default) starts a NEW BricsCAD with `open -n -a' (or the bare
+binary), and cadPid is the process that appeared; a fresh instance has no
+document, so TEMPLATE-PATH is always opened with it. POLICY :ATTACH uses
+the running one: the one named by PID, or else the one `open -a' brings
+forward (the longest-running, measured by probe cad-instances) -- an error,
+not a launch, when none runs. The document check above applies to an
+attach only, and with a PID it cannot open the drawing in THAT instance
+(`open' goes through LaunchServices), so a drawing-less instance is an
+error there."
+  (let* ((bundle (macos-app-bundle-for executable-path))
+         (open-doc (if template-path
+                       " & \" \" & quoted form of docPath"
+                       ""))
+         (wait-new-pid
+           "repeat ${STARTUPWAIT} times
+  repeat with p in my cadPids()
+    if pidsBefore does not contain (contents of p) then set cadPid to (contents of p) as integer
+  end repeat
+  if cadPid is not 0 then exit repeat
+  delay 1
+end repeat
+if cadPid is 0 then error \"the BricsCAD this run launched did not appear within ${STARTUPWAIT}s.\" number 1"))
+    (ecase policy
+      (:launch
+       (if bundle
+           (format nil "set pidsBefore to my cadPids()
+do shell script \"open -n -a \" & quoted form of appPath~A
+~A" open-doc wait-new-pid)
+           (format nil "set pidsBefore to my cadPids()
+do shell script quoted form of appPath & \" > /dev/null 2>&1 &\"
+~A" wait-new-pid)))
+      (:attach
+       (cond
+         (pid
+          (format nil "set cadRunning to my cadPids()
+if cadRunning does not contain \"~D\" then error \"--attach-pid ~:*~D: no running BricsCAD has this process id.\" number 1
+set cadPid to ~:*~D~@[
+~A
+if not alreadyHasDoc then error \"BricsCAD process ~D has no drawing open, so no command line to type into: open one in it, then run again.\" number 1~]"
+                  pid
+                  (and template-path +applescript-has-doc-check+)
+                  pid))
+         (t
+          (format nil "set cadRunning to my cadPids()
+if (count of cadRunning) is 0 then error \"--backend attach: no BricsCAD is running.\" number 1
+~A
+repeat 10 times
+  try
+    tell application \"System Events\" to set frontPid to unix id of first application process whose frontmost is true
+    if cadRunning contains (frontPid as text) then
+      set cadPid to frontPid
+      exit repeat
     end if
-  end tell
-end try
+  end try
+  delay 1
+end repeat
+if cadPid is 0 then set cadPid to (item 1 of cadRunning) as integer~@[
+~A
 if alreadyHasDoc then
-  do shell script \"open -a \" & quoted form of appPath
+  -- a drawing is open: nothing to open
 else
   do shell script \"open -a \" & quoted form of appPath & \" \" & quoted form of docPath
-end if")
-      (bundle
-       "do shell script \"open -a \" & quoted form of appPath")
-      (t
-       "do shell script quoted form of appPath & \" > /dev/null 2>&1 &\""))))
+end if~]"
+                  (if bundle
+                      "do shell script \"open -a \" & quoted form of appPath"
+                      "-- not a bundle: nothing to activate")
+                  (and template-path bundle +applescript-has-doc-check+))))))))
 
 (defparameter +bricscad-applescript-startup-wait+ "60"
   "How many seconds the launcher waits for BricsCAD to become the
@@ -1335,12 +1429,13 @@ terminal, too long and every run pays for it. Override with
 $ALFE_BRICSCAD_STARTUP_DELAY.")
 
 (defun emit-launcher-applescript (path &key runtime-load-path executable-path
-                                            template-path)
+                                            template-path (policy :launch) pid)
   "Write the macOS AppleScript launcher to PATH. EXECUTABLE-PATH is the
 discovered bricscad binary; the launcher addresses its enclosing .app
 bundle (see MACOS-APP-BUNDLE-FOR) rather than guessing an app name.
 TEMPLATE-PATH, when given, is opened with it so the CAD has a drawing —
-and therefore a command line — to type into."
+and therefore a command line — to type into. POLICY (:launch, the default,
+or :attach) and PID choose the instance: see %APPLESCRIPT-LAUNCH-COMMAND."
   (let* ((bundle (or (macos-app-bundle-for executable-path) executable-path ""))
          ;; :escape #'identity — this template is AppleScript, not VBScript.
          ;; The two path values are escaped here (they land inside AppleScript
@@ -1352,8 +1447,11 @@ and therefore a command line — to type into."
                   ("APPPATH"       . ,(applescript-escape (namestring bundle)))
                   ("DOCPATH"       . ,(applescript-escape
                                        (if template-path (namestring template-path) "")))
+                  ("EXEPATH"       . ,(applescript-escape
+                                       (if executable-path (namestring executable-path) "")))
                   ("LAUNCHCOMMAND" . ,(%applescript-launch-command
-                                       executable-path template-path))
+                                       executable-path template-path
+                                       :policy policy :pid pid))
                   ("STARTUPWAIT"   . ,(or (uiop:getenv "ALFE_BRICSCAD_STARTUP_DELAY")
                                           +bricscad-applescript-startup-wait+))
                   ("FOCUSLOG"      . ,(applescript-escape
@@ -1384,12 +1482,12 @@ This is OPTION B of alfe-bricscad-automation-macos: the macOS refusal
 in CHOOSE-EFFECTIVE-MODE stays the default, but can be explicitly
 relaxed to debug the osascript/AppleScript path against a real
 BricsCAD, interactively, at the machine. See
-issues/open/alfe-bricscad-automation-macos-osascript.issue."
+issues/closed/alfe-bricscad-automation-macos-osascript.issue."
   (and (macos-p)
        (let ((v (uiop:getenv "ALFE_ENABLE_MACOS_AUTOMATION")))
          (and v (plusp (length v)) (not (string= v "0"))))))
 
-(defun choose-effective-mode (backend cli-mode)
+(defun choose-effective-mode (backend cli-mode &optional attach-p)
   "Translate the CLI's :auto / :batch / :automation into the
 backend's variant slot. :auto picks :batch on every platform when the
 CLI binary is found, else :automation.
@@ -1432,8 +1530,13 @@ reached, now with a hardened launcher — see
                         :batch
                         :automation))
                    ((:batch :automation) cli-mode))))
+    ;; ATTACH-P: --backend attach / --attach-pid. Attaching to a running
+    ;; BricsCAD on macOS is an explicit request for the AppleScript path --
+    ;; at the machine, by a person, which is what the opt-in is for -- so it
+    ;; counts as the opt-in (alfe-cad-launch-new-by-default).
     (when (and (eq variant :automation)
                (not (windows-p))
+               (not (and attach-p (macos-p)))
                (not (macos-automation-opt-in-p)))
       (error 'backend-not-available
              :backend :bricscad
@@ -1444,12 +1547,18 @@ reached, now with a hardened launcher — see
                  "BricsCAD CLI executable not found, and --mode automation is not supported on this OS (Windows only), so there is no fallback. Install BricsCAD or point alfe at it, or set ALFE_ENABLE_MACOS_AUTOMATION=1 to opt into the experimental macOS AppleScript path.")))
     variant))
 
+(defun %attach-requested-p (cli-options)
+  "True when CLI-OPTIONS ask to attach to a running BricsCAD (--backend attach,
+or --attach-pid, which APPLY-CAD-INSTANCE-POLICY turned into it)."
+  (and cli-options
+       (eq :attach (alfe.cli:cli-options-backend-variant cli-options))))
+
 (defun build-launch-argv (backend protocol-session
-                          &key (mode :auto))
+                          &key (mode :auto) attach-p)
   "Return the argv list to launch the BricsCAD engine for SESSION
 under MODE. The returned list has the binary in CAR; the caller
 typically hands it to UIOP:LAUNCH-PROGRAM."
-  (let ((variant (choose-effective-mode backend mode))
+  (let ((variant (choose-effective-mode backend mode attach-p))
         (binary  (bricscad-backend-executable-path backend))
         (workdir (alfe.protocol.file:protocol-session-workdir protocol-session)))
     (case variant
@@ -1515,7 +1624,10 @@ file-protocol session plus the launched engine's PROCESS-INFO so
 SHUTDOWN can terminate it."
   (protocol-session nil)
   (process-info     nil)
-  (variant          nil))
+  (variant          nil)
+  ;; The files the launched process's console is redirected into
+  ;; (MAKE-CONSOLE-CAPTURE; alfe-accoreconsole-console-pipe-not-drained).
+  (console-capture  nil))
 
 (defmethod prepare-workdir ((backend bricscad-backend) workdir-root &key)
   (let ((workdir (if workdir-root
@@ -1610,12 +1722,54 @@ $ALFE_NO_CUI_REPAIR. Returns the list of quarantined paths."
                                    (namestring cui) e)
                          nil))))))
 
+;;; --- encoding situations: the console INPUT direction ---------------------
+;;;
+;;; -Econsole[-out] picks the codec the drain decodes BricsCAD's output with
+;;; (ALFE.CLI:RESOLVED-CONSOLE-ENCODING). The INPUT direction has nothing to
+;;; act on: the console device is fixed by the product (GUI console: full
+;;; Unicode on macOS V26, cp1252 on Windows V25 -- encoding-situations section
+;;; 7.2), and alfe's input to BricsCAD does not go through it -- forms travel
+;;; over the file-IPC protocol. Accepting -Econsole-in silently is what the
+;;; situations rule forbids (section 4: a product-fixed situation is warned
+;;; about and ignored), so say so, as the AutoCAD backend does for -Econsole.
+
+(defvar *bricscad-console-input-option-warned* nil
+  "True once the -Econsole-in-is-ignored warning was given this run.")
+
+(defun bricscad-console-input-warning (cli-options)
+  "The warning text for an explicit console INPUT encoding under BricsCAD
+(-Econsole-in, or a bare -Econsole, which sets both directions), or NIL when
+none was given. The bare -E never counts: it does not reach the console."
+  (let ((requested (and cli-options
+                        (clautolisp.autolisp-cli:cli-situation-encoding-explicit
+                         cli-options "console" "in"))))
+    (when requested
+      (format nil "backend BRICSCAD: the console input encoding is fixed by the ~
+product (GUI console: macOS full Unicode, Windows cp1252) and alfe's input does ~
+not go through the console device (forms travel over the file protocol); ~
+-Econsole-in ~A is ignored. -Econsole-out (or -Econsole) still selects the codec ~
+alfe decodes BricsCAD's output with." requested))))
+
+(defun %warn-bricscad-console-input (cli-options)
+  "Log BRICSCAD-CONSOLE-INPUT-WARNING once per run. Returns T when it warned."
+  (let ((text (bricscad-console-input-warning cli-options)))
+    (when (and text (not *bricscad-console-input-option-warned*))
+      (setf *bricscad-console-input-option-warned* t)
+      (log-warn "~A" text)
+      t)))
+
 (defmethod start-engine ((backend bricscad-backend) workdir
                          &key dialect host mock-input bootstrap-phase
                               interactive-p
                               dwg
                               load-encoding
                               io-encoding
+                              source-encoding
+                              file-read-encoding file-write-encoding
+                              console-in-encoding console-out-encoding
+                              cadstdio-in-encoding cadstdio-out-encoding
+                              log-encoding
+                              terminal-in-encoding terminal-out-encoding
                               cli-options version-text
                               (mode :auto)
                               (launcher #'uiop:launch-program)
@@ -1630,16 +1784,39 @@ mock CAD for the real engine; the production code path passes
 UIOP:LAUNCH-PROGRAM. WAIT-FOR-READY can be turned off when the
 test driver is responsible for the state walk.
 
-LOAD-ENCODING is accepted for protocol compatibility but ignored:
-the BricsCAD-resident AutoLISP runtime owns the source-file
-encoding policy; user `-e ENC' over the file-IPC protocol is a
-future ticket."
+The encoding keywords (LOAD-ENCODING / IO-ENCODING and the per-situation
+SOURCE-ENCODING ... TERMINAL-OUT-ENCODING) are accepted but not read here: the
+BricsCAD boundaries resolve their situations from CLI-OPTIONS where they are
+applied -- -Esource rides on each -l action (:encoding, used when the
+source is staged), the drain codec from
+ALFE.CLI:RESOLVED-CONSOLE-ENCODING (explicit -Econsole[-out] / -Ecadstdio only),
+and an explicit -Econsole-in is warned about and ignored
+(%WARN-BRICSCAD-CONSOLE-INPUT: the console device is product-fixed and alfe's
+input does not go through it). -Efile-write reaches the CAD's OPEN as ,ccs=
+where BricsCAD honours it (ALFE.BACKEND.CAD-COMMON:CAD-OPEN-WRITE-CCS ->
+*ALFE-OPEN-WRITE-CCS*), and is warned about elsewhere. The terminal is alfe's
+own."
   ;; DIALECT is currently irrelevant on the CAD side: the AutoLISP
   ;; dialect lives inside the CAD engine and is not swappable from
   ;; outside. HOST is meaningful only to clautolisp.
-  (declare (ignore host mock-input dialect dwg load-encoding io-encoding))
+  (declare (ignore host mock-input dialect load-encoding io-encoding
+                   source-encoding file-read-encoding file-write-encoding
+                   console-in-encoding console-out-encoding
+                   cadstdio-in-encoding cadstdio-out-encoding
+                   log-encoding terminal-in-encoding terminal-out-encoding))
   (log-verbose "backend BRICSCAD: starting engine (mode ~A)" mode)
+  ;; A product-fixed situation is warned about, never silently ignored.
+  (%warn-bricscad-console-input cli-options)
   (log-debug "backend BRICSCAD: workdir = ~A" workdir)
+  ;; The drawing the CLI hands over (--dwg, or --template's per-run copy)
+  ;; is the one BricsCAD opens: the launch reads the backend's TEMPLATE-PATH,
+  ;; which DETECT only fills from $AUTOLISP_DWG -- a --dwg / --template used
+  ;; to be dropped here, BricsCAD then starting on a new Dessin1.dwg
+  ;; (verify:alfe-template:windows, job 17461973387). One backend per alfe
+  ;; run, so this does not outlive the invocation.
+  (when (and dwg (probe-file dwg))
+    (setf (bricscad-backend-template-path backend)
+          (uiop:native-namestring (truename dwg))))
   ;; Let --timeout / $AUTOLISP_WAIT_SECS raise the READY timeout: a cold
   ;; BricsCAD launch (COM start + license + first document) can take well
   ;; over the 30 s default, which otherwise reports a spurious
@@ -1680,7 +1857,12 @@ future ticket."
                 :cli-options cli-options
                 :version-text version-text
                 :backend-name "BRICSCAD"
-                :variant (choose-effective-mode backend mode))))
+                :variant (choose-effective-mode backend mode
+                                                (%attach-requested-p cli-options))
+                ;; -Efile-write forwarded to OPEN as ,ccs= where BricsCAD
+                ;; honours it (Windows: UTF-8 / UTF-16LE); warned otherwise.
+                :open-write-ccs (alfe.backend.cad-common:cad-open-write-ccs
+                                 :bricscad cli-options))))
         ;; G2: how the drain decodes BricsCAD's console output. :AUTO
         ;; (default) keeps the robust cascade — behaviour-preserving.
         (setf (alfe.protocol.file:protocol-session-console-encoding protocol)
@@ -1707,7 +1889,8 @@ future ticket."
         (log-debug "backend BRICSCAD: protocol status file -> ~A"
                    (alfe.protocol.file:protocol-session-status-path protocol))
         ;; Emit the engine-side launcher in the right shape.
-        (let ((variant (choose-effective-mode backend mode)))
+        (let ((variant (choose-effective-mode backend mode
+                                              (%attach-requested-p cli-options))))
           (log-verbose "backend BRICSCAD: effective mode = ~A" variant)
           (case variant
             (:batch
@@ -1718,7 +1901,12 @@ future ticket."
             (:automation
              (cond
                ((windows-p)
-                (let ((vbs (merge-pathnames "bridge-bricscad.vbs" workdir)))
+                (let ((vbs (merge-pathnames "bridge-bricscad.vbs" workdir))
+                      (pid (and cli-options
+                                (alfe.cli:cli-options-attach-pid cli-options))))
+                  (when pid
+                    (check-com-attach-pid :bricscad "BricscadApp.AcadApplication"
+                                          pid workdir))
                   (emit-bridge-vbs
                    vbs
                    :runtime-load-path run-common
@@ -1731,13 +1919,17 @@ future ticket."
                    ;; piece when BricsCAD sits at BOOTING and never runs
                    ;; run-common.lsp.
                    :debug-path  (merge-pathnames "bridge-vbs.log" workdir)
-                   :com-mode    (or (uiop:getenv "BRICSCAD_COM_MODE") "auto"))
+                   :com-mode    (cad-com-mode cli-options "BRICSCAD_COM_MODE"))
                   (log-debug "backend BRICSCAD: wrote bridge-bricscad.vbs -> ~A" vbs)))
                ((macos-p)
                 (let ((apl (merge-pathnames "launcher.applescript" workdir)))
                   (emit-launcher-applescript
                    apl :runtime-load-path run-common
                        :executable-path (bricscad-backend-executable-path backend)
+                       ;; Launch a new BricsCAD unless asked to attach.
+                       :policy (if (%attach-requested-p cli-options) :attach :launch)
+                       :pid (and cli-options
+                                 (alfe.cli:cli-options-attach-pid cli-options))
                        ;; Open a drawing with the app: no document, no command
                        ;; line, nowhere for the keystrokes to land.
                        ;;
@@ -1764,15 +1956,24 @@ future ticket."
                   (log-debug "backend BRICSCAD: wrote launcher.applescript -> ~A" apl))))))
           (let* ((argv (alfe.plugin:run-hook
                         :launch-argv
-                        (build-launch-argv backend protocol :mode mode)
+                        (build-launch-argv backend protocol
+                                           :mode mode
+                                           :attach-p (%attach-requested-p cli-options))
                         :variant variant :workdir workdir))
                  (launch-options (alfe.plugin:run-hook
                                   :launch-options
                                   (list :directory nil :environment nil)
                                   :variant variant :argv argv :workdir workdir))
+                 ;; The launched process's console goes to FILES in the
+                 ;; workdir, never to a pipe nobody reads while it runs: a
+                 ;; full pipe blocks the writer for ever
+                 ;; (alfe-accoreconsole-console-pipe-not-drained). Read back
+                 ;; as UTF-8, falling back to ISO-8859-1.
+                 (capture (make-console-capture workdir :external-format :utf-8))
                  (session (%make-bricscad-session
                           :backend backend
                           :workdir workdir
+                          :console-capture capture
                           :request-timeout (and cli-options
                                                 (alfe.cli:cli-options-timeout
                                                  cli-options))
@@ -1781,10 +1982,9 @@ future ticket."
             (log-verbose "backend BRICSCAD: launching: ~{~A~^ ~}" argv)
             (let ((process-info
                     (when launcher
-                      (call-launcher launcher argv launch-options
-                                     :input :stream
-                                     :output :stream
-                                     :error-output :stream))))
+                      (apply #'call-launcher launcher argv launch-options
+                             :input :stream
+                             (console-capture-launch-keys capture)))))
               (when process-info
                 (log-debug "backend BRICSCAD: spawned, process-info-pid = ~A"
                            (ignore-errors (uiop:process-info-pid process-info))))
@@ -1824,7 +2024,9 @@ future ticket."
                                         elapsed last))
                           (t
                            (let ((failure (launcher-failure-details
-                                           (bricscad-session-process-info session))))
+                                           (bricscad-session-process-info session)
+                                           :capture (bricscad-session-console-capture
+                                                     session))))
                              (log-warn "backend BRICSCAD: READY ~:[timeout~;abort~] after ~,2F s; last status = ~S~@[ (~A)~]"
                                        failure elapsed last failure)
                              (error 'backend-bootstrap-error
@@ -1882,6 +2084,9 @@ future ticket."
                   ;; (alfe-request-timeout-aborts-long-eval).
                   :request-timeout (or explicit-timeout 30)
                   :keep-alive-while-running (null explicit-timeout)
+                  :defer-shutdown-p (and (windows-p)
+                                         (eq (bricscad-session-variant session)
+                                             :automation))
                   :process-info (bricscad-session-process-info session))))
     (session-state-set session
                        (ecase (alfe.backend:eval-result-status result)
@@ -1923,13 +2128,35 @@ future ticket."
   (unless (eq (session-state session) :stopped)
     (let ((protocol (bricscad-session-protocol-session session))
           (info (bricscad-session-process-info session)))
-      (ignore-errors (alfe.protocol.file:send-control protocol :shutdown))
-      (ignore-errors
-       (alfe.protocol.file:wait-for-status
-        protocol alfe.protocol.file:+status-stopped+ :timeout 5))
-      (%kill-engine-process info))
+      (unwind-protect
+           (when protocol
+             (if (and (windows-p)
+                      (eq (bricscad-session-variant session) :automation))
+                 ;; Contract 2: RESTORED, then the frontier, then the bridge
+                 ;; quits only its CREATED object, which must be proved gone
+                 ;; -- ended by its revalidated handle past the grace. Its
+                 ;; exit code is then a diagnostic; no STOPPED is required
+                 ;; from an engine that just quit.
+                 (alfe.backend.cad-common::finish-owned-com-session
+                  protocol (session-workdir session)
+                  :backend :bricscad :bridge-process-info info)
+                 (progn
+                   (alfe.protocol.file:send-control protocol :shutdown)
+                   (unless (alfe.protocol.file:wait-for-status
+                            protocol alfe.protocol.file:+status-stopped+ :timeout 5)
+                     (error 'backend-protocol-error :backend :bricscad
+                            :code :shutdown-timeout
+                            :message "CAD did not stop its protocol.")))))
+        (kill-engine-process info)))
     (session-state-set session :stopped))
   session)
+
+;;; The CAD's own command-history log, which the bootstrap directs into the
+;;; workdir's logs/ (--cad-log; ALFE.BACKEND.CAD-COMMON:COLLECT-CAD-LOG).
+(defmethod alfe.backend:collect-engine-log ((backend bricscad-backend) workdir &key cli-options)
+  (if workdir
+      (alfe.backend.cad-common:collect-cad-log :bricscad workdir cli-options)
+      (values '() :none)))
 
 (defmethod cleanup-workdir ((backend bricscad-backend) workdir &key keep-p)
   (when workdir

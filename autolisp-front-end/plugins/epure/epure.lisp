@@ -11,7 +11,7 @@
 ;;;; Specified by documentation/alfe--specifications.org, chapter "EPURE",
 ;;;; and issues/closed/alfe-plugin-epure.issue. Windows only; silently
 ;;;; ignored elsewhere and under --clautolisp. NOT validated on real CADs:
-;;;; see issues/open/alfe-plugin-epure-windows-validation.issue.
+;;;; see issues/closed/alfe-plugin-epure-windows-validation.issue.
 
 (defpackage #:alfe.plugin.epure
   (:use #:cl #:alfe.plugin)

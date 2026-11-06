@@ -222,8 +222,7 @@ recursive call in its own body would compile against an undefined name."
 ;;;; loop RETURNS, and what it does to the surrounding bindings.
 
 (defparameter *loop-corpus*
-  '(;; REPEAT yields NIL, not the last body value -- the mistake a Lisp
-    ;; reflex makes
+  '(;; REPEAT yields its last body value, NIL when the body never runs
     "(progn (defun f (/ a) (setq a 0) (list (repeat 3 (setq a (+ a 1))) a)) (f))"
     "(progn (defun f () (repeat 0 1)) (f))"
     "(progn (defun f () (repeat -5 1)) (f))"
@@ -282,11 +281,13 @@ back."
              (%read-one "(repeat n (setq a (+ a 1)))")))
       "a repeat body was still handed to the interpreter"))
 
-(test a-compiled-repeat-yields-nil-not-its-body
-  "REPEAT's value is NIL however many times it ran -- the one thing a
-Lisp reflex writes wrongly, and invisible in any test that only checks
-side effects."
-  (is (null (%run-with-compiled-bodies
-             "(progn (defun f (/ a) (setq a 0) (repeat 3 (setq a 1))) (f))")))
+(test a-compiled-repeat-yields-its-last-body-value
+  "REPEAT's value is the value of its last body evaluation, NIL when the
+body never runs (while-repeat-return-nil: the spec, AutoCAD's reference
+and BricsCAD V26 measured) -- invisible in any test that only checks side
+effects."
+  (is (eql 1 (%run-with-compiled-bodies
+              "(progn (defun f (/ a) (setq a 0) (repeat 3 (setq a 1))) (f))")))
+  (is (null (%run-with-compiled-bodies "(progn (defun f () (repeat 0 1)) (f))")))
   (is (%same-value-p (%run-interpreted "(progn (defun f () (repeat 3 99)) (f))")
                      (%run-with-compiled-bodies "(progn (defun f () (repeat 3 99)) (f))"))))

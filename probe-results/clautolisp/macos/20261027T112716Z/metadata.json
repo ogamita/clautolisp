@@ -1,0 +1,9 @@
+{
+  "product": "clautolisp",
+  "platform": "macos",
+  "timestamp_utc": "20261027T112716Z",
+  "status": "completed",
+  "exit_code": 0,
+  "runner_template": "\"/Users/pjb/src/ogamita/clautolisp/.claude/worktrees/fix-lone-cr/clautolisp/tools/clautolisp/bin/clautolisp-sbcl\" --no-init --clautolisp -q -l __PROBE_FILE__",
+  "result_file": "probe-results/clautolisp/macos/20261027T112716Z/results.sexp"
+}

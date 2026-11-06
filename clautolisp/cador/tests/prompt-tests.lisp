@@ -5,7 +5,7 @@
 ;;; --- Phase 12: headless interaction channel -----------------------
 
 (defun cador-with-input (lines)
-  "Build a MockHost with PROMPT-STREAM bound to a string-input
+  "Build a cador with PROMPT-STREAM bound to a string-input
 stream containing LINES (one per get* read)."
   (let ((mock (make-cador)))
     (setf (cador-prompt-stream mock)

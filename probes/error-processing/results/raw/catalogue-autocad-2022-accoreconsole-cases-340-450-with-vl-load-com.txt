@@ -1,0 +1,222 @@
+FIXTURE *DOC* ERROR type d'argument incorrect: VLA-OBJECT nil
+FIXTURE *BLOCKS* ERROR type d'argument incorrect: VLA-OBJECT nil
+FIXTURE *LO* ERROR type d'argument incorrect: VLA-OBJECT nil
+FIXTURE *EMPTY-SA* ERROR Limite sup�rieure de SAFEARRAYBOUND est plus petite que la limite inf�rieure.
+=== PCAT (nil "24.1" "AutoCAD" "FR") start=0
+BEGIN 340
+CASE 340 (setvar "OSMODE" -1) => (ERROR "param�tre de la variable AutoCAD rejet�: \"OSMODE\" -1") ; ERRNO=22
+BEGIN 341
+CASE 341 (setvar "CLAYER" "PCAT_NOPE_LAYER") => (ERROR "param�tre de la variable AutoCAD rejet�: \"CLAYER\" \"PCAT_NOPE_LAYER\"") ; ERRNO=22
+BEGIN 342
+CASE 342 (setvar "DWGNAME" "x") => (ERROR "param�tre de la variable AutoCAD rejet�: \"DWGNAME\" \"x\"") ; ERRNO=20
+BEGIN 343
+CASE 343 (setvar "CECOLOR" "999") => (ERROR "param�tre de la variable AutoCAD rejet�: \"CECOLOR\" \"999\"") ; ERRNO=22
+BEGIN 344
+CASE 344 (setvar "LUPREC" 99) => (ERROR "param�tre de la variable AutoCAD rejet�: \"LUPREC\" 99") ; ERRNO=22
+BEGIN 345
+CASE 345 (getenv nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+BEGIN 346
+CASE 346 (getenv "PCAT_NO_ENV") => (VALUE nil) ; ERRNO=0
+BEGIN 347
+CASE 347 (setenv nil "x") => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+BEGIN 348
+CASE 348 (getcfg nil) => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+BEGIN 349
+CASE 349 (getcfg "Bogus/x") => (VALUE nil) ; ERRNO=0
+BEGIN 350
+CASE 350 (vlax-curve-getPointAtParam *l* 25.0) => (VALUE nil) ; ERRNO=0
+BEGIN 351
+CASE 351 (vlax-curve-getPointAtParam *l* -1.0) => (VALUE nil) ; ERRNO=0
+BEGIN 352
+CASE 352 (vlax-curve-getPointAtDist *l* 25.0) => (VALUE nil) ; ERRNO=0
+BEGIN 353
+CASE 353 (vlax-curve-getPointAtDist *l* -1.0) => (VALUE nil) ; ERRNO=0
+BEGIN 354
+CASE 354 (vlax-curve-getParamAtPoint *l* '(5.0 3.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 355
+CASE 355 (vlax-curve-getParamAtPoint *l* '(5.0 3.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 356
+CASE 356 (vlax-curve-getDistAtPoint *l* '(5.0 3.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 357
+CASE 357 (vlax-curve-getParamAtDist *l* 25.0) => (VALUE 25.0) ; ERRNO=0
+BEGIN 358
+CASE 358 (vlax-curve-getDistAtParam *l* 25.0) => (VALUE 25.0) ; ERRNO=0
+BEGIN 359
+CASE 359 (vlax-curve-getParamAtPoint *p* '(5.0 3.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 360
+CASE 360 (vlax-curve-getDistAtPoint *p* '(5.0 3.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 361
+CASE 361 (vlax-curve-getParamAtPoint *pz* '(5.0 3.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 362
+CASE 362 (vlax-curve-getParamAtPoint *pz* '(5.0 0.0 0.0)) => (VALUE 0.5) ; ERRNO=0
+BEGIN 363
+CASE 363 (vlax-curve-getParamAtPoint *pz* '(5.0 0.0)) => (VALUE 0.5) ; ERRNO=0
+BEGIN 364
+CASE 364 (vlax-curve-getParamAtDist *p* 99.0) => (VALUE nil) ; ERRNO=0
+BEGIN 365
+CASE 365 (vlax-curve-getPointAtParam *p* 5.0) => (VALUE nil) ; ERRNO=0
+BEGIN 366
+CASE 366 (vlax-curve-getParamAtPoint *a* '(0.0 0.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 367
+CASE 367 (vlax-curve-getParamAtDist *a* 99.0) => (VALUE 9.9) ; ERRNO=0
+BEGIN 368
+CASE 368 (vlax-curve-getDistAtParam *a* 0.0) => (VALUE 0.0) ; ERRNO=0
+BEGIN 369
+CASE 369 (vlax-curve-getDistAtParam *a* 3.0) => (VALUE 30.0) ; ERRNO=0
+BEGIN 370
+CASE 370 (vlax-curve-getPointAtParam *a* 3.0) => (VALUE nil) ; ERRNO=0
+BEGIN 371
+CASE 371 (vlax-curve-getParamAtDist *c* 99.0) => (VALUE 0.950444) ; ERRNO=0
+BEGIN 372
+CASE 372 (vlax-curve-getParamAtPoint *c* '(0.0 0.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 373
+CASE 373 (vlax-curve-getClosestPointTo *l* nil) => (ERROR "type d'argument incorrect: point 2D/3D: nil") ; ERRNO=0
+BEGIN 374
+CASE 374 (vlax-curve-getClosestPointTo *l* '(20.0 5.0 0.0) T) => (VALUE (20.0 0.0 0.0)) ; ERRNO=0
+BEGIN 375
+CASE 375 (vlax-curve-getClosestPointTo *l* '(20.0 5.0)) => (VALUE (10.0 0.0 0.0)) ; ERRNO=0
+BEGIN 376
+CASE 376 (vlax-curve-getFirstDeriv *l* 25.0) => (VALUE (10.0 0.0 0.0)) ; ERRNO=0
+BEGIN 377
+CASE 377 (vlax-curve-getSecondDeriv *l* 25.0) => (VALUE (0.0 0.0 0.0)) ; ERRNO=0
+BEGIN 378
+CASE 378 (vlax-curve-getEndParam *t*) => (ERROR "valeur d'argument incorrecte: AcDbCurve 47") ; ERRNO=0
+BEGIN 379
+CASE 379 (vlax-curve-getEndParam nil) => (ERROR "impossible de trouver l'ID de l'objet: nil") ; ERRNO=0
+BEGIN 380
+CASE 380 (vlax-curve-getEndParam *dead*) => (ERROR "valeur d'argument incorrecte: AcDbCurve 48") ; ERRNO=0
+BEGIN 381
+CASE 381 (vlax-curve-getArea *l*) => (VALUE 0.0) ; ERRNO=0
+BEGIN 382
+CASE 382 (vlax-curve-getArea *t*) => (ERROR "valeur d'argument incorrecte: AcDbCurve 47") ; ERRNO=0
+BEGIN 383
+CASE 383 (vlax-curve-isClosed *t*) => (ERROR "valeur d'argument incorrecte: AcDbCurve 47") ; ERRNO=0
+BEGIN 384
+CASE 384 (vlax-curve-getStartPoint *t*) => (ERROR "valeur d'argument incorrecte: AcDbCurve 47") ; ERRNO=0
+BEGIN 385
+CASE 385 (vlax-curve-getPointAtDist *l* nil) => (ERROR "type d'argument incorrect: numberp: nil") ; ERRNO=0
+BEGIN 386
+CASE 386 (vlax-curve-getParamAtPoint *l* nil) => (ERROR "type d'argument incorrect: point 2D/3D: nil") ; ERRNO=0
+BEGIN 387
+CASE 387 (vlax-curve-getEndParam 'x) => (ERROR "impossible de trouver l'ID de l'objet: X") ; ERRNO=0
+BEGIN 388
+CASE 388 (command "_PCATNOSUCHCMD") => (VALUE nil) ; ERRNO=0
+BEGIN 389
+CASE 389 (command-s "_PCATNOSUCHCMD") => (ERROR "Erreur inconnue de (command-s).") ; ERRNO=0
+BEGIN 390
+CASE 390 (vl-cmdf "_PCATNOSUCHCMD") => (VALUE T) ; ERRNO=0
+BEGIN 391
+CASE 391 (command "_LINE" "pas-un-point" "") => (VALUE nil) ; ERRNO=0
+BEGIN 393
+CASE 393 (vl-cmdf "_LINE" "pas-un-point" "") => (VALUE T) ; ERRNO=0
+BEGIN 394
+CASE 394 (command "_LINE" nil) => (VALUE nil) ; ERRNO=0
+BEGIN 395
+CASE 395 (command-s "_LINE" '(0 0) nil) => (ERROR "Erreur inconnue de (command-s).") ; ERRNO=0
+BEGIN 396
+CASE 396 (command "_LAYER" "_S" "PCAT_NOPE_LAYER" "") => (VALUE nil) ; ERRNO=0
+BEGIN 398
+CASE 398 (command "_CIRCLE" '(0 0) -5) => (VALUE nil) ; ERRNO=0
+BEGIN 400
+CASE 400 (vl-cmdf "_CIRCLE" '(0 0) -5) => (VALUE T) ; ERRNO=0
+BEGIN 401
+CASE 401 (command 1 2) => (VALUE nil) ; ERRNO=0
+BEGIN 402
+CASE 402 (command-s) => (VALUE nil) ; ERRNO=0
+BEGIN 403
+CASE 403 (command) => (VALUE nil) ; ERRNO=0
+BEGIN 404
+CASE 404 (getvar "CMDACTIVE") => (VALUE 0) ; ERRNO=0
+BEGIN 405
+CASE 405 (vla-item *blocks* "PCAT_NO_BLOCK") => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 406
+CASE 406 (vla-item *blocks* 99999) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 407
+CASE 407 (vlax-ename->vla-object nil) => (ERROR "type d'argument incorrect: lentityp nil") ; ERRNO=0
+BEGIN 408
+CASE 408 (vlax-ename->vla-object *dead*) => (VALUE nil) ; ERRNO=0
+BEGIN 409
+CASE 409 (vla-get-name nil) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 410
+CASE 410 (vlax-get-property *lo* 'PcatBogus) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 411
+CASE 411 (vlax-put-property *lo* 'Color "red") => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 412
+CASE 412 (vlax-invoke-method *lo* 'PcatBogus) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 413
+CASE 413 (vla-get-effectivename *lo*) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 414
+CASE 414 (vla-get-textstring *lo*) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 415
+CASE 415 (vlax-property-available-p *lo* 'PcatBogus) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 416
+CASE 416 (vlax-method-applicable-p *lo* 'PcatBogus) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 417
+CASE 417 (vlax-variant-value nil) => (ERROR "type d'argument incorrect: variantp nil") ; ERRNO=0
+BEGIN 418
+CASE 418 (vlax-variant-value 1) => (ERROR "type d'argument incorrect: variantp 1") ; ERRNO=0
+BEGIN 419
+CASE 419 (vlax-safearray->list nil) => (ERROR "type d'argument incorrect: safearrayp nil") ; ERRNO=0
+BEGIN 420
+CASE 420 (vlax-safearray->list *empty-sa*) => (ERROR "type d'argument incorrect: safearrayp nil") ; ERRNO=0
+BEGIN 421
+CASE 421 (vlax-make-safearray vlax-vbDouble '(0 . -1)) => (ERROR "Limite sup�rieure de SAFEARRAYBOUND est plus petite que la limite inf�rieure.") ; ERRNO=0
+BEGIN 422
+CASE 422 (vlax-make-safearray vlax-vbDouble '(0 . 0)) => (VALUE #<safearray...>) ; ERRNO=0
+BEGIN 423
+CASE 423 (vlax-make-safearray vlax-vbDouble '(0 . -2)) => (ERROR "Limite sup�rieure de SAFEARRAYBOUND est plus petite que la limite inf�rieure.") ; ERRNO=0
+BEGIN 424
+CASE 424 (vlax-make-variant nil) => (VALUE #<variant 0 >) ; ERRNO=0
+BEGIN 425
+CASE 425 (vlax-ldata-get "pcat" "nokey") => (VALUE nil) ; ERRNO=0
+BEGIN 426
+CASE 426 (vlax-ldata-get nil nil) => (ERROR "type d'argument incorrect: doit �tre une entit� ou un dictionnaire OBJET VLA: nil") ; ERRNO=0
+BEGIN 427
+CASE 427 (vlax-erased-p *lo*) => (ERROR "impossible de trouver l'ID de l'objet: nil") ; ERRNO=0
+BEGIN 428
+CASE 428 (vlax-erased-p nil) => (ERROR "impossible de trouver l'ID de l'objet: nil") ; ERRNO=0
+BEGIN 429
+CASE 429 (vlax-read-enabled-p nil) => (ERROR "impossible de trouver l'ID de l'objet: nil") ; ERRNO=0
+BEGIN 430
+CASE 430 (vlax-get-acad-object 1) => (ERROR "nombre d'arguments trop important") ; ERRNO=0
+BEGIN 431
+CASE 431 (vla-put-layer *lo* "PCAT_NOPE_LAYER") => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 432
+CASE 432 (vla-put-color *lo* 999) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 433
+CASE 433 (vlax-release-object nil) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 434
+CASE 434 (vlax-tmatrix nil) => (ERROR "Liste de matrices de transformations incorrectes: nil") ; ERRNO=0
+BEGIN 435
+CASE 435 (vlax-3d-point nil) => (ERROR "Point en 3D incorrect: nil") ; ERRNO=0
+BEGIN 436
+CASE 436 (vlax-3d-point '(1)) => (ERROR "liste de points en 3D incorrecte: (1)") ; ERRNO=0
+BEGIN 437
+CASE 437 (vla-get-blocks nil) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 438
+CASE 438 (vla-add *blocks* (vlax-3d-point '(0 0 0)) "") => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 439
+CASE 439 (vlax-get *lo* 'PcatBogus) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 440
+CASE 440 (vlax-invoke *lo* 'PcatBogus) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 441
+CASE 441 (vlax-dump-object nil) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 442
+CASE 442 (vla-getboundingbox *lo* 'a 'b) => (ERROR "type d'argument incorrect: VLA-OBJECT nil") ; ERRNO=0
+BEGIN 443
+CASE 443 (open nil "r") => (ERROR "type d'argument incorrect: stringp nil") ; ERRNO=0
+BEGIN 444
+CASE 444 (open "Z:/pcat/nonexistent/x.txt" "r") => (VALUE nil) ; ERRNO=0
+BEGIN 445
+CASE 445 (open "pcat.txt" "z") => (ERROR "mode d'ouverture inconnu: \"z\"") ; ERRNO=0
+BEGIN 446
+CASE 446 (open "Z:/pcat/nonexistent/x.txt" "w") => (VALUE nil) ; ERRNO=0
+BEGIN 447
+CASE 447 (read-line nil) => (ERROR "type d'argument incorrect: FILE nil") ; ERRNO=0
+BEGIN 448
+CASE 448 (read-char nil) => (ERROR "type d'argument incorrect: FILE nil") ; ERRNO=0
+BEGIN 449
+CASE 449 (close nil) => (ERROR "type d'argument incorrect: streamp nil") ; ERRNO=0
+BEGIN 450
+CASE 450 (write-line 1 nil) => (ERROR "type d'argument incorrect: stringp 1") ; ERRNO=0
+=== PCAT DONE

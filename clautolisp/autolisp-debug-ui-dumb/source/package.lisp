@@ -92,4 +92,10 @@ UI refines.")
            #:inspector-loop
            ;; breakpoint-action / watch-predicate makers + value preview, reused
            ;; by the tool's sleeping-aldo bpcmd / trace / watch / lw commands.
-           #:make-bp-action #:make-watch-predicate #:preview))
+           #:make-bp-action #:make-watch-predicate #:preview
+           ;; the ALDO interactor and its per-instance state, instantiated in
+           ;; ncurses windows through the "aldo" template
+           ;; (windows-and-interactor-templates.issue, the singleton split).
+           #:*aldo* #:aldo-state #:aldo-state-p
+           #:aldo-state-ui #:aldo-state-session #:aldo-state-hit
+           #:dumb-ui-displays #:dumb-ui-last-step-command))

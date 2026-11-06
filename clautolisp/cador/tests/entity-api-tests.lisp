@@ -2,13 +2,19 @@
 
 (in-suite cador-suite)
 
-;;; --- Phase 10: entity API on MockHost -----------------------------
+;;; --- Phase 10: entity API on cador -----------------------------
 
 (defun make-line-data (&key (layer "0") (start '(0.0d0 0.0d0 0.0d0)) (end '(1.0d0 1.0d0 0.0d0)))
   (list (cons 0 "LINE")
         (cons 8 layer)
         (cons 10 start)
         (cons 11 end)))
+
+(defun %model-space-record (mock)
+  "Model space's BLOCK_RECORD: the owner a main-space entity's 330 names --
+the 330 of the BLOCK entity (tblobjname \"BLOCK\" \"*Model_Space\") returns
+\(cador-entget-subclass-layout-and-record-pointers, item 4)."
+  (cdr (assoc 330 (host-entget mock (host-tblobjname mock "BLOCK" "*Model_Space")))))
 
 (test entmake-allocates-handle-and-injects-bookkeeping
   (let* ((mock (make-cador))
@@ -18,17 +24,22 @@
     (let ((head (first data)))
       (is (and (consp head) (eql -1 (car head))))
       (is (typep (cdr head) 'autolisp-ename)))
-    ;; Second entry is the (5 . HANDLE) string. The host wraps string
-    ;; values as autolisp-strings at the boundary (REVIEW-1); the
-    ;; drawing stores a pure CL string.
-    (let ((second (second data)))
-      (is (and (consp second) (eql 5 (car second))))
-      (is (typep (cdr second) 'autolisp-string))
-      (is (string= "10" (autolisp-string-value (cdr second)))))
+    ;; Then the vendors' header (cador-entget-owner-and-header-layout; the
+    ;; default dialect follows AutoCAD 2022, measured): (0 . TYPE), the
+    ;; owner (330 . <model space BLOCK_RECORD>), then (5 . HANDLE). The host
+    ;; wraps string values as autolisp-strings at the boundary (REVIEW-1);
+    ;; the drawing stores a pure CL string.
+    (is (equal '(-1 0 330 5) (mapcar #'car (subseq data 0 4))))
+    (let ((five (fourth data)))
+      (is (typep (cdr five) 'autolisp-string))
+      ;; the handle the ename denotes (table records took the first ones)
+      (is (string= (autolisp-ename-value (cdr (first data)))
+                   (autolisp-string-value (cdr five)))))
+    (is (eq (%model-space-record mock) (cdr (third data))))
     ;; entlast surfaces the same ename as the entry just made.
     (let ((last-ename (host-entlast mock)))
       (is (typep last-ename 'autolisp-ename))
-      (is (string= "10" (autolisp-ename-value last-ename))))))
+      (is (eq (cdr (first data)) last-ename)))))
 
 (test entget-returns-the-stored-data-list
   (let* ((mock (make-cador))
@@ -76,22 +87,27 @@
       (host-entmod mock updated)
       (let ((after (host-entget mock ename)))
         (is (string= "Mine" (autolisp-string-value (cdr (assoc 8 after)))))
-        ;; The host still injected its (-1 . ename) and (5 . handle).
-        (is (eql -1 (car (first after))))
-        (is (eql 5 (car (second after))))))))
+        ;; The host still injected its (-1 . ename) and (5 . handle), in
+        ;; the vendors' header order, and the round trip stored no
+        ;; synthesized owner: the view's 330 is still the synthesized one.
+        (is (equal '(-1 0 330 5) (mapcar #'car (subseq after 0 4))))
+        (is (null (find 330 (clautolisp.drawing:entity-handle-data
+                             (clautolisp.cador::cador-find-entity-by-handle
+                              mock (autolisp-ename-value ename)))
+                        :key (lambda (p) (and (consp p) (car p))))))))))
 
 (test entlast-and-entnext-walk-creation-order
   (let* ((mock (make-cador))
          (a (cdr (first (host-entmake mock (make-line-data :layer "L1")))))
          (b (cdr (first (host-entmake mock (make-line-data :layer "L2")))))
          (c (cdr (first (host-entmake mock (make-line-data :layer "L3"))))))
-    (is (string= "12" (autolisp-ename-value (host-entlast mock))))
-    (let ((first-ename (host-entnext mock nil)))
-      (is (string= "10" (autolisp-ename-value first-ename))))
-    (let ((second (host-entnext mock a)))
-      (is (string= "11" (autolisp-ename-value second))))
-    (let ((third (host-entnext mock b)))
-      (is (string= "12" (autolisp-ename-value third))))
+    (is (eq c (host-entlast mock)))
+    (is (eq a (host-entnext mock nil)))
+    (is (eq b (host-entnext mock a)))
+    (is (eq c (host-entnext mock b)))
+    ;; consecutive handles, in creation order
+    (is (= (1+ (parse-integer (autolisp-ename-value a) :radix 16))
+           (parse-integer (autolisp-ename-value b) :radix 16)))
     ;; Past the end -> nil.
     (is (null (host-entnext mock c)))))
 
@@ -110,7 +126,7 @@
 (test handent-resolves-known-handle
   (let* ((mock (make-cador))
          (data (host-entmake mock (make-line-data)))
-         (handle (cdr (second data)))            ; an autolisp-string now
+         (handle (cdr (assoc 5 data)))           ; an autolisp-string now
          (ename (host-handent mock handle)))
     (is (typep ename 'autolisp-ename))
     (is (string= (autolisp-string-value handle) (autolisp-ename-value ename)))
@@ -228,16 +244,22 @@
          (v2 (host-entmakex mock (list (cons 0 "VERTEX")
                                        (cons 10 '(1.0d0 0.0d0 0.0d0)))))
          (seq (host-entmakex mock (list (cons 0 "SEQEND")))))
-    ;; Each VERTEX's 330 owner is the polyline's handle.
+    ;; Each VERTEX's 330 owner is the polyline -- as an ENAME, EQ to the
+    ;; polyline's own ename (a DXF pointer code; entget never returns a
+    ;; handle string there).
     (dolist (v (list v1 v2))
       (let ((owner (cdr (assoc 330 (host-entget mock v)))))
-        (is (string= poly-handle (autolisp-string-value owner)))))
+        (is (typep owner 'autolisp-ename))
+        (is (eq poly owner))
+        (is (string= poly-handle (autolisp-ename-value owner)))))
     ;; SEQEND is owned by the polyline too.
-    (is (string= poly-handle
-                 (autolisp-string-value (cdr (assoc 330 (host-entget mock seq))))))
-    ;; A LINE created after the SEQEND does NOT get an owner (run closed).
+    (is (eq poly (cdr (assoc 330 (host-entget mock seq)))))
+    ;; A LINE created after the SEQEND is NOT owned by the POLYLINE (run
+    ;; closed): its owner is model space's BLOCK_RECORD, as for any
+    ;; main-space entity (cador-entget-owner-and-header-layout).
     (let ((line (host-entmakex mock (make-line-data))))
-      (is (null (assoc 330 (host-entget mock line)))))
+      (is (eq (%model-space-record mock)
+              (cdr (assoc 330 (host-entget mock line))))))
     ;; ENTNEXT walks the whole structure in creation order.
     (is (string= poly-handle (autolisp-ename-value (host-entnext mock nil))))
     (is (string= (autolisp-ename-value v1)
@@ -253,8 +275,147 @@
                                       (cons 10 '(0.0d0 0.0d0 0.0d0))
                                       (cons 330 (make-autolisp-string "FADE"))))))
     (declare (ignore poly))
-    (is (string= "FADE"
-                 (autolisp-string-value (cdr (assoc 330 (host-entget mock v))))))))
+    ;; Stored as given; read back as the ENAME of that (dangling) handle.
+    (let ((owner (cdr (assoc 330 (host-entget mock v)))))
+      (is (typep owner 'autolisp-ename))
+      (is (string= "FADE" (autolisp-ename-value owner)))
+      ;; A pointer to no object: entget of it is NIL, no error.
+      (is (null (host-entget mock owner))))))
+
+;;; --- DXF pointer group codes come back as ENAMES ------------------
+;;; (cador-entget-pointer-codes-are-handle-strings.issue: SCHMS saw
+;;;  "ENTGET expects an ENAME, got \"41\"" when it entget-ed a 330.)
+
+(defun %pointer-codes-in (view)
+  "The (CODE . VALUE) pairs of VIEW whose CODE is a DXF pointer code."
+  (remove-if-not (lambda (pair)
+                   (and (consp pair) (integerp (car pair))
+                        (or (<= 330 (car pair) 369) (<= 390 (car pair) 399)
+                            (<= 480 (car pair) 481))))
+                 view))
+
+(test entget-owner-330-is-an-entgetable-ename
+  (let* ((mock (make-cador))
+         (poly (host-entmakex mock (list (cons 0 "POLYLINE") (cons 70 1))))
+         (v (host-entmakex mock (list (cons 0 "VERTEX")
+                                      (cons 10 '(0.0d0 0.0d0 0.0d0))))))
+    (host-entmakex mock (list (cons 0 "SEQEND")))
+    (let* ((owner (cdr (assoc 330 (host-entget mock v))))
+           (owner-view (host-entget mock owner)))
+      (is (typep owner 'autolisp-ename))
+      (is (consp owner-view))
+      (is (eq poly (cdr (assoc -1 owner-view))))
+      (is (string= "POLYLINE"
+                   (autolisp-string-value (cdr (assoc 0 owner-view))))))))
+
+(test entget-own-handle-5-and-xdata-1005-stay-strings
+  (let* ((mock (make-cador))
+         (target (host-entmakex mock (make-line-data)))
+         (ename (host-entmakex
+                 mock
+                 (append (make-line-data)
+                         (list (cons 105 (make-autolisp-string "1F"))
+                               (cons 320 (make-autolisp-string "1F"))
+                               (list -3 (list (make-autolisp-string "MYAPP")
+                                              (cons 1005 (make-autolisp-string
+                                                          (autolisp-ename-value target)))))))))
+         (view (host-entget mock ename (list (make-autolisp-string "MYAPP")))))
+    (is (typep (cdr (assoc 5 view)) 'autolisp-string))
+    (is (typep (cdr (assoc 105 view)) 'autolisp-string))
+    ;; 320-329 are arbitrary handle VALUES on AutoCAD (measured 2026-10-08;
+    ;; BricsCAD makes them enames -- pointer-dialect-tests).
+    (is (typep (cdr (assoc 320 view)) 'autolisp-string))
+    (let* ((group (first (cdr (assoc -3 view))))
+           (h (cdr (assoc 1005 (rest group)))))
+      (is (typep h 'autolisp-string))
+      (is (string= (autolisp-ename-value target) (autolisp-string-value h))))))
+
+(test entget-converts-every-pointer-code-range
+  (let* ((mock (make-cador))
+         (target (host-entmakex mock (make-line-data)))
+         (h (autolisp-ename-value target))
+         (codes '(330 339 340 349 350 359 360 369 390 399 480 481))
+         (ename (host-entmakex
+                 mock
+                 (append (make-line-data)
+                         (mapcar (lambda (c) (cons c (make-autolisp-string h)))
+                                 codes))))
+         (view (host-entget mock ename)))
+    (dolist (c codes)
+      (is (eq target (cdr (assoc c view)))))
+    (is (= (length codes) (length (%pointer-codes-in view))))))
+
+(test entmake-and-entmod-accept-ename-and-string-pointers
+  (let* ((mock (make-cador))
+         (a (host-entmakex mock (make-line-data)))
+         (b (host-entmakex mock (make-line-data)))
+         ;; entmake with an ENAME pointer ...
+         (e1 (host-entmakex mock (append (make-line-data) (list (cons 340 a)))))
+         ;; ... and with a handle STRING pointer (compatibility).
+         (e2 (host-entmakex mock (append (make-line-data)
+                                         (list (cons 340 (make-autolisp-string
+                                                          (autolisp-ename-value a))))))))
+    (is (eq a (cdr (assoc 340 (host-entget mock e1)))))
+    (is (eq a (cdr (assoc 340 (host-entget mock e2)))))
+    ;; entget -> entmod round trip with the ENAME unchanged.
+    (let ((data (host-entget mock e1)))
+      (is (consp (host-entmod mock data)))
+      (is (eq a (cdr (assoc 340 (host-entget mock e1))))))
+    ;; entmod re-pointing with an ENAME, then with a STRING.
+    (let ((data (subst (cons 340 b) (assoc 340 (host-entget mock e1))
+                       (host-entget mock e1) :test #'equal)))
+      (is (consp (host-entmod mock data)))
+      (is (eq b (cdr (assoc 340 (host-entget mock e1))))))
+    (let ((data (subst (cons 340 (make-autolisp-string (autolisp-ename-value a)))
+                       (assoc 340 (host-entget mock e1))
+                       (host-entget mock e1) :test #'equal)))
+      (is (consp (host-entmod mock data)))
+      (is (eq a (cdr (assoc 340 (host-entget mock e1))))))))
+
+(test entget-pointer-to-an-erased-object-stays-an-ename
+  (let* ((mock (make-cador))
+         (a (host-entmakex mock (make-line-data)))
+         (e (host-entmakex mock (append (make-line-data) (list (cons 340 a))))))
+    (host-entdel mock a)
+    (let ((p (cdr (assoc 340 (host-entget mock e)))))
+      (is (eq a p))
+      (is (null (host-entget mock p))))))
+
+(test tblsearch-record-pointers-are-entgetable-enames
+  (let* ((mock (make-cador))
+         (x (host-entmakex mock (list (cons 0 "XRECORD")
+                                      (cons 100 "AcDbXrecord")
+                                      (cons 1 "plot-style"))))
+         (owner (make-symbol-table-record
+                 :id "7A" :kind :layer :name "PTR-OWNER"
+                 :data '((0 . "LAYER") (2 . "PTR-OWNER") (70 . 0)))))
+    (clautolisp.cador::cador-add-table-record mock owner)
+    (clautolisp.cador::cador-add-table-record
+     mock (make-symbol-table-record
+           :id "7B" :kind :layer :name "PTR"
+           :data (list (cons 0 "LAYER") (cons 5 "7B") (cons 330 "7A")
+                       (cons 2 "PTR") (cons 70 0)
+                       (cons 390 (autolisp-ename-value x)))))
+    (dolist (view (list (host-tblsearch mock "LAYER" "PTR")
+                        (host-entget mock (host-tblobjname mock "LAYER" "PTR"))))
+      (let ((p330 (cdr (assoc 330 view)))
+            (p390 (cdr (assoc 390 view))))
+        (is (typep (cdr (assoc 5 view)) 'autolisp-string))
+        (is (typep p330 'autolisp-ename))
+        (is (eq p330 (host-tblobjname mock "LAYER" "PTR-OWNER")))
+        (is (string= "PTR-OWNER"
+                     (autolisp-string-value (cdr (assoc 2 (host-entget mock p330))))))
+        (is (eq x p390))
+        (is (string= "plot-style"
+                     (autolisp-string-value (cdr (assoc 1 (host-entget mock p390))))))))
+    ;; tblnext yields the same pointer view.
+    (let ((found nil))
+      (loop for r = (host-tblnext mock "LAYER" :rewind (not found))
+            while r
+            do (setf found t)
+               (when (string= "PTR" (autolisp-string-value (cdr (assoc 2 r))))
+                 (is (typep (cdr (assoc 330 r)) 'autolisp-ename))
+                 (is (eq x (cdr (assoc 390 r)))))))))
 
 ;;; --- ename EQ / EQUAL identity (ename-eq-identity.issue) ----------
 ;;;
@@ -302,3 +463,54 @@
          (b (host-entmakex mock (make-line-data))))
     (is (not (eq a b)))
     (is (not (equal a b)))))
+
+;;; --- the entget header: -1 0 5 [102 ...] 330 ----------------------
+;;;
+;;; cador-entget-owner-and-header-layout. BricsCAD V26 (entget-pointers
+;;; probe section 10, job 17397066992) lists every object -1 0 5, then a
+;;; dictionary member's {ACAD_REACTORS ...} group, then the owner 330;
+;;; a main-space entity's owner is its space's BLOCK_RECORD.
+
+(defun %stored-codes (mock ename)
+  (mapcar (lambda (p) (and (consp p) (car p)))
+          (clautolisp.drawing:entity-handle-data
+           (clautolisp.cador::cador-find-entity-by-handle
+            mock (autolisp-ename-value ename)))))
+
+(test entget-round-trips-store-nothing-synthesized
+  "(entmod (entget e)) and (entmake (cdr (entget e))) carry the
+synthesized owner and reactor groups back in; neither may be stored."
+  (let* ((mock (make-cador))
+         (line (host-entmakex mock (make-line-data))))
+    (host-entmod mock (host-entget mock line))
+    (is (null (member 330 (%stored-codes mock line))))
+    (is (equal '(-1 0 330 5) (mapcar #'car (subseq (host-entget mock line) 0 4))))
+    (let ((copy (host-entmakex mock (rest (remove 5 (host-entget mock line)
+                                               :key (lambda (p) (and (consp p) (car p))))))))
+      (is (typep copy 'autolisp-ename))
+      (is (null (member 330 (%stored-codes mock copy))))
+      (is (eq (%model-space-record mock)
+              (cdr (assoc 330 (host-entget mock copy))))))))
+
+(test entget-of-a-dictionary-member-has-the-reactor-group
+  (let* ((mock (make-cador))
+         (nod (host-namedobjdict mock))
+         (x (make-xrecord-ename mock "z")))
+    ;; Free: cador stores no owner (BricsCAD measured -1 0 5 100 ...; AutoCAD
+    ;; lists an owner, -1 0 330 5 100 -- cador-entget-subclass-layout-and-
+    ;; record-pointers).
+    (is (equal '(-1 0 5 100) (mapcar #'car (subseq (host-entget mock x) 0 4))))
+    (host-dictadd mock nod (mk-str "HDRK") x)
+    (let ((view (host-entget mock x)))
+      (is (equal '(-1 0 5 102 330 102 330 100)
+                 (mapcar #'car (subseq view 0 8))))
+      (is (string= "{ACAD_REACTORS" (autolisp-string-value (cdr (fourth view)))))
+      (is (eq nod (cdr (fifth view))))
+      (is (eq nod (cdr (seventh view))))
+      ;; entmod of that view stores no reactor group, and the owner once.
+      (host-entmod mock view)
+      (let ((stored (%stored-codes mock x)))
+        (is (null (member 102 stored)))
+        (is (= 1 (count 330 stored))))
+      (is (equal '(-1 0 5 102 330 102 330 100)
+                 (mapcar #'car (subseq (host-entget mock x) 0 8)))))))

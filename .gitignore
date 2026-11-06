@@ -180,3 +180,7 @@ clautolisp/drawing-dwg/source/clal_dwg.so
 *.pdf
 
 autolisp-spec/documentation/.harvest/
+
+# CI build caches (scripts/ci-build-cache.sh): the GitLab cache: of a job
+# holds .ci-cache/<kind>/; never tracked.
+/.ci-cache/

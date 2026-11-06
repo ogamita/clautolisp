@@ -1,0 +1,1005 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: clautolisp/alfe: named encoding "situations", per-situation CLI options, and line-termination
+#+DATE: 2026-07-27
+#+STATUS: DONE (2026-10-08, clautolisp 2.3.9 / alfe 2.3.9 -- see Resolution at the end)
+
+* Status
+
+*VALIDATED 2026-07-28 (pjb).* The situation list is settled at SIX:
+=source=, =file=, =console= (CAD GUI console device), =cadstdio= (CAD
+process OS pipes), =log=, =terminal= (alfe/clautolisp's own). Arbitration
+points a–d resolved (see §3): one =file=; two encodings (in/out) on
+=console=/=cadstdio=/=terminal= (+ read/write on =file=); =-e= and =-E=
+DROPPED; the console-area three-way split (=console= ≠ =cadstdio= ≠
+=terminal=). The option set is §4. Downstream still to complete: the §7
+defaults table (needs experiments E1–E5, several CAD-blocked) and the §6
+plumbing — but implementation of the settled situations + CLI can start.
+Key implementation constraint (§2.1): all =load= implementations
+(=builtin-load=/=autolisp-load-file-in-context= engine, =autolisp-source-load=
+CAD-side shadow — CONFIRMED still present, currently NOT encoding-aware =
+the macOS bug, =direct-load= alfe bridge, and the external =tu:load=) MUST
+share one algorithm, signature, and encoding-parameter processing for the
+=source= situation.
+
+Supersedes the "To design (pjb)" section of
+=alfe-cad-console-encoding.issue=, which sketched a per-backend console
+option only. The scope here is wider: there is not one console stream to
+configure but a handful of distinct *situations*, each with its own
+encoding, each fixed or configurable depending on the CAD and its
+version.
+
+* 1. Why
+
+Today `-E` is parsed, threaded into `start-engine`, and then dropped:
+
+    backend-bricscad.lisp:599   (declare (ignore host mock-input dialect dwg load-encoding io-encoding))
+    backend-autocad.lisp:552    (declare (ignore dialect host mock-input load-encoding io-encoding))
+    backend-clautolisp.lisp:389 (declare (ignore mock-input bootstrap-phase io-encoding mode dwg))
+
+and the one place that decodes CAD console output takes no encoding at
+all — `decode-console-octets` (file-protocol.lisp:564) is a fixed
+cascade: UTF-16LE by BOM/heuristic, then UTF-8 BOM, then lenient UTF-8
+with a per-byte `(code-char b)` fallback, i.e. Latin-1. So the only two
+outcomes reachable are UTF-16LE and Latin-1; no third encoding can be
+requested, and there is no parameter to request it through.
+
+Consequence measured on BricsCAD V26 / macOS (alfe 1.6.14): the CAD
+writes its console in Mac Roman, the fallback decodes Latin-1, and `é`
+(Mac Roman 0x8E) reaches the transcript as U+008E. Identical output for
+`-E MAC-ROMAN`, `-E WINDOWS-1252` and `-E UTF-8`.
+
+The reverse direction is *fine* and must not regress: a literal `é`
+passed in `-x` arrives in BricsCAD as one character of code 233,
+independently of `-E`.
+
+* 2. What we know, per situation × CAD × version × setting
+
+Provenance is marked: [doc] vendor documentation, [obs] measured here,
+[?] unknown, to be measured.
+
+** 2.1 AutoLISP source files (`load`, alfe `-l`)
+
+| CAD / setting              | Encoding                                   | Configurable?                      |
+|----------------------------+--------------------------------------------+------------------------------------|
+| AutoCAD, LISPSYS 0         | MBCS / ASCII, "no encoding argument"       | via LISPSYS only; restart required |
+| AutoCAD, LISPSYS 1 (dflt)  | Unicode support in AutoLISP functions      | via LISPSYS only; restart required |
+| AutoCAD, LISPSYS 2         | Unicode support, MBCS when *compiled*      | via LISPSYS only; restart required |
+| BricsCAD, any              | UTF-8 *if BOM present*, else ANSI/codepage | no per-call setting                |
+| BricsCAD V26 / macOS       | "ANSI" is Mac Roman                        | no                                 |
+| clautolisp                 | alfe `-e ENC` (honoured, incl. line-ending suffix) | yes                        |
+
+[doc] LISPSYS documents editor choice, Unicode support and the encoding
+used when *compiling* LSP files. It does **not** state how a `.lsp` is
+*decoded at load time*. → experiment E1.
+
+[obs] BricsCAD in-engine `(load …)` ignores alfe's `-e`; that is
+`cad-load-encoding-macos.issue`, and it is the same axis as this issue:
+the source situation has no per-engine setting to forward `-e` into.
+
+Our load implementations (verified 2026-07-28) — the `source` situation
+spans ALL of them, and they MUST share one algorithm, signature, and
+encoding-parameter processing (a fourth, macro-load, may join):
+- `builtin-load` → `autolisp-load-file-in-context`
+  (=CL/autolisp-builtins-core/source/api.lisp:546=, runtime :2829) —
+  in-process engine; HONOURS the encoding. **The reference algorithm.**
+- `autolisp-source-load` (=AFE/source/runtime/autolisp-bootstrap.lsp:563=,
+  family 432/461/566, dispatch `autolisp-eval-load-form` :688, registered
+  `*CLLOAD_DEFAULT_LOADER*` :833) — the CAD-side shadow that deports the
+  program's I/O over the protocol. **CONFIRMED still present; native
+  `(open … "r")` with NO encoding ⇒ host codepage (macOS Mac Roman). This
+  is the bug.** Must be brought to the reference algorithm; watch the
+  pure-ASCII constraint on the vendored runtime (bootstrap :541-547).
+- `direct-load` (=AFE/source/backend-clautolisp.lisp:505=) — the
+  alfe→clautolisp bridge; delegates to the engine, OK.
+- `tu:load` — the SCHMS+ unit-test loader (external, sncf-reseau/src/schms);
+  out of this tree but must follow the same contract.
+
+** 2.2 Files opened by the program (`open`, `read-line`, `write-line`, `princ` to a file)
+
+| CAD / setting             | Default encoding        | Per-call override                          |
+|---------------------------+-------------------------+--------------------------------------------|
+| AutoCAD, LISPSYS 0        | MBCS                    | none — the `encoding` arg does not exist    |
+| AutoCAD, LISPSYS 1 or 2   | MBCS when arg omitted   | `(open f mode "utf8" \| "utf8-bom")`        |
+| BricsCAD                  | ANSI / system codepage  | `(open f "r\|w,ccs=UTF-8\|UTF-16LE\|UNICODE")` |
+| BricsCAD V26 / macOS      | **Mac Roman, LF**       | as above                                    |
+
+[doc] AutoCAD: `(open filename mode [encoding])`; "When a value isn't
+provided for the argument, the file is assumed to contain multibyte
+character set (MBCS) which is the legacy behavior"; accepted values
+`"utf8"` and `"utf8-bom"` only.
+
+[doc] BricsCAD: `,ccs=<translation>` appended to the mode; `UTF-8`,
+`UTF-16LE`, `UNICODE` (= UTF-16LE, read only, auto-adapts). UTF-8 BOM
+optional; without BOM the file is treated as ANSI.
+
+[obs] BricsCAD V26 macOS, writing `A` `(chr 233)` `B`:
+
+    (open f "w")                → 41 8e 42 0a     Mac Roman, LF
+    (open f "w,ccs=UTF-8")      → 41 c3 a9 42 0a  UTF-8, LF        ✓
+    (open f "w,ccs=UTF-16LE")   → 41 c3 a9 42 0a  UTF-8, LF        ✗
+
+  `ccs=UTF-16LE` is *accepted without error* and silently produces UTF-8
+  on macOS. Worth a separate vendor-divergence probe.
+
+[obs 2026-07-28, the encoding experiment — see §7] The picture is richer
+than the single Mac-Roman row above: BricsCAD/macOS's `(open … "w")`
+default follows the **process locale**, not SYSCODEPAGE. Under the CI
+runner's `LANG=en_US.UTF-8` it wrote **UTF-8** (é = `c3 a9`), and
+`LC_ALL=C` switched it to Latin-1 (é = `e9`); the earlier `41 8e 42`
+(Mac Roman) was a non-UTF-8-desktop-locale reading. So `file` IS
+settable on macOS via `LC_ALL`. BricsCAD/**Windows** by contrast pins the
+default to ANSI_1252 (SYSCODEPAGE) regardless of `chcp`/`LC_*`, but
+HONOURS `,ccs=UTF-8` AND `,ccs=UTF-16LE` — so the §7 E4 divergence is
+confirmed (UTF-16LE works on Windows, degrades to UTF-8 on macOS).
+accoreconsole ignores `,ccs=` altogether (product-fixed ANSI/MBCS).
+
+** 2.3 Console (program's `princ` / `read-line` on stdin-stdout)
+
+| CAD / setting                 | Encoding                      | Configurable?                  |
+|-------------------------------+-------------------------------+--------------------------------|
+| AutoCAD GUI                   | no accessible console         | n/a                            |
+| accoreconsole 2022 FR         | **UTF-16LE** (pjb confirmed §7.2; matches alfe drain); LF-in/CRLF-out; unflushed prompt | **no known setting** (fixed) |
+| BricsCAD GUI (macOS V26)      | **full Unicode** both ways (é 233, € 8364) [§7.2] | product-fixed          |
+| BricsCAD GUI (Windows V25)    | **cp1252** (é 233, € 128) [§7.2] | product-fixed                  |
+| AutoCAD GUI (Windows 2022)    | **cp1252** in (é 233, € 128); € → 172 out [§7.2] | product-fixed        |
+| clautolisp                    | alfe `-E` — currently ignored | yes, once plumbed              |
+
+[obs, pjb] `accoreconsole/accoreconsole.org`: input must carry no BOM (a
+leading BOM is read as part of the first command); `/l` selects language
+not encoding; `SYSCODEPAGE` is read-only ("ANSI_1252") and independent of
+the pipe encoding; `DWGCODEPAGE` is its alias; `chcp 65001` has no effect
+on UTF-16 units written straight into a pipe. Conclusion: for
+accoreconsole the console encoding is **fixed by the product**, so the
+option must be a no-op-with-warning there rather than a promise.
+
+Note the line-termination consequence recorded in the same document:
+CRLF arriving on accoreconsole stdin counts as *two* Enter events, so the
+console situation needs a line-termination setting, not only a charset.
+
+** 2.4 CAD log file (LOGFILEMODE / LOGFILEPATH / LOGFILENAME)
+
+| CAD                    | Encoding | Configurable? |
+|------------------------+----------+---------------|
+| AutoCAD                | [?]      | [?]           |
+| BricsCAD               | [?]      | [?]           |
+
+[?] Not documented by either vendor as far as the search went. Attempted
+to measure on BricsCAD V26 macOS in batch mode: setting `LOGFILEPATH` +
+`LOGFILEMODE 1` produced no log file, so the measurement failed rather
+than yielded a value. → experiment E2.
+
+This situation matters to us concretely: the SCHMS+ harness routes
+`(vl-bt)` through LOGFILE on BricsCAD batch because the LISP console is
+not redirected there.
+
+** 2.5 alfe / clautolisp terminal
+
+What the *user* sees. Distinct from every row above: it is our own
+output stream, not the CAD's. Currently governed by the platform default
+and by `--no-color`; `--list-encodings` mentions that the line-ending
+suffix is "accepted-and-ignored on -E (terminal IO is line-buffered by
+default)".
+
+** 2.6 alfe↔CAD protocol files
+
+`protocol/stdout.txt`, `stderr.txt`, status/request/response. alfe writes
+them `:external-format :utf-8` hard-coded (file-protocol.lisp 273/320/359/1372,
+backend-bricscad 289/444/488, backend-autocad 379/397) and reads the two
+channel files through `decode-console-octets`.
+
+The channel files are the *transport* of situation 2.3 for the file-IPC
+backends — that is why `-E` looks like it "should" work there. The
+control files are alfe's own and their payload is ASCII.
+
+* 3. Proposed situation list — TO VALIDATE
+
+The name is what the CLI option is built from, so it should read well in
+both forms. Proposal:
+
+| # | Situation   | Covers                                                              | Who fixes it                     |
+|---+-------------+---------------------------------------------------------------------+----------------------------------|
+| 1 | `source`    | `.lsp`/`.dcl` read by `load` and by alfe `-l` (ALL load impls, §2.1) | engine (LISPSYS / BOM rule)      |
+| 2 | `file`      | files the AutoLISP program opens with `open`                        | per-call arg; default = ours     |
+| 3 | `console`   | the CAD's OWN console DEVICE (the GUI text console) — the *true* console; may differ from its stdio | product; [?] likely unsettable   |
+| 4 | `cadstdio`  | the CAD subprocess's stdin/stdout/stderr OS pipes (accoreconsole UTF-16LE; BricsCAD Qt on stdout) | fixed-known / Unix `LC_*` default |
+| 5 | `log`       | the CAD log file (LOGFILEMODE)                                      | [?]                              |
+| 6 | `terminal`  | alfe's / clautolisp's own REPL I/O to the user                     | us (settable)                    |
+
+Console-area distinction (pjb 2026-07-28): three different streams share
+the word "console" — the CAD GUI console DEVICE (`console`, product-fixed,
+maybe unsettable), the CAD process OS pipes (`cadstdio`, accoreconsole
+UTF-16LE / Unix LC_), and alfe's own terminal (`terminal`, ours). What a
+probe's `princ` writes lands on `cadstdio` for accoreconsole but on the
+file-IPC `protocol` channel for BricsCAD batch; the GUI `console` is only
+in the loop with a visible GUI. Situations 3/4/6 each carry TWO encodings
+(input + output — §arbitrated-b).
+
+Deliberately *not* proposed as user-facing situations, but say if you
+want them:
+
+- `protocol` — alfe's control files. Internal, payload ASCII; exposing it
+  invites people to break the protocol. Could be a debug-only option.
+- `dwg` / `dxf` — the drawing codec's own string encoding (SYSCODEPAGE /
+  DWGCODEPAGE, and libredwg's codepage handling). A real situation, but a
+  different subsystem; probably its own issue.
+
+Points ARBITRATED (pjb 2026-07-28):
+
+a. RESOLVED — `file` stays ONE situation (a user wants a consistent
+   load/file rule). The read/write divergence (BricsCAD `ccs=UNICODE`
+   auto-adapts on read only) is captured in the §7 defaults table, not a
+   second option. NB: the cross-CAD `source` discrepancy traces to our
+   having THREE+ `load` implementations (see §2.1) — they MUST share one
+   algorithm, signature, and encoding-parameter processing.
+b. RESOLVED — a console needs TWO encodings, INPUT and OUTPUT. Usually the
+   same, but a configuration may differ (e.g. an ISO-8859-1 keyboard with
+   a UTF-8 screen), and the line-termination treatment differs by
+   direction regardless. So the console/terminal options take an optional
+   direction: `-E<situation>[-in|-out]` (bare form sets both).
+c. RESOLVED — DROP both `-e` AND `-E` (no legacy aliases,
+   per pjb-cli-option-convention).
+d. RESOLVED — THREE distinct streams share the word "console" (see the §3
+   table + note), so three distinct situations:
+   - `console`  = the CAD's OWN console DEVICE (GUI text console). The
+                  *true* console; product-fixed, [?] whether settable.
+                  Option `-Econsole`.
+   - `cadstdio` = the CAD subprocess's OS stdin/stdout/stderr pipes
+                  (accoreconsole UTF-16LE; BricsCAD Qt on stdout; Unix may
+                  default from `LC_*`). Option `-Ecadstdio`.
+   - `terminal` = alfe's / clautolisp's OWN REPL device to the user; ours.
+                  Option `-Eterminal`.
+   (Current `-E` = terminal I/O per the code-map E5, NOT the CAD console;
+   the `-E`=source-file text in alfe-cad-console-encoding is stale.)
+
+* 4. Proposed CLI shape
+
+Per pjb: a clisp-style short form and a long form.
+
+    -E{situation} {encoding}          e.g. -Esource UTF-8   -Econsole UTF-16LE
+    --{situation}-encoding {encoding} e.g. --source-encoding UTF-8
+
+(pjb wrote `--{situation}--encoding` with a double dash; assumed a typo,
+single dash used above — say if the double dash is intended.)
+
+A bare `-E {encoding}` / `--encoding {encoding}` setting *every*
+situation at once would be a convenient shorthand; propose adding it.
+
+** Resolved option set (pjb 2026-07-28) — `-e` and `-E` DROPPED
+
+| situation  | short         | long                       | directions   |
+|------------+---------------+----------------------------+--------------|
+| `source`   | `-Esource`    | `--source-encoding`        | (read)       |
+| `file`     | `-Efile`      | `--file-encoding`          | read / write |
+| `console`  | `-Econsole`   | `--console-encoding`       | in / out     |
+| `cadstdio` | `-Ecadstdio`  | `--cadstdio-encoding`      | in / out     |
+| `log`      | `-Elog`       | `--log-encoding`           | (read)       |
+| `terminal` | `-Eterminal`  | `--terminal-encoding`      | in / out     |
+
+Direction (arbitrated-b — two encodings, input and output, may differ):
+the bare option sets BOTH directions; a suffix picks one:
+`-E<situation>-in` / `-E<situation>-out` (and `--<situation>-input-encoding`
+/ `--<situation>-output-encoding`). For `file` the two directions are
+`-read` / `-write`. The `{encoding}-{line-termination}` suffix (§5) is
+valid on all of them.
+
+Rules:
+
+- Unknown situation name → hard error listing the valid ones, never a
+  silent no-op.
+- A situation that is fixed by the product for the selected backend ×
+  version (accoreconsole console) → accept the option, *warn* that it is
+  ignored and why, and keep the product value. Silently ignoring is what
+  produced the bug that started all this.
+- `--list-encodings` gains a companion `--list-situations` printing the
+  table of §3 with, for the selected backend, the resolved default and
+  whether it is settable.
+
+* 5. Line termination
+
+Prior art already exists and should simply be generalised: encoding names
+accept a suffix, currently `-mac` / `-dos` / `-unix` / `-lf` / `-cr` /
+`-crlf`, "honoured on -e (file reads); accepted-and-ignored on -E".
+
+Proposal: `{encoding}-{line-termination}` becomes valid on **every**
+situation option, with per-situation semantics:
+
+| Situation | Line termination |
+|-----------+------------------|
+| `source`  | honoured on read (already is) |
+| `file`    | honoured both directions |
+| `console` | honoured; **required** for accoreconsole input, where CRLF is two Enter events |
+| `log`     | honoured on read |
+| `terminal`| honoured on write |
+
+Where the product fixes it, the resolved value must be *reported* by
+`--list-situations`, not silently overridden.
+
+* 6. Plumbing — "forwarded and set inside the relevant module"
+
+The spec text must say explicitly that declaring the option is not
+enough. Concretely, today:
+
+1. `cli.lisp:884` passes `:io-encoding` to `start-engine` — keep, extend
+   to one keyword per situation.
+2. Every backend must stop discarding it: remove `io-encoding` from the
+   three `(declare (ignore …))` forms listed in §1 and use it.
+3. DONE (alfe 1.6.17, G2 decode half) — `decode-console-octets` and
+   `drain-channel` now take an `encoding` argument; the auto-detect cascade
+   is the distinguished `:AUTO` value (and the default, so unset ⇒
+   unchanged). It rides on `protocol-session-console-encoding`, set from
+   `alfe.cli:resolved-console-encoding` in the AUTOCAD/BRICSCAD
+   `start-engine`. Codecs: utf-16le / utf-8 / iso-8859-1 / cp1252 (0x80–0x9F
+   C1 band) / us-ascii; unknown → :AUTO.
+4. DONE (alfe 1.6.18) — `autocad-console-external-format` now takes
+   CLI-OPTIONS and folds the resolved `console`/`cadstdio` encoding OVER
+   `$ALFE_AUTOCAD_CONSOLE_ENCODING` OVER the robust :ISO-8859-1 pipe default.
+   The accoreconsole channel-decode default is the named
+   `*accoreconsole-console-encoding*` (:utf-16le); a conflicting -Econsole on
+   accoreconsole is warned + ignored (fixed-known rule).
+5. For the engine-side situations (`source`, `file`, `console` inside the
+   CAD), forwarding means emitting the right thing into the CAD:
+   `(setvar "LISPSYS" …)` is a restart-level decision, so `source` for
+   AutoCAD is a *precondition to check and report*, not something alfe
+   can set mid-session. `file` can be forwarded by having the bootstrap
+   default the `open` shim's encoding argument / `ccs=`.
+
+Point 5 is the one with real design content: for several situations alfe
+cannot *set* the encoding, only *know* it and adapt. The spec should
+distinguish three states per (situation, backend, version, platform):
+**settable by us**, **fixed by the product and known**, **unknown**.
+
+* 7. Defaults table
+
+Defaults are keyed on (situation, backend, version, **platform**), not on
+backend alone — BricsCAD writes Mac Roman on macOS and (presumably)
+cp1252 or UTF-8 on Windows. The existing sketch in
+`alfe-cad-console-encoding.issue` ("autocad -> ?, bricscad -> utf-8")
+is therefore under-specified.
+
+MEASURED 2026-07-28 by the encoding experiment (encoding-probe.lsp driven
+by scripts/run-encoding-experiment.{sh,ps1}; CI encoding:experiment:*
+jobs; reports in the job artifacts dist/encoding/<backend>-<os>.txt). The
+program writes A·é(U+00E9)·€(chr 8364)·B with (open … "w")+princ under
+default / `,ccs=UTF-8` / `,ccs=UTF-16LE` modes and dumps the raw bytes,
+then re-runs under a matrix of LANG/LC_* (Unix) and chcp code-page
+(Windows) knobs to see which, if any, MOVES the exhibited encoding.
+
+Target identity as actually run (the (os × tool × version × codepage) key):
+  clautolisp 1.6.15,       Linux,   SYSCODEPAGE UTF-8,     LANG=C.UTF-8
+  BricsCAD   V26.0 LispEx,  macOS,   SYSCODEPAGE MAC_ROMAN, LANG=en_US.UTF-8
+  BricsCAD   V25.0 LispEx,  Windows, SYSCODEPAGE ANSI_1252, LANG=C
+  AutoCAD    2022 (24.1) / accoreconsole, Windows FR, LISPSYS 0, SYSCODEPAGE ANSI_1252
+
+Measured `file` bytes for é (U+00E9), and the provenance CLASS (§6 p.5:
+settable-by-us / fixed-known / unknown):
+
+| Target                | default write        | `,ccs=UTF-8`        | `,ccs=UTF-16LE`     | moved by knob?              | class            |
+|-----------------------+----------------------+---------------------+---------------------+-----------------------------+------------------|
+| clautolisp/Linux      | `c3 a9` UTF-8        | `c3 a9` UTF-8 ✓     | `e9 00` UTF-16LE ✓  | LANG/LC_ALL/LC_CTYPE → yes  | **settable**     |
+| BricsCAD/macOS V26     | `c3 a9` **UTF-8**    | UTF-8 (= default)   | UTF-8 (ccs ignored) | LC_ALL=C → Latin-1 `e9`     | **settable** (LC_ALL) |
+| BricsCAD/Windows V25   | `e9` ANSI_1252       | `c3 a9` UTF-8 ✓     | UTF-16LE ✓          | chcp/LANG/LC_ → no          | default fixed-known; per-call ccs settable |
+| AutoCAD/accoreconsole  | `e9` ANSI/MBCS (LISPSYS 0) | `e9` (ccs ignored)  | `e9` (ccs ignored)  | chcp/LANG/LC_ → no; **LISPSYS → yes** (cp1252↔UTF-8) | fixed per session, selectable via LISPSYS (restart) |
+
+Resolved defaults table (was all [?]; now [obs] except where noted):
+
+| Situation | clautolisp/Linux | BricsCAD/macOS V26 | BricsCAD/Windows V25 | AutoCAD/accoreconsole 2022 |
+|-----------+------------------+--------------------+----------------------+----------------------------|
+| source    | `-Esource`, dflt UTF-8; settable via LC_* | follows locale (UTF-8 here) unless BOM [obs]; not unconditionally Mac Roman | ANSI_1252 unless BOM [?] E1 | **LISPSYS picks cp1252 (0) vs UTF-8 (1/2)** [pjb]; measured LISPSYS 0 → ANSI_1252; restart-level |
+| file      | **UTF-8**, settable (LC_*, `-Esource`, `*AUTOLISP-FILE-ENCODING*`, ccs=) [obs] | **UTF-8** default under UTF-8 locale, settable via LC_ALL (C→Latin-1); ccs= IGNORED [obs] | **ANSI_1252** default (fixed by SYSCODEPAGE; chcp/LC_ don't move it); per-call ccs=UTF-8/UTF-16LE HONOURED [obs] | **LISPSYS picks cp1252 (0) vs UTF-8 (1/2)** [pjb]; measured LISPSYS 0 → ANSI_1252; ccs= IGNORED; no runtime knob moves it [obs] |
+| console   | UTF-8            | **full Unicode both ways** (é 233, € 8364) [obs §7.2] | GUI **cp1252** (é 233, € 128 in; € 128 out) [obs §7.2] | accoreconsole **UTF-16LE** (pjb, §7.2), LF-in/CRLF-out, € 172 out; GUI acad cp1252 [obs §7.2] |
+| log       | n/a             | [?] E2             | [?]                  | [?]                        |
+| terminal  | platform default | —                 | —                    | —                          |
+
+Corrections vs the earlier sketch:
+- BricsCAD/macOS `file` default is **UTF-8**, not Mac Roman, when the
+  process locale is UTF-8 (`LANG=en_US.UTF-8`, as on the CI runner). The
+  old "Mac Roman 0x8E" obs (§2.2) was taken under a non-UTF-8 desktop
+  locale — so the axis is the POSIX locale, not the product. This makes
+  BricsCAD/macOS `file` **settable via LC_ALL**, not "no setting".
+- E4 CONFIRMED as a genuine platform divergence: `,ccs=UTF-16LE` writes
+  proper UTF-16LE on BricsCAD/**Windows** but silently writes UTF-8 on
+  BricsCAD/**macOS**. Worth its own conformance/vendor-divergence probe.
+- accoreconsole `file` ignores `,ccs=` entirely (all three modes = ANSI),
+  and no *runtime* knob (chcp/LANG/LC_) moves it. But it is NOT purely
+  product-fixed: **LISPSYS** selects between windows-1252 (LISPSYS 0, what
+  we measured) and UTF-8 (LISPSYS 1/2) [pjb]. LISPSYS is a restart-level
+  sysvar, so for AutoCAD `source`/`file` alfe cannot *set* the encoding
+  mid-session — it must READ LISPSYS and adapt (a precondition to check
+  and report, per §6 p.5), like the load-path decision. Our matrix should
+  gain a LISPSYS axis (0/1/2) on the AutoCAD runner to nail the exact
+  cp1252-vs-UTF-8 byte outcomes — that is experiment E1.
+- Non-Latin-1 chars diverge in the char model, not just the codec: the €
+  (chr 8364) landed as U+00AC on BricsCAD, low-byte 0xAC on accoreconsole,
+  and was dropped in BricsCAD/Windows ANSI — a separate `chr`/DXF-codepage
+  question, tracked apart from these encoding rows.
+
+** 7.1 Measured — source native-load and file-read decode (2026-07-28)
+
+Second experiment pass (probe §6/§7/§8, commit 1380ca2; CI pipeline
+2713419298). The probe writes a file with known bytes, records them, then
+NATIVE `(load)`s it (or reads it back) and reports the DECODED code points.
+Test literal `A é Z`; 233 = é decoded to one char, `195 169` = its UTF-8
+bytes seen as two Latin-1 chars.
+
+CAVEAT: inside a CAD, `(load …)` goes through alfe's DEPORTED
+`autolisp-source-load` shadow (§2.1), so these `source` rows measure THAT
+path, not necessarily the CAD's own native loader.
+
+source native-load — decoded code points (✓ = A é Z = `65 233 90`):
+
+| file bytes written        | clautolisp | BricsCAD/macOS | BricsCAD/Win | AutoCAD/accore |
+|---------------------------+------------+----------------+--------------+----------------|
+| default (ANSI or UTF-8)   | UTF-8 → ✓  | UTF-8 → ✓       | ANSI e9 → ✓   | ANSI e9 → **LOAD-ERR** |
+| `,ccs=UTF-8` (no BOM)     | UTF-8 → ✓  | UTF-8 → ✓       | UTF-8 → ✓     | (ccs ign) → **LOAD-ERR** |
+| `,ccs=UTF-16LE`           | **LOAD-ERR** | UTF-8 (ccs ign) → ✓ | UTF-16LE → ✓ | (ccs ign) → **LOAD-ERR** |
+
+Findings:
+- BricsCAD `(load)` (BOTH platforms) auto-decodes UTF-8 **without a BOM**
+  AND UTF-16LE — the deported load is robust for BricsCAD.
+- **AutoCAD/accoreconsole `(load)` ERRORS on any source file with a high
+  byte (0xE9) at LISPSYS 0** — the deported `autolisp-source-load` path is
+  broken over accoreconsole. Filed: `accoreconsole-deported-load-highbyte.issue`.
+  (Also re-run under LISPSYS 1/2 — restart-level, §8 E1 — to see whether it
+  is a LISPSYS-0/MBCS artefact.)
+- clautolisp `(load)` decodes UTF-8; UTF-16LE source → LOAD-ERR (matches
+  its file-read: no UTF-16 source support).
+
+file READ decode — how `(open "r")`+read-char decodes bytes:
+
+- BricsCAD decodes UTF-8 **only with a BOM**: a BOM-less UTF-8 file reads
+  back as raw bytes (`65 195 169 …`), and `,ccs=UTF-8` on read does NOT
+  override the no-BOM→ANSI rule (matches vendor [doc]). So on BricsCAD
+  `read` ≠ `load`: `(load)` is BOM-less-UTF-8-aware, `(open "r")` is not.
+- BricsCAD/macOS **writes UTF-8 but reads it back single-byte** (`c3 a9` →
+  `195 169`) — a read/write asymmetry; the default file it authors does not
+  round-trip through its own reader without a BOM.
+- accoreconsole read = ANSI single-byte (`e9` → 233); `,ccs=` ignored;
+  no chcp/LANG/LC_ knob moves it.
+- clautolisp read decodes every case correctly (UTF-8 and UTF-16LE).
+
+log — E2 UNBLOCKED: all three CADs report `LOGFILEMODE 1` and a real
+`LOGFILENAME` (AutoCAD `…\logs\empty_*.log`, BricsCAD/Win
+`…\logs\Dessin1_*.log`, BricsCAD/mac `…/logs/bricscad.log`). A log file
+DOES exist during a run, so a follow-up probe can write a known accented
+line and `dumpbytes` the `LOGFILENAME` to read its encoding.
+
+** 7.2 Measured — GUI console I/O (2026-07-29, hand-run gui-console-probe.lsp)
+
+pjb ran the GUI console probe inside each product's real console (results
+appended to ~/enc-gui-console-report--*.txt). This is the `console`
+situation — the one batch cannot reach — measured BOTH directions.
+
+console INPUT (you type the char; the engine reports its decoded code points):
+
+| target (GUI console)        | é typed | € typed          | console-in codec        |
+|-----------------------------+---------+------------------+-------------------------|
+| BricsCAD/macOS V26          | 233     | 8364             | **full Unicode**        |
+| BricsCAD/Windows V25        | 233     | 128              | cp1252 (€ = 0x80)       |
+| AutoCAD/Windows (acad GUI)  | 233     | 128              | cp1252 (€ = 0x80)       |
+| accoreconsole 2022          | 233     | U+20AC code unit | **UTF-16 (BE per pjb)** |
+
+console OUTPUT (what renders on screen; output.string.cp):
+- BricsCAD/macOS: `Aé€B` renders correctly, cp 65 233 8364 66 — full Unicode
+  both ways (the ONLY target that round-trips the euro).
+- BricsCAD/Windows: cp 65 233 128 66 — cp1252 (€ = 128).
+- AutoCAD GUI + accoreconsole: cp 65 233 172 66, € renders as `¬` — output
+  low-byte-truncates 8364 → 172 (0xAC).
+
+Findings:
+- BricsCAD/macOS GUI console is FULLY Unicode in and out (é 233, € 8364) —
+  in stark contrast to its own file/DXF path, which degrades € to U+00AC.
+  So `console` and `file` on the SAME target have DIFFERENT provenance.
+- The Windows GUI CADs (BricsCAD V25, AutoCAD) are cp1252 on the console:
+  é = 233, € = 128 in; AutoCAD truncates € → 172 on output.
+- accoreconsole console is UTF-16, with ASYMMETRIC line terminators — **LF
+  on input, CRLF on output** — and it does NOT flush the LISP prompt (it
+  appears AFTER the typed input in the transcript). ENDIANNESS: **UTF-16LE**
+  (pjb 2026-07-29 — "j'utilise utf-16le en fait, j'ai dû me tromper ce
+  matin"; the morning `utf-16be` reading was an emacs-side misconfiguration,
+  not accoreconsole's order). This MATCHES alfe's `decode-console-octets`
+  (assumes LE), so no reconciliation is needed. Why the euro was a bad test:
+  U+20AC's two bytes are 0x20 (= ASCII space) and 0xAC (= 172 =
+  `(mod 8364 256)`), so a split UTF-16 unit reads as `[172][32]`/`[32][172]`
+  and the ORDER was imposed by the emacs coding layer, not accoreconsole —
+  plus a dropped 0x00 (ASCII is `XX 00`/`00 XX`) can desync the stream and
+  flip apparent endianness. A definitive emacs-free check remains available
+  if ever needed: hexdump accoreconsole's own redirected-stdout temp file
+  (`Redirect stdout (file: …\accc…)`) after a `(princ)` — but use a VISIBLE
+  discriminator whose UTF-16 bytes avoid 0x00 AND 0x20 AND control codes
+  (Œ = U+0152 → `01 52` is NOT ideal: 0x01 is invisible, per pjb; pick a
+  char whose both bytes are printable, e.g. one mapping to two distinct
+  ASCII letters). LE is treated as CONFIRMED for now.
+
+/isolate ⟺ LISPSYS (pjb, KEY): accoreconsole's `/isolate <userid>
+<folder>` option is designed to PREVENT sysvar changes from propagating.
+So LISPSYS cannot be persisted while `/isolate` is passed. alfe's autocad
+backend launches accoreconsole with `/isolate`, which is why:
+  (a) the batch probe is pinned at LISPSYS 0 and cannot sweep 0/1/2, and
+  (b) the deported-load bug (§7.1, accoreconsole-deported-load-highbyte)
+      reproduces — it is stuck at LISPSYS 0 / MBCS.
+To test LISPSYS 1/2 or change the source-load decode, run accoreconsole
+WITHOUT `/isolate` (or pre-set LISPSYS in the user profile/registry). This
+is the concrete unblock for E1 on accoreconsole.
+
+* 8. Experiments
+
+- E1 — AutoCAD: does `(load "x.lsp")` decode by BOM, by LISPSYS, or by
+  codepage? Vary LISPSYS 0/1/2 × file with/without UTF-8 BOM × cp1252
+  bytes. Needs the Windows/AutoCAD runner. KNOWN (pjb): LISPSYS IS the
+  selector — cp1252 at 0, UTF-8 at 1/2. Remaining: the exact byte outcomes
+  per level and the BOM interaction. CRITICAL for the experiment design:
+  LISPSYS is **restart-level** — `(setvar "LISPSYS" n)` in the running
+  accoreconsole/AutoCAD session does NOT change how that session decodes;
+  the new value only takes effect after the CAD is **relaunched**. So the
+  LISPSYS axis must be a SEPARATE probe invocation per level (set LISPSYS,
+  quit, relaunch accoreconsole, then measure), not an in-session sweep like
+  the LANG/LC_/chcp matrix. Same restart constraint already noted for
+  `source` in §2.1. ALSO CRITICAL (pjb, §7.2): accoreconsole's `/isolate`
+  option prevents sysvar changes from persisting, and alfe passes it — so
+  LISPSYS is pinned at 0 under alfe. The E1 run must drop `/isolate` (or
+  pre-set LISPSYS in the profile) or the level never changes.
+- E2 — log file encoding, both CADs. UNBLOCKED (2026-07-28, §7.1): a log
+  DOES exist during a run (LOGFILEMODE 1 + a real LOGFILENAME on all three
+  CADs). Next: a probe that writes a known accented line then dumpbytes the
+  LOGFILENAME. Original note kept below.
+  First make a log file appear at all
+  in batch mode; the BricsCAD/macOS attempt here produced none despite
+  `LOGFILEMODE 1` + `LOGFILEPATH`.
+- E3 — BricsCAD/Windows console encoding in `-B` batch, to fill the
+  column above. PARTIAL (2026-07-28): the `file` situation is measured
+  (ANSI_1252 default, ccs= honoured); the console/cadstdio bytes still
+  need the raw drain capture (the probe's console line comes back already
+  transcoded). UPDATE (2026-07-29, §7.2): the BricsCAD/Windows **GUI**
+  console is measured — cp1252 (é 233, € 128) both ways. The `-B` batch
+  console (via the file-IPC drain) may still differ from the GUI device;
+  that raw-drain capture remains the open part.
+- E4 — DONE (2026-07-28): BricsCAD `,ccs=UTF-16LE` writes UTF-8 on macOS
+  but proper UTF-16LE on Windows — a confirmed platform divergence.
+  Promote to a conformance/vendor-divergence probe in the suite.
+- E5 — confirm the current real meaning of `-e`, `-E` and whether
+  `-Eterminal` exists, before assigning aliases (§3.d).
+
+* 9. References
+
+- Autodesk, =open= (AutoLISP), 2024 ENU:
+  https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-AutoLISP-Reference/files/GUID-089A323F-21FF-4337-99A9-375758E23BA4.htm
+- Autodesk, =LISPSYS= (System Variable), 2024:
+  https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-Core/files/GUID-1853092D-6E6D-4A06-8956-AD2C3DF203A3.htm
+- Autodesk, Unicode Support for LISPSYS:
+  https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-Electrical-WhatsNew/files/GUID-13F84323-B0DF-4758-A5D4-9C0C9F071165.htm
+- Bricsys, read + write text files, V25 DevRef:
+  https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/readwritetextfiles.htm
+- Bricsys forum, UTF8 versus ANSI in Lisp:
+  https://forum.bricsys.com/discussion/34369/utf8-versus-ansi-in-lisp
+- pjb, AcCoreConsole — référence technique et notes d'intégration pour ALFE:
+  =sncf-reseau/accoreconsole/accoreconsole.org=
+- Related issues: =alfe-cad-console-encoding.issue= (superseded in part),
+  =cad-load-encoding-macos.issue= (the `source` situation),
+  =test-file-encodings.issue=.
+
+* E1 automated (2026-10-05) -- and the /isolate premise corrected
+
+CORRECTION to §7.2 / §8: alfe does NOT pass `/isolate`.
+build-launch-argv (autolisp-front-end/source/backend-autocad.lisp) launches
+`accoreconsole /i <dwg> /s <run.scr>` and the git history has no `/isolate`
+ever. The LISPSYS 0 every batch probe reports therefore comes from the
+runner's AutoCAD PROFILE (the registry), not from a pinning option -- and a
+level written into the profile before launch is what a run sees.
+
+E1 is now a job: encoding:experiment:lispsys-bom:autocad:windows (manual;
+automatic when its files change -- probe family `lispsys-bom`), driving
+scripts/run-lispsys-bom-probe.ps1 + autolisp-front-end/tests/scenarios/
+entities/lispsys-bom-probe.lsp:
+  - writes three fixtures, (setq *e1-value* "AéZ") with é as E9 (cp1252),
+    C3 A9 (UTF-8), EF BB BF + C3 A9 (UTF-8 with BOM);
+  - for LISPSYS 0, 1, 2: writes the level (and SECURELOAD 0, so the
+    fixture folder needs no trust) into EVERY AutoCAD profile's Variables
+    key, starts a fresh alfe / accoreconsole, has AutoCAD's NATIVE load read
+    each fixture -- through (read "load"), since alfe rewrites a literal
+    (load ...) into its own deporting loader -- and prints (strlen codes);
+  - restores LISPSYS / SECURELOAD in every profile afterwards (finally).
+Report: dist/encoding/lispsys-bom-autocad-Windows.txt. Results go here when
+it has run.
+
+** E1 results (2026-10-05, job 16931781178, AutoCAD 2022 = ACADVER 24.1)
+
+LISPSYS was written into both profiles (<<Profil sans nom>>, Epure; both
+held "0", String) and each run reported the level it was given, so the
+profile write is how a level is set (no /isolate involved). AutoCAD's
+native load, (strlen (vl-string->list *e1-value*)) of "AéZ":
+
+| source file        | LISPSYS 0              | LISPSYS 1          | LISPSYS 2          |
+|--------------------+------------------------+--------------------+--------------------|
+| cp1252 (E9)        | (3 (65 233 90))        | (3 (65 233 90))    | (3 (65 233 90))    |
+| UTF-8 (C3 A9)      | (4 (65 195 169 90))    | (3 (65 233 90))    | (3 (65 233 90))    |
+| UTF-8 + BOM        | (4 (65 195 169 90))    | (3 (65 233 90))    | (3 (65 233 90))    |
+
+So, measured (it was pjb's statement before):
+  - LISPSYS 0: windows-1252, and the BOM is IGNORED (skipped, no error, no
+    effect: the UTF-8 bytes still read as two characters);
+  - LISPSYS 1 / 2: UTF-8, BOM or not -- and a file that is NOT valid UTF-8
+    (the lone E9) is read as windows-1252 instead: a FALLBACK, not an error.
+Profiles restored to "0" afterwards (report's last line).
+
+* E3 results (2026-10-05, MR !416) -- the batch drain is the `file' situation
+
+run-encoding-experiment.ps1 now has the CAD write (chr 233), (chr 128) and
+(chr 8364) with the runtime's own drain call -- (open path "a") +
+write-line, which is how princ reaches protocol/stdout.txt in batch mode --
+and dumps the file's bytes:
+
+| target (batch)                          | (chr 233) | (chr 128) | (chr 8364) | line end |
+|-----------------------------------------+-----------+-----------+------------+----------|
+| BricsCAD V25 Windows -B (job 16936990755) | E9        | 80        | 80         | CR LF    |
+| AutoCAD 2022 accoreconsole (job 16936990756) | E9     | 80        | AC         | CR LF    |
+
+So:
+  - BricsCAD/Windows batch: windows-1252 -- U+20AC is written as its
+    cp1252 byte 0x80, as the GUI console does (section 7.2). There is no
+    separate "-B batch console" device: what alfe drains is the `file'
+    situation, already measured as ANSI_1252 (section 7.1). E3 CLOSED.
+  - AutoCAD/accoreconsole: same bytes for E9 / 80, but U+20AC keeps only
+    its low byte (0xAC) -- the truncation its console output shows (7.2).
+  - Both write CR LF.
+Consequence for the defaults table: `cadstdio' on both Windows CADs is
+windows-1252 + CR LF, product-fixed (0x80 / 0xAC are the CADs' own losses).
+
+Remaining in this ticket: the section 6 plumbing and E5.
+
+* Section 6 plumbing and E5 (2026-10-06, clautolisp 2.2.204 / alfe 2.2.150)
+
+An audit found most situations parsed and not acted on (only `source` reached
+every backend; `file` and `log` were read nowhere; the bare -E did not reach
+`source`; no warn-and-ignore existed although point 4 above said DONE).
+Done now:
+  - the bare -E / --encoding reaches `source` and `terminal` (the legacy
+    load-encoding / io-encoding slots are recomputed through
+    cli-situation-encoding; a specific option wins in any order);
+  - an unknown -E<name> is an error listing the situations;
+  - `terminal` in the clautolisp tool: the G1 code moved from alfe to the
+    shared autolisp-cli (terminal.lisp); clautolisp applies it at start-up;
+  - `file`: -Efile[-read|-write] -> *AUTOLISP-FILE-READ-ENCODING* /
+    *AUTOLISP-FILE-WRITE-ENCODING*, consulted first by OPEN's default;
+  - AutoCAD: -Econsole is warned about and ignored (console product-fixed);
+    the bare -E no longer reaches the console / pipe codecs (a blanket
+    -E UTF-8 read the UTF-16LE pipe as UTF-8); -Ecadstdio stays the explicit
+    override (by E3 the drain carries the CAD's file bytes);
+  - AutoCAD source staging: a -Esource code-page file is handed to AutoCAD
+    in cp1252 without a BOM (right at LISPSYS 0 / 1 / 2 by E1) instead of
+    UTF-8 + BOM (wrong at LISPSYS 0, which ignores the BOM);
+  - --list-situations rows corrected.
+E5 answered: -e is gone (rejected as an unknown option); -E / --encoding is the
+every-situation shorthand; -Eterminal exists with -in / -out.
+Still open: `log` (no reader of the CAD log exists yet), `console` -in and
+the CAD-side `file` default (the bootstrap `open` shim's default encoding,
+point 5), and one keyword per situation on start-engine (point 1).
+
+* Section 6 points 1 and 5, console -in (2026-10-06, clautolisp 2.2.210 / alfe 2.2.152, MR !432)
+
+- Point 1: start-engine takes one keyword per situation and direction
+  (situation-engine-keywords); alfe --clautolisp in subprocess mode forwards
+  -Efile-read / -Efile-write / -Eterminal-in / -Eterminal-out / -Elog.
+- console -in: clautolisp -- the console IS the terminal (-Econsole folds
+  into it unless -Eterminal is given); BricsCAD -- -Econsole-in warned and
+  ignored, a bare -E no longer reaches the drain codec.
+- Point 5, the CAD-side `file' default -- MEASURED first (probe-open-encoding:
+  AutoCAD 2022 job 16967893842, BricsCAD V25 Windows 16968316289, V26 macOS
+  16967893843), writing "A" e-acute "B":
+    AutoCAD 2022 (LISPSYS 0): default cp1252; ANY third argument "too many
+      arguments"; ,ccs= accepted and ignored; read decodes cp1252.
+    BricsCAD V25 Windows: default cp1252; "utf8"/"utf8-bom" accepted, no
+      effect; ,ccs=UTF-8 writes UTF-8 WITH a BOM, ,ccs=UTF-16LE UTF-16LE with a
+      BOM; read never decodes (octets, BOM skipped).
+    BricsCAD V26 macOS: always UTF-8 without a BOM; read returns octets.
+  So the only honourable case is WRITE on BricsCAD Windows: alfe-open* in the
+  bootstrap opens a plain "w"/"a" with ,ccs=UTF-8 / UTF-16LE, the loader
+  rewriting OPEN only when that is active (*ALFE-OPEN-WRITE-CCS*); every other
+  case is warned and ignored (cad-file-encoding-plan). clautolisp's own OPEN
+  diverges from the vendors on the third argument:
+  open-third-argument-dialect-divergence.
+- Found on the way: alfe-load-user-setq-clobbers-loader-locals.
+
+Still open here: `log' -- alfe reading the CAD's own log file (no reader
+exists; clautolisp now WRITES per-drawing logs, MR !428); AutoCAD's "utf8"
+third argument at LISPSYS 1 / 2 (unmeasured: the runner is at 0).
+* The `log' situation (2026-10-06, clautolisp 2.2.209)
+
+Measured (probe-logfile, MR !428): AutoCAD 2022 writes its LOGFILEMODE log in
+windows-1252 (an e-acute PRINCed reads back as 233). BricsCAD V25 logs only the
+command channel, so the PRINC marker never reached the file; its accented
+prompts read back whole, which fits windows-1252 or UTF-8 with a BOM -- not
+settled. clautolisp now writes per-drawing logs (cador command-log.lisp) and
+-Elog reaches them (*AUTOLISP-LOG-ENCODING*): default windows-1252 under the
+AutoCAD dialects, UTF-8 otherwise. Still open here: console -in, the CAD-side
+file default, one keyword per situation on start-engine.
+
+* The remainder (2026-10-07, clautolisp 2.2.231 / alfe 2.2.231)
+
+The two items the 2026-10-06 sections left open, and what became of them.
+
+** AutoCAD's "utf8" third argument at LISPSYS 1 / 2 -- MEASURED, then forwarded
+
+It was measured meanwhile (E1, job 16980926802, MR !438; recorded in
+autocad-open-encoding-lispsys-divergence): at LISPSYS 1 / 2 (open f "w" "utf8")
+writes UTF-8 without a BOM, "utf8-bom" with one, and a plain "w" still writes
+cp1252; a plain "r" decodes UTF-8 (BOM skipped) and falls back to cp1252, while
+"r" "utf8" returns the BOM as 65279 and stops at a byte that is not UTF-8. At 0
+any third argument is an error. clautolisp's OWN OPEN under the AutoCAD dialects
+follows that in 2.2.222 (MR !450, autocad-open-encoding-lispsys-divergence) --
+not touched here. Done here, on the alfe side:
+
+- -Efile-write UTF-8 under --autocad is forwarded: CAD-FILE-ENCODING-PLAN
+  returns the third argument "utf8" (a third value), emitted as
+  *ALFE-OPEN-WRITE-ARG*; the bootstrap's alfe-open* passes it to a plain
+  (open f "w") in alfe-loaded code when the CAD's LISPSYS is 1 or 2
+  (alfe-lispsys-unicode-p, read in the CAD at the call: LISPSYS is fixed when
+  AutoCAD starts and alfe cannot know it beforehand). At LISPSYS 0 it warns
+  once on alfe's error channel and opens the plain mode. Other write encodings
+  on AutoCAD are still warned about and not forwarded.
+- NOT forwarded: an (open f "a") -- what AutoCAD does with "a" "utf8" /
+  "utf8-bom" (a second BOM in the middle?) is unmeasured; warned once.
+- Reads: the -Efile-read warning now states the measured read defaults (it is
+  still not forwarded: the default read is the best there is at every level).
+- G3, the deported loader (autolisp-source-open-encoded-try): on AutoCAD it
+  passed "r" "utf8" for an explicit -Esource UTF-8. By the measurement above
+  that is never better than a plain "r" (an error, so the fallback, at 0) and
+  worse at 1 / 2 (a BOM read as a character, a truncated read on a cp1252
+  byte), so AutoCAD now always gets the plain "r". Test
+  protocol-autocad-source-open-takes-no-third-argument.
+
+** The `log' situation -- alfe now reads the CAD's log: --cad-log FILE
+
+The bootstrap already pointed LOGFILEPATH at the workdir's logs/ and set
+LOGFILEMODE 1 (log / full phases); nothing read the file, and -Elog was
+accepted and silently unused on the CAD backends. Now:
+
+- --cad-log FILE (alfe option; cli-options slot cad-log in the shared struct):
+  after the engine is down and before the workdir goes,
+  ALFE.BACKEND:COLLECT-ENGINE-LOG (new generic; CAD backends ->
+  CAD-COMMON:COLLECT-CAD-LOG) reads every file of logs/ except alfe's
+  debug.log, oldest first, decodes it, normalises CR LF to LF, and alfe writes
+  it to FILE in UTF-8 (one "==> NAME <==" line per file when there are several).
+- Decoding: the explicit -Elog (the bare -E does not reach it -- the CAD does
+  not change its log's encoding for alfe); else a BOM's encoding; else
+  windows-1252 on MS-Windows -- measured for AutoCAD 2022, and right under BOTH
+  open BricsCAD V25 hypotheses (windows-1252, or UTF-8 with a BOM) -- and the
+  auto-detect cascade elsewhere (macOS: no log in batch, nothing measured).
+- No log: a warning, no file. --clautolisp: a warning, no file (clautolisp
+  writes its own log where LOGFILEPATH points; -Elog sets its encoding there).
+
+** Probes written, results to read (nothing guessed)
+
+1. BricsCAD V25 Windows log encoding (windows-1252, or UTF-8 with a BOM?):
+   - probes/sources/probe-logfile.lsp gained the line "the log's (size chars
+     lines high-chars first-high-codes)": the file's byte size against what
+     (open "r") reads back. Single-octet file: size = chars + line ends; UTF-8:
+     each accented character one byte more, plus 3 for a BOM. Runs in
+     vendor:probes:* (family suite).
+   - scripts/run-encoding-experiment.{ps1,sh} gained a LOG step: a native PRINC
+     of e-acute + euro and a LINE command, run with --cad-log --keep-workdir,
+     reports what --cad-log decoded (code points) AND the raw log bytes (size,
+     first 16 bytes, the bytes around the first one above 7F). Runs in
+     encoding:experiment:{bricscad:windows,autocad:windows,bricscad:macos}.
+   TO MEASURE: whether the raw BricsCAD log starts with EF BB BF and how its
+   first accented prompt character is encoded. If UTF-8 without a BOM (neither
+   hypothesis), the default decode rule must change.
+2. APPEND with an encoding (alfe already appends ,ccs= to "a" on BricsCAD
+   Windows, unmeasured):
+   - probe-open-encoding.lsp: "w,ccs=UTF-8" then "a,ccs=UTF-8", the same in
+     UTF-16LE, "w,ccs=UTF-8" then a plain "a", and "w" "utf8" then "a" "utf8"
+     -- sizes after the write and after the append (UTF-8+BOM 7 -> 9 = no
+     second BOM, 12 = a second one; UTF-16LE 8 -> 10 / 12).
+   - lispsys-bom-probe.lsp: "w"/"a" with "utf8" and "utf8-bom" at each LISPSYS
+     level ("open-a-..." lines; 4 -> 6, 7 -> 9 or 12).
+   TO MEASURE: if no second BOM, alfe-open* may forward "a" on AutoCAD too; if
+   BricsCAD writes a second BOM on "a,ccs=", alfe must stop forwarding "a".
+3. End-to-end confirmation of the AutoCAD forwarding:
+   lispsys-forward-probe.lsp, run by run-lispsys-bom-probe.ps1 at each level
+   with -Efile-write utf-8 ("ENC E1F" lines + WARN lines).
+   TO MEASURE: LISPSYS 0 -> "w SIZE 3" + the LISPSYS warning; 1 / 2 ->
+   "w SIZE 4"; every level "a SIZE 1" + the append warning.
+
+Still open here: the three measurements above. Everything else in sections
+4 to 6 is implemented.
+
+* Measured 2026-10-08 (pipeline 2922145991, master ac83486f = clautolisp/alfe 2.3.1) -- acted on in clautolisp 2.3.9 / alfe 2.3.9
+
+The three measurements of the 2026-10-07 section were run: jobs 16998925783
+(encoding:experiment:bricscad:macos, BricsCAD V26), 16998925784
+(encoding:experiment:bricscad:windows, BricsCAD V25 (x64) fr), 16998925785
+(encoding:experiment:autocad:windows, AutoCAD 2022) and 16998925786
+(encoding:experiment:lispsys-bom:autocad:windows). Read from the job traces
+and artefacts, on bytes. (The Windows runner keeps dist/encoding/ between
+jobs, so each Windows job's artefact also carries the other jobs' reports;
+each answer below comes from the job that wrote it, checked against its own
+trace.)
+
+** 1. BricsCAD V25 log encoding -- SETTLED: windows-1252, no BOM
+
+Job 16998925784, LOG step (run-encoding-experiment.ps1 -Backend bricscad):
+#+begin_example
+[LOG] decoded: 11 lines
+[LOG] decoded line: D?part de la ligne : 0,0 | high code points: 233
+[LOG] decoded line: D?finissez l'extr?mit? ou [Angle/Longueur/annUler] : 1,1 | high code points: 233 233 233
+[LOG] raw Dessin1_2026-10-08_11-54-58.log: 475 bytes; first 16: 0D 0A 2D 2D 2D 2D 2D 2D 2D 2D 2D 2D 20 5B 20 42; first byte above 7F at offset 143: 0D 0A 44 E9 70 61 72 74
+#+end_example
+No EF BB BF at the start; e-acute is the single byte E9 ("\r\nDepart"). Neither
+of the two open hypotheses was "UTF-8 without a BOM", so alfe's --cad-log
+default (a BOM's encoding, else windows-1252 on MS-Windows) was already right
+and is unchanged (comments, manuals and a regression test on these bytes,
+cad-log-decodes-the-measured-bricscad-v25-log, updated in 2.3.9); the
+--cad-log copy (cad-log-bricscad.txt, UTF-8) reads "Départ de la ligne",
+"Définissez l'extrémité". As known, BricsCAD logs only the command channel: the
+PRINC marker is absent. The probe-logfile size line (vendor:probes:*) was not
+part of these jobs; the raw bytes above settle the question anyway.
+- BricsCAD V26 macOS (job 16998925783): "the CAD wrote no log ... BricsCAD on
+  macOS writes none in batch mode" -- confirmed again, nothing to decode.
+- AutoCAD 2022 (job 16998925785): the LOG step gave NO evidence. The raw log
+  =empty_129366860.log= is 210 bytes, all below 80 ("first byte above 7F at
+  offset 210: none"); it holds the header, "nil", ._QSAVE and ._QUIT -- no
+  LOG-MARKER, no LINE prompts -- and the trace has no "LOG WRITTEN" line, so
+  the probe form failed in the CAD before its PRINC (the report's filter
+  dropped the ERROR line; it keeps ERROR lines from 2.3.9 on). AutoCAD's log
+  encoding stays as measured by probe-logfile (MR !428): windows-1252.
+Consequence outside alfe: clautolisp writes its own log in UTF-8 under the
+BricsCAD dialects -- filed as cador-bricscad-windows-log-encoding (the cador
+sources are not touched here).
+
+** 2. OPEN in APPEND mode with an encoding -- AutoCAD SETTLED, BricsCAD NOT MEASURED
+
+AutoCAD 2022, job 16998925786 (lispsys-bom-probe.lsp: "A" e-acute "B" written
+with (open f "w" ENC), one e-acute appended with (open f "a" ENC), sizes):
+#+begin_example
+[LISPSYS 0] ENC E1 open-a-utf8 ERR nombre d'arguments trop important
+[LISPSYS 0] ENC E1 open-a-utf8-bom ERR nombre d'arguments trop important
+[LISPSYS 1] ENC E1 open-a-utf8 SIZES (4 6)
+[LISPSYS 1] ENC E1 open-a-utf8-bom SIZES (7 9)
+[LISPSYS 2] ENC E1 open-a-utf8 SIZES (4 6)
+[LISPSYS 2] ENC E1 open-a-utf8-bom SIZES (7 9)
+#+end_example
+So at LISPSYS 1 / 2 "a" "utf8" appends UTF-8 (2 bytes for e-acute) and
+"a" "utf8-bom" adds NO second BOM (7 -> 9, not 12); at 0 the third argument is
+an error, as on "w". Acted on (alfe 2.3.9): alfe-open* now passes
+*ALFE-OPEN-WRITE-ARG* to a plain "a" as well as to "w" at LISPSYS 1 / 2 (at 0:
+not forwarded, one warning per run for both); the "a ... is not given"
+warning is gone. Test protocol-alfe-load-forwards-open-write-arg.
+
+BricsCAD: probe-open-encoding.lsp (the "w,ccs=UTF-8" -> "a,ccs=UTF-8",
+UTF-16LE, plain "a", "w" "utf8" -> "a" "utf8" cases) runs in the
+vendor:probes:* jobs, and none of those was among the runs read here. The
+BricsCAD ",ccs=" append is therefore STILL UNMEASURED, and alfe's forwarding
+of ,ccs= on "a" for BricsCAD/Windows is KEPT unchanged until it is (if
+BricsCAD writes a second BOM there, that forwarding must stop).
+
+** 3. End-to-end AutoCAD -Efile-write forwarding -- NOT MEASURED (the probe's premise was wrong)
+
+Job 16998925786, lispsys-forward-probe.lsp under -Efile-write utf-8:
+#+begin_example
+[LISPSYS 0 forward] ENC E1F LISPSYS 0 FORWARDED-ARG "utf8"
+[LISPSYS 0 forward] ENC E1F w SIZE 3
+[LISPSYS 0 forward] ENC E1F a SIZE 1
+[LISPSYS 1 forward] ENC E1F LISPSYS 1 FORWARDED-ARG "utf8"
+[LISPSYS 1 forward] ENC E1F w SIZE 3
+[LISPSYS 1 forward] ENC E1F a SIZE 1
+[LISPSYS 2 forward] ENC E1F LISPSYS 2 FORWARDED-ARG "utf8"
+[LISPSYS 2 forward] ENC E1F w SIZE 3
+[LISPSYS 2 forward] ENC E1F a SIZE 1
+#+end_example
+and no WARN line at any level (the report filter keeps lines matching WARN,
+case-insensitively). Expected was "w SIZE 4" at LISPSYS 1 / 2 and a WARN at
+every level. *ALFE-OPEN-WRITE-ARG* was set in the CAD, but alfe-open* was
+never called: alfe sends the -l file as a (load ...) request, which the
+bootstrap evaluates through autolisp-eval-request-form, and only alfe-load
+rewrites OPEN. So the run measured the UNFORWARDED OPEN, not the forwarding;
+the probe was wrong, and a real gap surfaced: -Efile-write never reaches the
+-l file's own OPEN calls, silently -- filed as
+alfe-efile-write-not-applied-to-l-file (pjb-decision: rewrite OPEN in the
+request path, or warn). Done here: the manuals now say so;
+run-lispsys-bom-probe.ps1 writes a one-line entry file
+(alfe-load "<lispsys-forward-probe.lsp>") and gives THAT to -l, so the next run
+measures the forwarding itself. New expectations (with "a" now forwarded):
+LISPSYS 0 -> w 3, a 1, one WARN naming LISPSYS; LISPSYS 1 / 2 -> w 4, a 2, no
+WARN.
+
+** Still open here
+
+- The BricsCAD/Windows append with ",ccs=" (probe-open-encoding, in a
+  vendor:probes:bricscad:windows run): keep or stop the ,ccs= forwarding on
+  "a".
+- The end-to-end AutoCAD check, re-run with the corrected probe
+  (encoding:experiment:lispsys-bom:autocad:windows).
+Everything else of sections 4 to 6, and the `log' situation, is done.
+
+* Verified 2026-10-08 (MR !464, branch encoding-measured-2026-10-08 at 395f09a8 = clautolisp/alfe 2.3.9)
+
+** 3. End-to-end AutoCAD -Efile-write forwarding -- SETTLED
+
+Job 17027024820 (encoding:experiment:lispsys-bom:autocad:windows, AutoCAD
+2022), the corrected probe (lispsys-forward-probe.lsp alfe-loaded from the
+one-line entry file run-lispsys-bom-probe.ps1 writes), -Efile-write utf-8:
+#+begin_example
+[LISPSYS 0 forward] ENC E1F LISPSYS 0 FORWARDED-ARG "utf8"
+[LISPSYS 0 forward] ENC E1F w SIZE 3
+[LISPSYS 0 forward] ENC E1F a SIZE 1
+[LISPSYS 0 forward] WARN -Efile-write: not forwarded, LISPSYS is 0: AutoCAD's OPEN takes an encoding only at LISPSYS 1 or 2 (measured, AutoCAD 2022); files are written in cp1252.
+[LISPSYS 1 forward] ENC E1F LISPSYS 1 FORWARDED-ARG "utf8"
+[LISPSYS 1 forward] ENC E1F w SIZE 4
+[LISPSYS 1 forward] ENC E1F a SIZE 2
+[LISPSYS 2 forward] ENC E1F LISPSYS 2 FORWARDED-ARG "utf8"
+[LISPSYS 2 forward] ENC E1F w SIZE 4
+[LISPSYS 2 forward] ENC E1F a SIZE 2
+#+end_example
+Exactly the expectation: at LISPSYS 0 nothing is forwarded and ONE warning is
+given (for both the "w" and the "a"); at LISPSYS 1 / 2 "w" writes UTF-8 (4
+bytes for "A" e-acute "B") and "a" appends UTF-8 (2 bytes for e-acute), with
+no warning. The AutoCAD forwarding of -Efile-write UTF-8, "w" and "a"
+(alfe 2.3.9), is confirmed in the CAD. The same job repeats the append
+measurement: open-a-utf8 SIZES (4 6) and open-a-utf8-bom SIZES (7 9) at
+LISPSYS 1 / 2, "nombre d'arguments trop important" at 0. (Code loaded by the
+-l file itself is still not rewritten: alfe-efile-write-not-applied-to-l-file.)
+
+** The LOG step, re-run (jobs 17027024819 AutoCAD, 17027024818 BricsCAD V25)
+
+- AutoCAD 2022 (job 17027024819): with ERROR lines now kept, the step says why
+  it left no evidence:
+  #+begin_example
+  [LOG] ERROR protocol request 1: while loading ...\dist\encoding\log-probe.lsp (form starting at line 1) at line 1, column 1: nombre d'arguments insuffisants
+  [LOG] raw empty_129c0a04d.log: 210 bytes; first 16: 5B 20 41 75 74 6F 43 41 44 20 2D 20 54 68 75 20; first byte above 7F at offset 210: none
+  #+end_example
+  The probe form's (apply (quote princ) (list X)) calls the bootstrap's
+  fixed-arity (obj file) princ shadow on AutoCAD with one argument; APPLY
+  hides the call from the princ normalizer that pads (princ X), so the form
+  fails before the LINE command. A probe-authoring bug, not a log finding;
+  AutoCAD's log encoding stays as measured by probe-logfile (windows-1252, MR
+  !428). To make this step informative on AutoCAD the marker must not go
+  through APPLY (left as is: nothing depends on it).
+- BricsCAD V25 (job 17027024818) repeats the 2026-10-08 result byte for byte:
+  raw log 475 bytes, first 16 bytes 0D 0A 2D ..., first byte above 7F at
+  offset 143 in 0D 0A 44 E9 70 61 72 74 -- windows-1252, no BOM.
+
+** Still open here
+
+Only the BricsCAD/Windows ",ccs=" append (probe-open-encoding in
+vendor:probes:bricscad, job 17027024838, running): keep or stop alfe's ,ccs=
+forwarding on "a".
+
+* Measured 2026-10-08 -- the BricsCAD ",ccs=" append (probe:suite:bricscad:windows)
+
+Job 17027935338 (probe:suite:bricscad:windows, MR !464 pipeline 2926085769,
+branch at ff85b2f0; ACADVER "25.0 BricsCAD", LISPSYS 0), results
+probe-results/bricscad/ms-windows/20261008T112520Z/results.sexp, suite
+open-encoding ("A" e-acute "B" written with the first mode, one e-acute
+appended with the second; (size-after-write size-after-append), then a plain
+(open f "r") read-back):
+#+begin_example
+"w,ccs=UTF-8" then "a,ccs=UTF-8"       (7 9)   read (65 195 169 66 195 169)
+"w,ccs=UTF-16LE" then "a,ccs=UTF-16LE" (8 10)  read (65 233 0 66 0 233 0)
+"w,ccs=UTF-8" then a plain "a"         (7 8)   read (65 195 169 66 233)
+"w" "utf8" then "a" "utf8"             (3 4)   read (65 233 66 233)
+#+end_example
+So BricsCAD V25 on Windows writes NO second BOM on an append with ",ccs="
+(UTF-8 +2 bytes, UTF-16LE +2 bytes for one e-acute; the read-back has no
+EF BB BF / FF FE in the middle), while a plain "a" on the same UTF-8 file
+appends the cp1252 byte E9 -- a mixed file. The ",ccs=" forwarding on "a" is
+therefore right and is KEPT (alfe unchanged; backend-cad-common.lisp comment,
+alfe user manual and the spec's OPEN "Measured" subsection record it). "utf8"
+on "w"/"a" stays without effect on BricsCAD (cp1252), as measured before.
+
+Found on the way: clautolisp under bricscad-v25 writes NO BOM for
+"w,ccs=UTF-8" / "w,ccs=UTF-16LE" (BricsCAD writes one) --
+open-ccs-bom-bricscad-windows-divergence.
+
+* Resolution (2026-10-08, clautolisp 2.3.9 / alfe 2.3.9) -- DONE
+
+Every measurement this ticket waited for is in, and acted on:
+- source, file, console, cadstdio, log, terminal: situations, CLI (section 4),
+  plumbing (section 6) and the measured defaults (section 7, E1-E5) done in
+  the earlier sections;
+- log: BricsCAD V25 Windows windows-1252 without a BOM (jobs 16998925784,
+  17027024818), AutoCAD 2022 windows-1252 (MR !428), BricsCAD V26 macOS none
+  in batch; alfe --cad-log's default matches;
+- file write forwarding: AutoCAD "utf8" on "w" and "a" at LISPSYS 1/2,
+  verified end to end (job 17027024820); BricsCAD/Windows ",ccs=" on "w" and
+  "a", the append measured above.
+Follow-ups filed as their own tickets: alfe-efile-write-not-applied-to-l-file,
+cador-bricscad-windows-log-encoding, open-ccs-bom-bricscad-windows-divergence.

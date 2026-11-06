@@ -1,0 +1,231 @@
+-*- coding:utf-8 -*-
+
+autocad-no-rest-output-capture — probe princ output lost on AutoCAD (no-&rest path)
+===================================================================================
+
+Reported from: Windows vendor-probe job 15537669249
+(vendor:probes:autocad, alfe 1.6.12), against AutoCAD 2022 accoreconsole.
+
+The AutoCAD backend now works end to end EXCEPT output capture:
+
+  * accoreconsole launches, `run.scr` runs, runtime bootstraps, READY 0 in
+    ~0.8 s, the probe evaluates, status walks RUNNING 1 -> DONE 1 OK -> STOPPED,
+    and alfe reports `plan finished status=:SUCCESS exit=0`. No error anywhere.
+  * BUT the probe's printed output is GONE, so run-vendor-probes greps the log,
+    finds no "ALL ENTITY PROBES PASSED", and reports FAIL -- "no verdict". This
+    is a FALSE fail: the probe almost certainly passed, we just can't see it.
+
+Kept-workdir evidence (alfe-autocad-11664-3q9m89):
+    protocol/stdout.txt        0 bytes
+    output.txt                 0 bytes
+    errors.txt / stderr.txt    0 bytes
+    accoreconsole .log         only `nil` (the eval result), then _QSAVE/_QUIT
+    protocol/alfe-eval.lsp     (setq *AUTOLISP-EVAL-RESULT* (RUN-ENTITY-PROBES))
+    debug.log                  "host lacks &rest; keeping bootstrap 1-arg shadows
+                                + walk-rewriting normalize" ... server-loop
+                                returned normally
+
+Contrast: on BricsCAD (macOS + Windows) the SAME probe prints all 97 "ok" lines
++ "ALL ENTITY PROBES PASSED" and PASSES. BricsCAD logs "host supports &rest;
+installing variadic shadows + no-op normalize". So the break is specific to the
+**no-&rest** shadow/output path (AutoCAD lacks &rest; macOS BricsCAD has it).
+
+The probe prints ONLY via 1-arg `(princ (strcat ...))` -- no &rest/&optional.
+The loader (autolisp-source-load-run-body-impl) sets *AUTOLISP_CAPTURE_STDOUT* T
+around each form's eval, so by inspection the top-level `(run-entity-probes)`
+runs with capture on; emit-user-line/-out write to *AUTOLISP_OUTFILE* when
+capture is T. Yet all sinks are empty -- the divergence is in the run-common
+template's "host lacks &rest" branch (file-protocol.lisp, ~1240-1330: the princ
+shadow install / OUTFILE binding), not in the probe.
+
+Suspected root cause (under investigation): on the no-&rest path the in-effect
+`princ` shadow either writes to a sink alfe never drains, or emit is bypassed,
+or OUTFILE is not bound to protocol/stdout.txt. A subagent trace is pinpointing
+the exact line.
+
+Impact: AutoCAD conformance can't be *read* yet, though the engine runs the
+probe cleanly. Lower priority than BricsCAD (which is GREEN both platforms).
+pjb: "We may have to use automation when UI elements are tested, but we'll see
+later" -- batch is fine for these probes; this is an output-capture bug, not a
+UI-mode issue.
+
+Root cause (confirmed) + fix (alfe 1.6.13)
+------------------------------------------
+
+On the no-&rest path the in-effect princ/print/prin1 shadows are the bootstrap's
+FIXED 2-arg `(defun princ (obj file) ...)` (file REQUIRED; no &optional/&rest on
+the fallback host). The walk-rewriter (autolisp-normalize-princ-call) is meant
+to make user calls arity-safe, but it only rewrote the EMPTY `(princ)` case. So
+a 1-arg `(princ "text")` raised "nombre d'arguments insuffisants" -- the SAME
+trap that ate the runtime's own `(princ "")` earlier -- swallowed by the
+enclosing vl-catch-all-apply, so the request still reported DONE 1 OK with nil
+and zero bytes emitted. (On &rest hosts autolisp-normalize-princ-call is the
+identity, so BricsCAD never used this and is unaffected.)
+
+Fix (autolisp-bootstrap.lsp): extend the rewriter to pad ALL under-arity calls:
+  * pre-check autolisp-form-contains-empty-princ-p now triggers on princ/print/
+    prin1 with (length form) < 3 (0 or 1 args), not just empty princ.
+  * autolisp-normalize-princ-call-impl: 1-arg `(princ X)`/`(print X)`/`(prin1 X)`
+    -> pad the missing FILE with nil (`(princ X nil)`), arg walked too; empty
+    `(princ)` keeps its newline alias; 2-arg calls pass through. Value contract
+    preserved (princ returns its first arg). QUOTE/FUNCTION still stop the walk.
+
+Also (1.6.14): `load` is shadowed with a fixed (file onfailure) arity on the
+no-&rest host too (a vertical app's own load wrapper), so nested 1-arg
+`(load "mod")` calls in app code hit the same trap. The rewriter now pads
+`(load X)` -> `(load X nil)` as well (2-arg passes through). Matters for the
+future app-context (EPURE) tests; the current probes don't call load internally.
+
+Validated: both functions run in clautolisp (an AutoLISP interp) over sample
+forms -- (princ "t")->(princ "t" nil), (load "m")->(load "m" nil), defun bodies
+padded (both princ AND load), quoted forms untouched, 2-arg unchanged; alfe
+rebuilt, clautolisp probes still 97/27/21, suite 306/306. BricsCAD unaffected
+(normalize = identity there).
+
+Status
+------
+
+FIX IN (1.6.13), OPEN pending the vendor:probes:autocad re-run -- expect the
+probe output to now reach protocol/stdout.txt and the 97/27/21 verdicts to be
+readable/green. The rewriter's cons-rebuild of princ-containing forms was a
+known BricsCAD-V26 mapcar-lambda hazard, but it runs ONLY on the no-&rest
+(AutoCAD) path; watch for any mapcar-lambda breakage there on the re-run.
+
+
+Re-confirmed STILL REPRODUCING at HEAD (alfe 1.7.6, 2026-07-30, cad-triage-autocad)
+-----------------------------------------------------------------------------------
+
+Verified on the Windows runner against real AutoCAD 2022 accoreconsole:
+  launching: .../AutoCAD 2022/accoreconsole.exe /i empty.dwg /s run.scr
+  READY 0, plan finished status=:SUCCESS exit=0 -- and NO output.
+A probe printing ONLY through 1-arg (princ (strcat ...)) (both -l and -x)
+produced none of its markers (TRIAGE-OUT-A / TRIAGE-X-A / TRIAGE-DONE). So this
+is NOT fixed by the 1.7.4 princ/prin1 newline work: that fix routes the &rest
+VARIADIC shadows (BricsCAD has &rest); AutoCAD keeps the no-&rest 1-arg
+bootstrap shadows + the walk-rewriter, and the output path there still drops
+1-arg princ output.
+
+Likely gap: the walk-rewriter (autolisp-normalize-princ-call) only pads the
+TOP-LEVEL request form; 1-arg (princ X) calls INSIDE a loaded defun (the probe's
+run-entity-probes, or any user function) are NOT rewritten, so on a host that
+errors on under-arity they raise "too few arguments" and get swallowed. Fix
+direction to try: make the bootstrap princ/print/prin1 shadows accept the file
+arg via &optional (if accoreconsole's defun supports &optional) instead of
+relying on the source-form rewriter — then any arity works without a walk. Needs
+an AutoCAD triage of &optional support.
+
+Side finding (separate ticket-worthy): the per-run workdir RANDOM tag is
+CONSTANT -- alfe-autocad-<pid>-3q9m89 here AND in the original report -- so
+workdir.lisp's random-tag is unseeded (only the PID varies). See
+workdir-random-tag-unseeded (to file).
+
+
+Root cause found + encoding half FIXED (alfe 1.7.7, verified on real AutoCAD 2022)
+----------------------------------------------------------------------------------
+
+Deep diagnostics on real accoreconsole (cad-diag-autocad) showed the ticket's
+"no-&rest arity" framing is WRONG:
+  - the bootstrap DOES load and princ IS shadowed (AutoCAD 2022 reports every
+    defun'd function as type SUBR, which earlier looked like "native princ");
+  - the runtime DOES write the output to protocol/stdout.txt and alfe DOES
+    drain it -- but the drained bytes came out as CJK mojibake.
+
+The mojibake decodes (as UTF-16) back to the real text: the ENCODING was wrong.
+alfe drained the protocol stdout/stderr FILES with accoreconsole's console
+codec (:utf-16le, from the console-encoding work), but those files are written
+by the AutoLISP runtime in UTF-8/ASCII -- a DIFFERENT channel from
+accoreconsole's own console PIPE (which is UTF-16LE, decoded separately by
+autocad-console-external-format). UTF-8 decoded as UTF-16 -> mojibake -> looked
+like lost output.
+
+FIX (this issue's branch fix-autocad-protocol-file-encoding):
+%autocad-console-decode-encoding now defaults the FILE drain to the robust :AUTO
+cascade (auto-detects real UTF-16LE via the interleaved NULs, else UTF-8/Latin-1)
+and honours an explicit -Econsole/-Ecadstdio; the console PIPE stays :utf-16le.
+VERIFIED on real AutoCAD 2022: a 1-arg (princ ...) inside a loaded defun now
+drains CLEAN ASCII (PROBE-LINE-1 / PROBE-LINE-2 / PROBE-TOP), no mojibake.
+SBCL 412/412.
+
+REMAINING (keep this issue OPEN): the -x / eval-request path (autolisp-eval-
+request-form's redefinition writes the form to alfe-eval.lsp and calls NATIVE
+load) still drains "nil" lines instead of the form's princ output on
+accoreconsole -- i.e. a form CALLED via a protocol request (as the original
+vendor probe did: alfe-eval.lsp = "(setq *AUTOLISP-EVAL-RESULT* (RUN-ENTITY-
+PROBES))") loses its output, while a form/defun loaded+run via -l (source-load)
+is now correct. Next: make the eval-request native-load path capture the CAD
+output (or route -x through source-load like -l), then re-verify the full
+vendor probe on real AutoCAD.
+
+
+== Capture design — pjb ruling (2026-08-02) ==
+
+The variadic-shadow direction is DEAD: pjb confirms AutoCAD accepts NO variadic
+mechanism at all — no &rest, no &optional, no other way to define a
+variable-arity user function. So the fixed-arity shadow + source-form
+walk-rewriter can never cover 1-arg princ calls made INSIDE a natively-loaded
+defun (the probe's run-entity-probes). The earlier "&optional shadow" fix note
+above is void.
+
+Why we shadow princ/prin1/print at all: to capture their command-line output and
+route it to alfe's REPL output. The clean analogue of CL's "bind *standard-
+output* to another stream" is to REDIRECT the command-line stream itself, not
+shadow the functions — via AutoCAD's command-history log:
+
+  - Enable logging so 1-arg (princ x)/(prin1 x)/(print x) output is teed to a
+    file, no file handle needed; let the NATIVE functions run (their real
+    AutoCAD semantics preserved: bare (princ) -> newline; bare (print) -> does
+    nothing, returns nil like (values)).
+  - Sysvars (autolisp-spec + pjb): LOGFILEMODE is READ-ONLY (toggled by the
+    LOGFILEON/LOGFILEOFF commands — but `command` is unusable under accoreconsole,
+    so whether (setvar "LOGFILEMODE" 1) is even accepted MUST be tested);
+    LOGFILEPATH = the DIRECTORY where per-drawing log files are stored (settable);
+    LOGFILENAME = READ-ONLY path+name of the current drawing's log file.
+
+Complication (pjb): user programs may ALSO use file logging for their own
+purposes. So alfe must record whether logging is already active, TEE output to
+both the user's log and alfe's capture, and if LOGFILEMODE/LOGFILEPATH are
+changed mid-run, start / stop / retarget its tee accordingly. That requires
+SHADOWING setvar to intercept those sysvar writes.
+
+Open validation (pjb to run on a Windows or macOS accoreconsole): does
+accoreconsole honour LOGFILEMODE / LOGFILEON and actually log a 1-arg
+(princ "MARKER") to the LOGFILENAME file? If yes, implement the log-redirect +
+setvar-shadow tee; if not, fall back to capturing accoreconsole's process stdout.
+
+Related: [[accoreconsole-macos-headless-qt-blocker]] (a fresh macOS accoreconsole
+run first has to get past its Qt::AA_PluginApplication bootstrap abort).
+
+
+== 2026-09-25 comparison-probe report was a different bug ==
+
+The reported command using
+=-l ./autolisp-front-end/tests/scenarios/language/comparison-operators-probe.lsp=
+also produced no output, but it did NOT reproduce this capture defect.  alfe
+forwarded that relative pathname into accoreconsole's temporary workdir, so the
+file was never loaded; the padded =(load path nil)= then hid the missing file.
+Passing the same source as an absolute pathname produced all 240 observations
+through protocol/stdout.txt on AutoCAD 2022.  Fixed separately in alfe 2.2.84;
+see =issues/closed/alfe-cad-relative-cli-load-path.issue=.
+
+This issue remains open only for its narrower unresolved =-x= / native-load
+capture path described above.
+
+
+== CLOSED 2026-10-03 -- both halves verified on real AutoCAD 2022 ==
+
+The -l half has been fixed since alfe 1.7.7 (the protocol FILE drain was
+decoded with the console pipe's UTF-16LE); the wider capture work since
+then closed the -x half as well. Measured, not inferred:
+
+- vendor:probes:autocad (job 16789240721, 2026-09-28) reads 149
+  observations through the probes' printed output -- 101 entity-lifecycle,
+  27 drawing-data, 21 selection -- where the original report had zero
+  bytes. That job only uses -l.
+- verify:autocad-x-output:windows (new, manual; job 16912427532,
+  2026-10-03) exercises exactly this ticket's remaining path: -l defines a
+  function printing only through 1-arg princ (a literal, a strcat, a
+  number, a nested helper, terpri), -x CALLS it, plus a top-level -x
+  princ. RESULT=PASS -- every marker (XOUT-LITERAL, XOUT-STRCAT, 4242,
+  XOUT-HELPER-7, XOUT-END, XTOP) reached alfe's output.
+
+The job stays, manual, for the day the capture path changes again.

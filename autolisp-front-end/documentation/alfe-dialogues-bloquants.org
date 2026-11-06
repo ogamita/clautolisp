@@ -1,0 +1,101 @@
+#+TITLE: ALFE — Dialogues bloquants et blocages au démarrage et à la sortie
+#+DATE: 2026-11-05
+#+LANGUAGE: fr
+
+* Portée et niveau de preuve
+
+Inventaire des cas retrouvés dans les incidents ALFE et la documentation
+run-forest-run / EPURE, au 5 novembre 2026. Il ne constitue pas un relevé
+exhaustif de toutes les fenêtres possibles des moteurs.
+
+- Observé : un incident ou un historique rapporte le cas rencontré.
+- Documenté / pris en charge : le code ou les consignes traitent ce dialogue,
+  mais les éléments consultés ne fournissent pas une observation individuelle.
+- À confirmer : l'existence en source, une hypothèse ou un symptôme ne suffit
+  pas à établir que la fenêtre a effectivement été affichée.
+
+Le moteur qui affiche une fenêtre n'est pas nécessairement la cause du défaut.
+Un crash après le setup EPURE ne prouve pas qu'EPURE en est responsable.
+
+* AutoCAD
+
+| Phase | Dialogue ou blocage | Preuve / statut |
+|-------+--------------------+----------------|
+| Démarrage / ouverture | « Ouvrir – Fichier DWG étranger », bouton « Poursuivre l'ouverture du fichier DWG » ; peut précéder le script | Reconnu explicitement par le garde EPURE [R1] ; observation individuelle à confirmer |
+| Chargement | Autorisation de chargement depuis un emplacement non approuvé | Préparation TRUSTEDPATHS documentée [R1] ; titre et observation à confirmer |
+| Démarrage / compilation | Fenêtre « AutoLISP » bloquée avant VLIDE | Diagnostic dédié dans le pilote [R2] ; contenu et cause à confirmer |
+| Compilation | Choix PRJ / PRV et enregistrement de la sortie VLIDE | Dialogues normaux automatisés [R2] ; peuvent bloquer si leur validation échoue |
+| Sortie | Attente d'enregistrement après une sonde DXF | Observé sur PF5S26B le 23 octobre 2026 [A1] ; corrigé dans ALFE 2.3.44 |
+| Sortie / crash | Erreur fatale et invitation au rapport Autodesk CER | Documentées séparément [R1] ; occurrence, texte et cause de chaque incident à confirmer |
+| Sortie | Processus persistant ou appels COM rejetés | Symptôme de blocage, pas preuve d'une pop-up ; corréler PID, phase et journaux [A2] |
+
+La correction du cas DXF supprime la sauvegarde implicite à la fin des
+sessions non interactives : quitter sans enregistrer si le dessin est modifié.
+Le dialogue « Enregistrer sous » est une conséquence possible expliquée par
+le ticket ; le constat initial établit surtout qu'AutoCAD restait ouvert.
+
+* BricsCAD
+
+| Phase | Dialogue ou blocage | Preuve / statut |
+|-------+--------------------+----------------|
+| Démarrage | Demande de dessin et/ou de profil si les deux sont omis | Observé : job bloqué 32 minutes, fenêtre invisible sous /Automation [B1] |
+| Ouverture | Dessin déjà utilisé ; proposition de lecture seule | Dialogues signalés sur le runner [B2] ; éviter le partage du DWG entre invocations |
+| Démarrage | « CUI File Error / invalid document structure » | Cas historique documenté, notamment pour le default.cui utilisateur sous macOS [B3] ; ne pas généraliser à tous les runners Windows |
+| Démarrage | BOOTING sans READY sur une copie de Default-m.dwt, V25 Windows | Blocage observé, dialogue seulement supposé ; essai suivant réussi sans dialogue [B4] |
+| Sortie après setup EPURE | Crash ou fermeture qui n'aboutit pas | Contexte documenté [R3] ; fenêtre exacte, reproduction et cause à confirmer |
+| Sortie | Demande de sauvegarde d'un dessin modifié | Mécanisme commun AutoCAD / BricsCAD corrigé par ALFE [A1] ; observation BricsCAD distincte non établie ici |
+
+Le cas Default-m.dwt ne confirme donc ni une alerte de police, ni une xref,
+ni un proxy, ni une demande de récupération : ces explications étaient des
+hypothèses et le blocage n'a pas été reproduit.
+
+* EPURE (socle et applications)
+
+| Phase | Dialogue ou blocage | Preuve / statut |
+|-------+--------------------+----------------|
+| Configuration | « Installation EPURE 2022 » / ConfigEpure : utilisateur, ordinateur, dossier | Interface identifiée dans l'analyse du bootstrap [E1] ; validations interactives maintenues [R3] |
+| Démarrage | « Modifications et nouveautés … depuis la dernière mise à jour », SCHMS / SCHME | Dialogue historique explicitement pris en charge [R1] ; peut précéder le script natif |
+| Démarrage | Sélecteur de sous-application / version | Préparation préalable demandée par les consignes [R1] ; observation individuelle à confirmer |
+| Ouverture SCHMS+ | Version du document incompatible, avertissement et traitement en lecture seule | Présent dans les sources et documenté [E2] ; observation en essai à confirmer |
+| Chargement SCHMS+ | Alertes de migration, métadonnées incohérentes, classes inconnues, anomalies à l'ouverture | Présentes dans les sources [E3] ; liste des messages réellement rencontrés à confirmer |
+| Sortie après configuration | Retour du setup suivi d'un crash ou d'une fermeture bloquée | À enregistrer comme contexte EPURE avec le moteur concerné [R3], sans attribuer la cause au socle sans diagnostic |
+
+Les erreurs DCL et les fenêtres de licence / activation sont mentionnées dans
+les consignes générales [R1]. Leur texte, leur moteur et leur observation
+restent à confirmer ; elles ne sont pas comptées comme incidents identifiés.
+
+* Interprétation des blocages à la sortie
+
+Distinguer une réponse attendue (sauvegarde / confirmation), une erreur fatale,
+un rapport de crash et un processus restant actif sans fenêtre identifiée.
+Un timeout ou un refus COM ne prouve pas à lui seul la présence d'une pop-up.
+
+Le code AutoCAD =0xBABE= (47806) ne prouve pas un crash : la qualification
+sans Traverses rapporte des exécutions réussies avec ce code, sans crash
+corrélé [R4]. Inversement, un rapport de tests réussi ne suffit pas à établir
+que la fermeture s'est bien passée.
+
+Pour compléter l'inventaire : conserver le titre et le texte de la fenêtre,
+une capture, le moteur et sa version, le PID, la phase (avant script,
+chargement, après assertions, après demande de fermeture), le job et les
+événements de crash corrélés. FILEDIA=0 et CMDDIA=0 ne neutralisent pas tous
+les dialogues DCL, de sécurité, de licence ou de crash [R1].
+
+* Références
+
+Les liens vers les dépôts voisins supposent des checkouts frères ; ils ne
+constituent pas des dépendances d'exécution d'ALFE.
+
+- [A1] [[file:../../issues/closed/alfe-cad-quit-saves-modified-drawing.issue][Incident de fermeture après sonde DXF et correction ALFE 2.3.44]].
+- [A2] [[file:../../issues/closed/alfe-autocad-hung-instance-blocks-com-bootstrap.issue][Instance AutoCAD bloquée et bootstrap COM]].
+- [B1] [[file:../../issues/closed/cad-runner-wedged-by-modal-dialog.issue][Runner bloqué par un dialogue BricsCAD]].
+- [B2] [[file:../../issues/closed/bricscad-refuses-to-load-what-it-will-run.issue][Signalements de dessin déjà utilisé]].
+- [B3] [[file:../../RELEASE_NOTES.org][Historique : réparation du default.cui et CUI File Error]].
+- [B4] [[file:../../issues/closed/bricscad-v25-metric-template-stays-booting.issue][BOOTING V25 métrique : hypothèse de dialogue non confirmée]].
+- [R1] [[file:../../../run-forest-run/outils-test-cad/README.md][Préparation des essais CAO, nouveautés, DWG étranger et rapports de crash]].
+- [R2] [[file:../../../run-forest-run/autocad-vlx/compile-autocad-vlx.ahk][Pilote VLIDE et diagnostic de la fenêtre AutoLISP]].
+- [R3] [[file:../../../run-forest-run/doc/epure-copy-utilisateur.md][Setup EPURE et diagnostic de fermeture]], [[file:../../../run-forest-run/doc/notes-release-1.27.0.md][notes 1.27.0]].
+- [R4] [[file:../../../run-forest-run/doc/qualification-epure-sans-traverses.md][Qualification AutoCAD et code 0xBABE]].
+- [E1] [[file:../../../schms/dev/doc/notes/proposition-point-entree-uniforme-epure.md][Analyse du bootstrap EPURE et ConfigEpure]].
+- [E2] [[file:../../../schms/dev/doc/format-dwg.org][Compatibilité des documents SCHMS+]].
+- [E3] [[file:../../../schms/src-vlx/metadonnees.lsp][Diagnostics des métadonnées]], [[file:../../../schms/src-vlx/prelude.lsp][regroupement des alertes]], [[file:../../../schms/src-vlx/migration.lsp][alertes de migration]].

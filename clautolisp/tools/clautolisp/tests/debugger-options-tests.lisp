@@ -1,7 +1,7 @@
 ;;;; clautolisp/tools/clautolisp/tests/debugger-options-tests.lisp
 ;;;;
 ;;;; CLI parse tests for the debugger (aldo) options of
-;;;; issues/open/debugger-public-interface-and-on-error.issue Parts B-D:
+;;;; issues/closed/debugger-public-interface-and-on-error.issue Parts B-D:
 ;;;;   --on-error / --on-interrupt / --on-quit POLICY
 ;;;;   --debugger-ui UI
 ;;;;   --aldb-listen [HOST:]PORT / --aldb-stdio

@@ -258,6 +258,8 @@ test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "usocket" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
@@ -273,14 +275,25 @@ test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 #   - the test lanes also quit with an explicit status (pjb), which
 #     turns a signalled test failure into exit 1 rather than relying on
 #     the error path alone.
-test-ccl:  ## Run the alfe FiveAM suite under CCL.
+#
+# TEST_TIMEOUT (seconds, 0 = none): a guard OUTSIDE the Lisp process
+# (ccl-protocol-write-atomic-file-contention-hangs). The suite's own watchdog
+# (120 s, file-protocol-tests) cannot fire when the whole process freezes --
+# the x86 CCL under Rosetta stalls at 0 % CPU, every thread stopped -- so the
+# run is killed from outside and the step fails (exit 142, SIGALRM) instead
+# of hanging the lane. perl, not timeout(1): macOS ships no GNU timeout.
+TEST_TIMEOUT ?= 3600
+WITH_TEST_TIMEOUT = $(if $(filter-out 0,$(TEST_TIMEOUT)),perl -e 'alarm shift; exec @ARGV or die "exec: $$!"' $(TEST_TIMEOUT))
+test-ccl:  ## Run the alfe FiveAM suite under CCL (killed after TEST_TIMEOUT s).
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
-	"$(CCL)" --no-init --quiet --batch \
+	$(WITH_TEST_TIMEOUT) "$(CCL)" --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "usocket" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
@@ -324,6 +337,8 @@ conformance: conformance-harness-tests  ## Run the alfe scenario corpus and exit
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "usocket" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
@@ -464,7 +479,12 @@ PLUGIN_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/clautolisp/plug-in
 
 INSTALL_BINARIES_sbcl := $(ALFE_SBCL)
 INSTALL_BINARIES_ccl  := $(ALFE_CCL)
-INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARIES_$(impl)))
+# INSTALL_LISPS narrows that to the Lisps actually BUILT: the root
+# stage-programs builds only $(RELEASE_LISPS) and passes it here, so a
+# stale image of a Lisp it did not build (an old *-ccl left in bin/) is
+# not shipped -- nor used to compile the plug-ins against current source.
+INSTALL_LISPS ?= $(AVAILABLE_IMPLEMENTATIONS)
+INSTALL_BINARIES := $(foreach impl,$(INSTALL_LISPS),$(INSTALL_BINARIES_$(impl)))
 
 .PHONY: install install-programs install-plugins install-documentation uninstall
 

@@ -1,0 +1,156 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-eval-request-locals-capture-user-setq -- a request's (setq f ...) / (setq text ...) / (setq form ...) on a CAD backend sets the request evaluator's LOCAL, and the value is gone
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS:
+#+BRANCH: fix-alfe-request-locals-capture
+#+DATE: 2026-10-08
+
+* Context
+
+Found 2026-10-08 while writing the tests of
+alfe-efile-write-not-applied-to-l-file (alfe 2.3.14): an -l file doing
+=(setq f (open p "w"))= and then =(write-char 65 f)= failed on the hosted
+engine with "WRITE-CHAR expects an open file descriptor". Same class as the
+closed alfe-load-user-setq-clobbers-loader-locals (alfe 2.2.155), which fixed
+the loader's read loop (alfe-- prefixed locals) but not the request evaluator
+the loop calls.
+
+* Problem
+
+AutoLISP binds a DEFUN's parameters and /-locals dynamically. Every protocol
+request -- each form of an -l file (via the deported loader), -x, --main, the
+REPL -- is evaluated by the CAD's native LOAD of alfe-eval.lsp, called from
+inside the emitted =autolisp-eval-request-source= (file-protocol.lisp,
+run-common.lsp), whose lambda list is
+=(form source / r err path text f normalized)=, itself called from the
+runtime server loop =autolisp-protocol-server-loop= (=keep form req-id result
+rc=, autolisp-remote-io.lsp). A user =setq= of any of those names during the
+request sets the LOCAL binding, which disappears when the request returns: the
+global is never set.
+
+* Repro (hosted clautolisp, the harness of file-protocol-tests.lisp)
+
+Requests "(setq f 42 text 43 r 44 path 45 zz 46 result 47 form 48)" then
+"(princ (vl-prin1-to-string (list f text r path zz result form)))":
+prints the evaluator's own values for F (the alfe-eval.lsp file descriptor),
+TEXT (the request text), R (nil), PATH (alfe-eval.lsp), FORM (the form) --
+only ZZ is 46. Any CAD backend runs the same emitted code (AutoCAD, BricsCAD),
+so a program using F, R, PATH, TEXT, ERR, FORM, SOURCE, NORMALIZED, RESULT,
+KEEP, REQ-ID or RC as a global breaks under alfe and not in the CAD itself.
+
+* Fix direction
+
+As for the loader: rename every parameter / local of the request path that
+runs while user code is evaluated to an =alfe--= prefixed name
+(=autolisp-eval-request-source=, =autolisp-eval-request-form= in run-common,
+=autolisp-protocol-server-loop=, =autolisp-run-eval-file=,
+=autolisp-run-main=, the REPL file loop), and add the repro above as a test
+over every such name.
+
+* Resolution (alfe 2.3.15, 2026-10-08) -- NEXT until the CAD probe verifies
+
+** Audit
+
+Every binding site of alfe's CAD-side runtime was renamed, not only the
+request path: whether a function is on the stack while user code runs
+depends on callbacks (*error*, the princ/print shadows, alfe-load's
+rewrites) that are easy to miss, and one uniform rule is checkable.
+
+- autolisp-bootstrap.lsp: 108 defuns. 17 already carried alfe-- (the
+  earlier loader fix, alfe 2.2.155); the parameters and /-locals of the
+  other 91 are now alfe--NAME (autolisp-*-line/-file/-status helpers, the
+  printers autolisp-str / -render / -readable-text / -stdout-text /
+  -form-source-text / -real-*, the source scanners
+  autolisp-source-scan-text / -leading-symbols / -trim-leading-junk /
+  -first-form-end / -format-error / -raise / -resolve-load-path /
+  -open-encoded*, the rewriters alfe-form-needs-rewrite-p /
+  alfe-rewrite-form* / alfe-rewrite-open-calls* / alfe-open-rewrite-text /
+  alfe-open-request-text / autolisp-normalize-princ-call*, the fixed-arity
+  princ / print / prin1 / prompt shadows, alfe-princ* / -print* / -prin1*,
+  autolisp-safe-getvar / -setvar, autolisp-log-setup / -restore,
+  autolisp-slurp-lines, autolisp-sleep-ms, get_new_guid ...) and the
+  foreach variable of alfe-open-rewrite-text.
+- autolisp-remote-io.lsp: every defun, among them
+  autolisp-protocol-server-loop (keep form req-id result rc),
+  autolisp-protocol-remote-read (acc line), -remote-read-line (lines line),
+  -read-from-text (text f value), autolisp-read-line (old-flag line),
+  autolisp-request-failure-text (req-id msg form text shown), the
+  slurp/write/status helpers, -form-complete-p, -yield (mode ms r),
+  -sleep-ms (ms r), the selftest loop.
+- run-common.lsp, as file-protocol.lisp emits it: alfe-debug-log
+  (msg f path), autolisp-emit-user-line / -out / -str, autolisp-log-err,
+  alfe-publish-runtime-flags (f), alfe-request-source-text (form normalized
+  source back), autolisp-eval-request-form (form),
+  autolisp-eval-request-source (form source r err path text f normalized),
+  alfe-set-debugging / alfe-set-verbose (on), alfe-host-supports-rest-p
+  (probe call-result) and its quoted probe (&rest x), the variadic princ /
+  print / prin1 / prompt (&rest args), the identity
+  autolisp-normalize-princ-call (form) and the fixed-arity princ / print /
+  prin1 (obj file).
+- A second defect of the same class: autolisp-protocol-pulse-heartbeat
+  SETQ'd an undeclared F, i.e. the user's GLOBAL f, on every heartbeat --
+  between any two requests. It is now a local (alfe--f).
+- Function names: alfe defines alfe-*, autolisp-*, the princ / print /
+  prin1 / prompt / terpri shadows, quit, exit, clear-input, clear-output,
+  get_new_guid and C:AUTOLISP-PROTOCOL-SELFTEST; globals are *AUTOLISP...*
+  / *ALFE...* (plus the never-set legacy _autolisp_old_srchpath and
+  run.scr's alfe-scr-mark). Renaming them would break the public
+  interface; the alfe user manual now says they are alfe's (section "Names
+  reserved to alfe on a CAD"), with the alfe-- prefix.
+
+** Guards (alfe tests, FiveAM)
+
+- runtime-binds-only-alfe-prefixed-names: reads autolisp-bootstrap.lsp,
+  autolisp-remote-io.lsp and an emitted run-common.lsp with a small
+  AutoLISP reader and fails on any defun parameter / local, lambda
+  parameter or foreach variable without the alfe-- prefix
+  (*alfe-runtime-binding-allow-list*, empty, documents exceptions).
+- runtime-defuns-setq-no-unprefixed-global: a runtime defun may SETQ only
+  its own bindings or a *starred* global (catches the heartbeat F).
+- protocol-user-setq-of-every-runtime-name-reaches-the-global: hosted
+  clautolisp, AutoCAD path (fixed-arity shadows, --dialect autocad) and
+  BricsCAD path (variadic, --dialect bricscad): every bare name the runtime
+  binds (over 110, derived from the sources by the same reader) is SETQ'd through
+  -l (a (load P) request), -x, REPL input (print-wrapped), a --main style
+  function and alfe-load, and a LATER request checks every global.
+All three were run against the unfixed sources: they FAIL (on the hosted
+engine X/REPL lost exactly ERR F FORM NORMALIZED PATH R REQ-ID SOURCE
+TEXT, the -l and --main paths lost every name), and pass with the fix.
+
+** CAD probe (to run -- the ticket stays NEXT until it says kept)
+
+Family request-locals: autolisp-front-end/tests/scenarios/entities/
+request-locals-probe.lsp + scripts/run-request-locals-probe.{sh,ps1}. The
+-l file does (setq f 1 text "t" r 2 path "p" form 3 ...) over 23 names, an
+-x setq and a function set them again, and a LATER -x reads them back:
+RLOCALS <step> <name> kept|lost, RLOCALS-SUMMARY <step>. Jobs (manual
+unless the family changed, soft):
+request-locals:probe:bricscad:macos, request-locals:probe:bricscad:windows,
+request-locals:probe:autocad:windows (GUI),
+request-locals:probe:accoreconsole:windows.
+Baseline --clautolisp: all kept (72 observations).
+
+* Verified on the runners (2026-10-08, MR !468 pipeline 2927377490) -- DONE
+
+request-locals probe, alfe 2.3.15: a user (setq NAME v) for each of the 23
+names the request path used to bind (F TEXT R PATH FORM SOURCE ERR
+NORMALIZED RESULT KEEP REQ-ID RC LINE OBJ MSG ARGS NAME VALUE X S IDX BACK
+ON), in each of the 3 request kinds, keeps its value afterwards:
+
+| job         | target                     | kept      | summary              |
+|-------------+----------------------------+-----------+----------------------|
+| 17037517171 | BricsCAD V25 Windows       | 69 / 69   | lost 0 in 1, 2, 3    |
+| 17037517170 | BricsCAD V26 macOS         | 69 / 69   | lost 0 in 1, 2, 3    |
+| 17037517172 | AutoCAD 2022 GUI           | 69 / 69   | lost 0 in 1, 2, 3    |
+| 17037517173 | AutoCAD 2022 accoreconsole | 69 / 69   | lost 0 in 1, 2, 3    |
+
+#+begin_example
+RLOCALS-INFO ALFE 2.3.15
+RLOCALS 1 F kept 1
+RLOCALS 2 TEXT kept 112
+RLOCALS 3 ON kept 233
+RLOCALS-SUMMARY 3 kept 0
+RLOCALS-DONE
+#+end_example

@@ -5,7 +5,7 @@
 ;;;; FiveAM tests for alfe.protocol.file (Phase 2).
 ;;;;
 ;;;; The acceptance criteria from
-;;;; ../../issues/open/alfe-file-protocol.issue:
+;;;; ../../issues/closed/alfe-file-protocol.issue:
 ;;;;
 ;;;;   - session bring-up produces the protocol/ layout the spec
 ;;;;     documents (filenames, initial contents).
@@ -327,6 +327,18 @@ the condition comes back as DATA, on both hosts, and the thread finishes."
       (is (equal "in-thread" (first seen))
           "and its condition must arrive as data; got ~S" seen))))
 
+(defun %x86-ccl-under-rosetta-p ()
+  "True when this is the x86-64 CCL running translated by Rosetta 2 on an
+Apple-silicon Mac. Asked of the MACHINE (hw.optional.arm64 = 1), not of a
+child process: a child sysctl runs native and reports itself untranslated."
+  #+(and ccl darwin x86-64)
+  (ignore-errors
+   (string= "1" (string-trim '(#\Space #\Newline #\Return)
+                             (uiop:run-program '("sysctl" "-n" "hw.optional.arm64")
+                                               :output :string
+                                               :ignore-error-status t))))
+  #-(and ccl darwin x86-64) nil)
+
 (test protocol-write-atomic-file-contention
   "N=16 concurrent writers publishing distinct integers all complete
 without errors; the final file content is one of the published
@@ -346,6 +358,15 @@ formed value, never a partial one."
       ;; compile-time error ("Argument to IS must be a list, not T"). See
       ;; write-atomic-file-concurrent-rename-macos-windows.issue.
       (pass "skipped on Windows: write-atomic-file rename is non-atomic (UIOP delete+rename); single-writer usage unaffected")
+  ;; The x86 CCL under Rosetta 2 FREEZES -- the whole process, 0 % CPU,
+  ;; the 120 s watchdog below included -- on this test's 17 allocating
+  ;; threads (measured: test:alfe:ccl:macos job 16967831196, killed by the
+  ;; Makefile's TEST_TIMEOUT; ccl-protocol-write-atomic-file-contention-hangs).
+  ;; Every loop in write-atomic-file is bounded and native CCL passes (the
+  ;; Linux test:alfe:ccl lane), so it is the emulated runtime, not alfe:
+  ;; skip only there, with the reason, as on Windows.
+  (if (%x86-ccl-under-rosetta-p)
+      (pass "skipped on x86 CCL under Rosetta 2: the emulated runtime freezes under this many threads (ccl-protocol-write-atomic-file-contention-hangs); native CCL runs it")
   (let* ((workdir (make-test-workdir "contention"))
          (target (merge-pathnames "value.txt" workdir))
          (n-writers 16)
@@ -437,7 +458,7 @@ formed value, never a partial one."
               (is (or (string= final "seed")
                       (find final allowed-values :test #'string=))
                   "Final content ~S is not one of the published values" final))))
-      (delete-workdir workdir))))))
+      (delete-workdir workdir)))))))
 
 ;;; --- status polling ------------------------------------------------
 
@@ -893,12 +914,12 @@ preserves the user's reader-built cons cells — same fix scope as
 1.1.10, but at the source rather than papering over normalize.
 
 The shadows use `(&rest args)' — BricsCAD V26's native spelling
-(confirmed by Bricsys support). The bare `&' is a clautolisp-only
-extension; the emitted run-common.lsp runs inside the CAD's own
-runtime, so the BricsCAD spelling is what reaches its defun
-parser. clautolisp's parser accepts both spellings as synonyms
-(alfe 1.1.17), so the emitted file also loads correctly under
-the cador used by the test suite."
+(confirmed by Bricsys support). The emitted run-common.lsp runs
+inside the CAD's own runtime, so the BricsCAD spelling is what
+reaches its defun parser; clautolisp's parser accepts `&REST' too,
+so the emitted file also loads correctly under the cador used by
+the test suite. (A bare `&' is no separator anywhere: an ordinary
+symbol since pjb's 2026-10-23 ruling.)"
   ;; The bridge block (which carries the variadic shadows) is
   ;; emitted only when BOTH the bootstrap and the runtime LSP are
   ;; staged — emit-run-common-lsp gates the bridge inside the
@@ -934,15 +955,15 @@ the cador used by the test suite."
               (is (search "(defun alfe-host-supports-rest-p" content))
               (is (search "__alfe-amp-rest-probe" content))
               ;; The variadic shadows installed under the YES branch.
-              (is (search "(defun princ (&rest args)" content))
-              (is (search "(defun print (&rest args)" content))
-              (is (search "(defun prin1 (&rest args)" content))
-              (is (search "(defun prompt (&rest args)" content))
+              (is (search "(defun princ (&rest alfe--args)" content))
+              (is (search "(defun print (&rest alfe--args)" content))
+              (is (search "(defun prin1 (&rest alfe--args)" content))
+              (is (search "(defun prompt (&rest alfe--args)" content))
               ;; The no-op normalize override that's the whole
               ;; point — with variadic shadows in place, walking
               ;; the form is unnecessary. Identity-fn preserves
               ;; cons-cell identity.
-              (is (search "(defun autolisp-normalize-princ-call (form) form)"
+              (is (search "(defun autolisp-normalize-princ-call (alfe--form) alfe--form)"
                           content))
               ;; The fallback debug log for hosts that lack &rest.
               (is (search "host lacks &rest" content))
@@ -951,7 +972,7 @@ the cador used by the test suite."
               ;; to the open file descriptor, NOT leak onto
               ;; protocol/stdout.txt. The variadic shadows test (cadr
               ;; args) and write through autolisp-write-string-to-file.
-              (is (search "((cadr args)" content))
+              (is (search "((cadr alfe--args)" content))
               (is (search "autolisp-write-string-to-file" content))
               ;; The old comment that documented the drop as intended
               ;; must be gone, so a future reader can't reinstate it.
@@ -1268,6 +1289,8 @@ never signals."
 
 (defun emit-run-common-with-real-runtime (workdir &key assume-no-rest-p
                                                        dialect
+                                                       open-write-ccs
+                                                       open-write-arg
                                                        (explicit-no-rest-p t))
   "Emit run-common.lsp into WORKDIR with the REAL vendored bootstrap
 and runtime staged (the emit tests above use fakes). Returns the
@@ -1276,7 +1299,8 @@ AutoCAD takes instead of the one BricsCAD takes; with
 EXPLICIT-NO-REST-P NIL the keyword is not passed at all, so the
 emitter's target-derived default decides. DIALECT, a --dialect name,
 is stamped into the emitted file and is what the engine's
-portability warnings are judged against."
+portability warnings are judged against. OPEN-WRITE-CCS / OPEN-WRITE-ARG
+are passed to the emitter (*ALFE-OPEN-WRITE-CCS* / *ALFE-OPEN-WRITE-ARG*)."
   (let ((session (alfe.protocol.file:init-session
                   workdir
                   :bootstrap-lsp-source (%vendored-runtime-source
@@ -1291,9 +1315,13 @@ portability warnings are judged against."
             (if explicit-no-rest-p
                 (alfe.protocol.file:emit-run-common-lsp
                  session :cli-options options
+                         :open-write-ccs open-write-ccs
+                         :open-write-arg open-write-arg
                          :assume-no-rest-p assume-no-rest-p)
                 (alfe.protocol.file:emit-run-common-lsp
-                 session :cli-options options)))))
+                 session :cli-options options
+                         :open-write-ccs open-write-ccs
+                         :open-write-arg open-write-arg)))))
 
 (defun clautolisp-engine-binary ()
   "First existing clautolisp-sbcl among the documented search paths,
@@ -1343,26 +1371,26 @@ recognises a quit."
           (declare (ignore session))
           (let ((content (alfe.protocol.file:read-file-as-string path)))
             ;; The outcome is bound, tested, and re-signalled.
-            (is (search "(setq err (vl-catch-all-apply 'load (list path)))"
+            (is (search "(setq alfe--err (vl-catch-all-apply 'load (list alfe--path)))"
                         content))
-            (is (search "(vl-catch-all-error-p err)" content))
+            (is (search "(vl-catch-all-error-p alfe--err)" content))
             ;; Re-signalled through autolisp-raise, never `error': that
             ;; function does not exist on AutoCAD
             ;; (alfe-autocad-error-primitive-masks-load-failure).
-            (is (search "(if err (autolisp-raise err) r)" content))
-            (is (not (search "(error err)" content)))
+            (is (search "(if alfe--err (autolisp-raise alfe--err) alfe--r)" content))
+            (is (not (search "(error alfe--err)" content)))
             ;; ERR must be a local of the override, not a global left
             ;; behind in the CAD's symbol table.
-            (is (search "(defun autolisp-eval-request-form (form / r err"
+            (is (search "(defun autolisp-eval-request-source (alfe--form alfe--source / alfe--r alfe--err"
                         content))
             ;; The discarding shape must not come back: the ONLY
             ;; occurrence of the load call is the one bound to ERR.
-            (let ((pos (search "(vl-catch-all-apply 'load (list path))"
+            (let ((pos (search "(vl-catch-all-apply 'load (list alfe--path))"
                                content)))
               (is (not (null pos)))
               (when pos
-                (is (string= "(setq err "
-                             (subseq content (- pos 10) pos))
+                (is (string= "(setq alfe--err "
+                             (subseq content (- pos 16) pos))
                     "the load call's value is dropped again")))))
       (delete-workdir workdir))))
 
@@ -1442,8 +1470,25 @@ before `make build-clautolisp-sbcl`)."
 ;;; them by BYTES, with :assume-no-rest-p selecting the AutoCAD path on
 ;;; a host that does support &rest.
 
+(defun %hosted-engine-miss-record (session engine elapsed)
+  "The status entry DRIVE-HOSTED-ENGINE records when a request's DONE
+line was not seen in time: the status that IS current, then whether
+stdin.txt still holds the unread request, whether ENGINE is alive, and
+the ELAPSED seconds of the wait, e.g.
+\"READY 0 [miss: stdin-present=yes engine-alive=yes elapsed=30.1s]\".
+The status comes first so prefix checks such as \" OK\" / \" FAIL\" read
+it unchanged."
+  (format nil "~A [miss: stdin-present=~:[no~;yes~] engine-alive=~:[no~;yes~] elapsed=~,1Fs]"
+          (or (alfe.protocol.file:read-current-status session) "(timeout)")
+          (probe-file (alfe.protocol.file:protocol-session-stdin-path session))
+          (and engine (ignore-errors (uiop:process-alive-p engine)))
+          (or elapsed 0)))
+
 (defun drive-hosted-engine (binary forms &key assume-no-rest-p dialect
                                               (explicit-no-rest-p t)
+                                              prepare-shutdown-p
+                                              open-write-ccs
+                                              open-write-arg
                                               forms-fn)
   "Host the emitted run-common.lsp in a clautolisp subprocess, send
 FORMS one at a time, and return (values statuses stdout stderr
@@ -1456,7 +1501,9 @@ EXPLICIT-NO-REST-P NIL passes no :assume-no-rest-p at all, so the
 emitter's own default — the target — decides the shadow path.
 FORMS-FN, a function of the workdir called once the session exists and
 before the engine starts, returns the forms to send instead of FORMS —
-for a test that has to stage files of its own next to the session."
+for a test that has to stage files of its own next to the session.
+OPEN-WRITE-CCS is emitted as *ALFE-OPEN-WRITE-CCS*, OPEN-WRITE-ARG as
+*ALFE-OPEN-WRITE-ARG*."
   (let ((workdir (make-test-workdir (if assume-no-rest-p
                                         "hosted-norest"
                                         "hosted-rest")))
@@ -1467,6 +1514,8 @@ for a test that has to stage files of its own next to the session."
              (emit-run-common-with-real-runtime
               workdir
               :dialect dialect
+              :open-write-ccs open-write-ccs
+              :open-write-arg open-write-arg
               :assume-no-rest-p assume-no-rest-p
               :explicit-no-rest-p explicit-no-rest-p)
            ;; Declare alfe's own staged runtime trusted before starting
@@ -1491,18 +1540,21 @@ for a test that has to stage files of its own next to the session."
                       (multiple-value-bind (ok elapsed last)
                           (alfe.protocol.file:wait-for-status-prefix
                            session (format nil "DONE ~D" i) :timeout 30)
-                        (declare (ignore elapsed))
                         ;; A DONE line can be overwritten before the
                         ;; poll sees it -- a quit publishes DONE n QUIT
                         ;; and then STOPPED at once -- so on a miss
                         ;; record the status that IS there rather than a
                         ;; bare "(timeout)", which would hide a
-                        ;; legitimate terminal state.
+                        ;; legitimate terminal state. A miss also says
+                        ;; whether the request is still unread in
+                        ;; stdin.txt, whether the engine is alive, and
+                        ;; how long the wait lasted: a stall before
+                        ;; RUNNING is otherwise indistinguishable from a
+                        ;; lost request (hosted-engine-first-request-stall).
                         (push (if ok
                                   last
-                                  (or (alfe.protocol.file:read-current-status
-                                       session)
-                                      "(timeout)"))
+                                  (%hosted-engine-miss-record
+                                   session engine elapsed))
                               statuses)))
              (let ((out (alfe.protocol.file:read-file-as-string
                          (alfe.protocol.file:protocol-session-stdout-path
@@ -1510,9 +1562,12 @@ for a test that has to stage files of its own next to the session."
                    (err (alfe.protocol.file:read-file-as-string
                          (alfe.protocol.file:protocol-session-stderr-path
                           session))))
-               (alfe.protocol.file:send-control session :shutdown)
-               (alfe.protocol.file:wait-for-status session "STOPPED"
-                                                   :timeout 30)
+               (if prepare-shutdown-p
+                   (alfe.protocol.file::prepare-cad-shutdown session :timeout 10)
+                   (progn
+                     (alfe.protocol.file:send-control session :shutdown)
+                     (alfe.protocol.file:wait-for-status session "STOPPED"
+                                                        :timeout 30)))
                (ignore-errors (uiop:wait-process engine))
                (values (nreverse statuses) out err
                        (let ((p (merge-pathnames "engine-stderr.txt"
@@ -1571,6 +1626,131 @@ both paths. Skipped when clautolisp-sbcl is not on disk."
                   (car (last statuses))))
             (is (search "NO_SUCH_FUNCTION" rest-err))
             (is (search "NO_SUCH_FUNCTION" norest-err)))))))
+
+;;; --- code alfe does not rewrite must keep the native primitives --------
+;;;
+;;; alfe-autocad-fixed-arity-output-shadows. On AutoCAD (no &rest) alfe
+;;; used to REPLACE princ / print / prin1 with fixed 2-argument shadows and
+;;; made them usable by padding the calls in the text IT loads. Code that
+;;; does not go through that normaliser -- a VLX or FAS, a file loaded with
+;;; the native LOAD, a reactor -- then called (princ X) on the 2-argument
+;;; shadow and failed with "too few arguments" (SCHMS+ under EPURE on
+;;; AutoCAD 2022: the error was swallowed by a vl-catch-all-apply around a
+;;; reactor callback, and the work silently lost). The primitives are now
+;;; left alone on that path; the normaliser rewrites alfe's own calls onto
+;;; alfe-owned functions instead.
+
+(defparameter +native-output-source+
+  (format nil "~{~A~%~}"
+          '("(defun native-hello () (princ \"hello\") (princ) 'done)"
+            "(defun native-all ()"
+            "  (princ) (princ \"a\") (print) (print \"c\") (prin1) (prin1 \"d\")"
+            "  (prompt \"e\") (terpri)"
+            "  (mapcar 'princ '(1 2)) (apply 'print '(3))"
+            "  'done-all)"
+            ;; The FILE argument. A real descriptor: AutoCAD 2022 itself
+            ;; rejects an explicit NIL one (\"type d'argument incorrect: FILE
+            ;; nil\", measured), so native code never passes it.
+            "(defun native-file (/ p f l)"
+            "  (setq p (vl-filename-mktemp \"alfe\" nil \".txt\"))"
+            "  (setq f (open p \"w\"))"
+            "  (princ \"b\" f) (prin1 \"d\" f) (print 'c f)"
+            "  (close f)"
+            "  (setq f (open p \"r\")) (setq l (read-line f)) (close f)"
+            "  (vl-file-delete p)"
+            "  (if (= l (strcat \"b\" (chr 34) \"d\" (chr 34))) 'done-file l))"))
+  "A file that calls every documented arity of the output primitives, the
+way compiled or natively loaded code does: alfe loads it with the NATIVE
+load, so none of its calls is rewritten. Every call is one AutoCAD 2022
+accepts natively (run there on 2026-11-04).")
+
+(defun %native-output-run (binary assume-no-rest-p)
+  "Drive a hosted engine on the shadow path ASSUME-NO-REST-P selects: load
++NATIVE-OUTPUT-SOURCE+ with the native LOAD (vl-catch-all-apply 'load keeps
+the call opaque to alfe's normaliser, as a VLX's internal calls are), define
+another function from a string at run time, call both, and report. Returns
+(values statuses stdout stderr)."
+  (drive-hosted-engine
+   binary nil
+   :assume-no-rest-p assume-no-rest-p
+   :forms-fn
+   (lambda (workdir)
+     (let ((file (merge-pathnames "native-output.lsp" workdir)))
+       (with-open-file (out file :direction :output
+                                 :if-exists :supersede
+                                 :if-does-not-exist :create
+                                 :external-format :utf-8)
+         (write-string +native-output-source+ out))
+       (list
+        (format nil "(setq lr (vl-catch-all-apply (quote load) (list ~S)))"
+                (substitute #\/ #\\ (namestring file)))
+        ;; Defined from a string read at run time: the normaliser only ever
+        ;; sees the string.
+        "(eval (read \"(defun native-late () (princ \\\"x\\\") (print 'y) (prin1 \\\"z\\\") 'done-late)\"))"
+        (concatenate
+         'string
+         "(foreach f '(native-hello native-all native-file native-late)"
+         " (setq r (vl-catch-all-apply f nil))"
+         ;; A leading newline: on the &rest path the shadows capture the
+         ;; functions' own output, which does not end its line.
+         " (princ (strcat \"\\nNATIVE \" (vl-symbol-name f) \" \""
+         " (if (vl-catch-all-error-p r) (strcat \"ERROR \" (vl-catch-all-error-message r))"
+         " (vl-prin1-to-string r)) \"\\n\")))")
+        ;; Which functions the path left as the CAD's own.
+        (concatenate
+         'string
+         "(foreach f '(princ print prin1 prompt terpri)"
+         " (princ (strcat \"\\nTYPE \" (vl-symbol-name f) \" \""
+         " (vl-prin1-to-string (type (eval f))))))")
+        ;; alfe's own output still reaches its stream, framed as before.
+        "(progn (princ \"\\n\") (princ \"P\") (princ \"Q\") (print 1) (prin1 \"R\") (terpri) (prompt \"S\") (princ))")))))
+
+(test protocol-native-code-keeps-the-output-primitives
+  "Acceptance for alfe-autocad-fixed-arity-output-shadows: on the no-&rest
+path (*ALFE-ASSUME-NO-REST* T, the one AutoCAD takes), functions alfe did
+not rewrite -- loaded with the native LOAD, or defined from a string at run
+time -- call (princ), (princ X), (princ X F), (print), (print X),
+(print X F), (prin1), (prin1 X), (prin1 X F), (prompt X), (terpri),
+(mapcar 'princ ...) and (apply 'print ...) without error, the FILE ones
+writing to their file, because princ / print / prin1 / prompt / terpri are the
+CAD's own SUBRs there; and alfe's own output still reaches
+protocol/stdout.txt with the same bytes on both paths. The variadic path
+keeps its shadows (USUBRs) and runs the same code too. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; native-code output test skipped.")
+        (multiple-value-bind (norest-status norest-out norest-err)
+            (%native-output-run binary t)
+          (multiple-value-bind (rest-status rest-out rest-err)
+              (%native-output-run binary nil)
+            (dolist (run (list (list "no-&rest" norest-status norest-out norest-err)
+                               (list "&rest" rest-status rest-out rest-err)))
+              (destructuring-bind (name statuses out err) run
+                (is (and (= 5 (length statuses))
+                         (every (lambda (s) (search " OK" s)) statuses))
+                    "~A: every request must succeed: ~S~%~A" name statuses err)
+                (is (equal '("NATIVE-HELLO DONE" "NATIVE-ALL DONE-ALL"
+                             "NATIVE-FILE DONE-FILE" "NATIVE-LATE DONE-LATE")
+                           (%prefixed-lines "NATIVE " out))
+                    "~A: code alfe did not rewrite must run: ~S" name out)))
+            (is (equal '("PRINC SUBR" "PRINT SUBR" "PRIN1 SUBR"
+                         "PROMPT SUBR" "TERPRI SUBR")
+                       (%prefixed-lines "TYPE " norest-out))
+                "no-&rest: alfe must leave the primitives alone: ~S" norest-out)
+            (is (equal '("PRINC USUBR" "PRINT USUBR" "PRIN1 USUBR"
+                         "PROMPT USUBR" "TERPRI USUBR")
+                       (%prefixed-lines "TYPE " rest-out))
+                "&rest: the variadic shadows stay: ~S" rest-out)
+            ;; The last request: alfe's own output, framed alike on both
+            ;; paths -- "PQ", (print 1) = newline "1 ", "\"R\"", terpri,
+            ;; prompt's own line, (princ) = newline.
+            (let ((expected (format nil "PQ~%1 \"R\"~%S~%~%")))
+              (is (search expected (without-returns norest-out))
+                  "no-&rest framing: ~S" norest-out)
+              (is (search expected (without-returns rest-out))
+                  "&rest framing: ~S" rest-out)))))))
 
 ;;; --- the CAD-side runtime must be dialect-clean for its target -------
 ;;;
@@ -1655,10 +1835,12 @@ target; each line names the construct needing an alternative:~%~{  ~A~%~}"
 
 (test protocol-emitted-runtime-never-calls-error
   "The emitted CAD-side runtime -- run-common.lsp AND the bootstrap and
-protocol runtime it stages -- must contain no `(error ' call. That is
+protocol runtime it stages -- must contain no `(error ' call but ONE: the
+one in alfe-error, guarded by (= (type error) 'SUBR). That is
 the mechanical form of `no reachable dependency on an undefined ERROR
-function': AutoCAD has none, and a call that is never made cannot mask
-a diagnostic."
+function': AutoCAD has none, a call that is never made cannot mask a
+diagnostic, and the guarded call is never made where ERROR is not a
+function (alfe-runtime-raise-says-division-by-zero)."
   (let ((workdir (make-test-workdir "no-error-call")))
     (unwind-protect
         (multiple-value-bind (session path)
@@ -1669,7 +1851,15 @@ a diagnostic."
                               (alfe.protocol.file:protocol-session-runtime-lsp-staged
                                session)))
             (let* ((text (alfe.protocol.file:read-file-as-string file))
-                   (pos (search "(error " text)))
+                   (guarded "(if (= (type error) 'SUBR)
+    (error alfe--msg))")
+                   (allowed (search guarded text))
+                   (pos (loop for start = 0 then (1+ hit)
+                              for hit = (search "(error " text :start2 start)
+                              while hit
+                              unless (and allowed
+                                          (< allowed hit (+ allowed (length guarded))))
+                                return hit)))
               (is (null pos)
                   "~A calls ERROR at offset ~A: ~S"
                   (file-namestring file) pos
@@ -1678,8 +1868,11 @@ a diagnostic."
           (let ((boot (alfe.protocol.file:read-file-as-string
                        (alfe.protocol.file:protocol-session-bootstrap-lsp-staged
                         session))))
-            (is (search "(defun autolisp-raise (msg)" boot))
-            (is (search "(defun autolisp-force-error ()" boot))))
+            (is (search "(defun autolisp-raise (alfe--msg)" boot))
+            (is (search "(defun alfe-error (alfe--msg / *AUTOLISP-WARN-OUT-OF-DIALECT*)" boot))
+            ;; ... and its one ERROR call is the guarded one.
+            (is (search "(if (= (type error) 'SUBR)
+    (error alfe--msg))" boot))))
       (delete-workdir workdir))))
 
 (test protocol-loader-failure-reports-its-diagnostic-without-error
@@ -1728,7 +1921,8 @@ clautolisp-sbcl is not on disk."
           ;; right answer; what must NOT appear is FAIL, which is what a
           ;; quit raised through a missing ERROR would have produced.
           (is (or (search " QUIT" (third statuses))
-                  (string= "STOPPED" (third statuses)))
+                  ;; a miss record starts with the current status.
+                  (eql 0 (search "STOPPED" (third statuses))))
               "(quit) must quit, got ~S" (third statuses))
           (is (not (search " FAIL" (third statuses)))
               "(quit) must not be reported as a failure: ~S"
@@ -1792,6 +1986,1365 @@ clautolisp-sbcl is not on disk."
               "alfe-load must set ENCSRC from the loaded file: ~S" stdout)
           (is (string= "" stderr))))))
 
+;;; --- a caught error with a NIL message (AutoCAD) -----------------------
+;;;
+;;; alfe-cad-nil-catch-all-message. AutoCAD 2022 answers NIL from
+;;; vl-catch-all-error-message for some caught errors (vl-exit-with-error
+;;; outside a VLX); BricsCAD and clautolisp always give a string. These
+;;; tests make the hosted clautolisp answer NIL the way AutoCAD does: the
+;;; request evaluator used to take the NIL message for "no error" and
+;;; report the failed request DONE OK.
+
+(defparameter +nil-catch-all-message-form+
+  "(defun vl-catch-all-error-message (e) nil)"
+  "AutoLISP that makes the hosted clautolisp answer NIL for the message
+of every caught error, as AutoCAD does for some.")
+
+(test protocol-nil-catch-all-message-request-fails
+  "A failing -x request on a host whose caught-error message is NIL is
+reported FAIL with the fixed text, not DONE OK. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; NIL-message test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary
+             (list +nil-catch-all-message-form+
+                   "(/ 1 0)"
+                   "(princ 7)")
+             :assume-no-rest-p t)
+          (is (= 3 (length statuses)) "statuses: ~S" statuses)
+          (is (search " OK" (first statuses))
+              "the override must load: ~S ~S" statuses stderr)
+          (is (search " FAIL" (second statuses))
+              "a failing request must FAIL, not report OK: ~S" statuses)
+          (is (search "the engine supplied no message" stderr)
+              "the failure must carry the fixed text: ~S" stderr)
+          ;; The session survives the failure.
+          (is (search " OK" (third statuses)) "statuses: ~S" statuses)
+          (is (search "7" (without-returns stdout)) "stdout: ~S" stdout)))))
+
+(test protocol-nil-catch-all-message-load-fails
+  "A form that fails inside a loaded file, on a host whose caught-error
+message is NIL, makes the load FAIL and stops it there. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; NIL-message load test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :assume-no-rest-p t
+             :forms-fn
+             (lambda (workdir)
+               (let ((f (merge-pathnames "nil-message.lsp" workdir)))
+                 (with-open-file (out f :direction :output
+                                        :if-exists :supersede
+                                        :if-does-not-exist :create)
+                   (format out ";; fails on line 3~%(setq nilmsg-before 1)~%(/ 1 0)~%(setq nilmsg-after 1)~%"))
+                 (list +nil-catch-all-message-form+
+                       (format nil "(load ~S)" (namestring f))
+                       (concatenate 'string
+                                    "(princ (if (and (boundp (quote nilmsg-after))"
+                                    " nilmsg-after) \"AFTER-SET\" \"AFTER-UNSET\"))")))))
+          (is (= 3 (length statuses)) "statuses: ~S" statuses)
+          (is (search " OK" (first statuses))
+              "the override must load: ~S ~S" statuses stderr)
+          (is (search " FAIL" (second statuses))
+              "a failing form in a loaded file must FAIL the load: ~S ~S"
+              statuses stderr)
+          (is (search "nil-message.lsp" stderr)
+              "the diagnostic must name the loaded file: ~S" stderr)
+          (is (search "the engine supplied no message" stderr)
+              "the diagnostic must carry the fixed text: ~S" stderr)
+          (is (search "AFTER-UNSET" (without-returns stdout))
+              "the load must stop at the failing form: ~S" stdout)))))
+
+;;; --- real literals reach the CAD with every digit --------------------
+;;;
+;;; alfe-cad-transport-rounds-reals. The emitted AUTOLISP-EVAL-REQUEST-FORM
+;;; hands each form to the CAD's native LOAD through alfe-eval.lsp. It
+;;; used to PRINT the form back (autolisp-readable-text, vl-princ-to-string
+;;; per atom), and PRINC of a real keeps 6 significant digits on AutoCAD
+;;; and 14 on BricsCAD: (setq a 1.5707963267948966) was evaluated as
+;;; (setq a 1.5708). Now the source TEXT is written whenever the caller has
+;;; it and no normaliser rewrote the form, and a form that must be printed
+;;; goes through autolisp-form-source-text, which prints reals losslessly.
+;;;
+;;; clautolisp's own princ is lossless, so these tests make the hosted
+;;; engine behave like AutoCAD: AUTOLISP-RENDER (the bootstrap's princ
+;;; renderer) is redefined to keep 6 significant digits. With that stub the
+;;; old code rounds every literal, and only the fix keeps them.
+
+(defparameter +lossy-render-form+
+  (concatenate 'string
+               "(defun autolisp-render (obj / r)"
+               " (if (= (type obj) 'REAL)"
+               " (rtos obj 1 5)"
+               " (progn (setq r (vl-catch-all-apply 'vl-princ-to-string (list obj)))"
+               " (if (vl-catch-all-error-p r) \"<unprintable>\" r))))")
+  "AutoLISP that makes the hosted clautolisp print a REAL the way
+AutoCAD's PRINC does: 6 significant digits.")
+
+(defun %autolisp-read-one (text)
+  "The first object the clautolisp reader reads from TEXT; a real as
+its double-float value."
+  (let ((object (first (clautolisp.autolisp-reader:read-result-objects
+                        (clautolisp.autolisp-reader:read-forms-from-string
+                         text)))))
+    (handler-case (clautolisp.autolisp-reader:real-object-value object)
+      (error () object))))
+
+(defun %prefixed-lines (prefix text)
+  "The rest of every line of TEXT that starts with PREFIX, in order."
+  (loop for line in (uiop:split-string (without-returns text)
+                                       :separator (string #\Newline))
+        when (and (>= (length line) (length prefix))
+                  (string= prefix line :end2 (length prefix)))
+          collect (subseq line (length prefix))))
+
+(test protocol-form-source-text-prints-reals-losslessly
+  "autolisp-form-source-text (the CAD-side printer for a form that has to
+be written back as source) prints each real so that it reads back to the
+SAME double -- 1.2345678901234, 1.5707963267948966, 1.0e-300, 1.0e300,
+-0.0 (sign kept) and 3.0 (still a real) -- on an engine whose PRINC keeps
+only 6 digits, as AutoCAD's does. The text is read back here with the
+clautolisp reader and compared with EQL, which tells -0.0 from 0.0.
+Strings, symbols, quotes and dotted pairs print as before. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary))
+        (literals '("1.2345678901234" "1.5707963267948966" "1.0e-300"
+                    "1.0e300" "-0.0" "3.0" "0.1" "-2.5e-7")))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; source printer test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary
+             (append
+              (list +lossy-render-form+
+                    ;; The stub is in force: PRINC-style rendering rounds.
+                    "(princ (strcat \"PLAIN \" (autolisp-render (read \"1.5707963267948966\")) \"\\n\"))")
+              (mapcar (lambda (literal)
+                        (format nil "(princ (strcat \"SRC \" (autolisp-form-source-text (read ~S)) \"\\n\"))"
+                                literal))
+                      literals)
+              (list
+               "(princ (strcat \"FORM \" (autolisp-form-source-text (read \"(setq a 1.5707963267948966 s \\\"q\\\\\\\"x\\\" c (quote (k . 2.5)))\")) \"\\n\"))"
+               "(princ (strcat \"NORM \" (autolisp-real-text-normalize \".5\") \" \" (autolisp-real-text-normalize \"-.5\") \" \" (autolisp-real-text-normalize \"3\") \" \" (autolisp-real-text-normalize \"3.\") \" \" (autolisp-real-text-normalize \"1E+00\") \" \" (autolisp-real-text-normalize \"2.5E-07\") \"\\n\"))"))
+             :assume-no-rest-p nil)
+          (let ((plain (%prefixed-lines "PLAIN " stdout))
+                (printed (%prefixed-lines "SRC " stdout)))
+            (is (every (lambda (s) (search " OK" s)) statuses)
+                "every request must succeed: ~S ~S" statuses stderr)
+            ;; The stub really rounds (otherwise this test proves nothing).
+            (is (equal '("1.57080E+00") plain) "stub: ~S" plain)
+            (is (= (length literals) (length printed))
+                "one SRC line per literal: ~S" stdout)
+            (loop for literal in literals
+                  for text in printed
+                  do (let ((expected (%autolisp-read-one literal))
+                           (got (%autolisp-read-one text)))
+                       (is (typep got 'double-float)
+                           "~A printed as ~S, which reads as ~S"
+                           literal text got)
+                       (is (eql expected got)
+                           "~A printed as ~S reads back as ~S"
+                           literal text got)))
+            ;; The sign of a zero is kept in the spelling.
+            (is (member "-0.0" printed :test #'string=) "-0.0: ~S" printed)
+            ;; Everything else prints as before; 2.5 keeps the (stub's)
+            ;; plain spelling because that one reads back exactly.
+            (is (equal (list "(SETQ A 1.5707963267948966E+00 S \"q\\\"x\" C (QUOTE (K . 2.50000E+00)))")
+                       (%prefixed-lines "FORM " stdout))
+                "form: ~S" stdout)
+            (is (equal '("0.5 -0.5 3.0 3.0 1.0E+00 2.5E-07")
+                       (%prefixed-lines "NORM " stdout))
+                "normalize: ~S" stdout))))))
+
+(defun %real-transport-run (binary assume-no-rest-p)
+  "Host the emitted run-common.lsp with the 6-digit stub, count every
+call of autolisp-form-source-text (the re-printer), load a file of real
+literals, send real literals as protocol requests, and return
+(values statuses stdout stderr)."
+  (drive-hosted-engine
+   binary nil
+   :assume-no-rest-p assume-no-rest-p
+   :forms-fn
+   (lambda (workdir)
+     (let ((f (merge-pathnames "rtx-literals.lsp" workdir)))
+       (with-open-file (out f :direction :output :if-exists :supersede
+                              :if-does-not-exist :create)
+         (format out ";; real literals, read by the CAD-side loader~%~
+(setq rtx-a 1.5707963267948966)~%~
+(setq rtx-b 0.7853981633974483~%      rtx-n -0.0) (setq rtx-e 1.2345678901234)~%"))
+       (list
+        +lossy-render-form+
+        ;; Count the re-prints: wrap the printer.
+        (concatenate 'string
+                     "(progn (setq *rtx-printed* 0)"
+                     " (setq rtx-orig-fst autolisp-form-source-text)"
+                     " (defun autolisp-form-source-text (obj)"
+                     " (setq *rtx-printed* (1+ *rtx-printed*))"
+                     " (rtx-orig-fst obj)))")
+        (format nil "(load ~S)" (namestring f))
+        ;; A protocol request (an -x form) with a literal of its own.
+        "(setq rtx-d 1.5707963267948966)"
+        ;; No re-print so far: every form above travelled as its text.
+        "(princ (strcat \"PRINTED \" (itoa *rtx-printed*) \"\\n\"))"
+        ;; A form with a 1-arg princ: the AutoCAD normaliser rewrites it,
+        ;; and the padding is made in its TEXT, so it is not re-printed
+        ;; either (alfe-normalised-form-reals-autocad).
+        "(progn (setq rtx-c 5.497787143782138 rtx-m -0.0) (princ \"\"))"
+        "(princ (strcat \"REPRINTED \" (if (> *rtx-printed* 0) \"yes\" \"no\") \"\\n\"))"
+        (concatenate
+         'string
+         "(princ (strcat"
+         " \"RTX A \" (if (= rtx-a (read \"1.5707963267948966\")) \"EXACT\" \"ROUNDED\")"
+         " \" B \" (if (= rtx-b (read \"0.7853981633974483\")) \"EXACT\" \"ROUNDED\")"
+         " \" D \" (if (= rtx-d (read \"1.5707963267948966\")) \"EXACT\" \"ROUNDED\")"
+         " \" C \" (if (= rtx-c (read \"5.497787143782138\")) \"EXACT\" \"ROUNDED\")"
+         " \" N \" (if (minusp (atan rtx-n -1.0)) \"NEG\" \"POS\")"
+         " \" M \" (if (minusp (atan rtx-m -1.0)) \"NEG\" \"POS\")"
+         " \"\\n\"))")
+        ;; (rtos x 2 16) of the loaded 1.2345678901234: all its digits.
+        ;; Trailing zeros depend on DIMZIN, so they are not compared.
+        "(princ (strcat \"RTOS-E \" (rtos rtx-e 2 16) \"\\n\"))")))))
+
+(test protocol-real-literals-reach-the-engine-exactly
+  "Acceptance with a real AutoLISP engine whose PRINC keeps 6 digits
+(AutoCAD's): real literals of a loaded file and of a protocol request
+arrive exactly, on the variadic (BricsCAD) path AND the fixed-arity
+(AutoCAD) path. No form is re-printed while its text is at hand -- the
+re-printer is called zero times for the loaded file and the request --
+not even the form the AutoCAD normaliser rewrites, which is padded in
+its text (its literals, -0.0 included, still exact). (rtos x 2 16) of the loaded
+1.2345678901234 gives back all its digits. Skipped when clautolisp-sbcl
+is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; real transport test skipped.")
+        (dolist (no-rest '(nil t))
+          (multiple-value-bind (statuses stdout stderr)
+              (%real-transport-run binary no-rest)
+            (is (= 9 (length statuses)) "~:[variadic~;fixed-arity~]: ~S"
+                no-rest statuses)
+            (is (every (lambda (s) (search " OK" s)) statuses)
+                "~:[variadic~;fixed-arity~]: every request must succeed: ~S ~S"
+                no-rest statuses stderr)
+            (is (equal '("0") (%prefixed-lines "PRINTED " stdout))
+                "~:[variadic~;fixed-arity~]: the loaded file and the request must travel as text: ~S"
+                no-rest stdout)
+            ;; Only the AutoCAD path rewrites (princ ""), and it does so in
+            ;; the text: no form is printed back on either path.
+            (is (equal (list "no")
+                       (%prefixed-lines "REPRINTED " stdout))
+                "~:[variadic~;fixed-arity~]: ~S" no-rest stdout)
+            (is (equal '("A EXACT B EXACT D EXACT C EXACT N NEG M NEG")
+                       (%prefixed-lines "RTX " stdout))
+                "~:[variadic~;fixed-arity~]: ~S" no-rest stdout)
+            (let ((rtos (first (%prefixed-lines "RTOS-E " stdout))))
+              (is (and rtos
+                       (>= (length rtos) 15)
+                       (string= "1.2345678901234" rtos :end2 15)
+                       (every (lambda (ch) (char= ch #\0)) (subseq rtos 15)))
+                  "~:[variadic~;fixed-arity~]: (rtos x 2 16) = ~S"
+                  no-rest rtos)))))))
+
+;;; --- -Efile-write forwarded to the CAD's OPEN ------------------------
+;;;
+;;; encoding-situations-cli-options section 6 point 5. alfe emits
+;;; *ALFE-OPEN-WRITE-CCS* only when the CAD honours it (BricsCAD on
+;;; Windows); the bootstrap then rewrites OPEN in alfe-loaded code into
+;;; alfe-open*, which appends ",ccs=" to a plain "w"/"a" mode. Unset, OPEN
+;;; is never rewritten -- the cons-identity guard.
+
+(test protocol-emit-run-common-lsp-open-write-ccs
+  "run-common.lsp carries (setq *ALFE-OPEN-WRITE-CCS* \"...\") when a ccs is
+given, and does not mention the variable otherwise (NIL or an empty string)."
+  (let ((workdir (make-test-workdir "emit-open-ccs")))
+    (unwind-protect
+         (let ((session (alfe.protocol.file:init-session workdir)))
+           (let ((content (alfe.protocol.file:read-file-as-string
+                           (alfe.protocol.file:emit-run-common-lsp
+                            session :open-write-ccs "UTF-16LE"))))
+             (is (search "(setq *ALFE-OPEN-WRITE-CCS* \"UTF-16LE\")" content)))
+           (dolist (ccs '(nil ""))
+             (let ((content (alfe.protocol.file:read-file-as-string
+                             (alfe.protocol.file:emit-run-common-lsp
+                              session :open-write-ccs ccs))))
+               (is (not (search "ALFE-OPEN-WRITE-CCS" content))
+                   "no ccs (~S) must emit no *ALFE-OPEN-WRITE-CCS*" ccs))))
+      (delete-workdir workdir))))
+
+(defun %file-octets (path)
+  (with-open-file (in path :element-type '(unsigned-byte 8))
+    (let ((v (make-array (file-length in) :element-type '(unsigned-byte 8))))
+      (read-sequence v in)
+      (coerce v 'list))))
+
+(defun %drive-open-ccs (binary ccs outdir)
+  "Host the real runtime with *ALFE-OPEN-WRITE-CCS* = CCS, alfe-load a file
+that writes \"A\" with (open P \"w\") into OUTDIR/plain.txt and with an
+explicit (open P \"w,ccs=UTF-8\") into OUTDIR/explicit.txt, then report
+whether an OPEN form needs rewriting and whether alfe-rewrite-form keeps its
+conses. Returns (values statuses stdout stderr)."
+  (let ((plain (merge-pathnames "plain.txt" outdir))
+        (explicit (merge-pathnames "explicit.txt" outdir)))
+    (drive-hosted-engine
+     binary nil
+     :open-write-ccs ccs
+     :forms-fn
+     (lambda (workdir)
+       (let ((user (merge-pathnames "user-open.lsp" workdir)))
+         (with-open-file (out user :direction :output
+                                   :if-exists :supersede
+                                   :if-does-not-exist :create
+                                   :external-format :utf-8)
+           (format out "(setq f (open ~S \"w\"))~%(write-char 65 f)~%(close f)~%"
+                   (namestring plain))
+           (format out "(setq g (open ~S \"w,ccs=UTF-8\"))~%(write-char 65 g)~%(close g)~%"
+                   (namestring explicit)))
+         (list (format nil "(alfe-load ~S)" (namestring user))
+               (concatenate 'string
+                            "(princ (if (alfe-form-needs-rewrite-p"
+                            " (quote (open \"x\" \"w\"))) \"NEEDS\" \"UNTOUCHED\"))")
+               (concatenate 'string
+                            "(progn (setq fm (quote (setq h (open \"x\" \"w\"))))"
+                            " (princ (if (eq fm (alfe-rewrite-form fm))"
+                            " \" SAME\" \" REBUILT\")))")))))))
+
+(test protocol-alfe-load-forwards-open-write-ccs
+  "Acceptance with the real bootstrap under a hosted clautolisp (which honours
+,ccs=): with *ALFE-OPEN-WRITE-CCS* \"UTF-16LE\" a loaded (open P \"w\") writes
+\"A\" as UTF-16LE (41 00, possibly after a BOM), while an explicit
+\"w,ccs=UTF-8\" is left alone. Without it the same file writes the single
+octet 41 and an OPEN form is neither flagged nor rebuilt. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; OPEN ccs forwarding test skipped.")
+        (let ((outdir (make-test-workdir "open-ccs-out")))
+          (unwind-protect
+               (progn
+                 ;; 1. forwarded
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-ccs binary "UTF-16LE" outdir)
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (is (member (%file-octets (merge-pathnames "plain.txt" outdir))
+                               '((65 0) (255 254 65 0)) :test #'equal)
+                       "(open P \"w\") must write UTF-16LE: ~S"
+                       (%file-octets (merge-pathnames "plain.txt" outdir)))
+                   (is (member (%file-octets (merge-pathnames "explicit.txt" outdir))
+                               '((65) (239 187 191 65)) :test #'equal)
+                       "an explicit ,ccs= must be left alone: ~S"
+                       (%file-octets (merge-pathnames "explicit.txt" outdir)))
+                   (is (search "NEEDS" (without-returns stdout)) "stdout ~S" stdout)
+                   (is (search "REBUILT" (without-returns stdout)) "stdout ~S" stdout))
+                 ;; 2. not forwarded: nothing rewritten
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-ccs binary nil outdir)
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (is (equal '(65) (%file-octets (merge-pathnames "plain.txt" outdir)))
+                       "unset, (open P \"w\") must write the default: ~S"
+                       (%file-octets (merge-pathnames "plain.txt" outdir)))
+                   (is (search "UNTOUCHED" (without-returns stdout)) "stdout ~S" stdout)
+                   (is (search "SAME" (without-returns stdout)) "stdout ~S" stdout)))
+            (delete-workdir outdir))))))
+
+;;; AutoCAD's half of -Efile-write: OPEN's third argument "utf8" (measured,
+;;; AutoCAD 2022 at LISPSYS 1/2: UTF-8 without a BOM; at LISPSYS 0 any third
+;;; argument is an error). alfe emits *ALFE-OPEN-WRITE-ARG*; alfe-open* passes
+;;; it to a plain "w" or "a" only when alfe-lispsys-unicode-p, and warns once
+;;; on the error channel otherwise. "a" "utf8" was measured 2026-10-08 (job
+;;; 16998925786): it appends UTF-8, and no second BOM is ever written.
+
+(test protocol-emit-run-common-lsp-open-write-arg
+  "run-common.lsp carries (setq *ALFE-OPEN-WRITE-ARG* \"utf8\") when an arg is
+given, and does not mention the variable otherwise."
+  (let ((workdir (make-test-workdir "emit-open-arg")))
+    (unwind-protect
+         (let ((session (alfe.protocol.file:init-session workdir)))
+           (is (search "(setq *ALFE-OPEN-WRITE-ARG* \"utf8\")"
+                       (alfe.protocol.file:read-file-as-string
+                        (alfe.protocol.file:emit-run-common-lsp
+                         session :open-write-arg "utf8"))))
+           (dolist (arg '(nil ""))
+             (is (not (search "ALFE-OPEN-WRITE-ARG"
+                              (alfe.protocol.file:read-file-as-string
+                               (alfe.protocol.file:emit-run-common-lsp
+                                session :open-write-arg arg))))
+                 "no arg (~S) must emit no *ALFE-OPEN-WRITE-ARG*" arg)))
+      (delete-workdir workdir))))
+
+(defun %drive-open-arg (binary unicode-p outdir)
+  "Host the real runtime with *ALFE-OPEN-WRITE-ARG* \"utf8\" and
+alfe-lispsys-unicode-p answering UNICODE-P, then alfe-load a file that writes
+\"A\" e-acute with a plain (open P \"w\") into OUTDIR/plain.txt, the same with
+an unrewritten (apply 'open ...) into OUTDIR/ref.txt, and an e-acute with
+(open P \"a\") into OUTDIR/app.txt. Returns (values statuses stdout stderr)."
+  (drive-hosted-engine
+   binary nil
+   :open-write-arg "utf8"
+   :forms-fn
+   (lambda (workdir)
+     (let ((user (merge-pathnames "user-open-arg.lsp" workdir)))
+       (with-open-file (out user :direction :output
+                                 :if-exists :supersede
+                                 :if-does-not-exist :create
+                                 :external-format :utf-8)
+         (format out "(setq f (open ~S \"w\"))~%(write-char 65 f)~%(write-char 233 f)~%(close f)~%"
+                 (namestring (merge-pathnames "plain.txt" outdir)))
+         (format out "(setq h (apply 'open (list ~S \"w\")))~%(write-char 65 h)~%(write-char 233 h)~%(close h)~%"
+                 (namestring (merge-pathnames "ref.txt" outdir)))
+         (format out "(setq g (open ~S \"a\"))~%(write-char 233 g)~%(close g)~%"
+                 (namestring (merge-pathnames "app.txt" outdir))))
+       (list (if unicode-p
+                 "(defun alfe-lispsys-unicode-p () T)"
+                 "(defun alfe-lispsys-unicode-p () nil)")
+             (format nil "(alfe-load ~S)" (namestring user)))))))
+
+(test protocol-alfe-load-forwards-open-write-arg
+  "Acceptance with the real bootstrap under a hosted clautolisp (which honours
+OPEN's third argument): at LISPSYS 1/2 a loaded (open P \"w\") becomes
+(open P \"w\" \"utf8\") and writes A e-acute as 41 C3 A9, and an (open P \"a\")
+becomes (open P \"a\" \"utf8\") and appends e-acute as C3 A9, with no warning.
+At LISPSYS 0 nothing is forwarded and one warning names LISPSYS. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; OPEN third-argument forwarding test skipped.")
+        (let ((outdir (make-test-workdir "open-arg-out")))
+          (unwind-protect
+               (progn
+                 ;; 1. LISPSYS 1/2: forwarded on "w" and on "a"
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-arg binary t outdir)
+                   (declare (ignore stdout))
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (let ((plain (%file-octets (merge-pathnames "plain.txt" outdir)))
+                         (app (%file-octets (merge-pathnames "app.txt" outdir))))
+                     (is (equal '(65 195 169) plain)
+                         "(open P \"w\") must write UTF-8 through \"utf8\": ~S" plain)
+                     (is (equal '(195 169) app)
+                         "(open P \"a\") must append UTF-8 through \"utf8\": ~S" app))
+                   (is (not (search "-Efile-write" stderr)) "no warning: ~S" stderr))
+                 ;; 2. LISPSYS 0: nothing forwarded, warned once
+                 (delete-file (merge-pathnames "app.txt" outdir))
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-arg binary nil outdir)
+                   (declare (ignore stdout))
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (is (equal (%file-octets (merge-pathnames "ref.txt" outdir))
+                              (%file-octets (merge-pathnames "plain.txt" outdir)))
+                       "at LISPSYS 0 (open P \"w\") must write the default")
+                   (is (equal (rest (%file-octets (merge-pathnames "ref.txt" outdir)))
+                              (%file-octets (merge-pathnames "app.txt" outdir)))
+                       "at LISPSYS 0 (open P \"a\") must append in the default")
+                   (is (search "-Efile-write: not forwarded, LISPSYS is" stderr)
+                       "stderr ~S" stderr)
+                   (is (= 1 (loop with start = 0
+                                  for hit = (search "LISPSYS is" stderr :start2 start)
+                                  while hit
+                                  count t
+                                  do (setf start (1+ hit))))
+                       "the warning is given once: ~S" stderr)))
+            (delete-workdir outdir))))))
+
+;;; --- -Efile-write on every action -----------------------------------
+;;;
+;;; alfe-efile-write-not-applied-to-l-file (pjb 2026-10-08: "yes, apply
+;;; -Efile-write to -l and -x too"). Until then only alfe-load rewrote OPEN;
+;;; the -l file (sent as a (load ...) request and read by the deported
+;;; loader), -x forms, --main and REPL input went through
+;;; autolisp-eval-request-source, which never did. Now that function rewrites
+;;; OPEN in the request's source TEXT, so the CAD still loads what the user
+;;; wrote (alfe-cad-transport-rounds-reals) apart from the OPEN calls.
+
+(defun %efw-out (outdir name)
+  (namestring (merge-pathnames name outdir)))
+
+(defun %drive-open-actions (binary outdir &key ccs arg unicode-p assume-no-rest-p dialect)
+  "Host the real runtime with *ALFE-OPEN-WRITE-CCS* = CCS and
+*ALFE-OPEN-WRITE-ARG* = ARG (alfe-lispsys-unicode-p answering UNICODE-P) and
+write \"A\" e-acute through a plain (open P \"w\") from every kind of action:
+a file given to -l (sent as alfe does, (load P), and read by the deported
+loader) into l-w.txt, plus an e-acute appended with (open P \"a\") into
+l-a.txt; a function that file defines, called as --main calls it, into
+main-w.txt; an -x form into x-w.txt; a REPL request (wrapped in (print ...) as
+the REPL does) into repl-w.txt; and, as the reference, an unrewritten
+(apply 'open ...) into ref.txt. The engine's PRINC keeps 6 digits (as
+AutoCAD's does) and the re-printer autolisp-form-source-text is counted, so
+the result tells whether the source text was kept; alfe-open* is wrapped to
+count its calls (OPENSTAR line). DIALECT is the run's --dialect: under
+autocad-2022 the hosted clautolisp writes cp1252 by default, as AutoCAD does,
+so a forwarded \"utf8\" shows in the octets. Returns (values statuses stdout
+stderr)."
+  (drive-hosted-engine
+   binary nil
+   :open-write-ccs ccs
+   :open-write-arg arg
+   :assume-no-rest-p assume-no-rest-p
+   :dialect dialect
+   :forms-fn
+   (lambda (workdir)
+     (let ((lfile (merge-pathnames "efw-plain-l.lsp" workdir)))
+       (with-open-file (out lfile :direction :output
+                                  :if-exists :supersede
+                                  :if-does-not-exist :create
+                                  :external-format :utf-8)
+         ;; An OPEN call and a real literal in one form: the form is
+         ;; rewritten, and its literal must still arrive with every digit.
+         (format out "(progn (setq efw-r 1.5707963267948966)~%       (setq efw-f (open ~S \"w\")))~%(write-char 65 efw-f) (write-char 233 efw-f) (close efw-f)~%"
+                 (%efw-out outdir "l-w.txt"))
+         (format out "(setq efw-g (open ~S \"a\")) (write-char 233 efw-g) (close efw-g)~%"
+                 (%efw-out outdir "l-a.txt"))
+         (format out "(defun efw-main (/ m)~%  (setq m (open ~S \"w\"))~%  (write-char 65 m) (write-char 233 m) (close m) T)~%"
+                 (%efw-out outdir "main-w.txt"))
+         ;; Quoted OPEN calls are data: never rewritten.
+         (format out "(setq efw-q '(open \"q\" \"w\") efw-q2 (quote (open \"q\" \"w\")))~%"))
+       (list
+        (if unicode-p
+            "(defun alfe-lispsys-unicode-p () T)"
+            "(defun alfe-lispsys-unicode-p () nil)")
+        +lossy-render-form+
+        (concatenate 'string
+                     "(progn (setq *efw-printed* 0)"
+                     " (setq efw-orig-fst autolisp-form-source-text)"
+                     " (defun autolisp-form-source-text (obj)"
+                     " (setq *efw-printed* (1+ *efw-printed*))"
+                     " (efw-orig-fst obj)))")
+        (concatenate 'string
+                     "(progn (setq *efw-openstar* 0)"
+                     " (setq efw-orig-open* alfe-open*)"
+                     " (defun alfe-open* (args)"
+                     " (setq *efw-openstar* (1+ *efw-openstar*))"
+                     " (efw-orig-open* args)))")
+        ;; -l
+        (format nil "(load ~S)" (namestring lfile))
+        "(princ (strcat \"PRINTED-L \" (itoa *efw-printed*) \"\\n\"))"
+        ;; --main
+        "(efw-main)"
+        ;; -x
+        (format nil "(progn (setq efw-xf (open ~S \"w\")) (write-char 65 efw-xf) (write-char 233 efw-xf) (close efw-xf) (setq efw-x 0.7853981633974483))"
+                (%efw-out outdir "x-w.txt"))
+        ;; REPL input, as backend-cad-common wraps it
+        (format nil "(print (progn (setq efw-k (open ~S \"w\")) (write-char 65 efw-k) (write-char 233 efw-k) (close efw-k) 'done))"
+                (%efw-out outdir "repl-w.txt"))
+        ;; the reference: OPEN reached through APPLY of a quoted symbol
+        (format nil "(progn (setq efw-h (apply 'open (list ~S \"w\"))) (write-char 65 efw-h) (write-char 233 efw-h) (close efw-h))"
+                (%efw-out outdir "ref.txt"))
+        (concatenate
+         'string
+         "(princ (strcat"
+         " \"\\nEFW R \" (if (= efw-r (read \"1.5707963267948966\")) \"EXACT\" \"ROUNDED\")"
+         " \" X \" (if (= efw-x (read \"0.7853981633974483\")) \"EXACT\" \"ROUNDED\")"
+         " \" Q \" (vl-symbol-name (car efw-q)) \" \" (vl-symbol-name (car efw-q2))"
+         " \"\\nOPENSTAR \" (itoa *efw-openstar*)"
+         " \"\\n\"))"))))))
+
+(defun %efw-octets (outdir name)
+  (let ((p (merge-pathnames name outdir)))
+    (and (probe-file p) (%file-octets p))))
+
+(defun %count-occurrences (needle haystack)
+  (loop with start = 0
+        for hit = (search needle haystack :start2 start)
+        while hit
+        count t
+        do (setf start (1+ hit))))
+
+(defun %efw-clear (outdir)
+  (dolist (name '("l-w.txt" "l-a.txt" "main-w.txt" "x-w.txt" "repl-w.txt" "ref.txt"))
+    (let ((p (merge-pathnames name outdir)))
+      (when (probe-file p) (delete-file p)))))
+
+(defun %autolisp-string-literal (string)
+  "STRING as an AutoLISP string literal on ONE line: backslash, double quote
+and newline escaped."
+  (with-output-to-string (out)
+    (write-char #\" out)
+    (loop for ch across string
+          do (case ch
+               (#\\ (write-string "\\\\" out))
+               (#\" (write-string "\\\"" out))
+               (#\Newline (write-string "\\n" out))
+               (t (write-char ch out))))
+    (write-char #\" out)))
+
+(defparameter +efw-written-files+ '("l-w.txt" "main-w.txt" "x-w.txt" "repl-w.txt"))
+
+(test protocol-open-write-arg-reaches-every-action
+  "Acceptance, AutoCAD-style runtime (fixed-arity shadows) with
+*ALFE-OPEN-WRITE-ARG* \"utf8\" under a hosted clautolisp: at LISPSYS 1/2 a plain
+(open P \"w\") writes A e-acute as 41 C3 A9 from the -l file, from --main, from
+an -x form and from a REPL request, and (open P \"a\") in the -l file appends
+C3 A9, with no warning; at LISPSYS 0 every file is written like the
+unrewritten reference and ONE warning names LISPSYS for the whole run. A
+quoted (open ...) stays data, and the real literals of the -l file and of the
+-x form arrive with every digit. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; -Efile-write on every action test skipped.")
+        (let ((outdir (make-test-workdir "efw-arg-out")))
+          (unwind-protect
+               (progn
+                 ;; 1. LISPSYS 1/2
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-actions binary outdir :arg "utf8" :unicode-p t
+                                                        :assume-no-rest-p t
+                                                        :dialect "autocad-2022")
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (dolist (name +efw-written-files+)
+                     (is (equal '(65 195 169) (%efw-octets outdir name))
+                         "~A: (open P \"w\") must write UTF-8 through \"utf8\": ~S"
+                         name (%efw-octets outdir name)))
+                   (is (equal '(195 169) (%efw-octets outdir "l-a.txt"))
+                       "l-a.txt: (open P \"a\") must append UTF-8: ~S"
+                       (%efw-octets outdir "l-a.txt"))
+                   (is (not (equal '(65 195 169) (%efw-octets outdir "ref.txt")))
+                       "the reference must NOT be forwarded: ~S"
+                       (%efw-octets outdir "ref.txt"))
+                   (is (not (search "-Efile-write" stderr)) "no warning: ~S" stderr)
+                   (is (equal '("R EXACT X EXACT Q OPEN OPEN")
+                              (%prefixed-lines "EFW " stdout))
+                       "literals and quoted data: ~S" stdout)
+                 (is (equal '("5") (%prefixed-lines "OPENSTAR " stdout))
+                     "-l w, -l a, --main, -x and REPL each call alfe-open*: ~S" stdout)
+                   (is (equal '("5") (%prefixed-lines "OPENSTAR " stdout))
+                       "-l w, -l a, --main, -x and REPL each call alfe-open*: ~S" stdout)
+                   ;; The -l file travelled as its text: not re-printed.
+                   (is (equal '("0") (%prefixed-lines "PRINTED-L " stdout))
+                       "the -l file must be rewritten in its text: ~S" stdout))
+                 ;; 2. LISPSYS 0: nothing forwarded, one warning per run
+                 (%efw-clear outdir)
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-actions binary outdir :arg "utf8" :unicode-p nil
+                                                        :assume-no-rest-p t
+                                                        :dialect "autocad-2022")
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (dolist (name +efw-written-files+)
+                     (is (equal (%efw-octets outdir "ref.txt") (%efw-octets outdir name))
+                         "~A: at LISPSYS 0 must write the default: ~S"
+                         name (%efw-octets outdir name)))
+                   (is (equal (rest (%efw-octets outdir "ref.txt"))
+                              (%efw-octets outdir "l-a.txt"))
+                       "at LISPSYS 0 (open P \"a\") must append in the default")
+                   (is (= 1 (%count-occurrences "-Efile-write: not forwarded, LISPSYS is" stderr))
+                       "one warning for the whole run: ~S" stderr)
+                   (is (equal '("R EXACT X EXACT Q OPEN OPEN")
+                              (%prefixed-lines "EFW " stdout))
+                       "literals and quoted data: ~S" stdout)
+                 (is (equal '("5") (%prefixed-lines "OPENSTAR " stdout))
+                     "-l w, -l a, --main, -x and REPL each call alfe-open*: ~S" stdout)
+                   (is (equal '("5") (%prefixed-lines "OPENSTAR " stdout))
+                       "-l w, -l a, --main, -x and REPL each call alfe-open*: ~S" stdout)))
+            (delete-workdir outdir))))))
+
+(test protocol-open-write-ccs-reaches-every-action
+  "Acceptance, BricsCAD-style runtime (variadic shadows) with
+*ALFE-OPEN-WRITE-CCS* \"UTF-16LE\" under a hosted clautolisp: a plain (open P
+\"w\") writes UTF-16LE from the -l file, --main, an -x form and a REPL request,
+and (open P \"a\") in the -l file appends UTF-16LE; no request is re-printed
+(every OPEN is rewritten in the source text). Skipped when clautolisp-sbcl is
+not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; -Efile-write on every action test skipped.")
+        (let ((outdir (make-test-workdir "efw-ccs-out")))
+          (unwind-protect
+               (multiple-value-bind (statuses stdout stderr)
+                   (%drive-open-actions binary outdir :ccs "UTF-16LE"
+                                                     :dialect "bricscad-v25")
+                 (is (every (lambda (s) (search " OK" s)) statuses)
+                     "every request must succeed: ~S~%~A" statuses stderr)
+                 (dolist (name +efw-written-files+)
+                   (is (member (%efw-octets outdir name)
+                               '((65 0 233 0) (255 254 65 0 233 0)) :test #'equal)
+                       "~A: (open P \"w\") must write UTF-16LE: ~S"
+                       name (%efw-octets outdir name)))
+                 (is (member (%efw-octets outdir "l-a.txt")
+                             '((233 0) (255 254 233 0)) :test #'equal)
+                     "l-a.txt: (open P \"a\") must append UTF-16LE: ~S"
+                     (%efw-octets outdir "l-a.txt"))
+                 (is (equal '("R EXACT X EXACT Q OPEN OPEN")
+                            (%prefixed-lines "EFW " stdout))
+                     "literals and quoted data: ~S" stdout)
+                 (is (equal '("5") (%prefixed-lines "OPENSTAR " stdout))
+                     "-l w, -l a, --main, -x and REPL each call alfe-open*: ~S" stdout)
+                 (is (equal '("0") (%prefixed-lines "PRINTED-L " stdout))
+                     "the -l file must be rewritten in its text: ~S" stdout))
+            (delete-workdir outdir))))))
+
+(test protocol-open-not-rewritten-without-efile-write
+  "Without -Efile-write (neither *ALFE-OPEN-WRITE-CCS* nor *ALFE-OPEN-WRITE-ARG*)
+nothing changes, on either runtime: every action writes exactly like the
+unrewritten reference, no warning, and nothing is re-printed. Skipped when
+clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; -Efile-write on every action test skipped.")
+        (let ((outdir (make-test-workdir "efw-none-out")))
+          (unwind-protect
+               (dolist (no-rest '(nil t))
+                 (%efw-clear outdir)
+                 (multiple-value-bind (statuses stdout stderr)
+                     (%drive-open-actions binary outdir :assume-no-rest-p no-rest
+                                                        :dialect "autocad-2022")
+                   (is (every (lambda (s) (search " OK" s)) statuses)
+                       "every request must succeed: ~S~%~A" statuses stderr)
+                   (dolist (name +efw-written-files+)
+                     (is (equal (%efw-octets outdir "ref.txt") (%efw-octets outdir name))
+                         "~:[variadic~;fixed-arity~] ~A: must write the default: ~S"
+                         no-rest name (%efw-octets outdir name)))
+                   (is (not (search "-Efile-write" stderr)) "no warning: ~S" stderr)
+                   (is (equal '("0") (%prefixed-lines "PRINTED-L " stdout))
+                       "nothing re-printed: ~S" stdout)
+                   (is (equal '("0") (%prefixed-lines "OPENSTAR " stdout))
+                       "alfe-open* never called: ~S" stdout)))
+            (delete-workdir outdir))))))
+
+(defun %forward-probe-run (binary e1-dir way unicode-p)
+  "Run lispsys-forward-probe.lsp the WAY run-lispsys-bom-probe.ps1 does
+(:alfe-load, :l or :x) on the hosted engine, AutoCAD-style, with
+*ALFE-OPEN-WRITE-ARG* \"utf8\" and alfe-lispsys-unicode-p answering UNICODE-P.
+Returns (values statuses stdout stderr)."
+  (let ((probe (namestring
+                (asdf:system-relative-pathname
+                 "autolisp-front-end"
+                 "tests/scenarios/entities/lispsys-forward-probe.lsp")))
+        (previous-dir (set-environment-variable "E1_DIR" e1-dir))
+        (previous-mode (set-environment-variable "E1F_MODE"
+                                                 (if (eq way :x) "x" ""))))
+    (unwind-protect
+         (drive-hosted-engine
+          binary
+          (append
+           (list (if unicode-p
+                     "(defun alfe-lispsys-unicode-p () T)"
+                     "(defun alfe-lispsys-unicode-p () nil)"))
+           (ecase way
+             (:alfe-load (list (format nil "(alfe-load ~S)" probe)))
+             (:l (list (format nil "(load ~S)" probe)))
+             (:x (list (format nil "(load ~S)" probe)
+                       "(e1f-x (open (e1f-xp 'w) (e1f-xm 'w)) (open (e1f-xp 'a) (e1f-xm 'a)))"))))
+          :open-write-arg "utf8"
+          :assume-no-rest-p t
+          :dialect "autocad-2022")
+      (set-environment-variable "E1_DIR" (or previous-dir ""))
+      (set-environment-variable "E1F_MODE" (or previous-mode "")))))
+
+(test protocol-lispsys-forward-probe-three-ways
+  "The CAD probe itself, run the three ways run-lispsys-bom-probe.ps1 runs it
+(alfe-load entry, plain -l, -x), on the hosted engine as AutoCAD 2022: at
+LISPSYS 1/2 every way reports \"w SIZE 4\" and \"a SIZE 2\" with no WARN, at
+LISPSYS 0 \"w SIZE 3\", \"a SIZE 1\" and one WARN -- the expectations the CAD
+job is read against. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; forward probe test skipped.")
+        (let ((e1-dir (make-test-workdir "e1f-dir")))
+          (unwind-protect
+               (dolist (way '(:alfe-load :l :x))
+                 (dolist (unicode-p '(t nil))
+                   (multiple-value-bind (statuses stdout stderr)
+                       (%forward-probe-run binary
+                                           (string-right-trim "/" (namestring e1-dir))
+                                           way unicode-p)
+                     (let ((lines (%prefixed-lines "ENC E1F " (without-returns stdout))))
+                       (is (every (lambda (s) (search " OK" s)) statuses)
+                           "~A: every request must succeed: ~S~%~A" way statuses stderr)
+                       (is (member (if unicode-p "w SIZE 4" "w SIZE 3") lines :test #'string=)
+                           "~A LISPSYS ~:[0~;1/2~]: ~S" way unicode-p lines)
+                       (is (member (if unicode-p "a SIZE 2" "a SIZE 1") lines :test #'string=)
+                           "~A LISPSYS ~:[0~;1/2~]: ~S" way unicode-p lines)
+                       (is (= (if unicode-p 0 1)
+                              (%count-occurrences "WARN -Efile-write" stderr))
+                           "~A LISPSYS ~:[0~;1/2~]: WARN count: ~S" way unicode-p stderr)))))
+            (delete-workdir e1-dir))))))
+
+(test protocol-open-rewrite-text-keeps-the-source
+  "alfe-open-rewrite-text, the CAD-side textual OPEN rewrite: an OPEN call is
+wrapped as (alfe-open* (list ...)) and everything else of the text is kept
+-- real literals, case, spacing, comments; quoted lists (' and QUOTE /
+FUNCTION), strings and comments (; and ;| |;) are never rewritten; nested
+OPEN calls are all rewritten. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary))
+        (cases
+          '(("(setq f (open p \"w\"))"
+             "(setq f (alfe-open* (list p \"w\")))")
+            ("(OPEN)" "(alfe-open* (list))")
+            ("(setq r 1.5707963267948966  f ( Open  p \"a\" ) )"
+             "(setq r 1.5707963267948966  f ( alfe-open* (list  p \"a\" )) )")
+            ("(list '(open a) (quote (open b)) (function (lambda () (open c))) \"(open d\" (open e))"
+             "(list '(open a) (quote (open b)) (function (lambda () (open c))) \"(open d\" (alfe-open* (list e)))")
+            (#.(format nil "(progn ;| (open x) |; (open y \"w\") ; (open z~% (opened 1))")
+             #.(format nil "(progn ;| (open x) |; (alfe-open* (list y \"w\")) ; (open z~% (opened 1))"))
+            ("(foo (open (open a \"r\") \"w\"))"
+             "(foo (alfe-open* (list (alfe-open* (list a \"r\")) \"w\")))")
+            ("(setq s \"\\\"(open\" t (open s \"w\"))"
+             "(setq s \"\\\"(open\" t (alfe-open* (list s \"w\")))"))))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; OPEN text rewrite test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary
+             (loop for (in expected) in cases
+                   for i from 1
+                   collect (format nil "(progn (setq txt (alfe-open-rewrite-text ~A)) (princ (strcat \"TXT~D \" (if (= txt ~A) \"SAME\" (vl-prin1-to-string txt)) \"\\n\")))"
+                                   (%autolisp-string-literal in) i
+                                   (%autolisp-string-literal expected))))
+          (is (every (lambda (s) (search " OK" s)) statuses)
+              "every request must succeed: ~S~%~A" statuses stderr)
+          (loop for (in expected) in cases
+                for i from 1
+                do (let ((got (first (%prefixed-lines (format nil "TXT~D " i)
+                                                      stdout))))
+                     (is (equal "SAME" got)
+                         "case ~D: ~S expected ~S, got ~A" i in expected got)))))))
+
+;;; --- the AutoCAD normaliser pads the TEXT, not a re-printed form ------
+;;;
+;;; alfe-normalised-form-reals-autocad. On AutoCAD (no &rest) a 1-argument
+;;; princ/print/prin1/load is padded to 2 arguments. That rebuilt form used
+;;; to be PRINTED back, and AutoCAD's rtos stops at 16 significant digits
+;;; and a 2-digit exponent: pi/2 lost its last digit. The padding is now
+;;; made in the source text (alfe-normalize-princ-text), checked by reading
+;;; it back (alfe-normalized-source-text), and the printer is only the
+;;; fallback.
+
+(test protocol-normalize-princ-text-pads-in-the-source
+  "alfe-normalize-princ-text, the CAD-side textual twin of the AutoCAD
+output normaliser: a princ/print/prin1 call with 0 to 2 arguments gets its
+head replaced by the alfe-owned autolisp-princ-to / -print-to / -prin1-to
+and, with 1 argument, \" nil\" before its closing parenthesis; an empty
+(princ) or (terpri) becomes (autolisp-princ-newline), an empty print/prin1
+gets \\\"\\\" nil, (prompt X) becomes (autolisp-emit-prompt X), a 1-argument
+load gets \" nil\", and everything else of the text is kept -- real
+literals, case, spacing, comments. Quoted lists (' and QUOTE / FUNCTION),
+lists in head position, strings and comments are never rewritten; a call
+with more arguments than the primitive takes is left alone; nested calls
+are all rewritten (alfe-autocad-fixed-arity-output-shadows). alfe-normalized-source-text returns the
+padded text only when it reads back EQUAL to the normalised form, and NIL
+(-> the printer) otherwise. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary))
+        (cases
+          '(("(princ 1.5707963267948966)"
+             "(autolisp-princ-to 1.5707963267948966 nil)")
+            ("(progn (setq a 123456789012345678.0)  (PRINC) )"
+             "(progn (setq a 123456789012345678.0)  (autolisp-princ-newline) )")
+            ("(print)" "(autolisp-print-to \"\" nil)")
+            ("(prin1 'x)" "(autolisp-prin1-to 'x nil)")
+            ("(princ x f)" "(autolisp-princ-to-file x f)")
+            ("(PRINT x f)" "(autolisp-print-to-file x f)")
+            ("(princ x f g)" "(princ x f g)")
+            ("(load \"a.lsp\")" "(load \"a.lsp\" nil)")
+            ("(load \"a.lsp\" 1)" "(load \"a.lsp\" 1)")
+            ("(princ (princ 1.0e300))"
+             "(autolisp-princ-to (autolisp-princ-to 1.0e300 nil) nil)")
+            ("(prin1 (print 2) f)" "(autolisp-prin1-to-file (autolisp-print-to 2 nil) f)")
+            ("(prompt \"p\")" "(autolisp-emit-prompt \"p\")")
+            ("(prompt (princ 1))" "(autolisp-emit-prompt (autolisp-princ-to 1 nil))")
+            ("(progn (TERPRI) (terpri f))" "(progn (autolisp-princ-newline) (terpri f))")
+            ("(princ \"a;b(princ c)\")" "(autolisp-princ-to \"a;b(princ c)\" nil)")
+            ("((princ a) b)" "((princ a) b)")
+            ("(list '(princ a) (quote (princ b)) (function (lambda () (princ c))) (princ e))"
+             "(list '(princ a) (quote (princ b)) (function (lambda () (princ c))) (autolisp-princ-to e nil))")
+            (#.(format nil "(progn ;| (princ x) |; (princ y) ; (princ z~% (princed 1))")
+             #.(format nil "(progn ;| (princ x) |; (autolisp-princ-to y nil) ; (princ z~% (princed 1))")))))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; princ text normaliser test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary
+             (append
+              (loop for (in expected) in cases
+                    for i from 1
+                    collect (format nil "(progn (setq txt (alfe-normalize-princ-text ~A)) (princ (strcat \"TXT~D \" (if (= txt ~A) \"SAME\" (vl-prin1-to-string txt)) \"\\n\")))"
+                                    (%autolisp-string-literal in) i
+                                    (%autolisp-string-literal expected)))
+              (list
+               ;; The verified text, and the fallback (NIL) when the source
+               ;; does not match the form, or is missing.
+               (concatenate
+                'string
+                "(progn (setq f (read \"(princ 1.5707963267948966)\"))"
+                " (setq n (autolisp-normalize-princ-call-impl f))"
+                " (princ (strcat \"CHECK \""
+                " (vl-prin1-to-string (alfe-normalized-source-text f n \"(princ 1.5707963267948966)\"))"
+                " \" \" (vl-prin1-to-string (alfe-normalized-source-text f n \"(princ 2.5)\"))"
+                " \" \" (vl-prin1-to-string (alfe-normalized-source-text f n nil))"
+                " \"\\n\")))")))
+             :assume-no-rest-p nil)
+          (is (every (lambda (s) (search " OK" s)) statuses)
+              "every request must succeed: ~S~%~A" statuses stderr)
+          (loop for (in expected) in cases
+                for i from 1
+                do (let ((got (first (%prefixed-lines (format nil "TXT~D " i)
+                                                      stdout))))
+                     (is (equal "SAME" got)
+                         "case ~D: ~S expected ~S, got ~A" i in expected got)))
+          (is (equal '("\"(autolisp-princ-to 1.5707963267948966 nil)\" nil nil")
+                     (%prefixed-lines "CHECK " stdout))
+              "alfe-normalized-source-text: ~S" stdout)))))
+
+(defparameter +autocad-rtos-real-printer-form+
+  (concatenate 'string
+               "(defun autolisp-real-source-text (x)"
+               " (setq *rtn-printed* (1+ *rtn-printed*))"
+               " (rtos x 1 15))")
+  "AutoLISP that makes the hosted clautolisp print a REAL for source the
+way alfe's printer manages on AutoCAD: 16 significant digits (AutoCAD's
+rtos cannot give 17), and count the calls in *RTN-PRINTED*.")
+
+(test protocol-normalised-form-reals-reach-the-engine-exactly
+  "Acceptance on the AutoCAD (fixed-arity) shadow path: a form the AutoCAD
+normaliser pads -- (princ <17-digit real>), and a progn holding a 1-arg
+princ next to a setq of pi/2 and of a 17-digit integer-valued real --
+reaches the engine with its literals' digits intact, and the real printer
+is not called at all. The hosted clautolisp's real printer is replaced by
+one that, like AutoCAD's rtos, keeps 16 significant digits: before the
+fix the padded form was printed back with it, and every one of these
+literals arrived rounded. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; normalised real transport test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary
+             (list
+              "(setq *rtn-printed* 0)"
+              +autocad-rtos-real-printer-form+
+              ;; The stub really rounds (otherwise this test proves nothing).
+              "(princ (strcat \"STUB \" (autolisp-real-source-text (read \"1.5707963267948966\")) \"\\n\"))"
+              "(setq *rtn-printed* 0)"
+              ;; Normalised: the inner 1-arg princ is padded on AutoCAD.
+              "(setq rtn-p (princ 1.5707963267948966))"
+              "(progn (setq rtn-j 123456789012345678.0 rtn-e 1.2345678901234567) (princ \"\"))"
+              (concatenate
+               'string
+               "(princ (strcat"
+               " \"\\nRTN P \" (if (= rtn-p (read \"1.5707963267948966\")) \"EXACT\" \"ROUNDED\")"
+               " \" J \" (if (= rtn-j (read \"123456789012345678.0\")) \"EXACT\" \"ROUNDED\")"
+               " \" E \" (if (= rtn-e (read \"1.2345678901234567\")) \"EXACT\" \"ROUNDED\")"
+               " \" PRINTED \" (itoa *rtn-printed*)"
+               " \"\\n\"))"))
+             :assume-no-rest-p t)
+          (is (every (lambda (s) (search " OK" s)) statuses)
+              "every request must succeed: ~S ~S" statuses stderr)
+          (is (equal '("1.570796326794897E+00") (%prefixed-lines "STUB " stdout))
+              "stub: ~S" stdout)
+          (is (equal '("P EXACT J EXACT E EXACT PRINTED 0")
+                     (%prefixed-lines "RTN " stdout))
+              "normalised forms must travel as their (padded) text: ~S" stdout)))))
+
+(test protocol-autocad-source-open-takes-no-third-argument
+  "G3 on AutoCAD: the deported loader opens a source with a plain (open P \"r\"),
+never (open P \"r\" \"utf8\") -- measured on AutoCAD 2022: the third argument is
+an error at LISPSYS 0 and, at LISPSYS 1 / 2, returns the BOM as a character and
+stops at a byte that is not UTF-8, where the plain read decodes UTF-8 with a
+cp1252 fallback. Checked under a hosted clautolisp whose OPEN is replaced by a
+two-argument one: AUTOLISP-SOURCE-OPEN-ENCODED-TRY must not call it with three.
+Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; AutoCAD source-open test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :forms-fn
+             (lambda (workdir)
+               (let ((src (merge-pathnames "g3-src.lsp" workdir)))
+                 (with-open-file (out src :direction :output
+                                          :if-exists :supersede
+                                          :if-does-not-exist :create
+                                          :external-format :utf-8)
+                   (format out "(setq g3 1)~%"))
+                 (list "(setq g3--real-open open)"
+                       "(defun open (g3--p g3--m) (g3--real-open g3--p g3--m))"
+                       (format nil "(progn (setq g3--r (vl-catch-all-apply ~
+'autolisp-source-open-encoded-try (list ~S \"UTF-8\" \"AUTOCAD\"))) ~
+(if (vl-catch-all-error-p g3--r) (princ \" THREE-ARGS\") ~
+(progn (close g3--r) (princ \" TWO-ARGS\"))) (setq open g3--real-open) (princ))"
+                               (namestring src))))))
+          (is (every (lambda (s) (search " OK" s)) statuses)
+              "every request must succeed: ~S~%~A" statuses stderr)
+          (is (search "TWO-ARGS" (without-returns stdout))
+              "AutoCAD's source open must take two arguments: ~S" stdout)))))
+
+(test protocol-a-loaded-file-may-setq-the-loaders-names
+  "alfe-load-user-setq-clobbers-loader-locals. AutoLISP is dynamically scoped
+and a loaded file's forms run INSIDE the loader, so a user's top-level
+(setq f ...) used to assign the loader's own F -- the source being read --
+and the next READ-LINE read the user's output file. The loader's locals now
+carry an alfe-- prefix: a file that sets every name the loader used (and
+opens a file through F) runs to its last form. Skipped when clautolisp-sbcl
+is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; loader-locals test skipped.")
+        (let ((outdir (make-test-workdir "loader-locals-out")))
+          (unwind-protect
+               (multiple-value-bind (statuses stdout stderr)
+                   (drive-hosted-engine
+                    binary nil
+                    :forms-fn
+                    (lambda (workdir)
+                      (let ((user (merge-pathnames "user-locals.lsp" workdir))
+                            (out-file (merge-pathnames "out.txt" outdir)))
+                        (with-open-file (out user :direction :output
+                                                  :if-exists :supersede
+                                                  :if-does-not-exist :create
+                                                  :external-format :utf-8)
+                          (format out "(setq f (open ~S \"w\"))~%(write-char 65 f)~%(close f)~%"
+                                  (namestring out-file))
+                          (format out "(setq line 1 result 2 path \"p\" prev 3 form 4 r 5 idx 6 args 7 resolved 8 onfailure 9)~%")
+                          (format out "(setq locals-reached-the-end T)~%"))
+                        (list (format nil "(alfe-load ~S)" (namestring user))
+                              "(princ (if locals-reached-the-end \"END-REACHED\" \"STOPPED\"))"))))
+                 (is (every (lambda (s) (search " OK" s)) statuses)
+                     "every request must succeed: ~S~%~A" statuses stderr)
+                 (is (search "END-REACHED" (without-returns stdout)) "stdout ~S" stdout)
+                 (is (equal '(65) (%file-octets (merge-pathnames "out.txt" outdir)))))
+            (delete-workdir outdir))))))
+
+;;; --- the alfe-- reserved prefix ---------------------------------------
+;;;
+;;; alfe-eval-request-locals-capture-user-setq. AutoLISP binds a DEFUN's
+;;; parameters and /-locals DYNAMICALLY, and on a CAD backend every user
+;;; form -- the -l file, -x, --main, REPL input, alfe-load -- is evaluated
+;;; while alfe's own CAD-side functions are on the stack (the server loop,
+;;; autolisp-eval-request-source, the deported loader, the printers ...). A
+;;; user (setq f ...) used to assign the request evaluator's LOCAL F, and
+;;; the value was gone when the request returned. Every variable such a
+;;; function binds now carries the reserved prefix alfe--; the static check
+;;; below keeps it so, and the hosted test proves the user's globals survive.
+
+(defparameter *alfe-runtime-binding-prefix* "alfe--"
+  "The prefix every parameter, /-local, LAMBDA parameter and FOREACH
+variable of alfe's CAD-side runtime must carry.")
+
+(defparameter *alfe-runtime-binding-allow-list*
+  '(;; alfe-error binds it nil around its own (error MSG), so the
+    ;; runtime's raise earns no [vendor-operator] notice on a clautolisp
+    ;; engine (clautolisp-error-silent-under-autocad). The NAME is the point:
+    ;; it is the variable clautolisp reads. No user code runs while it is
+    ;; bound: before the call only (type error) runs, and clautolisp unwinds
+    ;; the binding before a *error* handler or a vl-catch-all-apply caller
+    ;; gets control. The vendors do not read the variable at all.
+    "*AUTOLISP-WARN-OUT-OF-DIALECT*")
+  "Names alfe's CAD-side runtime may bind WITHOUT the alfe-- prefix, as
+case-insensitive strings. A name belongs here only with a comment saying
+why no user code can ever run while it is bound.")
+
+(defun %lsp-tokens (text)
+  "AutoLISP TEXT as a list of tokens: :OPEN, :CLOSE, :QUOTE, (:STRING s)
+or an atom's text. Comments (; and ;| |;) are dropped."
+  (let ((tokens '()) (i 0) (n (length text)))
+    (flet ((delimiterp (c)
+             (member c '(#\( #\) #\' #\" #\; #\Space #\Tab #\Return #\Newline
+                         #\Page))))
+      (loop while (< i n)
+            do (let ((c (char text i)))
+                 (cond
+                   ((member c '(#\Space #\Tab #\Return #\Newline #\Page))
+                    (incf i))
+                   ((and (char= c #\;) (< (1+ i) n) (char= (char text (1+ i)) #\|))
+                    (let ((end (search "|;" text :start2 (+ i 2))))
+                      (setf i (if end (+ end 2) n))))
+                   ((char= c #\;)
+                    (let ((end (position #\Newline text :start i)))
+                      (setf i (or end n))))
+                   ((char= c #\")
+                    (let ((j (1+ i)))
+                      (loop while (and (< j n) (char/= (char text j) #\"))
+                            do (when (char= (char text j) #\\) (incf j))
+                               (incf j))
+                      (push (list :string (subseq text (1+ i) (min j n))) tokens)
+                      (setf i (1+ j))))
+                   ((char= c #\() (push :open tokens) (incf i))
+                   ((char= c #\)) (push :close tokens) (incf i))
+                   ((char= c #\') (push :quote tokens) (incf i))
+                   (t
+                    (let ((j i))
+                      (loop while (and (< j n) (not (delimiterp (char text j))))
+                            do (incf j))
+                      (push (subseq text i j) tokens)
+                      (setf i j)))))))
+    (nreverse tokens)))
+
+(defun %lsp-forms (text)
+  "The forms of AutoLISP TEXT: a symbol or number is its text (a CL
+string), a string literal (:STRING s), 'X is (:QUOTE X), a list a list."
+  (let ((tokens (%lsp-tokens text)))
+    (labels ((read-one ()
+               (let ((token (pop tokens)))
+                 (cond
+                   ((eq token :open)
+                    (loop until (or (null tokens) (eq (first tokens) :close))
+                          collect (read-one)
+                          finally (pop tokens)))
+                   ((eq token :quote) (list :quote (read-one)))
+                   (t token)))))
+      (loop while tokens
+            if (eq (first tokens) :close) do (pop tokens)
+            else collect (read-one)))))
+
+(defun %lsp-symbol-p (form)
+  (stringp form))
+
+(defun %lsp-head-p (form name)
+  (and (consp form) (%lsp-symbol-p (first form)) (string-equal (first form) name)))
+
+(defun %lsp-binding-sites (forms)
+  "Every binding site in FORMS, as (DESCRIPTION NAMES SETQ-TARGETS): one
+per DEFUN (its name, its parameters and /-locals), LAMBDA and FOREACH.
+SETQ-TARGETS, for a DEFUN, are the names its body SETQs that no site of
+that DEFUN binds -- globals. Quoted data is not code, except a quoted
+DEFUN or LAMBDA list, which is code that is EVALed."
+  (let ((sites '()))
+    (labels ((lambda-list-names (list)
+               (when (listp list)
+                 (remove-if (lambda (s)
+                              (or (not (%lsp-symbol-p s))
+                                  (member s '("/" "&rest" "&optional")
+                                          :test #'string-equal)))
+                            list)))
+             (setq-targets (form)
+               ;; SETQ targets anywhere in FORM, skipping quoted data.
+               (cond
+                 ((not (consp form)) '())
+                 ((member (first form) '(:quote :string)) '())
+                 ((%lsp-head-p form "setq")
+                  (loop for (target value) on (rest form) by #'cddr
+                        when (%lsp-symbol-p target) collect target
+                        append (setq-targets value)))
+                 (t (loop for sub in form append (setq-targets sub)))))
+             (bound-names (form)
+               ;; Every name bound by a site inside FORM, itself included.
+               (cond
+                 ((not (consp form)) '())
+                 ((%lsp-head-p form "defun")
+                  (append (lambda-list-names (third form))
+                          (loop for sub in (cdddr form) append (bound-names sub))))
+                 ((%lsp-head-p form "lambda")
+                  (append (lambda-list-names (second form))
+                          (loop for sub in (cddr form) append (bound-names sub))))
+                 ((%lsp-head-p form "foreach")
+                  (append (when (%lsp-symbol-p (second form))
+                            (list (second form)))
+                          (loop for sub in (cddr form) append (bound-names sub))))
+                 ((eq (first form) :string) '())
+                 ((eq (first form) :quote) (bound-names (second form)))
+                 (t (loop for sub in form append (bound-names sub)))))
+             (walk (form)
+               (when (and (consp form) (not (eq (first form) :string)))
+                 (cond
+                   ((%lsp-head-p form "defun")
+                    (let ((bound (bound-names form)))
+                      (push (list (format nil "defun ~A" (second form))
+                                  (lambda-list-names (third form))
+                                  (remove-if
+                                   (lambda (target)
+                                     (member target bound :test #'string-equal))
+                                   (setq-targets (cdddr form))))
+                            sites)))
+                   ((%lsp-head-p form "lambda")
+                    (push (list "lambda" (lambda-list-names (second form)) '())
+                          sites))
+                   ((%lsp-head-p form "foreach")
+                    (push (list "foreach"
+                                (when (%lsp-symbol-p (second form))
+                                  (list (second form)))
+                                '())
+                          sites)))
+                 (mapc #'walk form))))
+      (mapc #'walk forms))
+    (nreverse sites)))
+
+(defun %alfe-runtime-texts ()
+  "(NAME . TEXT) of every AutoLISP text alfe runs on a CAD: the two
+vendored runtime files, and the run-common.lsp the file-protocol emitter
+writes (both of its shadow branches are in that one text)."
+  (let ((workdir (make-test-workdir "runtime-texts")))
+    (unwind-protect
+         (append
+          (mapcar (lambda (basename)
+                    (cons basename
+                          (alfe.protocol.file:read-file-as-string
+                           (%vendored-runtime-source basename))))
+                  '("autolisp-bootstrap.lsp" "autolisp-remote-io.lsp"))
+          (multiple-value-bind (session path)
+              (emit-run-common-with-real-runtime workdir)
+            (declare (ignore session))
+            (list (cons "run-common.lsp"
+                        (alfe.protocol.file:read-file-as-string path)))))
+      (delete-workdir workdir))))
+
+(defun %alfe-prefixed-p (name)
+  (let ((prefix *alfe-runtime-binding-prefix*))
+    (and (> (length name) (length prefix))
+         (string-equal prefix name :end2 (length prefix)))))
+
+(defun %alfe-runtime-user-visible-names ()
+  "The names alfe's CAD-side runtime binds, WITHOUT the alfe-- prefix:
+the names a user program would have lost before the prefix, as
+lowercase strings, sorted and unique."
+  (let ((names '()))
+    (dolist (entry (%alfe-runtime-texts))
+      (dolist (site (%lsp-binding-sites (%lsp-forms (cdr entry))))
+        (dolist (name (second site))
+          (pushnew (string-downcase
+                    (if (%alfe-prefixed-p name)
+                        (subseq name (length *alfe-runtime-binding-prefix*))
+                        name))
+                   names :test #'string=))))
+    (sort names #'string<)))
+
+(test runtime-binds-only-alfe-prefixed-names
+  "Static guard for alfe-eval-request-locals-capture-user-setq: every
+parameter, /-local, LAMBDA parameter and FOREACH variable in alfe's
+CAD-side runtime -- autolisp-bootstrap.lsp, autolisp-remote-io.lsp and the
+run-common.lsp file-protocol.lisp emits -- starts with alfe--, so no user
+SETQ can land in a binding of alfe's while its functions are on the
+dynamic stack. Names in *ALFE-RUNTIME-BINDING-ALLOW-LIST* are exempt."
+  (let ((offenders '()) (sites 0))
+    (dolist (entry (%alfe-runtime-texts))
+      (dolist (site (%lsp-binding-sites (%lsp-forms (cdr entry))))
+        (incf sites)
+        (dolist (name (second site))
+          (unless (or (%alfe-prefixed-p name)
+                      (member name *alfe-runtime-binding-allow-list*
+                              :test #'string-equal))
+            (push (format nil "~A: ~A binds ~A" (car entry) (first site) name)
+                  offenders)))))
+    ;; The scanner must actually see the runtime (a broken reader would
+    ;; find no site and pass vacuously).
+    (is (> sites 150) "only ~D binding sites found" sites)
+    (is (null offenders)
+        "unprefixed bindings in alfe's CAD runtime:~%~{  ~A~%~}"
+        (reverse offenders))))
+
+(test runtime-defuns-setq-no-unprefixed-global
+  "Static guard, the other direction: a function of alfe's CAD-side
+runtime may SETQ only its own bindings or a *STARRED* global. An
+undeclared (setq f ...) in autolisp-protocol-pulse-heartbeat assigned the
+USER's global F (or a caller's local F) on every heartbeat, i.e. between
+any two requests."
+  (let ((offenders '()))
+    (dolist (entry (%alfe-runtime-texts))
+      (dolist (site (%lsp-binding-sites (%lsp-forms (cdr entry))))
+        (dolist (target (third site))
+          (unless (and (plusp (length target)) (char= (char target 0) #\*))
+            (push (format nil "~A: ~A sets ~A" (car entry) (first site) target)
+                  offenders)))))
+    (is (null offenders)
+        "alfe's CAD runtime SETQs unstarred globals:~%~{  ~A~%~}"
+        (reverse offenders))))
+
+(defun %setq-every-name-form (names value)
+  (format nil "(setq ~{~A ~D~^ ~})"
+          (loop for name in names append (list name value))))
+
+(defun %drive-user-setq-of-runtime-names (binary names &key assume-no-rest-p dialect)
+  "Host the real runtime and, for every action a CAD backend evaluates
+user code through, SETQ every one of NAMES, then check in a LATER request
+that the GLOBAL holds the value: -l (a (load P) request read by the
+deported loader) 42, -x 43, REPL input (wrapped in print, as the REPL
+does) 44, --main (a function the -l file defines) 45, alfe-load 46. The -l
+file also writes through F before setting it. Returns (values statuses
+stdout stderr)."
+  (drive-hosted-engine
+   binary nil
+   :assume-no-rest-p assume-no-rest-p
+   :dialect dialect
+   :forms-fn
+   (lambda (workdir)
+     (let ((lfile (merge-pathnames "user-names-l.lsp" workdir))
+           (afile (merge-pathnames "user-names-a.lsp" workdir))
+           (ofile (merge-pathnames "user-names-out.txt" workdir)))
+       (with-open-file (out lfile :direction :output :if-exists :supersede
+                                  :if-does-not-exist :create :external-format :utf-8)
+         (format out "(setq f (open ~S \"w\"))~%(write-char 65 f)~%(close f)~%"
+                 (namestring ofile))
+         (format out "~A~%" (%setq-every-name-form names 42))
+         (format out "(defun zz--main () ~A)~%" (%setq-every-name-form names 45))
+         (format out "(setq zz--l-end T)~%"))
+       (with-open-file (out afile :direction :output :if-exists :supersede
+                                  :if-does-not-exist :create :external-format :utf-8)
+         (format out "~A~%" (%setq-every-name-form names 46)))
+       (list
+        ;; The checker: the names whose GLOBAL value is not V.
+        (format nil "(defun zz--check (zz--v zz--tag / zz--s zz--bad) ~
+(foreach zz--s '(~{~A~^ ~}) ~
+(if (not (equal (eval zz--s) zz--v)) (setq zz--bad (cons zz--s zz--bad)))) ~
+(princ (strcat zz--tag \"=\" (if zz--bad (vl-prin1-to-string (reverse zz--bad)) \"ALL\") \"\\n\")))"
+                names)
+        (format nil "(load ~S)" (namestring lfile))
+        "(zz--check 42 \"L\")"
+        (%setq-every-name-form names 43)
+        "(zz--check 43 \"X\")"
+        (format nil "(print ~A)" (%setq-every-name-form names 44))
+        "(zz--check 44 \"REPL\")"
+        "(zz--main)"
+        "(zz--check 45 \"MAIN\")"
+        (format nil "(alfe-load ~S)" (namestring afile))
+        "(zz--check 46 \"ALFE-LOAD\")"
+        (format nil "(princ (if zz--l-end \"L-END\" \"L-STOPPED\"))"))))))
+
+(test protocol-user-setq-of-every-runtime-name-reaches-the-global
+  "alfe-eval-request-locals-capture-user-setq, hosted, on the AutoCAD path
+(fixed-arity shadows, --dialect autocad) and the BricsCAD path (variadic
+shadows, --dialect bricscad): a user SETQ of ANY name alfe's CAD-side
+runtime binds -- F, TEXT, R, PATH, FORM, SOURCE, RESULT, ... -- through
+-l, -x, REPL input, --main or alfe-load sets the user's GLOBAL, which a
+later request reads back. It used to set a local of the request evaluator
+and vanish. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary))
+        (names (%alfe-runtime-user-visible-names)))
+    ;; The name list is the runtime's own: it must include the names the
+    ;; ticket saw captured.
+    (dolist (name '("f" "text" "r" "path" "form" "source" "err" "normalized"
+                    "result" "keep" "req-id" "rc"))
+      (is (member name names :test #'string=) "~A not among ~S" name names))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; user-setq test skipped.")
+        (loop for (no-rest dialect) in '((t "autocad") (nil "bricscad"))
+              do (multiple-value-bind (statuses stdout stderr)
+                     (%drive-user-setq-of-runtime-names
+                      binary names :assume-no-rest-p no-rest :dialect dialect)
+                   (let ((out (without-returns stdout)))
+                     (is (every (lambda (s) (search " OK" s)) statuses)
+                         "~A: every request must succeed: ~S~%~A"
+                         dialect statuses stderr)
+                     (dolist (tag '("L" "X" "REPL" "MAIN" "ALFE-LOAD"))
+                       (is (search (format nil "~A=ALL" tag) out)
+                           "~A, ~A: user globals lost -- stdout ~S"
+                           dialect tag out))
+                     (is (search "L-END" out) "~A: stdout ~S" dialect out)))))))
+
 (test protocol-failure-inside-a-loaded-file-fails-that-request
   "Acceptance: a form that fails inside a loaded file makes THAT request
 fail, at one level and at two, and no failure is ever attributed to a
@@ -1845,6 +3398,103 @@ later request. Skipped when clautolisp-sbcl is not on disk."
           (is (search "Division by zero" stderr)
               "the original error text must be reported: ~S" stderr)))))
 
+(test protocol-runtime-raise-carries-its-message-to-user-handlers
+  "alfe-runtime-raise-says-division-by-zero: when alfe's CAD-side runtime
+raises (here alfe-load of a missing file), a USER handler -- a
+vl-catch-all-apply around the call, or a *error* function -- must see the
+runtime's own message, LOAD failed: \"...\", not the \"Division by zero\"
+of the arithmetic the runtime used to abort with. Run on the AutoCAD and
+the BricsCAD shadow paths, and once more with ERROR unbound, which is the
+AutoCAD host's situation (no ERROR function) and takes the portable
+fallback. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; runtime-raise test skipped.")
+        (loop for (no-rest dialect unbind-error-p)
+                in '((t "autocad" nil) (nil "bricscad" nil) (t "autocad" t))
+              do (multiple-value-bind (statuses stdout stderr engine-diagnostics)
+                     (drive-hosted-engine
+                      binary
+                      (append
+                       (when unbind-error-p
+                         ;; AutoLISP is a Lisp-1: this is what a host
+                         ;; without an ERROR function looks like.
+                         (list "(setq error nil)"))
+                       (list
+                        "(princ (strcat \"<\" (vl-catch-all-error-message (vl-catch-all-apply (quote alfe-load) (list \"/no/such/file-xyz\"))) \">\"))"
+                        "(progn (defun *error* (m) (princ (strcat \"[\" m \"]\"))) (alfe-load \"/no/such/file-xyz\"))"))
+                      :assume-no-rest-p no-rest :dialect dialect)
+                   (declare (ignore statuses stderr))
+                   (let ((out (without-returns stdout))
+                         (label (format nil "~A~:[~;, ERROR unbound~]"
+                                        dialect unbind-error-p)))
+                     ;; The fallback quotes the message inside the host's
+                     ;; bad-argument text, so its own quotes come back
+                     ;; escaped: look for its words there.
+                     (is (if unbind-error-p
+                             (and (search "LOAD failed: " out)
+                                  (search "/no/such/file-xyz" out))
+                             (search "LOAD failed: \"/no/such/file-xyz\"" out))
+                         "~A: a user handler must see the runtime's message: ~S"
+                         label out)
+                     (is (not (search "ivision by zero" out))
+                         "~A: the arithmetic used to abort must not show: ~S"
+                         label out)
+                     ;; Both handlers ran, each with the message.
+                     (is (and (search "<" out) (search "[" out))
+                         "~A: both handlers must run: ~S" label out)
+                     ;; ERROR is a BricsCAD operator clautolisp adopts, and
+                     ;; warns under strict (clautolisp-error-silent-under-
+                     ;; autocad): the runtime's own raise must not earn the
+                     ;; user a [vendor-operator] notice from the engine, which
+                     ;; runs under its strict default.
+                     (is (not (search "[vendor-operator]" engine-diagnostics))
+                         "~A: the runtime's raise must not warn: ~S"
+                         label engine-diagnostics)))))))
+
+(test protocol-alfe-error-signals-its-message-on-every-host
+  "alfe-error is alfe's portable raise: where ERROR is a function (BricsCAD,
+clautolisp) the message a handler gets is MSG verbatim, and where it is not
+(AutoCAD, simulated by unbinding ERROR) it is quoted inside the host's
+bad-argument error. alfe defines no ERROR of its own: unbound before, it is
+still unbound after. And it warns nothing on the engine, whose dialect is
+the strict default. Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; alfe-error test skipped.")
+        (loop for (no-rest dialect unbind-error-p)
+                in '((t "autocad" nil) (nil "bricscad" nil) (t "autocad" t))
+              do (multiple-value-bind (statuses stdout stderr engine-diagnostics)
+                     (drive-hosted-engine
+                      binary
+                      (append
+                       (when unbind-error-p (list "(setq error nil)"))
+                       (list
+                        "(princ (strcat \"<\" (vl-catch-all-error-message (vl-catch-all-apply (quote alfe-error) (list \"How do you do\"))) \">\"))"
+                        "(progn (defun *error* (m) (princ (strcat \"[\" m \"]\"))) (alfe-error \"How do you do\"))"
+                        "(princ (strcat \"type=\" (vl-princ-to-string (type error))))"))
+                      :assume-no-rest-p no-rest :dialect dialect)
+                   (declare (ignore statuses stderr))
+                   (let ((out (without-returns stdout))
+                         (label (format nil "~A~:[~;, ERROR unbound~]"
+                                        dialect unbind-error-p)))
+                     (if unbind-error-p
+                         (progn
+                           (is (and (search "<" out) (search "How do you do" out))
+                               "~A: the message must be quoted: ~S" label out)
+                           (is (search "type=nil" out)
+                               "~A: alfe must not define ERROR: ~S" label out))
+                         (progn
+                           (is (search "<How do you do>" out)
+                               "~A: the catch must get MSG verbatim: ~S" label out)
+                           (is (search "[How do you do]" out)
+                               "~A: *error* must get MSG verbatim: ~S" label out)))
+                     (is (not (search "[vendor-operator]" engine-diagnostics))
+                         "~A: alfe-error must not warn: ~S"
+                         label engine-diagnostics)))))))
+
 (test protocol-loaded-file-runs-every-form-on-a-line
   "Acceptance: a loaded file whose line carries two forms runs BOTH, in
 order. (princ \"x\")(princ \"y\") must print xy, and (setq a 1)(setq b 2)
@@ -1883,6 +3533,106 @@ clautolisp-sbcl is not on disk."
           (is (string= "xyz(A 1 B 2)" (without-returns stdout))
               "every form must run, in order: ~S" stdout)
           (is (string= "" stderr))))))
+
+;;; --- a ;| block comment |; is a comment ------------------------------
+;;;
+;;; alfe-cad-source-loader-evaluates-block-comments. The CAD-side
+;;; scanners knew only the line comment: `;|' opened a comment that the
+;;; newline closed, and the next lines of the block -- SCHMS documents
+;;; every function that way -- were read as code. SCHMS job 529707 died
+;;; with `no function definition: SYMBOLE', the word after a parenthesis
+;;; in the prose `(symbole ou autre valeur)'.
+
+(defun %write-lsp (path text)
+  (with-open-file (out path :direction :output
+                            :if-exists :supersede
+                            :if-does-not-exist :create
+                            :external-format :utf-8)
+    (write-string text out)))
+
+(defparameter +block-comment-file+
+  (format nil "~{~A~%~}"
+          '(";| @Global"
+            "  Nom d'une cle (symbole ou autre valeur) ; \"quote ( paren"
+            "  @Returns string: par exemple \":OWN-LIST\""
+            "|;"
+            "(setq a 1) ;| inline (boom) |; (setq b 2)"
+            "(princ \";| not a comment |;\")"
+            "(setq c ;| inside (boom) |; 3)"
+            ";| several"
+            "(boom)"
+            "|; (princ \"w\")"
+            "(princ \"x\");|tail (boom)|;(princ \"y\")"
+            "(setq d 4) ;| opened after a form"
+            "(boom)"
+            "|;"
+            "; a line comment ;| does not open a block"
+            "(setq e 5)"))
+  "Block comments in every position the acceptance criteria name; any
+(boom) that is evaluated fails the load.")
+
+(test protocol-loaded-file-ignores-block-comments
+  "Acceptance: the prose of a ;| ... |; block comment is never read or
+evaluated -- parentheses, quotes and semicolons included, on one line or
+many, before, between, after and inside forms -- while ;| inside a string
+stays text and the forms around each comment run exactly once, in order.
+Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; block-comment test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :forms-fn
+             (lambda (workdir)
+               (let ((f (merge-pathnames "blockcomments.lsp" workdir)))
+                 (%write-lsp f +block-comment-file+)
+                 (list (format nil "(load ~S)" (namestring f))
+                       "(princ (list a b c d e))"))))
+          (is (search " OK" (first statuses))
+              "the load must succeed, got ~S -- ~S" (first statuses) stderr)
+          (is (search " OK" (second statuses)))
+          (is (string= ";| not a comment |;wxy(1 2 3 4 5)"
+                       (without-returns stdout))
+              "every form must run once, in order, and no comment: ~S" stdout)
+          (is (string= "" stderr))))))
+
+(test protocol-block-comment-keeps-source-lines
+  "A failure after a multi-line block comment is reported at ITS line,
+and an unterminated block comment is an end-of-file error, not code.
+Skipped when clautolisp-sbcl is not on disk."
+  (let ((binary (clautolisp-engine-binary)))
+    (if (not binary)
+        (is (null (clautolisp-engine-binary))
+            "clautolisp-sbcl not present; block-comment line test skipped.")
+        (multiple-value-bind (statuses stdout stderr)
+            (drive-hosted-engine
+             binary nil
+             :forms-fn
+             (lambda (workdir)
+               (let ((fails (merge-pathnames "blockfail.lsp" workdir))
+                     (unclosed (merge-pathnames "blockopen.lsp" workdir)))
+                 (%write-lsp fails (format nil "~{~A~%~}"
+                                           '(";| one" "(two)" "three |;"
+                                             "(princ \"before\")"
+                                             "(no_such_function_after_block)")))
+                 (%write-lsp unclosed (format nil "~{~A~%~}"
+                                          '("(princ \"ran\")" ";| never closed"
+                                            "(boom)")))
+                 (list (format nil "(load ~S)" (namestring fails))
+                       (format nil "(load ~S)" (namestring unclosed))))))
+          (is (search " FAIL" (first statuses)))
+          (is (search "line 5" stderr)
+              "the failing form is on line 5: ~S" stderr)
+          (is (search "NO_SUCH_FUNCTION_AFTER_BLOCK" stderr))
+          (is (not (search "BOOM" stderr))
+              "no comment text may be evaluated: ~S" stderr)
+          (is (search " FAIL" (second statuses)))
+          (is (search "block comment" stderr)
+              "an unterminated block comment must say so: ~S" stderr)
+          (is (string= "beforeran" (without-returns stdout))
+              "the forms before each failure ran: ~S" stdout)))))
 
 ;;; --- a failure is reported ONCE --------------------------------------
 ;;;
@@ -1952,3 +3702,37 @@ is passed through untouched. Skipped when clautolisp-sbcl is not on disk."
           (is (search "Undefined AutoLISP function NO_SUCH_FUNCTION" stderr))
           (is (not (search "[form: (NO_SUCH_FUNCTION 1)]" stderr))
               "an informative message must not be padded: ~S" stderr)))))
+
+;;; --- an unattended quit never SAVES -----------------------------------
+;;;
+;;; The CAD-side runtime ended an unattended session (and a failed
+;;; bootstrap) with (command "_QUIT" "_Y"): QUIT's "Save changes?" answered
+;;; YES, so a drawing the run had modified was saved -- under the name the
+;;; run had last given it, or through the Save As dialog for an unnamed one.
+;;; AutoCAD was left on that prompt with the dxf-angles probe's renamed
+;;; dxf-angles-probe.dxf (2026-10-23). Every QUIT the runtime issues now
+;;; answers NO, and only when DBMOD says there is something to save.
+
+(test protocol-emitted-runtime-quits-without-saving
+  "No QUIT in the emitted CAD-side runtime (run-common.lsp, the bootstrap,
+the protocol runtime) answers Yes; every QUIT the bootstrap issues is
+guarded by DBMOD."
+  (let ((workdir (make-test-workdir "quit-no-save")))
+    (unwind-protect
+        (multiple-value-bind (session path)
+            (emit-run-common-with-real-runtime workdir)
+          (dolist (file (list path
+                              (alfe.protocol.file:protocol-session-bootstrap-lsp-staged
+                               session)
+                              (alfe.protocol.file:protocol-session-runtime-lsp-staged
+                               session)))
+            (let ((text (alfe.protocol.file:read-file-as-string file)))
+              (dolist (bad '("\"_QUIT\" \"_Y\"" "\"_.QUIT\" \"_Y\"" "QUIT _Y"))
+                (is (null (search bad text))
+                    "~A answers QUIT with Yes (~A)" (file-namestring file) bad))))
+          (let ((boot (alfe.protocol.file:read-file-as-string
+                       (alfe.protocol.file:protocol-session-bootstrap-lsp-staged session))))
+            (is (search "(defun autolisp-host-quit ()" boot))
+            (is (search "(getvar \"DBMOD\")" boot))
+            (is (search "(command \"_.QUIT\" \"_N\")" boot))))
+      (delete-workdir workdir))))

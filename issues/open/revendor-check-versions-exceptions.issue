@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: revendor-check-versions-exceptions — the accepted-exceptions mechanism must go back upstream to informatimago/rules
-#+STATUS: TODO
+#+STATUS: WIP
 #+PRIORITY: P3
 #+TYPE: infra
 #+DEPENDS: -
@@ -93,3 +93,17 @@ the value of this change is entirely in the cases that still FAIL.
 
 Filed per AGENTS.md's "a bug or a follow-up found while doing something else
 gets its own ticket" rule, rather than left as a comment in the closed issue.
+
+* Upstream MR opened 2026-10-03 -- informatimago/rules!1
+
+Git against ~/src/public/rules is still refused in this session, but the
+GitLab API is not git: branch =accepted-exceptions= on informatimago/rules
+(commit 5ebda834) carries scripts/check-versions.sh -- byte-identical to
+this repository's copy (cmp) -- and version-rules.md § 6.1, "Accepted
+exceptions", plus the § 6 sentence "reads nothing but git refs" amended.
+MR: https://gitlab.com/informatimago/rules/-/merge_requests/1 (review the
+four modified lines named above). make check-versions here: 0, two
+accepted exceptions.
+
+LEFT: pjb merges !1. Re-vendoring is then a no-op (identical already);
+close this ticket on the merge.

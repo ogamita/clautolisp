@@ -86,13 +86,16 @@
                  (sysvar-cell-value (cador-sysvar mock "CLAYER"))))))
 
 (test cador-set-sysvar-rejects-read-only
+  ;; :SYSVAR-READ-ONLY, the code HOST-SETVAR uses: a wrong argument, not a
+  ;; missing host capability -- so NOT a host-error (D1 §15, D2 §II.15).
   (let ((mock (make-cador)))
     (handler-case
         (progn (cador-set-sysvar mock "DWGNAME" "Other.dwg")
                (is nil))
       (autolisp-runtime-error (condition)
-        (is (eq :host-not-supported
-                (autolisp-runtime-error-code condition)))))))
+        (is (eq :sysvar-read-only
+                (autolisp-runtime-error-code condition)))
+        (is (not (typep condition 'clautolisp.autolisp-runtime:host-error)))))))
 
 (test sysvar-name-lookup-is-case-insensitive
   (let ((mock (make-cador)))
@@ -139,9 +142,9 @@
     (push :grdraw-1 (cador-display-log mock))
     (is (equal '(:grdraw-1) (cador-display-log mock)))))
 
-;;; --- Phase-9 contract: host operations on a default MockHost -----
+;;; --- Phase-9 contract: host operations on a default cador -----
 ;;;
-;;; MockHost in Phase 9 has only the data carriers; all host
+;;; cador in Phase 9 has only the data carriers; all host
 ;;; operations still fall through to the base-class fallback methods
 ;;; on `host` and signal :host-not-supported. Phase 10 fills these
 ;;; in.

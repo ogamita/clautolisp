@@ -6,7 +6,7 @@
 ;;;; clautolisp.cador (model.lisp) so the in-memory
 ;;;; drawing database becomes a first-class CL value that can be held
 ;;;; outside any host, loaded from / written to a file (Phase 17b/c),
-;;;; and enumerated by pure-CL tools (Phase 17d). MockHost now holds
+;;;; and enumerated by pure-CL tools (Phase 17d). cador now holds
 ;;;; one of these and delegates its entity / table / sysvar surface to
 ;;;; the active drawing; it re-exports the carriers so older code and
 ;;;; tests that imported them from the cador package keep working.
@@ -23,7 +23,10 @@ plus the canonical group-0 marker giving the entity kind)."
   (block     nil)
   (layer     nil)
   (data      nil :type list)
-  (deleted-p nil :type boolean))
+  (deleted-p nil :type boolean)
+  ;; T for an object read from a file's OBJECTS section: never graphical,
+  ;; whatever its type (an unknown type would otherwise count as one).
+  (object-p  nil :type boolean))
 
 ;;; --- Symbol-table record ---------------------------------------
 
@@ -64,7 +67,11 @@ rather than fixed."
   (kind           :integer :type keyword)
   (value          nil)
   (read-only-p    nil :type boolean)
-  (host-derived-p nil :type boolean))
+  (host-derived-p nil :type boolean)
+  ;; The scope tier (D1 §4, C4): :DRAWING (saved in the drawing, one per
+  ;; document), :REGISTRY (the application's, persisted in the profile) or
+  ;; :NOT-SAVED (the session's); NIL when unknown.
+  (scope          nil :type symbol))
 
 ;;; --- The drawing value object -----------------------------------
 
@@ -73,6 +80,12 @@ rather than fixed."
          :initform "Drawing.dwg"
          :accessor drawing-name
          :documentation "Drawing name (the DWGNAME the host reports).")
+   (dbmod :initform 0
+          :accessor drawing-dbmod
+          :documentation "The DBMOD bits: 1 when the database (entities,
+tables, blocks, objects) changed since the drawing was read, created or
+last written. Set by the mutation functions, cleared by READ-DRAWING /
+WRITE-DRAWING.")
    (path :initarg :path
          :initform nil
          :accessor drawing-path

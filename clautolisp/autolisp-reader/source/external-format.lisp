@@ -375,3 +375,122 @@ host and need not know which path they got."
               (error "~S: :DIRECTION ~S is not supported by the built-in ~
 ~A codec (the host CL provides no ~:*~A codec of its own)."
                      'open-with-external-format direction base)))))))))
+
+;;; --- encodability and the replacement policies -----------------------
+;;;
+;;; encoding-replacement-character-option.issue. What to WRITE in place of a
+;;; character the target encoding cannot hold. The policy is decided by the
+;;; runtime (the dialect default, the -Ereplacement option, the
+;;; *AUTOLISP-ENCODING-REPLACEMENT* global); this part only knows encodings:
+;;; whether a character fits one, and what each policy turns it into.
+;;;
+;;; The check is done HERE rather than left to the stream for two reasons.
+;;; Portability: SBCL signals on an unencodable character, while CCL writes a
+;;; substitute of its own, so the same program would abort on one host and
+;;; silently lose data on the other. And the error: deciding before anything
+;;; is written lets the caller signal an ordinary AutoLISP error, with no
+;;; half-written line and no host condition in sight.
+
+(defparameter *unicode-complete-encodings*
+  '(:utf-8 :utf8 :utf-16 :utf-16le :utf-16be :utf-32 :utf-32le :utf-32be
+    :ucs-4 :ucs-4le :ucs-4be :utf-8b)
+  "Encodings that can represent every character: no check needed.")
+
+(defvar *encodable-cache* (make-hash-table :test #'equal)
+  "(BASE . CODE) -> T / NIL, for the encodings babel answers for.")
+
+(defun character-encodable-p (character external-format)
+  "True when CHARACTER can be written in EXTERNAL-FORMAT (a keyword or a
+\(KEYWORD . OPTIONS) designator). Answers T for an encoding we cannot
+introspect -- neither single-octet nor known to babel -- so such a stream
+keeps the host's own behaviour rather than a guess of ours."
+  (let ((base (external-format-base external-format))
+        (code (char-code character)))
+    (cond
+      ((null base) t)
+      ((< code 128)
+       ;; ASCII fits every encoding clautolisp opens (all ASCII-compatible
+       ;; but UTF-16/32, which are complete anyway).
+       t)
+      ((member base *unicode-complete-encodings*) t)
+      ((member base '(:latin-1 :latin1 :iso-8859-1 :iso8859-1)) (< code 256))
+      ((member base '(:ascii :us-ascii)) nil)
+      (t
+       (multiple-value-bind (decode encode) (single-octet-tables base)
+         (if decode
+             (not (null (gethash code encode)))
+             (let ((key (cons base code)))
+               (multiple-value-bind (known foundp) (gethash key *encodable-cache*)
+                 (if foundp
+                     known
+                     (setf (gethash key *encodable-cache*)
+                           (handler-case
+                               (progn
+                                 (babel:string-to-octets (string character)
+                                                         :encoding base :errorp t)
+                                 t)
+                             (babel-encodings:character-encoding-error () nil)
+                             ;; babel does not know BASE: say yes, see above.
+                             (error () t))))))))))))
+
+(defun string-encodable-p (string external-format)
+  "True when every character of STRING can be written in EXTERNAL-FORMAT."
+  (every (lambda (character) (character-encodable-p character external-format))
+         string))
+
+;;; SPEC-UNCERTAIN: Windows' best-fit table (BricsCAD V25) is approximated by
+;;; stripping a Latin diacritic; other characters become "?" -- see
+;;; issues/open/deferred-spec-research.issue, "Encoding replacement".
+(defun %best-fit-base-letter (character)
+  "The unaccented letter CHARACTER is built on, from its Unicode name
+\(\"LATIN CAPITAL LETTER I WITH BREVE\" -> #\\I), or NIL. A portable stand-in
+for the best-fit table of Windows' WideCharToMultiByte: both SBCL and CCL name
+characters after Unicode, with underscores or spaces."
+  (let ((name (ignore-errors (char-name character))))
+    (when name
+      (let* ((words (uiop:split-string (substitute #\Space #\_ (string-upcase name))
+                                       :separator " "))
+             (letter (position "LETTER" words :test #'string=)))
+        (when (and letter
+                   (string= (first words) "LATIN")
+                   (< (1+ letter) (length words))
+                   (= 1 (length (nth (1+ letter) words)))
+                   (member "WITH" words :test #'string=))
+          (let ((base (char (nth (1+ letter) words) 0)))
+            (if (member "SMALL" words :test #'string=)
+                (char-downcase base)
+                base)))))))
+
+(defun encoding-replacement-text (character external-format policy)
+  "The text written in place of CHARACTER, which EXTERNAL-FORMAT cannot hold,
+under POLICY:
+
+  a CHARACTER   that character;
+  :LOW-BYTE     the character whose code is the low byte of CHARACTER's code
+                (AutoCAD 2022: U+012C -> \",\", U+4E2D -> \"-\"), or \"?\"
+                when the target has none;
+  :BEST-FIT     the unaccented base letter when the target has it (BricsCAD
+                V25 on Windows: U+012C -> \"I\"), else \"?\";
+  :ESCAPE       the eight-or-more characters \\U+XXXX (BricsCAD V26 macOS).
+
+Returns a string; NIL when POLICY's substitute does not fit the target either
+\(a replacement character the encoding lacks), for the caller to signal."
+  (flet ((fits (text) (and (string-encodable-p text external-format) text)))
+    (etypecase policy
+      (character (fits (string policy)))
+      (keyword
+       (ecase policy
+         (:low-byte
+          (let* ((byte (logand (char-code character) #xFF))
+                 (decode (single-octet-tables (external-format-base external-format)))
+                 (candidate (if decode
+                                (aref decode byte)
+                                (code-char byte))))
+            (or (and candidate (fits (string candidate)))
+                "?")))
+         (:best-fit
+          (let ((base (%best-fit-base-letter character)))
+            (or (and base (fits (string base)))
+                "?")))
+         (:escape
+          (format nil "\\U+~4,'0X" (char-code character))))))))

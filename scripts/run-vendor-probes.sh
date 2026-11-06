@@ -49,6 +49,12 @@ alfe="$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl"
 [ -x "$alfe.exe" ] && alfe="$alfe.exe"
 probe_dir="$root/autolisp-front-end/tests/scenarios/entities"
 out_dir="$root/dist/vendor-probes/$backend"
+# Clean this backend's dist dir at the START of the run -- see
+# run-vendor-probes.ps1 and vendor-probes-artifact-upload-bloat.issue: with
+# PROBE_KEEP_WORKDIR the kept protocol workdirs are copied in here, and dist/ is
+# untracked and the Windows runner reuses its build dir, so without this they
+# pile up across runs (39701 files, a half-hour upload retry on the CAD runner).
+rm -rf "$out_dir"
 mkdir -p "$out_dir"
 
 if [ ! -x "$alfe" ]; then

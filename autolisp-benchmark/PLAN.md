@@ -78,7 +78,7 @@ of the same suite version (a workload change changes what an
   can be diffed by a tool rather than by eye.
 - Optional: a `compare` helper that ingests two result files and prints
   a clautolisp-vs-CAD ratio table.
-- Once `issues/open/entmakex-returns-list.issue` is fixed, the entity
+- Once `issues/closed/entmakex-returns-list.issue` is fixed, the entity
   workload can drop the `(entlast)` step and call `(entmakex)`
   directly (a micro-optimisation; the current path is already
   portable).

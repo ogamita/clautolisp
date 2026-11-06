@@ -76,7 +76,7 @@
                                        (cons 1000 "tag-string")
                                        (cons 1002 "{")
                                        (cons 1003 "0")
-                                       (cons 1005 "2A")
+                                       (cons 1005 (cdr (assoc 5 (entget e))))   ; a handle that EXISTS
                                        (cons 1040 1.5)
                                        (cons 1070 42)
                                        (cons 1071 100000)
@@ -91,7 +91,7 @@
   (obf "xdata.1040-real"   (equal (a2 1040 xd) 1.5))
   (obf "xdata.1070-int16"  (equal (a2 1070 xd) 42))
   (obf "xdata.1071-int32"  (equal (a2 1071 xd) 100000))
-  (obf "xdata.1005-handle" (equal (a2 1005 xd) "2A"))
+  (obf "xdata.1005-handle" (equal (a2 1005 xd) (cdr (assoc 5 (entget e)))))
   (entdel e))
 
 (defun run-xdata-multi-app-probe (/ a1 a2app e)

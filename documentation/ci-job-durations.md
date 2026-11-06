@@ -53,6 +53,50 @@ critical path; `build:clautolisp-ci-image` only runs when its inputs change.
 Note CCL is 4× faster than SBCL on the same suites — it is not doing less
 work, it compiles less aggressively.
 
+### With the fasl cache (2026-10-06)
+
+The Lisp lanes above now carry `.fasl-cache` (see
+`scripts/ci-build-cache.sh`): when nothing compiled changed since the job's
+last successful run (an issues/docs/probe-results-only pipeline, a re-run),
+the project's fasls are reused and the compile disappears. Any change to a
+compiled input is a full miss, i.e. the figures above. Measured in the CI
+image on poseidon, the job's script run twice on the same tree, all ten
+lanes at once (so the cold column is inflated by contention):
+
+| job | cold | cache hit |
+|---|---|---|
+| `test:clautolisp:compiler:sbcl` | 240 s | 50 s |
+| `test:autolisp-test:sbcl` | 219 s | 34 s |
+| `test:alfe:sbcl` | 208 s | 25 s |
+| `test:clautolisp:sbcl` | 202 s | 20 s |
+| `test:alfe:conformance` | 184 s | 5 s |
+| `build:alfe:sbcl` | 182 s | 9 s |
+| `test:alfe:spec-coverage` | 178 s | 3 s |
+| `test:clautolisp:ccl` | 57 s | 43 s |
+| `test:alfe:ccl` | 45 s | 36 s |
+| `test:clautolisp:compiler:ccl` | 29 s | 14 s |
+
+`build:alfe:sbcl` alone, not contended: 131 s cold, 5 s hit. Add a second
+or two for the runner to unpack/pack the ~8 MB cache.
+
+### With the LibreDWG cache (2026-10-07)
+
+`verify:packaged-dwg:linux` (manual) carries the `libredwg` kind of the same
+script. Its key is the libredwg submodule commit + `clautolisp/drawing-dwg` +
+the toolchain, so unlike the fasls it also hits across clautolisp commits
+that change other sources -- possible only since LibreDWG stopped carrying
+clautolisp's `git describe` in `config.h`
+(libredwg-version-is-superproject-describe). Measured in the CI image, the
+job's script on two fresh clones (the second at another clautolisp commit,
+with a changed `version.lisp`), the cache restored with its saved times:
+
+| step | cold | cache hit |
+|---|---|---|
+| `make build-libraries` | 164 s (27 C objects) | 1 s (0 objects) |
+
+The cache is ~60 MB (468 files). `make build-programs` (~2 min) is not
+cached in this job.
+
 ## Native Windows lanes (no CAD)
 
 | job | median | range | n |
@@ -97,7 +141,7 @@ time. When the CAD machine is on battery, batch the pushes.
 without it the ceiling is the project default and one hung BricsCAD held the
 runner for 32 minutes on 2026-08-14, with 70 CAD jobs queued behind it. The
 30m figure is chosen from the table above: ~55% headroom over the real
-outlier. See `issues/open/cad-runner-wedged-by-modal-dialog.issue`.
+outlier. See `issues/closed/cad-runner-wedged-by-modal-dialog.issue`.
 
 ## Refreshing these numbers
 

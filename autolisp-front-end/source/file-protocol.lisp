@@ -3,7 +3,7 @@
 ;;;; alfe.protocol.file — the file-IPC driver shared by the BricsCAD
 ;;;; and AutoCAD backends. Phase 2 of the alfe rollout.
 ;;;;
-;;;; Specified by ../issues/open/alfe-file-protocol.issue and by
+;;;; Specified by ../issues/closed/alfe-file-protocol.issue and by
 ;;;; documentation/alfe--specifications.org sections "Protocole REPL
 ;;;; distant" and "Contrat AutoLISP côté runtime".
 ;;;;
@@ -902,7 +902,7 @@ reassembles identically on both sides."
 
 ;;; --- control sender ------------------------------------------------
 
-(defparameter +control-commands+ '("PING" "SHUTDOWN" "INTERRUPT")
+(defparameter +control-commands+ '("PING" "PREPARE-SHUTDOWN" "SHUTDOWN" "INTERRUPT")
   "The full set of out-of-band commands the spec defines for
 control.txt. Listed here so SEND-CONTROL can refuse anything
 unrecognised before it reaches the wire.")
@@ -944,6 +944,7 @@ BACKEND-PROTOCOL-ERROR."
   (let ((path (protocol-session-control-path session))
         (text (case command
                 (:ping      "PING")
+                (:prepare-shutdown "PREPARE-SHUTDOWN")
                 (:shutdown  "SHUTDOWN")
                 (:interrupt "INTERRUPT")
                 (otherwise
@@ -1168,6 +1169,8 @@ single place that knows the product behind a name (`autocad',
                                  version-text
                                  (backend-name "CLAUTOLISP")
                                  (variant nil)
+                                 (open-write-ccs nil)
+                                 (open-write-arg nil)
                                  (assume-no-rest-p
                                   (autocad-target-p backend-name cli-options)))
   "Write the run-common.lsp init script the CAD-side runtime sources
@@ -1194,6 +1197,24 @@ could never have, and then warned five times about its own runtime.
 The dialect warnings are the instrument that says which construct
 needs a per-CAD alternative; honouring them here is what closes that
 loop. Pass the keyword explicitly to override in either direction.
+
+OPEN-WRITE-CCS, when a non-empty string (\"UTF-8\" / \"UTF-16LE\", from
+ALFE.BACKEND.CAD-COMMON:CAD-OPEN-WRITE-CCS), emits
+`(setq *ALFE-OPEN-WRITE-CCS* \"...\")': the bootstrap then rewrites the
+user's OPEN calls into alfe-open*, which appends \",ccs=...\" to a plain
+\"w\"/\"a\" mode (-Efile-write forwarded to the CAD's OPEN). NIL (the
+default) emits nothing, so OPEN calls are never rewritten.
+
+OPEN-WRITE-ARG, when a non-empty string (\"utf8\", AutoCAD only), emits
+`(setq *ALFE-OPEN-WRITE-ARG* \"...\")': alfe-open* then passes it as the
+third argument of a plain \"w\" or \"a\" OPEN when the CAD's LISPSYS is 1
+or 2, and warns once per run (on the error channel) when it is 0.
+
+Either one applies to EVERY action (alfe-efile-write-not-applied-to-l-file):
+code loaded with alfe-load, and every protocol request -- the -l file read
+by the deported loader, -x forms, --main, REPL input. A request's OPEN calls
+are rewritten in its source TEXT (alfe-open-request-text in the bootstrap),
+so the rest of the text reaches the CAD's LOAD as written.
 
 When CLI-OPTIONS is non-NIL, the CLI-derived *AUTOLISP-…* globals
 from transmit-options.issue are emitted at the *top* of the file
@@ -1238,6 +1259,13 @@ Returns the path of the emitted file."
                                             (or version-text "0.0.0")
                                             #'emit-var
                                             :backend-name backend-name))
+              ;; -Efile-write forwarded to the CAD's own OPEN (only when
+              ;; the CAD honours it: see CAD-FILE-ENCODING-PLAN). Absent,
+              ;; the bootstrap never rewrites OPEN.
+              (when (and (stringp open-write-ccs) (plusp (length open-write-ccs)))
+                (format out "(setq *ALFE-OPEN-WRITE-CCS* ~S)~%" open-write-ccs))
+              (when (and (stringp open-write-arg) (plusp (length open-write-arg)))
+                (format out "(setq *ALFE-OPEN-WRITE-ARG* ~S)~%" open-write-arg))
               (flet ((emit-path (hyphen underscore path)
                        (emit-var hyphen underscore
                                  (format nil "~S" (stringify-path path)))))
@@ -1314,14 +1342,25 @@ Returns the path of the emitted file."
             ;; diagnosable tail on disk.
             (format out "~%~
 ;;; --- CAD-side debug logger (gated on *AUTOLISP_DEBUG*) ---~%~
-(defun alfe-debug-log (msg / f path)~%~
+(defun alfe-debug-log (alfe--msg / alfe--f alfe--path)~%~
   (if *AUTOLISP_DEBUG*~%~
     (progn~%~
-      (setq path *AUTOLISP_DEBUGFILE*)~%~
-      (if (and path (/= path \"\"))~%~
+      (setq alfe--path *AUTOLISP_DEBUGFILE*)~%~
+      (if (and alfe--path (/= alfe--path \"\"))~%~
         (progn~%~
-          (setq f (open path \"a\"))~%~
-          (if f (progn (write-line (strcat \"[CAD] \" msg) f) (close f))))))))~%~
+          (setq alfe--f (open alfe--path \"a\"))~%~
+          (if alfe--f (progn (write-line (strcat \"[CAD] \" alfe--msg) alfe--f) (close alfe--f))))))))~%~
+~%~
+;;; --- caught-error message, never NIL (alfe-cad-nil-catch-all-message) ---~%~
+;; AutoCAD answers NIL from vl-catch-all-error-message for some caught~%~
+;; errors (BricsCAD \"\"). The bootstrap defines this same function; it is~%~
+;; emitted here as well because the bootstrap-load diagnostic below runs~%~
+;; before -- or without -- the bootstrap.~%~
+(defun alfe-catch-all-message (alfe--e / alfe--m)~%~
+  (setq alfe--m (vl-catch-all-error-message alfe--e))~%~
+  (if (and (= (type alfe--m) 'STR) (/= alfe--m \"\"))~%~
+    alfe--m~%~
+    \"the engine supplied no message\"))~%~
 (alfe-debug-log \"run-common.lsp evaluated; about to bootstrap runtime\")~%")
             ;; --- Plug-in text, before anything is bootstrapped ---
             ;; Hook :run-common-prelude — AutoLISP source a plug-in wants the
@@ -1345,7 +1384,7 @@ Returns the path of the emitted file."
   (vl-catch-all-apply 'load (list ~S)))~%~
 (if (vl-catch-all-error-p *ALFE-BOOTSTRAP-LOAD-RESULT*)~%  ~
   (alfe-debug-log (strcat \"bootstrap LOAD failed: \"~%    ~
-    (vl-catch-all-error-message *ALFE-BOOTSTRAP-LOAD-RESULT*)))~%  ~
+    (alfe-catch-all-message *ALFE-BOOTSTRAP-LOAD-RESULT*)))~%  ~
   (alfe-debug-log \"bootstrap LOAD succeeded\"))~%"
                         bootstrap-path bootstrap-path)))
             ;; --- Source the CAD-side runtime ---
@@ -1367,7 +1406,7 @@ Returns the path of the emitted file."
   (vl-catch-all-apply 'load (list ~S)))~%~
 (if (vl-catch-all-error-p *ALFE-RUNTIME-LOAD-RESULT*)~%  ~
   (alfe-debug-log (strcat \"runtime LOAD failed: \"~%    ~
-    (vl-catch-all-error-message *ALFE-RUNTIME-LOAD-RESULT*)))~%  ~
+    (alfe-catch-all-message *ALFE-RUNTIME-LOAD-RESULT*)))~%  ~
   (alfe-debug-log \"runtime LOAD succeeded\"))~%"
                          runtime-path runtime-path))
                ;; --- Bridge bootstrap I/O channels onto the file-IPC ---
@@ -1388,41 +1427,57 @@ Returns the path of the emitted file."
                ;; in alfe's stderr channel.
                (format out "~%~
 ;;; --- alfe: bridge bootstrap I/O channels onto the file-IPC ---~%~
-(defun autolisp-emit-user-line (text)~%~
-  (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE* text)~%~
-  text)~%~
-(defun autolisp-emit-user-out (obj)~%~
+(defun autolisp-emit-user-line (alfe--text)~%~
+  (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE* alfe--text)~%~
+  alfe--text)~%~
+(defun autolisp-emit-user-out (alfe--obj)~%~
   (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE*~%~
-                       (autolisp-stdout-text obj))~%~
-  obj)~%~
+                       (autolisp-stdout-text alfe--obj))~%~
+  alfe--obj)~%~
 ;; alfe-princ-prin1-spurious-newlines: princ/prin1 must NOT terminate a~%~
 ;; line -- only terpri / print's framing / an explicit \\n breaks it. This~%~
 ;; RAW emitter appends TEXT to the byte-drained protocol stdout with no~%~
 ;; trailing newline (autolisp-write-string-to-file is char-wise, no \\n).~%~
-(defun autolisp-emit-user-str (text / f)~%~
-  (setq f (open *AUTOLISP_PROTOCOL_STDOUTFILE* \"a\"))~%~
-  (if f (progn (autolisp-write-string-to-file text f) (close f)))~%~
-  text)~%~
-;; With princ/prin1 no longer forcing a newline, a direct (terpri) must route~%~
-;; the line break to the protocol stdout (native terpri writes to the CAD~%~
-;; console, which alfe never drains) -- otherwise consecutive output runs~%~
-;; together. autolisp-princ-newline emits an empty line via emit-user-line.~%~
-(defun terpri () (autolisp-princ-newline))~%~
-(defun autolisp-log-err (text)~%~
-  (autolisp-write-line *AUTOLISP_PROTOCOL_STDERRFILE* text))~%~
+(defun autolisp-emit-user-str (alfe--text / alfe--f)~%~
+  (setq alfe--f (open *AUTOLISP_PROTOCOL_STDOUTFILE* \"a\"))~%~
+  (if alfe--f (progn (autolisp-write-string-to-file alfe--text alfe--f) (close alfe--f)))~%~
+  alfe--text)~%~
+(defun autolisp-log-err (alfe--text)~%~
+  (autolisp-write-line *AUTOLISP_PROTOCOL_STDERRFILE* alfe--text))~%~
 (setq *AUTOLISP_CAPTURE_STDOUT* T)~%~
 ;;; --- alfe: publish current verbosity flags after every eval ---~%~
 ;; alfe-publish-runtime-flags rewrites protocol/runtime-flags.txt in~%~
 ;; truncate mode so the alfe-side logger can mirror runtime-side~%~
 ;; (setq *autolisp-debug* …) toggles between requests, independent~%~
 ;; of whatever the CLI flag was at startup.~%~
-(defun alfe-publish-runtime-flags (/ f)~%~
-  (setq f (open *AUTOLISP_PROTOCOL_FLAGSFILE* \"w\"))~%~
-  (if f~%~
+(defun alfe-publish-runtime-flags (/ alfe--f)~%~
+  (setq alfe--f (open *AUTOLISP_PROTOCOL_FLAGSFILE* \"w\"))~%~
+  (if alfe--f~%~
     (progn~%~
-      (write-line (strcat \"DEBUG=\" (if *AUTOLISP-DEBUG* \"1\" \"0\")) f)~%~
-      (write-line (strcat \"VERBOSE=\" (if *AUTOLISP-VERBOSE* \"1\" \"0\")) f)~%~
-      (close f))))~%~
+      (write-line (strcat \"DEBUG=\" (if *AUTOLISP-DEBUG* \"1\" \"0\")) alfe--f)~%~
+      (write-line (strcat \"VERBOSE=\" (if *AUTOLISP-VERBOSE* \"1\" \"0\")) alfe--f)~%~
+      (close alfe--f))))~%~
+;; The text alfe-eval.lsp gets for FORM. SOURCE, the text FORM was read~%~
+;; from, is used whenever a text for the NORMALISED form can be made from~%~
+;; it and verified (alfe-normalized-source-text in the bootstrap): SOURCE~%~
+;; itself when normalize returned FORM (EQ: nothing was rewritten), or~%~
+;; SOURCE with its princ/print/prin1/load calls padded IN THE TEXT when~%~
+;; normalize rebuilt FORM (AutoCAD: (princ X) -> (princ X nil)) -- each~%~
+;; used only if it reads back EQUAL to the normalised form, so the CAD~%~
+;; never evaluates anything but that, and every real literal keeps the~%~
+;; digits it was written with (alfe-normalised-form-reals-autocad).~%~
+;; Otherwise (no text, or the check fails) the normalised form is printed~%~
+;; with autolisp-form-source-text, reals at the CAD's best precision.~%~
+;; With -Efile-write forwarded, a form that calls OPEN gets its OPEN calls~%~
+;; rewritten into alfe-open* -- in its TEXT when that text is usable~%~
+;; (alfe-open-request-text, alfe-efile-write-not-applied-to-l-file).~%~
+(defun alfe-request-source-text (alfe--form alfe--normalized alfe--source / alfe--text)~%~
+  (cond~%~
+   ((alfe-open-request-p alfe--normalized)~%~
+    (alfe-open-request-text alfe--form alfe--normalized alfe--source))~%~
+   ((setq alfe--text (alfe-normalized-source-text alfe--form alfe--normalized alfe--source))~%~
+    alfe--text)~%~
+   (T (autolisp-form-source-text alfe--normalized))))~%~
 ;; Wrap autolisp-eval-request-form so the publish fires after every~%~
 ;; protocol-driven evaluation. For non-LOAD forms, we no longer call~%~
 ;; `(eval form)' inline — BricsCAD V26 mis-dispatches embedded~%~
@@ -1439,24 +1494,38 @@ Returns the path of the emitted file."
 ;; full diagnosis. Performance: per-request file write + load adds~%~
 ;; a few ms on SSDs, well below the human perception threshold for~%~
 ;; a typed-form REPL turn.~%~
-(defun autolisp-eval-request-form (form / r err path text f)~%~
-  (setq form (autolisp-normalize-princ-call form))~%~
+;;~%~
+;; WHAT is written to alfe-eval.lsp: the form's own SOURCE TEXT whenever~%~
+;; the caller has it (the -l read loop, the protocol request, -x) -- with~%~
+;; the normaliser's padding, if any, applied to that text -- so the CAD~%~
+;; reads the digits the user wrote. Printing the form back instead~%~
+;; rendered every real with PRINC, which keeps 6 significant digits on~%~
+;; AutoCAD and 14 on BricsCAD: (setq a 1.5707963267948966) reached AutoCAD~%~
+;; as (setq a 1.5708). When the form must be printed (no text, or the~%~
+;; padded text does not read back as the normalised form) it goes through~%~
+;; autolisp-form-source-text, which prints reals as precisely as the CAD's~%~
+;; rtos allows. See alfe-cad-transport-rounds-reals and~%~
+;; alfe-normalised-form-reals-autocad.~%~
+(defun autolisp-eval-request-form (alfe--form)~%~
+  (autolisp-eval-request-source alfe--form nil))~%~
+(defun autolisp-eval-request-source (alfe--form alfe--source / alfe--r alfe--err alfe--path alfe--text alfe--f alfe--normalized)~%~
+  (setq alfe--normalized (autolisp-normalize-princ-call alfe--form))~%~
   (cond~%~
-    ((autolisp-load-form-p form)~%~
-      (setq r (autolisp-eval-load-form form)))~%~
+    ((autolisp-load-form-p alfe--normalized)~%~
+      (setq alfe--r (autolisp-eval-load-form alfe--normalized)))~%~
     (T~%~
-      (setq path (strcat *AUTOLISP_PROTOCOL_DIR* \"alfe-eval.lsp\"))~%~
-      (setq text (autolisp-readable-text form))~%~
-      (setq f (open path \"w\"))~%~
-      (if f~%~
+      (setq alfe--path (strcat *AUTOLISP_PROTOCOL_DIR* \"alfe-eval.lsp\"))~%~
+      (setq alfe--text (alfe-request-source-text alfe--form alfe--normalized alfe--source))~%~
+      (setq alfe--f (open alfe--path \"w\"))~%~
+      (if alfe--f~%~
         (progn~%~
           ;; Wrap in a setq so we can recover the form's value after~%~
           ;; load returns. *AUTOLISP-EVAL-RESULT* is reset before~%~
           ;; load so a failed/aborted load yields nil rather than a~%~
           ;; stale previous turn's value.~%~
           (write-line~%~
-            (strcat \"(setq *AUTOLISP-EVAL-RESULT* \" text \")\") f)~%~
-          (close f)~%~
+            (strcat \"(setq *AUTOLISP-EVAL-RESULT* \" alfe--text \")\") alfe--f)~%~
+          (close alfe--f)~%~
           (setq *AUTOLISP-EVAL-RESULT* nil)~%~
           ;; The load's outcome must NOT be discarded. This override~%~
           ;; runs INSIDE the protocol server loop's own guard, and~%~
@@ -1471,14 +1540,17 @@ Returns the path of the emitted file."
           ;; turn, and the error is re-signalled afterwards.~%~
           ;; Re-signalling by MESSAGE keeps~%~
           ;; the loop's quit test working: it recognises a quit with~%~
-          ;; autolisp-quit-signal-p on the message text.~%~
-          (setq err (vl-catch-all-apply 'load (list path)))~%~
-          (if (vl-catch-all-error-p err)~%~
-            (setq err (vl-catch-all-error-message err))~%~
+          ;; autolisp-quit-signal-p on the message text. The message~%~
+          ;; goes through alfe-catch-all-message: AutoCAD answers NIL~%~
+          ;; for some errors, and a NIL alfe--err reported the failed~%~
+          ;; request as DONE OK (alfe-cad-nil-catch-all-message).~%~
+          (setq alfe--err (vl-catch-all-apply 'load (list alfe--path)))~%~
+          (if (vl-catch-all-error-p alfe--err)~%~
+            (setq alfe--err (alfe-catch-all-message alfe--err))~%~
             (progn~%~
-              (setq err nil)~%~
-              (setq r *AUTOLISP-EVAL-RESULT*))))~%~
-        (setq r nil))))~%~
+              (setq alfe--err nil)~%~
+              (setq alfe--r *AUTOLISP-EVAL-RESULT*))))~%~
+        (setq alfe--r nil))))~%~
   (alfe-publish-runtime-flags)~%~
   ;; autolisp-raise, never `error': `error' is a BricsCAD / clautolisp~%~
   ;; extension and AutoCAD has none, so re-signalling with it there~%~
@@ -1487,7 +1559,7 @@ Returns the path of the emitted file."
   ;; escapes vl-catch-all-apply. The bootstrap's autolisp-raise carries~%~
   ;; the message in the error context and aborts portably. See~%~
   ;; alfe-autocad-error-primitive-masks-load-failure.~%~
-  (if err (autolisp-raise err) r))~%~
+  (if alfe--err (autolisp-raise alfe--err) alfe--r))~%~
 ;;; --- alfe: explicit control sentinels via protocol/stdout.txt ---~%~
 ;; The polling mirror above (runtime-flags.txt) re-publishes after~%~
 ;; every eval and works for the (setq *autolisp-debug* …) case, but~%~
@@ -1503,23 +1575,23 @@ Returns the path of the emitted file."
 ;; The sentinel format is `[ALFE-CONTROL] KEY=VALUE'. Currently~%~
 ;; supported keys: DEBUG (1|0). New keys can be added without~%~
 ;; touching alfe by piping further lines through the same channel.~%~
-(defun alfe-set-debugging (on / )~%~
-  (setq *AUTOLISP-DEBUG* on)~%~
-  (setq *AUTOLISP_DEBUG* on)~%~
+(defun alfe-set-debugging (alfe--on / )~%~
+  (setq *AUTOLISP-DEBUG* alfe--on)~%~
+  (setq *AUTOLISP_DEBUG* alfe--on)~%~
   (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE*~%~
-                       (strcat \"[ALFE-CONTROL] DEBUG=\" (if on \"1\" \"0\")))~%~
-  on)~%~
-(defun alfe-set-verbose (on / )~%~
-  (setq *AUTOLISP-VERBOSE* on)~%~
-  (setq *AUTOLISP_VERBOSE* on)~%~
+                       (strcat \"[ALFE-CONTROL] DEBUG=\" (if alfe--on \"1\" \"0\")))~%~
+  alfe--on)~%~
+(defun alfe-set-verbose (alfe--on / )~%~
+  (setq *AUTOLISP-VERBOSE* alfe--on)~%~
+  (setq *AUTOLISP_VERBOSE* alfe--on)~%~
   (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE*~%~
-                       (strcat \"[ALFE-CONTROL] VERBOSE=\" (if on \"1\" \"0\")))~%~
-  on)~%~
+                       (strcat \"[ALFE-CONTROL] VERBOSE=\" (if alfe--on \"1\" \"0\")))~%~
+  alfe--on)~%~
 ;;; --- alfe: variadic shadows when the host supports `&rest' ---~%~
-;; The bootstrap installs 1-arg-only shadows for princ/print/prin1/~%~
-;; prompt and a walk-rewriting `autolisp-normalize-princ-call' that~%~
-;; rewrites empty `(princ)' to `(autolisp-princ-newline)' before~%~
-;; eval. The walk was made cons-identity-preserving in alfe 1.1.10~%~
+;; The bootstrap leaves princ/print/prin1/prompt alone and has a~%~
+;; walk-rewriting `autolisp-normalize-princ-call' that rewrites their~%~
+;; calls onto alfe-owned fixed-arity output functions before eval.~%~
+;; The walk was made cons-identity-preserving in alfe 1.1.10~%~
 ;; (see issues/closed/bricscad-rest-mapcar-lambda-bug.issue), but~%~
 ;; even the cheap pre-walk costs cycles per request.~%~
 ;;~%~
@@ -1533,19 +1605,19 @@ Returns the path of the emitted file."
 ;; the variadic shadows only if both the defun AND the call succeed~%~
 ;; (some hosts accept `&rest' at defun-time but mishandle the bound~%~
 ;; rest-arg, which the call-time check catches).~%~
-(defun alfe-host-supports-rest-p (/ probe call-result)~%~
-  (setq probe~%~
+(defun alfe-host-supports-rest-p (/ alfe--probe alfe--call-result)~%~
+  (setq alfe--probe~%~
     (vl-catch-all-apply~%~
       'eval~%~
-      (list '(defun __alfe-amp-rest-probe (&rest x) x))))~%~
-  (if (vl-catch-all-error-p probe)~%~
+      (list '(defun __alfe-amp-rest-probe (&rest alfe--x) alfe--x))))~%~
+  (if (vl-catch-all-error-p alfe--probe)~%~
     nil~%~
     (progn~%~
-      (setq call-result~%~
+      (setq alfe--call-result~%~
         (vl-catch-all-apply '__alfe-amp-rest-probe (list 1 2 3)))~%~
-      (and (not (vl-catch-all-error-p call-result))~%~
-           (listp call-result)~%~
-           (= 3 (length call-result))))))~%~
+      (and (not (vl-catch-all-error-p alfe--call-result))~%~
+           (listp alfe--call-result)~%~
+           (= 3 (length alfe--call-result))))))~%~
 ;; *ALFE-ASSUME-NO-REST* forces the no-&rest branch on a host that~%~
 ;; does support it. The fallback shadows are the ones AutoCAD runs,~%~
 ;; and a host that has &rest can otherwise never exercise them --~%~
@@ -1567,91 +1639,104 @@ Returns the path of the emitted file."
     ;;                        See issues/closed/alfe-bricscad-open.issue.~%~
     ;;                        autolisp-write-string-to-file lives in the~%~
     ;;                        bootstrap, loaded before this bridge.~%~
-    (defun princ (&rest args)~%~
+    (defun princ (&rest alfe--args)~%~
       (cond~%~
-        ((null args)~%~
+        ((null alfe--args)~%~
           (autolisp-princ-newline))~%~
-        ((cadr args)~%~
-          (autolisp-write-string-to-file (autolisp-str (car args)) (cadr args))~%~
-          (car args))~%~
+        ((cadr alfe--args)~%~
+          (autolisp-write-string-to-file (autolisp-str (car alfe--args)) (cadr alfe--args))~%~
+          (car alfe--args))~%~
         (T~%~
-          (autolisp-emit-user-str (autolisp-str (car args)))~%~
-          (car args))))~%~
+          (autolisp-emit-user-str (autolisp-str (car alfe--args)))~%~
+          (car alfe--args))))~%~
     ;; (print obj) writes a leading newline before obj; (print obj~%~
     ;; filedes) writes the documented leading-newline + trailing-space~%~
     ;; framing to the file. (print) with no args degrades to a bare~%~
     ;; newline.~%~
-    (defun print (&rest args)~%~
+    (defun print (&rest alfe--args)~%~
       (cond~%~
-        ((null args)~%~
+        ((null alfe--args)~%~
           (autolisp-princ-newline))~%~
-        ((cadr args)~%~
+        ((cadr alfe--args)~%~
           (autolisp-write-string-to-file~%~
-            (strcat \"\\n\" (autolisp-stdout-text (car args)) \" \") (cadr args))~%~
-          (car args))~%~
+            (strcat \"\\n\" (autolisp-stdout-text (car alfe--args)) \" \") (cadr alfe--args))~%~
+          (car alfe--args))~%~
         (T~%~
           (autolisp-emit-user-str~%~
-            (strcat \"\\n\" (autolisp-stdout-text (car args)) \" \"))~%~
-          (car args))))~%~
-    (defun prin1 (&rest args)~%~
+            (strcat \"\\n\" (autolisp-stdout-text (car alfe--args)) \" \"))~%~
+          (car alfe--args))))~%~
+    (defun prin1 (&rest alfe--args)~%~
       (cond~%~
-        ((null args)~%~
+        ((null alfe--args)~%~
           (autolisp-emit-user-str (autolisp-stdout-text nil)))~%~
-        ((cadr args)~%~
-          (autolisp-write-string-to-file (autolisp-stdout-text (car args)) (cadr args))~%~
-          (car args))~%~
+        ((cadr alfe--args)~%~
+          (autolisp-write-string-to-file (autolisp-stdout-text (car alfe--args)) (cadr alfe--args))~%~
+          (car alfe--args))~%~
         (T~%~
-          (autolisp-emit-user-str (autolisp-stdout-text (car args)))~%~
-          (car args))))~%~
-    (defun prompt (&rest args)~%~
+          (autolisp-emit-user-str (autolisp-stdout-text (car alfe--args)))~%~
+          (car alfe--args))))~%~
+    (defun prompt (&rest alfe--args)~%~
       (cond~%~
-        ((null args) nil)~%~
+        ((null alfe--args) nil)~%~
         (T~%~
-          (if (car args)~%~
+          (if (car alfe--args)~%~
             (progn~%~
-              (autolisp-emit-user-line (autolisp-str (car args)))~%~
-              (car args))~%~
-            (car args)))))~%~
+              (autolisp-emit-user-line (autolisp-str (car alfe--args)))~%~
+              (car alfe--args))~%~
+            (car alfe--args)))))~%~
+    ;; With princ/prin1 no longer forcing a newline, a direct (terpri) must~%~
+    ;; route the line break to the protocol stdout (native terpri writes to~%~
+    ;; the CAD console, which alfe never drains) -- otherwise consecutive~%~
+    ;; output runs together. autolisp-princ-newline emits an empty line via~%~
+    ;; emit-user-line. (Without &rest, the normaliser rewrites (terpri)~%~
+    ;; onto autolisp-princ-newline instead, and terpri is left alone.)~%~
+    (defun terpri () (autolisp-princ-newline))~%~
     ;; With variadic shadows in place, every documented (princ)~%~
     ;; arity is honoured natively — no source-form rewrite is~%~
     ;; needed. Replace normalize with the identity function so~%~
     ;; the user's form goes through eval with its original~%~
     ;; reader-built cons cells intact (which BricsCAD's mapcar~%~
     ;; relies on to recognise embedded lambdas as functions).~%~
-    (defun autolisp-normalize-princ-call (form) form))~%~
+    (defun autolisp-normalize-princ-call (alfe--form) alfe--form))~%~
   (progn~%~
     (alfe-debug-log~%~
-      \"host lacks &rest; keeping bootstrap 1-arg shadows + walk-rewriting normalize\")~%~
-    ;; The shadows stay 2-arg (obj file) and normalize keeps~%~
-    ;; padding the user's 1-arg calls -- but their OUTPUT framing~%~
-    ;; must match the variadic branch above, and the bootstrap's~%~
-    ;; own bodies route through autolisp-emit-user-line /~%~
-    ;; -user-out, which TERMINATE the line. On this path (the one~%~
-    ;; AutoCAD takes, since its defun has no &rest) that made~%~
-    ;; (princ \"a\") (princ \"b\") come out as \"a<nl>b<nl>\" instead of~%~
-    ;; \"ab\", and (print x) end with a newline instead of the~%~
-    ;; documented trailing space. Same defect as~%~
-    ;; alfe-princ-prin1-spurious-newlines, which was fixed for the~%~
-    ;; &rest branch only. Re-point the three at the RAW emitter so~%~
-    ;; both hosts produce identical bytes.~%~
-    (defun princ (obj file)~%~
-      (if file~%~
-        (progn (autolisp-write-string-to-file (autolisp-str obj) file) obj)~%~
-        (progn (autolisp-emit-user-str (autolisp-str obj)) obj)))~%~
-    (defun print (obj file)~%~
-      (if file~%~
+      \"host lacks &rest; primitives left alone, normalize rewrites onto alfe-owned output functions\")~%~
+    ;; alfe-autocad-fixed-arity-output-shadows. AutoCAD's defun has no~%~
+    ;; &rest nor &optional, so a shadow of princ / print / prin1 could only~%~
+    ;; be FIXED-arity -- and every caller alfe does not rewrite (a VLX or~%~
+    ;; FAS, a file loaded with the native LOAD, a reactor) then failed with~%~
+    ;; \"too few arguments\". So the primitives are NOT redefined here: the~%~
+    ;; normaliser rewrites the calls of the code alfe evaluates onto the~%~
+    ;; alfe-owned autolisp-princ-to / -print-to / -prin1-to (OBJ FILE),~%~
+    ;; autolisp-emit-prompt and autolisp-princ-newline, and other code~%~
+    ;; keeps the CAD's own primitives (its output reaches the CAD's command~%~
+    ;; line and log -- --cad-log -- instead of alfe's stream).~%~
+    ;;~%~
+    ;; Their OUTPUT framing must match the variadic branch above, and the~%~
+    ;; bootstrap's own bodies route through autolisp-emit-user-line /~%~
+    ;; -user-out, which TERMINATE the line: that made (princ \"a\")~%~
+    ;; (princ \"b\") come out as \"a<nl>b<nl>\" instead of \"ab\", and~%~
+    ;; (print x) end with a newline instead of the documented trailing~%~
+    ;; space (alfe-autocad-shadow-path-spurious-newlines). Re-point the~%~
+    ;; three at the RAW emitter so both hosts produce identical bytes.~%~
+    (defun autolisp-princ-to (alfe--obj alfe--file)~%~
+      (if alfe--file~%~
+        (progn (autolisp-write-string-to-file (autolisp-str alfe--obj) alfe--file) alfe--obj)~%~
+        (progn (autolisp-emit-user-str (autolisp-str alfe--obj)) alfe--obj)))~%~
+    (defun autolisp-print-to (alfe--obj alfe--file)~%~
+      (if alfe--file~%~
         (progn~%~
           (autolisp-write-string-to-file~%~
-            (strcat \"\\n\" (autolisp-stdout-text obj) \" \") file)~%~
-          obj)~%~
+            (strcat \"\\n\" (autolisp-stdout-text alfe--obj) \" \") alfe--file)~%~
+          alfe--obj)~%~
         (progn~%~
           (autolisp-emit-user-str~%~
-            (strcat \"\\n\" (autolisp-stdout-text obj) \" \"))~%~
-          obj)))~%~
-    (defun prin1 (obj file)~%~
-      (if file~%~
-        (progn (autolisp-write-string-to-file (autolisp-stdout-text obj) file) obj)~%~
-        (progn (autolisp-emit-user-str (autolisp-stdout-text obj)) obj)))))~%~
+            (strcat \"\\n\" (autolisp-stdout-text alfe--obj) \" \"))~%~
+          alfe--obj)))~%~
+    (defun autolisp-prin1-to (alfe--obj alfe--file)~%~
+      (if alfe--file~%~
+        (progn (autolisp-write-string-to-file (autolisp-stdout-text alfe--obj) alfe--file) alfe--obj)~%~
+        (progn (autolisp-emit-user-str (autolisp-stdout-text alfe--obj)) alfe--obj)))))~%~
 ;; Publish once at startup so alfe sees the initial values even~%~
 ;; before the first request lands.~%~
 (alfe-publish-runtime-flags)~%~
@@ -1687,7 +1772,7 @@ Returns the path of the emitted file."
 (if (vl-catch-all-error-p *AUTOLISP-PROTOCOL-LOOP-RESULT*)~%  ~
   (progn~%    ~
     (setq *ALFE-LOOP-ERRMSG*~%      ~
-      (vl-catch-all-error-message *AUTOLISP-PROTOCOL-LOOP-RESULT*))~%    ~
+      (alfe-catch-all-message *AUTOLISP-PROTOCOL-LOOP-RESULT*))~%    ~
     (alfe-debug-log (strcat \"server-loop CAUGHT error: \" *ALFE-LOOP-ERRMSG*))~%    ~
     (vl-catch-all-apply 'autolisp-protocol-write-stderr~%      ~
       (list (strcat \"ERROR server-loop aborted: \" *ALFE-LOOP-ERRMSG*)))~%    ~
@@ -1741,3 +1826,16 @@ exactly as-checked-in."
         (uiop:copy-file source target)
         (setf (protocol-session-bootstrap-lsp-staged session) target)
         target))))
+
+
+(defun prepare-cad-shutdown (session &key (timeout 5))
+  "Require restoration acknowledgement before closing a live CAD transport."
+  (when (string= (or (read-current-status session) "") "STOPPED")
+    ;; The runtime's legacy stop path also restores before publishing STOPPED.
+    (return-from prepare-cad-shutdown t))
+  (send-control session :prepare-shutdown)
+  (unless (wait-for-status session "RESTORED" :timeout timeout)
+    (error 'backend-protocol-error :backend :file-protocol :phase :shutdown
+           :code :restore-not-acknowledged
+           :message "CAD did not acknowledge session restoration before shutdown."))
+  t)

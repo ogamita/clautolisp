@@ -80,6 +80,15 @@
    #:*document-activation-hook*
    #:session-scheduler
    #:document-namespace-host-document-key
+   #:runtime-session-document-for-host-key
+   #:link-runtime-session-current-document
+   #:request-runtime-document-switch
+   #:forget-runtime-session-document-for-host-key
+   #:runtime-session-pending-document-key
+   #:apply-pending-document-switch
+   #:*document-namespace-created-hook*
+   #:runtime-session-pending-loads
+   #:add-runtime-session-pending-load
    #:make-document-scheduler
    #:document-scheduler-p
    #:document-scheduler-contexts
@@ -124,13 +133,17 @@
    #:with-host-request
    #:autolisp-file
    #:make-autolisp-file
+   #:autolisp-file-external-format
    #:autolisp-format-real
+   #:autolisp-format-real-as
+   #:autolisp-print-real
    #:autolisp-file-stream
    #:autolisp-file-path
    #:autolisp-file-mode
    #:autolisp-ename
    #:autolisp-ename-value
    #:make-autolisp-ename
+   #:autolisp-ename-document
    #:autolisp-pickset
    #:autolisp-pickset-value
    #:make-autolisp-pickset
@@ -163,6 +176,9 @@
    #:autolisp-usubr-site
    #:usubr-site-call-count
    #:usubr-site-compiled-body
+   #:usubr-site-instrumented-body
+   #:usubr-site-debug-metadata
+   #:usubr-site-compiled-instrumented-body
    #:parse-let-binding
    #:emit-bricscad-undocumented-warning
    #:eval-function-form
@@ -203,8 +219,25 @@
    #:autolisp-catch-all-error-message
    #:autolisp-catch-all-error-condition
    #:autolisp-catch-all-error-call-stack
+   #:autolisp-subr-owner
+   #:autolisp-subr-version-gate
+   #:version-gated-operator-gates
+   #:vendor-only-operator-owner
+   #:clautolisp-adopted-operator-p
+   #:*clautolisp-adopted-operators*
+   #:*vendor-only-operators*
+   #:emit-vendor-operator-warning
    #:autolisp-runtime-error
    #:autolisp-runtime-error-code
+   #:text-ink-box
+   #:autolisp-runtime-error-class-for-code
+   ;; the host condition taxonomy (D1 §15)
+   #:host-error
+   #:operation-not-supported-by-this-host
+   #:unavailable-in-headless-context
+   #:operation-not-yet-implemented
+   #:backend-error
+   #:parse-autolisp-distance
    #:autolisp-runtime-error-call-stack
    #:current-autolisp-call-stack
    #:autolisp-runtime-error-message
@@ -248,6 +281,7 @@
    #:*com-point-wrap-hook*
    #:*com-point-unwrap-hook*
    #:*com-objects-wrap-hook*
+   #:without-builtin-layer-hooks
    #:set-autolisp-errno
    #:autolisp-exit-status
    #:set-autolisp-exit-status
@@ -328,6 +362,8 @@
    #:set-autolisp-current-directory
    #:autolisp-support-paths
    #:set-autolisp-support-paths
+   #:autolisp-support-path-string
+   #:set-autolisp-support-path-string
    #:synchronize-process-environment
    #:autolisp-trusted-paths
    #:set-autolisp-trusted-paths
@@ -343,6 +379,7 @@
    #:autolisp-type
    #:autolisp-vl-symbolp
    #:autolisp-vl-symbol-name
+   #:autolisp-symbol-print-name
    #:autolisp-vl-symbol-value
    #:autolisp-function-list-definition
    #:set-autolisp-function-list-definition
@@ -386,6 +423,21 @@
    ;; `[clautolisp-sysvar]' notice (clal-drawing-sysvars-silent-out-of-dialect):
    ;; a clautolisp-only system variable used under a vendor dialect.
    #:emit-clautolisp-sysvar-warning
+   #:emit-errno-setvar-warning
+   #:emit-printer-nil-file-warning
+   #:printer-explicit-nil-file-action
+   #:*printer-nil-file-warned*
+   #:*errno-setvar-warned*
+   ;; encoding-replacement-character-option: the replacement policy and its
+   ;; `[encoding-replacement]' notice.
+   #:parse-encoding-replacement
+   #:encoding-replacement-policy-name
+   #:dialect-encoding-replacement-default
+   #:resolve-encoding-replacement
+   #:emit-encoding-replacement-warning
+   #:*encoding-replacement-warnings-seen*
+   #:+encoding-replacement-sysvar+
+   #:*internal-sysvar-read*
    #:*clautolisp-sysvar-warnings-seen*
    ;; `/...' subfolder-recursion warning, platform-gated to Windows
    ;; (dialect-platform-version-axis): AutoCAD-Windows accepts only the
@@ -490,6 +542,7 @@
    #:squeeze-encoding-name
    #:resolve-encoding-spelling-alias
    #:lookup-autolisp-file-encoding
+   #:lookup-autolisp-encoding-variable
    ;; Encoding-dispatch diagnostics (encoding-dispatch.issue Phase 4).
    #:*enc-diagnostic-stream*
    #:*enc-diagnostic-suppress-p*
@@ -536,6 +589,7 @@
    #:autolisp-variant
    #:autolisp-vla-object
    #:make-autolisp-ename
+   #:autolisp-ename-document
    #:make-autolisp-file
    #:make-autolisp-pickset
    #:make-autolisp-safearray

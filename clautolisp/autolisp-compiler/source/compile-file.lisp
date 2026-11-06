@@ -68,9 +68,68 @@ OBJECT — with symbols interned in THAT image's table."
     ;; CONS rather than LIST: an AutoLISP dotted pair is a normal value
     ;; (a point, an entity association) and rebuilding it with LIST would
     ;; turn (1 . 2) into (1 2) — a change of type, not of representation.
-    (cons `(cons ,(externalize-datum (car object))
-                 ,(externalize-datum (cdr object))))
+    ;;
+    ;; A cons the reader registered with a ;|...|; block keeps it: the
+    ;; rebuilt cons is registered in the loading image too, so a nested
+    ;; DEFUN or SETQ the interpreter runs from a .lap documents its name
+    ;; exactly as it does from the source.
+    ;;
+    ;; Likewise its source positions -- the form's own and, when its car is
+    ;; an atom, that occurrence's -- so a function loaded from a .lap can be
+    ;; debugged by line like one loaded from its source (see
+    ;; CONS-WITH-SOURCE-POSITIONS).
+    (cons (let* ((built `(cons ,(externalize-datum (car object))
+                               ,(externalize-datum (cdr object))))
+                 (doc (gethash object *preceding-docs*))
+                 (position (position->list (clautolisp.source:position-of object)))
+                 (element (position->list
+                           (clautolisp.source:element-position-of object)))
+                 (built (if (or position element)
+                            `(cons-with-source-positions ,built ',position ',element)
+                            built)))
+            (if doc
+                `(cons-with-preceding-doc ,built ,doc)
+                built)))
     (t `',object)))
+
+(defun position->list (position)
+  "A SOURCE-POSITION as a printable list (FILE START-LINE START-COLUMN
+END-LINE END-COLUMN), or nil."
+  (and position
+       (list (clautolisp.source:source-position-file position)
+             (clautolisp.source:source-position-start-line position)
+             (clautolisp.source:source-position-start-column position)
+             (clautolisp.source:source-position-end-line position)
+             (clautolisp.source:source-position-end-column position))))
+
+(defun list->position (list)
+  (and list
+       (destructuring-bind (file start-line start-column end-line end-column) list
+         (clautolisp.source:make-source-position
+          :file file :start-line start-line :start-column start-column
+          :end-line end-line :end-column end-column))))
+
+(defun cons-with-source-positions (cons position element)
+  "Record, in the loading image, the source POSITION of the form CONS and the
+ELEMENT position of its car (both lists from POSITION->LIST, or nil); return
+CONS.
+
+Only when positions are being tracked -- a load under a debugger UI -- which
+is the same rule the reader follows: an ordinary load of a .lap stays as
+allocation-free as an ordinary load of its source."
+  (when clautolisp.source:*track-source-positions*
+    (when position
+      (setf (gethash cons clautolisp.source:*source-position-table*)
+            (list->position position)))
+    (when element
+      (setf (gethash cons clautolisp.source:*source-element-position-table*)
+            (list->position element))))
+  cons)
+
+(defun cons-with-preceding-doc (cons doc)
+  "Register DOC as the ;|...|; documentation of CONS; return CONS."
+  (register-preceding-doc cons doc)
+  cons)
 
 (defun externalize-code (form)
   "Rewrite FORM — Common Lisp code produced by the transpiler — so that it
@@ -101,7 +160,7 @@ longer locate."
 
 ;;;; --- what a loaded .lap does ----------------------------------------
 
-(defun load-compiled-defun (name lambda-list body compiled-body)
+(defun load-compiled-defun (name lambda-list body compiled-body &optional doc)
   "Install, in the loading image, the function a .lap carries.
 
 Reproduces what EVAL-DEFUN-FORM does — make a usubr, bind it to NAME —
@@ -112,12 +171,18 @@ BODY is kept even though COMPILED-BODY is what runs. It is not dead
 weight: it is what the debugger instruments when a session starts, what
 CLAL-COMPILATION-level changes fall back to, and what an error report
 prints. An artefact that dropped it would be faster to load and
-undebuggable."
+undebuggable.
+
+DOC is the text of the ;|...|; block that preceded the DEFUN in the
+source, or nil: kept in the .lap and installed as EVAL-DEFUN-FORM installs
+it -- every DEFUN rewrites its binding's documentation -- so a function
+loaded from a .lap is as documented as one loaded from its source."
   (let* ((context (current-evaluation-context))
          (usubr (make-autolisp-usubr (autolisp-symbol-name name)
                                      lambda-list body context)))
     (setf (autolisp-usubr-compiled-body usubr) compiled-body)
     (set-function name usubr context)
+    (set-binding-doc name (and doc (list :function doc)) context)
     name))
 
 (defun load-compiled-toplevel (thunk)
@@ -144,7 +209,9 @@ undebuggable."
           ,(externalize-datum body)
           (lambda (%context)
             (declare (ignorable %context))
-            ,(externalize-code (transpile-body body '%context)))))
+            ,(externalize-code (transpile-body body '%context)))
+          ,@(let ((doc (gethash form *preceding-docs*)))
+              (and doc (list doc)))))
       ;; Everything else — SETQ at top level, a call, a nested DEFUN
       ;; inside a PROGN — is transpiled as an ordinary form. Operators the
       ;; transpiler does not handle fall back to the interpreter exactly
@@ -159,7 +226,10 @@ undebuggable."
   "Write the Common Lisp source of a .lap for AUTOLISP-FORMS."
   (let ((*package* (find-package '#:clautolisp.autolisp-compiler))
         (*print-readably* nil)
-        (*print-circle* nil)
+        ;; A generated GENSYM can occur in both a binding and its uses.
+        ;; Preserve that identity when the host reads this source back:
+        ;; repeated #:NAME tokens would otherwise become distinct symbols.
+        (*print-circle* t)
         (*print-pretty* nil))
     (format stream ";;;; Generated by clautolisp. Do not edit.~%")
     (format stream "(in-package #:clautolisp.autolisp-compiler)~%~%")
@@ -177,11 +247,24 @@ coalesce literals across the sources and resolve forward references
 between them without a warning at each one.
 
 Returns the artefact's truename, or NIL if the host compiler failed."
-  (let ((forms (loop for source in source-pathnames
-                     append (read-runtime-from-file source))))
+  (let ((forms nil)
+        (generated-text nil))
+    ;; Read with positions tracked, into tables of our own, and write the
+    ;; source while they are bound: the .lap carries the positions
+    ;; (EXTERNALIZE-DATUM), but compiling must not leave them in this
+    ;; image's tables, which only a debug load fills.
+    (let ((clautolisp.source:*track-source-positions* t)
+          (clautolisp.source:*source-position-table*
+            (make-hash-table :test 'eq))
+          (clautolisp.source:*source-element-position-table*
+            (make-hash-table :test 'eq)))
+      (setf forms (loop for source in source-pathnames
+                        append (read-runtime-from-file source)))
+      (setf generated-text (with-output-to-string (out)
+                             (write-lap-source forms out))))
     (uiop:with-temporary-file (:stream stream :pathname generated
                                :type "lisp" :keep nil)
-        (write-lap-source forms stream)
+        (write-string generated-text stream)
         :close-stream
       (multiple-value-bind (fasl warningsp failurep)
           ;; NO :OUTPUT-FILE. The host names its own output, and only

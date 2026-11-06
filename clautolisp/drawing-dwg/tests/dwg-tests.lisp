@@ -109,12 +109,17 @@ NATIVE-LIBRARY-ORDER-PUTS-THE-PROGRAM-BEFORE-THE-DEVELOPMENT-TREE."
     ;; The development tree is always a candidate.
     (is (find-if (lambda (d) (search "drawing-dwg/source/" d)) dirs)
         "the dev tree must be searched: ~S" dirs)
-    ;; When the implementation names the running program, its prefix is
-    ;; searched, with the platform subdirectory appended.
-    (when (clautolisp.drawing.dwg::running-program-prefix-candidates)
-      (is (find-if (lambda (d) (search platform d)) dirs)
-          "a program-derived lib/clautolisp/<os>/<arch>/ must be searched: ~S"
-          dirs))
+    ;; When the implementation names the running program and it is a
+    ;; clautolisp / alfe image, its prefix is searched, with the platform
+    ;; subdirectory appended; a bare Lisp's prefix is not (it is the Lisp's).
+    (let ((exe (clautolisp.drawing.dwg::running-program-pathname)))
+      (when (clautolisp.drawing.dwg::running-program-prefix-candidates exe)
+        (if (clautolisp.drawing.dwg::bare-lisp-runtime-p exe)
+            (is (not (find-if (lambda (d) (search platform d)) dirs))
+                "a bare Lisp's prefix must not be searched: ~S" dirs)
+            (is (find-if (lambda (d) (search platform d)) dirs)
+                "a program-derived lib/clautolisp/<os>/<arch>/ must be searched: ~S"
+                dirs))))
     ;; No duplicates: the same directory must not be probed twice.
     (is (= (length dirs) (length (remove-duplicates dirs :test #'equal))))))
 
@@ -178,6 +183,32 @@ $ACADVER, DWG_ERR_IOERROR for the group-70 overflow."
              (is (zerop (clautolisp.drawing:drawing-entity-count back))
                  "documents what a bare skeleton still loses; see ~
 dwg-round-trip-loses-entities")))
+      (ignore-errors (delete-file out)))))
+
+(test dwg-writes-a-drawing-with-no-version
+  "A drawing created without a version -- what a session's new Drawing.dwg
+is -- saves as DWG with no :VERSION: DWG-WRITE-DRAWING falls back to the
+drawing's own version (NIL, then the codec's newest). That fallback called
+an UNIMPORTED DRAWING-VERSION, an undefined function in this package, and
+every such save failed with COM-SAVE-FAILED; the tests above all carry a
+version, so only verify:packaged-dwg:windows saw it (2026-10-03)."
+  (let ((d (clautolisp.drawing:make-drawing))
+        (out (format nil "/tmp/clal-dwg-noversion-~D.dwg" (get-internal-real-time))))
+    (dolist (spec '((:block-record "*Model_Space" "*Paper_Space")
+                    (:layer "0") (:ltype "BYBLOCK" "BYLAYER" "Continuous")
+                    (:style "Standard") (:dimstyle "Standard")
+                    (:vport "*Active") (:appid "ACAD")))
+      (dolist (name (cdr spec))
+        (clautolisp.drawing:add-table-record
+         d (clautolisp.drawing:make-symbol-table-record
+            :kind (car spec) :name name
+            :data (list (cons 0 (string-upcase (symbol-name (car spec))))
+                        (cons 2 name))))))
+    (is (null (clautolisp.drawing:drawing-version d)) "the premise: no version")
+    (unwind-protect
+         (progn
+           (clautolisp.drawing.dwg:dwg-write-drawing d out)
+           (is (probe-file out)))
       (ignore-errors (delete-file out)))))
 
 (test dwg-parsed-drawing-keeps-its-entities
@@ -380,8 +411,11 @@ older library"))))
                                   dirs)))
     (is (equal dirs (remove-duplicates dirs :test #'equal :from-end t)))
     (is (integerp dev-at) "the development tree is among the candidates")
-    (is (or (null program-at) (< program-at dev-at))
-        "a program-owned directory, when there is one, comes first")))
+    ;; FIVEAM:IS-TRUE, not IS: IS evaluates the arguments of the form it checks to
+    ;; report them, so (< program-at dev-at) ran even when PROGRAM-AT was NIL --
+    ;; never the case until a bare Lisp stopped counting as the program.
+    (fiveam:is-true (or (null program-at) (< program-at dev-at))
+                    "a program-owned directory, when there is one, comes first")))
 
 ;;; --- the libredwg DLL's name is toolchain-dependent ----------------
 ;;;
@@ -413,3 +447,102 @@ older library"))))
   ;; an unrelated DLL beside it is not the dependency either
   (is (null (clautolisp.drawing.dwg::%libredwg-dependency-in
              (list (pathname "/lib/clal_dwg.dll") (pathname "/lib/zlib1.dll"))))))
+
+(test a-bare-lisp-runtime-is-not-the-program
+  "alfe-clautolisp-backend-semantic-parity: a checkout runs in a bare Lisp,
+whose prefix is the Lisp's -- on the macOS runner /opt/local, clautolisp's own
+default install prefix -- so its lib/clautolisp/ must not be searched. A
+clautolisp / alfe executable image's prefix is searched."
+  (dolist (bare '("/opt/local/bin/sbcl" "/usr/local/bin/SBCL"
+                  "/opt/ccl/dx86cl64" "C:/ccl/wx86cl64.exe" "/usr/bin/ccl"))
+    (is (clautolisp.drawing.dwg::bare-lisp-runtime-p (pathname bare))
+        "~A is a bare Lisp" bare))
+  (dolist (program '("/opt/local/libexec/clautolisp/binaries/darwin/arm64/clautolisp-sbcl"
+                     "/opt/local/bin/alfe-sbcl" "C:/clautolisp/bin/clautolisp-sbcl.exe"))
+    (is (not (clautolisp.drawing.dwg::bare-lisp-runtime-p (pathname program)))
+        "~A is a clautolisp program" program))
+  (is (not (clautolisp.drawing.dwg::bare-lisp-runtime-p nil))))
+;;; --- Real vendor templates (.dwt) ---------------------------------
+;;;
+;;; A .dwt is a .dwg (the same format; only the extension differs), and
+;;; PROBE-DRAWING-FORMAT reads it as one. The vendors' templates cannot be
+;;; committed (they are theirs), so this test reads the ones installed where
+;;; it runs, named by CLAUTOLISP_TEST_DWT: entries separated by ";", each
+;;; PATH or PATH|PRODUCT-UNITS[-VERSION] (bricscad-imperial-26, autocad-metric ...). It
+;;; checks what a reader must get right -- the format, the header, the
+;;; named-object dictionary as handle-addressed objects -- and, for an entry
+;;; naming the set the entget-pointers probe measured on that very template
+;;; (cador's *MEASURED-DEFAULT-OBJECTS*), that the NOD's entries ARE those the
+;;; CAD listed and MEASUREMENT is the template's. The test:dwt:macos job sets
+;;; it to thalassa's BricsCAD V26 and AutoCAD 2026 templates. Unset: nothing
+;;; to read, the test passes vacuously.
+
+(defun %vendor-template-entries ()
+  "((PATH . SET-KEY-or-NIL) ...) from CLAUTOLISP_TEST_DWT."
+  (let ((value (uiop:getenv "CLAUTOLISP_TEST_DWT")))
+    (loop for entry in (and value (uiop:split-string value :separator ";"))
+          for (path key) = (uiop:split-string entry :separator "|")
+          unless (string= "" (string-trim " " path))
+            collect (cons (string-trim " " path)
+                          ;; PRODUCT-UNITS[-VERSION] -> (PRODUCT UNITS VERSION), the
+                          ;; key cador's measured sets have had since 2.3.61; no
+                          ;; version: the newest set (CADOR's %MEASURED-SET)
+                          (and key (plusp (length key))
+                               (destructuring-bind (product units &optional version)
+                                   (uiop:split-string key :separator "-")
+                                 (list (intern (string-upcase product) :keyword)
+                                       (intern (string-upcase units) :keyword)
+                                       (and version (parse-integer version :junk-allowed t)))))))))
+
+(defun %dwg-version-number (path)
+  "The release number of the DWG at PATH, from its AC10nn magic (1014 for
+R14, 1015 for R2000 ...), or 0."
+  (with-open-file (in path :element-type '(unsigned-byte 8))
+    (let ((magic (make-array 6 :element-type '(unsigned-byte 8))))
+      (read-sequence magic in)
+      (or (ignore-errors (parse-integer (map 'string #'code-char (subseq magic 2))))
+          0))))
+
+(defparameter *nod-entries-by-release*
+  ;; (ENTRY . FIRST-RELEASE): what a drawing's NOD holds from that release on
+  '(("ACAD_GROUP" . 1012) ("ACAD_LAYOUT" . 1015) ("ACAD_PLOTSTYLENAME" . 1015)
+    ("ACAD_MATERIAL" . 1021)))
+
+(defun %nod-keys (drawing)
+  (mapcar #'car (clautolisp.drawing:dictionary-object-entries
+                 drawing (clautolisp.drawing:drawing-root-dictionary-handle drawing))))
+
+(test dwg-reads-vendor-templates
+  (dolist (entry (%vendor-template-entries))
+    (destructuring-bind (path . key) entry
+      (is (probe-file path) "~A: no such template" path)
+      (when (probe-file path)
+        (let* ((drawing (clautolisp.drawing:read-drawing path))
+               (keys (%nod-keys drawing))
+               (measurement (clautolisp.drawing:drawing-variable drawing "MEASUREMENT")))
+          (is (eq :dwg (clautolisp.drawing:drawing-format drawing)) "~A read as DWG" path)
+          (is (not (null (clautolisp.drawing:drawing-root-dictionary-handle drawing)))
+              "~A: its named-object dictionary" path)
+          ;; the entries its release has (an R14 template has no layouts)
+          (let ((release (%dwg-version-number path)))
+            (loop for (k . since) in *nod-entries-by-release*
+                  when (>= release since)
+                    do (is (member k keys :test #'string=)
+                           "~A (AC~D): NOD lacks ~A (has ~S)" path release k keys))
+            (when (>= release 1015)
+              (let ((layouts (clautolisp.drawing:dictionary-member-handle
+                              drawing (clautolisp.drawing:drawing-root-dictionary-handle drawing)
+                              "ACAD_LAYOUT")))
+                (is (and layouts
+                         (clautolisp.drawing:dictionary-member-handle drawing layouts "Model"))
+                    "~A: no Model layout" path))))
+          (is (member measurement '(0 1)) "~A: MEASUREMENT ~S" path measurement)
+          (when key
+            (let ((measured (clautolisp.cador::%measured-set
+                             key clautolisp.cador::*measured-default-objects*)))
+              (is (not (null measured)) "~A: no measured set ~S" path key)
+              (when measured
+                (is (equal (mapcar #'first measured) keys)
+                    "~A: NOD ~S, but the CAD listed ~S" path keys (mapcar #'first measured))
+                (is (eql (if (eq (second key) :imperial) 0 1) measurement)
+                    "~A: MEASUREMENT ~S for ~S" path measurement key)))))))))

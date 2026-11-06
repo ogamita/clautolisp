@@ -10,7 +10,7 @@
 
 * Introduction
 
-The autolisp-init-files system implements the user-init-file lookup chain (~/.clautolisp{,rc}, ~/.autolisp{,rc}, ~/.config/clautolisp/init, ~/.config/autolisp/init) and the no-init env-var policy.
+The autolisp-init-files system implements the user-init-file lookup chain (~/.autolisp, ~/.config/autolisp/init, ~/.clautolisp, ~/.config/clautolisp/init, and the alfe pair ~/.alfe, ~/.config/alfe/init) and the no-init env-var policy.
 
 This document is a stub seeded by documentation-synchronisation.issue.
 Audience: developer of the project.

@@ -3,6 +3,6 @@
 that names the flag to add."
  :classification :portable
  :argv ("--epure-profile" "Site" "--dry-run")
- :expected-exit 2
+ :expected-exit 64
  :expected-stderr-includes ("--epure-profile" "add --epure")
  :covers-options ("--epure-profile"))

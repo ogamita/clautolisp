@@ -10,10 +10,13 @@
   '(type (getvar "ERRNO"))
   'int)
 
-(deftest-error "sysvar-errno-readonly-setvar-signals"
+;; Documented read-only, yet accepted by AutoCAD 2022, BricsCAD V25 and V26
+;; (errno-setvar-accepted-by-vendors): the write reaches the session errno.
+(deftest "sysvar-errno-setvar-accepted-and-read-back"
   '((operator . "ERRNO") (area . "sysvar") (profile . strict))
-  '(setvar "ERRNO" 0)
-  'sysvar-read-only)
+  '(progn (findfile "/no/such/path/anywhere/at/all")
+          (list (setvar "ERRNO" 0) (getvar "ERRNO")))
+  '(0 0))
 
 (deftest "sysvar-errno-findfile-miss-sets-22"
   '((operator . "ERRNO") (area . "sysvar") (profile . strict))

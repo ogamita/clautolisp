@@ -425,7 +425,16 @@ frame and echoes with the DBG> prefix."
 
 (defun %aldo-template-constructor (context)
   "Build an ALDO activation over the shared debugger session named by CONTEXT's
-TARGET (a DEBUGGER-SESSION or a (:session :ui :hit) plist)."
+TARGET (a DEBUGGER-SESSION or a (:session :ui :hit :input :output) plist).
+
+The singleton split (windows-and-interactor-templates.issue): the DEBUGGER — the
+session and its engine — is the one shared backend; the aldo INSTANCE is the
+command side, and its per-instance state is its own UI object: prompt, `display'
+list, browse stack, navigation history, gdb-style step repeat. When the target
+names no :UI, the instance gets a FRESH dumb-ui of its own (over the plist's
+:INPUT / :OUTPUT streams, else the standard ones), so two aldo instances over
+one session never share that state. A :UI given explicitly is used as is (the
+stop's own UI, for the instance a stop pushes)."
   (let ((target (clautolisp.interactor:template-context-target context)))
     (multiple-value-bind (session ui hit)
         (typecase target
@@ -433,8 +442,14 @@ TARGET (a DEBUGGER-SESSION or a (:session :ui :hit) plist)."
           (debugger-session (values target nil nil))
           (cons (values (getf target :session) (getf target :ui) (getf target :hit)))
           (t (values target nil nil)))
-      (make-activation *aldo*
-                       (make-aldo-state :ui ui :session session :hit hit)))))
+      (make-activation
+       *aldo*
+       (make-aldo-state
+        :ui (or ui
+                (make-dumb-ui
+                 :input  (or (and (consp target) (getf target :input))  *standard-input*)
+                 :output (or (and (consp target) (getf target :output)) *standard-output*)))
+        :session session :hit hit)))))
 
 (clautolisp.interactor:define-interactor-template "aldo"
   :display-name "Aldo debugger"

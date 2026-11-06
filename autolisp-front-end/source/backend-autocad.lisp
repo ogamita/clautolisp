@@ -1,7 +1,7 @@
 ;;;; autolisp-front-end/source/backend-autocad.lisp
 ;;;;
 ;;;; The AutoCAD backend — Phase 3 of the alfe rollout. Specified
-;;;; by ../issues/open/alfe-backend-autocad.issue and the spec's
+;;;; by ../issues/closed/alfe-backend-autocad.issue and the spec's
 ;;;; "Backend autocad" section.
 ;;;;
 ;;;; AutoCAD is Windows-only; on macOS / Linux this backend's DETECT
@@ -61,13 +61,18 @@
                 #:vbs-escape
                 #:expand-plugin-slots
                 #:launcher-lines
+                #:cad-com-mode
+                #:check-com-attach-pid
                 #:call-launcher
                 #:discover-runtime-lsp
                 #:discover-bootstrap-lsp
                 #:require-runtime-assets
                 #:drive-protocol-actions
                 #:launcher-state-description
-                #:kill-engine-process)
+                #:kill-engine-process
+                #:make-console-capture
+                #:console-capture-launch-keys
+                #:process-console-text)
   (:import-from #:alfe.logging
                 #:log-debug
                 #:log-verbose
@@ -228,7 +233,7 @@ Order of precedence:
      install;
   5. NIL, in which case the caller raises :no-dwg.
 
-Step 3 is new (issues/open/empty-ressource.issue, pjb 2026-08-30). Every
+Step 3 is new (issues/closed/empty-ressource.issue, pjb 2026-08-30). Every
 run gets its OWN drawing because sharing one produces modal dialogs --
 \"in use by another instance\", \"open read-only?\" -- when a previous CAD
 still holds the lock or has modified the file, and a modal dialog in a
@@ -590,7 +595,7 @@ The next job reads this file and can end what the last one left."
   ;; of ever moving one of these characters into code.
   "' AutoCAD COM bridge - emitted by alfe.backend.autocad
 ' Placeholders: ${RUNLSPFILE}, ${STATUSFILE}, ${ERRFILE},
-' ${COMMODE}, ${DEBUGFILE}, ${WAIT_SECS}, ${PROGID}.
+' ${COMMODE}, ${DEBUGFILE}, ${WAIT_SECS}, ${LAUNCH_SECS}, ${PROGID}.
 ' Mirrors the legacy bash wrapper's bridge-autocad.vbs; preserve
 ' the WaitQuiescent + GetAcadState handshake - it's the hard-won
 ' piece that keeps the bridge from racing AutoCAD's UI init.
@@ -598,7 +603,8 @@ The next job reads this file and can end what the last one left."
 Option Explicit
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile, waitSecs
 Dim attached, created, rc, statusReadyFlag, flagsFile, progId, createdFile
-Dim errNumber, errDescription, lastTouchError
+Dim errNumber, errDescription, lastTouchError, pidsBefore
+Dim launchSecs, serverCmd, launchStage
 
 Set fso = CreateObject(\"Scripting.FileSystemObject\")
 runFile     = \"${RUNLSPFILE}\"
@@ -615,6 +621,10 @@ createdFile = \"${CREATEDFILE}\"
 ' it last (alfe-autocad-cad-selection-ignores-com-progid).
 progId      = \"${PROGID}\"
 waitSecs    = ${WAIT_SECS}
+' How long our OWN launch of AutoCAD may take to register: alfe's ready
+' timeout. CreateObject cannot be given one -- DCOM waits 120 s, fixed.
+launchSecs  = ${LAUNCH_SECS}
+launchStage = \"\"
 attached    = False
 created     = False
 statusReadyFlag = False
@@ -654,9 +664,35 @@ End Sub
 '
 ' The acad.exe that COM starts is a child of the COM service, not of
 ' cscript, so there is no process tree to walk: WMI is how it is found.
-Sub RecordCreatedProcesses(path)
+'
+' ONLY THE PROCESSES THAT APPEARED (alfe-cad-launch-new-by-default): alfe
+' now launches a new AutoCAD even when one is running, so \"every acad.exe
+' started with /Automation\" can include an instance this run did not
+' create -- an earlier run's, or a person's. BEFORE is the list of the
+' acad.exe PIDs taken just before CreateObject (AcadPidList); a PID in it
+' is not ours. Each new one also goes to the flags file as CREATEDPID=,
+' which is how alfe's shutdown knows which acad.exe is its own.
+Function AcadPidList()
+  Dim wmi, processes, proc, s
+  s = \",\"
+  On Error Resume Next
+  Set wmi = GetObject(\"winmgmts:\\\\.\\root\\cimv2\")
+  If Err.Number <> 0 Then
+    Err.Clear
+    AcadPidList = s
+    Exit Function
+  End If
+  Set processes = wmi.ExecQuery(\"SELECT ProcessId FROM Win32_Process WHERE Name = 'acad.exe'\")
+  For Each proc In processes
+    s = s & proc.ProcessId & \",\"
+  Next
+  Err.Clear
+  On Error GoTo 0
+  AcadPidList = s
+End Function
+
+Sub RecordCreatedProcesses(path, before)
   Dim wmi, processes, proc
-  If path = \"\" Then Exit Sub
   On Error Resume Next
   Set wmi = GetObject(\"winmgmts:\\\\.\\root\\cimv2\")
   If Err.Number <> 0 Then
@@ -667,8 +703,10 @@ Sub RecordCreatedProcesses(path)
   Set processes = wmi.ExecQuery( _
     \"SELECT ProcessId, CreationDate, CommandLine FROM Win32_Process WHERE Name = 'acad.exe'\")
   For Each proc In processes
-    If InStr(1, proc.CommandLine & \"\", \"/Automation\", 1) > 0 Then
-      AppendLine path, \"PID=\" & proc.ProcessId & \" CREATED=\" & proc.CreationDate
+    If InStr(1, proc.CommandLine & \"\", \"/Automation\", 1) > 0 _
+       And InStr(before, \",\" & proc.ProcessId & \",\") = 0 Then
+      If path <> \"\" Then AppendLine path, \"PID=\" & proc.ProcessId & \" CREATED=\" & proc.CreationDate
+      If flagsFile <> \"\" Then AppendLine flagsFile, \"CREATEDPID=\" & proc.ProcessId
       VBSDebug \"recorded created acad.exe pid \" & proc.ProcessId
     End If
   Next
@@ -727,6 +765,81 @@ errNumber = 0
 errDescription = \"\"
 lastTouchError = \"\"
 
+' THE COMMAND COM ITSELF WOULD RUN for progId: the LocalServer32 of its
+' CLSID, normally \"...\\acad.exe\" /Automation. Empty when it cannot be
+' read, and the caller then falls back to CreateObject.
+Function ServerCommand(id)
+  Dim sh, clsid, cmd
+  ServerCommand = \"\"
+  On Error Resume Next
+  Set sh = CreateObject(\"WScript.Shell\")
+  clsid = sh.RegRead(\"HKCR\\\" & id & \"\\CLSID\\\")
+  If Err.Number = 0 Then cmd = sh.RegRead(\"HKCR\\CLSID\\\" & clsid & \"\\LocalServer32\\\")
+  If Err.Number <> 0 Then
+    VBSDebug \"LocalServer32 of \" & id & \" unreadable: \" & Err.Description
+    Err.Clear
+    On Error GoTo 0
+    Exit Function
+  End If
+  On Error GoTo 0
+  cmd = sh.ExpandEnvironmentStrings(cmd)
+  If InStr(1, cmd, \"/Automation\", 1) = 0 Then cmd = cmd & \" /Automation\"
+  ServerCommand = cmd
+End Function
+
+' START THE SERVER OURSELVES AND WAIT FOR IT, instead of CreateObject.
+' CreateObject has DCOM start the server and wait for it to register its
+' class object -- for 120 s, fixed by Windows. AutoCAD registers at the END
+' of its start, and on PF5S26BT (2026-11-05) that took 53 s to more than
+' 120 s: past 120 s CreateObject returned 429 and abandoned the AutoCAD it
+' had started, whatever --timeout said
+' (autocad-com-launch-bounded-by-dcom-timeout). Here the wait is
+' launchSecs, and a launched process that exits ends it at once. Returns
+' the application, or Nothing with launchStage, errNumber and
+' errDescription saying why.
+Function LaunchAndWait(cmd, secs)
+  Dim sh, proc, deadline, obj
+  Set LaunchAndWait = Nothing
+  Set obj = Nothing
+  Set sh = CreateObject(\"WScript.Shell\")
+  On Error Resume Next
+  Set proc = sh.Exec(cmd)
+  errNumber = Err.Number
+  errDescription = Err.Description
+  Err.Clear
+  On Error GoTo 0
+  If errNumber <> 0 Then
+    launchStage = \"launch\"
+    Exit Function
+  End If
+  VBSDebug \"launched \" & cmd & \" as pid \" & proc.ProcessID & \"; waiting up to \" & secs & \" s\"
+  deadline = DateAdd(\"s\", secs, Now)
+  Do While Now < deadline
+    On Error Resume Next
+    Set obj = GetObject(, progId)
+    errNumber = Err.Number
+    errDescription = Err.Description
+    Err.Clear
+    On Error GoTo 0
+    If errNumber = 0 And Not (obj Is Nothing) Then
+      VBSDebug \"pid \" & proc.ProcessID & \" registered \" & progId
+      Set LaunchAndWait = obj
+      Exit Function
+    End If
+    If proc.Status <> 0 Then
+      launchStage = \"launch-exited\"
+      errNumber = proc.ExitCode
+      errDescription = \"acad.exe (pid \" & proc.ProcessID & \") exited with code \" & _
+        proc.ExitCode & \" before registering \" & progId
+      Exit Function
+    End If
+    WScript.Sleep 1000
+  Loop
+  launchStage = \"launch-timeout\"
+  errDescription = \"acad.exe (pid \" & proc.ProcessID & \") did not register \" & _
+    progId & \" within \" & secs & \" s\"
+End Function
+
 ' RPC_E_CALL_REJECTED (&H80010001, \"L'appel a ete rejete par l'appele\")
 ' and RPC_E_SERVERCALL_RETRYLATER (&H8001010A) do not mean the server is
 ' broken: they mean it is BUSY -- a modal dialog, a load in progress, a
@@ -776,20 +889,36 @@ If app Is Nothing Then
     EmitFlags False, False
     WScript.Quit 4
   End If
-  On Error Resume Next
-  Set app = CreateObject(progId)
-  errNumber = Err.Number
-  errDescription = Err.Description
-  If errNumber <> 0 Then
-    AppendLine errFile, \"ERROR COM bridge: could not launch \" & progId & \": \" & errDescription
-    RecordComError \"createobject\", errNumber, errDescription
-    EmitFlags False, False
-    WScript.Quit 4
+  pidsBefore = AcadPidList()
+  VBSDebug \"acad.exe before CreateObject: \" & pidsBefore
+  serverCmd = ServerCommand(progId)
+  ' Our own launch needs GetObject to find OUR instance, so only when no
+  ' acad.exe runs: beside another one, GetObject could return that one, and
+  ' CreateObject (a new instance, alfe-cad-launch-new-by-default) is kept.
+  If pidsBefore = \",\" And serverCmd <> \"\" Then
+    Set app = LaunchAndWait(serverCmd, launchSecs)
+    If app Is Nothing Then
+      AppendLine errFile, \"ERROR COM bridge: could not launch \" & progId & \": \" & errDescription
+      RecordComError launchStage, errNumber, errDescription
+      EmitFlags False, False
+      WScript.Quit 4
+    End If
+  Else
+    On Error Resume Next
+    Set app = CreateObject(progId)
+    errNumber = Err.Number
+    errDescription = Err.Description
+    If errNumber <> 0 Then
+      AppendLine errFile, \"ERROR COM bridge: could not launch \" & progId & \": \" & errDescription
+      RecordComError \"createobject\", errNumber, errDescription
+      EmitFlags False, False
+      WScript.Quit 4
+    End If
+    Err.Clear
+    On Error GoTo 0
   End If
-  Err.Clear
-  On Error GoTo 0
   created = True
-  RecordCreatedProcesses createdFile
+  RecordCreatedProcesses createdFile, pidsBefore
 End If
 
 If Not TouchApp(app, 10) Then
@@ -938,14 +1067,17 @@ start bridge used, so the instance quit is the instance created."
   path)
 
 (defun read-com-flags (workdir)
-  "Return (values ATTACHED-P CREATED-P) from the bridge's flags file.
+  "Return (values ATTACHED-P CREATED-P CREATED-PIDS) from the bridge's flags
+file. CREATED-PIDS are the acad.exe processes that appeared with this run's
+CreateObject (CREATEDPID= lines).
 
-Both NIL when the file is missing or unreadable — which is the SAFE
+All NIL when the file is missing or unreadable — which is the SAFE
 default: alfe quits only what it can SHOW it created, so a bridge that
 died before reporting leaves AutoCAD alone."
   (let ((path (merge-pathnames "com-flags.txt" workdir))
         (attached nil)
-        (created nil))
+        (created nil)
+        (pids '()))
     (when (probe-file path)
       (ignore-errors
        (with-open-file (in path :direction :input :external-format :utf-8)
@@ -953,8 +1085,30 @@ died before reporting leaves AutoCAD alone."
                while line
                do (let ((trimmed (string-trim '(#\Space #\Tab #\Return) line)))
                     (cond ((string= trimmed "ATTACHED=1") (setf attached t))
-                          ((string= trimmed "CREATED=1")  (setf created t))))))))
-    (values attached created)))
+                          ((string= trimmed "CREATED=1")  (setf created t))
+                          ((and (> (length trimmed) 11)
+                                (string= "CREATEDPID=" trimmed :end2 11))
+                           (let ((pid (parse-integer trimmed :start 11
+                                                             :junk-allowed t)))
+                             (when pid (pushnew pid pids))))))))))
+    (values attached created (nreverse pids))))
+
+(defun windows-image-pids (image &key (launcher #'uiop:run-program))
+  "The PIDs of the running processes named IMAGE (\"acad.exe\"), from
+TASKLIST's CSV output; NIL when TASKLIST cannot be run."
+  (let ((text (ignore-errors
+               (funcall launcher
+                        (list "tasklist" "/FI" (format nil "IMAGENAME eq ~A" image)
+                              "/FO" "CSV" "/NH")
+                        :output :string :error-output nil :ignore-error-status t))))
+    (when text
+      (loop for line in (uiop:split-string text :separator '(#\Newline))
+            for fields = (uiop:split-string (string-trim '(#\Return) line)
+                                            :separator '(#\,))
+            for pid = (and (second fields)
+                           (parse-integer (string-trim "\"" (second fields))
+                                          :junk-allowed t))
+            when pid collect pid))))
 
 (defun emit-bridge-vbs (path
                         &key runtime-load-path
@@ -964,15 +1118,17 @@ died before reporting leaves AutoCAD alone."
                              flags-path
                              progid
                              (created-registry (created-cad-registry-path))
-                             (com-mode "auto")
-                             (wait-secs 60))
+                             (com-mode "launch")
+                             (wait-secs 60)
+                             (launch-secs 300))
   (let ((text (alfe.plugin:run-hook
                :launcher-script
                ;; The plug-in slots are filled AFTER the placeholders: their
                ;; lines are VBScript already and must not be quote-doubled.
                (expand-plugin-slots
                 (substitute-placeholders
-                 *bridge-autocad-vbs-template*
+                 (alfe.backend.cad-common::instrument-owned-com-bridge
+                  *bridge-autocad-vbs-template* path)
                  `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
@@ -983,7 +1139,8 @@ died before reporting leaves AutoCAD alone."
                    ("CREATEDFILE" . ,(if created-registry
                                          (uiop:native-namestring created-registry)
                                          ""))
-                   ("WAIT_SECS"   . ,(format nil "~D" wait-secs))))
+                   ("WAIT_SECS"   . ,(format nil "~D" wait-secs))
+                   ("LAUNCH_SECS" . ,(format nil "~D" (max 1 (ceiling launch-secs))))))
                 :automation)
                :kind :vbs :variant :automation :path path)))
     (with-open-file (out path :direction :output
@@ -1071,6 +1228,25 @@ page changes it). Named so the value lives in ONE place. The drain decodes
 the channel with it; the robust auto-detect cascade (:AUTO) stays as the
 safety net for any target that turns out NOT to be UTF-16LE.")
 
+(defvar *autocad-console-option-warned* nil
+  "True once the -Econsole-is-ignored warning was given this run.")
+
+(defun %autocad-requested-stdio-encoding (cli-options)
+  "The codec the user asked for on AutoCAD's stdio, or NIL. Only -Ecadstdio
+counts: the console is FIXED by the product (accoreconsole: UTF-16LE), so an
+explicit -Econsole is warned about and ignored (encoding-situations-cli-
+options, section 4), and the bare -E does not reach this boundary at all --
+a blanket -E UTF-8 used to make alfe read the UTF-16LE pipe as UTF-8."
+  (when cli-options
+    (when (and (or (clautolisp.autolisp-cli:cli-situation-encoding-explicit cli-options "console" "out")
+                   (clautolisp.autolisp-cli:cli-situation-encoding-explicit cli-options "console" "in"))
+               (not *autocad-console-option-warned*))
+      (setf *autocad-console-option-warned* t)
+      (log-warn "backend AUTOCAD: the console encoding is fixed by the product (accoreconsole: ~
+UTF-16LE); -Econsole is ignored. Use -Ecadstdio to force the codec alfe decodes with."))
+    (or (clautolisp.autolisp-cli:cli-situation-encoding-explicit cli-options "cadstdio" "out")
+        (clautolisp.autolisp-cli:cli-situation-encoding-explicit cli-options "cadstdio"))))
+
 (defun %autocad-console-decode-encoding (cli-options variant)
   "How the DRAIN decodes the protocol stdout/stderr FILES. These are written by
 the AutoLISP runtime (open + write-line), NOT by accoreconsole itself, so they
@@ -1081,50 +1257,40 @@ AUTOCAD-CONSOLE-EXTERNAL-FORMAT). The files are self-describing, so decode with
 the robust :AUTO cascade (it detects UTF-16LE via the interleaved NULs, else
 UTF-8/Latin-1, and never signals). Forcing :UTF-16LE here decoded the UTF-8
 payload as UTF-16 and turned every line into CJK mojibake -- the real cause of
-autocad-no-rest-output-capture. An explicit -Econsole / -Ecadstdio still forces
-a codec for a target that genuinely needs one."
+autocad-no-rest-output-capture. An explicit -Ecadstdio still forces a codec for
+a target that genuinely needs one; -Econsole is warned about and ignored."
   (declare (ignore variant))
-  (let ((requested (alfe.cli:resolved-console-encoding cli-options)))
-    (if (eq requested :auto)
-        :auto
-        (clautolisp.autolisp-cli:encoding-keyword requested))))
+  (let ((requested (%autocad-requested-stdio-encoding cli-options)))
+    (if requested
+        (clautolisp.autolisp-cli:encoding-keyword requested)
+        :auto)))
 
 (defun autocad-console-external-format (&optional cli-options)
   "The external-format for reading accoreconsole's own stdout/stderr PIPE
 (diagnostics). Precedence: an explicit -Econsole / -Ecadstdio in CLI-OPTIONS,
 then $ALFE_AUTOCAD_CONSOLE_ENCODING, then the robust default :ISO-8859-1 — a
 total decoder that never signals, so a non-UTF-8 Windows console cannot crash
-bootstrap; SLURP-PROCESS-STREAM strips UTF-16LE's interleaved NULs. The
+bootstrap; SLURP-PROCESS-STREAM strips UTF-16LE's interleaved NULs. -Econsole
+and the bare -E do not count here (%AUTOCAD-REQUESTED-STDIO-ENCODING). The
 protocol PAYLOAD is decoded separately by the drain (DECODE-CONSOLE-OCTETS,
 never signals) with %AUTOCAD-CONSOLE-DECODE-ENCODING — this is only the raw
 pipe read, so the default stays the robust total decoder (G2)."
-  (let ((requested (and cli-options
-                        (let ((e (alfe.cli:resolved-console-encoding cli-options)))
-                          (unless (eq e :auto) e))))
+  (let ((requested (%autocad-requested-stdio-encoding cli-options))
         (env (uiop:getenv "ALFE_AUTOCAD_CONSOLE_ENCODING")))
     (cond
       (requested (clautolisp.autolisp-cli:encoding-keyword requested))
       ((and env (plusp (length env))) (intern (string-upcase env) :keyword))
       (t :iso-8859-1))))
 
-(defun slurp-process-stream (stream)
-  (if (null stream)
-      ""
-      (with-output-to-string (out)
-        (loop for ch = (read-char stream nil nil)
-              while ch
-              unless (char= ch #\Null)
-                do (write-char ch out)))))
-
-(defun process-exit-details (process-info)
-  (let ((exit-code (ignore-errors (uiop:wait-process process-info)))
-        (stdout (slurp-process-stream
-                 (ignore-errors (uiop:process-info-output process-info))))
-        (stderr (slurp-process-stream
-                 (ignore-errors (uiop:process-info-error-output process-info)))))
+(defun process-exit-details (process-info &optional capture)
+  "Exit code and console text of the dead engine PROCESS-INFO. The console is
+read from CAPTURE, the files START-ENGINE redirected it into (never a pipe
+left undrained while the engine ran -- alfe-accoreconsole-console-pipe-not-
+drained), plus any pipe a test launcher returned; UTF-16LE's NULs stripped."
+  (let ((exit-code (ignore-errors (uiop:wait-process process-info))))
     (list :exit-code exit-code
-          :stdout stdout
-          :stderr stderr)))
+          :stdout (process-console-text process-info :stdout :capture capture)
+          :stderr (process-console-text process-info :stderr :capture capture))))
 
 (defun %com-field (text name)
   "The value of a NAME=… line in TEXT (the bridge's error file), or NIL."
@@ -1209,7 +1375,8 @@ started is what ATTACHED/CREATED say.")
           (format out "~%  Server asked for: ~A (override with $AUTOCAD_PROGID)."
                   progid))))))
 
-(defun wait-for-ready-or-process-exit (protocol process-info timeout)
+(defun wait-for-ready-or-process-exit (protocol process-info timeout
+                                       &optional capture)
   (let ((start (get-internal-real-time))
         (interval-ms 50)
         (last-seen nil)
@@ -1231,7 +1398,7 @@ started is what ATTACHED/CREATED say.")
           (return (values :ready (elapsed) last-seen nil)))
         (when (and process-info
                    (not (uiop:process-alive-p process-info)))
-          (let ((details (process-exit-details process-info)))
+          (let ((details (process-exit-details process-info capture)))
             (alfe.protocol.file:stream-debug-log-to-logger protocol)
             (return (values :exited (elapsed) last-seen details))))
         (when (>= (elapsed) timeout)
@@ -1253,7 +1420,12 @@ started is what ATTACHED/CREATED say.")
   (variant          nil)
   ;; The COM server this run asked for, kept so SHUTDOWN quits the same
   ;; one (alfe-autocad-cad-selection-ignores-com-progid).
-  (progid           nil))
+  (progid           nil)
+  ;; What TRUST-WORKDIR-FOR-RUN added to TRUSTEDPATHS, for UNTRUST-WORKDIR
+  ;; (alfe-cad-workdir-not-in-trustedpaths). NIL when nothing was added.
+  (trusted          nil)
+  ;; The files the engine's console is redirected into (MAKE-CONSOLE-CAPTURE).
+  (console-capture  nil))
 
 (defmethod prepare-workdir ((backend autocad-backend) workdir-root &key)
   (let ((workdir (if workdir-root
@@ -1267,15 +1439,31 @@ started is what ATTACHED/CREATED say.")
                               interactive-p
                               load-encoding
                               io-encoding
+                              source-encoding
+                              file-read-encoding file-write-encoding
+                              console-in-encoding console-out-encoding
+                              cadstdio-in-encoding cadstdio-out-encoding
+                              log-encoding
+                              terminal-in-encoding terminal-out-encoding
                               cli-options version-text
                               (mode :auto)
                               (dwg nil)
                               (launcher #'uiop:launch-program)
                               (wait-for-ready t)
                               (ready-timeout 60))
-  ;; LOAD-ENCODING accepted but ignored: the AutoCAD-resident
-  ;; AutoLISP runtime owns the source-file encoding policy.
-  (declare (ignore dialect host mock-input load-encoding io-encoding))
+  ;; The encoding keywords are accepted but not read here: the AutoCAD
+  ;; boundaries resolve their situations from CLI-OPTIONS where they are
+  ;; applied (-Esource on each -l action for source staging,
+  ;; %AUTOCAD-REQUESTED-STDIO-ENCODING for the
+  ;; console/cadstdio codecs, with the -Econsole warning; CAD-OPEN-WRITE-CCS
+  ;; for -Efile: UTF-8 written through OPEN's "utf8" at LISPSYS 1/2, the
+  ;; rest warned), and the
+  ;; terminal is alfe's own (APPLY-TERMINAL-ENCODING).
+  (declare (ignore dialect host mock-input load-encoding io-encoding
+                   source-encoding file-read-encoding file-write-encoding
+                   console-in-encoding console-out-encoding
+                   cadstdio-in-encoding cadstdio-out-encoding
+                   log-encoding terminal-in-encoding terminal-out-encoding))
   (log-verbose "backend AUTOCAD: starting engine (mode ~A)" mode)
   (log-debug "backend AUTOCAD: workdir = ~A" workdir)
   ;; Parity with the BricsCAD backend: let --timeout / $AUTOLISP_WAIT_SECS
@@ -1318,7 +1506,12 @@ started is what ATTACHED/CREATED say.")
                 :cli-options cli-options
                 :version-text version-text
                 :backend-name "AUTOCAD"
-                :variant variant)))
+                :variant variant
+                ;; -Efile-write UTF-8: OPEN's third argument "utf8", which
+                ;; the CAD side passes only at LISPSYS 1/2 (it warns at 0);
+                ;; anything else only warns (CAD-FILE-ENCODING-PLAN).
+                :open-write-arg (nth-value 1 (alfe.backend.cad-common:cad-open-write-ccs
+                                              :autocad cli-options)))))
         ;; G2: how the drain decodes AutoCAD's console output. accoreconsole
         ;; (batch) is UTF-16LE, product-fixed (conflicting -Econsole warned +
         ;; ignored); the GUI path honours the user's request, else :AUTO.
@@ -1360,6 +1553,9 @@ started is what ATTACHED/CREATED say.")
                       ;; (alfe-autocad-progid-registry-probe-fails).
                       :explicit-p (and named t))))
              (log-verbose "backend AUTOCAD: COM server = ~A" progid)
+             (let ((pid (and cli-options (alfe.cli:cli-options-attach-pid cli-options))))
+               (when pid
+                 (check-com-attach-pid :autocad progid pid workdir)))
              (emit-bridge-vbs
               vbs
               :runtime-load-path run-common
@@ -1367,7 +1563,8 @@ started is what ATTACHED/CREATED say.")
               :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
               :flags-path  (merge-pathnames "com-flags.txt" workdir)
               :progid      progid
-              :com-mode    (or (uiop:getenv "AUTOCAD_COM_MODE") "auto"))
+              :com-mode    (cad-com-mode cli-options "AUTOCAD_COM_MODE")
+              :launch-secs ready-timeout)
              (log-debug "backend AUTOCAD: wrote bridge-autocad.vbs -> ~A" vbs)))
           (:batch
            (let ((scr (merge-pathnames "run.scr" workdir)))
@@ -1381,30 +1578,47 @@ started is what ATTACHED/CREATED say.")
                                 :launch-options
                                 (list :directory nil :environment nil)
                                 :variant variant :argv argv :workdir workdir))
+               ;; The console goes to FILES in the workdir, not to pipes:
+               ;; nothing reads a pipe while the engine runs, and accoreconsole
+               ;; echoes its whole command line there (UTF-16LE), so a long
+               ;; chatty run filled the pipe and blocked on its next write
+               ;; until --timeout (alfe-accoreconsole-console-pipe-not-drained).
+               (capture (make-console-capture
+                         workdir
+                         ;; accoreconsole's console is not UTF-8 on a
+                         ;; non-UTF-8 Windows; a robust external-format keeps
+                         ;; reading it from crashing bootstrap
+                         ;; (alfe-accoreconsole-encoding.issue). -Econsole /
+                         ;; -Ecadstdio (or $ALFE_AUTOCAD_CONSOLE_ENCODING)
+                         ;; override it (G2 send half).
+                         :external-format (autocad-console-external-format
+                                           cli-options)))
                (session (%make-autocad-session
                          :backend backend
                          :workdir workdir
+                         :console-capture capture
                          :request-timeout (and cli-options
                                                (alfe.cli:cli-options-timeout
                                                 cli-options))
                          :protocol-session protocol
                          :variant variant
                          :progid progid))
+               ;; BEFORE the launch: with SECURELOAD=2 the CAD's first load,
+               ;; run-common.lsp from this workdir, is itself refused unless
+               ;; the workdir is already trusted. Only for a REAL launch --
+               ;; --print-command and the tests pass their own launcher, and
+               ;; a dry run must not write the user's registry.
+               (_ (when (eq launcher #'uiop:launch-program)
+                    (setf (autocad-session-trusted session)
+                          (ignore-errors (trust-workdir-for-run workdir)))))
                (_ (log-verbose "backend AUTOCAD: launching: ~{~A~^ ~}" argv))
                (process-info
                  (when launcher
-                   (call-launcher launcher argv launch-options
-                            :input :stream
-                            :output :stream
-                            :error-output :stream
-                            ;; accoreconsole's console is not UTF-8 on a
-                            ;; non-UTF-8 Windows; a robust external-format
-                            ;; keeps reading its pipe from crashing bootstrap
-                            ;; (alfe-accoreconsole-encoding.issue). -Econsole /
-                            ;; -Ecadstdio (or $ALFE_AUTOCAD_CONSOLE_ENCODING)
-                            ;; override it (G2 send half).
-                            :external-format (autocad-console-external-format
-                                              cli-options)))))
+                   (apply #'call-launcher launcher argv launch-options
+                          :input :stream
+                          :external-format (autocad-console-external-format
+                                            cli-options)
+                          (console-capture-launch-keys capture)))))
           (declare (ignore _))
           (when process-info
             (log-debug "backend AUTOCAD: spawned, process-info-pid = ~A"
@@ -1431,7 +1645,10 @@ started is what ATTACHED/CREATED say.")
                   (ignore-errors
                    (log-warn "backend AUTOCAD: start aborted; terminating spawned engine (pid ~A)"
                              (ignore-errors (uiop:process-info-pid process-info))))
-                  (kill-engine-process process-info)))))))
+                  (kill-engine-process process-info))
+                ;; AFTER the kill: a live AutoCAD saves its profile on exit.
+                (ignore-errors (untrust-workdir (autocad-session-trusted session)))
+                (setf (autocad-session-trusted session) nil))))))
     (alfe.error:backend-error (probe)
       (error probe))
     (error (probe)
@@ -1453,7 +1670,8 @@ unwind-protect that reaps the engine when it does not get there."
                          ready-timeout)
             (multiple-value-bind (state elapsed last details)
                 (wait-for-ready-or-process-exit
-                 protocol process-info ready-timeout)
+                 protocol process-info ready-timeout
+                 (and session (autocad-session-console-capture session)))
               (cond
                 ((eq state :ready)
                  (log-verbose "backend AUTOCAD: READY after ~,2F s (status ~S)"
@@ -1506,12 +1724,17 @@ unwind-protect that reaps the engine when it does not get there."
   (let* ((explicit-timeout (session-request-timeout session))
          (result (drive-protocol-actions
                   (autocad-session-protocol-session session) plan
+                  ;; -l sources re-encoded for AutoCAD's LISPSYS (cp1252).
+                  :staging-product :autocad
                   ;; See the BricsCAD eval-plan: --timeout bounds the DONE
                   ;; wait (hard cap when explicit), else a RUNNING eval is
                   ;; kept alive while accoreconsole lives
                   ;; (alfe-request-timeout-aborts-long-eval).
                   :request-timeout (or explicit-timeout 30)
                   :keep-alive-while-running (null explicit-timeout)
+                  :defer-shutdown-p (and (windows-p)
+                                         (eq (autocad-session-variant session)
+                                             :automation))
                   :process-info (autocad-session-process-info session))))
     (session-state-set session
                        (ecase (alfe.backend:eval-result-status result)
@@ -1540,8 +1763,44 @@ unwind-protect that reaps the engine when it does not get there."
     (:shutdown  :stopped)
     (:interrupt :interrupted)))
 
+(defun %other-autocad-running-p (created-pids runner)
+  "True when this run's own acad.exe PIDs are known and an acad.exe that is
+not one of them is running: the instance the quit bridge's GetObject would
+name may then be that other one. With the PIDs unknown (WMI unavailable to
+the bridge, which is rare) the quit bridge is used, as before."
+  (and created-pids
+       (some (lambda (pid) (not (member pid created-pids)))
+             (windows-image-pids "acad.exe" :launcher runner))))
+
+(defun %end-created-autocad (created-pids runner timeout)
+  "End the acad.exe processes this run created, by PID: TASKKILL first without
+/F (a close request), then with /F for those still running after TIMEOUT
+seconds. The IMAGENAME filter keeps a PID Windows reused for another program
+out of reach."
+  (flet ((alive ()
+           (intersection created-pids
+                         (windows-image-pids "acad.exe" :launcher runner)))
+         (taskkill (pid force)
+           (ignore-errors
+            (funcall runner (append (list "taskkill")
+                                    (when force (list "/F"))
+                                    (list "/FI" "IMAGENAME eq acad.exe"
+                                          "/FI" (format nil "PID eq ~D" pid)))
+                     :output nil :error-output nil :ignore-error-status t))))
+    (dolist (pid (alive)) (taskkill pid nil))
+    (let ((start (get-internal-real-time)))
+      (loop while (and (alive)
+                       (< (/ (float (- (get-internal-real-time) start))
+                             internal-time-units-per-second)
+                          timeout))
+            do (sleep 0.5)))
+    (dolist (pid (alive))
+      (log-verbose "backend AUTOCAD: acad.exe ~D did not close; killing it" pid)
+      (taskkill pid t))))
+
 (defun quit-created-autocad (session &key (timeout 20)
-                                          (launcher #'uiop:launch-program))
+                                          (launcher #'uiop:launch-program)
+                                          (runner #'uiop:run-program))
   "Quit the AutoCAD this session CREATED, if it created one.
 
 WHY THIS EXISTS. In automation mode alfe does not run AutoCAD: it runs
@@ -1553,7 +1812,7 @@ process-tree kill from the job. The bridge ends with `Don't call
 app.Quit here - ... the alfe-side poller decides on the lifecycle';
 this is the alfe side finally deciding. Until now nothing did, and
 every automation run left AutoCAD idle on an unnamed Dessin1.dwg
-(issues/open/alfe-autocad-automation-never-quits-acad.issue).
+(issues/closed/alfe-autocad-automation-never-quits-acad.issue).
 
 ONLY WHAT WE CREATED (pjb, 2026-09-16). The bridge attaches to a
 running AutoCAD when there is one, and on this runner that may be a
@@ -1564,16 +1823,30 @@ which nothing read — is what licenses the quit.
 BOUNDED, like every other shutdown step here: the quit is itself a
 cscript, so it gets the same treatment as the engine — poll, then
 KILL-ENGINE-PROCESS. A CAD that hangs on a dialog while being asked to
-quit must not hang alfe, or the cure becomes the disease."
+quit must not hang alfe, or the cure becomes the disease.
+
+ANOTHER AUTOCAD MAY BE RUNNING (alfe-cad-launch-new-by-default): alfe now
+launches a new instance even when one is open, and the quit bridge's
+GetObject(, ProgID) names whichever instance COM has registered -- not
+necessarily ours. When the bridge reported this run's acad.exe PIDs and
+another acad.exe is running, ours is ended by its PID (TASKKILL, /F after
+TIMEOUT) instead. RUNNER runs those synchronous commands (tests inject it)."
   (let ((workdir (session-workdir session)))
     (when workdir
-      (multiple-value-bind (attached created) (read-com-flags workdir)
+      (multiple-value-bind (attached created created-pids) (read-com-flags workdir)
         (declare (ignore attached))
         (cond
           ((not created)
            (log-debug "backend AUTOCAD: not quitting AutoCAD (this run did ~
 not create it)")
            nil)
+          ((%other-autocad-running-p created-pids runner)
+           ;; The quit bridge would ask COM for THE AutoCAD, and with another
+           ;; one running that may be the other one: end ours by its PID.
+           (log-verbose "backend AUTOCAD: another AutoCAD is running; ending ~
+the one this run created (~{~D~^, ~}) by its process id" created-pids)
+           (%end-created-autocad created-pids runner timeout)
+           t)
           (t
            (log-verbose "backend AUTOCAD: quitting the AutoCAD this run created")
            (ignore-errors
@@ -1582,7 +1855,9 @@ not create it)")
                                        :progid (autocad-session-progid session)))
                    (info (funcall launcher
                                   (list "cscript" "//nologo" (namestring vbs))
-                                  :output :stream :error-output :stream))
+                                  ;; Nothing reads its output: discard it
+                                  ;; rather than leave a pipe nobody drains.
+                                  :output nil :error-output nil))
                    (start (get-internal-real-time)))
               (loop while (and (uiop:process-alive-p info)
                                (< (/ (float (- (get-internal-real-time) start))
@@ -1598,27 +1873,37 @@ not create it)")
   (unless (eq (session-state session) :stopped)
     (let ((protocol (autocad-session-protocol-session session))
           (info (autocad-session-process-info session)))
-      (ignore-errors (alfe.protocol.file:send-control protocol :shutdown))
-      (ignore-errors
-       (alfe.protocol.file:wait-for-status
-        protocol alfe.protocol.file:+status-stopped+ :timeout 5))
-      ;; NOT terminate + (uiop:wait-process info): that wait is UNBOUNDED,
-      ;; and on Windows a GUI CAD that is slow to die — or a child of it
-      ;; still holding the handles — hangs it, freezing alfe in shutdown
-      ;; and with it the whole CI job. The BricsCAD backend learned this
-      ;; and grew a bounded killer; AutoCAD had kept the unbounded call.
-      ;; KILL-ENGINE-PROCESS is now shared by both.
-      ;;
-      ;; The AutoCAD itself is quit FIRST, and only when this run created
-      ;; it: in automation mode the process killed below is cscript, and
-      ;; acad.exe is a child of Windows' COM service that no kill here can
-      ;; reach. Order matters only in that the quit needs COM alive; the
-      ;; kill below is unaffected either way.
-      (when (eq (autocad-session-variant session) :automation)
-        (ignore-errors (quit-created-autocad session)))
-      (kill-engine-process info))
+      (unwind-protect
+           (when protocol
+             (if (and (windows-p)
+                      (eq (autocad-session-variant session) :automation))
+                 ;; Contract 2: RESTORED, then the frontier, then the bridge
+                 ;; quits only its CREATED object, which must be proved gone
+                 ;; -- ended by its revalidated handle past the grace. Its
+                 ;; exit code is then a diagnostic; no STOPPED is required
+                 ;; from an engine that just quit.
+                 (alfe.backend.cad-common::finish-owned-com-session
+                  protocol (session-workdir session)
+                  :backend :autocad :bridge-process-info info)
+                 (progn
+                   (alfe.protocol.file:send-control protocol :shutdown)
+                   (unless (alfe.protocol.file:wait-for-status
+                            protocol alfe.protocol.file:+status-stopped+ :timeout 5)
+                     (error 'backend-protocol-error :backend :autocad
+                            :code :shutdown-timeout
+                            :message "CAD did not stop its protocol.")))))
+        (kill-engine-process info)))
+    (ignore-errors (untrust-workdir (autocad-session-trusted session)))
+    (setf (autocad-session-trusted session) nil)
     (session-state-set session :stopped))
   session)
+
+;;; The CAD's own command-history log, which the bootstrap directs into the
+;;; workdir's logs/ (--cad-log; ALFE.BACKEND.CAD-COMMON:COLLECT-CAD-LOG).
+(defmethod alfe.backend:collect-engine-log ((backend autocad-backend) workdir &key cli-options)
+  (if workdir
+      (alfe.backend.cad-common:collect-cad-log :autocad workdir cli-options)
+      (values '() :none)))
 
 (defmethod cleanup-workdir ((backend autocad-backend) workdir &key keep-p)
   (when workdir

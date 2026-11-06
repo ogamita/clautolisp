@@ -84,7 +84,7 @@ runs:
       run: |
         sbcl --non-interactive \
              --load ~/quicklisp/setup.lisp \
-             --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)'
+             --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "cffi" "usocket") :silent t)'
 
     - name: Pre-warm Quicklisp dependencies (CCL)
       if: inputs.ccl == 'true'
@@ -95,5 +95,5 @@ runs:
         # green step (issues/closed/ccl-test-lanes-cannot-fail.issue).
         ccl --no-init --quiet --batch \
             --eval '(load #P"~/quicklisp/setup.lisp")' \
-            --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)' \
+            --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "cffi" "usocket") :silent t)' \
             --eval '(ccl:quit)'

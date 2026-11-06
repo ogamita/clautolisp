@@ -162,6 +162,10 @@ input line completes is prompt text, which the dribble format omits)."
 
 (defmethod trivial-gray-streams:stream-write-char ((tee dribble-output-tee) character)
   (write-char character (tee-understream tee))
+  ;; The command-history log (LOGFILEMODE): standard output only, and only
+  ;; what cador's own console channel has not already logged.
+  (when (string= (tee-tag tee) "O")
+    (clautolisp.cador:command-log-output (string character)))
   (setf (tee-column tee)
         (if (char= character #\Newline) 0 (1+ (tee-column tee))))
   (when (%dribble-filter-passes-p)
@@ -225,6 +229,8 @@ dribble file."))
 passes. Any pending partial output line is DISCARDED, not emitted — the
 only output that can be left unterminated when the user finishes typing
 a line is the prompt, which the dribble format omits."
+  ;; The command-history log gets every line typed at the REPL.
+  (clautolisp.cador:command-log-input-line (copy-seq (echo-buffer echo)))
   (when (%dribble-filter-passes-p)
     (%dribble-terminate-open-line :discard t)
     (%dribble-write-raw-line (echo-buffer echo)))
@@ -410,3 +416,24 @@ file just opened, or NIL when it just stopped dribbling."
        (dribble-stop))
       (t
        (dribble-start nil names)))))
+
+(defun call-with-engine-dribble (function)
+  "Call FUNCTION -- the work of one engine run: its actions and its REPL --
+with the standard streams behind the dribble tees and the CLAL-DRIBBLE builtin
+attached, and close a dribble the run left open when it ends (flushing a
+pending partial output line), however it ends. The tees are pure
+pass-throughs while no dribble is active, so (clal-dribble) can start
+recording at any time, from a REPL or from a batch -l / -x.
+
+ONE function for the clautolisp program (RUN-WITH-INPUT) and alfe's
+in-process engine, so that (clal-dribble FILE) called from a batch script
+records the same file whichever runs it
+(alfe-clautolisp-backend-semantic-parity.issue). Before, the in-process engine
+had no dribble at all, and the program lost a batch run's last, unterminated
+line: nothing closed the file before the process exited."
+  (let ((clautolisp.autolisp-runtime:*dribble-hook* #'clal-dribble)
+        (*standard-output* (make-dribble-output-tee *standard-output* "O"))
+        (*error-output*    (make-dribble-output-tee *error-output*    "E"))
+        (*standard-input*  (make-dribble-input-echo *standard-input*)))
+    (unwind-protect (funcall function)
+      (dribble-stop))))

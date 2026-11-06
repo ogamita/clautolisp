@@ -19,6 +19,7 @@
   (mode             :auto)            ; A   :auto / :automation / :batch
   (backend-variant  nil)              ; A   :attach / :launch / :direct / :subprocess
   (cad              nil)              ; A   --cad DENOTATION (alfe backend selection)
+  (attach-pid       nil)              ; A   --attach-pid PID: attach to that running CAD
   ;; Dialect + host
   (dialect          :strict)          ; AC  :strict / :autocad-2026 / :bricscad-v26 / :clautolisp
   (host             :mock)            ; AC  :mock / :null (default :mock)
@@ -27,8 +28,11 @@
   (io-encoding      nil)              ; AC  = the `terminal' situation (-Eterminal); mirrored for downstream
   (situation-encodings nil)           ; AC  alist (KEY . canonical-enc): KEY = "all" | "<situation>" | "<situation>/<dir>"
                                       ;     built by the -E<situation>[-<dir>] / --<situation>-encoding family
+  (encoding-replacements nil)         ; AC  alist (KEY . policy-name): KEY = "all" | "file/write" | "terminal/out"
+                                      ;     built by -Ereplacement / -Efile-write-replacement / -Eterminal-out-replacement
   ;; Drawing
-  (dwg              nil)              ; A
+  (dwg              nil)              ; AC  --dwg FILE: the first drawing
+  (template         nil)              ; A   --template NAME|PATH: a copy of a CAD template (alfe)
   ;; Plug-ins (alfe). The options a plug-in defines are parsed into
   ;; PLUGIN-OPTIONS, an alist (NAME . PLIST) of plug-in name -> plist of
   ;; option key -> value, resolved (command line, then environment, then
@@ -72,6 +76,14 @@
                                       ;     workdir is prepared, write its
                                       ;     absolute path to FILE (for CI to
                                       ;     locate a --keep-workdir workdir).
+  (cad-log          nil)              ; A   --cad-log FILE: after the run, the CAD's
+                                      ;     own command-history log (LOGFILEMODE),
+                                      ;     decoded per -Elog, copied to FILE.
+  (result-files     nil)              ; A   --result-file FILE, repeatable, in
+                                      ;     order: files the run must have
+                                      ;     written, checked complete after it.
+  (cleanup-report   nil)              ; A   --cleanup-report FILE: the owned-CAD
+                                      ;     cleanup report, copied to FILE.
   ;; Clautolisp-only
   (mock-input       nil)              ; C   --mock-input PATH (string)
   (gui              nil)              ; C   --gui CMD          (string)
@@ -92,7 +104,18 @@
   (user-interface   nil)              ; C   --debugger-ui dumb|ncurses|aldb  → :dumb/:ncurses/:aldb (terminal/tui alias dumb; emacs aliases aldb)
   (aldb-address     nil)              ; C   --aldb-listen [HOST:]PORT — the HOST part (string)
   (aldb-port        nil)              ; C   --aldb-listen [HOST:]PORT — the PORT part (integer or service-name string)
-  (aldb-stdio-p     nil))             ; C   --aldb-stdio → t
+  (aldb-stdio-p     nil)              ; C   --aldb-stdio → t
+  ;; --front-end-bindings FILE: the *AUTOLISP-...* bindings a driving front
+  ;; end (alfe --backend subprocess) resolved, to install INSTEAD of the ones
+  ;; this program would derive from its own argv
+  ;; (alfe-clautolisp-backend-semantic-parity.issue).
+  (front-end-bindings nil)            ; C   --front-end-bindings FILE → FILE (string)
+  ;; --front-end-action-boundaries DIR: the directory through which the
+  ;; program tells a driving front end where each action begins and ends, and
+  ;; waits for it there, so the front end's per-action plug-in hooks run at the
+  ;; same points of the run as in its in-process engine
+  ;; (alfe-clautolisp-backend-semantic-parity.issue).
+  (front-end-action-boundaries nil))  ; C   --front-end-action-boundaries DIR → DIR (string)
 
 ;;; --- value parsers ----------------------------------------------------
 ;;;

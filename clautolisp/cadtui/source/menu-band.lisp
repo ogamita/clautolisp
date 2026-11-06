@@ -159,3 +159,62 @@ new ui-menubar."
   (let ((band (build-band form)))
     (add-child drawing band)
     band))
+
+;;; --- File-command events from the command engine (alref Phase 4 S3) ---
+;;;
+;;; The CAD core opens documents and reads customisation files; this side
+;;; mirrors that into the tree. The core never depends on cadtui: the CLI
+;;; connects APPLY-FILE-COMMAND-EVENT to its hook when --host cadtui runs.
+
+(defun %root-active-drawing (root)
+  (find :drawing (ui-children root) :key #'ui-role))
+
+(defvar *cadtui-activate-document-function* nil
+  "NIL, or a function (KEY) the CLI installs: make host document KEY current
+(=activate on a drawing node). The switch takes effect at the next read, as a
+NEW does; the tree follows on :DOCUMENT-ACTIVATED.")
+
+(defvar *cadtui-close-document-function* nil
+  "NIL, or a function (KEY) the CLI installs: close host document KEY (=close on
+a drawing node); the tree follows on :DOCUMENT-CLOSED.")
+
+(defun %drawing-node (root key)
+  (find-if (lambda (node) (and (eq :drawing (ui-role node)) (equal key (ui-key node))))
+           (ui-children root)))
+
+(defun ensure-drawing-node (root key)
+  "ROOT's ui-drawing for host document KEY, made (with its console) if missing."
+  (or (%drawing-node root key)
+      (let ((drawing (make-instance 'ui-drawing :key key :filename key))
+            (console (make-instance 'ui-console :key "console")))
+        (add-child root drawing)
+        (add-child drawing console)
+        drawing)))
+
+(defun apply-file-command-event (root event &rest args)
+  "Mirror a file command into ROOT. :DOCUMENT-OPENED KEY -- NEW / OPEN made
+document KEY current: a ui-drawing (with its console) is added and made the
+active drawing. :MENU-LOADED FORMS PATH -- MENULOAD / CUILOAD read FORMS: a
+(:menu-bar ...) replaces the application's menu bar, each (:band ...) is
+added to the active drawing (bands belong to a drawing; without one they
+are not installed). Returns the node(s) created."
+  (ecase event
+    ;; A document opened (it becomes current at the switch time of the
+    ;; dialect: :DOCUMENT-ACTIVATED then puts it first).
+    (:document-opened
+     (ensure-drawing-node root (first args)))
+    (:document-activated
+     (%activate-drawing (ensure-drawing-node root (first args))))
+    (:document-closed
+     (let ((node (%drawing-node root (first args))))
+       (when node
+         (setf (ui-children root) (remove node (ui-children root))
+               (ui-parent node) nil))
+       node))
+    (:menu-loaded
+     (let ((target (%root-active-drawing root)))
+       (loop for form in (first args)
+             when (eq (first form) :menu-bar)
+               collect (install-menu-bar root form)
+             when (and (eq (first form) :band) target)
+               collect (add-band target form))))))

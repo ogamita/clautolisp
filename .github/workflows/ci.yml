@@ -65,7 +65,15 @@ jobs:
       - name: autolisp-test — conformance harness
         run: make -C autolisp-test test
 
+      # clautolisp-sbcl first, or the subprocess-variant tests (the
+      # direct/subprocess parity table) skip; ALFE_TEST_REQUIRE_CLAUTOLISP
+      # makes such a skip a failure. Mirrors GitLab test:alfe:sbcl.
+      - name: clautolisp — build clautolisp-sbcl (the subprocess engine)
+        run: make -C clautolisp build-clautolisp-sbcl
+
       - name: autolisp-front-end (alfe) — FiveAM suite (SBCL)
+        env:
+          ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
         run: make -C autolisp-front-end test-sbcl
 
       - name: autolisp-front-end (alfe) — scenario conformance
@@ -103,7 +111,14 @@ jobs:
           make -C clautolisp run-file-compat-ccl \
             FILE_COMPAT_ARGS="--tag builtin --report-format json --output .artifacts/file-compat-ccl.json"
 
+      # The CCL alfe drives the SBCL clautolisp child. Mirrors GitLab
+      # test:alfe:ccl.
+      - name: clautolisp — build clautolisp-sbcl (the subprocess engine)
+        run: make -C clautolisp build-clautolisp-sbcl
+
       - name: autolisp-front-end (alfe) — FiveAM suite (CCL)
+        env:
+          ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
         run: make -C autolisp-front-end test-ccl
 
   # --------------------------------------------------------------------- #

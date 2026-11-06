@@ -8,7 +8,7 @@
 ;;;; transmit bindings and stamps a handful of host sysvars from them
 ;;;; (engine identity, TEMPPREFIX, launch codepage). Before this suite
 ;;;; existed those helpers were only exercised end-to-end by binary
-;;;; runs. Here we drive them directly against a fresh MockHost.
+;;;; runs. Here we drive them directly against a fresh cador.
 
 ;;; --- Engine identity stamping -----------------------------------
 ;;;
@@ -54,9 +54,9 @@ sexp file (UNIX backend), so registry reads/writes stay hermetic."
                             (random (expt 36 8)))
                     (uiop:temporary-directory)))
             (clautolisp.cador::*vl-registry-backend* :unix)
-            (clautolisp.cador::*mock-registry-path* ,path)
-            (clautolisp.cador::*mock-registry* nil)
-            (clautolisp.cador::*mock-registry-loaded-from* nil))
+            (clautolisp.cador::*cador-registry-path* ,path)
+            (clautolisp.cador::*cador-registry* nil)
+            (clautolisp.cador::*cador-registry-loaded-from* nil))
        (unwind-protect (progn ,@body)
          (ignore-errors (delete-file ,path))))))
 
@@ -183,3 +183,164 @@ alongside tui/gui/auto; a typo is a usage error (dcl-ncurses-renderer.issue)."
   (is (eq :auto (clautolisp.autolisp-cli:parse-dcl-mode "auto" "--dcl")))
   (signals cli-usage-error
     (clautolisp.autolisp-cli:parse-dcl-mode "nope" "--dcl")))
+
+;;; --- front-end bindings (alfe-clautolisp-backend-semantic-parity) ---
+;;;
+;;; alfe --backend subprocess hands the child engine the *AUTOLISP-...*
+;;; bindings it resolved, through --front-end-bindings FILE, so user code sees
+;;; the same values as under the in-process engine. The file must carry every
+;;; value kind a binding can hold back unchanged: strings (non-ASCII, quotes,
+;;; backslashes, newlines -- *AUTOLISP-HELP* has them all), symbols, integers,
+;;; NIL and nested lists (*AUTOLISP-ACTIONS*).
+
+(test front-end-bindings-file-round-trips-every-value-kind
+  (let* ((text (format nil "caf~C \"quoted\" back\\slash~%second line"
+                       (code-char 233)))
+         (bindings
+           (list (list "*AUTOLISP-VERSION*" (clautolisp.autolisp-runtime:make-autolisp-string "9.9.9"))
+                 (list "*AUTOLISP-FRONTEND*" (clautolisp.autolisp-runtime:intern-autolisp-symbol "ALFE"))
+                 (list "*AUTOLISP-TIMEOUT*" 42)
+                 (list "*AUTOLISP-MAIN*" nil)
+                 (list "*AUTOLISP-HELP*" (clautolisp.autolisp-runtime:make-autolisp-string text))
+                 (list "*AUTOLISP-ACTIONS*"
+                       (list (list (clautolisp.autolisp-runtime:intern-autolisp-symbol "EVAL")
+                                   (clautolisp.autolisp-runtime:make-autolisp-string "(+ 1 2)"))))
+                 (list "*AUTOLISP-PAIR*"
+                       (cons 1 (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")))))
+         (path (uiop:tmpize-pathname
+                (merge-pathnames "front-end-bindings-test.sexp"
+                                 (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-cli:write-transmit-bindings-file path bindings)
+           (let ((back (clautolisp.autolisp-cli:read-transmit-bindings-file path)))
+             (is (equal (mapcar #'first bindings) (mapcar #'first back)))
+             (flet ((value (name) (second (assoc name back :test #'string=))))
+               (is (string= "9.9.9" (clautolisp.autolisp-runtime:autolisp-string-value
+                                     (value "*AUTOLISP-VERSION*"))))
+               (is (eq (clautolisp.autolisp-runtime:intern-autolisp-symbol "ALFE")
+                       (value "*AUTOLISP-FRONTEND*")))
+               (is (eql 42 (value "*AUTOLISP-TIMEOUT*")))
+               (is (null (value "*AUTOLISP-MAIN*")))
+               (is (string= text (clautolisp.autolisp-runtime:autolisp-string-value
+                                  (value "*AUTOLISP-HELP*"))))
+               (let ((action (first (value "*AUTOLISP-ACTIONS*"))))
+                 (is (eq (clautolisp.autolisp-runtime:intern-autolisp-symbol "EVAL")
+                         (first action)))
+                 (is (string= "(+ 1 2)" (clautolisp.autolisp-runtime:autolisp-string-value
+                                         (second action)))))
+               (is (eql 1 (car (value "*AUTOLISP-PAIR*"))))
+               (is (eq (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")
+                       (cdr (value "*AUTOLISP-PAIR*")))))))
+      (ignore-errors (delete-file path)))))
+
+(test front-end-bindings-file-unreadable-is-a-noinput-cli-error
+  ;; The file is the option's input: missing is EX_NOINPUT, malformed
+  ;; EX_DATAERR (sysexits-exit-statuses.issue).
+  (is (eql clautolisp.sysexits:+ex-noinput+
+           (handler-case
+               (progn (clautolisp.autolisp-cli:read-transmit-bindings-file
+                       "/nonexistent/front-end-bindings.sexp")
+                      :no-error)
+             (clautolisp.autolisp-cli:cli-error (c)
+               (clautolisp.autolisp-cli:cli-error-status c)))))
+  (let ((path (uiop:tmpize-pathname
+               (merge-pathnames "front-end-bindings-bad.sexp"
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (with-open-file (out path :direction :output :if-exists :supersede)
+             (write-line "(:not-the-bindings 1 ())" out))
+           (is (eql clautolisp.sysexits:+ex-dataerr+
+                    (handler-case
+                        (progn (clautolisp.autolisp-cli:read-transmit-bindings-file path)
+                               :no-error)
+                      (clautolisp.autolisp-cli:cli-error (c)
+                        (clautolisp.autolisp-cli:cli-error-status c))))))
+      (ignore-errors (delete-file path)))))
+
+;;; --- action boundaries (alfe-clautolisp-backend-semantic-parity) -------
+;;;
+;;; --front-end-action-boundaries DIR: the child engine publishes a marker
+;;; before and after each action and waits for the front end's reply, so
+;;; alfe's per-action plug-in hooks run between two actions of ONE run.
+
+(defun %fresh-boundary-directory ()
+  (let ((directory (merge-pathnames
+                    (format nil "action-boundaries-test-~36R/"
+                            (random (expt 36 10) (make-random-state t)))
+                    (uiop:temporary-directory))))
+    (ensure-directories-exist directory)
+    directory))
+
+(test action-boundary-marker-round-trips
+  (let ((directory (%fresh-boundary-directory)))
+    (unwind-protect
+         (let ((marker (clautolisp.autolisp-cli:write-action-boundary
+                        directory 3 :post :kind :expression
+                        ;; a base-string, which *PRINT-READABLY* would write
+                        ;; in SBCL's own #A syntax
+                        :value (coerce "\"caf\"" 'base-string)
+                        :status 5)))
+           (is (equal (namestring marker)
+                      (namestring (clautolisp.autolisp-cli:action-boundary-pathname
+                                   directory 3 :post))))
+           (is (string= "0003-post" (pathname-name marker)))
+           (is (equal '(:index 3 :phase :post :kind :expression :value "\"caf\"" :status 5)
+                      (clautolisp.autolisp-cli:read-action-boundary marker)))
+           (is (not (search "#A" (uiop:read-file-string marker)))))
+      (uiop:delete-directory-tree directory :validate t :if-does-not-exist :ignore))))
+
+(test action-boundary-report-waits-for-the-reply
+  (let ((directory (%fresh-boundary-directory)))
+    (unwind-protect
+         (progn
+           ;; The reply is already there: the child goes on at once.
+           (clautolisp.autolisp-cli:acknowledge-action-boundary directory 1 :pre)
+           (is (eq t (clautolisp.autolisp-cli:report-action-boundary
+                      directory 1 :pre :kind :file)))
+           (is (probe-file (clautolisp.autolisp-cli:action-boundary-pathname
+                            directory 1 :pre))))
+      (uiop:delete-directory-tree directory :validate t :if-does-not-exist :ignore))
+    ;; The front end is gone (its directory with it): the child stops waiting.
+    (is (null (clautolisp.autolisp-cli:wait-for-action-boundary-reply
+               (merge-pathnames "gone/" directory) 1 :pre)))))
+
+(test action-boundaries-off-run-the-action-plain
+  (is (eql 42 (clautolisp.autolisp-cli:call-at-action-boundaries
+               nil 1 :expression nil (lambda () 42)))))
+
+;;; --- the encoding replacement options (encoding-replacement-character-option) ---
+
+(defun %parse-common (&rest argv)
+  (clautolisp.autolisp-cli::parse-arguments-with-spec
+   clautolisp.autolisp-cli::*common-option-specs* argv))
+
+(test encoding-replacement-options-parse
+  (let ((opts (%parse-common "-Ereplacement" "?")))
+    (is (equal "?" (clautolisp.autolisp-cli:cli-encoding-replacement opts)))
+    (is (equal "?" (clautolisp.autolisp-cli:cli-encoding-replacement opts "file/write"))))
+  (let ((opts (%parse-common "--encoding-replacement" "ESCAPE")))
+    (is (equal "escape" (clautolisp.autolisp-cli:cli-encoding-replacement opts))))
+  ;; the specific option wins over the bare one, whatever the order
+  (let ((opts (%parse-common "-Efile-write-replacement" "error" "-Ereplacement" "#")))
+    (is (equal "error" (clautolisp.autolisp-cli:cli-encoding-replacement opts "file/write")))
+    (is (equal "#" (clautolisp.autolisp-cli:cli-encoding-replacement opts "terminal/out"))))
+  (let ((opts (%parse-common "--terminal-output-encoding-replacement" "low-byte")))
+    (is (equal "low-byte" (clautolisp.autolisp-cli:cli-encoding-replacement opts "terminal/out")))
+    (is (null (clautolisp.autolisp-cli:cli-encoding-replacement opts "file/write")))
+    (is (equal '("-Eterminal-out-replacement" "low-byte")
+               (clautolisp.autolisp-cli:encoding-replacement-option-arguments opts))))
+  (signals clautolisp.autolisp-cli:cli-usage-error (%parse-common "-Ereplacement" "question"))
+  (signals clautolisp.autolisp-cli:cli-usage-error (%parse-common "-Ereplacement" "")))
+
+(test encoding-replacement-options-transmitted
+  ;; -Ereplacement seeds *AUTOLISP-ENCODING-REPLACEMENT*; the others stay nil.
+  (let* ((opts (%parse-common "-Ereplacement" "?" "-Efile-write-replacement" "best-fit"))
+         (bindings (clautolisp.autolisp-cli::cli-options->transmit-bindings opts)))
+    (flet ((value (name)
+             (let ((v (second (assoc name bindings :test #'string=))))
+               (and v (clautolisp.autolisp-runtime:autolisp-string-value v)))))
+      (is (equal "?" (value "*AUTOLISP-ENCODING-REPLACEMENT*")))
+      (is (equal "best-fit" (value "*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*")))
+      (is (null (value "*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*"))))))

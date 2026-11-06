@@ -121,12 +121,14 @@ case "$product" in
 
   autocad)
     [[ -n "${AUTOCAD_RUNNER:-}" ]] && emit "$AUTOCAD_RUNNER"
-    # Headless AutoCAD Core Console runs a .scr that loads the wrapper.
+    # Headless AutoCAD Core Console runs a .scr that loads the wrapper; with
+    # PROBE_TEMPLATE it opens (/i) the run's copy of that template first
+    # (run-probes.sh), not its default new drawing.
     # accoreconsole FIRST because it is the headless one, which is what a
     # probe wants; alfe lists both, so ask in that order.
     bin="${AUTOCAD_ACCORECONSOLE:-}"
     [[ -z "$bin" ]] && bin="$(alfe_lookup accoreconsole || true)"
-    if [[ -n "$bin" ]]; then emit "\"$bin\" /s __SCRIPT_FILE__"; fi
+    if [[ -n "$bin" ]]; then emit "\"$bin\" ${PROBE_TEMPLATE:+/i __DRAWING_FILE__ }/s __SCRIPT_FILE__"; fi
     bin="${AUTOCAD_ACCORECONSOLE:-}"
     if [[ -z "$bin" && "$platform" == "ms-windows" ]]; then
       bin="$(first_glob \
@@ -134,7 +136,7 @@ case "$product" in
         "/c/Program Files/Autodesk/AutoCAD"*"/accoreconsole.exe" \
         || true)"
     fi
-    if [[ -n "$bin" ]]; then emit "\"$bin\" /s __SCRIPT_FILE__"; fi
+    if [[ -n "$bin" ]]; then emit "\"$bin\" ${PROBE_TEMPLATE:+/i __DRAWING_FILE__ }/s __SCRIPT_FILE__"; fi
     # Fall back to full AutoCAD in script mode.
     bin="${AUTOCAD_EXE:-}"
     if [[ -z "$bin" && "$platform" == "ms-windows" ]]; then

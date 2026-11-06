@@ -11,12 +11,12 @@ allocator, the DXF/DWG class table, and file provenance.
 This package speaks *pure* Common-Lisp values only. The AutoLISP
 wrapper types (autolisp-ename, autolisp-string, …) are not visible
 here; wrapping/unwrapping is the host adapter's job
-(clautolisp.cador and, later, the LiveHost). MockHost
+(clautolisp.cador and, later, the LiveHost). cador
 holds one or more of these drawings and delegates its entity /
 table / sysvar surface to the active one.
 
 The data-carrier structs (ENTITY-HANDLE, SYMBOL-TABLE-RECORD,
-DICTIONARY, SYSVAR-CELL) live here and are re-exported by MockHost
+DICTIONARY, SYSVAR-CELL) live here and are re-exported by cador
 for backward compatibility with code and tests that imported them
 from the cador package before the Phase-17a extraction.")
   (:export
@@ -28,6 +28,8 @@ from the cador package before the Phase-17a extraction.")
    #:drawing-p
    #:drawing-name
    #:drawing-path
+   #:drawing-dbmod
+   #:note-drawing-modified
    #:drawing-format
    #:drawing-version
    #:drawing-codepage
@@ -48,6 +50,7 @@ from the cador package before the Phase-17a extraction.")
    #:entity-handle-layer
    #:entity-handle-data
    #:entity-handle-deleted-p
+   #:entity-handle-object-p
    ;; Data carrier: symbol-table record.
    #:symbol-table-record
    #:make-symbol-table-record
@@ -63,6 +66,8 @@ from the cador package before the Phase-17a extraction.")
    ;; Data carrier: sysvar / header-variable cell.
    #:sysvar-cell
    #:make-sysvar-cell
+   #:sysvar-cell-scope
+   #:*drawing-modification-hook*
    #:copy-sysvar-cell
    #:sysvar-cell-name
    #:sysvar-cell-kind
@@ -76,6 +81,7 @@ from the cador package before the Phase-17a extraction.")
    #:sysvar-cell-p
    ;; Conditions (Phase 17b).
    #:drawing-error
+   #:drawing-library-unavailable
    #:drawing-read-error
    #:drawing-write-error
    #:drawing-format-error
@@ -130,6 +136,7 @@ from the cador package before the Phase-17a extraction.")
    #:drawing-table
    #:map-table-records
    #:find-table-record
+   #:find-table-record-by-handle
    #:table-record-dxf
    ;; Block definitions.
    #:drawing-blocks
@@ -154,6 +161,7 @@ from the cador package before the Phase-17a extraction.")
    #:ensure-root-dictionary
    #:find-dictionary
    #:dictionary-object-entries
+   #:dictionary-data-sorted
    #:dictionary-member-handle
    #:dictionary-add-entry
    #:dictionary-remove-entry
@@ -174,6 +182,7 @@ from the cador package before the Phase-17a extraction.")
    #:set-drawing-variable
    #:ensure-drawing-variable
    #:add-table-record
+   #:ensure-record-handle
    #:remove-table-record
    ;; Entity-family registry + ENTMAKE/ENTMAKEX validation.
    #:entity-family

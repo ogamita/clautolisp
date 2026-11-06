@@ -4,7 +4,7 @@
 
 ;;; --- Command dispatch (deferred-command-special-form issue) -------
 ;;;
-;;; MockHost has no command engine: HOST-COMMAND records the routed
+;;; cador has no command engine: HOST-COMMAND records the routed
 ;;; token sequence on the per-session command log, echoes one line to
 ;;; PROMPT-OUTPUT, and returns nil. HOST-COMMAND-LOG reads the log
 ;;; back oldest-first.
@@ -319,6 +319,34 @@
       (is (< (abs (- 0.0d0 (%ct-group data 50))) 1d-6))        ; start angle
       (is (< (abs (- pi (%ct-group data 51))) 1d-6)))))        ; end angle
 
+(test command-arc-angles-are-radians-in-0-2pi
+  ;; cador-curve-length-and-sampling: entget reports an ARC's 50/51 in
+  ;; [0, 2pi); the 3-point form used to store atan's negative angles.
+  (let ((mock (make-cador)))
+    ;; (0,-1) (1,0) (0,1): the right half circle, 270 -> 90 degrees.
+    (clautolisp.autolisp-host:host-command
+     mock '("._arc" "0,-1" "1,0" "0,1" ""))
+    (let ((data (%ct-last-data mock)))
+      (is (< (abs (- (* 1.5d0 pi) (%ct-group data 50))) 1d-6))
+      (is (< (abs (- (* 0.5d0 pi) (%ct-group data 51))) 1d-6)))))
+
+(test command-arc-center-forms
+  (let ((mock (make-cador)))
+    ;; C center start end: the end point fixes the end angle only
+    (clautolisp.autolisp-host:host-command
+     mock '("._arc" "_c" "0,0" "10,0" "0,20"))
+    (let ((data (%ct-last-data mock)))
+      (is (string= "ARC" (autolisp-string-value (%ct-group data 0))))
+      (is (< (abs (- 10.0d0 (%ct-group data 40))) 1d-9))
+      (is (< (abs (%ct-group data 50)) 1d-9))
+      (is (< (abs (- (* 0.5d0 pi) (%ct-group data 51))) 1d-9)))
+    ;; start C center Angle -90: clockwise, i.e. CCW from 270 to 0 degrees
+    (clautolisp.autolisp-host:host-command
+     mock '("._arc" "10,0" "_c" "0,0" "_a" "-90"))
+    (let ((data (%ct-last-data mock)))
+      (is (< (abs (- (* 1.5d0 pi) (%ct-group data 50))) 1d-9))
+      (is (< (abs (%ct-group data 51)) 1d-9)))))
+
 (test command-pline-draws-a-closed-lwpolyline
   (let ((mock (make-cador)))
     (clautolisp.autolisp-host:host-command
@@ -419,3 +447,374 @@
     (clautolisp.autolisp-host:host-command
      mock '("._zoom" "_e" "._line" "0,0" "1,1" "" "._ucs" "_w" "._circle" "5,5" "2"))
     (is (equal '("LINE" "CIRCLE") (%ct-types mock)))))
+
+;;; --- alref Phase 4 S1: draw constructions, measured on the vendors ----
+;;;
+;;; Expected values are probes/sources/probe-commands.lsp's BricsCAD V26
+;;; results (20261003T151707Z); the geometry is what the vendor made.
+
+(defun %ct-run (tokens)
+  "A fresh host after one (command . TOKENS); returns it."
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock tokens)
+    mock))
+
+(defun %ct-near (a b)
+  (if (consp a)
+      (every (lambda (x y) (< (abs (- x y)) 1d-5)) a b)
+      (< (abs (- a b)) 1d-5)))
+
+(defun %ct-vertices (data)
+  (loop for (code . value) in data when (eql code 10) collect value))
+
+(test command-point-ray-xline-as-measured
+  (let ((d (%ct-last-data (%ct-run '("_.POINT" "1,2")))))
+    (is (string= "POINT" (autolisp-string-value (%ct-group d 0))))
+    (is (%ct-near '(1 2 0) (%ct-group d 10))))
+  (let ((d (%ct-last-data (%ct-run '("_.RAY" "0,0" "1,1" "")))))
+    (is (string= "RAY" (autolisp-string-value (%ct-group d 0))))
+    (is (%ct-near '(0.707107 0.707107 0) (%ct-group d 11))))
+  (let ((d (%ct-last-data (%ct-run '("_.XLINE" "0,0" "1,2" "")))))
+    (is (string= "XLINE" (autolisp-string-value (%ct-group d 0))))
+    (is (%ct-near '(0.447214 0.894427 0) (%ct-group d 11)))))
+
+(test command-ellipse-both-forms-as-measured
+  (let ((d (%ct-last-data (%ct-run '("_.ELLIPSE" "0,0" "4,0" "1")))))
+    (is (%ct-near '(2 0 0) (%ct-group d 10)))
+    (is (%ct-near '(-2 0 0) (%ct-group d 11)))
+    (is (%ct-near 0.5 (%ct-group d 40))))
+  (let ((d (%ct-last-data (%ct-run '("_.ELLIPSE" "_C" "0,0" "4,0" "1")))))
+    (is (%ct-near '(0 0 0) (%ct-group d 10)))
+    (is (%ct-near '(4 0 0) (%ct-group d 11)))
+    (is (%ct-near 0.25 (%ct-group d 40)))))
+
+(test command-polygon-and-rectang-vertex-order-as-measured
+  (flet ((verts (tokens) (%ct-vertices (%ct-last-data (%ct-run tokens)))))
+    (let ((v (verts '("_.POLYGON" "6" "0,0" "_I" "2"))))
+      (is (= 6 (length v)))
+      (is (%ct-near '(-1 1.732051) (first v)))
+      (is (%ct-near '(1 1.732051) (sixth v))))
+    (let ((v (verts '("_.POLYGON" "5" "0,0" "_C" "2"))))
+      (is (%ct-near '(0 2.472136) (first v)))
+      (is (%ct-near '(-1.453085 -2) (third v))))
+    (is (every #'%ct-near '((0 0) (2 0) (2 2) (0 2))
+               (verts '("_.POLYGON" "4" "_E" "0,0" "2,0"))))
+    (is (every #'%ct-near '((3 2) (0 2) (0 0) (3 0))
+               (verts '("_.RECTANG" "3,2" "0,0"))))))
+
+(test command-3dpoly-makes-a-3d-polyline-run
+  (let ((mock (%ct-run '("_.3DPOLY" "0,0,0" "1,0,1" "1,1,2" ""))))
+    (is (equal '("POLYLINE" "VERTEX" "VERTEX" "VERTEX" "SEQEND") (%ct-types mock)))
+    (is (eql 8 (%ct-group (%ct-last-data mock) 70)))))
+
+(test command-headless-noops-are-recognised
+  ;; Recognised (a following command in the same call still runs).
+  (let ((mock (%ct-run '("_.PROPERTIES" "" "_.POINT" "5,5"))))
+    (is (equal '("POINT") (%ct-types mock)))))
+
+(test command-spline-is-the-natural-chord-length-cubic-as-measured
+  ;; BricsCAD: knots 0 0 0 0 1.414214 2.828427 4.242641 x4, control points
+  ;; (0,0) (0.333333,0.555556) (1,1.666667) (2,-0.666667) (2.666667,0.444444) (3,1).
+  (let* ((d (%ct-last-data (%ct-run '("_.SPLINE" "0,0" "1,1" "2,0" "3,1" "" "" ""))))
+         (knots (loop for (c . v) in d when (eql c 40) collect v))
+         (ctrl (%ct-vertices d)))
+    (is (eql 1064 (%ct-group d 70)))
+    (is (= 10 (length knots)))
+    (is (%ct-near 1.414214 (fifth knots)))
+    (is (= 6 (length ctrl)))
+    (is (%ct-near '(0.333333 0.555556 0) (second ctrl)))
+    (is (%ct-near '(2 -0.666667 0) (fourth ctrl)))))
+
+(test command-mline-records-vertices-miters-and-element-distances
+  (let ((mock (make-cador)))
+    (host-setvar mock "CMLSCALE" 20.0d0)
+    (clautolisp.autolisp-host:host-command mock '("_.MLINE" "0,0" "4,0" "4,3" ""))
+    (let* ((d (%ct-last-data mock))
+           (distances (loop for (c . v) in d when (eql c 41) collect v)))
+      (is (eql 3 (%ct-group d 72)))
+      (is (%ct-near 20.0 (%ct-group d 40)))
+      ;; per vertex: element 1 (0, 0), element 2 (-20 | -28.28 at the corner, 0)
+      (is (%ct-near -20.0 (nth 2 distances)))
+      (is (%ct-near -28.284271 (nth 6 distances))))))
+
+(test fresh-drawing-holds-the-template-values
+  ;; Not the catalogue's zero stand-ins (sysvar-template-defaults-undocumented):
+  ;; acad.dwt's values under en_US, acadiso.dwt's elsewhere (AutoCAD 2026
+  ;; "Initial value: X (imperial) or Y (metric)"; BricsCAD's for its own cells).
+  (let ((saved (mapcar (lambda (v) (cons v (uiop:getenv v))) '("LC_ALL" "LC_NUMERIC" "LANG"))))
+    (flet ((fresh (lang)
+             (setf (uiop:getenv "LC_ALL") "" (uiop:getenv "LC_NUMERIC") ""
+                   (uiop:getenv "LANG") lang)
+             (make-cador)))
+      (unwind-protect
+           (let ((imperial (fresh "en_US.UTF-8"))
+                 (metric (fresh "fr_FR.UTF-8")))
+             (is (%ct-near 0.18 (host-getvar imperial "DIMASZ")))
+             (is (equal '(12.0d0 9.0d0) (host-getvar imperial "LIMMAX")))
+             (is (%ct-near 1.0 (host-getvar imperial "CMLSCALE")))
+             (is (string= "Standard" (autolisp-string-value (host-getvar imperial "DIMSTYLE"))))
+             (is (string= "." (autolisp-string-value (host-getvar imperial "DIMDSEP"))))
+             (is (eql 1 (host-getvar imperial "INSUNITS")))
+             (is (%ct-near 2.5 (host-getvar metric "DIMASZ")))
+             (is (equal '(420.0d0 297.0d0) (host-getvar metric "LIMMAX")))
+             (is (%ct-near 20.0 (host-getvar metric "CMLSCALE")))
+             (is (string= "ISO-25" (autolisp-string-value (host-getvar metric "DIMSTYLE"))))
+             (is (string= "," (autolisp-string-value (host-getvar metric "DIMDSEP"))))
+             (is (string= "ANGLE" (autolisp-string-value (host-getvar metric "HPNAME"))))
+             (is (eql 4 (host-getvar metric "INSUNITS")))
+             (is (eql 1 (host-getvar metric "MEASUREMENT")))
+             ;; The current dimension style is a record of the DIMSTYLE table.
+             (is (gethash "ISO-25" (gethash :dimstyle (clautolisp.cador::cador-tables metric)))))
+        (loop for (var . value) in saved
+              do (setf (uiop:getenv var) (or value "")))))))
+
+(test fresh-drawing-measurement-follows-the-locale
+  ;; pjb 2026-10-04: imperial (0) under en_US, metric (1) otherwise; the
+  ;; first non-empty of LC_ALL, LC_NUMERIC, LANG decides.
+  (let ((saved (mapcar (lambda (v) (cons v (uiop:getenv v))) '("LC_ALL" "LC_NUMERIC" "LANG"))))
+    (flet ((with-locale (all numeric lang)
+             (setf (uiop:getenv "LC_ALL") (or all "")
+                   (uiop:getenv "LC_NUMERIC") (or numeric "")
+                   (uiop:getenv "LANG") (or lang ""))
+             (let ((mock (make-cador)))
+               (list (host-getvar mock "MEASUREMENT") (host-getvar mock "MEASUREINIT")))))
+      (unwind-protect
+           (progn
+             (is (equal '(0 0) (with-locale nil nil "en_US.UTF-8")))
+             (is (equal '(1 1) (with-locale nil nil "fr_FR.UTF-8")))
+             (is (equal '(1 1) (with-locale nil "de_DE" "en_US.UTF-8")))
+             (is (equal '(0 0) (with-locale "en_US" "de_DE" "fr_FR")))
+             (is (equal '(1 1) (with-locale nil nil "en_GB.UTF-8")))
+             (is (equal '(1 1) (with-locale nil nil nil))))
+        (loop for (var . value) in saved
+              do (setf (uiop:getenv var) (or value "")))))))
+
+;;; --- alref Phase 4 S2: selection by window, crossing and point --------
+
+(test command-selection-window-crossing-and-point
+  (flet ((erased-after (selection)
+           ;; Draw a line inside (1,1)-(2,2) and one crossing x = 3, then
+           ;; ERASE with SELECTION; return what is left.
+           (let ((mock (make-cador)))
+             (clautolisp.autolisp-host:host-command
+              mock (append '("_.LINE" "1,1" "2,2" "" "_.LINE" "0,5" "6,5" ""
+                             "_.ERASE")
+                           selection '("")))
+             (%ct-types mock))))
+    ;; Window 0,0 - 4,6: the first line is inside, the second crosses out.
+    (is (equal '("LINE") (erased-after '("_W" "0,0" "4,6"))))
+    ;; Crossing: both.
+    (is (equal '() (erased-after '("_C" "0,0" "4,6"))))
+    ;; A point ON the second line picks it alone.
+    (is (equal '("LINE") (erased-after '("3,5"))))
+    ;; A point on nothing ends the selection; nothing is erased.
+    (is (equal '("LINE" "LINE") (erased-after '("9,9"))))))
+
+;;; --- alref Phase 4 S2: modify / property commands, as measured --------
+;;; AutoCAD 2022 (job 16914186872) and BricsCAD V26 (job 16914186873).
+
+(test command-scale-align-change-as-measured
+  (let ((d (%ct-last-data (%ct-run '("_.CIRCLE" "1,0" "1" "_.SCALE" "_L" "" "0,0" "2")))))
+    (is (%ct-near '(2 0 0) (%ct-group d 10)))
+    (is (%ct-near 2.0 (%ct-group d 40))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "2,0" ""
+                                     "_.ALIGN" "_L" "" "0,0" "1,1" "2,0" "1,3" "" "_N")))))
+    (is (%ct-near '(1 1 0) (%ct-group d 10)))
+    (is (%ct-near '(1 3 0) (%ct-group d 11))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "2,0" "" "_.CHANGE" "_L" "" "3,3")))))
+    (is (%ct-near '(0 0 0) (%ct-group d 10)))
+    (is (%ct-near '(3 3 0) (%ct-group d 11)))))
+
+(test command-chprop-matchprop-setbylayer-colour
+  (let ((d (%ct-last-data (%ct-run '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "1" "")))))
+    (is (eql 1 (%ct-group d 62)))
+    ;; The vendors list colour right after the layer.
+    (is (eql 62 (car (nth (1+ (position 8 d :key #'car)) d)))))
+  (let ((mock (%ct-run '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "3" ""
+                         "_.LINE" "5,5" "6,6" "" "_.MATCHPROP" "0.7071,0.7071" "5.5,5.5" ""))))
+    (is (eql 3 (%ct-group (%ct-last-data mock) 62))))
+  (let ((d (%ct-last-data (%ct-run '("_.CIRCLE" "0,0" "1" "_.CHPROP" "_L" "" "_C" "2" ""
+                                     "_.SETBYLAYER" "_L" "" "_Y" "_Y")))))
+    (is (null (assoc 62 d)))))
+
+(test command-explode-stretch-lengthen-convertpoly
+  (is (equal '("LINE" "LINE" "LINE" "LINE")
+             (%ct-types (%ct-run '("_.RECTANG" "0,0" "2,1" "_.EXPLODE" "_L" "")))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "4,0" ""
+                                     "_.STRETCH" "_C" "3,-1" "5,1" "" "4,0" "6,1")))))
+    (is (%ct-near '(0 0 0) (%ct-group d 10)))
+    (is (%ct-near '(6 1 0) (%ct-group d 11))))
+  (let ((d (%ct-last-data (%ct-run '("_.LINE" "0,0" "4,0" "" "_.LENGTHEN" "_DE" "1" "4,0" "")))))
+    (is (%ct-near '(5 0 0) (%ct-group d 11))))
+  (is (equal '("POLYLINE" "VERTEX" "VERTEX" "VERTEX" "SEQEND")
+             (%ct-types (%ct-run '("_.PLINE" "0,0" "2,0" "2,1" ""
+                                   "_.CONVERTPOLY" "_H" "_L" ""))))))
+
+;;; --- alref Phase 4 S3: NEW, OPEN, MENULOAD ---------------------------
+
+(test command-new-open-and-menuload-notify-the-ui
+  (let ((events '()) (mock (make-cador))
+        (menu (merge-pathnames "cador-menuload-test.mnu" (uiop:temporary-directory))))
+    (with-open-file (out menu :direction :output :if-exists :supersede)
+      (write-string "(:band \"Draw\" (:button \"Line\" :action \"LINE\"))
+(:menu-bar (:menu \"File\" (:item \"New\" :action \"NEW\")))
+(not-a-ui-form)" out))
+    (let ((clautolisp.cador:*cador-command-ui-hook*
+            (lambda (host event &rest args)
+              (declare (ignore host))
+              (push (cons event args) events))))
+      ;; NEW: a second document, current.
+      (clautolisp.autolisp-host:host-command mock '("_.NEW" "."))
+      (is (= 2 (length (clautolisp.autolisp-host:host-document-list mock))))
+      (is (equal (clautolisp.autolisp-host:host-current-document mock)
+                 (second (first events))))
+      ;; OPEN a real drawing: the bundled empty-drawing template (DXF).
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.OPEN" (namestring (clautolisp.drawing:drawing-template-path))))
+      (is (= 3 (length (clautolisp.autolisp-host:host-document-list mock))))
+      ;; :DOCUMENT-OPENED, then the switch's :DOCUMENT-ACTIVATED.
+      (is (member :document-opened (mapcar #'car (subseq events 0 2))))
+      ;; MENULOAD: only the UI forms reach the UI.
+      (clautolisp.autolisp-host:host-command mock (list "_.MENULOAD" (namestring menu)))
+      (destructuring-bind (event forms path) (first events)
+        (is (eq :menu-loaded event))
+        (is (equal '(:band :menu-bar) (mapcar #'first forms)))
+        (is (string= (namestring menu) path))))))
+
+;;; --- alref Phase 4 S5: geometry editing ------------------------------
+
+(defun %ct-lines (mock)
+  "The (start end) 2D pairs of MOCK's live LINEs, oldest first, rounded."
+  (let ((out '()) (e (host-entnext mock nil)))
+    (loop while e
+          do (let ((d (host-entget mock e)))
+               (when (string= "LINE" (autolisp-string-value (cdr (assoc 0 d))))
+                 (push (mapcar (lambda (p) (mapcar (lambda (x) (/ (round (* 1000 x)) 1000))
+                                                   (list (first p) (second p))))
+                               (list (cdr (assoc 10 d)) (cdr (assoc 11 d))))
+                       out)))
+             (setq e (host-entnext mock e)))
+    (nreverse out)))
+
+(defun %ct-two-lines (a1 a2 b1 b2)
+  "A host with LINE A then LINE B; returns (values HOST A-ENAME B-ENAME)."
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock (list "_.LINE" a1 a2 ""))
+    (let ((a (host-entlast mock)))
+      (clautolisp.autolisp-host:host-command mock (list "_.LINE" b1 b2 ""))
+      (values mock a (host-entlast mock)))))
+
+(test command-trim-and-extend-both-modes
+  ;; Classic (TRIMEXTENDMODE 0): edge, RETURN, then the pick.
+  (multiple-value-bind (mock a edge) (%ct-two-lines "0,0" "4,0" "2,-1" "2,1")
+    (host-setvar mock "TRIMEXTENDMODE" 0)
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.TRIM" edge "" (list a '(3.0d0 0.0d0 0.0d0)) ""))
+    (is (equal '(((0 0) (2 0)) ((2 -1) (2 1))) (%ct-lines mock))))
+  ;; Quick (TRIMEXTENDMODE 1, the default): every object is an edge.
+  (multiple-value-bind (mock a) (%ct-two-lines "0,0" "4,0" "2,-1" "2,1")
+    (host-setvar mock "TRIMEXTENDMODE" 1)
+    (clautolisp.autolisp-host:host-command mock (list "_.TRIM" (list a '(1.0d0 0.0d0 0.0d0)) ""))
+    (is (equal '((2 0) (4 0)) (first (%ct-lines mock)))))
+  (multiple-value-bind (mock a edge) (%ct-two-lines "0,0" "1,0" "3,-1" "3,1")
+    (host-setvar mock "TRIMEXTENDMODE" 0)
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.EXTEND" edge "" (list a '(1.0d0 0.0d0 0.0d0)) ""))
+    (is (equal '((0 0) (3 0)) (first (%ct-lines mock))))))
+
+(test command-fillet-chamfer-offset-break-pedit-overkill
+  (multiple-value-bind (mock a b) (%ct-two-lines "0,0" "4,0" "4,0" "4,4")
+    (clautolisp.autolisp-host:host-command mock '("_.FILLET" "_R" "1"))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.FILLET" (list a '(2.0d0 0.0d0 0.0d0)) (list b '(4.0d0 2.0d0 0.0d0))))
+    (is (equal '(((0 0) (3 0)) ((4 1) (4 4))) (%ct-lines mock)))
+    (let ((arc (%ct-last-data mock)))
+      (is (%ct-near '(3 1 0) (%ct-group arc 10)))
+      (is (%ct-near 1.0 (%ct-group arc 40)))))
+  (multiple-value-bind (mock a b) (%ct-two-lines "0,0" "4,0" "4,0" "4,4")
+    (clautolisp.autolisp-host:host-command mock '("_.CHAMFER" "_D" "1" "1"))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.CHAMFER" (list a '(2.0d0 0.0d0 0.0d0)) (list b '(4.0d0 2.0d0 0.0d0))))
+    (is (equal '(((0 0) (3 0)) ((4 1) (4 4)) ((3 0) (4 1))) (%ct-lines mock))))
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "4,0" ""))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.OFFSET" "1" (list (host-entlast mock) '(2.0d0 0.0d0 0.0d0)) "2,1" ""))
+    (is (equal '(((0 0) (4 0)) ((0 1) (4 1))) (%ct-lines mock))))
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "4,0" ""))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.BREAK" (list (host-entlast mock) '(1.0d0 0.0d0 0.0d0)) "3,0"))
+    (is (equal '(((0 0) (1 0)) ((3 0) (4 0))) (%ct-lines mock))))
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "4,0" ""))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.PEDIT" (list (host-entlast mock) '(2.0d0 0.0d0 0.0d0)) "_Y" "_W" "0.5" ""))
+    (let ((d (%ct-last-data mock)))
+      (is (string= "LWPOLYLINE" (autolisp-string-value (%ct-group d 0))))
+      (is (%ct-near 0.5 (%ct-group d 43)))))
+  (multiple-value-bind (mock a b) (%ct-two-lines "0,0" "4,0" "0,0" "4,0")
+    (clautolisp.autolisp-host:host-command mock (list "_.-OVERKILL" a b "" ""))
+    (is (= 1 (length (%ct-lines mock))))))
+
+;;; --- cador-4 slice 4: a declined command leaves a notice ---------------------
+
+(test unknown-command-leaves-a-console-notice
+  (let ((host (make-cador)))
+    (clautolisp.autolisp-host:host-command host '("_.NOSUCHCMD" "1,1" "_.LINE" "0,0" "1,1" ""))
+    (let ((console (get-output-stream-string (cador-prompt-output host))))
+      (is (search "; cador: unknown command NOSUCHCMD -- the rest of the command sequence is ignored."
+                  console)))
+    ;; Interpretation stopped at it: the LINE after it was not drawn.
+    (is (null (clautolisp.autolisp-host:host-entlast host)))))
+
+(test failing-command-leaves-a-console-notice
+  (let ((host (make-cador)))
+    (setf (gethash "PRBFAIL" clautolisp.cador::*cador-commands*)
+          (lambda (host tokens) (declare (ignore host tokens)) (error "probe failure")))
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-host:host-command host '("_.PRBFAIL"))
+           (is (search "; cador: PRBFAIL failed: probe failure"
+                       (get-output-stream-string (cador-prompt-output host))))
+           ;; CMDECHO 0 silences the notice, as it does the echo.
+           (clautolisp.autolisp-host:host-setvar host "CMDECHO" 0)
+           (clautolisp.autolisp-host:host-command host '("_.PRBFAIL"))
+           (is (string= "" (get-output-stream-string (cador-prompt-output host)))))
+      (remhash "PRBFAIL" clautolisp.cador::*cador-commands*))))
+
+;;; --- alref final round: LOAD (a shape file) and SHAPE --------------------------
+
+(test shape-after-load-makes-the-measured-entity
+  (let* ((host (make-cador))
+         (dir (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "cador-shape-~D/" (random 1000000))
+                                (uiop:temporary-directory))))
+         (shx (merge-pathnames "probeshp.shx" dir)))
+    (ensure-directories-exist dir)
+    (unwind-protect
+         (progn
+           (with-open-file (out shx :direction :output :if-exists :supersede)
+             (write-string "*1,1,TRACK1" out))
+           ;; No shape file loaded: SHAPE makes nothing.
+           (clautolisp.autolisp-host:host-command host '("_.SHAPE" "TRACK1" "0,0" "1" "0"))
+           (is (null (clautolisp.autolisp-host:host-entlast host)))
+           (clautolisp.autolisp-host:host-command host (list "_.LOAD" (namestring shx)))
+           (clautolisp.autolisp-host:host-command host '("_.SHAPE" "TRACK1" "0,0" "1" "0"))
+           (let ((data (clautolisp.autolisp-host:host-entget
+                        host (clautolisp.autolisp-host:host-entlast host))))
+             (flet ((g (code)
+                      (let ((v (cdr (assoc code data))))
+                        (if (typep v 'clautolisp.autolisp-runtime:autolisp-string)
+                            (clautolisp.autolisp-runtime:autolisp-string-value v)
+                            v))))
+               (is (equal "SHAPE" (g 0)))
+               (is (equal "0" (g 8)))
+               (is (equal '(0d0 0d0 0d0) (g 10)))
+               (is (= 1 (g 40)))
+               (is (equal "TRACK1" (g 2)))
+               (is (= 0 (g 50)))
+               (is (= 1 (g 41)))
+               (is (= 0 (g 51))))))
+      (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore))))
+

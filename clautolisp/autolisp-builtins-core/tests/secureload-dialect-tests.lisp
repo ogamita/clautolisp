@@ -5,7 +5,7 @@
 ;;;; SECURELOAD / TRUSTEDPATHS dialect-default overlay (Phase 2).
 ;;;;
 ;;;; Exercises APPLY-DIALECT-TRUST-SYSVAR-DEFAULTS directly against a
-;;;; fresh MockHost: the per-dialect SECURELOAD / TRUSTEDPATHS defaults
+;;;; fresh cador: the per-dialect SECURELOAD / TRUSTEDPATHS defaults
 ;;;; and read-only-ness, registration of the clautolisp-only trust
 ;;;; sysvars, and the environment-variable override (env > dialect
 ;;;; default). See documentation/clautolisp-secureload-trust-model-spec.org.
@@ -15,17 +15,17 @@
   (declare (ignore _))
   "/work/proj")
 
-(defun %trust-host (dialect &optional getenv)
-  "A fresh MockHost with the dialect trust defaults applied. GETENV, when
-supplied, stubs the environment lookups (a function NAME -> string-or-nil).
-The cwd is stubbed to /work/proj so implicit-trusted defaults are
-deterministic."
+(defun %trust-host (dialect &optional (getenv (constantly nil)))
+  "A fresh cador with the dialect trust defaults applied. GETENV stubs the
+environment lookups (a function NAME -> string-or-nil); by default it finds
+NOTHING, so the dialect defaults are what is tested. It used to fall back to
+the REAL environment, and on the macOS runner -- whose user exports
+TRUSTEDPATHS -- TRUSTEDPATHS-DIALECT-DEFAULT-IS-EMPTY read that user's paths
+(test:clautolisp:macos, job 16912187707, 2026-10-03). The cwd is stubbed to
+/work/proj so implicit-trusted defaults are deterministic."
   (let ((mock (clautolisp.cador:make-cador)))
-    (if getenv
-        (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
-         mock dialect :getenv getenv :getcwd #'%const-cwd)
-        (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
-         mock dialect :getcwd #'%const-cwd))
+    (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
+     mock dialect :getenv getenv :getcwd #'%const-cwd)
     mock))
 
 (defun %getvar-int (host name)
@@ -52,6 +52,26 @@ deterministic."
   (is (eql 1 (%getvar-int (%trust-host :strict) "SECURELOAD")))
   (is (eql 0 (%getvar-int (%trust-host :lax) "SECURELOAD")))
   (is (eql 1 (%getvar-int (%trust-host :clautolisp) "SECURELOAD"))))
+
+(test every-product-spelling-gets-its-products-trust-defaults
+  ;; Regression 2026-10-03: the dialect was compared by NAME, so every
+  ;; derived spelling (--dialect bricscad-mac, ...) got AutoCAD's
+  ;; SECURELOAD 1, settable, and AutoCAD's sysvar set.
+  (dolist (d '(:bricscad-mac :bricscad-linux :bricscad-v25 :bricscad-mac-v26 :bricscad))
+    (is (eq :bricscad-v26
+            (clautolisp.autolisp-reader:autolisp-dialect-template-name d))
+        "~S should fold onto :bricscad-v26" d)
+    (is (eql 0 (%getvar-int (%trust-host d) "SECURELOAD")) "~S SECURELOAD" d)
+    (is (clautolisp.autolisp-builtins-core::secureload-read-only-for-dialect-p d)
+        "~S should make SECURELOAD read-only" d))
+  (dolist (d '(:autocad-mac :autocad-2022 :autocad))
+    (is (eq :autocad-2026
+            (clautolisp.autolisp-reader:autolisp-dialect-template-name d))
+        "~S should fold onto :autocad-2026" d)
+    (is (eql 1 (%getvar-int (%trust-host d) "SECURELOAD")) "~S SECURELOAD" d))
+  ;; Non-product dialects keep their own names.
+  (dolist (d '(:strict :lax :clautolisp))
+    (is (eq d (clautolisp.autolisp-reader:autolisp-dialect-template-name d)))))
 
 (test trustedpaths-dialect-default-is-empty
   (dolist (d '(:autocad-2026 :bricscad-v26 :strict :lax :clautolisp))

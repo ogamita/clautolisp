@@ -1,0 +1,219 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-activex-enumeration-constants-unbound — provide the vendor ActiveX constants
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-cador-activex-enumeration-constants-unbound
+#+DATE: 2026-10-06
+
+* Context
+
+Visual LISP programs use the symbolic constants published with the AutoCAD
+ActiveX API.  For example, =acAlignmentMiddleLeft= is the documented value
+=9= of the =AcAlignment= enumeration.  The symbols are part of the practical
+ActiveX language surface: application code should not have to replace them
+with unexplained integers merely because it runs through cador.
+
+The cador property implementation already accepts the numeric =AcAlignment=
+range 0 through 14.  It does not, however, bind the corresponding AutoLISP
+symbols in the runtime environment.
+
+* Reproduction
+
+Run the SCHME ActiveX suite with alfe's clautolisp subprocess backend:
+
+#+begin_src sh
+alfe --clautolisp --backend subprocess --host cador \
+  --dialect bricscad-v26 --dwg Schema_Test.dwg \
+  -l charger-dotnet.lsp -l tests/test-cad-activex.lsp \
+  -x '(C:MAIN)' --quit
+#+end_src
+
+The following SCHME code creates an attribute definition and then sets its
+alignment:
+
+#+begin_src lisp
+(vla-put-Alignment attribut acAlignmentMiddleLeft)
+#+end_src
+
+In GitLab job 527257, =acAlignmentMiddleLeft= evaluated to =nil= and cador
+reported:
+
+#+begin_example
+ERROR [adaptateurs-activex-a1] creation insertion et mise a jour d'un bloc attribue
+-- Alignment expects an acAlignment value 0-14, got NIL.
+#+end_example
+
+The remaining 16 SCHME tests passed.  This is distinct from the former
+=AddAttribute= argument-order defect: attribute creation now succeeds and the
+failure occurs at the subsequent =vla-put-Alignment= call.
+
+* Cause
+
+=clautolisp/cador/source/vlax-api.lisp= implements conversion between numeric
+=AcAlignment= values and DXF groups, but the runtime bootstrap does not install
+the vendor ActiveX enumeration constants.  Consequently an otherwise valid
+symbolic argument reaches the property setter as =nil=.
+
+The same gap can affect every symbolic constant used by =vla-*= and =vlax-*=
+calls, not only =acAlignmentMiddleLeft=.  Fixing one name locally would leave
+the ActiveX surface incomplete and make failures dependent on which application
+code happens to run first.
+
+* Temporary downstream workaround
+
+SCHME can keep its source compatible with real CAD products by defining the
+constant only when the host has not already supplied it:
+
+#+begin_src lisp
+(if (not (boundp 'acAlignmentMiddleLeft))
+  (setq acAlignmentMiddleLeft 9))
+#+end_src
+
+The guard is required: AutoCAD and BricsCAD already provide this variable, so
+the workaround must not overwrite a vendor definition.  The numeric fallback
+is temporary and should be removed once a release containing the runtime fix
+is consumed.
+
+* Required fix
+
+1. Inventory the ActiveX enumeration constants exposed to AutoLISP by the
+   supported AutoCAD and BricsCAD profiles; do not special-case only the one
+   constant found by SCHME.
+2. Bind the constants in every clautolisp execution path that exposes ActiveX,
+   including standalone clautolisp and =alfe --clautolisp= with direct and
+   subprocess backends.
+3. Keep the constant values and availability consistent with the selected host
+   and product/version profile where the vendors differ.
+4. Make =vl-load-com= idempotent and ensure that calling it does not erase or
+   unexpectedly replace user bindings.
+5. Add table-driven tests which pass symbolic constants through representative
+   =vla-*= setters and methods, rather than testing only raw numeric values.
+
+* Acceptance criteria
+
+- Under =--host cador --dialect bricscad-v26=, =acAlignmentMiddleLeft= is bound
+  to =9= before application code uses it.
+- The SCHME =creation insertion et mise a jour d'un bloc attribue= test passes
+  without its conditional fallback.
+- All =AcAlignment= values accepted by the cador property bridge have their
+  expected symbolic bindings.
+- A broader generated or table-driven test covers the other ActiveX enum
+  families consumed by implemented =vla-*= and =vlax-*= operations.
+- Direct clautolisp, alfe direct mode and alfe subprocess mode expose the same
+  bindings for the same host and dialect.
+- AutoCAD/BricsCAD-compatible application code can use the symbolic constants
+  without embedding numeric magic values.
+
+* Progress (2026-10-06, clautolisp 2.2.213)
+
+Branch =fix-cador-activex-enumeration-constants-unbound=.
+
+** Done
+
+- =(vl-load-com)= binds the ActiveX enumeration constants of the four
+  families consumed by cador's implemented =vla-*= / =vlax-*= operations
+  (table =*ACTIVEX-ENUMERATION-CONSTANTS*= in
+  =clautolisp/autolisp-builtins-core/source/api.lisp=, 58 names):
+  - =AcAlignment= 0-14 (Text / Attribute =Alignment=): names and order from
+    Autodesk "Alignment Property (ActiveX)"
+    (https://help.autodesk.com/cloudhelp/2025/ENU/AutoCAD-LT-ActiveX-Reference/files/GUID-27030E1C-6480-4A64-BE0A-E72C1FFF2023.htm),
+    values = the 0-14 range cador's property bridge already maps to DXF
+    72 + 73/74;
+  - =AcAttributeMode= (=AddAttribute= Mode, =Mode= property): 0, 1, 2, 4, 8,
+    16, 32 -- additive flags per Autodesk's AddAttribute documentation;
+  - =AcColor= (=Color=): acByBlock 0, acRed 1 ... acWhite 7, acByLayer 256 --
+    Autodesk "ColorIndex Property (ActiveX)"
+    (https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-LT-ActiveX-Reference/files/GUID-0C23C1B5-DA04-4A27-9EDD-26D5615C71D5.htm):
+    "a color index number from 0 to 256, or one of the constants";
+  - =AcLineWeight= (=Lineweight=): verbatim from BricsCAD V26 DevRef
+    =vl-vplayer-set-lineweight=, already copied in the spec draft.
+  Every name is in BricsCAD's list of AC constants
+  (https://developer.bricsys.com/bricscad/help/en_US/V14/DevRef/source/Lisp_acCONSTANTS.html)
+  and in Autodesk's reference, so no family is product-restricted. Neither
+  vendor page states the AcAttributeMode / AcColor numbers next to the
+  names; they agree with the DXF ATTDEF 70 flags and the ACI, and with
+  third-party type-library mirrors -- the probe settles them.
+- Binding time: at =(vl-load-com)= (Autodesk's examples always call it
+  first; =vla-*= names appear only after it). A name the program already
+  gave a non-nil value is left alone, so repeated calls neither erase nor
+  replace user bindings; a name set to nil is rebound.
+- Same code path for standalone clautolisp and both =alfe --clautolisp=
+  variants (they run the same builtin); checked under the autocad-2022,
+  bricscad-v26 and clautolisp dialects (tests) and in the built
+  =clautolisp-sbcl= under =--dialect bricscad-v26=.
+- Table-driven tests (autolisp-builtins-core builtin-tests.lisp,
+  =activex-constants-*=): every AcAlignment constant through
+  =vla-put-Alignment= on an ATTDEF created by =vla-AddAttribute= (the SCHME
+  call) and on a TEXT; every bound constant under three dialects;
+  Color / Lineweight / layer Color / AddAttribute Mode symbolically;
+  idempotence and user bindings.
+- Probe =probes/sources/probe-activex-constants.lsp= (in the manifest):
+  boundp + value before and after =(vl-load-com)=, each constant of the
+  four families with its documented value, a user binding across a second
+  =(vl-load-com)=, and the value of every one of the 934 names of
+  BricsCAD's AC constant list (two of which, =action_tile= and
+  =acdimenableupdate=, are functions).
+
+** Remains
+
+- Run the probe on AutoCAD 2022 and BricsCAD V25/V26 and reconcile:
+  values, whether the constants exist before =(vl-load-com)= (BricsCAD
+  calls it at startup from =vle-extension.lsp=), whether a second call
+  resets a user value (clautolisp: no), whether the names are protected.
+- Bind the other families from the inventory as operations consume them
+  (AcActiveSpace, AcRegenType, AcSaveAsType, AcAttachmentPoint, ...).
+- Multi-document: the constants are bound in the namespace that called
+  =(vl-load-com)=; a later document's namespace gets them at its own
+  =(vl-load-com)= (as acaddoc.lsp code does) -- vendor behaviour unmeasured.
+- SCHME: replay =creation insertion et mise a jour d'un bloc attribue=
+  without the conditional fallback.
+
+* Measured, and the full table bound (2026-10-06, pjb: "bind the full measured table")
+
+probe-activex-constants on AutoCAD 2022 (job 16974598250), BricsCAD V25
+Windows (16974598254) and V26 macOS (16978678521):
+- the 58 documented values of AcAlignment / AcAttributeMode / AcColor /
+  AcLineWeight: identical on all three;
+- the inventory of BricsCAD's 934 AC names: 932 integer constants (the two
+  others are functions); AutoCAD binds 832, BricsCAD all 932; both BricsCAD
+  builds agree; 30 names differ between the products (AcViewportScale off by
+  one, acNative 64 / 60);
+- a second (vl-load-com) re-binds NOTHING on all three: (setq acRed 99)
+  stays 99, (setq acRed nil) stays nil;
+- (vl-load-com) answers nil on AutoCAD 2022, T on BricsCAD.
+
+Done: activex-constants-table.lisp is GENERATED from those runs
+(*ACTIVEX-MEASURED-CONSTANTS*: name, AutoCAD value, BricsCAD value). Each
+dialect binds its product's table (strict: the names both bind alike;
+clautolisp / lax: all, AutoCAD's value where they differ), at the FIRST
+(vl-load-com) of a document only, never over a non-nil value; (vl-load-com)
+answers nil under AutoCAD dialects. Tests rewritten to the measured table
+(832 / 932 per product, the differing names per dialect, the answer of
+(vl-load-com), nil stays nil).
+
+Still open: whether the vendors bind the constants BEFORE any (vl-load-com)
+-- the first run measured it after another suite had loaded COM, so the
+probe now runs FIRST in the manifest; the next run settles it. Then the
+SCHME replay without its fallback (downstream).
+
+* Closed (2026-10-06, clautolisp 2.2.213)
+
+The last question settled, the probe now FIRST in the run: AutoCAD 2022
+(job 16978852020) has none of the constants before (vl-load-com) -- it binds
+them there; BricsCAD V26 (job 16978852021) has them from the start of the
+document. So under the BricsCAD dialects the document startup chain
+installs them (before on_doc_load.lsp and S::STARTUP), otherwise the first
+(vl-load-com) does. Checked on the built binary:
+  bricscad-v26: acAlignmentMiddleLeft before any (vl-load-com) = 9,
+                acVp1_10 = 6, (vl-load-com) = T;
+  autocad-2022: nil before, (vl-load-com) = nil, then 9, acVp1_10 = 7;
+  strict:       nil before, then 9, acVp1_10 unbound (not portable).
+Test activex-constants-are-there-from-document-start-under-bricscad.
+Acceptance: acAlignmentMiddleLeft is 9 under --dialect bricscad-v26 before
+application code runs; every AcAlignment value bound and accepted by the
+property bridge; the whole measured table, table-driven, per product; the
+same builtin on every path (standalone, alfe direct / subprocess). Left
+downstream: SCHME removes its conditional fallback and replays
+"creation insertion et mise a jour d'un bloc attribue".

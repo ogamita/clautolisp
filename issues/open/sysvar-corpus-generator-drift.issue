@@ -1,0 +1,35 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: sysvar-corpus-generator-drift -- the generated inventory-coverage.lsp no longer matches its generator
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-11-04
+
+* Symptom
+
+Found while fixing errno-setvar-accepted-by-vendors (2026-11-04).
+=autolisp-test/tests/sysvar/inventory-coverage.lsp= says it is GENERATED
+by =autolisp-test/tools/generate-sysvar-corpus.lisp=, but regenerating it
+
+#+begin_example
+sbcl --non-interactive --load autolisp-test/tools/generate-sysvar-corpus.lisp --eval '(generate)'
+#+end_example
+
+changes far more than the entry being edited: ~120 lines go, among them
+=sysvar-celtype-getvar-default=, =sysvar-cmaterial-getvar-default= and the
+=sysvar-cmdline*-getvar-default= tests (BricsCAD "RGB: 50 54 56 (Settings
+dialog) ..." defaults). Either the tracked file was edited by hand, or the
+generator (or the inventory's :default fields) changed without the file
+being regenerated.
+
+For errno-setvar the generator was updated and the one ERRNO entry
+patched by hand, to keep the change reviewable.
+
+* To do
+
+1. Find which side moved (git log of the generator, the inventory and the
+   generated file) and decide which tests are right.
+2. Regenerate, and add a check target (like check-dialect-warnings-annex)
+   so the drift cannot come back silently.

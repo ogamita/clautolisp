@@ -57,6 +57,17 @@
     (is (= 2.5d0 (call-autolisp-function max-fn 1 2.5d0 2)))
     (is (= 1.5d0 (call-autolisp-function min-fn 3 1.5d0 2)))
     (is (= 2 (call-autolisp-function rem-fn 17 5)))
+    ;; REM takes real and mixed operands, real result when any operand is
+    ;; real; variadic reduce; remainder follows the dividend's sign. The
+    ;; real case is the one SCHMS arc geometry needs -- rem-real-operands.issue.
+    (is (= 12.0d0 (call-autolisp-function rem-fn 12.0d0 16)))         ; the SCHMS case
+    (is (typep (call-autolisp-function rem-fn 12.0d0 16) 'double-float))
+    (is (typep (call-autolisp-function rem-fn 17 5) '(signed-byte 32))) ; all-int -> int
+    (is (= 1.5d0 (call-autolisp-function rem-fn 7.5d0 3)))            ; mixed
+    (is (= -1 (call-autolisp-function rem-fn -7 2)))                  ; sign of dividend
+    (is (= 1 (call-autolisp-function rem-fn 7 -2)))
+    (is (= 0 (call-autolisp-function rem-fn 42 12 3)))               ; variadic: rem(rem(42,12),3)
+    (is (= 5 (call-autolisp-function rem-fn 5)))                     ; one operand -> itself
     (is (= 4 (call-autolisp-function gcd-fn 20 12)))
     (is (= 6 (call-autolisp-function gcd-fn 54 24 18)))
     (is (= 0 (call-autolisp-function gcd-fn)))
@@ -1025,24 +1036,21 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
         (is (string= "quit / exit abort"
                      (autolisp-string-value message))
             "trapped (quit) carries the same vendor canonical message")))
-    (let ((value (call-autolisp-function
-                  apply-fn
-                  (intern-autolisp-symbol "VL-EXIT-WITH-VALUE")
-                  (list 42))))
-      (is (= 42 value))
-      (is (= 0 (autolisp-errno)))
-      (is (null (call-autolisp-function error-p-fn value))))
-    (let ((failure (call-autolisp-function
-                    apply-fn
-                    (intern-autolisp-symbol "VL-EXIT-WITH-ERROR")
-                    (list (make-autolisp-string "boom")))))
-      (is (= 1 (autolisp-errno)))
-      (is (string= "T"
-                   (autolisp-symbol-name
-                    (call-autolisp-function error-p-fn failure))))
-      (let ((message (call-autolisp-function message-fn failure)))
-        (is (typep message 'autolisp-string))
-        (is (search "boom" (autolisp-string-value message)))))))
+    ;; Outside a VLX (always, in clautolisp) both vl-exit-* are an error
+    ;; without a message: the catch-all's message is nil under the default
+    ;; dialect, as on AutoCAD (vl-exit-outside-vlx-caught-diverges).
+    (dolist (call (list (list "VL-EXIT-WITH-VALUE" 42)
+                        (list "VL-EXIT-WITH-ERROR" (make-autolisp-string "boom"))))
+      (let ((failure (call-autolisp-function
+                      apply-fn
+                      (intern-autolisp-symbol (first call))
+                      (rest call))))
+        (is (string= "T"
+                     (autolisp-symbol-name
+                      (call-autolisp-function error-p-fn failure)))
+            "~A outside a VLX must be caught as an error" (first call))
+        (is (null (call-autolisp-function message-fn failure))
+            "~A outside a VLX has no message" (first call))))))
 
 (test builtin-mapcar
   (reset-autolisp-symbol-table)
@@ -1179,20 +1187,17 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
           (is nil))
       (autolisp-termination (condition)
         (is (eq :quit (autolisp-termination-kind condition)))))
-    (handler-case
-        (progn
-          (call-autolisp-function exit-error-fn (make-autolisp-string "bridge-error"))
-          (is nil))
-      (autolisp-namespace-exit (condition)
-        (is (eq :error (autolisp-namespace-exit-kind condition)))
-        (is (string= "bridge-error" (autolisp-namespace-exit-value condition)))))
-    (handler-case
-        (progn
-          (call-autolisp-function exit-value-fn 42)
-          (is nil))
-      (autolisp-namespace-exit (condition)
-        (is (eq :value (autolisp-namespace-exit-kind condition)))
-        (is (= 42 (autolisp-namespace-exit-value condition)))))))
+    ;; Outside a VLX -- always, in clautolisp -- both raise the AutoLISP
+    ;; error :VL-EXIT-OUTSIDE-VLX (measured on AutoCAD and BricsCAD).
+    (dolist (call (list (list exit-error-fn (make-autolisp-string "bridge-error"))
+                        (list exit-value-fn 42)))
+      (handler-case
+          (progn
+            (apply #'call-autolisp-function call)
+            (is nil))
+        (autolisp-runtime-error (condition)
+          (is (eq :vl-exit-outside-vlx
+                  (clautolisp.autolisp-runtime:autolisp-runtime-error-code condition))))))))
 
 (test builtin-load-error-hook-can-transfer-control
   (reset-autolisp-symbol-table)
@@ -1381,12 +1386,15 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
            (dir-names (mapcar #'autolisp-string-value directory-results)))
       ;; Descriptions carry the actual values + the cwd so a macОС-only
       ;; regression is self-explanatory in the CI trace.
-      (is (equal '("README" "alpha.lsp") all-names)
+      ;; The selector defaults to 0 (files AND directories), and "." / ".."
+      ;; are entries, as on AutoCAD and BricsCAD
+      ;; (vl-directory-files-dot-entries-and-default-selector).
+      (is (equal '("." ".." "README" "alpha.lsp" "subdir") all-names)
           "vl-directory-files files = ~S (dir ~S, cwd ~S)"
           all-names directory (clautolisp.autolisp-runtime:autolisp-current-directory))
       (is (equal '("alpha.lsp") file-names)
           "vl-directory-files *.lsp = ~S" file-names)
-      (is (equal '("subdir") dir-names)
+      (is (equal '("." ".." "subdir") dir-names)
           "vl-directory-files dirs = ~S" dir-names))
     (is (string= "T"
                  (autolisp-symbol-name
@@ -1479,14 +1487,51 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
                   (call-autolisp-function
                    isdir (clautolisp.autolisp-runtime:make-autolisp-string path))))
            ;; `-1' selector: same subdir list with and without the trailing sep.
-           (is (equal '("bornage") (dirs directory)))
-           (is (equal '("bornage") (dirs dir-no-sep))
+           (is (equal '("." ".." "bornage") (dirs directory)))
+           (is (equal '("." ".." "bornage") (dirs dir-no-sep))
                "vl-directory-files -1 must list subdirs without a trailing separator; got ~S"
                (dirs dir-no-sep))
            ;; vl-file-directory-p: true for the subdir with and without the sep.
            (is (string= "T" (autolisp-symbol-name (dir-p subdirectory))))
            (is (string= "T" (autolisp-symbol-name (dir-p subdir-no-sep)))
                "vl-file-directory-p must recognise a directory without a trailing separator"))
+      (ignore-errors (uiop:delete-directory-tree directory :validate t)))))
+
+;;; vl-directory-files-dot-entries-and-default-selector: AutoCAD 2022, BricsCAD
+;;; V25 and V26 list "." and ".." first, as directory entries the pattern
+;;; filters like any other name, and an omitted / nil selector means 0.
+
+(test builtin-vl-directory-files-dot-entries-follow-pattern-and-selector
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((dirfiles (autolisp-symbol-function (find-autolisp-symbol "VL-DIRECTORY-FILES")))
+         (directory (namestring
+                     (uiop:ensure-directory-pathname
+                      (merge-pathnames
+                       (format nil "clautolisp-dotent-~D/" (random 1000000000))
+                       (uiop:temporary-directory))))))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))
+    (ensure-directories-exist (concatenate 'string directory "sub/"))
+    (with-open-file (stream (concatenate 'string directory "a.lsp")
+                            :direction :output :if-does-not-exist :create)
+      (write-line "a" stream))
+    (unwind-protect
+         (flet ((names (pattern &optional (selector nil selector-p))
+                  (mapcar #'autolisp-string-value
+                          (apply #'call-autolisp-function dirfiles
+                                 (clautolisp.autolisp-runtime:make-autolisp-string directory)
+                                 (and pattern
+                                      (clautolisp.autolisp-runtime:make-autolisp-string pattern))
+                                 (and selector-p (list selector))))))
+           ;; "." and ".." come first, then the other entries in any order.
+           (is (equal '("." "..") (subseq (names nil) 0 2)))
+           (is (equal '("." ".." "a.lsp" "sub") (sort (names nil) #'string<)))
+           (is (equal '("." ".." "a.lsp" "sub") (sort (names "*" 0) #'string<)))
+           (is (equal '("." ".." "a.lsp" "sub") (sort (names "*.*" nil) #'string<)))
+           (is (equal '("." ".." "sub") (sort (names "*.*" -1) #'string<)))
+           (is (equal '("a.lsp") (names "*.*" 1)))
+           (is (equal '("a.lsp") (names "*.lsp")))
+           (is (equal '("..") (names ".." -1))))
       (ignore-errors (uiop:delete-directory-tree directory :validate t)))))
 
 (test builtin-vl-file-mutation-and-size-helpers
@@ -1854,6 +1899,78 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     (is (string= (concatenate 'string (string #\Newline) "\"hello\" ") contents))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))))
 
+(test builtin-printers-explicit-nil-file-per-dialect
+  ;; autocad-output-explicit-nil-file-rejected. Both vendor references
+  ;; accept an explicit NIL file argument for princ / print / prin1
+  ;; (Autodesk: "Type: File or nil"; Bricsys: "if omitted or NIL is used,
+  ;; output goes to command line"), and BricsCAD V26 does (measured
+  ;; 2026-11-04). AutoCAD 2022 rejects it ("type d'argument incorrect:
+  ;; FILE nil", accoreconsole, LISPSYS 0, measured 2026-11-04): a product
+  ;; contradicting an agreed doc, case 2. The AutoCAD dialects reproduce
+  ;; the error and warn; strict accepts and warns; bricscad, clautolisp
+  ;; and lax accept silently. The 1-argument call never warns.
+  (reset-autolisp-symbol-table)
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (install-core-builtins)
+  (let ((session (clautolisp.autolisp-runtime:evaluation-context-session
+                  (clautolisp.autolisp-runtime:current-evaluation-context))))
+    (labels ((call (name &rest args)
+               ;; (values outcome stdout stderr): OUTCOME is :error-CODE or
+               ;; the returned value.
+               (let* ((fn (autolisp-symbol-function (find-autolisp-symbol name)))
+                      (out (make-string-output-stream))
+                      (err (make-string-output-stream))
+                      (outcome
+                        (let ((*standard-output* out) (*error-output* err))
+                          (handler-case (apply #'call-autolisp-function fn args)
+                            (autolisp-runtime-error (condition)
+                              (list :error (clautolisp.autolisp-runtime:autolisp-runtime-error-code
+                                            condition)))))))
+                 (values outcome (get-output-stream-string out)
+                         (get-output-stream-string err))))
+             (in-dialect (name)
+               (clautolisp.autolisp-runtime:set-runtime-session-dialect
+                session (clautolisp.autolisp-reader:find-autolisp-dialect name))
+               (setf clautolisp.autolisp-runtime::*printer-nil-file-warned* nil)))
+      (let ((x (make-autolisp-string "x"))
+            (results '()))
+        (dolist (dialect '(:autocad :autocad-2022 :strict :bricscad :clautolisp :lax))
+          (in-dialect dialect)
+          (dolist (name '("PRINC" "PRINT" "PRIN1"))
+            ;; The notice is once per run: re-arm it for each operator.
+            (setf clautolisp.autolisp-runtime::*printer-nil-file-warned* nil)
+            (multiple-value-bind (outcome out err) (call name x nil)
+              (push (list dialect name
+                          (if (consp outcome) (first outcome) :value)
+                          (plusp (length out))
+                          (and (search "[printer-nil-file]" err) t))
+                    results)))
+          (multiple-value-bind (outcome out err) (call "PRINC" x)
+            (declare (ignore outcome out))
+            (push (list dialect :one-arg-warns (and (search "[printer-nil-file]" err) t))
+                  results)))
+        (setf results (reverse results))
+        (in-dialect :strict)
+        (dolist (name '("PRINC" "PRINT" "PRIN1"))
+          ;; (dialect name outcome wrote-p warned-p)
+          (is (equal (list :autocad name :error nil t)
+                     (find-if (lambda (r) (and (eq (first r) :autocad) (equal (second r) name))) results))
+              "autocad ~A: ~S" name results)
+          (is (equal (list :autocad-2022 name :error nil t)
+                     (find-if (lambda (r) (and (eq (first r) :autocad-2022) (equal (second r) name))) results))
+              "autocad-2022 ~A: ~S" name results)
+          (is (equal (list :strict name :value t t)
+                     (find-if (lambda (r) (and (eq (first r) :strict) (equal (second r) name))) results))
+              "strict ~A: ~S" name results)
+          (dolist (quiet '(:bricscad :clautolisp :lax))
+            (is (equal (list quiet name :value t nil)
+                       (find-if (lambda (r) (and (eq (first r) quiet) (equal (second r) name))) results))
+                "~A ~A: ~S" quiet name results)))
+        (dolist (dialect '(:autocad :autocad-2022 :strict :bricscad :clautolisp :lax))
+          (is (equal (list dialect :one-arg-warns nil)
+                     (find-if (lambda (r) (and (eq (first r) dialect) (eq (second r) :one-arg-warns))) results))
+              "~A: (princ x) must not warn" dialect))))))
+
 (test builtin-atoi-strtol-style
   ;; AutoLISP `atoi` follows a strtol(..., 10) C-style lex model.
   ;; Confirmed against BricsCAD V26 by the Phase-5 product test on
@@ -1924,7 +2041,39 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     ;; equal with fuzz tolerance.
     (is (eq t-symbol
             (call-autolisp-function equal-fn 1.0d0 1.0001d0 0.01d0)))
-    (is (null (call-autolisp-function equal-fn 1.0d0 1.05d0 0.01d0)))))
+    (is (null (call-autolisp-function equal-fn 1.0d0 1.05d0 0.01d0)))
+    ;; equal-list-fuzz.issue: fuzz reaches numeric LEAVES of lists, points,
+    ;; nested lists and dotted pairs -- not only top-level numbers.
+    (is (eq t-symbol                                              ; list, inside tol
+            (call-autolisp-function equal-fn
+                                    (list 5.0d0) (list (+ 5.0d0 1.0d-15)) 1.0d-9)))
+    (is (null (call-autolisp-function equal-fn                    ; list, outside tol
+                                      (list 5.0d0) (list 5.01d0) 1.0d-9)))
+    (is (eq t-symbol                                              ; point, 3 coords
+            (call-autolisp-function equal-fn
+                                    (list 1.0d0 2.0d0 0.0d0)
+                                    (list (+ 1.0d0 1.0d-15) 2.0d0 0.0d0) 1.0d-9)))
+    (is (eq t-symbol                                              ; nested list
+            (call-autolisp-function equal-fn
+                                    (list 1.0d0 (list 2.0d0 3.0d0))
+                                    (list 1.0d0 (list (+ 2.0d0 1.0d-15) 3.0d0)) 1.0d-9)))
+    (is (eq t-symbol                                              ; dotted pair
+            (call-autolisp-function equal-fn
+                                    (cons 1.0d0 2.0d0)
+                                    (cons (+ 1.0d0 1.0d-15) 2.0d0) 1.0d-9)))
+    (is (null (call-autolisp-function equal-fn                    ; length kept strict
+                                      (list 5.0d0) (list 5.0d0 5.0d0) 1.0d-9)))
+    (is (eq t-symbol                                              ; non-numeric strict + numeric fuzz
+            (call-autolisp-function equal-fn
+                                    (list (make-autolisp-string "p") 1.0d0)
+                                    (list (make-autolisp-string "p") (+ 1.0d0 1.0d-15)) 1.0d-9)))
+    (is (null (call-autolisp-function equal-fn                    ; non-numeric differs
+                                      (list (make-autolisp-string "p") 1.0d0)
+                                      (list (make-autolisp-string "q") 1.0d0) 1.0d-9)))
+    (is (eq t-symbol                                              ; zero fuzz = exact, equal
+            (call-autolisp-function equal-fn (list 5.0d0) (list 5.0d0) 0)))
+    (is (null (call-autolisp-function equal-fn                    ; zero fuzz = exact, differs
+                                      (list 5.0d0) (list (+ 5.0d0 1.0d-15)) 0)))))
 
 (test builtin-caxr-family
   ;; All depth-2 and depth-3 CAxR / CDxR walkers and a representative
@@ -2124,6 +2273,41 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     (is (string= "0.0000E+00" (autolisp-string-value
                                (call-autolisp-function rtos-fn 0.0d0 1 4))))))
 
+(defun %rtos-in (dialect expression)
+  "EXPRESSION's string value under DIALECT (cador + core installed)."
+  (autolisp-string-value
+   (run-autolisp-string expression
+                        :setup-fn #'%install-cador-and-core
+                        :dialect (clautolisp.autolisp-reader:find-autolisp-dialect dialect))))
+
+(test rtos-scientific-precision-0-and-ties-as-measured
+  ;; probes/sources/probe-rtos.lsp, AutoCAD 2022 + BricsCAD, 2026-10-03:
+  ;; precision 0 prints no decimal point; a tie rounds away from zero on
+  ;; AutoCAD, to even on BricsCAD; mantissa carry renormalises.
+  (loop for (expression autocad bricscad)
+          in '(("(rtos 2.5 1 0)"        "3E+00"  "2E+00")
+               ("(rtos 3.14159 1 0)"    "3E+00"  "3E+00")
+               ("(rtos 0.5 1 0)"        "5E-01"  "5E-01")
+               ("(rtos -0.5 1 0)"       "-5E-01" "-5E-01")
+               ("(rtos 100.0 1 0)"      "1E+02"  "1E+02")
+               ("(rtos 123456.789 1 0)" "1E+05"  "1E+05")
+               ("(rtos 0.0 1 0)"        "0E+00"  "0E+00")
+               ("(rtos 2.5 1 2)"        "2.50E+00" "2.50E+00")
+               ("(rtos 9.99 1 1)"       "1.0E+01" "1.0E+01")
+               ("(rtos 0.0 1 4)"        "0.0000E+00" "0.0000E+00"))
+        do (is (equal autocad (%rtos-in :autocad expression)) "autocad ~A" expression)
+           (is (equal autocad (%rtos-in :strict expression)) "strict ~A" expression)
+           (is (equal bricscad (%rtos-in :bricscad-mac expression)) "bricscad ~A" expression)))
+
+(test angtos-bearing-a-hair-past-north-follows-the-product
+  ;; 1.5707963268 is a hair past 90 degrees: AutoCAD keeps the unrounded
+  ;; (west) side, BricsCAD calls a deviation that rounds to 0 east.
+  (let ((clautolisp.autolisp-builtins-core::*edtime-language* :en))
+    (is (equal "N 0d W" (%rtos-in :autocad "(angtos 1.5707963268 4 0)")))
+    (is (equal "N 0d E" (%rtos-in :bricscad-mac "(angtos 1.5707963268 4 0)")))
+    (is (equal "N 45d E" (%rtos-in :bricscad-mac "(angtos 0.7853981634 4 0)")))
+    (is (equal "S 90d W" (%rtos-in :bricscad-mac "(angtos 3.1415926536 4 0)")))))
+
 ;;;; ----- RTOS reads LUNITS / LUPREC / DIMZIN when args omitted -------
 ;;;;
 ;;;; system-variables.issue 'Coupling', step 2: with MODE / PRECISION
@@ -2259,8 +2443,12 @@ NIL when GETSTRING returns nil)."
   (install-core-builtins)
   (let ((rtos-fn (autolisp-symbol-function (find-autolisp-symbol "RTOS"))))
     (%rtos-is "1'-5.50\"" 17.5d0 3 2)     ; canonical AutoCAD example
-    (%rtos-is "1'-0.00\"" 12.0d0 3 2)     ; exact foot -> 0 inches
-    (%rtos-is "0'-6.5\"" 6.5d0 3 1)       ; under a foot keeps 0'
+    ;; DIMZIN 0 (the host-less default) = feet/inch code 0: zero feet and
+    ;; precisely zero inches are suppressed. Zero feet MEASURED on AutoCAD and
+    ;; BricsCAD (code 0 via DIMZIN 8); zero inches documented, probe pending.
+    (%rtos-is "1'" 12.0d0 3 2)             ; exact foot -> zero inches dropped
+    (%rtos-is "6.5\"" 6.5d0 3 1)           ; under a foot -> zero feet dropped
+    (%rtos-is "1'" 11.999d0 3 2)           ; 12.00" carries a foot
     (%rtos-is "-1'-5.50\"" -17.5d0 3 2)   ; sign leads the whole result
     (%rtos-is "2'-1\"" 25.0d0 3 0)))      ; P 0 drops the decimal point
 
@@ -2271,10 +2459,12 @@ NIL when GETSTRING returns nil)."
   (let ((rtos-fn (autolisp-symbol-function (find-autolisp-symbol "RTOS"))))
     (%rtos-is "1'-5 1/2\"" 17.5d0 4 2)    ; canonical AutoCAD example
     (%rtos-is "1'-5 1/2\"" 17.5d0 4 4)    ; 8/16 reduces to 1/2
-    (%rtos-is "1'-0\"" 12.0d0 4 4)        ; exact foot, no fraction
-    (%rtos-is "0'-3 3/8\"" 3.375d0 4 4)   ; 6/16 reduces to 3/8
+    ;; DIMZIN 0 = code 0: zero feet (measured) and zero inches (documented)
+    ;; are suppressed -- see %FEET-AND-INCHES.
+    (%rtos-is "1'" 12.0d0 4 4)             ; exact foot, no fraction
+    (%rtos-is "3 3/8\"" 3.375d0 4 4)       ; 6/16 reduces to 3/8; no 0'
     (%rtos-is "-1'-5 1/2\"" -17.5d0 4 2)  ; negative
-    (%rtos-is "1'-0\"" 11.99d0 4 0)))     ; rounds up 12" -> carries a foot
+    (%rtos-is "1'" 11.99d0 4 0)))          ; rounds up 12" -> carries a foot
 
 (test rtos-fractional-mode-whole-and-fraction
   ;; Mode 5: whole units + a reduced 2^P fraction, no feet.
@@ -2287,6 +2477,238 @@ NIL when GETSTRING returns nil)."
     (%rtos-is "6" 6.0d0 5 4)              ; integral -> no fraction
     (%rtos-is "1/2" 0.5d0 5 4)            ; zero whole -> bare fraction
     (%rtos-is "-15 1/2" -15.5d0 5 4)))    ; negative
+
+(test rtos-modes-3-5-match-autocad-and-bricscad-under-dimzin-8
+  ;; MEASURED, and identical on both vendors: AutoCAD 2022 (probe-results/
+  ;; autocad/ms-windows/20260831T130043Z) and BricsCAD V26 (probe-results/
+  ;; bricscad/macos/20260906T190558Z), each run with DIMZIN 8 and UNITMODE 0.
+  ;; DIMZIN 8 = trailing-zero suppression + feet/inch code 0 (zero feet
+  ;; dropped). Halves round AWAY from zero.
+  (dolist (case '(("(rtos -0.5 3 0)" "-1\"")
+                  ("(rtos 0.0 3 2)" "0\"")
+                  ("(rtos 0.5 3 2)" "0.5\"")
+                  ("(rtos 1.0 3 4)" "1\"")
+                  ("(rtos 3.14159 3 4)" "3.1416\"")
+                  ("(rtos 100.0 3 2)" "8'-4\"")
+                  ("(rtos 123456.789 3 2)" "10288'-0.79\"")
+                  ("(rtos 123456.789 3 6)" "10288'-0.789\"")
+                  ("(rtos -0.5 4 0)" "-1\"")
+                  ("(rtos 0.0 4 2)" "0\"")
+                  ("(rtos 0.5 4 0)" "1\"")
+                  ("(rtos 0.5 4 2)" "1/2\"")
+                  ("(rtos -0.5 4 2)" "-1/2\"")
+                  ("(rtos 2.5 4 0)" "3\"")
+                  ("(rtos 2.5 4 2)" "2 1/2\"")
+                  ("(rtos 3.14159 4 4)" "3 1/8\"")
+                  ("(rtos 3.14159 4 6)" "3 9/64\"")
+                  ("(rtos 100.0 4 2)" "8'-4\"")
+                  ("(rtos 123456.789 4 0)" "10288'-1\"")
+                  ("(rtos 123456.789 4 2)" "10288'-0 3/4\"")
+                  ("(rtos 123456.789 4 4)" "10288'-0 13/16\"")
+                  ("(rtos -0.5 5 0)" "-1")
+                  ("(rtos 0.5 5 0)" "1")
+                  ("(rtos 2.5 5 0)" "3")
+                  ("(rtos 123456.789 5 0)" "123457")
+                  ("(rtos 123456.789 5 2)" "123456 3/4")
+                  ("(rtos 123456.789 5 6)" "123456 25/32")))
+    (destructuring-bind (form expected) case
+      (let ((got (%al (format nil "(progn (setvar \"DIMZIN\" 8) (setvar \"UNITMODE\" 0) ~A)" form))))
+        (is (string= expected (autolisp-string-value got))
+            "~A => ~S, the vendors say ~S" form (autolisp-string-value got) expected)))))
+
+(test distof-reads-feet-inches-and-fractions
+  ;; Modes 3 and 4 accept engineering AND architectural forms alike (spec,
+  ;; distof Notes); 5 is fractional; a failure is nil.
+  (flet ((d (text mode)
+           (%al (format nil "(distof ~S ~D)" text mode))))
+    (is (= 18.0d0 (d "1'-6\"" 4)))
+    (is (= 18.0d0 (d "1'6\"" 4)))
+    (is (= 18.0d0 (d "1'-6\"" 3)) "3 and 4 alike")
+    (is (= 17.5d0 (d "1'-5 1/2\"" 4)))
+    (is (= 17.5d0 (d "1'-5-1/2\"" 4)) "the UNITMODE 1 form")
+    (is (= 17.5d0 (d "1'-5.50\"" 4)) "engineering form under mode 4")
+    (is (= 12.0d0 (d "1'" 4)))
+    (is (= 0.5d0 (d "1/2\"" 4)))
+    (is (= -0.5d0 (d "-1/2\"" 4)))
+    (is (= 17.5d0 (d "17.5" 4)) "a plain number is inches")
+    (is (= 18.0d0 (d "1.5'" 4)) "decimal feet")
+    (is (= 17.5d0 (d "17 1/2" 5)))
+    (is (= 17.5d0 (d "17-1/2" 5)))
+    (is (= 0.5d0 (d "1/2" 5)))
+    (is (= 2.5d0 (d "2.5" 2)))
+    (is (null (d "1'-x\"" 4)))
+    (is (null (d "1/0" 5)))
+    (is (null (d "" 4)))))
+
+(test distof-reads-back-what-the-vendors-rtos-printed
+  ;; RTOS's complement: every measured AutoCAD/BricsCAD mode 3-5 output
+  ;; (see RTOS-MODES-3-5-MATCH-...) reads back to the value it printed.
+  (dolist (case '(("8'-4\"" 3 100.0d0) ("10288'-0.79\"" 3 123456.79d0)
+                  ("-0.5\"" 3 -0.5d0) ("0\"" 3 0.0d0)
+                  ("1/2\"" 4 0.5d0) ("-1/2\"" 4 -0.5d0) ("2 1/2\"" 4 2.5d0)
+                  ("3 9/64\"" 4 3.140625d0) ("10288'-0 13/16\"" 4 123456.8125d0)
+                  ("123456 25/32" 5 123456.78125d0) ("3" 5 3.0d0)))
+    (destructuring-bind (text mode expected) case
+      (let ((got (%al (format nil "(distof ~S ~D)" text mode))))
+        (is (and got (< (abs (- got expected)) 1d-9)) "~A mode ~D => ~S" text mode got)))))
+
+(test distof-input-forms-per-vendor
+  ;; MEASURED 2026-10-03, and the vendors diverge: AutoCAD
+  ;; (20261003T091920Z) reads a whole decimal or a fraction in mode 2 and
+  ;; refuses feet/inch marks; BricsCAD (20261003T092024Z) reads every form in
+  ;; every mode. Both: "" and malformed text are nil -- never the ATOF
+  ;; leading-number reading ("1'-6\"" was 1.0).
+  (flet ((d (text mode &optional (dialect :strict))
+           (run-autolisp-string (format nil "(distof ~S ~D)" text mode)
+                                :setup-fn #'%install-cador-and-core
+                                :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                                          dialect))))
+    ;; AutoCAD (strict follows it)
+    (is (null (d "1'-6\"" 2)))
+    (is (null (d "1'" 2)))
+    (is (null (d "1.5'" 2)))
+    (is (null (d "1/2\"" 2)))
+    (is (= 0.5d0 (d "1/2" 2)))
+    (is (= 17.5d0 (d "17 1/2" 2)))
+    (is (= 17.5d0 (d "17-1/2" 2)))
+    (is (= 17.5d0 (d "17.5" 2)))
+    (is (null (d "" 2)))
+    (is (null (d "1'-x\"" 2)))
+    (is (null (d "1/2\"" 5)))
+    (is (null (d "1'-6\"" 5)))
+    ;; BricsCAD
+    (is (= 18.0d0 (d "1'-6\"" 2 :bricscad)))
+    (is (= 12.0d0 (d "1'" 2 :bricscad)))
+    (is (= 18.0d0 (d "1.5'" 5 :bricscad)))
+    (is (= -0.5d0 (d "-1/2\"" 2 :bricscad)))
+    (is (= 17.5d0 (d "17 1/2" 2 :bricscad)))
+    (is (null (d "" 2 :bricscad)))
+    (is (null (d "1'-x\"" 2 :bricscad)))))
+
+(test getdist-reads-architectural-input-under-lunits-4
+  ;; getdist takes a distance in the CURRENT units: under LUNITS 4 the user
+  ;; may type it as RTOS prints it. The result is always a real.
+  (is (= 18.0d0 (%get-with-mock-input "(progn (setvar \"LUNITS\" 4) (getdist \"D: \"))" "1'-6\"")))
+  (is (= 17.5d0 (%get-with-mock-input "(progn (setvar \"LUNITS\" 4) (getdist \"D: \"))" "1'-5 1/2\"")))
+  (is (= 12.5d0 (%get-with-mock-input "(progn (setvar \"LUNITS\" 4) (getdist \"D: \"))" "12.5")))
+  (is (= 17.5d0 (%get-with-mock-input "(progn (setvar \"LUNITS\" 5) (getdist \"D: \"))" "17 1/2")))
+  ;; decimal units keep the decimal reading
+  (is (= 12.5d0 (%get-with-mock-input "(progn (setvar \"LUNITS\" 2) (getdist \"D: \"))" "12.5"))))
+
+(test angtos-matches-autocad-every-measured-case
+  ;; angtos-modes-wrong. ALL 80 cases of the AutoCAD 2022 run (probe-results/
+  ;; autocad/ms-windows/20261003T091920Z), which had DIMZIN 8 and a FRENCH
+  ;; product -- hence O for West; BricsCAD's English run is identical but for
+  ;; W. Four angles, the five modes, precisions 0 2 4 6.
+  (let ((clautolisp.autolisp-builtins-core::*edtime-language* :fr))
+    (dolist (case '(
+                  ("(angtos 0.0 0 0)" "0")
+                  ("(angtos 0.7853981634 0 0)" "45")
+                  ("(angtos 1.5707963268 0 0)" "90")
+                  ("(angtos 3.1415926536 0 0)" "180")
+                  ("(angtos 0.0 0 2)" "0")
+                  ("(angtos 0.7853981634 0 2)" "45")
+                  ("(angtos 1.5707963268 0 2)" "90")
+                  ("(angtos 3.1415926536 0 2)" "180")
+                  ("(angtos 0.0 0 4)" "0")
+                  ("(angtos 0.7853981634 0 4)" "45")
+                  ("(angtos 1.5707963268 0 4)" "90")
+                  ("(angtos 3.1415926536 0 4)" "180")
+                  ("(angtos 0.0 0 6)" "0")
+                  ("(angtos 0.7853981634 0 6)" "45")
+                  ("(angtos 1.5707963268 0 6)" "90")
+                  ("(angtos 3.1415926536 0 6)" "180")
+                  ("(angtos 0.0 1 0)" "0d")
+                  ("(angtos 0.7853981634 1 0)" "45d")
+                  ("(angtos 1.5707963268 1 0)" "90d")
+                  ("(angtos 3.1415926536 1 0)" "180d")
+                  ("(angtos 0.0 1 2)" "0d0'")
+                  ("(angtos 0.7853981634 1 2)" "45d0'")
+                  ("(angtos 1.5707963268 1 2)" "90d0'")
+                  ("(angtos 3.1415926536 1 2)" "180d0'")
+                  ("(angtos 0.0 1 4)" "0d0'0\"")
+                  ("(angtos 0.7853981634 1 4)" "45d0'0\"")
+                  ("(angtos 1.5707963268 1 4)" "90d0'0\"")
+                  ("(angtos 3.1415926536 1 4)" "180d0'0\"")
+                  ("(angtos 0.0 1 6)" "0d0'0.00\"")
+                  ("(angtos 0.7853981634 1 6)" "45d0'0.00\"")
+                  ("(angtos 1.5707963268 1 6)" "90d0'0.00\"")
+                  ("(angtos 3.1415926536 1 6)" "180d0'0.00\"")
+                  ("(angtos 0.0 2 0)" "0g")
+                  ("(angtos 0.7853981634 2 0)" "50g")
+                  ("(angtos 1.5707963268 2 0)" "100g")
+                  ("(angtos 3.1415926536 2 0)" "200g")
+                  ("(angtos 0.0 2 2)" "0g")
+                  ("(angtos 0.7853981634 2 2)" "50g")
+                  ("(angtos 1.5707963268 2 2)" "100g")
+                  ("(angtos 3.1415926536 2 2)" "200g")
+                  ("(angtos 0.0 2 4)" "0g")
+                  ("(angtos 0.7853981634 2 4)" "50g")
+                  ("(angtos 1.5707963268 2 4)" "100g")
+                  ("(angtos 3.1415926536 2 4)" "200g")
+                  ("(angtos 0.0 2 6)" "0g")
+                  ("(angtos 0.7853981634 2 6)" "50g")
+                  ("(angtos 1.5707963268 2 6)" "100g")
+                  ("(angtos 3.1415926536 2 6)" "200g")
+                  ("(angtos 0.0 3 0)" "0r")
+                  ("(angtos 0.7853981634 3 0)" "1r")
+                  ("(angtos 1.5707963268 3 0)" "2r")
+                  ("(angtos 3.1415926536 3 0)" "3r")
+                  ("(angtos 0.0 3 2)" "0r")
+                  ("(angtos 0.7853981634 3 2)" "0.79r")
+                  ("(angtos 1.5707963268 3 2)" "1.57r")
+                  ("(angtos 3.1415926536 3 2)" "3.14r")
+                  ("(angtos 0.0 3 4)" "0r")
+                  ("(angtos 0.7853981634 3 4)" "0.7854r")
+                  ("(angtos 1.5707963268 3 4)" "1.5708r")
+                  ("(angtos 3.1415926536 3 4)" "3.1416r")
+                  ("(angtos 0.0 3 6)" "0r")
+                  ("(angtos 0.7853981634 3 6)" "0.785398r")
+                  ("(angtos 1.5707963268 3 6)" "1.570796r")
+                  ("(angtos 3.1415926536 3 6)" "3.141593r")
+                  ("(angtos 0.0 4 0)" "N 90d E")
+                  ("(angtos 0.7853981634 4 0)" "N 45d E")
+                  ("(angtos 1.5707963268 4 0)" "N 0d O")
+                  ("(angtos 3.1415926536 4 0)" "S 90d O")
+                  ("(angtos 0.0 4 2)" "E")
+                  ("(angtos 0.7853981634 4 2)" "N 45d0' E")
+                  ("(angtos 1.5707963268 4 2)" "N")
+                  ("(angtos 3.1415926536 4 2)" "O")
+                  ("(angtos 0.0 4 4)" "E")
+                  ("(angtos 0.7853981634 4 4)" "N 45d0'0\" E")
+                  ("(angtos 1.5707963268 4 4)" "N")
+                  ("(angtos 3.1415926536 4 4)" "O")
+                  ("(angtos 0.0 4 6)" "E")
+                  ("(angtos 0.7853981634 4 6)" "N 45d0'0.00\" E")
+                  ("(angtos 1.5707963268 4 6)" "N")
+                  ("(angtos 3.1415926536 4 6)" "O")))
+      (destructuring-bind (form expected) case
+        (let ((got (autolisp-string-value
+                    (%al (format nil "(progn (setvar \"DIMZIN\" 8) (setvar \"UNITMODE\" 0) ~A)" form)))))
+          (is (string= expected got) "~A => ~S, AutoCAD says ~S" form got expected))))))
+
+(test angtos-defaults-west-letter-and-angtof-round-trip
+  ;; MODE / PRECISION default to AUNITS / AUPREC; DIMZIN 0 keeps the zeros;
+  ;; English says W; ANGTOF reads every mode back.
+  (let ((clautolisp.autolisp-builtins-core::*edtime-language* :en))
+    (is (string= "180" (autolisp-string-value (%al "(angtos pi)"))) "AUNITS 0, AUPREC 0")
+    ;; DIMZIN set here: a fresh drawing's is 8 under a metric locale (acadiso.dwt).
+    (is (string= "180.0000" (autolisp-string-value
+                             (%al "(progn (setvar \"DIMZIN\" 0) (angtos pi 0 4))")))
+        "DIMZIN 0")
+    (is (string= "270" (autolisp-string-value (%al "(angtos (- (/ pi 2)) 0 0)"))) "modulo 2 pi")
+    (is (string= "S 90d W" (autolisp-string-value (%al "(angtos 3.1415926536 4 0)"))))
+    (is (string= "N45dE" (autolisp-string-value
+                          (%al "(progn (setvar \"UNITMODE\" 1) (angtos (/ pi 4) 4 0))"))))
+    (dolist (case '(("(angtof \"90\" 0)" 90) ("(angtof \"45d30'\" 1)" 45.5)
+                    ("(angtof \"100g\" 2)" 90) ("(angtof \"1.5707963268r\" 3)" 90)
+                    ("(angtof \"N 45d E\" 4)" 45) ("(angtof \"N\" 4)" 90)
+                    ("(angtof \"S 90d W\" 4)" 180)))
+      (destructuring-bind (form degrees) case
+        (let ((got (%al form)))
+          (is (and got (< (abs (- got (* degrees (/ pi 180)))) 1d-6))
+              "~A => ~S, expected ~A degrees" form got degrees))))
+    (is (null (%al "(angtof \"abc\" 0)")))))
 
 (test rtos-unitmode-selects-display-vs-input-form
   ;; UNITMODE 0 (default) joins whole inches and the fraction with a
@@ -2372,33 +2794,34 @@ the host's prompt-output / command log after the run."
     ;; The command still ran: it is recorded in the log regardless.
     (is (= 1 (length (clautolisp.cador:cador-command-log host))))))
 
-;;; --- MAXSORT -> acad_strlsort length gate --------------------------
+;;; --- MAXSORT does not constrain AutoLISP sorting -------------------
 
-(test coupling-maxsort-caps-acad-strlsort
-  ;; acad_strlsort returns nil when the list is longer than MAXSORT.
-  (reset-autolisp-symbol-table)
-  (is (null (%al "(progn (setvar \"MAXSORT\" 2)
-                         (acad_strlsort (list \"c\" \"b\" \"a\")))")))
-  (reset-autolisp-symbol-table)
-  (is (equal '("a" "b" "c")
-             (mapcar #'autolisp-string-value
-                     (%al "(progn (setvar \"MAXSORT\" 1000)
-                                  (acad_strlsort (list \"c\" \"a\" \"b\")))")))))
+(test coupling-maxsort-does-not-cap-acad-strlsort
+  ;; MAXSORT concerns GUI name lists, not this AutoLISP function.
+  (dolist (limit '(0 2 1000))
+    (is (equal '("a" "b" "c")
+               (mapcar #'autolisp-string-value
+                       (%al (format nil "(setvar ~S ~D) (acad_strlsort '(~S ~S ~S))"
+                                    "MAXSORT" limit "c" "b" "a")))))))
 
 ;;; --- TILEMODE / CVPORT -> vports / setview -------------------------
 
 (test coupling-tilemode-cvport-viewport-access
-  ;; TILEMODE / CVPORT round-trip, and vports reports the documented
-  ;; single-viewport sentinel headlessly (viewport 1); setview is a
-  ;; documented headless no-op returning nil.
+  ;; probe-viewports (AutoCAD 2022, BricsCAD V25/V26): one tiled viewport,
+  ;; number 2, is CVPORT; TILEMODE 0 makes CVPORT 1 (the sheet); SETVIEW
+  ;; returns the view for an existing viewport and nil for another.
   (reset-autolisp-symbol-table)
-  (is (eql 0 (%al "(progn (setvar \"TILEMODE\" 0) (getvar \"TILEMODE\"))")))
+  (is (eql 2 (%al "(car (car (vports)))")))
   (reset-autolisp-symbol-table)
-  (is (eql 3 (%al "(progn (setvar \"CVPORT\" 3) (getvar \"CVPORT\"))")))
+  (is (equal '(0 1 1)
+             (%al "(progn (setvar \"TILEMODE\" 0)
+                     (list (getvar \"TILEMODE\") (getvar \"CVPORT\") (car (car (vports)))))")))
   (reset-autolisp-symbol-table)
-  (is (eql 1 (%al "(car (car (vports)))")))
+  (is (equal '(1 2) (%al "(progn (setvar \"TILEMODE\" 1) (list (getvar \"TILEMODE\") (getvar \"CVPORT\")))")))
   (reset-autolisp-symbol-table)
-  (is (null (%al "(setview (list 0.0 0.0 0.0) 1)"))))
+  (is (consp (%al "(setview (list (cons 0 \"VIEW\")) 2)")))
+  (reset-autolisp-symbol-table)
+  (is (null (%al "(setview (list (cons 0 \"VIEW\")) 99)"))))
 
 ;;; --- SNAPANG / ANGBASE -> setvar takes radians, not display --------
 
@@ -2676,7 +3099,7 @@ the host's prompt-output / command log after the run."
   ;; The Phase-10 builtins (ENTGET/ENTMAKE/ENTLAST/ENTNEXT/HANDENT)
   ;; route through the active session's HAL backend. Under the
   ;; default NullHost they signal :host-not-supported; under a
-  ;; freshly-allocated MockHost they round-trip a DXF group-code
+  ;; freshly-allocated cador they round-trip a DXF group-code
   ;; list. We exercise both halves here.
   (reset-autolisp-symbol-table)
   (install-core-builtins)
@@ -2685,7 +3108,7 @@ the host's prompt-output / command log after the run."
     (handler-case (call-autolisp-function entlast-fn)
       (autolisp-runtime-error (condition)
         (is (eq :host-not-supported (autolisp-runtime-error-code condition))))))
-  ;; Swap the default context onto a MockHost-bearing session.
+  ;; Swap the default context onto a cador-bearing session.
   (let* ((mock (clautolisp.cador:make-cador))
          (session (clautolisp.autolisp-runtime:evaluation-context-session
                    (clautolisp.autolisp-runtime:default-evaluation-context))))
@@ -2812,9 +3235,8 @@ the host's prompt-output / command log after the run."
         (val-fn  (autolisp-symbol-function (find-autolisp-symbol "VLAX-VARIANT-VALUE"))))
     (let ((v (call-autolisp-function make-fn 42)))
       (is (eql 42 (call-autolisp-function val-fn v)))
-      (is (string= "INTEGER"
-                   (autolisp-symbol-name
-                    (call-autolisp-function type-fn v)))))))
+      ;; vlax-vbLong: an AutoLISP integer's default variant type
+      (is (eql 3 (call-autolisp-function type-fn v))))))
 
 ;;; --- Dynamic vla-* accessor façade (vla-accessor-family.issue) ---
 ;;;
@@ -2846,17 +3268,16 @@ the host's prompt-output / command log after the run."
 
 (test vla-get-accessor-reads-a-property
   (let ((name (%vla "(vl-load-com)(vla-get-name (vla-get-activedocument (vlax-get-acad-object)))")))
-    (is (string= "Drawing.dwg"
+    (is (string= "Drawing1.dwg"
                  (if (typep name 'autolisp-string) (autolisp-string-value name) name)))))
 
 (test vla-put-accessor-writes-a-property
-  (let ((name (%vla (concatenate 'string
-                                 "(vl-load-com)"
-                                 "(setq d (vla-get-activedocument (vlax-get-acad-object)))"
-                                 "(vla-put-name d \"Renamed.dwg\")"
-                                 "(vla-get-name d)"))))
-    (is (string= "Renamed.dwg"
-                 (if (typep name 'autolisp-string) (autolisp-string-value name) name)))))
+  ;; Document.Name is read-only (the drawing's name); Application.Visible is not.
+  (is (null (%vla (concatenate 'string
+                               "(vl-load-com)"
+                               "(setq a (vlax-get-acad-object) v (vla-get-visible a))"
+                               "(vla-put-visible a :vlax-false)"
+                               "(equal v (vla-get-visible a))")))))
 
 (test vla-method-dispatch-routes-to-invoke-method
   ;; A non-get/put vla-<method> dispatches to vlax-invoke-method; an
@@ -2873,6 +3294,261 @@ the host's prompt-output / command log after the run."
 (test vla-accessor-user-definition-wins
   ;; A user (defun vla-get-foo …) shadows the façade for that name.
   (is (eql 42 (%vla "(vl-load-com)(defun vla-get-foo (x) 42)(vla-get-foo nil)"))))
+
+;;; --- ActiveX enumeration constants (cador-activex-enumeration-constants-
+;;; unbound.issue): (vl-load-com) binds acAlignmentMiddleLeft & co. ----------
+
+(defparameter *acalignment-constants*
+  '(("acAlignmentLeft" 0) ("acAlignmentCenter" 1) ("acAlignmentRight" 2)
+    ("acAlignmentAligned" 3) ("acAlignmentMiddle" 4) ("acAlignmentFit" 5)
+    ("acAlignmentTopLeft" 6) ("acAlignmentTopCenter" 7) ("acAlignmentTopRight" 8)
+    ("acAlignmentMiddleLeft" 9) ("acAlignmentMiddleCenter" 10)
+    ("acAlignmentMiddleRight" 11) ("acAlignmentBottomLeft" 12)
+    ("acAlignmentBottomCenter" 13) ("acAlignmentBottomRight" 14))
+  "The AcAlignment family, written out independently of the runtime table.")
+
+(test activex-constants-are-unbound-before-vl-load-com
+  (is (null (%vla "acAlignmentMiddleLeft")))
+  (is (eql 9 (%vla "(vl-load-com) acAlignmentMiddleLeft"))))
+
+(test activex-acalignment-constants-drive-vla-put-alignment
+  "Every AcAlignment value cador's property bridge accepts has its symbolic
+binding, and the symbol -- not a magic number -- goes through
+(vla-put-Alignment ...) on an ATTDEF made by vla-AddAttribute (the SCHME
+call that received NIL) and on a TEXT."
+  (dolist (entry *acalignment-constants*)
+    (destructuring-bind (name value) entry
+      (is (equal (list value value value)
+                 (%vla (format nil "(vl-load-com)
+                  (setq d (vla-get-activedocument (vlax-get-acad-object)))
+                  (setq b (vla-add (vla-get-blocks d) (vlax-3d-point 0.0 0.0 0.0) \"ALIGN\"))
+                  (setq a (vla-addattribute b 1.0 acAttributeModeNormal \"P\"
+                                            (vlax-3d-point 0.0 0.0 0.0) \"TAG\" \"V\"))
+                  (vla-put-Alignment a ~A)
+                  (entmake '((0 . \"TEXT\") (10 0.0 0.0 0.0) (40 1.0) (1 \"t\")))
+                  (setq o (vlax-ename->vla-object (entlast)))
+                  (vla-put-Alignment o ~A)
+                  (list ~A (vla-get-Alignment a) (vla-get-Alignment o))"
+                               name name name)))
+          name))))
+
+(test activex-constants-every-measured-constant-bound-per-product
+  "Table-driven over the MEASURED table (probe-activex-constants on AutoCAD
+2022, BricsCAD V25 / V26): after (vl-load-com) every name the dialect's
+product binds has that product's value -- 847 on AutoCAD, 948 on BricsCAD
+(832 / 932 AC constants, plus 15 / 16 vlax-vb* VarType constants)."
+  (dolist (case '(("autocad-2022" :autocad 847) ("bricscad-v26" :bricscad 948)))
+    (destructuring-bind (dialect product count) case
+      (let ((constants (clautolisp.autolisp-builtins-core:activex-enumeration-constants
+                        product)))
+        (is (= count (length constants)) dialect)
+        (let ((values (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com) (list ~{~A~^ ~})"
+                                    dialect (mapcar #'first constants)))))
+          (is (equal (mapcar #'second constants) values) dialect))))))
+
+(test activex-constants-follow-the-product-where-the-vendors-differ
+  "Measured: 30 names differ between the products -- the AcViewportScale
+family is off by one, acNative 64 / 60. Each vendor dialect has its own;
+strict, the portable subset, has neither; clautolisp takes AutoCAD's."
+  (is (equal '(7 64) (%vla "(setq *AUTOLISP-DIALECT* 'autocad-2022) (vl-load-com) (list acVp1_10 acNative)")))
+  (is (equal '(6 60) (%vla "(setq *AUTOLISP-DIALECT* 'bricscad-v26) (vl-load-com) (list acVp1_10 acNative)")))
+  (is (equal '(nil nil 9) (%vla "(setq *AUTOLISP-DIALECT* 'strict) (vl-load-com) (list acVp1_10 acNative acAlignmentMiddleLeft)")))
+  (is (equal '(7 64) (%vla "(setq *AUTOLISP-DIALECT* 'clautolisp) (vl-load-com) (list acVp1_10 acNative)"))))
+
+(test activex-constants-are-there-from-document-start-under-bricscad
+  "Measured with the probe first in the run: BricsCAD has the constants from
+the start of the document, before any (vl-load-com); AutoCAD 2022 binds them
+only at (vl-load-com). The document startup chain installs them under the
+BricsCAD dialects only."
+  (flet ((after-startup (dialect)
+           (let ((seen :unset))
+             (run-autolisp-string
+              "nil"
+              :setup-fn (lambda (context)
+                          (%install-cador-and-core context)
+                          (clautolisp.autolisp-runtime:set-runtime-session-dialect
+                           (clautolisp.autolisp-runtime:evaluation-context-session context)
+                           (clautolisp.autolisp-reader:find-autolisp-dialect dialect))
+                          (clautolisp.autolisp-builtins-core::run-document-startup-chain context)
+                          (setf seen (clautolisp.autolisp-runtime:lookup-variable
+                                      (clautolisp.autolisp-runtime:intern-autolisp-symbol
+                                       "ACALIGNMENTMIDDLELEFT")
+                                      context))))
+             seen)))
+    (reset-autolisp-symbol-table)
+    (is (eql 9 (after-startup :bricscad-v26)))
+    (reset-autolisp-symbol-table)
+    (is (null (after-startup :autocad-2022)))))
+
+(test activex-vl-load-com-answers-per-product
+  "Measured: (vl-load-com) answers NIL on AutoCAD 2022, T on BricsCAD."
+  (is (null (%vla "(setq *AUTOLISP-DIALECT* 'autocad-2022) (vl-load-com)")))
+  (is (%vla "(setq *AUTOLISP-DIALECT* 'bricscad-v26) (vl-load-com)")))
+
+(test activex-constants-pass-through-color-lineweight-and-mode
+  "The other families, symbolically through the operations that consume
+them: Color and Lineweight on an entity, Color on a layer, the Mode
+argument of AddAttribute (additive flags)."
+  (is (equal '(1 256 0 50 -2 -3 5 3)
+             (%vla "(vl-load-com)
+               (setq d (vla-get-activedocument (vlax-get-acad-object)))
+               (entmake '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 1.0 0.0 0.0)))
+               (setq o (vlax-ename->vla-object (entlast)) r '())
+               (vla-put-Color o acRed) (setq r (cons (vla-get-Color o) r))
+               (vla-put-Color o acByLayer) (setq r (cons (vla-get-Color o) r))
+               (vla-put-Color o acByBlock) (setq r (cons (vla-get-Color o) r))
+               (vla-put-Lineweight o acLnWt050) (setq r (cons (vla-get-Lineweight o) r))
+               (vla-put-Lineweight o acLnWtByBlock) (setq r (cons (vla-get-Lineweight o) r))
+               (vla-put-Lineweight o acLnWtByLwDefault) (setq r (cons (vla-get-Lineweight o) r))
+               (setq lay (vla-item (vla-get-layers d) \"0\"))
+               (vla-put-Color lay acBlue) (setq r (cons (vla-get-Color lay) r))
+               (setq b (vla-add (vla-get-blocks d) (vlax-3d-point 0.0 0.0 0.0) \"MODES\"))
+               (setq a (vla-addattribute b 1.0 (+ acAttributeModeInvisible acAttributeModeConstant)
+                                         \"P\" (vlax-3d-point 0.0 0.0 0.0) \"TAG\" \"V\"))
+               (setq r (cons (vla-get-Mode a) r))
+               (reverse r)"))))
+
+(test activex-constants-vl-load-com-is-idempotent-and-keeps-user-bindings
+  ;; Twice is harmless; a value the program set first is neither erased nor
+  ;; replaced, before or after a later (vl-load-com).
+  (is (equal '(9 99 7)
+             (%vla "(vl-load-com) (vl-load-com)
+                    (setq acRed 99) (vl-load-com)
+                    (list acAlignmentMiddleLeft acRed acWhite)")))
+  (is (equal '(42 10)
+             (%vla "(setq acAlignmentMiddleLeft 42) (vl-load-com)
+                    (list acAlignmentMiddleLeft acAlignmentMiddleCenter)")))
+  ;; Set to nil after the first (vl-load-com): a later one does NOT restore
+  ;; it -- measured on AutoCAD 2022, BricsCAD V25 and V26: the constants are
+  ;; installed once.
+  (is (null (%vla "(vl-load-com) (setq acAlignmentMiddleLeft nil) (vl-load-com)
+                   acAlignmentMiddleLeft"))))
+
+;;; --- vlax-vb* VarType constants (vlax-vb-constants-unbound.issue) ---------
+
+(defparameter *vlax-vb-constants*
+  '(("vlax-vbEmpty" 0 0) ("vlax-vbNull" 1 1) ("vlax-vbInteger" 2 2)
+    ("vlax-vbLong" 3 3) ("vlax-vbSingle" 4 4) ("vlax-vbDouble" 5 5)
+    ("vlax-vbCurrency" 6 6) ("vlax-vbDate" 7 7) ("vlax-vbString" 8 8)
+    ("vlax-vbObject" 9 9) ("vlax-vbError" 10 10) ("vlax-vbBoolean" 11 11)
+    ("vlax-vbVariant" 12 12) ("vlax-vbDataObject" 13 13)
+    ("vlax-vbDecimal" nil 14) ("vlax-vbByte" nil nil)
+    ("vlax-vbArray" 8192 8192))
+  "(NAME AUTOCAD-VALUE BRICSCAD-VALUE) as measured on 2026-10-23 (probe
+activex-constants: AutoCAD 2022, BricsCAD V25 and V26), written out
+independently of the runtime table. NIL: the product does not bind it.")
+
+(defun %vlax-vb-expected (product)
+  (mapcar (lambda (entry)
+            (destructuring-bind (name autocad bricscad) entry
+              (declare (ignore name))
+              (ecase product
+                (:autocad autocad)
+                (:bricscad bricscad)
+                (:strict (and autocad bricscad (= autocad bricscad) autocad))
+                (:clautolisp (or autocad bricscad)))))
+          *vlax-vb-constants*))
+
+(test vlax-vb-constants-bound-after-vl-load-com
+  "vlax-vb-constants-unbound: after (vl-load-com) every vlax-vb* name has
+its MEASURED value for the dialect's product: AutoCAD binds 15 of the 17
+(not vlax-vbDecimal, not vlax-vbByte), BricsCAD 16 (not vlax-vbByte);
+strict the common subset, clautolisp the union."
+  (loop for (dialect product) in '(("clautolisp" :clautolisp)
+                                   ("autocad-2022" :autocad)
+                                   ("bricscad-v26" :bricscad)
+                                   ("strict" :strict))
+        do (is (equal (%vlax-vb-expected product)
+                      (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com) (list ~{~A~^ ~})"
+                                    dialect (mapcar #'first *vlax-vb-constants*))))
+               dialect)))
+
+(test vlax-vb-constants-yield-to-the-measured-table
+  "The vlax-vb* constants are no longer a separate documented table: they
+come from *ACTIVEX-MEASURED-CONSTANTS*, per product, like the AC ones."
+  (is (not (fboundp (find-symbol "ACTIVEX-DOCUMENTED-CONSTANTS"
+                                 "CLAUTOLISP.AUTOLISP-BUILTINS-CORE"))))
+  (loop for product in '(:autocad :bricscad :strict :clautolisp)
+        do (is (equal (remove nil (mapcar (lambda (entry value)
+                                            (and value (list (string-upcase (first entry)) value)))
+                                          *vlax-vb-constants*
+                                          (%vlax-vb-expected product)))
+                      (sort (remove-if-not
+                             (lambda (entry) (eql 0 (search "VLAX-VB" (first entry))))
+                             (clautolisp.autolisp-builtins-core:activex-enumeration-constants
+                              product))
+                            (lambda (a b)
+                              (< (position (first a) *vlax-vb-constants*
+                                           :key #'first :test #'string-equal)
+                                 (position (first b) *vlax-vb-constants*
+                                           :key #'first :test #'string-equal)))))
+               product)))
+
+;;; --- VARIANT / SAFEARRAY lower-case names on AutoCAD -----------------------
+;;; (type-symbols-print-lowercase-on-autocad.issue, probe type-symbols
+;;; measured 2026-10-23 on AutoCAD 2022, BricsCAD V25 and V26.)
+
+(defun %type-symbol-names (dialect)
+  (autolisp-string-value
+   (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com)
+          (setq v (vlax-make-variant 1) sa (vlax-make-safearray 5 '(0 . 1)))
+          (strcat (vl-symbol-name (type v)) \" \"
+                  (vl-princ-to-string (type sa)) \" \"
+                  (vl-prin1-to-string 'VARIANT) \" \"
+                  (vl-symbol-name (read \"SAFEARRAY\")) \" \"
+                  (vl-princ-to-string 'safearray) \" \"
+                  (vl-prin1-to-string (list (type v) (type 1) (type \"s\") 'foo)) \" \"
+                  (vl-symbol-name (type (vlax-get-acad-object))) \" \"
+                  (vl-symbol-name (type (ssadd))))" dialect))))
+
+(test type-symbols-variant-safearray-names-lower-case-except-bricscad
+  "Measured: AutoCAD names the symbols VARIANT and SAFEARRAY \"variant\" and
+\"safearray\" (vl-symbol-name, princ, prin1; from TYPE, from a quoted
+literal, from READ); every other TYPE result is upper case; BricsCAD has
+them all upper case. Every dialect but the BricsCAD ones follows AutoCAD."
+  (dolist (dialect '("autocad-2022" "autocad-2026" "clautolisp" "strict" "lax"))
+    (is (equal "variant safearray variant safearray safearray (variant INT STR FOO) VLA-OBJECT PICKSET"
+               (%type-symbol-names dialect))
+        dialect))
+  (dolist (dialect '("bricscad-v25" "bricscad-v26"))
+    (is (equal "VARIANT SAFEARRAY VARIANT SAFEARRAY SAFEARRAY (VARIANT INT STR FOO) VLA-OBJECT PICKSET"
+               (%type-symbol-names dialect))
+        dialect)))
+
+(test type-symbols-lower-case-name-is-still-the-same-symbol
+  "Only the name the symbol SHOWS changes: reading stays case-insensitive,
+(type v) is EQ to 'VARIANT and to (read (strcase (vl-symbol-name (type v)))),
+as measured on AutoCAD (\"eq read upcase\" T for every TYPE result)."
+  (dolist (dialect '("autocad-2022" "bricscad-v26" "strict"))
+    (is (equal '(t t t t t)
+               (mapcar (lambda (x) (and x t))
+                       (%vla (format nil "(setq *AUTOLISP-DIALECT* '~A) (vl-load-com)
+                          (setq v (vlax-make-variant 1) sa (vlax-make-safearray 5 '(0 . 1)))
+                          (list (eq (type v) 'VARIANT)
+                                (eq (type v) 'variant)
+                                (eq (read \"variant\") 'VARIANT)
+                                (eq (type v) (read (strcase (vl-symbol-name (type v)))))
+                                (eq (type sa) (read (vl-symbol-name (type sa)))))" dialect))))
+        dialect))
+  ;; The canonical (interned) name is unchanged: internal comparisons keep
+  ;; using it.
+  (is (equal "VARIANT"
+             (clautolisp.autolisp-runtime:autolisp-symbol-name
+              (%vla "(setq *AUTOLISP-DIALECT* 'autocad-2022) (vl-load-com)
+                     (type (vlax-make-variant 1))")))))
+
+(test vlax-vb-constants-drive-make-variant-and-safearray
+  "The canonical calls with the symbolic type: vlax-make-variant /
+vlax-variant-type, vlax-make-safearray."
+  (is (eql 2 (%vla "(vl-load-com) (vlax-variant-type (vlax-make-variant 1 vlax-vbInteger))")))
+  (is (eql 5 (%vla "(vl-load-com) (vlax-variant-type (vlax-make-variant 1.0 vlax-vbDouble))")))
+  (is (eql 8 (%vla "(vl-load-com) (vlax-variant-type (vlax-make-variant \"s\" vlax-vbString))")))
+  (is (eql 8197 (%vla "(vl-load-com)
+                       (vlax-variant-type
+                         (vlax-make-variant (vlax-make-safearray vlax-vbDouble '(0 . 2))))")))
+  (is (equal '(0 . 2) (%vla "(vl-load-com)
+                       (setq sa (vlax-make-safearray vlax-vbDouble '(0 . 2)))
+                       (cons (vlax-safearray-get-l-bound sa 1) (vlax-safearray-get-u-bound sa 1))"))))
 
 (test vla-addattribute-passes-the-six-vendor-arguments-through
   "cador-addattribute-argument-order. The AutoLISP façade must hand
@@ -3025,7 +3701,9 @@ Value as its TextString; both are read through the façade as well."
 (defparameter +curve-circle+
   "(vl-load-com)(setq e (entmakex '((0 . \"CIRCLE\")(10 0.0 0.0 0.0)(40 . 5.0))))")
 (defparameter +curve-arc+
-  "(vl-load-com)(setq e (entmakex '((0 . \"ARC\")(10 0.0 0.0 0.0)(40 . 2.0)(50 . 0.0)(51 . 90.0))))")
+  ;; entget / entmake angles are RADIANS (cador-curve-length-and-sampling:
+  ;; this fixture said 90.0 while the model converted from degrees).
+  "(vl-load-com)(setq e (entmakex '((0 . \"ARC\")(10 0.0 0.0 0.0)(40 . 2.0)(50 . 0.0)(51 . 1.5707963267948966))))")
 (defparameter +curve-pline+
   (concatenate 'string
    "(vl-load-com)(setq e (entmakex '((0 . \"LWPOLYLINE\")"
@@ -3040,7 +3718,8 @@ Value as its TextString; both are read through the façade as well."
   (is (%pt~ (%curve +curve-line+ "(vlax-curve-getpointatdist e 2.5)") '(2.5 0 0)))
   (is (< (abs (- 7.0d0 (%curve +curve-line+ "(vlax-curve-getparamatpoint e '(7.0 0.0 0.0))"))) 1d-9))
   (is (%pt~ (%curve +curve-line+ "(vlax-curve-getclosestpointto e '(5.0 3.0 0.0))") '(5 0 0)))
-  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getfirstderiv e 3.0)") '(1 0 0)))
+  ;; measured: a LINE's first derivative is END - START (not the unit vector)
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getfirstderiv e 3.0)") '(10 0 0)))
   (is (null (%curve +curve-line+ "(vlax-curve-isclosed e)")))
   (is (< (abs (- 10.0d0 (%curve +curve-line+ "(vlax-curve-getperimeter e)"))) 1d-9)))
 
@@ -3049,8 +3728,8 @@ Value as its TextString; both are read through the façade as well."
   (is (< (abs (- (* 2 pi 5) (%curve +curve-circle+ "(vlax-curve-getperimeter e)"))) 1d-6))
   (is (%curve +curve-circle+ "(vlax-curve-isclosed e)"))
   (is (%curve +curve-circle+ "(vlax-curve-isperiodic e)"))
-  ;; arc-length param r*pi/2 -> quarter turn -> (0 5 0)
-  (is (%pt~ (%curve +curve-circle+ "(vlax-curve-getpointatparam e 7.8539816339744831)")
+  ;; a CIRCLE's param is the ANGLE: pi/2 -> quarter turn -> (0 5 0)
+  (is (%pt~ (%curve +curve-circle+ "(vlax-curve-getpointatparam e (/ pi 2))")
             '(0 5 0) 1d-6)))
 
 (test vlax-curve-arc-geometry
@@ -3076,6 +3755,394 @@ Value as its TextString; both are read through the façade as well."
                    "(vl-load-com)(setq tp (entmakex '((0 . \"POINT\")(10 1.0 2.0 0.0))))"
                    "(vlax-curve-getstartpoint tp)")))))
 
+;;; --- curve geometry: arcs, bulges, boundaries ----------------------
+;;; cador-curve-length-and-sampling.issue: SCHMS read an ARC's length as
+;;; 0.27415567780803773 (R 10, 0..pi/2: the model converted the RADIAN
+;;; entget angles from degrees) and its sampling got NIL from
+;;; vlax-curve-getDistAtPoint at the real arc end point.
+
+(defun %~ (got expected &optional (eps 1d-9))
+  (and (numberp got) (< (abs (- got expected)) eps)))
+
+(defparameter +curve-arc90+
+  "(vl-load-com)(setq e (entmakex '((0 . \"ARC\")(10 0.0 0.0 0.0)(40 . 10.0)(50 . 0.0)(51 . 1.5707963267948966))))")
+(defparameter +curve-arc-across-zero+   ; 315 deg -> 45 deg
+  "(vl-load-com)(setq e (entmakex '((0 . \"ARC\")(10 0.0 0.0 0.0)(40 . 10.0)(50 . 5.497787143782138)(51 . 0.7853981633974483))))")
+(defparameter +curve-bulge-pline+       ; (0,0) bulge 1 (10,0) then (10,10)
+  (concatenate 'string
+   "(vl-load-com)(setq e (entmakex '((0 . \"LWPOLYLINE\")"
+   "(100 . \"AcDbEntity\")(100 . \"AcDbPolyline\")"
+   "(90 . 3)(70 . 0)(10 0.0 0.0)(42 . 1.0)(10 10.0 0.0)(10 10.0 10.0))))"))
+(defparameter +curve-closed-pline+      ; 10x10 square, closed
+  (concatenate 'string
+   "(vl-load-com)(setq e (entmakex '((0 . \"LWPOLYLINE\")"
+   "(100 . \"AcDbEntity\")(100 . \"AcDbPolyline\")"
+   "(90 . 4)(70 . 1)(10 0.0 0.0)(10 10.0 0.0)(10 10.0 10.0)(10 0.0 10.0))))"))
+(defparameter +curve-heavy-pline+       ; the bulge polyline as a 2D POLYLINE
+  (concatenate 'string
+   "(vl-load-com)(entmake '((0 . \"POLYLINE\")(66 . 1)(70 . 0)(10 0.0 0.0 0.0)))"
+   "(entmake '((0 . \"VERTEX\")(10 0.0 0.0 0.0)(42 . 1.0)))"
+   "(entmake '((0 . \"VERTEX\")(10 10.0 0.0 0.0)))"
+   "(entmake '((0 . \"VERTEX\")(10 10.0 10.0 0.0)))"
+   "(entmake '((0 . \"SEQEND\")))(setq e (entlast))"))
+
+(test vlax-curve-arc-params-are-angles-and-dists-are-arc-lengths
+  ;; R 10, 0..90 deg: params are the angles, the length is R * sweep = 5pi.
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getstartparam e)") 0.0d0))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getendparam e)") (/ pi 2)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatparam e (vlax-curve-getendparam e))")
+          (* 5 pi)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatparam e (/ pi 4))") (* 2.5 pi)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getperimeter e)") (* 5 pi)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getstartpoint e)") '(10 0 0)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getendpoint e)") '(0 10 0)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getpointatparam e (/ pi 4))")
+            (list (* 10 (cos (/ pi 4))) (* 10 (sin (/ pi 4))) 0)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getparamatdist e (* 2.5 pi))") (/ pi 4)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getpointatdist e (* 5 pi))") '(0 10 0)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getfirstderiv e 0.0)") '(0 10 0)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getsecondderiv e 0.0)") '(-10 0 0)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getarea e)") (* 50 (- (/ pi 2) 1))))
+  (is (null (%curve +curve-arc90+ "(vlax-curve-isclosed e)"))))
+
+(test vlax-curve-arc-boundaries-and-points-on-the-arc
+  ;; the end points are on the curve: the sampling NIL of the report
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatpoint e '(0.0 10.0 0.0))") (* 5 pi)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatpoint e '(10.0 0.0 0.0))") 0.0d0))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getparamatpoint e '(0.0 10.0 0.0))") (/ pi 2)))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getparamatpoint e (vlax-curve-getendpoint e))")
+          (/ pi 2)))
+  ;; a 2D point is accepted (taken in the arc's plane)
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatpoint e '(0.0 10.0))") (* 5 pi)))
+  ;; param / dist exactly at the end, and just outside
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getparamatdist e (vlax-curve-getdistatparam e (vlax-curve-getendparam e)))")
+          (/ pi 2)))
+  ;; AutoCAD extrapolates an ARC's dist <-> param past its ends (measured)
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getparamatdist e 16.0)") 1.6d0))
+  (is (null (%curve +curve-arc90+ "(vlax-curve-getpointatparam e 2.0)")))
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatparam e -0.1)") -1.0d0))
+  ;; a point off the arc has no param; its closest point is the near end
+  (is (null (%curve +curve-arc90+ "(vlax-curve-getparamatpoint e '(-10.0 0.0 0.0))")))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getclosestpointto e '(0.0 20.0 0.0))") '(0 10 0)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-curve-getclosestpointto e '(5.0 -20.0 0.0))") '(10 0 0))))
+
+(test vlax-curve-arc-crossing-zero-degrees
+  ;; 315 -> 45 deg: start param 7pi/4, end param raised by 2pi to 9pi/4
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getstartparam e)") (* 7/4 pi)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getendparam e)") (* 9/4 pi)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getdistatparam e (vlax-curve-getendparam e))")
+          (* 5 pi)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getparamatpoint e '(10.0 0.0 0.0))") (* 2 pi)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getdistatpoint e '(10.0 0.0 0.0))") (* 2.5 pi)))
+  (is (%pt~ (%curve +curve-arc-across-zero+ "(vlax-curve-getpointatdist e (* 2.5 pi))") '(10 0 0)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getparamatpoint e (vlax-curve-getstartpoint e))")
+          (* 7/4 pi)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getparamatpoint e (vlax-curve-getendpoint e))")
+          (* 9/4 pi))))
+
+(test vlax-curve-circle-params-are-angles
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getstartparam e)") 0.0d0))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getendparam e)") (* 2 pi)))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getdistatparam e pi)") (* 5 pi)))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getparamatdist e (* 5 pi))") pi))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getparamatpoint e '(0.0 5.0 0.0))") (/ pi 2)))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getparamatpoint e '(5.0 0.0 0.0))") 0.0d0))
+  (is (%pt~ (%curve +curve-circle+ "(vlax-curve-getendpoint e)") '(5 0 0) 1d-9)))
+
+(test vlax-curve-bulge-polyline-follows-the-arc
+  ;; segment 0 is a half circle of R 5 (length 5pi), segment 1 a 10 line
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getendparam e)") 2.0d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getdistatparam e 1.0)") (* 5 pi)))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getdistatparam e 2.0)") (+ 10 (* 5 pi))))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getperimeter e)") (+ 10 (* 5 pi))))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getpointatparam e 0.5)") '(5 -5 0)))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getpointatdist e (* 2.5 pi))") '(5 -5 0)))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(5.0 -5.0 0.0))") 0.5d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getdistatpoint e '(5.0 -5.0 0.0))") (* 2.5 pi)))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getclosestpointto e '(5.0 -9.0 0.0))") '(5 -5 0)))
+  ;; measured: on a bulge segment the derivative has length R (d / d angle)
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getfirstderiv e 0.5)") '(5 0 0)))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getfirstderiv e 1.5)") '(0 10 0)))
+  ;; open: area closed by the chord = half disc + triangle
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getarea e)") (+ 50 (* 12.5 pi)))))
+
+(test vlax-curve-polyline-vertex-and-end-boundaries
+  ;; vertices are params 0, 1, 2; the end vertex and end dist are numbers
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(0.0 0.0 0.0))") 0.0d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(10.0 0.0 0.0))") 1.0d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(10.0 10.0 0.0))") 2.0d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(10.0 10.0))") 2.0d0))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getdistatpoint e '(10.0 10.0 0.0))") (+ 10 (* 5 pi))))
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatdist e (vlax-curve-getdistatparam e 2.0))") 2.0d0))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getpointatdist e (vlax-curve-getdistatparam e 2.0))") '(10 10 0)))
+  (is (%pt~ (%curve +curve-bulge-pline+ "(vlax-curve-getpointatparam e 1.0)") '(10 0 0)))
+  (is (null (%curve +curve-bulge-pline+ "(vlax-curve-getpointatparam e 2.5)")))
+  (is (null (%curve +curve-bulge-pline+ "(vlax-curve-getparamatdist e 100.0)")))
+  (is (null (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(20.0 20.0 0.0))"))))
+
+(test vlax-curve-closed-polyline
+  (is (%curve +curve-closed-pline+ "(vlax-curve-isclosed e)"))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getendparam e)") 4.0d0))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getperimeter e)") 40.0d0))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getarea e)") 100.0d0))
+  (is (%pt~ (%curve +curve-closed-pline+ "(vlax-curve-getendpoint e)") '(0 0 0)))
+  (is (%pt~ (%curve +curve-closed-pline+ "(vlax-curve-getpointatparam e 3.5)") '(0 5 0)))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getdistatpoint e '(0.0 5.0 0.0))") 35.0d0))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getparamatpoint e '(0.0 10.0 0.0))") 3.0d0))
+  (is (%~ (%curve +curve-closed-pline+ "(vlax-curve-getparamatpoint e '(0.0 0.0 0.0))") 0.0d0)))
+
+(test vlax-curve-heavy-2d-polyline-reads-its-vertices
+  (is (%~ (%curve +curve-heavy-pline+ "(vlax-curve-getendparam e)") 2.0d0))
+  (is (%~ (%curve +curve-heavy-pline+ "(vlax-curve-getdistatparam e 2.0)") (+ 10 (* 5 pi))))
+  (is (%pt~ (%curve +curve-heavy-pline+ "(vlax-curve-getpointatparam e 0.5)") '(5 -5 0)))
+  (is (%pt~ (%curve +curve-heavy-pline+ "(vlax-curve-getendpoint e)") '(10 10 0))))
+
+(test vlax-curve-line-boundaries
+  (is (%~ (%curve +curve-line+ "(vlax-curve-getendparam e)") 10.0d0))
+  (is (%~ (%curve +curve-line+ "(vlax-curve-getdistatpoint e '(10.0 0.0 0.0))") 10.0d0))
+  (is (%~ (%curve +curve-line+ "(vlax-curve-getparamatdist e 10.0)") 10.0d0))
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getpointatdist e 10.0)") '(10 0 0)))
+  (is (null (%curve +curve-line+ "(vlax-curve-getpointatdist e 10.5)")))
+  (is (%~ (%curve +curve-line+ "(vlax-curve-getparamatpoint e '(4.0 0.0))") 4.0d0)))
+
+(test vla-curve-properties-agree-with-vlax-curve
+  (is (%~ (%curve +curve-arc90+ "(vla-get-arclength (vlax-ename->vla-object e))") (* 5 pi)))
+  (is (%~ (%curve +curve-arc90+ "(vla-get-totalangle (vlax-ename->vla-object e))") (/ pi 2)))
+  (is (%~ (%curve +curve-arc90+ "(vla-get-radius (vlax-ename->vla-object e))") 10.0d0))
+  (is (%~ (%curve +curve-arc90+ "(vla-get-endangle (vlax-ename->vla-object e))") (/ pi 2)))
+  (is (%pt~ (%curve +curve-arc90+ "(vlax-safearray->list (vlax-variant-value (vla-get-endpoint (vlax-ename->vla-object e))))")
+            '(0 10 0)))
+  (is (%~ (%curve +curve-arc-across-zero+ "(vla-get-arclength (vlax-ename->vla-object e))") (* 5 pi)))
+  (is (%~ (%curve +curve-bulge-pline+ "(vla-get-length (vlax-ename->vla-object e))") (+ 10 (* 5 pi))))
+  (is (%~ (%curve +curve-heavy-pline+ "(vla-get-length (vlax-ename->vla-object e))") (+ 10 (* 5 pi))))
+  (is (%~ (%curve +curve-closed-pline+ "(vla-get-area (vlax-ename->vla-object e))") 100.0d0))
+  (is (%curve +curve-closed-pline+ "(eq :vlax-true (vla-get-closed (vlax-ename->vla-object e)))"))
+  (is (%curve +curve-bulge-pline+ "(eq :vlax-false (vla-get-closed (vlax-ename->vla-object e)))"))
+  (is (%~ (%curve +curve-line+ "(vla-get-length (vlax-ename->vla-object e))") 10.0d0))
+  (is (%~ (%curve +curve-circle+ "(vla-get-circumference (vlax-ename->vla-object e))") (* 10 pi)))
+  (is (%~ (%curve +curve-circle+ "(vla-get-diameter (vlax-ename->vla-object e))") 10.0d0)))
+
+(test vla-addarc-and-command-arc-build-radian-arcs
+  ;; vla-AddArc normalises the angles into [0, 2pi) like entget
+  (is (%~ (%vla (concatenate 'string
+                 "(vl-load-com)(setq ms (vla-get-modelspace (vla-get-activedocument (vlax-get-acad-object))))"
+                 "(setq a (vla-addarc ms (vlax-3d-point '(0 0 0)) 10.0 (* 1.75 pi) (* 0.25 pi)))"
+                 "(vlax-curve-getdistatparam a (vlax-curve-getendparam a))"))
+          (* 5 pi)))
+  (is (%~ (%vla (concatenate 'string
+                 "(vl-load-com)(setq ms (vla-get-modelspace (vla-get-activedocument (vlax-get-acad-object))))"
+                 "(setq a (vla-addarc ms (vlax-3d-point '(0 0 0)) 10.0 (* -0.25 pi) (* 0.25 pi)))"
+                 "(cdr (assoc 50 (entget (vlax-vla-object->ename a))))"))
+          (* 1.75 pi)))
+  ;; ARC Center start end, and Center start Angle
+  (is (%~ (%vla "(vl-load-com)(command \"_ARC\" \"_C\" '(0 0) '(10 0) '(0 10))(vlax-curve-getdistatparam (entlast) (vlax-curve-getendparam (entlast)))")
+          (* 5 pi)))
+  (is (%~ (%vla "(vl-load-com)(command \"_ARC\" \"_C\" '(0 0) '(7.0710678118654755 -7.0710678118654755) \"_A\" 90)(cdr (assoc 50 (entget (entlast))))")
+          (* 1.75 pi)))
+  (is (%~ (%vla "(vl-load-com)(command \"_ARC\" '(10 0) \"_C\" '(0 0) '(0 10))(vla-get-arclength (vlax-ename->vla-object (entlast)))")
+          (* 5 pi))))
+
+(test vla-addlightweightpolyline-and-bulges
+  (let ((r (%vla (concatenate 'string
+                  "(vl-load-com)(setq ms (vla-get-modelspace (vla-get-activedocument (vlax-get-acad-object))))"
+                  "(setq p (vla-addlightweightpolyline ms (vlax-make-variant (vlax-safearray-fill (vlax-make-safearray vlax-vbdouble '(0 . 5)) '(0 0 10 0 10 10)))))"
+                  "(vla-setbulge p 0 1.0)"
+                  "(list (vla-getbulge p 0) (vla-getbulge p 1) (vla-get-length p) (vlax-curve-getdistatparam p 1.0))"))))
+    (is (%~ (first r) 1.0d0))
+    (is (%~ (second r) 0.0d0))
+    (is (%~ (third r) (+ 10 (* 5 pi))))
+    (is (%~ (fourth r) (* 5 pi)))))
+
+;;; --- measured vendor behaviour (curve-geometry:probe:*, 2026-10-08) ---
+;;; AutoCAD 2022 (GUI + AcCoreConsole, jobs 17026948757 / 17026948758) is
+;;; the behaviour of every dialect but the BricsCAD ones; BricsCAD V25 / V26
+;;; (jobs 17026948756 / 17026948755) is selected by a BricsCAD dialect.
+
+(defparameter +curve-as-bricscad+ "(setq *AUTOLISP-DIALECT* 'bricscad)")
+
+(defun %bcurve (mk expr)
+  (%vla (concatenate 'string +curve-as-bricscad+ mk expr)))
+
+(test vlax-curve-measured-out-of-range-line-and-circle
+  ;; LINE and CIRCLE extrapolate dist <-> param on both vendors
+  (dolist (f (list #'%curve #'%bcurve))
+    (is (%~ (funcall f +curve-line+ "(vlax-curve-getdistatparam e -0.1)") -0.1d0))
+    (is (%~ (funcall f +curve-line+ "(vlax-curve-getdistatparam e 10.1)") 10.1d0))
+    (is (%~ (funcall f +curve-line+ "(vlax-curve-getparamatdist e 11.0)") 11.0d0))
+    (is (null (funcall f +curve-line+ "(vlax-curve-getpointatparam e 10.5)")))
+    (is (%~ (funcall f +curve-circle+ "(vlax-curve-getdistatparam e -0.1)") -0.5d0))
+    (is (%pt~ (funcall f +curve-circle+ "(vlax-curve-getpointatparam e (+ (* 2 pi) 0.5))")
+              (list (* 5 (cos 0.5d0)) (* 5 (sin 0.5d0)) 0) 1d-9))
+    (is (%~ (funcall f +curve-line+ "(vlax-curve-getarea e)") 0.0d0)))
+  ;; CIRCLE getParamAtDist: AutoCAD wraps past 2pi (exactly 2pi stays), BricsCAD does not
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getparamatdist e (+ (* 10 pi) 1.0))") 0.2d0))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getparamatdist e (* 10 pi))") (* 2 pi)))
+  (is (%~ (%curve +curve-circle+ "(vlax-curve-getparamatdist e -1.0)") (- (* 2 pi) 0.2d0)))
+  (is (%~ (%bcurve +curve-circle+ "(vlax-curve-getparamatdist e (+ (* 10 pi) 1.0))") (+ (* 2 pi) 0.2d0)))
+  (is (%~ (%bcurve +curve-circle+ "(vlax-curve-getparamatdist e -1.0)") -0.2d0)))
+
+(test vlax-curve-measured-out-of-range-arc
+  ;; AutoCAD extrapolates R * (p - start); BricsCAD answers nil outside the arc
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getdistatparam e (+ (/ pi 2) 0.1))") (+ (* 5 pi) 1.0d0)))
+  (is (null (%bcurve +curve-arc90+ "(vlax-curve-getdistatparam e (+ (/ pi 2) 0.1))")))
+  (is (null (%bcurve +curve-arc90+ "(vlax-curve-getdistatparam e -0.1)")))
+  ;; getParamAtDist past the end: AutoCAD extrapolates, BricsCAD answers the LENGTH
+  (is (%~ (%curve +curve-arc90+ "(vlax-curve-getparamatdist e (+ (* 5 pi) 1.0))") (+ (/ pi 2) 0.1d0)))
+  (is (%~ (%bcurve +curve-arc90+ "(vlax-curve-getparamatdist e (+ (* 5 pi) 1.0))") (* 5 pi)))
+  (is (%~ (%bcurve +curve-arc90+ "(vlax-curve-getparamatdist e -1.0)") (* 5 pi)))
+  ;; a hair past the end extrapolates on both
+  (is (%~ (%bcurve +curve-arc90+ "(vlax-curve-getparamatdist e (+ (* 5 pi) 1.0e-9))") (+ (/ pi 2) 1.0d-10) 1d-12))
+  ;; getPointAtParam: any angle ON the arc, modulo 2pi (both vendors)
+  (dolist (f (list #'%curve #'%bcurve))
+    (is (%pt~ (funcall f +curve-arc-across-zero+ "(vlax-curve-getpointatparam e 0.1)")
+              (list (* 10 (cos 0.1d0)) (* 10 (sin 0.1d0)) 0) 1d-9))
+    (is (null (funcall f +curve-arc90+ "(vlax-curve-getpointatparam e (+ (/ pi 2) 0.5))"))))
+  ;; ... while getDistAtParam does not wrap on AutoCAD: R * (0.1 - 7pi/4)
+  (is (%~ (%curve +curve-arc-across-zero+ "(vlax-curve-getdistatparam e 0.1)") (* 10 (- 0.1d0 (* 7/4 pi))) 1d-9)))
+
+(test vlax-curve-bricscad-thresholds-second-round
+  "cador-curve-length-and-sampling, second probe round (BricsCAD V26 macOS,
+2026-10-24): a little past an end is the end, far past the length / nil;
+point tolerances per entity."
+  ;; getParamAtDist on the ARC (length 5pi): 1e-9 extrapolates, 1e-6 is the
+  ;; end, 1e-2 the length
+  (is (%~ (%bcurve +curve-arc90+ "(vlax-curve-getparamatdist e (+ (* 5 pi) 1.0e-6))")
+          (/ pi 2) 1d-12))
+  (is (%~ (%bcurve +curve-arc90+ "(vlax-curve-getparamatdist e -1.0e-6)") 0d0 1d-12))
+  (is (%~ (%bcurve +curve-arc90+ "(vlax-curve-getparamatdist e (+ (* 5 pi) 1.0e-2))")
+          (* 5 pi)))
+  ;; getDistAtParam past the end: ARC 1e-4 rad is the length, 1e-2 nil
+  (is (%~ (%bcurve +curve-arc90+ "(vlax-curve-getdistatparam e (+ (/ pi 2) 1.0e-4))")
+          (* 5 pi)))
+  (is (null (%bcurve +curve-arc90+ "(vlax-curve-getdistatparam e (+ (/ pi 2) 1.0e-2))")))
+  ;; ... polyline 1e-5 is the length, 1e-4 nil
+  (is (%~ (%bcurve +curve-bulge-pline+ "(vlax-curve-getdistatparam e (+ 2 1.0e-5))")
+          (+ 10 (* 5 pi))))
+  (is (null (%bcurve +curve-bulge-pline+ "(vlax-curve-getdistatparam e (+ 2 1.0e-4))")))
+  ;; getParamAtDist on the polyline: 1e-4 past is the end, 1e-2 the length
+  (is (%~ (%bcurve +curve-bulge-pline+ "(vlax-curve-getparamatdist e (+ 10 (* 5 pi) 1.0e-4))")
+          2d0 1d-12))
+  ;; a point a hair past a LINE's end answers the projected param
+  (is (%~ (%bcurve +curve-line+ "(vlax-curve-getparamatpoint e '(10.00000001 0.00000001 0.0))")
+          10.00000001d0 1d-12))
+  ;; an ARC is stricter in its plane than across it
+  (is (%bcurve +curve-arc90+ "(vlax-curve-getparamatpoint e '(0.0 10.0 1.0e-9))"))
+  (is (null (%bcurve +curve-arc90+ "(vlax-curve-getparamatpoint e '(1.0e-9 10.000000001 0.0))")))
+  ;; a 2D POLYLINE's Coordinates: x y z per vertex (from its VERTEX entities)
+  (is (equal '(0.0d0 0.0d0 0.0d0 10.0d0 0.0d0 0.0d0 10.0d0 10.0d0 0.0d0)
+             (%bcurve +curve-heavy-pline+ "(vlax-get (vlax-ename->vla-object e) 'Coordinates)"))))
+
+(test vlax-curve-autocad-thresholds-second-round
+  "The same round on AutoCAD 2022 (job 17435959369), the template of every
+dialect but the BricsCAD ones."
+  ;; LWPOLYLINE getParamAtDist: 1e-7 past the end is the end, 1e-6 nil, and
+  ;; nothing below the start
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatdist e (+ 10 (* 5 pi) 1.0e-7))")
+          2d0 1d-12))
+  (is (null (%curve +curve-bulge-pline+ "(vlax-curve-getparamatdist e (+ 10 (* 5 pi) 1.0e-6))")))
+  (is (null (%curve +curve-bulge-pline+ "(vlax-curve-getparamatdist e -1.0e-8)")))
+  ;; a point beside the straight end segment answers the projected param
+  ;; (end + 1e-6 / 10)
+  (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(10.000001 10.000001 0.0))")
+          2.0000001d0 1d-12))
+  ;; LINE: 1e-10 above is on (inclusive), (1e-10, 1e-10) beside is off
+  (is (%curve +curve-line+ "(vlax-curve-getparamatpoint e '(10.0 0.0 1.0e-10))"))
+  (is (null (%curve +curve-line+ "(vlax-curve-getparamatpoint e '(10.0000000001 0.0000000001 0.0))")))
+  ;; ARC: 1e-9 above is on, 1e-8 off
+  (is (%curve +curve-arc90+ "(vlax-curve-getparamatpoint e '(0.0 10.0 1.0e-9))"))
+  (is (null (%curve +curve-arc90+ "(vlax-curve-getparamatpoint e '(0.0 10.0 1.0e-8))"))))
+
+(test vlax-curve-measured-polyline-ends
+  ;; LWPOLYLINE: nil outside; a hair past the end is the end; far past:
+  ;; nil on AutoCAD, the LENGTH on BricsCAD
+  (is (null (%curve +curve-bulge-pline+ "(vlax-curve-getparamatdist e (+ 10 (* 5 pi) 1.0))")))
+  (is (%~ (%bcurve +curve-bulge-pline+ "(vlax-curve-getparamatdist e (+ 10 (* 5 pi) 1.0))") (+ 10 (* 5 pi))))
+  (is (%~ (%bcurve +curve-bulge-pline+ "(vlax-curve-getparamatdist e -1.0)") (+ 10 (* 5 pi))))
+  (dolist (f (list #'%curve #'%bcurve))
+    (is (%~ (funcall f +curve-bulge-pline+ "(vlax-curve-getparamatdist e (+ 10 (* 5 pi) 1.0e-9))") 2.0d0))
+    (is (null (funcall f +curve-bulge-pline+ "(vlax-curve-getdistatparam e 2.1)")))
+    (is (funcall f +curve-closed-pline+ "(vlax-curve-isperiodic e)")))
+  ;; AutoCAD's 2D POLYLINE refuses a distance AT its length, and
+  ;; extrapolates below its start; BricsCAD does neither
+  (is (null (%curve +curve-heavy-pline+ "(vlax-curve-getparamatdist e (vlax-curve-getdistatparam e 2.0))")))
+  (is (null (%curve +curve-heavy-pline+ "(vlax-curve-getpointatdist e (vlax-curve-getdistatparam e 2.0))")))
+  (is (%~ (%bcurve +curve-heavy-pline+ "(vlax-curve-getparamatdist e (vlax-curve-getdistatparam e 2.0))") 2.0d0))
+  (is (%~ (%curve +curve-heavy-pline+ "(vlax-curve-getdistatparam e -0.1)") (* -0.5 pi)))
+  (is (%pt~ (%curve +curve-heavy-pline+ "(vlax-curve-getpointatparam e -0.5)") '(5 5 0) 1d-9))
+  (is (null (%bcurve +curve-heavy-pline+ "(vlax-curve-getdistatparam e -0.1)")))
+  ;; getClosestPointTo with extend: the 2D POLYLINE extends, the LWPOLYLINE does not
+  (dolist (f (list #'%curve #'%bcurve))
+    (is (%pt~ (funcall f +curve-heavy-pline+ "(vlax-curve-getclosestpointto e '(1000.0 1000.0 0.0) T)") '(10 1000 0)))
+    (is (%pt~ (funcall f +curve-bulge-pline+ "(vlax-curve-getclosestpointto e '(1000.0 1000.0 0.0) T)") '(10 10 0)))))
+
+(test vlax-curve-measured-derivatives
+  ;; second derivative on a negative bulge: AutoCAD (-5 0 0), BricsCAD (5 0 0)
+  (let ((neg (concatenate 'string
+              "(vl-load-com)(setq e (entmakex '((0 . \"LWPOLYLINE\")"
+              "(100 . \"AcDbEntity\")(100 . \"AcDbPolyline\")"
+              "(90 . 2)(70 . 0)(10 0.0 0.0)(42 . -1.0)(10 10.0 0.0))))"))
+        (elev (concatenate 'string
+               "(vl-load-com)(setq e (entmakex '((0 . \"LWPOLYLINE\")"
+               "(100 . \"AcDbEntity\")(100 . \"AcDbPolyline\")"
+               "(90 . 2)(70 . 0)(38 . 5.0)(10 0.0 0.0)(10 10.0 0.0))))")))
+    (is (%pt~ (%curve neg "(vlax-curve-getsecondderiv e 0.0)") '(-5 0 0) 1d-9))
+    (is (%pt~ (%bcurve neg "(vlax-curve-getsecondderiv e 0.0)") '(5 0 0) 1d-9))
+    (dolist (f (list #'%curve #'%bcurve))
+      (is (%pt~ (funcall f neg "(vlax-curve-getfirstderiv e 0.0)") '(0 5 0) 1d-9))
+      (is (%pt~ (funcall f +curve-bulge-pline+ "(vlax-curve-getsecondderiv e 0.5)") '(0 5 0) 1d-9)))
+    ;; AutoCAD's LWPOLYLINE second derivative carries the elevation as Z
+    (is (%pt~ (%curve elev "(vlax-curve-getsecondderiv e 0.0)") '(0 0 5)))
+    (is (%pt~ (%bcurve elev "(vlax-curve-getsecondderiv e 0.0)") '(0 0 0)))))
+
+(test vlax-curve-measured-points-off-the-curve
+  (let ((elev (concatenate 'string
+               "(vl-load-com)(setq e (entmakex '((0 . \"LWPOLYLINE\")"
+               "(100 . \"AcDbEntity\")(100 . \"AcDbPolyline\")"
+               "(90 . 2)(70 . 0)(38 . 5.0)(10 0.0 0.0)(10 10.0 0.0))))")))
+    ;; 1e-7 off an ARC / LINE / 2D POLYLINE is off on both vendors (AutoCAD nil)
+    (is (null (%curve +curve-arc90+ "(vlax-curve-getparamatpoint e '(0.0 10.0 1.0e-7))")))
+    (is (null (%bcurve +curve-arc90+ "(vlax-curve-getparamatpoint e '(0.0 10.0 1.0e-7))")))
+    (is (null (%curve +curve-line+ "(vlax-curve-getparamatpoint e '(10.0 0.0 1.0e-7))")))
+    (is (null (%curve +curve-heavy-pline+ "(vlax-curve-getparamatpoint e '(10.0 10.0 1.0e-7))")))
+    ;; ... BricsCAD answers 0 for a point off a LINE / polyline in the plane Z = 0
+    (is (%~ (%bcurve +curve-line+ "(vlax-curve-getparamatpoint e '(1000.0 1000.0 0.0))") 0.0d0))
+    (is (%~ (%bcurve +curve-heavy-pline+ "(vlax-curve-getparamatpoint e '(10.0 10.0 1.0e-7))") 0.0d0))
+    (is (null (%bcurve elev "(vlax-curve-getparamatpoint e '(1000.0 1000.0 0.0))")))
+    ;; AutoCAD's LWPOLYLINE ignores the Z of the point; BricsCAD accepts 1e-7
+    (is (%~ (%curve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(10.0 10.0 1.0e-4))") 2.0d0))
+    (is (%~ (%curve elev "(vlax-curve-getparamatpoint e '(4.0 0.0 0.0))") 0.4d0))
+    (is (%~ (%bcurve +curve-bulge-pline+ "(vlax-curve-getparamatpoint e '(10.0 10.0 1.0e-7))") 2.0d0))
+    (is (null (%bcurve elev "(vlax-curve-getparamatpoint e '(4.0 0.0 0.0))")))
+    ;; a 2D point: in the plane on AutoCAD, at Z 0 on BricsCAD
+    (is (%~ (%curve elev "(vlax-curve-getparamatpoint e '(4.0 0.0))") 0.4d0))
+    (is (null (%bcurve elev "(vlax-curve-getparamatpoint e '(4.0 0.0))")))
+    ;; a CIRCLE point just below angle 0: AutoCAD 2pi - eps, BricsCAD 0
+    (is (> (%curve +curve-circle+ "(vlax-curve-getparamatpoint e '(5.0 -1.0e-12 0.0))") 6.28d0))
+    (is (%~ (%bcurve +curve-circle+ "(vlax-curve-getparamatpoint e '(5.0 -1.0e-12 0.0))") 0.0d0))))
+
+(test arc-angle-storage-measured
+  ;; entmake: AutoCAD normalises 50/51 into [0, 2pi), BricsCAD keeps them
+  (let ((mk "(vl-load-com)(setq e (entmakex (list '(0 . \"ARC\") '(100 . \"AcDbEntity\") '(100 . \"AcDbCircle\") '(10 0.0 0.0 0.0) '(40 . 10.0) '(100 . \"AcDbArc\") (cons 50 (- (/ pi 4))) (cons 51 7.0))))"))
+    (is (%~ (%curve mk "(cdr (assoc 50 (entget e)))") (* 7/4 pi)))
+    (is (%~ (%curve mk "(cdr (assoc 51 (entget e)))") (- 7.0d0 (* 2 pi))))
+    (is (%~ (%bcurve mk "(cdr (assoc 50 (entget e)))") (- (/ pi 4))))
+    (is (%~ (%bcurve mk "(cdr (assoc 51 (entget e)))") 7.0d0))
+    ;; BricsCAD measures from the stored angle, and answers area 0 there
+    (is (%~ (%bcurve mk "(vlax-curve-getstartparam e)") (- (/ pi 4))))
+    (is (%~ (%bcurve mk "(vlax-curve-getendparam e)") (- 7.0d0 (* 2 pi))))
+    (is (%~ (%bcurve mk "(vlax-curve-getarea e)") 0.0d0))
+    (is (%~ (%curve mk "(vlax-curve-getstartparam e)") (* 7/4 pi)))
+    (is (%~ (%curve mk "(vlax-curve-getendparam e)") 7.0d0))
+    (is (%~ (%curve mk "(vlax-curve-getdistatparam e (vlax-curve-getendparam e))")
+            (* 10 (- 7.0d0 (* 7/4 pi)))))))
+
+(test lwpolyline-coordinates-property-measured
+  (is (equal '(0.0d0 0.0d0 10.0d0 0.0d0 10.0d0 10.0d0)
+             (%curve +curve-bulge-pline+ "(vlax-get (vlax-ename->vla-object e) 'Coordinates)")))
+  (is (%pt~ (%curve +curve-bulge-pline+
+                    "(vlax-put (vlax-ename->vla-object e) 'Coordinates '(0.0 0.0 20.0 0.0 20.0 20.0))(vlax-curve-getendpoint e)")
+            '(20 20 0))))
+
 ;;; --- vlax-for (special form) + vlax-map-collection ---------------
 
 (test vlax-for-iterates-a-collection
@@ -3086,7 +4153,7 @@ Value as its TextString; both are read through the façade as well."
                     "  (setq n (+ n 1)))"
                     "n"))))
   ;; VAR is bound to each member (a document VLA-object) in turn.
-  (is (equal "Drawing.dwg"
+  (is (equal "Drawing1.dwg"
              (let ((v (%vla (concatenate 'string
                              "(vl-load-com)(setq nm nil)"
                              "(vlax-for d (vlax-get-property (vlax-get-acad-object) \"Documents\")"
@@ -3427,9 +4494,43 @@ in a headless engine where every coordinate space collapses to WCS."
     (is (= 2 (length result)))
     (is (= 3 (length (first  result))))    ; (x1 y1 z1)
     (is (= 3 (length (second result))))    ; (x2 y2 z2)
-    ;; Lower-left corner at origin in our stub.
-    (is (= 0.0d0 (first  (first result))))
-    (is (= 0.0d0 (second (first result))))))
+    ;; The measured Standard-font ink box (probe-block-walk.lsp):
+    ;; 'h' has a left bearing, the 'o' overshoots the baseline.
+    (is (< (abs (- 0.092087d0 (first  (first result)))) 1d-4))
+    (is (< (abs (- -0.016371d0 (second (first result)))) 1d-4))
+    (is (< (abs (- 2.899727d0 (first  (second result)))) 1d-4))
+    (is (< (abs (- 1.0d0 (second (second result)))) 1d-4))))
+
+(test textbox-measures-glyphs-as-autocad-reports-them
+  "10 x M / 10 x i as AutoCAD 2022 measures them; spaces carry no ink;
+a box that does not straddle the baseline is reported touching it."
+  (flet ((tb (string)
+           (reset-autolisp-symbol-table)
+           (run-autolisp-string
+            (format nil "(textbox (list (cons 1 ~S)))" string)
+            :setup-fn #'install-core-into)))
+    (let ((m (tb "MMMMMMMMMM")) (i (tb "iiiiiiiiii")))
+      (is (< (abs (- 0.103683d0 (first (first m)))) 1d-4))
+      (is (< (abs (- 11.531378d0 (first (second m)))) 1d-4))
+      (is (< (abs (- 0.092769d0 (first (first i)))) 1d-4))
+      (is (< (abs (- 3.008868d0 (first (second i)))) 1d-4)))
+    (is (equal '((0.0d0 0.0d0 0.0d0) (0.0d0 0.0d0 0.0d0)) (tb "   ")))
+    (let ((dash (tb "--")))
+      (is (= 0.0d0 (second (first dash))))
+      (is (< (abs (- 0.123465d0 (second (second dash)))) 1d-4)))))
+
+(test textbox-measures-glyphs-as-bricscad-reports-them
+  "Under a BricsCAD dialect: spaces are ink to their advance, and an
+off-baseline box keeps its true height."
+  (multiple-value-bind (x0 y0 x1 y1)
+      (clautolisp.autolisp-runtime:text-ink-box "   " 1.0d0 :bricscad t)
+    (is (= 0.0d0 x0 y0 y1))
+    (is (< (abs (- 1.164393d0 x1)) 1d-4)))
+  (multiple-value-bind (x0 y0 x1 y1)
+      (clautolisp.autolisp-runtime:text-ink-box "--" 1.0d0 :bricscad t)
+    (declare (ignore x0 x1))
+    (is (< (abs (- 0.300136d0 y0)) 1d-4))
+    (is (< (abs (- 0.423602d0 y1)) 1d-4))))
 
 (test m2-vle-g-vectol-returns-tolerance
   "(vle_g_vectol) returns the configured vector tolerance."
@@ -3440,10 +4541,11 @@ in a headless engine where every coordinate space collapses to WCS."
     (is (plusp result))))
 
 (test m2-cli-noops-all-return-nil
-  "GRAPHSCR, TEXTSCR, TEXTPAGE, REDRAW, SETVIEW, TABLET return nil."
+  "GRAPHSCR, TEXTSCR, TEXTPAGE, REDRAW, TABLET return nil. (SETVIEW takes a
+view: coupling-tilemode-cvport-viewport-access.)"
   (reset-autolisp-symbol-table)
   (dolist (form '("(graphscr)" "(textscr)" "(textpage)"
-                  "(redraw)" "(setview)" "(tablet)"))
+                  "(redraw)" "(tablet)"))
     (is (null (run-autolisp-string form :setup-fn #'install-core-into)))))
 
 (test m2-cli-noops-string-return
@@ -3775,14 +4877,17 @@ LENGTH2DYZ drops X."
          1.0d-9)))
 
 (test m3b-vle-vector-normalise
-  "NORMALISE produces a unit vector; zero-length input returns NIL."
+  "NORMALISE produces a unit vector; zero-length input returns the zero
+vector (0 0 0), as BricsCAD V26 does -- vle-extension-vendor-divergences."
   (reset-autolisp-symbol-table)
   (is (close-vec3-p
        (run-autolisp-string "(vle-vector-normalise '(0 3 0))"
                             :setup-fn #'install-core-into)
        '(0d0 1d0 0d0)))
-  (is (null (run-autolisp-string "(vle-vector-normalise '(0 0 0))"
-                                 :setup-fn #'install-core-into))))
+  (is (close-vec3-p
+       (run-autolisp-string "(vle-vector-normalise '(0 0 0))"
+                            :setup-fn #'install-core-into)
+       '(0d0 0d0 0d0))))
 
 (test m3b-vle-vector-angles
   "ANGLETO unsigned π/2 between X and Y axes; ANGLETOREF sign
@@ -4115,12 +5220,13 @@ OP=1 is logical-AND per the documented truth-table layout."
     (is (plusp (length (autolisp-string-value result))))))
 
 (test coverage-angtof-parses-string
-  "(angtof \"1.5708\") parses to a real."
+  "(angtof \"90\") is pi/2: mode 0 (the AUNITS default) is DEGREES; it used
+to read the string as radians (angtos-modes-wrong)."
   (reset-autolisp-symbol-table)
-  (let ((result (run-autolisp-string "(angtof \"1.5708\")"
+  (let ((result (run-autolisp-string "(angtof \"90\")"
                                      :setup-fn #'install-core-into)))
     (is (numberp result))
-    (is (< (abs (- 1.5708d0 result)) 1.0d-6))))
+    (is (< (abs (- (/ pi 2) result)) 1.0d-9))))
 
 (test coverage-distof-parses-string
   "(distof \"1.5\") parses to 1.5 as a real."
@@ -4268,11 +5374,14 @@ to keep the test deterministic across hosts)."
 (test coverage-vle-member-and-enamep-and-picksetp
   "Three predicate-style gap-fills."
   (reset-autolisp-symbol-table)
-  ;; VLE-MEMBER: returns the tail starting at the match (CL MEMBER).
-  (let ((tail (run-autolisp-string "(vle-member 'b '(a b c))"
-                                   :setup-fn #'install-core-into)))
-    (is (consp tail))
-    (is (= 2 (length tail))))
+  ;; VLE-MEMBER: BricsCAD V26 returns the boolean T / nil, NOT the tail
+  ;; (the tail/index is VLE-SEARCH's job) -- vle-extension-vendor-divergences.
+  (let ((present (run-autolisp-string "(vle-member 'b '(a b c))"
+                                      :setup-fn #'install-core-into)))
+    (is (not (null present)))
+    (is (atom present)))          ; a boolean, not the (b c) tail
+  (is (null (run-autolisp-string "(vle-member 'z '(a b c))"
+                                 :setup-fn #'install-core-into)))
   ;; VLE-ENAMEP / VLE-PICKSETP: both nil for a bare integer.
   (is (null (run-autolisp-string "(vle-enamep 5)"
                                  :setup-fn #'install-core-into)))
@@ -4380,9 +5489,9 @@ and returns T. Accepts both a single symbol and a list."
 ;;;; ----- M5 missing-functions: core/misc rest -----
 
 (test m5-native-vl-load-family-returns-t
-  "VL-INIT / VL-LOAD-COM / VL-LOAD-REACTORS / VL-LOAD-ALL all
-return T — no-op success on a system without VLX / COM /
-reactors."
+  "VL-INIT / VL-LOAD-COM / VL-LOAD-REACTORS return T -- no-op success on a
+system without VLX / COM / reactors. (VL-LOAD-ALL takes a file name and
+loads it into every document: multidocument-tests.)"
   (reset-autolisp-symbol-table)
   (flet ((true-p (form)
            (let ((r (run-autolisp-string form :setup-fn #'install-core-into)))
@@ -4390,8 +5499,7 @@ reactors."
                   (string= "T" (autolisp-symbol-name r))))))
     (is (true-p "(vl-init)"))
     (is (true-p "(vl-load-com)"))
-    (is (true-p "(vl-load-reactors)"))
-    (is (true-p "(vl-load-all)"))))
+    (is (true-p "(vl-load-reactors)"))))
 
 (test reactor-builtins-import-runtime-helpers
   "Regression for reactor-builtins-undefined-functions: the reactor
@@ -4559,7 +5667,7 @@ complete-unit-tests.issue."
     (is (stub-nil "(vl-subent-ssmemb nil nil nil)"))))
 
 (defun %get-with-mock-input (form-source input-line)
-  "Evaluate FORM-SOURCE under a MockHost whose prompt-stream yields
+  "Evaluate FORM-SOURCE under a cador whose prompt-stream yields
 INPUT-LINE; return the raw AutoLISP result. Generalises
 %GETSTRING-WITH-INPUT for the whole GET* family."
   (let ((mock (clautolisp.cador:make-cador)))
@@ -4597,7 +5705,7 @@ input returns nil rather than signalling."
 
 (test coverage-get-family-reads-parsed-value-from-host
   "The interactive GET* prompts delegate to the active host's prompt stream
-and return the parsed value of their type. Driven by a MockHost input line:
+and return the parsed value of their type. Driven by a cador input line:
 getint->integer, getreal->real, getkword->the matched keyword string,
 getangle/getorient->radians real, getcorner->point. (complete-unit-tests.issue
 GET* family; getstring/getdist/getpoint/getvar/initget already covered.)"
@@ -4775,25 +5883,33 @@ where it was broken, so it cannot come back unnoticed."
         "expected at least the greet / listpick / all-widgets examples, saw ~D"
         checked)))
 
-(test m5-layoutlist-returns-model-only
-  "(layoutlist) returns a single-element list with the autolisp-string \"Model\"."
+(test layoutlist-lists-paper-layouts-never-model
+  "(layoutlist) is the PAPER layouts only -- never \"Model\" (AutoCAD 2022,
+BricsCAD V25 / V26, probe-triage3); with no drawing there are none."
   (reset-autolisp-symbol-table)
-  (let ((result (run-autolisp-string "(layoutlist)"
-                                     :setup-fn #'install-core-into)))
-    (is (consp result))
-    (is (= 1 (length result)))
-    (is (typep (first result) 'autolisp-string))
-    (is (string= "Model" (autolisp-string-value (first result))))))
+  (is (null (run-autolisp-string "(layoutlist)" :setup-fn #'install-core-into)))
+  (reset-autolisp-symbol-table)
+  (let ((result (%al "(layoutlist)")))
+    (is (equal '("Layout1") (mapcar #'autolisp-string-value result))))
+  ;; The layouts COM collection and LAYOUTLIST agree.
+  (reset-autolisp-symbol-table)
+  (is (equal '("Layout1" "Model")
+             (mapcar #'autolisp-string-value
+                     (%al "(progn (vl-load-com) (setq n '())
+                            (vlax-for l (vla-get-layouts (vla-get-activedocument (vlax-get-acad-object)))
+                              (setq n (cons (vla-get-name l) n)))
+                            (reverse n))")))))
 
 (test m5-vports-returns-single-default
-  "(vports) returns a list with one entry: id=1, full-screen corners."
+  "(vports) returns a list with one entry: viewport 2 (as AutoCAD and BricsCAD
+number a new drawing's only tiled viewport), full-screen corners."
   (reset-autolisp-symbol-table)
-  (let* ((result (run-autolisp-string "(vports)"
-                                      :setup-fn #'install-core-into))
+  ;; On cador: nihil has no viewports (it signals, as for every CAD operation).
+  (let* ((result (%vp-run "autocad-2022" "(vports)"))
          (first-entry (first result)))
     (is (consp result))
     (is (= 1 (length result)))
-    (is (eql 1 (first first-entry)))
+    (is (eql 2 (first first-entry)))
     (is (equal '(0.0d0 0.0d0) (second first-entry)))
     (is (equal '(1.0d0 1.0d0) (third first-entry)))))
 
@@ -4815,8 +5931,8 @@ Windows registry / macOS defaults with a persistent per-user store
 descendents, delete, and persistence across a fresh store load."
   (reset-autolisp-symbol-table)
   (uiop:with-temporary-file (:pathname path :type "sexp")
-    (let ((clautolisp.cador:*mock-registry-path* path)
-          (clautolisp.cador::*mock-registry* nil)
+    (let ((clautolisp.cador:*cador-registry-path* path)
+          (clautolisp.cador::*cador-registry* nil)
           ;; force the sexp store: this unit test is about the :unix
           ;; backend — on darwin/windows the default backend talks to the
           ;; REAL platform store (covered by the verify:vl-registry jobs)
@@ -4853,7 +5969,7 @@ descendents, delete, and persistence across a fresh store load."
         (is (null (run-al "(vl-registry-read \"HKCU\\\\Soft\\\\App\")")))
         ;; Persistence: drop the in-memory table — the next call reloads
         ;; the store file written by the last write
-        (setf clautolisp.cador::*mock-registry* nil)
+        (setf clautolisp.cador::*cador-registry* nil)
         (is (s= "1" (run-al "(vl-registry-read \"HKCU\\\\Soft\\\\App\\\\Sub1\" \"x\")")))))))
 
 (test m5-getcfg-setcfg-roundtrip
@@ -5076,11 +6192,14 @@ HKCU registry-path strings (complete-unit-tests.issue)."
   "The untested safearray introspection/mutation ops, on a real 1-D safearray
 built headlessly via vlax-make-safearray (complete-unit-tests.issue)."
   (reset-autolisp-symbol-table)
-  (is (string= "INTEGER"
-               (autolisp-symbol-name
-                (run-autolisp-string
-                 "(vlax-safearray-type (vlax-make-safearray 'integer '(0 . 2)))"
-                 :setup-fn #'install-core-into))))
+  ;; the vlax-vb* code (spec: Integer type code); an AutoLISP integer is a
+  ;; vlax-vbLong (3)
+  (is (eql 3 (run-autolisp-string
+              "(vlax-safearray-type (vlax-make-safearray 'integer '(0 . 2)))"
+              :setup-fn #'install-core-into)))
+  (is (eql 5 (run-autolisp-string
+              "(vlax-safearray-type (vlax-make-safearray 5 '(0 . 2)))"
+              :setup-fn #'install-core-into)))
   (is (eql 0 (run-autolisp-string
               "(vlax-safearray-get-l-bound (vlax-make-safearray 'integer '(0 . 2)) 1)"
               :setup-fn #'install-core-into)))
@@ -5099,11 +6218,13 @@ built headlessly via vlax-make-safearray (complete-unit-tests.issue)."
   (is (eql 42 (run-autolisp-string
                "(vlax-variant-value (vlax-variant-change-type (vlax-make-variant 42) 'real))"
                :setup-fn #'install-core-into)))
-  (is (string= "REAL"
-               (autolisp-symbol-name
-                (run-autolisp-string
-                 "(vlax-variant-type (vlax-variant-change-type (vlax-make-variant 42) 'real))"
-                 :setup-fn #'install-core-into)))))
+  (is (eql 5 (run-autolisp-string
+              "(vlax-variant-type (vlax-variant-change-type (vlax-make-variant 42) 'real))"
+              :setup-fn #'install-core-into)))
+  ;; an integer type code (vlax-vbDouble) re-tags too
+  (is (eql 5 (run-autolisp-string
+              "(vlax-variant-type (vlax-variant-change-type (vlax-make-variant 42) 5))"
+              :setup-fn #'install-core-into))))
 
 (test vlax-safearray-mode-is-a-nil-stub
   "_vlax-safearray-mode is an internal policy-flag no-op stub returning nil
@@ -5523,7 +6644,7 @@ written, as a list of (unsigned-byte 8)."
 ;;;; tests don't have to read real *error-output*.
 
 (defun %install-cador-and-core (context)
-  "Wire a fresh MockHost into CONTEXT and install the core builtins.
+  "Wire a fresh cador into CONTEXT and install the core builtins.
 Used by tests that exercise sysvar paths through GETVAR / SETVAR —
 the bare RUN-AUTOLISP-STRING uses nihil which signals
 :host-not-supported."
@@ -5645,10 +6766,10 @@ sysvars."
 
 ;;;; ----- LISPSYS dispatch (Phase 6) ----------------------------------
 ;;;;
-;;;; LISPSYS is an AutoCAD-only sysvar (introduced 2021) that gates
-;;;; source-file encoding globally. BricsCAD does not expose it. The
-;;;; encoding-dispatch.issue answer to the open question is: warn
-;;;; loudly under all non-autocad dialects, do not forbid.
+;;;; LISPSYS is a vendor sysvar (AutoCAD 2021+, BricsCAD V23+) that gates
+;;;; source-file encoding globally. The encoding-dispatch.issue answer to
+;;;; the open question is: warn loudly under the dialects that do not
+;;;; have it (strict, clautolisp), do not forbid.
 ;;;;
 ;;;; Setvar with a value outside {0,1,2} additionally emits
 ;;;; enc-lispsys-out-of-range — the spec mandates the {0,1,2} domain.
@@ -5670,14 +6791,15 @@ sysvars."
     (is (search "[enc-foreign-dialect]" diagnostics))
     (is (search "--clautolisp" diagnostics))))
 
-(test lispsys-getvar-foreign-dialect-under-bricscad
+(test lispsys-getvar-silent-under-bricscad
+  ;; BricsCAD has LISPSYS from V23 (V26 measured: 0, probe-versions /
+  ;; probe-triage2), so the bricscad dialects own it.
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        "(getvar \"LISPSYS\")"
        :dialect :bricscad-v26)
     (declare (ignore result))
-    (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "--bricscad" diagnostics))))
+    (is (string= "" diagnostics))))
 
 (test lispsys-getvar-extension-used-under-strict
   (multiple-value-bind (result diagnostics)
@@ -5792,25 +6914,25 @@ attempts the I/O."
     (is (string= "" diagnostics))))
 
 (test open-positional-clautolisp-foreign-under-autocad
-  ;; "UTF-8" with the dash is the clautolisp vocabulary — foreign to
-  ;; AutoCAD's "utf8" / "utf8-bom" set.
+  ;; "UTF-8" with the dash is the clautolisp vocabulary — AutoCAD
+  ;; documents only "utf8" / "utf8-bom".
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        (%open-fixture-form "\"w\" \"UTF-8\"")
        :dialect :autocad-2026)
     (declare (ignore result))
     (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "clautolisp-positional" diagnostics))))
+    (is (search "documents only" diagnostics))))
 
-(test open-positional-autocad-foreign-under-clautolisp
-  ;; The AutoCAD lower-case literal is foreign to --clautolisp.
+(test open-positional-autocad-silent-under-clautolisp
+  ;; clautolisp's own dialect never warns about OPEN's encoding forms
+  ;; (pjb 2026-10-06: lenient, warn only in other dialects or strict).
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        (%open-fixture-form "\"w\" \"utf8\"")
        :dialect :clautolisp)
     (declare (ignore result))
-    (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "autocad-positional" diagnostics))))
+    (is (string= "" diagnostics))))
 
 (test open-positional-extension-used-under-strict
   (multiple-value-bind (result diagnostics)
@@ -5835,16 +6957,15 @@ attempts the I/O."
        :dialect :autocad-2026)
     (declare (ignore result))
     (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "bricscad-ccs" diagnostics))))
+    (is (search "ignores the \",ccs=UTF-8\" mode suffix" diagnostics))))
 
-(test open-ccs-suffix-foreign-under-clautolisp
+(test open-ccs-suffix-silent-under-clautolisp
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        (%open-fixture-form "\"w,ccs=UTF-8\"")
        :dialect :clautolisp)
     (declare (ignore result))
-    (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "bricscad-ccs" diagnostics))))
+    (is (string= "" diagnostics))))
 
 (test open-ccs-suffix-extension-used-under-strict
   (multiple-value-bind (result diagnostics)
@@ -5862,8 +6983,8 @@ attempts the I/O."
        (%open-fixture-form "\"w,ccs=UTF-8\" \"UTF-8\"")
        :dialect :strict)
     (declare (ignore result))
-    (is (search "bricscad-ccs" diagnostics))
-    (is (search "clautolisp-positional" diagnostics))))
+    (is (search ",ccs=UTF-8" diagnostics))
+    (is (search "third (encoding) argument" diagnostics))))
 
 (test open-no-encoding-arg-silent-under-every-dialect
   ;; Bare OPEN should not emit any encoding diagnostic regardless
@@ -6205,22 +7326,31 @@ attempts the I/O."
        :dialect :autocad-2026)
     (declare (ignore result))
     (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "clautolisp-positional" diagnostics))))
+    (is (search "documents only" diagnostics))))
 
-(test clal-lint-detects-ccs-suffix-under-clautolisp
+(test clal-lint-detects-ccs-suffix-under-autocad
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        "(clal-lint-encoding-extensions '(open \"f.txt\" \"w,ccs=UTF-8\"))"
-       :dialect :clautolisp)
+       :dialect :autocad-2026)
     (declare (ignore result))
     (is (search "[enc-foreign-dialect]" diagnostics))
-    (is (search "bricscad-ccs" diagnostics))))
+    (is (search ",ccs=UTF-8" diagnostics))))
 
-(test clal-lint-detects-lispsys-getvar-under-bricscad
+(test clal-lint-accepts-lispsys-getvar-under-bricscad
+  ;; BricsCAD has LISPSYS from V23: not foreign to --bricscad.
   (multiple-value-bind (result diagnostics)
       (%capture-enc-diagnostics
        "(clal-lint-encoding-extensions '(getvar \"LISPSYS\"))"
        :dialect :bricscad-v26)
+    (declare (ignore result))
+    (is (not (search "LISPSYS" diagnostics)))))
+
+(test clal-lint-detects-lispsys-getvar-under-clautolisp
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(getvar \"LISPSYS\"))"
+       :dialect :clautolisp)
     (declare (ignore result))
     (is (search "[enc-foreign-dialect]" diagnostics))))
 
@@ -7035,13 +8165,13 @@ objects. The same list object twice for list-same, so identity can hold."
 
 ;;;; ----- COMMAND / COMMAND-S / VL-CMDF / CLAL-COMMAND-LOG -----------
 ;;;; (deferred-command-special-form issue) — the full stack on a
-;;;; MockHost: the runtime special form normalizes tokens, the HAL
-;;;; routes them, MockHost records them, CLAL-COMMAND-LOG reads them
+;;;; cador: the runtime special form normalizes tokens, the HAL
+;;;; routes them, cador records them, CLAL-COMMAND-LOG reads them
 ;;;; back as AutoLISP values.
 
 (defun run-on-mock-command-host (source)
   "Evaluate SOURCE with the core builtins installed and the default
-session pointed at a fresh MockHost. Returns (values result mock)."
+session pointed at a fresh cador. Returns (values result mock)."
   (let ((mock (clautolisp.cador:make-cador)))
     (values
      (run-autolisp-string
@@ -7055,7 +8185,7 @@ session pointed at a fresh MockHost. Returns (values result mock)."
 
 (test command-special-form-records-tokens-on-cador
   "(command \"._LINE\" pt1 pt2 \"\") returns nil and lands on the
-MockHost command log as normalized token strings."
+cador command log as normalized token strings."
   (reset-autolisp-symbol-table)
   (multiple-value-bind (result mock)
       (run-on-mock-command-host
@@ -7156,6 +8286,25 @@ itself fails loudly."
                          (mapcar #'autolisp-string-value tokens))
                        result)))))
 
+(test command-is-also-a-function-for-apply-and-mapcar
+  ;; On the vendors COMMAND is an ordinary function: (apply 'command lst)
+  ;; is a common idiom. clautolisp's special form had no function binding
+  ;; ("Undefined AutoLISP function COMMAND", 2026-10-03).
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result mock)
+      (run-on-mock-command-host
+       "(apply 'command (list \"._LINE\" \"0,0\" \"1,1\" \"\"))
+        (apply 'command-s (list \"._CIRCLE\" \"1,2\" \"3\"))
+        (mapcar 'command (list \"._REGEN\"))
+        (clal-command-log)")
+    (declare (ignore mock))
+    (is (equal '(("._LINE" "0,0" "1,1" "")
+                 ("._CIRCLE" "1,2" "3")
+                 ("._REGEN"))
+               (mapcar (lambda (tokens)
+                         (mapcar #'autolisp-string-value tokens))
+                       result)))))
+
 ;;;; ====================================================================
 ;;;; ACAD_STRLSORT — Express Tools string-list sort
 ;;;; (issues/closed/acad-strlsort-returns-nil.issue)
@@ -7164,7 +8313,7 @@ itself fails loudly."
 ;;;; is case-sensitive, ordinal on character codes (ASCII digits <
 ;;;; upper < lower; code points > 127 after the ASCII range), duplicates
 ;;;; preserved, input list untouched, and the whole result is nil for
-;;;; invalid input or a list longer than the MAXSORT sysvar.
+;;;; invalid input. MAXSORT must never truncate or suppress the result.
 
 (defun %acad-strlsort-fn ()
   (autolisp-symbol-function (find-autolisp-symbol "ACAD_STRLSORT")))
@@ -7281,15 +8430,21 @@ itself fails loudly."
            :setup-fn #'%install-cador-and-core)))
     (is (equal '("a" "b" "c") (%al-string-values result)))))
 
-(test acad-strlsort-above-maxsort-returns-nil
-  ;; Length > MAXSORT: the Express Tools MAXSORT gate returns nil
-  ;; (list left unsorted). MAXSORT 2, a 3-element list -> nil.
-  (let ((result
-          (run-autolisp-string
-           "(setvar \"MAXSORT\" 2)
-            (acad_strlsort '(\"c\" \"b\" \"a\"))"
-           :setup-fn #'%install-cador-and-core)))
-    (is (null result))))
+(test acad-strlsort-large-catalogue-ignores-maxsort
+  ;; SCHMS enumerates 204 classes; the BricsCAD profile's MAXSORT is 200.
+  ;; Both native engines sort the whole list, also for MAXSORT=0. Cover
+  ;; the former host-less fallback ceiling of 1000 as well.
+  (dolist (count '(204 1001))
+    (let* ((names (loop for index downfrom count above 0
+                        collect (format nil "class-~4,'0D" index)))
+           (expected (reverse names)))
+      (dolist (limit '(0 2 200 1000))
+        (let ((actual
+                (%al-string-values
+                 (%al (format nil "(setvar ~S ~D) (acad_strlsort '~S)"
+                              "MAXSORT" limit names)))))
+          (is (equal expected actual)
+              "~D catalogue entries must sort with MAXSORT=~D." count limit))))))
 
 (test vla-getboundingbox-assigns-bare-safearrays
   ;; Vendor by-reference contract: (vla-getboundingbox obj 'll 'ur)
@@ -7307,7 +8462,747 @@ itself fails loudly."
     (is (consp result))
     (let ((min-corner (first result))
           (max-corner (second result)))
-      (is (= 1.0d0 (first min-corner)))
-      (is (= 2.0d0 (second min-corner)))
-      ;; The text height extends the box upward: 2.0 + 2.5.
-      (is (= 4.5d0 (second max-corner))))))
+      ;; The glyph ink box of "boite" (as TEXTBOX measures it),
+      ;; placed at the insertion point (1 2).
+      (multiple-value-bind (x0 y0 x1 y1)
+          (clautolisp.autolisp-runtime:text-ink-box "boite" 2.5d0)
+        (is (< (abs (- (+ 1.0d0 x0) (first min-corner))) 1d-9))
+        (is (< (abs (- (+ 2.0d0 y0) (second min-corner))) 1d-9))
+        (is (< (abs (- (+ 1.0d0 x1) (first max-corner))) 1d-9))
+        (is (< (abs (- (+ 2.0d0 y1) (second max-corner))) 1d-9))))))
+
+(test print-functions-without-argument-return-the-void-symbol
+  ;; Spec: (princ) / (prin1) / (print) return the VOID symbol -- empty
+  ;; name, a SYM, not nil -- so a command function's closing (princ)
+  ;; echoes nothing. (princ nil) still prints "nil" and returns nil.
+  (dolist (f '("princ" "prin1" "print"))
+    (reset-autolisp-symbol-table)
+    (is (equal "" (autolisp-string-value
+                   (run-autolisp-string (format nil "(vl-symbol-name (~A))" f)
+                                        :setup-fn #'install-core-into)))
+        "(~A) should return the void symbol" f))
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(princ nil)" :setup-fn #'install-core-into))))
+
+;;; --- com-application-object-properties (triage round 2, item 1) --------
+;;; The Application / Document properties EPUREE and its SNCF upstream call,
+;;; with the values BricsCAD V26 returned (probe-triage2, jobs 16923716753
+;;; V26 macOS and 16923716756 V25 Windows).
+
+(test com-application-layouts-active-and-preferences
+  (reset-autolisp-symbol-table)
+  (let ((saved (clautolisp.autolisp-runtime:autolisp-support-paths)))
+    (unwind-protect
+         (flet ((str (form) (autolisp-string-value (%al form))))
+           ;; :VLAX-TRUE / :VLAX-FALSE are symbols whose value is themselves.
+           (is (equal "(:VLAX-TRUE :VLAX-FALSE SYM)"
+                      (str "(vl-prin1-to-string (list :vlax-true :vlax-false (type :vlax-true)))")))
+           ;; Document.Active, compared as EPUREE does.
+           (is (equal "T" (str "(progn (vl-load-com)
+                                (vl-prin1-to-string
+                                 (= (vla-get-active (vla-get-activedocument (vlax-get-acad-object)))
+                                    :vlax-true)))")))
+           ;; Layouts: paper layouts first, then Model; Item by name; a missing
+           ;; name is an error (an Automation error on the vendors).
+           (is (equal "(2 (\"Layout1\" \"Model\") \"Model\" T)"
+                      (str "(progn (vl-load-com)
+                         (setq ls (vla-get-layouts (vla-get-activedocument (vlax-get-acad-object))))
+                         (setq names '())
+                         (vlax-for l ls (setq names (cons (vla-get-name l) names)))
+                         (vl-prin1-to-string
+                          (list (vla-get-count ls) (reverse names)
+                                (vla-get-name (vla-item ls \"model\"))
+                                (vl-catch-all-error-p
+                                 (vl-catch-all-apply 'vla-item (list ls \"NoSuchLayout\"))))))")))
+           ;; Preferences.Files.SupportPath is (getenv "ACAD"); setting it
+           ;; sets the support path findfile searches.
+           (is (equal "(T \"/tmp/a;/tmp/b\" \"/tmp/a;/tmp/b\")"
+                      (str "(progn (vl-load-com)
+                         (setq files (vla-get-files (vla-get-preferences (vlax-get-acad-object))))
+                         (setq before (= (vla-get-supportpath files) (getenv \"ACAD\")))
+                         (vla-put-supportpath files \"/tmp/a;/tmp/b/\")
+                         (vl-prin1-to-string
+                          (list before (vla-get-supportpath files) (getenv \"ACAD\"))))")))
+           (is (equal '("/tmp/a/" "/tmp/b/") (clautolisp.autolisp-runtime:autolisp-support-paths)))
+           ;; Profiles.ActiveProfile is CPROFILE, a string.
+           (is (equal "(STR T)"
+                      (str "(progn (vl-load-com)
+                         (setq p (vla-get-activeprofile
+                                  (vla-get-profiles (vla-get-preferences (vlax-get-acad-object)))))
+                         (vl-prin1-to-string (list (type p) (= p (getvar \"CPROFILE\")))))"))))
+      (clautolisp.autolisp-runtime:set-autolisp-support-paths saved))))
+;;; --- dialect-platform-version-axis remainder (triage round 2, item 5) ----
+;;; Character codes at LISPSYS 0 on Windows, OPEN's encoding argument and
+;;; VL-CMDF's value, as measured by probe-triage2 (AutoCAD 2022 job
+;;; 16923993438, BricsCAD V25 Windows 16923993442 / V26 macOS 16923993439).
+
+(defun %axis (dialect lispsys form)
+  "FORM's value under DIALECT with LISPSYS set (NIL: left alone)."
+  (reset-autolisp-symbol-table)
+  (%al (format nil "(progn (setq *AUTOLISP-DIALECT* '~A) ~@[(setvar \"LISPSYS\" ~D)~] ~A)"
+               dialect lispsys form)))
+
+(test lispsys-0-character-codes-follow-the-vendor
+  (let ((forms '("(ascii (chr 128))" "(ascii (chr 8364))" "(strlen (chr 8364))"
+                 "(vl-string->list (strcat \"1\" (chr 128)))" "(vl-string->list (chr 8364))")))
+    (flet ((row (dialect lispsys) (mapcar (lambda (f) (%axis dialect lispsys f)) forms)))
+      ;; AutoCAD 2022, LISPSYS 0: a code is reduced to a byte.
+      (is (equal '(128 172 1 (49 128) (172)) (row "autocad-2022" 0)))
+      ;; AutoCAD before 2021 is the MBCS engine whatever LISPSYS says.
+      (is (equal '(128 172 1 (49 128) (172)) (row "autocad-2020" nil)))
+      ;; AutoCAD 2022, LISPSYS 1: Unicode.
+      (is (equal '(128 8364 1 (49 128) (8364)) (row "autocad-2022" 1)))
+      ;; BricsCAD V26 on Windows, LISPSYS 0: windows-1252.
+      (is (equal '(128 128 1 (49 128) (128)) (row "bricscad-v26" 0)))
+      ;; BricsCAD V26 on macOS: Unicode even at LISPSYS 0.
+      (is (equal '(128 8364 1 (49 128) (8364)) (row "bricscad-macos-v26" 0)))
+      ;; clautolisp: Unicode.
+      (is (equal '(128 8364 1 (49 128) (8364)) (row "clautolisp" nil))))
+    ;; The other direction: the character a code names.
+    (is (string= (string (code-char #x20AC))
+                 (autolisp-string-value (%axis "autocad-2022" 0 "(chr 128)"))))
+    (is (string= (string (code-char #xAC))
+                 (autolisp-string-value (%axis "autocad-2022" 0 "(vl-list->string '(8364))"))))
+    (is (eql 1 (%axis "bricscad-v26" 0 "(vl-string-position 8364 (strcat \"a\" (chr 128)))")))))
+
+(test open-encoding-argument-is-taken-under-every-dialect
+  ;; pjb 2026-10-06: "open third argument: lenient, but dialect warn when
+  ;; it's used in other dialects or strict." AutoCAD 2022 at LISPSYS 0 and
+  ;; AutoCAD before 2021 say "too many arguments"; clautolisp opens the
+  ;; file anyway and warns (open-encoding-third-argument-warns-per-dialect).
+  (let ((path (namestring (merge-pathnames "clautolisp-open-utf8-axis.txt"
+                                           (uiop:temporary-directory)))))
+    (flet ((try (dialect lispsys)
+             (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream*
+                     (make-broadcast-stream)))
+               (%axis dialect lispsys
+                      (format nil "(progn (setq r (vl-catch-all-apply 'open (list ~S \"w\" \"utf8\")))
+                                  (if (vl-catch-all-error-p r) \"ERROR\" (progn (close r) \"FILE\")))"
+                              path)))))
+      (unwind-protect
+           (dolist (row '(("autocad-2022" 0) ("autocad-2020" nil) ("autocad-2022" 1)
+                          ("bricscad-v26" 0) ("bricscad-mac-v26" nil) ("strict" nil)))
+             (is (string= "FILE" (autolisp-string-value (apply #'try row)))
+                 "OPEN refused its third argument under ~S" row))
+        (ignore-errors (delete-file path))))))
+
+;;; --- open-third-argument-dialect-divergence (pjb 2026-10-06) -----------
+;;; The measured vendor behaviour (probe-open-encoding, MR !432) decides the
+;;; diagnostic; the file clautolisp writes is the same under every dialect.
+
+(defun %open-encoding-run (dialect lispsys open-arguments &optional (prelude ""))
+  "Write \"A\" e-acute \"B\" through (open PATH OPEN-ARGUMENTS...) under
+DIALECT (LISPSYS set unless NIL), after the AutoLISP source PRELUDE. Returns (values DIAGNOSTICS OCTETS): the
+OPEN diagnostic lines and the file's first octets (up to 6)."
+  (let ((path (namestring (merge-pathnames "clautolisp-open-warn-axis.txt"
+                                           (uiop:temporary-directory))))
+        (sink (make-string-output-stream)))
+    (unwind-protect
+         (progn
+           (ignore-errors (delete-file path))
+           (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* sink))
+             (%axis dialect lispsys
+                    (format nil "(progn ~A (setq f (open ~S ~A)) (princ (strcat \"A\" (chr 233) \"B\") f) (close f) 0)"
+                            prelude path open-arguments)))
+           (values
+            (with-output-to-string (out)
+              (with-input-from-string (in (get-output-stream-string sink))
+                (loop :for line := (read-line in nil)
+                      :while line
+                      ;; The OPEN divergence notice, not the other enc-*
+                      ;; diagnostics (unsupported target, host-dependent).
+                      :when (or (search "clautolisp accepts" line)
+                                (search "clautolisp honours" line))
+                        :do (write-line line out))))
+            (with-open-file (in path :element-type '(unsigned-byte 8))
+              (loop :repeat 6
+                    :for b := (read-byte in nil)
+                    :while b :collect b))))
+      (ignore-errors (delete-file path)))))
+
+(test open-encoding-third-argument-warns-per-dialect
+  ;; (dialect lispsys) -> warns? for "utf8" / "cp1252" / ",ccs=UTF-8".
+  (let ((matrix
+          '((("autocad-2022" 0)     t   t   t)
+            (("autocad-2022" 1)     nil t   t)
+            (("autocad-2020" nil)   t   t   t)
+            (("bricscad-v25" nil)   t   t   nil)
+            (("bricscad-v26" nil)   t   t   nil)
+            (("bricscad-mac" nil)   t   t   t)
+            (("bricscad-mac-v26" nil) t t   t)
+            (("strict" nil)         t   t   t)
+            (("clautolisp" nil)     nil nil nil)
+            (("lax" nil)            nil nil nil)))
+        (forms '("\"w\" \"utf8\"" "\"w\" \"cp1252\"" "\"w,ccs=UTF-8\""))
+        (octets '((65 195 169 66) (65 233 66) (65 195 169 66))))
+    (dolist (row matrix)
+      (destructuring-bind ((dialect lispsys) . expected) row
+        (loop :for form :in forms
+              :for warn-p :in expected
+              :for bytes :in octets
+              :do (multiple-value-bind (diagnostics written)
+                      (%open-encoding-run dialect lispsys form)
+                    (is (eq warn-p (and (plusp (length diagnostics)) t))
+                        "~A LISPSYS ~A (open f ~A): expected ~:[silence~;a warning~], got ~S"
+                        dialect lispsys form warn-p diagnostics)
+                    ;; The same octets under every dialect -- but for the BOM
+                    ;; a Windows BricsCAD writes on "w,ccs=UTF-8"
+                    ;; (open-ccs-bom-bricscad-windows-divergence).
+                    ;; (%OPEN-ENCODING-RUN reads the first 6 octets.)
+                    (let ((bytes (if (and (string= form "\"w,ccs=UTF-8\"")
+                                          (member dialect '("bricscad-v25" "bricscad-v26")
+                                                  :test #'string=))
+                                     (subseq (list* #xEF #xBB #xBF bytes) 0 6)
+                                     bytes)))
+                      (is (equal bytes written)
+                          "~A (open f ~A) wrote ~S, expected ~S" dialect form written bytes))))))))
+
+(test open-encoding-warning-says-what-the-vendor-does
+  (flet ((diag (dialect lispsys form &optional (prelude ""))
+           (values (%open-encoding-run dialect lispsys form prelude))))
+    (is (search "AutoCAD 2022 (LISPSYS 0) rejects a third argument (too many arguments"
+                (diag "autocad-2022" 0 "\"w\" \"utf8\"")))
+    (is (search "[enc-foreign-dialect]" (diag "autocad-2022" 0 "\"w\" \"utf8\"")))
+    (is (search "documents only \"utf8\" and \"utf8-bom\""
+                (diag "autocad-2022" 1 "\"w\" \"cp1252\"")))
+    (is (search "has no effect there" (diag "bricscad-v25" nil "\"w\" \"utf8\"")))
+    (is (search "rejects \"cp1252\" as a third argument (bad argument type"
+                (diag "bricscad-v26" nil "\"w\" \"cp1252\"")))
+    (is (search "on macOS ignores the \",ccs=UTF-8\" mode suffix"
+                (diag "bricscad-mac" nil "\"w,ccs=UTF-8\"")))
+    (is (search "AutoCAD 2022 ignores the \",ccs=UTF-8\" mode suffix"
+                (diag "autocad-2022" 1 "\"w,ccs=UTF-8\"")))
+    ;; An unmeasured ccs name under BricsCAD Windows warns; UTF-16LE does not.
+    (is (search "is unmeasured there" (diag "bricscad-v25" nil "\"w,ccs=ISO-8859-1\"")))
+    (is (string= "" (diag "bricscad-v25" nil "\"w,ccs=UTF-16LE\"")))
+    (is (search "[enc-extension-used]" (diag "strict" nil "\"w\" \"utf8\"")))
+    ;; Silenced by *AUTOLISP-WARN-OUT-OF-DIALECT* = nil -- a global the
+    ;; symbol table keeps, so put it back for the tests that follow.
+    (unwind-protect
+         (is (string= "" (diag "autocad-2022" 0 "\"w\" \"utf8\""
+                               "(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)")))
+      (reset-autolisp-symbol-table))))
+
+;;; --- vlax-boolean-properties-return-t (triage round 3, point 1) ---------
+;;; probe-triage3: BricsCAD V26 macOS job 16931597044, V25 Windows 16931597047.
+
+(test com-boolean-properties-are-vlax-true-and-vlax-false
+  (flet ((str (form) (autolisp-string-value (%al form))))
+    (reset-autolisp-symbol-table)
+    (is (equal "(:VLAX-TRUE :VLAX-FALSE :VLAX-TRUE :VLAX-TRUE -1)"
+               (str "(progn (vl-load-com)
+                  (setq doc (vla-get-activedocument (vlax-get-acad-object)))
+                  (setq lay (vla-item (vla-get-layers doc) \"0\"))
+                  (vl-prin1-to-string
+                   (list (vla-get-layeron lay) (vla-get-freeze lay)
+                         (vla-get-islayout (vla-get-modelspace doc))
+                         (vlax-get-property lay 'Plottable)
+                         (vlax-get lay 'LayerOn))))")))
+    ;; Put: :vlax-false, T, nil and -1 / 0 (a Windows dialect) all mean the
+    ;; boolean; reading back gives the symbols.
+    (reset-autolisp-symbol-table)
+    (is (equal "(:VLAX-FALSE :VLAX-TRUE :VLAX-FALSE :VLAX-TRUE :VLAX-TRUE)"
+               (str "(progn (vl-load-com)
+                  (setq lay (vla-item (vla-get-layers (vla-get-activedocument (vlax-get-acad-object))) \"0\"))
+                  (setq r '())
+                  (vla-put-layeron lay :vlax-false) (setq r (cons (vla-get-layeron lay) r))
+                  (vla-put-layeron lay T) (setq r (cons (vla-get-layeron lay) r))
+                  (vla-put-lock lay nil) (setq r (cons (vla-get-lock lay) r))
+                  (vla-put-lock lay -1) (setq r (cons (vla-get-lock lay) r))
+                  (setq r (cons (vla-get-layeron lay) r))
+                  (vl-prin1-to-string (reverse r)))")))
+    ;; Anything else is an invalid argument.
+    (reset-autolisp-symbol-table)
+    (is (equal "T" (str "(progn (vl-load-com)
+                  (setq lay (vla-item (vla-get-layers (vla-get-activedocument (vlax-get-acad-object))) \"0\"))
+                  (vl-prin1-to-string (vl-catch-all-error-p (vl-catch-all-apply 'vla-put-freeze (list lay 7)))))")))
+    ;; An entity's Visible is group 60.
+    (reset-autolisp-symbol-table)
+    (is (equal "(:VLAX-TRUE :VLAX-FALSE 1)"
+               (str "(progn (vl-load-com)
+                  (entmake '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 1.0 0.0 0.0)))
+                  (setq o (vlax-ename->vla-object (entlast)))
+                  (setq a (vla-get-visible o))
+                  (vla-put-visible o :vlax-false)
+                  (vl-prin1-to-string (list a (vla-get-visible o) (cdr (assoc 60 (entget (entlast)))))))")))))
+;;; --- AutoCAD's source decoding (encoding-situations E1, job 16931781178) ---
+
+(test autocad-load-decodes-as-autocad-2022-does
+  "LISPSYS 0 (windows-1252): a UTF-8 BOM is skipped and ignored; LISPSYS 1/2
+(UTF-8): BOM or not, and a file that is not UTF-8 reads as windows-1252.
+The same table AutoCAD 2022 returned for (strlen / vl-string->list) of AéZ."
+  (let ((dir (uiop:ensure-directory-pathname
+              (merge-pathnames (format nil "clautolisp-e1-~D/" (random 1000000))
+                               (uiop:temporary-directory)))))
+    (ensure-directories-exist dir)
+    (flet ((fixture (name prefix eacute)
+             (let ((path (merge-pathnames name dir)))
+               (with-open-file (out path :direction :output :if-exists :supersede
+                                         :element-type '(unsigned-byte 8))
+                 (write-sequence (concatenate '(vector (unsigned-byte 8))
+                                              prefix
+                                              (map 'vector #'char-code "(setq *e1-value* \"A")
+                                              eacute
+                                              (map 'vector #'char-code (format nil "Z\")~%")))
+                                 out))
+               (namestring path)))
+           (load-e1 (encoding path)
+             (reset-autolisp-symbol-table)
+             (autolisp-string-value
+              (%al (format nil "(progn (setq *AUTOLISP-DIALECT* 'autocad-2022)
+                                       (setq *AUTOLISP-FILE-ENCODING* ~S)
+                                       (load ~S)
+                                       (vl-prin1-to-string (vl-string->list *e1-value*)))"
+                           encoding path)))))
+      (unwind-protect
+           (let ((cp1252 (fixture "e1-cp1252.lsp" #() #(#xE9)))
+                 (utf8 (fixture "e1-utf8.lsp" #() #(#xC3 #xA9)))
+                 (bom (fixture "e1-utf8bom.lsp" #(#xEF #xBB #xBF) #(#xC3 #xA9))))
+             ;; LISPSYS 0
+             (is (equal "(65 233 90)" (load-e1 "WINDOWS-1252" cp1252)))
+             (is (equal "(65 195 169 90)" (load-e1 "WINDOWS-1252" utf8)))
+             (is (equal "(65 195 169 90)" (load-e1 "WINDOWS-1252" bom)))
+             ;; LISPSYS 1 / 2
+             (is (equal "(65 233 90)" (load-e1 "UTF-8" cp1252)))
+             (is (equal "(65 233 90)" (load-e1 "UTF-8" utf8)))
+             (is (equal "(65 233 90)" (load-e1 "UTF-8" bom)))
+             ;; An explicit LOAD encoding is honoured as given (no fallback).
+             (reset-autolisp-symbol-table)
+             (is (equal "(65 195 169 90)"
+                        (autolisp-string-value
+                         (%al (format nil "(progn (setq *AUTOLISP-DIALECT* 'autocad-2022)
+                                                  (load ~S \"ISO-8859-1\")
+                                                  (vl-prin1-to-string (vl-string->list *e1-value*)))"
+                                      utf8))))))
+        (uiop:delete-directory-tree dir :validate t)))))
+
+;;; --- OPEN's encoding under the AutoCAD dialects, per LISPSYS ------------
+;;; autocad-open-encoding-lispsys-divergence: AutoCAD 2022 (E1, job
+;;; 16980926802, autolisp-front-end/tests/scenarios/entities/
+;;; lispsys-bom-probe.lsp) wrote and read "A" e-acute "B" at LISPSYS 0, 1, 2.
+;;; The LISPSYS a launch reads selects *AUTOLISP-FILE-ENCODING*
+;;; (apply-persisted-lispsys: 0 -> WINDOWS-1252, 1 / 2 -> UTF-8); the
+;;; helpers below lay down the same two values.
+
+(defun %e1-lispsys-prelude (lispsys)
+  (format nil "(setvar \"LISPSYS\" ~D) (setq *AUTOLISP-FILE-ENCODING* ~S)"
+          lispsys (if (eql lispsys 0) "WINDOWS-1252" "UTF-8")))
+
+(defun %e1-file-octets (path)
+  (with-open-file (in path :element-type '(unsigned-byte 8))
+    (loop :for b := (read-byte in nil) :while b :collect b)))
+
+(defun %e1-write (dialect prelude open-arguments)
+  "Write A e-acute B with WRITE-CHAR (as the probe does) through (open PATH
+OPEN-ARGUMENTS...) under DIALECT after PRELUDE; the file's octets."
+  (let ((path (namestring (merge-pathnames (format nil "clautolisp-e1w-~D.txt" (random 1000000))
+                                           (uiop:temporary-directory)))))
+    (unwind-protect
+         (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* (make-broadcast-stream)))
+           (reset-autolisp-symbol-table)
+           (%al (format nil "(progn (setq *AUTOLISP-DIALECT* '~A) ~A
+                                    (setq f (open ~S ~A))
+                                    (write-char 65 f) (write-char 233 f) (write-char 66 f)
+                                    (close f) 0)"
+                        dialect prelude path open-arguments))
+           (%e1-file-octets path))
+      (ignore-errors (delete-file path)))))
+
+(defun %e1-read (dialect prelude octets open-arguments)
+  "The READ-CHAR codes of a file holding OCTETS, opened with (open PATH
+OPEN-ARGUMENTS...) under DIALECT after PRELUDE, as a printed list."
+  (let ((path (namestring (merge-pathnames (format nil "clautolisp-e1r-~D.txt" (random 1000000))
+                                           (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (with-open-file (out path :direction :output :if-exists :supersede
+                                     :element-type '(unsigned-byte 8))
+             (write-sequence (coerce octets '(vector (unsigned-byte 8))) out))
+           (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* (make-broadcast-stream)))
+             (reset-autolisp-symbol-table)
+             (autolisp-string-value
+              (%al (format nil "(progn (setq *AUTOLISP-DIALECT* '~A) ~A
+                                       (setq f (open ~S ~A) acc nil)
+                                       (while (setq c (read-char f)) (setq acc (cons c acc)))
+                                       (close f)
+                                       (vl-prin1-to-string (reverse acc)))"
+                           dialect prelude path open-arguments)))))
+      (ignore-errors (delete-file path)))))
+
+(defparameter *e1-cp1252-octets* '(65 #xE9 66))
+(defparameter *e1-utf8-octets* '(65 #xC3 #xA9 66))
+(defparameter *e1-utf8-bom-octets* '(#xEF #xBB #xBF 65 #xC3 #xA9 66))
+
+(test autocad-open-writes-as-autocad-2022-does
+  ;; | LISPSYS | (open f "w") | (open f "w" "utf8") | (open f "w" "utf8-bom") |
+  ;; | 1, 2    | 3 B cp1252   | 4 B UTF-8, no BOM   | 7 B BOM + UTF-8         |
+  ;; | 0       | 3 B cp1252   | too many arguments  | too many arguments      |
+  (dolist (lispsys '(0 1 2))
+    (let ((prelude (%e1-lispsys-prelude lispsys)))
+      (is (equal *e1-cp1252-octets* (%e1-write "autocad-2022" prelude "\"w\""))
+          "LISPSYS ~D default write is not cp1252" lispsys)
+      ;; At LISPSYS 0 AutoCAD refuses the argument; clautolisp takes it
+      ;; (lenient, warned -- open-encoding-third-argument-warns-per-dialect)
+      ;; and writes what AutoCAD writes at 1 / 2.
+      (is (equal *e1-utf8-octets* (%e1-write "autocad-2022" prelude "\"w\" \"utf8\""))
+          "LISPSYS ~D (open f \"w\" \"utf8\") is not BOM-less UTF-8" lispsys)
+      (is (equal *e1-utf8-bom-octets* (%e1-write "autocad-2022" prelude "\"w\" \"utf8-bom\""))
+          "LISPSYS ~D (open f \"w\" \"utf8-bom\") wrote no BOM" lispsys)))
+  ;; The 2026 behavioural template (dialect default UTF-8, no LISPSYS set):
+  ;; Autodesk's OPEN page -- no argument, "MBCS".
+  (is (equal *e1-cp1252-octets* (%e1-write "autocad-2026" "" "\"w\"")))
+  (is (equal *e1-utf8-bom-octets* (%e1-write "autocad" "" "\"w\" \"utf8-bom\"")))
+  ;; The write default is cp1252 even after a runtime *AUTOLISP-FILE-ENCODING*
+  ;; ... but the file situation (-Efile-write) and an explicit -Esource / -e
+  ;; still win.
+  (is (equal *e1-utf8-octets*
+             (%e1-write "autocad-2022"
+                        "(setq *AUTOLISP-FILE-WRITE-ENCODING* \"UTF-8\")" "\"w\"")))
+  (is (equal *e1-utf8-octets*
+             (%e1-write "autocad-2022"
+                        "(setq *AUTOLISP-CAD-LOAD-ENCODING* \"UTF-8\" *AUTOLISP-FILE-ENCODING* \"UTF-8\")"
+                        "\"w\"")))
+  ;; Append mode keeps the default too.
+  (is (equal *e1-cp1252-octets* (%e1-write "autocad-2022" (%e1-lispsys-prelude 1) "\"a\""))))
+
+(test open-utf8-bom-and-default-write-unchanged-outside-autocad
+  ;; BricsCAD was measured to write no BOM (probe-open-encoding); the
+  ;; clautolisp / lax / strict dialects keep their behaviour.
+  (dolist (dialect '("bricscad-v26" "bricscad-mac" "clautolisp" "lax" "strict"))
+    (is (equal *e1-utf8-octets* (%e1-write dialect "" "\"w\" \"utf8-bom\""))
+        "~A (open f \"w\" \"utf8-bom\") changed" dialect))
+  (dolist (dialect '("clautolisp" "strict" "bricscad-v26"))
+    (is (equal *e1-utf8-octets*
+               (%e1-write dialect "(setq *AUTOLISP-FILE-ENCODING* \"UTF-8\")" "\"w\""))
+        "~A default write no longer follows *AUTOLISP-FILE-ENCODING*" dialect)))
+
+(defun %ccs-write-then-append (dialect write-mode write-codes append-mode append-codes
+                               &key (existing nil))
+  "The octets of a file written through (open PATH WRITE-MODE) with the
+WRITE-CODES, then appended to through (open PATH APPEND-MODE) with the
+APPEND-CODES, under DIALECT. WRITE-MODE NIL skips the write; EXISTING, a list
+of octets, is the file's content before both."
+  (let ((path (namestring (merge-pathnames (format nil "clautolisp-ccs-~D.txt" (random 1000000))
+                                           (uiop:temporary-directory)))))
+    (flet ((pass (mode codes)
+             ;; The dialect in the same evaluation: each %AL is a fresh run.
+             (when mode
+               (%al (format nil "(progn (setq *AUTOLISP-DIALECT* '~A) (setq f (open ~S ~S)) ~{(write-char ~D f) ~}(close f) 0)"
+                            dialect path mode codes)))))
+      (unwind-protect
+           (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* (make-broadcast-stream)))
+             (ignore-errors (delete-file path))
+             (when existing
+               (with-open-file (out path :direction :output :if-exists :supersede
+                                         :element-type '(unsigned-byte 8))
+                 (write-sequence (coerce existing '(vector (unsigned-byte 8))) out)))
+             (reset-autolisp-symbol-table)
+             (%al (format nil "(setq *AUTOLISP-DIALECT* '~A)" dialect))
+             (pass write-mode write-codes)
+             (pass append-mode append-codes)
+             (%e1-file-octets path))
+        (ignore-errors (delete-file path))))))
+
+(test open-ccs-writes-a-bom-under-the-windows-bricscad-dialects
+  "open-ccs-bom-bricscad-windows-divergence: BricsCAD V25 on Windows writes a
+BOM for \"w,ccs=UTF-8\" / \"w,ccs=UTF-16LE\" and none on an append with the
+same suffix (jobs 16968316289, 17027935338)."
+  (dolist (dialect '("bricscad-v25" "bricscad"))
+    (is (equal '(#xEF #xBB #xBF 65 #xC3 #xA9 #xC3 #xA9)
+               (%ccs-write-then-append dialect "w,ccs=UTF-8" '(65 233) "a,ccs=UTF-8" '(233)))
+        "~A: w,ccs=UTF-8 then a,ccs=UTF-8" dialect)
+    (is (equal '(#xFF #xFE 65 0 66 0)
+               (%ccs-write-then-append dialect "w,ccs=UTF-16LE" '(65) "a,ccs=UTF-16LE" '(66)))
+        "~A: w,ccs=UTF-16LE then a,ccs=UTF-16LE" dialect)
+    ;; an append that creates the file writes it as "w" would (unmeasured)
+    (is (equal '(#xEF #xBB #xBF 65)
+               (%ccs-write-then-append dialect nil '() "a,ccs=UTF-8" '(65)))
+        "~A: a,ccs=UTF-8 creating the file" dialect)
+    ;; an append to an existing, non-empty file writes none
+    (is (equal '(66 65)
+               (%ccs-write-then-append dialect nil '() "a,ccs=UTF-8" '(65) :existing '(66)))
+        "~A: a,ccs=UTF-8 on an existing file" dialect)))
+
+(test open-ccs-writes-no-bom-elsewhere
+  "The other dialects -- BricsCAD on macOS, AutoCAD, clautolisp, strict, lax
+-- are byte-for-byte unchanged: no BOM."
+  (dolist (dialect '("bricscad-mac" "autocad-2022" "clautolisp" "strict" "lax"))
+    (is (equal '(65 #xC3 #xA9 #xC3 #xA9)
+               (%ccs-write-then-append dialect "w,ccs=UTF-8" '(65 233) "a,ccs=UTF-8" '(233)))
+        "~A: w,ccs=UTF-8 changed" dialect)
+    (is (equal '(65 0 66 0)
+               (%ccs-write-then-append dialect "w,ccs=UTF-16LE" '(65) "a,ccs=UTF-16LE" '(66)))
+        "~A: w,ccs=UTF-16LE changed" dialect)))
+
+(test autocad-open-reads-as-autocad-2022-does
+  (dolist (lispsys '(1 2))
+    (let ((prelude (%e1-lispsys-prelude lispsys)))
+      ;; (open f "r"): all three files read back (65 233 66).
+      (dolist (octets (list *e1-cp1252-octets* *e1-utf8-octets* *e1-utf8-bom-octets*))
+        (is (equal "(65 233 66)" (%e1-read "autocad-2022" prelude octets "\"r\""))
+            "LISPSYS ~D (open f \"r\") misread ~S" lispsys octets))
+      ;; (open f "r" "utf8"): strict UTF-8.
+      (is (equal "(65 233 66)" (%e1-read "autocad-2022" prelude *e1-utf8-octets* "\"r\" \"utf8\"")))
+      (is (equal "(65279 65 233 66)"
+                 (%e1-read "autocad-2022" prelude *e1-utf8-bom-octets* "\"r\" \"utf8\""))
+          "LISPSYS ~D (open f \"r\" \"utf8\") hid the BOM" lispsys)
+      (is (equal "(65)" (%e1-read "autocad-2022" prelude *e1-cp1252-octets* "\"r\" \"utf8\""))
+          "LISPSYS ~D (open f \"r\" \"utf8\") did not stop at the invalid byte" lispsys)))
+  ;; LISPSYS 0: the cp1252 file reads (65 233 66).
+  (is (equal "(65 233 66)"
+             (%e1-read "autocad-2022" (%e1-lispsys-prelude 0) *e1-cp1252-octets* "\"r\"")))
+  ;; The data after the invalid byte is not read, whatever follows it.
+  (is (equal "(65 66)"
+             (%e1-read "autocad-2022" (%e1-lispsys-prelude 1)
+                       '(65 66 #xE9 67 #xC3 #xA9 10 68) "\"r\" \"utf8\"")))
+  ;; An explicit file-read encoding (-Efile-read) is honoured as given.
+  (is (equal "(65 195 169 66)"
+             (%e1-read "autocad-2022"
+                       (format nil "~A (setq *AUTOLISP-FILE-READ-ENCODING* \"WINDOWS-1252\")"
+                               (%e1-lispsys-prelude 1))
+                       *e1-utf8-octets* "\"r\""))))
+
+(test open-default-read-unchanged-outside-autocad
+  ;; Outside the AutoCAD dialects a default read decodes per
+  ;; *AUTOLISP-FILE-ENCODING* with no BOM skip and no fallback.
+  (is (equal "(65279 65 233 66)"
+             (%e1-read "clautolisp" "(setq *AUTOLISP-FILE-ENCODING* \"UTF-8\")"
+                       *e1-utf8-bom-octets* "\"r\"")))
+  (is (equal "(65279 65 233 66)"
+             (%e1-read "lax" "" *e1-utf8-bom-octets* "\"r\" \"utf8\""))))
+
+(test utf-8-valid-prefix-length-follows-rfc-3629
+  (flet ((len (&rest octets)
+           (clautolisp.autolisp-reader.internal:utf-8-valid-prefix-length
+            (coerce octets '(vector (unsigned-byte 8))))))
+    (is (= 0 (len)))
+    (is (= 4 (len 65 #xC3 #xA9 66)))
+    (is (= 1 (len 65 #xE9 66)))                 ; cp1252 e-acute
+    (is (= 1 (len 65 #xC0 #xAF)))               ; overlong
+    (is (= 1 (len 65 #xED #xA0 #x80)))          ; surrogate
+    (is (= 1 (len 65 #xF4 #x90 #x80 #x80)))     ; above U+10FFFF
+    (is (= 1 (len 65 #xE2 #x82)))               ; cut short
+    (is (= 5 (len 65 #xF0 #x9F #x98 #x80)))
+    (is (= 4 (len #xEF #xBB #xBF 65)))))
+
+;;; --- DXF pointer codes through the AutoLISP builtins ---------------
+;;; Regression for the SCHMS report under the cador host:
+;;;   ENTGET expects an ENAME, got "41"
+;;; (cador-entget-pointer-codes-are-handle-strings.issue). AutoLISP code
+;;; follows a pointer with (entget (cdr (assoc 330 ...))); the owner,
+;;; dictionary-entry and table-record pointers must be ENAMES.
+
+(test entget-follows-pointer-group-codes-under-cador
+  ;; Owner 330 of a VERTEX -> its POLYLINE.
+  (let ((r (%al "(progn
+                   (setq p (entmakex '((0 . \"POLYLINE\") (70 . 1))))
+                   (setq v (entmakex '((0 . \"VERTEX\") (10 0.0 0.0 0.0))))
+                   (entmakex '((0 . \"SEQEND\")))
+                   (list (type (cdr (assoc 330 (entget v))))
+                         (eq p (cdr (assoc 330 (entget v))))
+                         (cdr (assoc 0 (entget (cdr (assoc 330 (entget v))))))))")))
+    (is (string= "ENAME" (autolisp-symbol-name (first r))))
+    (is (not (null (second r))))
+    (is (string= "POLYLINE" (autolisp-string-value (third r)))))
+  ;; (entget (namedobjdict)) 350 entries and a dictsearch member's 330.
+  (let ((r (%al "(progn
+                   (setq x (entmakex '((0 . \"XRECORD\") (100 . \"AcDbXrecord\") (1 . \"v\"))))
+                   (dictadd (namedobjdict) \"PTRTEST\" x)
+                   (list (type (cdr (assoc 350 (entget (namedobjdict)))))
+                         (cdr (assoc 0 (entget (cdr (assoc 350 (entget (namedobjdict)))))))
+                         (eq (namedobjdict)
+                             (cdr (assoc 330 (dictsearch (namedobjdict) \"PTRTEST\"))))
+                         (type (cdr (assoc 5 (entget x))))))")))
+    (is (string= "ENAME" (autolisp-symbol-name (first r))))
+    (is (typep (second r) 'autolisp-string))
+    (is (not (null (third r))))
+    (is (string= "STR" (autolisp-symbol-name (fourth r))))))
+
+;;; --- a LOCAL *error* is the one called ---------------------------
+;;;
+;;; local-error-handler-not-called. (defun c:cmd (/ *error* ...) (defun
+;;; *error* ...) ...) is THE AutoCAD idiom: the handler is local to the
+;;; command, and the binding current where the error happens is called,
+;;; with the command's other locals still visible. The error handler used
+;;; to unwind first, so only the global *error* was ever seen.
+
+(defun %error-handler-run (source)
+  "Evaluate SOURCE (AutoLISP text) under CALL-WITH-AUTOLISP-ERROR-HANDLER, as
+the toplevel does; return its value."
+  (let ((forms (clautolisp.autolisp-runtime:read-runtime-from-string source))
+        (context (clautolisp.autolisp-runtime:default-evaluation-context)))
+    (clautolisp.autolisp-runtime:call-with-autolisp-error-handler
+     (lambda () (clautolisp.autolisp-runtime::autolisp-eval-progn forms context))
+     context)))
+
+(defun %error-handler-value (name)
+  (let ((v (autolisp-symbol-value (intern-autolisp-symbol name))))
+    (if (typep v 'autolisp-string) (autolisp-string-value v) v)))
+
+(test local-error-handler-is-called-with-locals-visible
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun *error* (msg) (setq seen (strcat \"GLOBAL \" msg)))
+    (defun divise (a b / *error*)
+      (defun *error* (msg) (setq seen (strcat \"LOCAL \" msg \" a=\" (itoa a))))
+      (/ a b))")
+  (%error-handler-run "(divise 7 0)")
+  (is (equal "LOCAL Division by zero in /. a=7" (%error-handler-value "SEEN"))
+      "the local *error* must be called, seeing the local A: ~S"
+      (%error-handler-value "SEEN"))
+  ;; The local binding is undone on the way out: the global one is back.
+  (%error-handler-run "(/ 1 0)")
+  (is (equal "GLOBAL Division by zero in /." (%error-handler-value "SEEN"))))
+
+(test local-error-handler-set-by-setq-is-called
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun f (/ *error*)
+      (setq *error* (lambda (m) (setq seen (strcat \"SETQ \" m))))
+      (/ 1 0))")
+  (%error-handler-run "(f)")
+  (is (equal "SETQ Division by zero in /." (%error-handler-value "SEEN"))))
+
+(test error-handler-does-not-shadow-vl-catch-all-apply
+  ;; An error caught by vl-catch-all-apply never reaches *error*.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun *error* (msg) (setq seen msg))
+    (setq r (vl-catch-all-error-p (vl-catch-all-apply (quote /) (list 1 0))))")
+  (is (null (%error-handler-value "SEEN")))
+  (is (eq (find-autolisp-symbol "T") (%error-handler-value "R"))))
+
+;;; --- vl-exit-with-error / -value outside a VLX ----------------------
+;;;
+;;; vl-exit-with-error-leaks-host-condition. With no separate-namespace
+;;; boundary (clautolisp loads no VLX) the AUTOLISP-NAMESPACE-EXIT escaped
+;;; every AutoLISP handler and reached the host Lisp's debugger. In the
+;;; document namespace it is now an AutoLISP error with the message, and
+;;; vl-exit-with-value is the value of the toplevel form.
+
+(test vl-exit-with-error-at-toplevel-calls-error-handler
+  "Outside a VLX, vl-exit-with-error is an AutoLISP error WITHOUT a message
+(measured, vl-exit-outside-vlx-caught-diverges): *error* -- a local one
+too, called before the locals unwind -- receives the empty message."
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (%error-handler-run
+   "(setq seen nil)
+    (defun *error* (msg) (setq seen (strcat \"GLOBAL[\" msg \"]\")))")
+  (%error-handler-run "(vl-exit-with-error \"boom\")")
+  (is (equal "GLOBAL[]" (%error-handler-value "SEEN")))
+  (%error-handler-run
+   "(defun f (n / *error*)
+      (defun *error* (msg) (setq seen (strcat \"LOCAL[\" msg \"] n=\" (itoa n))))
+      (vl-exit-with-error \"inner\"))")
+  (%error-handler-run "(f 3)")
+  (is (equal "LOCAL[] n=3" (%error-handler-value "SEEN"))))
+
+(test vl-exit-without-handler-is-an-autolisp-error
+  "With no *error*, both vl-exit-* surface as the AutoLISP error
+:VL-EXIT-OUTSIDE-VLX -- never as a host condition (vl-exit-with-error-
+leaks-host-condition)."
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (dolist (text '("(vl-exit-with-error \"boom\")" "(list 1 (vl-exit-with-value 42) 2)"))
+    (let ((caught (handler-case (progn (%error-handler-run text) nil)
+                    (error (c) c))))
+      (is (typep caught 'clautolisp.autolisp-runtime:autolisp-runtime-error)
+          "~A must surface as an AutoLISP error, not ~S" text (type-of caught))
+      (when (typep caught 'clautolisp.autolisp-runtime:autolisp-runtime-error)
+        (is (eq :vl-exit-outside-vlx
+                (clautolisp.autolisp-runtime:autolisp-runtime-error-code caught)))))))
+
+(test vl-exit-caught-outside-a-vlx-is-an-error-without-message
+  "vl-catch-all-apply of either vl-exit-* outside a VLX returns a catch-all
+error; its message is nil under the default dialect, as on AutoCAD 2022
+(BricsCAD answers \"\")."
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (dolist (form '("(vl-catch-all-apply (quote vl-exit-with-value) (list 5))"
+                  "(vl-catch-all-apply (quote vl-exit-with-error) (list \"c\"))"))
+    (is (%error-handler-run (format nil "(vl-catch-all-error-p ~A)" form)))
+    (is (null (%error-handler-run (format nil "(vl-catch-all-error-message ~A)" form))))))
+
+;;;; ----- Real printing per product (dialect-platform-version-axis) ----------
+;;;;
+;;;; Measured (probe-versions, 2026-10-25: AutoCAD 2022 job 17450478986,
+;;;; BricsCAD V26 17450478987, V25 17450350668). pjb: "keep the 3 variants
+;;;; ... in strict, use clautolisp format, just as in lax".
+
+(defun %real-count (needle text)
+  "How many times NEEDLE occurs in TEXT."
+  (loop with start = 0
+        for pos = (search needle text :start2 start)
+        while pos count t do (setf start (1+ pos))))
+
+(defun %real-print (source dialect)
+  "(values RESULT STDERR) of SOURCE under DIALECT."
+  (let ((err (make-string-output-stream)))
+    (let ((result (let ((*error-output* err))
+                    (%capture-enc-diagnostics source :dialect dialect))))
+      (values result (get-output-stream-string err)))))
+
+(test real-printing-follows-the-dialect-product
+  (flet ((spell (source dialect) (autolisp-string-value (%real-print source dialect))))
+    (dolist (case '(("(vl-prin1-to-string (/ 1.0 3.0))"
+                     "0.333333" "0.333333333333333" "0.3333333333333333")
+                    ("(vl-princ-to-string 1.0e6)" "1.0e+06" "1000000.0" "1000000.0")
+                    ("(vl-prin1-to-string 12345678.0)" "1.23457e+07" "12345678.0" "1.2345678e7")
+                    ("(vl-prin1-to-string (/ 1.0 1.0e5))" "1.0e-05" "1e-05" "1.0e-5")
+                    ("(vl-prin1-to-string 1.0e15)" "1.0e+15" "1e+15" "1.0e15")
+                    ("(vl-prin1-to-string 123.456)" "123.456" "123.456" "123.456")
+                    ("(vl-prin1-to-string 100.0)" "100.0" "100.0" "100.0")))
+      (destructuring-bind (source autocad bricscad own) case
+        (is (string= autocad (spell source :autocad-2022)) "~A under autocad-2022" source)
+        (is (string= bricscad (spell source :bricscad-v26)) "~A under bricscad-v26" source)
+        (dolist (dialect '(:clautolisp :strict :lax))
+          (is (string= own (spell source dialect)) "~A under ~A" source dialect))))))
+
+(test real-format-notice-once-where-the-products-differ
+  (flet ((notices (source dialect)
+           (multiple-value-bind (result err) (%real-print source dialect)
+             (declare (ignore result))
+             (%real-count "[real-format]" err))))
+    ;; 1/3: 0.333333 on AutoCAD, 0.333333333333333 on BricsCAD -> once per
+    ;; session, however many are printed; under every dialect but lax
+    (dolist (dialect '(:autocad-2022 :bricscad-v26 :clautolisp :strict))
+      (is (= 1 (notices "(vl-prin1-to-string (/ 1.0 3.0)) (vl-prin1-to-string 1.0e6)" dialect))
+          "~A" dialect))
+    (is (zerop (notices "(vl-prin1-to-string (/ 1.0 3.0))" :lax)))
+    ;; a real both spell alike: silent
+    (is (zerop (notices "(vl-prin1-to-string 0.5) (vl-prin1-to-string 123.456)" :autocad-2022)))
+    ;; RTOS is not concerned
+    (is (zerop (notices "(rtos (/ 1.0 3.0) 2 8)" :autocad-2022)))))
+
+;;;; ----- PRIN1 escapes control characters (sunset campaign B3) ---------------
+;;;;
+;;;; probe reader-printer, 2026-10-28 (AutoCAD 2022, BricsCAD V25 / V26): tab,
+;;;; newline, return and escape by name, the other control characters in three
+;;;; octal digits, DEL as \177 on AutoCAD and as itself on BricsCAD; READ gives
+;;;; the string back.
+
+(test prin1-escapes-control-characters-as-the-vendors-do
+  (flet ((printed (code dialect)
+           (autolisp-string-value
+            (%real-print (format nil "(vl-prin1-to-string (chr ~D))" code) dialect))))
+    (dolist (dialect '(:autocad-2022 :bricscad-v26 :strict))
+      (is (string= "\"\\t\"" (printed 9 dialect)))
+      (is (string= "\"\\n\"" (printed 10 dialect)))
+      (is (string= "\"\\r\"" (printed 13 dialect)))
+      (is (string= "\"\\e\"" (printed 27 dialect)))
+      (is (string= "\"\\007\"" (printed 7 dialect)))
+      (is (string= "\"\\\\\"" (printed 92 dialect))))
+    (is (string= "\"\\177\"" (printed 127 :autocad-2022)))
+    (is (string= (coerce (list #\" (code-char 127) #\") 'string) (printed 127 :bricscad-v26)))
+    ;; and READ gives it back
+    (is (equal '(t t t)
+               (let ((v (%real-print "(mapcar (function (lambda (c) (= (chr c) (read (vl-prin1-to-string (chr c)))))) '(7 9 27))"
+                                     :autocad-2022)))
+                 (mapcar (lambda (x) (and x t)) v))))))

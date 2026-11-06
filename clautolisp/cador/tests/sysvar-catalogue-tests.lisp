@@ -29,7 +29,7 @@
                     "USERI1" "USERR1" "USERS1"))
       (let ((cell (cador-sysvar mock name)))
         (is (typep cell 'sysvar-cell)
-            "expected MockHost to carry a sysvar cell for ~A" name)))))
+            "expected cador to carry a sysvar cell for ~A" name)))))
 
 (test full-sysvar-catalogue-count-matches-source
   ;; Sanity: every entry in *full-sysvar-catalogue* shows up in the
@@ -130,16 +130,16 @@
         (is (eq :unknown-sysvar (autolisp-runtime-error-code c)))))))
 
 (test bricscad-overlay-removes-the-expected-count
-  ;; All 382 absent names are present in the AutoCAD-derived catalogue,
+  ;; All 374 absent names (382 until the 8 V26 additions moved to *bricscad-v25-absent-sysvars*, 2026-10-05) are present in the AutoCAD-derived catalogue,
   ;; and exactly that many cells disappear after the overlay.
   (let* ((mock (make-cador))
          (before (hash-table-count (cador-sysvars mock))))
-    (is (= 382 (length clautolisp.cador:*bricscad-absent-sysvars*)))
+    (is (= 374 (length clautolisp.cador:*bricscad-absent-sysvars*)))
     (dolist (name clautolisp.cador:*bricscad-absent-sysvars*)
       (is (typep (cador-sysvar mock name) 'sysvar-cell)
           "absent-list name ~A must exist in the base catalogue" name))
     (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
-    (is (= (- before 382) (hash-table-count (cador-sysvars mock))))))
+    (is (= (- before 374) (hash-table-count (cador-sysvars mock))))))
 
 ;;; --- BricsCAD-dialect factory-default value overlay (Phase 2) ----
 ;;;
@@ -186,6 +186,26 @@
       (is (null (cador-sysvar mock "DEFINITELYNOTASYSVAR")))
       (is (null (cador-sysvar mock "DYNPROMPT"))))))
 
+(test bricscad-shipped-factory-defaults-all-land-under-bricscad-only
+  ;; The ADOPTED table (2026-10-03 harvest, doc-corroborated rows): every
+  ;; row names a sysvar the overlay keeps, and lands with its value; a
+  ;; plain host keeps AutoCAD's catalogue default for the same names.
+  (is (<= 40 (length clautolisp.cador:*bricscad-factory-defaults*)))
+  (let ((mock (make-cador))
+        (plain (make-cador)))
+    (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
+    (loop for (name . value) in clautolisp.cador:*bricscad-factory-defaults*
+          for got = (host-getvar mock name)
+          do (is (not (null (cador-sysvar mock name))) "~A dropped by the overlay" name)
+             (is (equal (if (typep got 'autolisp-string) (autolisp-string-value got) got)
+                        (if (stringp value) value value))
+                 "~A: expected ~S, got ~S" name value got))
+    ;; Spot values a BricsCAD user would notice, and AutoCAD's on a plain host.
+    (is (eql 4 (host-getvar mock "PICKBOX")))
+    (is (eql 3 (host-getvar plain "PICKBOX")))
+    (is (eql 200 (host-getvar mock "MAXSORT")))
+    (is (eql 1000 (host-getvar plain "MAXSORT")))))
+
 ;;; --- ERRNO bridge -------------------------------------------------
 ;;;
 ;;; (getvar "ERRNO") must reflect the live runtime errno, not the
@@ -200,19 +220,60 @@
     (clautolisp.autolisp-runtime:set-autolisp-errno 42)
     (is (eql 42 (host-getvar mock "ERRNO")))))
 
-(test host-setvar-on-errno-signals-read-only
-  ;; ERRNO is documented read-only on both vendors; user-level
-  ;; (setvar "ERRNO" v) must signal :sysvar-read-only. The runtime
-  ;; side-door for failing builtins is the internal SET-AUTOLISP-ERRNO
-  ;; helper (autolisp-runtime/source/api.lisp).
+(defun %setvar-errno-under (dialect-name value)
+  "(host-setvar cador \"ERRNO\" VALUE) under the dialect DIALECT-NAME, from a
+fresh session. Returns (RESULT ERRNO-AFTER WARNING-TEXT)."
   (clautolisp.autolisp-runtime:reset-default-evaluation-context)
-  (let ((mock (make-cador)))
-    (handler-case
-        (progn
-          (host-setvar mock "ERRNO" 7)
-          (is nil "expected setvar on read-only ERRNO to signal"))
-      (autolisp-runtime-error (c)
-        (is (eq :sysvar-read-only (autolisp-runtime-error-code c)))))))
+  (let* ((mock (make-cador))
+         (session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:current-evaluation-context)))
+         (clautolisp.autolisp-runtime::*errno-setvar-warned* nil))
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-runtime:set-runtime-session-dialect
+            session (clautolisp.autolisp-reader:find-autolisp-dialect dialect-name))
+           (clautolisp.autolisp-runtime:set-autolisp-errno 7)
+           (let* (result
+                  (warning (with-output-to-string (*error-output*)
+                             (setf result (host-setvar mock "ERRNO" value)))))
+             (list result (clautolisp.autolisp-runtime:autolisp-errno) warning)))
+      (clautolisp.autolisp-runtime:set-runtime-session-dialect
+       session (clautolisp.autolisp-reader:autolisp-dialect-strict)))))
+
+(test host-setvar-on-errno-writes-the-session-errno
+  ;; ERRNO is documented read-only on both vendors, yet AutoCAD 2022,
+  ;; BricsCAD V25 and V26 all ACCEPT (setvar "ERRNO" 0) -- the
+  ;; error-processing catalogue resets it that way before each of its ~505
+  ;; cases (errno-setvar-accepted-by-vendors). So every dialect writes the
+  ;; session errno and returns the value; getvar reads it back.
+  (dolist (dialect '(:autocad :autocad-2022 :bricscad :bricscad-v25 :strict
+                     :clautolisp :lax))
+    (destructuring-bind (result errno warning) (%setvar-errno-under dialect 0)
+      (declare (ignore warning))
+      (is (eql 0 result) "~S: setvar ERRNO returned ~S" dialect result)
+      (is (eql 0 errno) "~S: errno after setvar is ~S" dialect errno))))
+
+(test host-setvar-on-errno-warns-once-except-clautolisp-and-lax
+  ;; The tolerance is undocumented by both vendors: warn ([errno-setvar])
+  ;; under the vendor dialects and --strict (pjb, 2026-11-03: "with
+  ;; warning"), once per run; --clautolisp and --lax stay silent.
+  (dolist (dialect '(:autocad :bricscad-v26 :strict))
+    (let ((warning (third (%setvar-errno-under dialect 0))))
+      (is (search "[errno-setvar]" warning)
+          "~S: expected an [errno-setvar] warning, got ~S" dialect warning)))
+  (dolist (dialect '(:clautolisp :lax))
+    (let ((warning (third (%setvar-errno-under dialect 0))))
+      (is (string= "" warning) "~S: expected silence, got ~S" dialect warning)))
+  ;; Once per run: a second setvar in the same run says nothing more.
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (let ((mock (make-cador))
+        (clautolisp.autolisp-runtime::*errno-setvar-warned* nil))
+    (let ((first (with-output-to-string (*error-output*)
+                   (host-setvar mock "ERRNO" 0)))
+          (second (with-output-to-string (*error-output*)
+                    (host-setvar mock "ERRNO" 0))))
+      (is (search "[errno-setvar]" first))
+      (is (string= "" second)))))
 
 (test host-getvar-errno-tracks-internal-helper
   ;; Internal failing-builtin helpers set ERRNO via SET-AUTOLISP-ERRNO;

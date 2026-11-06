@@ -74,7 +74,12 @@ FAMILIES = {
         "probes/scripts/**",
     ],
     "encoding": [f"{ENTITIES}/encoding-probe.lsp",
+                 # the FORWARD step of run-encoding-experiment.ps1
+                 f"{ENTITIES}/lispsys-forward-probe.lsp",
                  "scripts/run-encoding-experiment.*"],
+    "lispsys-bom": [f"{ENTITIES}/lispsys-bom-probe.lsp",
+                    f"{ENTITIES}/lispsys-forward-probe.lsp",
+                    "scripts/run-lispsys-bom-probe.*"],
     "path-sysvars": [f"{ENTITIES}/path-sysvars-probe.lsp",
                      "scripts/run-path-sysvars-probe.*"],
     "getcname": [f"{ENTITIES}/getcname-probe.lsp",
@@ -83,7 +88,29 @@ FAMILIES = {
     "optkw": [f"{ENTITIES}/optkw-probe.lsp", "scripts/run-optkw-probe.*"],
     "pathname": [f"{ENTITIES}/pathname-probe.lsp",
                  "scripts/run-pathname-probe.*"],
+    "curve-geometry": [f"{ENTITIES}/curve-geometry-probe.lsp",
+                       "scripts/run-curve-geometry-probe.*"],
+    "intersectwith": [f"{ENTITIES}/intersectwith-probe.lsp",
+                      "scripts/run-intersectwith-probe.*"],
+    "console-flood": [f"{ENTITIES}/console-flood-probe.lsp",
+                      "scripts/run-console-flood-probe.*"],
+    "real-transport": [f"{ENTITIES}/real-transport-probe.lsp",
+                       "scripts/run-real-transport-probe.*"],
+    "block-comment": [f"{ENTITIES}/block-comment-probe.lsp",
+                      "scripts/run-block-comment-probe.*"],
+    "control-flow": [f"{ENTITIES}/control-flow-probe.lsp",
+                     "scripts/run-control-flow-probe.*"],
+    "request-locals": [f"{ENTITIES}/request-locals-probe.lsp",
+                       "scripts/run-request-locals-probe.*"],
+    "dxf-angles": [f"{ENTITIES}/dxf-angles-probe.lsp",
+                   "scripts/run-dxf-angles-probe.*"],
+    "cad-instances": ["scripts/probe-cad-instances.ps1",
+                      "scripts/probe-cad-instances.sh"],
     "sysvars": ["autolisp-spec/autolisp/dump-sysvars.lsp"],
+    "entget-pointers": ["probes/sources/probe-entget-pointers.lsp"],
+    # sets the CAD's LISPSYS: its job stays MANUAL even when these change
+    "lispsys1": ["probes/sources/probe-lispsys.lsp",
+                 "scripts/run-lispsys1-probe.*"],
 }
 
 # What a probe file looks like; every tracked match must be in a family or
@@ -113,6 +140,8 @@ UNCLAIMED = {
         "probe:com-registration:autocad:windows is manual-only",
     "scripts/probe-cad-session-state.ps1":
         "probe:cad-session-state:windows is manual-only",
+    "scripts/probe-trustedpaths-registry.ps1":
+        "probe:trustedpaths-registry:windows is manual-only",
 }
 
 

@@ -5012,10 +5012,10 @@
   '(type (getvar "ERRNO"))
   'int)
 
-(deftest-error "sysvar-errno-setvar-readonly-signals"
+(deftest "sysvar-errno-setvar-accepted-although-read-only"
   '((operator . "ERRNO") (area . "sysvar") (profile . STRICT))
   '(setvar "ERRNO" 0)
-  'sysvar-read-only)
+  0)
 
 (deftest "sysvar-erstate-getvar-type"
   '((operator . "ERSTATE") (area . "sysvar") (profile . STRICT))

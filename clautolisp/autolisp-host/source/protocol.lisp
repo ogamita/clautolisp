@@ -16,7 +16,7 @@
 ;;;;                              :host-not-supported runtime error.
 ;;;;                              Default for programs that exercise
 ;;;;                              only the language-level surface.
-;;;;   - MockHost  (Phase 9)   — in-memory deterministic CAD
+;;;;   - cador  (Phase 9)   — in-memory deterministic CAD
 ;;;;                              substrate.
 ;;;;   - LiveHost  (Phase 16)  — bridge to a live BricsCAD or
 ;;;;                              AutoCAD process.
@@ -46,12 +46,47 @@ the NULL-HOST default and signal :host-not-supported."))
 
 (defun signal-host-not-supported (host operation)
   "Raise the standard runtime error for a host backend that does
-not implement OPERATION."
+not implement OPERATION: OPERATION-NOT-SUPPORTED-BY-THIS-HOST, code
+:HOST-NOT-SUPPORTED -- a design boundary (D1 §15)."
   (signal-autolisp-runtime-error
    :host-not-supported
    "Host backend ~A does not support ~A."
    (host-name host)
    operation))
+
+;;; The canonical raisers of the other three HOST-ERROR subclasses (D1 §15).
+;;; Raise through these, not with a bare code, so the message stays uniform.
+
+(defun signal-unavailable-in-headless (host operation)
+  "OPERATION needs a display or a pointer HOST does not have in this
+configuration: UNAVAILABLE-IN-HEADLESS-CONTEXT, code
+:HOST-UNAVAILABLE-HEADLESS -- a design boundary, not a gap."
+  (signal-autolisp-runtime-error
+   :host-unavailable-headless
+   "Host backend ~A cannot perform ~A without a display or pointer."
+   (host-name host)
+   operation))
+
+(defun signal-not-yet-implemented (host operation)
+  "OPERATION is a real gap HOST intends to fill:
+OPERATION-NOT-YET-IMPLEMENTED, code :HOST-NOT-YET-IMPLEMENTED. A probe
+marks it pending, not failing."
+  (signal-autolisp-runtime-error
+   :host-not-yet-implemented
+   "Host backend ~A does not implement ~A yet."
+   (host-name host)
+   operation))
+
+(defun signal-backend-error (host operation reason)
+  "HOST's backend was asked correctly for OPERATION and refused or
+failed, for REASON (a string or a condition): BACKEND-ERROR, code
+:HOST-BACKEND-ERROR."
+  (signal-autolisp-runtime-error
+   :host-backend-error
+   "Host backend ~A failed ~A: ~A"
+   (host-name host)
+   operation
+   reason))
 
 ;;; --- Generic-function declarations ---------------------------------
 ;;;
@@ -69,7 +104,28 @@ not implement OPERATION."
   (:documentation "Open a new, empty document (optionally named NAME) and
 return an opaque document KEY identifying it. Does not change the current
 document."))
-(defgeneric host-close-document (host key)
+(defgeneric host-open-document-from-file (host path &key format read-only)
+  (:documentation "Read the drawing file at PATH (FORMAT, or sniffed: DXF / DWG)
+into a new open document and return its KEY, without making it current (D1
+§3). READ-ONLY marks the document read-only (Save refuses it). A file that
+cannot be read signals BACKEND-ERROR."))
+(defgeneric host-document-of (host handle)
+  (:documentation "The KEY of the open document HANDLE belongs to -- an entity
+name or a COM object -- or NIL when HANDLE carries no document (D1 §3)."))
+(defgeneric host-sysvar-scope (host name)
+  (:documentation "The scope tier of system variable NAME: :DRAWING (saved in
+the drawing, one value per document), :REGISTRY (the application's, persisted
+in the profile) or :NOT-SAVED (the session's); NIL when the host does not
+know NAME (D1 §4, C4)."))
+(defgeneric host-lock-document (host key)
+  (:documentation "Take document KEY's lock and return a lock token (D1 §10).
+Locks nest. On cador a checked no-op: nothing is excluded (one runner), but
+application-context code that modifies a document other than the current one
+without holding its lock is signalled -- the bug a real product would show."))
+(defgeneric host-unlock-document (host key token)
+  (:documentation "Release document KEY's lock taken as TOKEN; T. Releasing a
+lock that is not held signals BACKEND-ERROR (D1 §10)."))
+(defgeneric host-close-document (host key &key save file)
   (:documentation "Close the document identified by KEY. Returns T if a
 document was closed, NIL if KEY was unknown. Closing the current document is
 the host's decision to define (cador refuses to leave itself with none)."))
@@ -83,6 +139,18 @@ has none open."))
 (defgeneric host-document-list (host)
   (:documentation "Return the list of open document KEYs, in the order they
 were opened (current or not)."))
+(defgeneric host-viewports (host)
+  (:documentation "The viewports of the current layout, as (VPORTS) returns
+them: a list of (ID (LLX LLY) (URX URY)), the current viewport first -- model
+space (TILEMODE 1): the tiled viewports, corners in [0,1] of the screen;
+paper space (TILEMODE 0): viewport 1 (the sheet) then the floating ones, in
+paper units."))
+(defgeneric host-open-startup-drawing (host path)
+  (:documentation "Make the drawing file at PATH the host's FIRST document, in
+place of the untitled startup drawing -- the drawing argument of the command
+line (clautolisp --dwg FILE, as acad.exe FILE / accoreconsole /i FILE). Called
+before any LISP session is linked to HOST. Returns the document KEY; signals
+when the file cannot be read."))
 
 ;; Entity API (autolisp-spec ch.16)
 (defgeneric host-entget    (host ename &optional applist) (:documentation "Return the DXF group-code list for ENAME, or nil. With APPLIST (a list of registered application names, or the wildcard \"*\"), the matching xdata is appended as a trailing (-3 ...) cell; without it the xdata is suppressed."))
@@ -103,6 +171,7 @@ were opened (current or not)."))
 (defgeneric host-sslength    (host pickset)           (:documentation "Return the cardinality of PICKSET as a non-negative integer."))
 (defgeneric host-ssmemb      (host pickset ename)     (:documentation "True iff ENAME is a member of PICKSET."))
 (defgeneric host-ssgetfirst  (host)                   (:documentation "Return the host's pickfirst selection."))
+(defgeneric host-entsel     (host prompt)            (:documentation "Pick one object: (ename point), or NIL."))
 (defgeneric host-sssetfirst  (host pickset)           (:documentation "Set the host's pickfirst selection."))
 
 ;; Symbol tables (block, layer, ltype, style, view, ucs, vport, dimstyle, appid)
@@ -125,6 +194,11 @@ were opened (current or not)."))
 ;; Registered applications (XData namespaces)
 (defgeneric host-regapp       (host name)              (:documentation "Register the application NAME for XData. Returns NAME on success, nil if already registered."))
 
+;; Command names
+(defgeneric host-getcname (host name)
+  (:documentation "GETCNAME: the other form of the command name NAME (a CL string) -- \"_LINE\" -> the local name, a local name -> \"_LINE\" -- as a CL string, or NIL when HOST does not know the command. The default knows none.")
+  (:method (host name) (declare (ignore host name)) nil))
+
 ;; System variables
 (defgeneric host-getvar (host name)                   (:documentation "Return the value of the named system variable."))
 (defgeneric host-setvar (host name value)             (:documentation "Set the named system variable to VALUE; returns VALUE."))
@@ -141,6 +215,12 @@ were opened (current or not)."))
 (defgeneric host-registry-write (host key value-name value) (:documentation "Store the string VALUE under registry KEY at VALUE-NAME (NIL = the default value); create the key as needed. Returns VALUE."))
 (defgeneric host-registry-delete (host key value-name) (:documentation "With VALUE-NAME, delete that value under KEY; with NIL, delete the whole KEY and its values. Returns true when something was deleted."))
 (defgeneric host-registry-descendents (host key value-names-p) (:documentation "With VALUE-NAMES-P, the value names stored under KEY; otherwise KEY's immediate sub-key names. A list of strings, or NIL."))
+
+(defgeneric host-layout-names (host)
+  (:documentation "The drawing's PAPER-SPACE layout names in tab order (never \"Model\"), or NIL."))
+(defmethod host-layout-names (host)
+  (declare (ignore host))
+  nil)
 
 ;; Command dispatch
 (defgeneric host-command (host arguments)             (:documentation "Issue an AutoLISP (command ...) sequence. ARGUMENTS is the normalized token-string list produced by the runtime's COMMAND special form: each element is command-line input text; the empty string \"\" is the RETURN token and the one-backslash string \"\\\\\" is the PAUSE token. Returns nil on success."))
@@ -194,17 +274,34 @@ were opened (current or not)."))
 ;;;
 ;;; Every operation has a default method on the base `host` class
 ;;; that signals :host-not-supported. This lets newly-introduced
-;;; backends (e.g. MockHost in Phase 9) inherit a sensible "not
+;;; backends (e.g. cador in Phase 9) inherit a sensible "not
 ;;; yet implemented" failure shape, and lets future hosts override
 ;;; only the operations they support without writing an explicit
 ;;; not-supported method for the rest. NullHost overrides every
 ;;; method explicitly to pin its behaviour.
 
 (defmethod host-open-document     ((host host) &optional name) (declare (ignore name)) (signal-host-not-supported host 'open-document))
-(defmethod host-close-document    ((host host) key)           (declare (ignore key)) (signal-host-not-supported host 'close-document))
+(defmethod host-close-document    ((host host) key &key save file) (declare (ignore key save file)) (signal-host-not-supported host 'close-document))
 (defmethod host-activate-document ((host host) key)           (declare (ignore key)) (signal-host-not-supported host 'activate-document))
 (defmethod host-current-document  ((host host))               (signal-host-not-supported host 'current-document))
 (defmethod host-document-list     ((host host))               (signal-host-not-supported host 'document-list))
+(defmethod host-viewports ((host host)) (signal-host-not-supported host 'viewports))
+(defmethod host-open-document-from-file ((host host) path &key format read-only)
+  (declare (ignore path format read-only))
+  (signal-host-not-supported host 'open-document-from-file))
+(defmethod host-lock-document ((host host) key)
+  (declare (ignore key))
+  (signal-host-not-supported host 'lock-document))
+(defmethod host-unlock-document ((host host) key token)
+  (declare (ignore key token))
+  (signal-host-not-supported host 'unlock-document))
+(defmethod host-document-of ((host host) handle)
+  (declare (ignore handle))
+  (signal-host-not-supported host 'document-of))
+(defmethod host-sysvar-scope ((host host) name)
+  (declare (ignore name))
+  (signal-host-not-supported host 'sysvar-scope))
+(defmethod host-open-startup-drawing ((host host) path) (declare (ignore path)) (signal-host-not-supported host 'open-startup-drawing))
 (defmethod host-entget    ((host host) ename &optional applist) (declare (ignore ename applist)) (signal-host-not-supported host 'entget))
 (defmethod host-entmod    ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmod))
 (defmethod host-entmake   ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmake))
@@ -221,6 +318,7 @@ were opened (current or not)."))
 (defmethod host-sslength    ((host host) pickset)         (declare (ignore pickset)) (signal-host-not-supported host 'sslength))
 (defmethod host-ssmemb      ((host host) pickset ename)   (declare (ignore pickset ename)) (signal-host-not-supported host 'ssmemb))
 (defmethod host-ssgetfirst  ((host host))                 (signal-host-not-supported host 'ssgetfirst))
+(defmethod host-entsel      ((host host) prompt)          (declare (ignore prompt)) nil)
 (defmethod host-sssetfirst  ((host host) pickset)         (declare (ignore pickset)) (signal-host-not-supported host 'sssetfirst))
 (defmethod host-tblsearch  ((host host) kind name)        (declare (ignore kind name)) (signal-host-not-supported host 'tblsearch))
 (defmethod host-tblnext    ((host host) kind &key rewind) (declare (ignore kind rewind)) (signal-host-not-supported host 'tblnext))

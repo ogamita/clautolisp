@@ -1,0 +1,48 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: multidocument-notes -- pjb's notes on the multidocument analysis and the host-interface spec
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: documentation
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-11-04
+
+* Notes about clautolisp-multidocument-analysis.org
+
+R18 - Breakpoint table placement
+
+    Actually the user must be able to decide whether a breakpoint is
+    global (applying to the function in whatever document it's loaded
+    (eg. with vl-load-all, or with separate load), or if it applies only
+    to the current document.
+
+
+    The default should be that the breakpoint command applies only to the
+    current document, but an auxliary word ('all') could indicate that the
+    command applies to all occurences of the function/break-point in all
+    documents.
+
+
+R19 — Concurrent debugger contexts
+
+    Indeed, and each debugging context may route to a different user
+    interface (dumb, ncurses, aldb).
+
+
+
+* Notes about clautolisp-host-interace-spec.org
+
+We could add mention of cadtui when nihil, cador, and <wire-host> are enumerated.
+cadtui implements all cad operations using a ncurses text UI.
+
+* Resolved (2026-11-04, documentation only)
+
+- clautolisp-multidocument-analysis.org: R18 records the decision
+  (breakpoint scope chosen by the user, current document by default, =all=
+  for every document); R19 records the confirmation and that each debugging
+  context may route to its own UI (dumb, ncurses, aldb).
+- clautolisp-host-interface-spec.org 0.3.1: cadtui named beside nihil and
+  cador where the hosts are enumerated (§2.3, §2.4); §1 and the fidelity
+  matrix already described it.
+- Implementing R18 / R19 belongs to the multidocument epic, not to this
+  note.

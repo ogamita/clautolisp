@@ -12,7 +12,7 @@
 ;;;; VBScript bridges, its refusals — under *HOST-OS-OVERRIDE* :windows, with
 ;;;; a fake CAD executable and --print-command's launcher seam. Whether the
 ;;;; real CADs then do what those lines ask is the business of
-;;;; issues/open/alfe-plugin-epure-windows-validation.issue.
+;;;; issues/closed/alfe-plugin-epure-windows-validation.issue.
 
 ;;; --- helpers -----------------------------------------------------------
 
@@ -176,7 +176,8 @@ explicit automation, and refuses accoreconsole (batch)."
             (cli-usage-error (condition)
               (is (search "accoreconsole"
                           (alfe.error:cli-usage-error-message condition)))
-              (is (= 2 (exit-code-for-condition condition))))))))))
+              (is (= clautolisp.sysexits:+ex-usage+
+                     (exit-code-for-condition condition))))))))))
 
 (test epure-raises-the-ready-timeout
   "EPURE takes MINUTES to load -- 174 s to READY on the Windows runner
@@ -231,7 +232,9 @@ gives the default one."
               (is (search "not installed" message))
               (is (search "version changed" message))
               (is (search "--epure-script" message)))
-            (is (= 4 (exit-code-for-condition condition)))))
+            ;; EPURE is not installed: a support file that does not exist.
+            (is (= clautolisp.sysexits:+ex-unavailable+
+                   (exit-code-for-condition condition)))))
         (is (select '("--epure-script" "/no/such/control.scr") :dry-run-p t))
         ;; No name and no %APPDATA%: cannot guess.
         (with-plugin-env (("APPDATA" ""))
@@ -455,8 +458,11 @@ templates: the slot lines are removed, nothing else changes."
               (is (search "${PLUGIN_AFTER_APP}" template))
               (is (search "${PLUGIN_BEFORE_LOAD}" template))
               (is (not (search "PLUGIN_" text)))
-              ;; Same number of lines as the template less its two slot lines.
-              (is (= (- (length (%lines template)) 2) (length (%lines text)))))))))))
+              ;; The base now includes the retained COM lifecycle; plug-ins
+              ;; still contribute no lines when none are enabled.
+              (let ((base (alfe.backend.cad-common::instrument-owned-com-bridge
+                           template (merge-pathnames "x.vbs" dir))))
+                (is (= (- (length (%lines base)) 2) (length (%lines text))))))))))))
 
 (test epure-shows-in-dry-run-and-run-off-windows
   "The scenario every CI host can run: --epure with --bricscad, dry run."
@@ -581,7 +587,8 @@ places the run is refused with the places tried."
         (%run-alfe "--epuree" "--epuree-alpm" "/nonexistent/alpm.lsp"
                    "--dry-run" "-x" "(+ 1 2)")
       (declare (ignore out))
-      (is (= 2 code))
+      ;; The file the user named is not there: EX_NOINPUT.
+      (is (= clautolisp.sysexits:+ex-noinput+ code))
       (is (search "alpm.lsp not found: /nonexistent/alpm.lsp" err)))
     ;; The plug-in's package does not exist until it is loaded, so its
     ;; variable is found at run time.
@@ -591,7 +598,8 @@ places the run is refused with the places tried."
         (multiple-value-bind (code out err)
             (%run-alfe "--epuree" "--dry-run" "-x" "(+ 1 2)")
           (declare (ignore out))
-          (is (= 2 code))
+          ;; None installed: a support file that does not exist.
+          (is (= clautolisp.sysexits:+ex-unavailable+ code))
           (is (search "/nowhere/a/alpm.lsp, /nowhere/b/alpm.lsp" err))
           (is (search "--epuree-alpm" err)))))))
 

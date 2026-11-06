@@ -32,7 +32,11 @@
   (funcall (find-symbol "QUICKLOAD" :ql) "trivial-gray-streams" :silent t)
   ;; backend-cad-common depends on babel (codepage transcode). ASDF does
   ;; not auto-install transitive quicklisp deps, so quickload it here.
-  (funcall (find-symbol "QUICKLOAD" :ql) "babel" :silent t))
+  (funcall (find-symbol "QUICKLOAD" :ql) "babel" :silent t)
+  (funcall (find-symbol "QUICKLOAD" :ql) "cffi" :silent t)
+  ;; backend-clautolisp depends on the clautolisp program (its debugger run
+  ;; machinery), which brings usocket (the aldb TCP listener).
+  (funcall (find-symbol "QUICKLOAD" :ql) "usocket" :silent t))
 
 (defun resolve-relative (relative)
   (let ((self (or *load-pathname* *load-truename*)))
@@ -57,7 +61,11 @@
   '("-B"   ; BricsCAD's own batch flag passed in argv; not an alfe option.
     "-P"   ; BricsCAD's profile flag passed through to the engine.
     "/i"   ; accoreconsole.exe input flag (Windows).
-    "/s")  ; accoreconsole.exe script flag (Windows).
+    "/s"   ; accoreconsole.exe script flag (Windows).
+    ;; clautolisp's options on the subprocess engine's command line (alfe
+    ;; passes them), not alfe's own.
+    "--front-end-bindings"
+    "--front-end-action-boundaries")
   "Option-shaped tokens the spec mentions because they appear in the
 emitted *engine-side* command line — not alfe's own CLI. The
 spec-coverage check skips these so they don't show up as
