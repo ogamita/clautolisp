@@ -26,3 +26,14 @@ Windows PowerShell validation found that the default execution policy refused
 the generated helper. Version 2.3.78 supplies only a process-scoped policy and
 handles a process exiting during its StartTime query; no persistent policy is
 changed. Native COM qualification remains pending deployment.
+
+* Decision de suivi, 2026-11-06
+Voir [[file:alfe-owned-cad-termination-after-recorded-results.issue][le contrat de terminaison apres resultats persistants]]. La disparition de
+l'instance creee reste obligatoire ; une sortie en crash ou une force apres
+resultats et restauration acquittes ne doit plus invalider le resultat du
+script. Un SHUTDOWN final apres Quit n'est pas indispensable si les preuves
+prealables sont persistantes. Cette evolution reste a implementer/valider ;
+les anciennes observations ci-dessus ne sont pas une qualification actuelle.
+
+Implementee en 2.3.107 (contrat 2) : voir la section Implementation de
+[[file:alfe-owned-cad-termination-after-recorded-results.issue][l'issue de terminaison]] ; validation native en attente.

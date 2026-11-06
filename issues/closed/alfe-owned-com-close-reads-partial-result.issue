@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: alfe-owned-com-close-reads-partial-result -- close-owned-com-bridge reads close-owned.result before it is written
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -40,3 +40,21 @@ looks like a CAD that did not close.
   is not atomic there -- AGENTS.md, native lanes).
 - Regression test: a worker that creates the file, sleeps, then writes "0";
   the close must succeed.
+
+* Resolved (alfe / clautolisp 2.3.107, 2026-11-06)
+
+Fixed with the owned-CAD close contract 2
+([[file:../open/alfe-owned-cad-termination-after-recorded-results.issue][alfe-owned-cad-termination-after-recorded-results]]).
+Every file of the handshake -- =close-owned.result=, the helper's
+=owned-cad-cleanup.txt=, the frontier and the cleanup report -- is KEY=VALUE
+lines ending with =end=1=, written to a =.tmp= and renamed by every writer
+(the VBS bridge, the PowerShell helper, alfe). The reader,
+=READ-KEY-VALUE-FILE=, returns NIL until that last line is there, so a file
+that exists but is half-written is waited past, never read as a failed close
+-- on Windows too, where the rename is not atomic for a concurrent reader.
+
+Regression test: =owned-com-close-reads-only-a-complete-answer= (its bridge
+stand-in leaves a half-written =close-owned.result= for 0.3 s before the
+complete one) and =key-value-files-are-written-whole=. The flaky
+=owned-com-close-requires-process-exit-result= is replaced.
+
