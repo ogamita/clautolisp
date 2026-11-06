@@ -1,5 +1,5 @@
 (:name "directory-files-basic"
- :description "List mixed file and directory entries with wildcard filtering."
+ :description "List mixed file and directory entries with wildcard filtering; \".\" and \"..\" are entries \"*.*\" matches, as on AutoCAD and BricsCAD."
  :kind :builtin
  :classification :portable
  :tags (:builtin :paths :directory-files)
@@ -9,4 +9,4 @@
  :current-directory "./"
  :builtin-name "VL-DIRECTORY-FILES"
  :arguments ("." "*.*" 0)
- :expected-value (:predicate :unordered-strings ("README" "alpha.lsp" "subdir")))
+ :expected-value (:predicate :unordered-strings ("." ".." "README" "alpha.lsp" "subdir")))

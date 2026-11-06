@@ -1,7 +1,7 @@
 ;;;; autolisp-front-end/source/backend-echo.lisp
 ;;;;
 ;;;; The `echo` backend is the test-only mock specified by
-;;;; ../issues/open/alfe-backend-interface.issue (section "Mock
+;;;; ../issues/closed/alfe-backend-interface.issue (section "Mock
 ;;;; backend"). It implements every generic on ALFE.BACKEND:BACKEND
 ;;;; with a scripted answer table, letting alfe.cli tests drive an
 ;;;; end-to-end action plan without depending on a real evaluator.
@@ -99,9 +99,20 @@ both after the fact."
                          &key dialect host mock-input bootstrap-phase
                               interactive-p mode dwg
                               load-encoding io-encoding
+                              source-encoding
+                              file-read-encoding file-write-encoding
+                              console-in-encoding console-out-encoding
+                              cadstdio-in-encoding cadstdio-out-encoding
+                              log-encoding
+                              terminal-in-encoding terminal-out-encoding
                               cli-options version-text)
   (declare (ignore host mock-input bootstrap-phase interactive-p mode dwg
-                   load-encoding io-encoding cli-options version-text))
+                   load-encoding io-encoding
+                   source-encoding file-read-encoding file-write-encoding
+                   console-in-encoding console-out-encoding
+                   cadstdio-in-encoding cadstdio-out-encoding
+                   log-encoding terminal-in-encoding terminal-out-encoding
+                   cli-options version-text))
   (let ((session (%make-echo-session :backend backend
                                      :workdir workdir
                                      :dialect dialect)))

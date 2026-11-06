@@ -88,15 +88,15 @@ spellings emit ~enc-foreign-dialect~.
 *clautolisp*: ~LISPSYS~ is exposed via the catalogue; setvar
 ~validates against {0, 1, 2}~ and emits
 ~enc-lispsys-out-of-range~ if outside (the write still proceeds).
-Under ~--bricscad~ / ~--clautolisp~ / ~--strict~, even reading
-~LISPSYS~ emits ~enc-foreign-dialect~ — AutoCAD-only sysvar.
+Under ~--clautolisp~ / ~--strict~, even reading
+~LISPSYS~ emits ~enc-foreign-dialect~ — a vendor sysvar (AutoCAD 2021+, BricsCAD V23+).
 
 #+BEGIN_SRC autolisp
 ;; OK under --autocad — silent:
 (setvar "LISPSYS" 1)
 
 ;; Same call under --strict:
-;; [enc-extension-used] SETVAR on LISPSYS: AutoCAD-only sysvar, foreign to --strict.
+;; [enc-extension-used] SETVAR on LISPSYS: a vendor sysvar, foreign to --strict.
 
 ;; Out-of-range, any dialect:
 (setvar "LISPSYS" 7)

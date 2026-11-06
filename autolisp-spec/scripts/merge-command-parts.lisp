@@ -14,8 +14,25 @@
 
 (defparameter *keys*
   '(:name :category :aliases :intl-name :synopsis :options :arguments
-    :description :availability :autocad-versions :bricscad-versions
+    :description :availability :tier :autocad-versions :bricscad-versions
     :source-autocad :source-bricscad))
+
+;;; Phase 3 support tiers (autolisp-spec-alref-commands.issue), decided by
+;;; pjb 2026-10-03: CORE-NOW = the DRAW and MODIFY commands both vendors
+;;; share, plus the file / customisation commands the cadtui tree layer
+;;; needs; PACKAGE-SPECIFIC = a command only one vendor has; DEFERRED =
+;;; everything else. An entry that already carries a :tier keeps it.
+(defparameter *core-now-extra* '("NEW" "OPEN" "MENULOAD" "CUILOAD"))
+
+(defun tier-for (pl)
+  (let ((name (getf pl :name))
+        (category (getf pl :category))
+        (availability (getf pl :availability)))
+    (cond ((getf pl :tier))
+          ((member name *core-now-extra* :test #'string=) :core-now)
+          ((and (member category '(:draw :modify)) (eq availability :both)) :core-now)
+          ((member availability '(:autocad-only :bricscad-only)) :package-specific)
+          (t :deferred))))
 
 (defun read-list (path)
   (with-open-file (in path :external-format :utf-8)
@@ -47,7 +64,11 @@
           (unless (gethash name table) (push name order))
           (setf (gethash name table) pl))))
     (let* ((names (sort (remove-duplicates order :test #'equal) #'string<))
-           (merged (mapcar (lambda (n) (gethash n table)) names)))
+           (merged (mapcar (lambda (n)
+                             (let ((pl (copy-list (gethash n table))))
+                               (setf (getf pl :tier) (tier-for pl))
+                               pl))
+                           names)))
       ;; sanity: every plist has exactly the 13 keys
       (dolist (pl merged)
         (loop for k in *keys*
@@ -69,8 +90,8 @@
                   (getf pl :name) (getf pl :category) (getf pl :aliases) (getf pl :intl-name))
           (format o " :synopsis ~S~% :options ~S~% :arguments ~S~%"
                   (getf pl :synopsis) (getf pl :options) (getf pl :arguments))
-          (format o " :description ~S~% :availability ~S~%"
-                  (getf pl :description) (getf pl :availability))
+          (format o " :description ~S~% :availability ~S~% :tier ~S~%"
+                  (getf pl :description) (getf pl :availability) (getf pl :tier))
           (format o " :autocad-versions ~S~% :bricscad-versions ~S~%"
                   (getf pl :autocad-versions) (getf pl :bricscad-versions))
           (format o " :source-autocad ~S~% :source-bricscad ~S)~%~%"

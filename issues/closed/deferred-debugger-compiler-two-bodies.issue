@@ -1,0 +1,77 @@
+deferred-debugger-compiler-two-bodies — Phase 8: compiler two-bodies discipline
+================================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phase 8)
+  clautolisp/documentation/clautolisp-debugger-spec.org (§5, §13)
+
+DEFERRED — gated on the clautolisp compiler-to-CL, which does not yet exist.
+UPDATE 2026-09-29: the gate is lifted -- the compiler exists (compiler.issue,
+slices from 2.0.0). This is now TODO, workable on Linux.
+
+Context
+-------
+
+clautolisp is currently an interpreter, so the v1 debugger uses the
+`*debug-mode*` interpreter instrumentation variant (spec §11.3, §13 "v1").
+The full two-bodies discipline (Raskin) with call-site entry-point dispatch
+(Fjeld) becomes available only when the compiler-to-CL lands. The debug
+protocol (Part III) and all three UIs are UNCHANGED across the migration
+(spec §13), so this is purely an instrumentation-backend swap.
+
+Scope (when unblocked)
+----------------------
+
+- Emit two CL bodies per AutoLISP defun: `foo/ordinary` (optimised, no poll
+  points) and `foo/debug` (instrumented), behind a function-entries vector
+  (spec §5.1).
+- Disable across-poll-point optimisations in the debug body (spec §5.2): no
+  CSE / dead-code elim of sub-form results / LICM / TCO / type-inference
+  propagation across poll points.
+- Call-site dispatch: ordinary code calls ordinary entry points, debug code
+  calls debug entry points; debugging-ness propagates down the call chain
+  (spec §5). Emit `function-debug-metadata` from the compiler (spec §7).
+- Keep the interpreter available as a fallback (low optimisation /
+  macroexpansion debugging).
+
+Acceptance (when unblocked)
+---------------------------
+
+- Production (ordinary) code pays zero instrumentation cost; entering a debug
+  entry point keeps the whole call chain instrumented; same UI behaviour as
+  the interpreter path.
+
+Closed (2026-10-06, clautolisp 2.2.206)
+---------------------------------------
+
+An audit against this scope found it delivered, in a different encoding:
+
+- Two bodies per function: DONE as slots on the usubr (compiled-body,
+  compiled-instrumented-body; compile-usubr / compile-instrumented-usubr),
+  not as named foo/ordinary + foo/debug behind a function-entries vector --
+  AutoLISP resolves a callee by symbol at every call (REPL redefinition), so
+  a call site cannot bind an entry point at compile time anyway.
+- Call-site dispatch and propagation down the call chain: SUPERSEDED by
+  design note DN-2 (clautolisp-debugger-design-notes.org): the body is
+  chosen per callee for the whole session; every function is instrumented on
+  first call under a session, so the whole chain is debuggable, including
+  through uninstrumented library code (test
+  instrumented-callee-debugged-through-uninstrumented-caller).
+- Same UI behaviour compiled or interpreted: DONE (compiler.issue slice 7;
+  make test-debug-compiled runs the debug corpus with every instrumented body
+  compiled -- 603 this run, 0 failures).
+- Ordinary code pays zero instrumentation: DONE (no poll points; one test
+  of *debugging* per call).
+- Interpreter as fallback: DONE.
+
+What this closure added:
+- the debugging body is compiled at (optimize (debug 3)) -- spec 5.2 stated
+  as a policy, and no tail call merged out of the debugger's backtrace
+  (instrumented-fork-lambda-form; test the-debug-fork-is-compiled-at-debug-3);
+- a .lap carries its source positions, registered on load only under
+  source tracking, so a .lap function is debuggable by line (test
+  an-artefact-keeps-the-source-positions-for-the-debugger);
+- the debugger spec: an "as built" note in section 5 and section 13
+  rewritten to the implemented design.
+
+Found and filed separately: debug-lambda-in-a-loop-reinstrumented.

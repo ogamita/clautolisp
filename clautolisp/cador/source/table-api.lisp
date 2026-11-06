@@ -1,6 +1,6 @@
 (in-package #:clautolisp.cador)
 
-;;;; Symbol-table walker HAL methods on MockHost (Phase 11).
+;;;; Symbol-table walker HAL methods on cador (Phase 11).
 ;;;;
 ;;;; Implements: host-tblsearch, host-tblnext, host-tblobjname.
 ;;;;
@@ -12,7 +12,7 @@
 
 (defun resolve-table-kind (kind operator-name)
   "Coerce KIND from an AutoLISP-string / CL-string / keyword to
-the MockHost's per-kind keyword."
+the cador's per-kind keyword."
   (let ((string (cond
                   ((typep kind 'clautolisp.autolisp-runtime:autolisp-string)
                    (clautolisp.autolisp-runtime:autolisp-string-value kind))
@@ -63,12 +63,11 @@ result is EQ to any other ename for the same record. (ename-eq-identity)"
 ;;; can (strcat), (=) and (type) the values a tblsearch / tblnext record
 ;;; yields. Without this wrap the raw CL strings would reject those
 ;;; operators. Table records carry no (-1 . ename) head (tblobjname is
-;;; the way to an ename), so we wrap the data list as-is.
-
-(defun table-record->al-view (record)
-  "The AutoLISP tblsearch / tblnext view of a table RECORD: its
-group-code list with every string value wrapped as an autolisp-string."
-  (pure->al-value (symbol-table-record-data record)))
+;;; the way to an ename), so we wrap the data list as-is -- except the
+;;; DXF pointer group codes (330-369, 390-399, 480-481), which come back
+;;; as ENAMES like ENTGET's, not as handle strings. The view is built by
+;;; TABLE-RECORD-AL-VIEW+EXTRAS (entity-api.lisp), which also adds a BLOCK
+;;; record's (-2 . first-entity) group.
 
 (defmethod host-tblsearch ((host cador) kind name)
   (let ((record (cador-find-table-record host
@@ -104,7 +103,13 @@ group-code list with every string value wrapped as an autolisp-string."
            (table-record-al-view+extras host next)))))))
 
 (defmethod host-tblobjname ((host cador) kind name)
-  (let ((record (cador-find-table-record host
-                                              (resolve-table-kind kind 'tblobjname)
-                                              (resolve-record-name name 'tblobjname))))
-    (and record (table-record->ename host record))))
+  ;; A BLOCK answers its BLOCK entity, not the BLOCK_RECORD (that is the
+  ;; entity's 330, and the owner a LINE names): entget-pointers sections 10
+  ;; and 11 on both vendors.
+  (let* ((kind (resolve-table-kind kind 'tblobjname))
+         (record (cador-find-table-record host kind
+                                          (resolve-record-name name 'tblobjname))))
+    (and record
+         (if (eq kind :block-record)
+             (handle->ename host (%block-entity-handle host record))
+             (table-record->ename host record)))))

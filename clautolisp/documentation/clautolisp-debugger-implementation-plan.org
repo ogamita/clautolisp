@@ -15,7 +15,7 @@ into ordered, shippable work:
   native-AutoLISP backend driven from alfe). Section refs like R-III are
   to it.
 
-Tracking issue: =issues/open/clautolisp-debugger.issue=.
+Tracking issue: =issues/closed/clautolisp-debugger.issue=.
 
 ** 0.1 Primary target ordering (decision)
 

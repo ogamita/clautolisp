@@ -1,0 +1,503 @@
+# AutoCAD / BricsCAD system variables: collect, specify, and implement
+
+Status: CLOSED 2026-10-05 (pjb)
+Baseline: origin/master @ 0dd68c8
+Spec: autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org (v0.8.2)
+
+## Summary
+
+System variables (the things `(getvar "NAME")` / `(setvar "NAME" v)`
+read and write) are a namespace *distinct from* AutoLISP symbols: they
+live in the host/engine, are addressed by string name, are typed, and
+many are read-only. AutoCAD ships several hundred; BricsCAD ships its
+own (overlapping but not identical) set, where the support-file search
+path and other preferences also surface as settings.
+
+clautolisp today documents only the *accessors* and ships a deliberately
+tiny stand-in catalogue:
+
+  - Spec: `GETVAR` / `SETVAR` are documented as Function Entries
+    (`autolisp-visual-lisp-specification-draft.org:7885,7931`); individual
+    sysvars appear only in scattered prose (LISPSYS, EXTNAMES, ERRNO,
+    TILEMODE, CVPORT, ANGBASE, SNAPANG, DATE, …). There is NO enumerated
+    catalogue chapter, and no per-sysvar entry analogous to a Function
+    Entry.
+  - Implementation: `clautolisp/autolisp-mock-host/source/sysvars.lisp`
+    defines `*default-sysvars*` — ~30 cells (`CMDECHO`, `CLAYER`,
+    `OSMODE`, `USERR1..5`, `LISPSYS`, …), explicitly described as "a
+    conservative subset … the ones that published AutoLISP corpora
+    actually consult." `SRCHPATH` and the vast majority are absent.
+
+This issue covers three phases: (1) collect every system variable from
+the AutoCAD and BricsCAD references into a machine-readable inventory;
+(2) add a "System Variables" chapter to autolisp-spec built from that
+inventory; (3) implement them in clautolisp — both as host sysvar cells
+and, crucially, by wiring the functions that read or write them.
+
+## Goals / deliverables
+
+  1. `autolisp-spec/documentation/system-variables-inventory.sexp`
+     — one record per sysvar, per the schema below, sourced from the
+     vendor references (NOT invented).
+  2. A new spec chapter specifying every sysvar (entry template below),
+     generated/curated from the inventory. Bump spec 0.8.2 → 0.9.0.
+  3. clautolisp implementation: a data-driven sysvar catalogue in the
+     host layer, read-only enforcement, type coercion, ERRNO semantics,
+     and the function↔sysvar couplings (§ "Coupling").
+  4. autolisp-test conformance records exercising getvar/setvar and the
+     coupled functions for the sysvars we implement.
+
+Non-goal: making clautolisp's defaults byte-identical to a specific CAD
+build. Where a value is host/version/drawing-specific we record that it
+is, and mark the cell accordingly, rather than guessing.
+
+## Phase 1 — Data collection
+
+### Sources
+
+  - AutoCAD: the "System Variables" reference (alphabetical A–Z) in the
+    Autodesk "Commands and System Variables Reference". Cross-check with
+    the in-product `SETVAR ?` enumeration and `SYSVARMONITOR`. Note the
+    support-file search path is NOT an AutoCAD sysvar — it is the
+    Preferences object `AcadPreferencesFiles.SupportPath`; the related
+    *security* sysvars are `TRUSTEDPATHS` and `SECURELOAD`.
+  - BricsCAD: the Bricsys "System Variables" / "Settings" reference
+    (the `SETTINGS` dialog is the in-product index). BricsCAD exposes a
+    `SRCHPATH` support-path setting and reads it via ExpressTools
+    `acet-pref-supportpath-list` (spec `:36411`).
+  - Internal corroboration already in-repo: the LISPSYS/encoding prose
+    (`...draft.org:6256,6291,6301`), EXTNAMES (`:9098`), ERRNO
+    (`:9354`), TILEMODE (`:9389`), CVPORT (`:9432`), the SETVAR
+    angular-radians note (`:7975`).
+
+### Per-sysvar schema (one record each)
+
+    (:name        "EXTNAMES"          ; canonical upcased string
+     :type        :integer            ; :integer :short :real :string
+                                      ;  :point :point3d :symbol :ename
+     :default     1                   ; or (:host-specific) / (:drawing) /
+                                      ;  (:session) / (:unknown) when not a
+                                      ;  fixed constant — never guessed
+     :read-only   nil
+     :range       (0 1)               ; or NIL; for integers a (lo hi) pair
+     :scope       :drawing            ; :drawing :document :registry
+                                      ;  :session :preference
+     :saved-in    :registry           ; where the engine persists it
+     :versions    (:autocad "all" :bricscad "V20+")
+     :vendor      :both               ; :autocad :bricscad :both
+     :divergence  nil                 ; prose when AutoCAD≠BricsCAD
+     :summary     "Controls strict vs. relaxed symbol-table naming."
+     :coupled     ("SNVALID")         ; AutoLISP fns that read/write it
+     :source      (:autocad "GUID-…" :bricscad "…"))
+
+### Method
+
+  - One pass per vendor; union by upcased name; AutoCAD and BricsCAD
+    differences captured in `:divergence`, not by dropping either.
+  - `:default` is a *literal* only when the reference states a fixed
+    initial value; otherwise one of the `(:host-specific)` /
+    `(:drawing)` / `(:session)` / `(:unknown)` markers. Do not invent.
+  - Record provenance (`:source`) for every record so Phase-4-style
+    verification can re-check against the live products later.
+
+## Phase 2 — autolisp-spec chapter
+
+Add a chapter "System Variables" as a sub-tree of §16 *Host
+Interaction* (e.g. `16.N`), so chapters 17–28 are not renumbered.
+Mirror the Function-Entry house style with a per-sysvar entry:
+
+    ** System Variable Entry: EXTNAMES
+    *** Name        EXTNAMES
+    *** Type        integer (0 | 1)
+    *** Default     1
+    *** Read-Only   no
+    *** Scope       drawing; saved in registry
+    *** Description …
+    *** Read/Written By  snvalid (and the symbol-table creators)
+    *** Compatibility    AutoCAD: all; BricsCAD: V20+; divergence: …
+    *** Source Notes     <vendor URLs>
+
+The chapter opens with normative rules common to all sysvars: name
+case-insensitivity, type coercion on `setvar`, the integer range
+`-32768..32767` (`:7973`), the `setvar` radians semantics for
+`ANGBASE`/`SNAPANG` (`:7975`), read-only error behaviour, and `getvar`
+returning `nil` for unknown names (`:7908`). Update the `GETVAR`/
+`SETVAR` Function Entries to cross-link the new chapter. Increment the
+document version header (0.8.2 → 0.9.0).
+
+## Phase 3 — Implementation in clautolisp
+
+Architecture is already in place; this phase scales the *data* and
+wires the *couplings*:
+
+  - Accessors: `builtin-getvar` / `builtin-setvar`
+    (`autolisp-builtins-core/source/api.lisp:2878-2885`) → host generics
+    `host-getvar` / `host-setvar`
+    (`autolisp-host/source/protocol.lisp:101-102`).
+  - Storage: `sysvar-cell` (name/kind/value/read-only-p,
+    `autolisp-mock-host/source/model.lisp:75`) populated by
+    `*default-sysvars*` (`sysvars.lisp:45`); coercion/validation in
+    `present-sysvar-value` / `ensure-sysvar-name`
+    (`autolisp-mock-host/source/sysvar-api.lisp`).
+
+Work items:
+
+  1. Make the mock-host catalogue **data-driven from the Phase-1
+     inventory** instead of the hand-written 30-entry list. Map the
+     inventory `:type` to the existing cell `:kind` keywords; honour
+     `:read-only`; for non-constant `:default` markers, install a
+     sensible session default and flag the cell so tests don't assert a
+     vendor-exact value.
+  2. Enforce read-only on `setvar` (already partially present — extend
+     to the full catalogue) and unknown-name behaviour on `getvar`
+     (`nil`) consistent with the spec chapter.
+  3. ERRNO: give it real semantics — the functions that document
+     "returns nil and sets ERRNO" must actually set it
+     (`:9354`); add a runtime helper used by those builtins.
+  4. Real hosts: the BricsCAD/AutoCAD backends already round-trip
+     getvar/setvar to the engine; ensure the catalogue is only the
+     *fallback* (mock/null host) and never shadows a live engine value.
+
+### Coupling — functions that read or write sysvars (the bulk of the work)
+
+Most sysvars are not just storage; they steer function behaviour. The
+inventory's `:coupled` field drives this, and each coupling needs code +
+a test. Known couplings to seed the list:
+
+  - LISPSYS        → `load`, `open` (encoding/engine selection; ch.11).
+  - EXTNAMES       → `snvalid` (symbol-table naming rules; `:9098`).
+  - ERRNO          → set by `open`/file IO/entity/selection functions on
+                     failure (`:9354`).
+  - ANGBASE/ANGDIR/AUNITS/AUPREC → `angtos`, `angle`, `getangle`,
+                     `getorient` (angle parse/format).
+  - LUNITS/LUPREC/DIMZIN/UNITMODE → `rtos`, `distance` formatting.
+  - SNAPANG/ANGBASE → `setvar` radians-vs-display semantics (`:7975`).
+  - TILEMODE/CVPORT → `vports`, `setview`, viewport-aware access
+                     (`:9389`, `:9432`).
+  - CMDECHO        → `command` / `vl-cmdf` echo policy.
+  - OSMODE         → `osnap` defaults.
+  - DWGNAME/DWGPREFIX → default path resolution for file builtins.
+  - DATE/CDATE/TDCREATE/TDUPDATE → `menucmd` DIESEL `edtime` (`:9024`).
+  - MAXSORT        → `acad_strlsort`.
+  - USERR1..5 / USERI1..5 / USERS1..5 → user scratch (read/write round
+                     trip; no behavioural coupling).
+  - SRCHPATH (BricsCAD) / support path → `findfile`, `load` search
+                     (see `issues/` discussion; AutoCAD has no `SRCHPATH`
+                     sysvar — its path lives in Preferences).
+  - TRUSTEDPATHS/SECURELOAD → `load`, `open`, `findtrustedfile` trust
+                     gating (`:6449`, `:6486`).
+
+## Test plan
+
+  - autolisp-test: promote inventory records into conformance entries —
+    one per implemented sysvar asserting type/read-only round-trip, plus
+    behavioural tests for each coupling above. Keep vendor-exact-default
+    assertions only for cells whose `:default` is a documented constant.
+  - check-spec-coverage analogue: a gate asserting every sysvar in the
+    new chapter has an inventory record and (where implemented) a cell.
+
+## Risks / open questions
+
+  - Volume: ~hundreds of sysvars; phase the *implementation* by coupling
+    priority (file/encoding/error/units first), not alphabetically.
+  - Vendor drift: AutoCAD vs BricsCAD names/defaults/ranges differ;
+    `:divergence` must be filled, not flattened.
+  - Defaults that depend on drawing/template/registry must be marked
+    non-constant rather than guessed — accuracy over completeness.
+  - Placement under §16 vs. a new appendix chapter: chosen §16 sub-tree
+    to avoid renumbering 17–28; revisit if the chapter grows large.
+
+## Acceptance criteria
+
+  - [ ] `system-variables-inventory.sexp` exists, schema-valid, with
+        provenance for every record.
+  - [ ] Spec chapter present; GETVAR/SETVAR cross-link it; version 0.9.0.
+  - [ ] mock/null host catalogue is data-driven from the inventory;
+        read-only + unknown-name + coercion behave per the chapter.
+  - [ ] ERRNO has real semantics; each listed coupling implemented and
+        tested.
+  - [ ] autolisp-test conformance green; spec-coverage-style gate green.
+
+## Verification audit (2026-06-23)
+
+"Verify what is implemented, and implement the missing parts."
+Evidence-based audit of the current tree against the deliverables above;
+the bulk of the issue is DONE. Remaining work is in the function↔sysvar
+couplings.
+
+Deliverable status:
+
+  - [x] Inventory: `autolisp-spec/documentation/system-variables-inventory.sexp`
+        exists with 1836 records, all 13 schema fields, per-vendor
+        provenance; parseable.
+  - [x] Spec chapter: §16 "System Variables" present (1836 per-sysvar
+        entries + the normative-rules preamble); GETVAR/SETVAR Function
+        Entries cross-link it; document version is 0.9.2 (>= the
+        requested 0.9.0).
+  - [x] Catalogue: `autolisp-mock-host/source/sysvar-catalogue.lisp` is
+        auto-generated from the inventory (1836 cells); read-only is
+        enforced on setvar, getvar returns nil for unknown names, and
+        type coercion is in place.
+  - [x] ERRNO: real semantics via the `errno-and-return` runtime helper,
+        wired through open / findfile / entget / entmod / entsel /
+        nentsel / ssget / ssname / read-line / write-line / handent.
+  - [~] Couplings: PARTIAL — see the table below.
+  - [x] Tests/gate: inventory-coverage conformance + a spec↔inventory↔
+        catalogue coverage gate (`check-sysvar-spec-coverage.lisp`) exist;
+        coupling tests under `autolisp-test/tests/sysvar/`.
+
+Coupling status (verified against the built engine, not just by reading):
+
+  IMPLEMENTED & passing:
+    - ERRNO -> open / file IO / entity / selection.
+    - ANGBASE/ANGDIR/AUNITS/AUPREC -> angtos / angle / getangle / getorient.
+    - USERR1..5 / USERI1..5 / USERS1..5 scratch round-trip.
+    - getvar/setvar unknown-name + read-only behaviour.
+    - EXTNAMES -> snvalid  (FIXED 2026-06-23 in clautolisp 1.2.11; was
+      previously ignoring EXTNAMES — snvalid now applies the extended
+      (EXTNAMES=1) reserved-char rule, the restrictive (EXTNAMES=0) R14
+      rule, and the FLAG bit that permits "|", matching the SNVALID spec
+      entry's examples. coupling-extnames.lsp's relaxed-accepts assertion
+      now holds.)
+    - LUNITS/LUPREC/DIMZIN -> rtos default mode/precision + zero
+      suppression  (FIXED 2026-06-24 in clautolisp 1.2.13 + 1.2.14):
+        * 1.2.13 fixed the rtos FLOAT-FORMATTING divergences (these were
+          NOT a sysvar coupling): (rtos 1.6 2 0) => "2." (want "2") and
+          (rtos 100.0 1 2) => "1.00d+2" (want "1.00E+02").
+          %FORMAT-DECIMAL-REAL strips the trailing point at precision 0;
+          %FORMAT-SCIENTIFIC-REAL emits AutoCAD-style scientific notation
+          (uppercase E, signed two-digit-padded exponent). angtos shares
+          the decimal helper.
+        * 1.2.14 wired the actual coupling: with MODE / PRECISION
+          OMITTED, rtos now reads LUNITS (mode) and LUPREC (precision);
+          the decimal result is zero-suppressed per DIMZIN (bit 3 = drop
+          trailing zeros, bit 2 = drop a leading zero). AutoCAD defaults
+          (LUNITS 2, LUPREC 4, DIMZIN 0) match the historic hard-coded
+          values, so a host that never sets them is unchanged.
+          coupling-units.lsp gained default-reading + DIMZIN deftests;
+          builtins-core gained 9 regression checks.
+      STILL OPEN under this heading:
+        - UNITMODE: only affects engineering/architectural/fractional
+          (rtos modes 3-5), which clautolisp falls back to decimal
+          headlessly, so UNITMODE is currently a no-op (documented in
+          builtin-rtos). Implementing modes 3-5 is the remaining work.
+        - distance/getdist reading LUPREC for INPUT parsing (distance
+          itself returns a real number, not a formatted string).
+    - CMDECHO -> command/vl-cmdf echo policy.
+    - TILEMODE/CVPORT -> vports/setview.
+    - SNAPANG/ANGBASE radians-vs-display on setvar.
+    - DWGNAME/DWGPREFIX -> default path resolution for file builtins.
+    - DATE/CDATE/TDCREATE/TDUPDATE -> edtime.
+    - MAXSORT -> acad_strlsort.
+    - SRCHPATH (BricsCAD) / support path -> findfile/load.
+    - TRUSTEDPATHS/SECURELOAD -> load/open/findtrustedfile trust gating.
+  (None of these eight have a coupling test yet.)
+
+Recommended next steps (by priority): (1) DONE 2026-06-24 (1.2.13) —
+the rtos/distance float-format divergences ("N." for integer-valued
+reals at precision 0; "d+N" vs "E+0N" scientific) are fixed in
+%FORMAT-DECIMAL-REAL / %FORMAT-SCIENTIFIC-REAL; (2) DONE 2026-06-24
+(1.2.14) — rtos reads LUNITS/LUPREC when mode/precision omitted and
+applies DIMZIN zero-suppression (UNITMODE remains a no-op pending rtos
+modes 3-5); (3) the trust-gating coupling
+(TRUSTEDPATHS/SECURELOAD), which is security-relevant — NEXT; (4) the remaining
+behavioural couplings with tests.
+
+## Progress (2026-08-06) — rtos modes 3-5 + UNITMODE, and coupling tests
+
+Branch feature-system-variables-couplings (off origin/master).
+
+### 1. rtos modes 3-5 + UNITMODE (item 1) — DONE
+
+builtin-rtos now formats every documented LUNITS mode; the
+decimal-fallback / "UNITMODE is a no-op" note is removed.
+New helpers in autolisp-builtins-core/source/api.lisp:
+
+  - %inches->whole-fraction — splits inches into whole + a reduced
+    2^LUPREC fraction, carrying a rounded-up unit.
+  - %format-engineering-real  (mode 3) — feet + decimal inches:
+    (rtos 17.5 3 2) => "1'-5.50\"".
+  - %format-architectural-real (mode 4) — feet + fractional inches:
+    (rtos 17.5 4 2) => "1'-5 1/2\"".
+  - %format-fractional-real   (mode 5) — whole + fraction, no feet:
+    (rtos 17.5 5 2) => "17 1/2".
+
+LUPREC is decimal places for engineering, and the power-of-two
+fraction denominator (2^LUPREC) for architectural/fractional (LUPREC 4
+=> 1/16). UNITMODE is now honoured: 0 = display form (space between
+whole inches and the fraction), 1 = re-readable input form (hyphen),
+e.g. "1'-5-1/2\"" / "17-1/2". builtin-rtos reads UNITMODE alongside
+LUNITS/LUPREC/DIMZIN. The canonical assertions are Autodesk's own rtos
+reference examples for 17.5.
+
+TODO (edge cases, headless): DIMZIN feet-inch zero-suppression bits
+(0-3) for modes 3-5 (only the decimal bits 2/3 are applied, on mode 2);
+engineering-mode inch rounding that lands on 12.000" does not carry a
+foot (architectural/fractional do carry). Negative values that round to
+zero print a leading "-".
+
+### 2. distance / getdist reading LUPREC for input parsing (item 2) — FINDING, no code change
+
+Investigated; there is genuinely nothing for LUPREC to do on input:
+
+  - distance (builtin-distance, api.lisp) takes two POINT arguments
+    (coordinate lists), computes the Euclidean distance, and returns a
+    real. It parses no string and formats no output, so no linear-unit
+    sysvar (LUNITS/LUPREC/DIMZIN/UNITMODE) couples to it.
+  - getdist (host-getdist, cador/source/prompt-api.lisp) reads one line
+    of text and returns a full-precision real (parse-real). LUPREC is a
+    *display* precision (decimal places / fraction denominator for
+    rtos/angtos OUTPUT); it does not and must not truncate parsed input.
+    The spec is explicit that getdist "result is always a real, even
+    when the user enters values in architectural units" — i.e. the
+    return keeps full precision regardless of LUPREC.
+
+  Conclusion: the LUPREC<->input coupling asserted in the seed list does
+  not exist. The only genuine input-side enhancement would be teaching
+  getdist to PARSE feet/inch architectural input ("1'-6\"") — governed
+  by LUNITS/UNITMODE, not LUPREC — which is a separate headless-parsing
+  enhancement, left as a TODO. LUPREC's sole coupling remains the
+  rtos/angtos output path (already implemented).
+
+### 3. Coupling tests (item 3) — DONE (breadth), one behavioural test per coupling
+
+builtins-core FiveAM (autolisp-builtins-core/tests/builtin-tests.lisp),
+all green:
+
+  - RTOS-ENGINEERING/ARCHITECTURAL/FRACTIONAL-MODE-*,
+    RTOS-UNITMODE-SELECTS-DISPLAY-VS-INPUT-FORM,
+    RTOS-MODES-3-5-DEFAULT-PRECISION-FROM-LUPREC.
+  - COUPLING-CMDECHO-GATES-COMMAND-ECHO — captures the prompt output:
+    CMDECHO=1 echoes the command line, CMDECHO=0 silences it while still
+    running/logging the command.
+  - COUPLING-MAXSORT-CAPS-ACAD-STRLSORT.
+  - COUPLING-TILEMODE-CVPORT-VIEWPORT-ACCESS (vports sentinel + setview).
+  - COUPLING-SNAPANG-ANGBASE-SETVAR-RADIANS.
+  - COUPLING-DWGNAME-DWGPREFIX-ARE-PATH-STRINGS.
+  - COUPLING-DATE-FAMILY-ARE-READABLE-REALS (DATE/TDCREATE/TDUPDATE).
+  - COUPLING-SRCHPATH-ROUND-TRIPS.
+  - COUPLING-TRUSTEDPATHS-SECURELOAD-ROUND-TRIP (gating itself is already
+    covered by the SECURELOAD-GATE-* / SECURELOAD-FINDTRUSTEDFILE-* /
+    OPEN-RESOLUTION-USES-SUPPORT-SEARCH-PATH tests).
+
+autolisp-test conformance corpus (tests/sysvar/, profile strict), added
++ registered in harness/test-loader.lsp:
+
+  - coupling-units.lsp: rtos modes 3-5 + UNITMODE 0/1 (+ reset).
+  - coupling-sort.lsp: MAXSORT -> acad_strlsort.
+  - coupling-viewport.lsp: TILEMODE/CVPORT round-trip, vports, setview.
+  - coupling-command.lsp: CMDECHO round-trip; command runs under 0/1.
+  - coupling-path.lsp: DWGNAME/DWGPREFIX shape, SRCHPATH round-trip.
+  - coupling-angle.lsp: SNAPANG radians round-trip (added).
+  - coupling-date.lsp: TDCREATE/TDUPDATE readable reals (added).
+
+### Code change enabling the CMDECHO coupling
+
+The mock command engine (cador/source/command-api.lisp, host-command)
+previously echoed the command line unconditionally, ignoring CMDECHO —
+so the "CMDECHO -> command echo" coupling was not actually wired. Added
+%cador-cmdecho-on-p and gated the prompt echo on it (the command log is
+still recorded unconditionally). This is the code half of that coupling;
+the FiveAM + conformance tests above are the test half.
+
+### Done 2026-09-29 (clautolisp 2.2.148) -- the three headless TODOs
+
+  - rtos modes 3-5 now MATCH AutoCAD 2022 and BricsCAD V26 on every
+    measured case (probe-results 20260831T130043Z / 20260906T190558Z, both
+    DIMZIN 8): halves round AWAY from zero (CL ROUND went to even: 2.5 -> 2);
+    zero feet are dropped under DIMZIN feet/inch code 0 (0.5 -> 1/2", not
+    0'-0 1/2"); DIMZIN's decimal bits apply to engineering inches (8'-4", not
+    8'-4.00"); a negative sign never precedes a zero; inches rounding to 12
+    carry a foot in engineering too. Codes 1-3 and exactly-zero inches follow
+    Autodesk's documented meaning (%FEET-AND-INCHES) pending the new probe
+    cases. Tests: RTOS-MODES-3-5-MATCH-AUTOCAD-AND-BRICSCAD-UNDER-DIMZIN-8
+    (27 measured cases); the old unmeasured expectations (0'-3 3/8", 1'-0")
+    corrected.
+  - DISTOF honours its MODE (default LUNITS): 3 and 4 read feet-and-inches
+    in either form, 5 fractional -- RTOS's complement (it reads back every
+    measured vendor output). GETDIST under LUNITS 3/4/5 accepts the same
+    forms (1'-6", 1'-5 1/2", 17 1/2); a plain number is accepted in every
+    unit. Shared parser: runtime PARSE-AUTOLISP-DISTANCE.
+  - DIESEL: (menucmd "M=...") evaluates DIESEL (autolisp-builtins-core/
+    source/diesel.lisp): the arithmetic, comparison, bitwise, string, if/eval,
+    getvar/getenv, rtos/angtos and EDTIME functions, "..." quoting, and the
+    documented error strings ($(f)?? / $(f,??) / $?). EDTIME inverts the
+    DATE convention (JDN + day fraction) and implements every picture code.
+    Other menucmd areas keep the stub's "".
+
+New probes, for the runners (they will run automatically: the `suite'
+probe family changed):
+  - probe-rtos.lsp: rtos under DIMZIN 0 1 2 3 4 8 12 (modes 3/4, exact feet,
+    the engineering carry, -0.1 rounding to zero), and DISTOF input forms
+    under modes 2-5 -- including (distof "1'-6\"" 2), where clautolisp's
+    decimal reader still takes the leading "1" (ATOF-like); the vendors
+    probably answer nil.
+  - probe-diesel.lsp (new suite): the DIESEL functions, how a non-integral
+    result prints (clautolisp: up to 8 decimals, trailing zeros dropped --
+    Autodesk does not say), the error strings, EDTIME on a fixed date.
+    NB: the BricsCAD probe:suite jobs run a narrowed PROBE_SUITES list, so
+    this suite runs on AutoCAD only until that list is widened
+    (probes-suite-crashes-bricscad).
+
+### The probes answered -- 2026-10-03 (clautolisp 2.2.150)
+
+AutoCAD 2022 (job 16824025450, probe-results/autocad/ms-windows/
+20261003T091920Z) and BricsCAD (job 16824025454, .../bricscad/ms-windows/
+20261003T092024Z):
+  - rtos-dimzin: EVERY case matches on both -- DIMZIN codes 0-3, the
+    decimal bits, exact feet, the engineering carry, -0.1 to zero. The
+    documented-only behaviour is now measured.
+  - distof modes 3-5 matched; mode 2 did not, and the vendors DIVERGE:
+    AutoCAD reads a whole decimal or a fraction ("17 1/2" 17.5) and refuses
+    feet/inch marks; BricsCAD reads every form in every mode. clautolisp
+    follows AutoCAD, and BricsCAD under a bricscad dialect; "" and
+    malformed text are nil (the old ATOF-like reading gave "1'-6\"" 1.0).
+  - DIESEL (AutoCAD; the BricsCAD jobs do not run that suite): the number
+    format matched; corrected to the engine's error strings (padded,
+    upper-cased: " $(NTH,??) "), out-of-range NTH as an error, (substr)
+    alone "", an unclosed $( -> menucmd nil, and EDTIME's names in the
+    product language ("Mardi, 29 Septembre 2026" on this French AutoCAD;
+    clautolisp takes the locale, *EDTIME-LANGUAGE*).
+  - Against AutoCAD the clautolisp run now differs in 2 of 337 cases:
+    $(getvar,dimzin) (a template default, not a bug) and $(angtos,...),
+    which is ANGTOS itself -- filed as angtos-modes-wrong.
+
+### DIESEL on BricsCAD -- measured 2026-10-03
+
+The full probe suite reached BricsCAD (probes-suite-crashes-bricscad
+closed): job 16912423452, probe-results/bricscad/ms-windows/
+20261003T120059Z. BricsCAD DOES evaluate (menucmd "M=..."), though its
+documentation lists only P0-P16, and agrees with AutoCAD on 43 of 53 cases.
+It DIVERGES on five (the remaining differences in that comparison were
+artefacts of the clautolisp baseline: pre-ANGTOS-fix, French locale):
+
+| case                | BricsCAD              | AutoCAD = clautolisp today |
+|---------------------+-----------------------+----------------------------|
+| non-integral result | 12 decimals           | 8 decimals                 |
+|                     | 0.333333333333        | 0.33333333                 |
+| $(/,1,0)            | inf                   | " $(/,??) "                |
+| unclosed $(+,1      | $?                    | nil                        |
+| $(substr)           | " $(SUBSTR,??) "      | ""                         |
+| edtime MSEC         | not a code: 9SEC      | milliseconds: 000          |
+|                     | (M month + SEC text)  |                            |
+
+clautolisp follows AutoCAD -- and, since 2.2.153, BricsCAD under any
+dialect of that product (bricscad-mac included), as DISTOF does since
+2.2.150. Pinned by DIESEL-FOLLOWS-BRICSCAD-UNDER-A-BRICSCAD-DIALECT (each
+case under bricscad, bricscad-mac, autocad, strict).
+
+### Still open
+
+  - (DONE 2026-10-05, clautolisp 2.2.194) vports / setview: measured
+    (probe-viewports.lsp, AutoCAD 2022 + BricsCAD V25/V26) then
+    implemented -- cador keeps each drawing's tiled viewports, -VPORTS 2 V
+    and SI per product, CVPORT derived, TILEMODE 0 lists the sheet and the
+    layout's viewport, setview returns the view. Recorded in the spec's
+    VPORTS / SETVIEW entries. This was the last item listed as open here;
+    closing the ticket is pjb's call.
+
+## Closed 2026-10-05 (pjb: "yes, close them")
+
+Every item this ticket listed is done; the last, vports / setview, in
+clautolisp 2.2.194 (MR !417), and the -VPORTS options in 2.2.196 (MR !418).
+Sysvars still to measure or implement are tracked by their own tickets.

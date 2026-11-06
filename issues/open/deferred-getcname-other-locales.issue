@@ -1,0 +1,23 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-getcname-other-locales -- getcname tables for the locales other than fr_FR, and BricsCAD's COMMANDS listing
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: cadtui-locale-probe-getcname
+#+BRANCH: -
+#+DATE: 2026-10-26
+
+cadtui-locale-probe-getcname (closed 2026-10-26) harvested fr_FR on every
+product and made clautolisp's GETCNAME real. Left:
+
+1. Other locales (de_DE, es_ES ... -- cadtui already has verb / keyword
+   tables for them): one localised AutoCAD / BricsCAD install per locale on
+   a runner (pjb's provisioning). Then run the getcname probe there and
+   regenerate cadtui's <locale>/command.sexp
+   (scripts/cadtui-getcname-to-sexp.py) and cador's data/getcname/<locale>.sexp
+   (scripts/getcname-to-cador.py).
+2. BricsCAD's COMMANDS listing (English + localised), which the issue asked
+   for besides getcname.
+3. The probe's command list is a curated 143; the dash commands (-LAYER ...)
+   and more are worth adding, since GETCNAME answers only for the commands
+   in its tables.

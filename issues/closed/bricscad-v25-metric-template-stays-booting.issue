@@ -1,0 +1,53 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: bricscad-v25-metric-template-stays-booting -- BricsCAD V25 (Windows) never reaches READY on a copy of Default-m.dwt
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-10-25
+
+* Symptom
+
+probe:template-defaults:bricscad-metric:windows (job 17450398554, PF5S26B,
+BricsCAD V25 fr_FR): alfe opens a copy of
+AppData/Local/Bricsys/BricsCAD/V25x64/fr_FR/Templates/Default-m.dwt (named
+template.dwg, via $AUTOLISP_DWG) and the runtime never gets past BOOTING:
+READY timeout after 180 s, launcher exit 0, engine killed, exit 75.
+
+The same job on Default-imperial.dwt (job 17449031340) reached READY and
+finished in under 20 s; BricsCAD V26 macOS on its Default-m.dwt (job
+17449031343) completed too. (The job's 12m45s template lookup, first taken
+for an alfe timeout that did not fire, was run-probes.sh's -- fixed with
+alfe-batch-timeout-not-enforced.)
+
+* Suspects
+
+A modal dialog BricsCAD V25 raises while opening that file before
+run-common.lsp loads (missing font / xref / proxy, a units or recovery
+prompt): cf. alfe-cad-nil-catch-all-message, empty-ressource. alfe's batch
+mode cannot see it.
+
+* To do
+
+1. Retry the job once (the first run may have been a cold-start artefact).
+2. If it reproduces: look at the runner's screen during the READY wait, or
+   open the copy by hand in BricsCAD V25 on PF5S26B.
+3. Once it runs: its set goes into cador's default objects as
+   (:bricscad :metric 25) (MR !489 falls back to V26's).
+
+
+Resolved (2026-10-25, clautolisp 2.3.63, MR !490)
+-------------------------------------------------
+
+To do 1 settled it: the retry on this MR (job 17451032321, PF5S26B, BricsCAD
+V25 fr_FR, same Default-m.dwt) found the template in 3.7 s and ran the probe
+to the end in 18 s -- READY with no dialog. The BOOTING of job 17450398554
+did not reproduce: a one-off (a cold start after the 12m45s disk walk is the
+likeliest), not something Default-m.dwt does to V25.
+
+To do 3: the run's set (bricscad/ms-windows/20261025T190205Z) is now
+(:bricscad :metric 25) in cador's default objects. It is V25's own: its Model
+layout carries an ISO A4 page setup (margins 7.5 / 20, 210 x 297 mm), which
+V26's metric template does not. Test DEFAULT-OBJECTS-FOLLOW-THE-DIALECT-
+VERSION updated (V25 metric its own set; V23 metric falls back to V25's).

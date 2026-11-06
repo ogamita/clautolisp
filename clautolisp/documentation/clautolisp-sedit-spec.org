@@ -9,11 +9,11 @@ integration with the *aldo* debugger as the *form navigator*. It formalises
 the material of the (now retired) issue =aldo-sedit-integration.issue=, whose
 pure-bug items were split into separate issues:
 
-- =issues/open/bug-aldo-duplicate-breakpoint.issue= — two breakpoints on one
+- =issues/closed/bug-aldo-duplicate-breakpoint.issue= — two breakpoints on one
   poll-point;
-- =issues/open/bug-aldo-nav-command-dictionary.issue= — nav mode exposes only
+- =issues/closed/bug-aldo-nav-command-dictionary.issue= — nav mode exposes only
   =break=;
-- =issues/open/bug-aldo-nav-entry-and-breakpoint-flow.issue= — nav re-selects
+- =issues/closed/bug-aldo-nav-entry-and-breakpoint-flow.issue= — nav re-selects
   the whole form; breakpoints need =invoke-debugger= first.
 
 It is *layered on* two existing normative documents, and does not restate them:

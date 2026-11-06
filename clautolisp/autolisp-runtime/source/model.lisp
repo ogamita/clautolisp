@@ -209,9 +209,23 @@ clautolisp-secureload-trust-model spec.")
   ;; via (autolisp-set-status N) and that (quit) — and the CLI's normal
   ;; end-of-run — pick up. Defaults to 0 (success). Mirrors the CAD-side
   ;; alfe `autolisp-set-status` bootstrap so a single C:MAIN is portable.
-  ;; See issues/open/autolisp-set-status-and-quit-status.issue.
+  ;; See issues/closed/autolisp-set-status-and-quit-status.issue.
   (exit-status 0 :type integer)
   current-document
+  ;; The host document a lifecycle command (NEW / OPEN / Documents.Add ...)
+  ;; asked to switch to, applied at the next top-level read, as AutoCAD does:
+  ;; the running form finishes in the document it started in
+  ;; (deferred-document-lifecycle-command-semantics, option A).
+  (pending-document-key nil)
+  ;; The symbols bound in the startup document before any user code ran --
+  ;; builtins, T / PI / PAUSE, :VLAX-TRUE, the CLI-transmitted variables:
+  ;; what every document's namespace starts with (each AutoCAD drawing has
+  ;; the built-in functions and variables, not the user's). NIL until
+  ;; LINK-RUNTIME-SESSION-CURRENT-DOCUMENT records it.
+  (system-symbols nil)
+  ;; Files VL-LOAD-ALL loaded: every document opened later loads them too
+  ;; (D2 section I.9, R9), oldest first.
+  (pending-loads '())
   ;; Phase 6: every runtime session carries the dialect descriptor
   ;; that drove its instantiation. Builtins that have product-divergent
   ;; lex / mode behaviour (currently `atof` hex-float, `open` `ccs=`)
@@ -297,10 +311,18 @@ clautolisp-secureload-trust-model spec.")
 (defstruct autolisp-file
   stream
   (path nil)
-  (mode nil))
+  (mode nil)
+  ;; The external format OPEN opened STREAM with, or NIL when unknown: the
+  ;; write builtins read it to apply the encoding replacement
+  ;; (encoding-replacement-character-option).
+  (external-format nil))
 
 (defstruct autolisp-ename
-  value)
+  value
+  ;; The host drawing the handle belongs to (opaque to the runtime), or NIL:
+  ;; a host compares it with its active drawing so an ename from another
+  ;; document signals instead of aliasing (cador-multidocument-host C5).
+  document)
 
 (defstruct autolisp-pickset
   value)
@@ -334,7 +356,18 @@ clautolisp-secureload-trust-model spec.")
   ;; called with the locals materialised into a real frame first, because
   ;; it could see them. Same discipline as OPEN-CODE: set only by
   ;; INSTALL-CORE-BUILTINS, against the implementation, never the name.
-  (lexically-safe nil))
+  (lexically-safe nil)
+  ;; :AUTOCAD or :BRICSCAD when this builtin implements an operator only that
+  ;; vendor provides (the spec's Availability; operator-availability.lisp),
+  ;; else NIL. Read on every subr call, so the out-of-dialect check costs
+  ;; one slot test for everything portable
+  ;; (deferred-clautolisp-out-of-dialect-warnings). Set by
+  ;; MAKE-CORE-BUILTIN-SUBR from the name at install time.
+  (owner nil)
+  ;; The (PRODUCT SINCE UNTIL) gates of an operator that appeared or was
+  ;; removed in a given product version (operator-versions.lisp), else NIL:
+  ;; one more slot test per subr call. Set at install time.
+  (version-gate nil))
 
 (defstruct autolisp-usubr
   (name "" :type string)
@@ -430,10 +463,20 @@ compiling the BODY, which is the one thing they have in common. See the
 SITE slot of AUTOLISP-USUBR for why the decision cannot live on the
 closure."
   (call-count 0 :type fixnum)
-  (compiled-body nil))
+  (compiled-body nil)
+  ;; The DEBUG side, shared the same way (debug-lambda-in-a-loop-
+  ;; reinstrumented): the instrumented body and its debug metadata -- one
+  ;; record, one function id, for the lambda FORM rather than one per closure
+  ;; -- and, once the site is hot under a session, the compiled debugging
+  ;; body. Filled by the debugger's instrumenter (clautolisp.debug), which
+  ;; reuses them only while that metadata is still registered.
+  (instrumented-body nil)
+  (debug-metadata nil)
+  (debug-call-count 0 :type fixnum)
+  (compiled-instrumented-body nil))
 
 (defstruct autolisp-catch-all-error
-  (message "" :type string)
+  (message "" :type (or null string)) ; nil: vl-exit-* outside a VLX on AutoCAD
   condition)
 
 (defstruct autolisp-variant

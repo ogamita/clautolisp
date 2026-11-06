@@ -1,0 +1,33 @@
+#+TITLE: CAD instance probes reuse A/B drawings across Windows runs
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+BRANCH: codex/cad-probe-unique-20261023
+
+* Reproduction and cause
+The Windows probe scripts/probe-cad-instances.ps1 saves both logical
+instances to TEMP/cadinst-<backend>-A.dwg and -B.dwg. A second probe under
+the same account reuses those names. If an earlier CAD still holds a
+file, SaveAs encounters a lock; cleanup also names the shared files.
+Observed on pfenny on 2026-10-23; its BricsCAD Recent Paths includes
+cadinst-bricscad-B.dwg and Windows Recent contains cadinst-autocad-A/B.
+The producer was identified in CI checkout 52f52cb9, on
+cad-launch-new-by-default; it was absent from the older working clone.
+
+* Resolution
+Allocate a private directory and filenames containing the backend,
+PowerShell PID, a fresh GUID and A/B. SaveAs, ROT lookups and cleanup all
+use the same path map. Never pre-delete a shared legacy filename.
+Cleanup removes only that probe's exact DWG/DWL/DWL2 paths and removes the
+directory only when empty, preserving unexpected files.
+The macOS probe already allocates its private directory with mktemp.
+
+* Validation
+scripts/tests/test-probe-cad-instances-paths.ps1 extracts and executes the
+real helpers without launching CAD. Two allocations in the same process
+produce four distinct filenames; cleanup of one preserves the other one's
+drawings and locks, a legacy A drawing, and an unexpected file. Both
+AutoCAD and BricsCAD variants pass under PowerShell 7 on macOS and
+Windows PowerShell on pfenny. Both Windows native probe jobs run this
+check before launching CAD. The full native probe was not rerun by this
+correction, avoiding interference with existing CAD activity.

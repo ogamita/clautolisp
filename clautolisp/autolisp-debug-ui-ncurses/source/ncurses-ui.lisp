@@ -42,9 +42,13 @@
    ;; The repl pane's live Lisp instance (windows-and-interactor-templates.issue):
    ;; a real *AUTOLISP* activation over the shared evaluator, made on first use.
    (repl-activation :initform nil :accessor ncurses-ui-repl-activation)
-   ;; Per-window output for make-lisp-window's dedicated REPL windows
-   ;; (window -> list of lines, newest last); the repl PANE keeps repl-lines.
-   (lisp-lines :initform (make-hash-table :test 'eq) :accessor ncurses-ui-lisp-lines)))
+   ;; How each user-made window was made (window -> (COMMAND . ARG-TEXT)): the
+   ;; make-*-window command and the argument text it ran with, so a saved layout
+   ;; can replay them and recreate the window's interactor (pjb, Q5).
+   (window-recipes :initform (make-hash-table :test 'eq) :accessor ncurses-ui-window-recipes)
+   ;; True once the startup layout (the saved layout named "debugger") has been
+   ;; tried, at this UI's first stop.
+   (startup-layout-done :initform nil :accessor ncurses-ui-startup-layout-done)))
 
 (defun make-ncurses-ui (&rest initargs)
   (apply #'make-instance 'ncurses-ui initargs))
@@ -96,6 +100,54 @@ stack is built."
       (dolist (w (frame-windows frame))
         (setf (window-stack w) (list (base-interactor w))))
       (push :window-manager (window-stack (frame-selected-window frame))))))
+
+(defun ui-instance-names (ui)
+  "The instance names of every live interactor activation this UI can see -- in
+its windows' stacks, its repl pane, and the dynamic *INTERACTOR-STACK* of the
+tty frame below it -- so a new instance is uniquified against all of them
+(\"Lisp REPL\" -> \"Lisp REPL<2>\", windows-and-interactor-templates.issue)."
+  (let ((names '()))
+    (flet ((note (entry)
+             (when (clautolisp.interactor:activation-p entry)
+               (pushnew (clautolisp.interactor:activation-label entry) names
+                        :test #'string=))))
+      (dolist (w (ui-windows ui)) (mapc #'note (window-stack w)))
+      (note (ncurses-ui-repl-activation ui))
+      (mapc #'note clautolisp.interactor:*interactor-stack*))
+    names))
+
+(defun instantiate-in-ui (ui template-name &optional target)
+  "Instantiate the interactor template TEMPLATE-NAME over TARGET, named uniquely
+among UI's live instances. Returns the activation."
+  (clautolisp.interactor:instantiate-interactor-template
+   template-name
+   (clautolisp.interactor:make-template-context :target target)
+   :existing-names (ui-instance-names ui)))
+
+(defun note-window-recipe (ui window command arg-text)
+  "Record that WINDOW was made by the M-x COMMAND with ARG-TEXT (a string, or
+NIL), for layout persistence (pjb, Q5: record the constructor parameters and
+replay them). Returns WINDOW."
+  (setf (gethash window (ncurses-ui-window-recipes ui))
+        (cons command (or arg-text "")))
+  window)
+
+(defun window-recipe (ui window)
+  "(COMMAND . ARG-TEXT) for a user-made WINDOW, or NIL."
+  (values (gethash window (ncurses-ui-window-recipes ui))))
+
+(defvar *replaying-layout* nil
+  "True while a saved layout replays its make-*-window commands
+(config-persist.lisp): a blank argument then means \"none\" instead of
+prompting in the minibuffer.")
+
+(defun %arg-text (ui arg prompt)
+  "ARG when it is a non-blank string, else a line read from the minibuffer with
+PROMPT (never while a layout replays); NIL when both are blank."
+  (let ((text (cond ((and arg (plusp (length (string-trim " " arg)))) arg)
+                    (*replaying-layout* nil)
+                    (t (read-minibuffer ui prompt)))))
+    (and text (plusp (length (string-trim " " text))) text)))
 
 (defun activate-window (ui new)
   "Make window NEW the active window: pop the :WINDOW-MANAGER interactor from the
@@ -673,6 +725,8 @@ long error/why message flows instead of truncating) followed by the key legend."
   (tui-start (ncurses-ui-screen ui))
   ;; seat this stop's shared (aldo lisp) tail under the debug panes (spec §C)
   (rebuild-shared-tail ui session hit)
+  ;; the first stop opens the saved "debugger" layout, if any (config-persist)
+  (apply-startup-layout ui session hit)
   (unwind-protect
        (loop
          (render-debugger ui session)
@@ -1064,6 +1118,9 @@ handle keystrokes here."
         ((window-entry-aldo-view-p activation) (aldo-view-window-key activation ui key))
         (t (values nil nil))))
 
+(defparameter +window-scroll-step+ 3
+  "Default lines/columns per scroll (a C-u N count prefix is TODO).")
+
 (defun window-manager-key (ui session hit key)
   "The umbrella interactor on the active window: the C-w/C-x window-command
 prefix, the minibuffer , command line, Esc-x (M-x) and C-h help."
@@ -1307,9 +1364,6 @@ re-homing the next window into the new split so four windows remain."
           (set-message ui "split ~A ~A" (window-name active)
                        (if (eq split-type :horizontal) "below" "right"))))))
 
-(defparameter +window-scroll-step+ 3
-  "Default lines/columns per scroll (a C-u N count prefix is TODO).")
-
 (defun window-scroll-by (ui dl dc)
   "Scroll the active window by DL lines / DC columns (clamped at next render). A
 `small' command: it leaves the interactor message alone (the scroll is visible
@@ -1395,14 +1449,13 @@ run bare; an unhandled key falls through (values NIL NIL)."
 (defun %sedit-target-from-arg (arg ui)
   "The sedit target for `M-x sedit': ARG parsed as a form when non-empty, else a
 form read from the minibuffer, else NIL (a stand-alone editor). A parse error is
-reported and yields NIL."
-  (let ((text (if (and arg (plusp (length (string-trim " " arg))))
-                  arg
-                  (read-minibuffer ui "sedit form: "))))
-    (if (and text (plusp (length (string-trim " " text))))
-        (handler-case (clautolisp.sedit:parse-form text)
-          (error (e) (set-message ui "sedit: ~A" e) nil))
-        nil)))
+reported and yields NIL. The second value is the text used (for the recipe)."
+  (let ((text (%arg-text ui arg "sedit form: ")))
+    (values (if text
+                (handler-case (clautolisp.sedit:parse-form text)
+                  (error (e) (set-message ui "sedit: ~A" e) nil))
+                nil)
+            text)))
 
 (defun open-sedit-in-source (ui session hit arg)
   "`M-x sedit': open a SEDIT activation over ARG (or a prompted form) in the
@@ -1410,9 +1463,7 @@ source pane, swapping its navigator out. Selects the source window so its keys
 drive sedit. Returns NIL (no resume)."
   (declare (ignore session hit))
   (let* ((target (%sedit-target-from-arg arg ui))
-         (activation (clautolisp.interactor:instantiate-interactor-template
-                      "sedit"
-                      (clautolisp.interactor:make-template-context :target target)))
+         (activation (instantiate-in-ui ui "sedit" target))
          (window (ui-window ui :source)))
     (when window
       ;; drop the navigator / any prior sedit, keep :window-manager, push the new
@@ -1440,11 +1491,7 @@ navigator."
 from the frame; the source pane swaps its navigator back instead."
   (let ((window (active-window ui)))
     (if (eq (window-role window) :sedit)
-        (progn
-          (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
-          (let ((now (active-window ui)))
-            (when now (pushnew :window-manager (window-stack now))))
-          (set-message ui "sedit window closed"))
+        (close-user-window ui window "sedit window closed")
         (close-sedit-in-source ui))))
 
 (defun make-sedit-window (ui session hit arg)
@@ -1452,15 +1499,15 @@ from the frame; the source pane swaps its navigator back instead."
 in a NEW window beside the active one (the spec's create-a-window form; `sedit'
 alone swaps the source pane instead). Returns NIL."
   (declare (ignore session hit))
-  (let* ((target (%sedit-target-from-arg arg ui))
-         (activation (clautolisp.interactor:instantiate-interactor-template
-                      "sedit" (clautolisp.interactor:make-template-context :target target)))
-         (window (clautolisp.ui.tui:add-window-to-frame
-                  (ncurses-ui-frame ui) :name "sedit" :role :sedit
-                  :beside (active-window ui) :split :vertical)))
-    (setf (window-stack window) (list activation))
-    (activate-window ui window)
-    (set-message ui "sedit: d u > < move | i a r edit | q close"))
+  (multiple-value-bind (target text) (%sedit-target-from-arg arg ui)
+    (let ((activation (instantiate-in-ui ui "sedit" target))
+          (window (clautolisp.ui.tui:add-window-to-frame
+                   (ncurses-ui-frame ui) :name "sedit" :role :sedit
+                   :beside (active-window ui) :split :vertical)))
+      (note-window-recipe ui window "make-sedit-window" text)
+      (setf (window-stack window) (list activation))
+      (activate-window ui window)
+      (set-message ui "sedit: d u > < move | i a r edit | q close")))
   nil)
 
 ;;;; --- the list-selector interactor (windows-and-interactor-templates.issue:
@@ -1585,9 +1632,7 @@ what a window can run, windows-and-interactor-templates.issue)."
 over the shared evaluation context; NIL if the template is unavailable."
   (or (ncurses-ui-repl-activation ui)
       (setf (ncurses-ui-repl-activation ui)
-            (ignore-errors
-             (clautolisp.interactor:instantiate-interactor-template
-              "lisp" (clautolisp.interactor:make-template-context))))))
+            (ignore-errors (instantiate-in-ui ui "lisp")))))
 
 (defun %eval-in-lisp-activation (activation line)
   "Evaluate LINE through ACTIVATION's interactor evaluator (*COMMAND-ACTIVATION*
@@ -1629,8 +1674,8 @@ Lisp image. Other keys fall through (values NIL NIL)."
 
 ;;;; --- make-lisp-window: a dedicated REPL window over the shared evaluator --
 ;;;; A second *AUTOLISP* instance in its own window (the slime-mrepl model),
-;;;; with its own scrollback (ncurses-ui-lisp-lines, keyed by window) so it does
-;;;; not share the repl pane's buffer. `e' evaluates a prompted form; `q' closes.
+;;;; with its own history and transcript (per-instance REPL-STATE, the singleton
+;;;; split) so it shares neither the repl pane's buffer nor its :* history. `e' evaluates a prompted form; `q' closes.
 
 (defun %activation-interactor-name= (activation name)
   (string-equal name (clautolisp.interactor:interactor-name
@@ -1644,46 +1689,64 @@ Lisp image. Other keys fall through (values NIL NIL)."
   (find-if #'window-entry-lisp-p (window-stack window)))
 
 (defun lisp-window-buffer (ui window)
-  "Buffer lines (STRING . ATTR) for a make-lisp-window REPL window."
-  (mapcar (lambda (s) (cons s :normal))
-          (gethash window (ncurses-ui-lisp-lines ui))))
+  "Buffer lines (STRING . ATTR) for a make-lisp-window REPL window: the
+TRANSCRIPT of the window's own lisp instance (per-instance state, the singleton
+split), not a UI-global buffer."
+  (declare (ignore ui))
+  (let ((activation (window-lisp-activation window)))
+    (and activation
+         (mapcar (lambda (s) (cons s :normal))
+                 (clautolisp.repl:repl-state-transcript
+                  (clautolisp.interactor:activation-state activation))))))
+
+(defun lisp-window-eval (activation line)
+  "Evaluate LINE in the lisp instance ACTIVATION and append the echo + output to
+the instance's own transcript. Returns the transcript."
+  (clautolisp.repl:repl-transcript-append
+   (clautolisp.interactor:activation-state activation)
+   (%eval-in-lisp-activation activation line)))
+
+(defun close-user-window (ui window message)
+  "Remove the user-made WINDOW from UI's frame, forget its recipe, and hand the
+window manager to the newly active window."
+  (remhash window (ncurses-ui-window-recipes ui))
+  (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
+  (let ((now (active-window ui)))
+    (when now (pushnew :window-manager (window-stack now))))
+  (when message (set-message ui "~A" message)))
 
 (defun lisp-window-key (activation ui key)
   "Drive a dedicated lisp window: `e' evaluates a prompted form in ACTIVATION and
-appends the result to this window's scrollback; `q' closes the window."
+appends the result to this instance's transcript; `q' closes the window."
   (let ((window (active-window ui)))
     (cond
       ((and (characterp key) (char= key #\e))
        (let ((line (read-minibuffer ui "eval: ")))
          (when (and line (plusp (length (string-trim " " line))))
-           (setf (gethash window (ncurses-ui-lisp-lines ui))
-                 (append (gethash window (ncurses-ui-lisp-lines ui))
-                         (%eval-in-lisp-activation activation line)))))
+           (lisp-window-eval activation line)))
        (values t nil))
       ((and (characterp key) (char= key #\q))
-       (remhash window (ncurses-ui-lisp-lines ui))
-       (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
-       (let ((now (active-window ui)))
-         (when now (pushnew :window-manager (window-stack now))))
-       (set-message ui "lisp window closed")
+       (close-user-window ui window "lisp window closed")
        (values t nil))
       (t (values nil nil)))))
 
 (defun make-lisp-window (ui session hit arg)
-  "`M-x make-lisp-window': open a new *AUTOLISP* REPL over the shared evaluator
-in its own window beside the active one. Returns NIL."
+  "`M-x make-lisp-window': open a new *AUTOLISP* REPL instance (\"Lisp REPL<N>\")
+over the shared evaluator in its own window beside the active one. The instance
+has its own history and transcript. Returns NIL."
   (declare (ignore session hit arg))
-  (let ((activation (ignore-errors
-                     (clautolisp.interactor:instantiate-interactor-template
-                      "lisp" (clautolisp.interactor:make-template-context)))))
+  (let ((activation (ignore-errors (instantiate-in-ui ui "lisp"))))
     (if (null activation)
         (set-message ui "no Lisp evaluator available")
         (let ((window (clautolisp.ui.tui:add-window-to-frame
                        (ncurses-ui-frame ui) :name "lisp" :role :lisp-repl
                        :beside (active-window ui) :split :vertical)))
+          (note-window-recipe ui window "make-lisp-window" nil)
           (setf (window-stack window) (list activation))
-          (setf (gethash window (ncurses-ui-lisp-lines ui))
-                (list "AutoLISP REPL  -  e eval  q close"))
+          (clautolisp.repl:repl-transcript-append
+           (clautolisp.interactor:activation-state activation)
+           (list (format nil "~A  -  e eval  q close"
+                         (clautolisp.interactor:activation-label activation))))
           (activate-window ui window)
           (set-message ui "lisp: e eval | q close"))))
   nil)
@@ -1745,11 +1808,7 @@ component (the cursor's marked)."
 
 (defun close-inspector-window (ui)
   "`q' in an inspector window: remove it from the frame."
-  (let ((window (active-window ui)))
-    (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
-    (let ((now (active-window ui)))
-      (when now (pushnew :window-manager (window-stack now))))
-    (set-message ui "inspector closed")))
+  (close-user-window ui (active-window ui) "inspector closed"))
 
 (defun inspector-window-key (activation ui key)
   "Drive an INSPECTOR window: up/down move the cursor; d/Enter descends into the
@@ -1777,16 +1836,17 @@ current component; u ascends; q closes."
 
 (defun %inspector-target-from-arg (ui arg)
   "The value make-inspector-window inspects: ARG (or a prompted form) evaluated
-in the shared context; NIL (inspect nil) when empty or on error."
-  (let ((text (if (and arg (plusp (length (string-trim " " arg)))) arg
-                  (read-minibuffer ui "inspect: "))))
-    (if (and text (plusp (length (string-trim " " text))))
-        (handler-case
-            (clautolisp.autolisp-runtime:autolisp-eval
-             (clautolisp.autolisp-runtime:autolisp-read-from-string text)
-             (clautolisp.autolisp-runtime:current-evaluation-context))
-          (error (e) (set-message ui "inspect: ~A" e) nil))
-        nil)))
+in the shared context; NIL (inspect nil) when empty or on error. The second value
+is the text used (for the recipe)."
+  (let ((text (%arg-text ui arg "inspect: ")))
+    (values (if text
+                (handler-case
+                    (clautolisp.autolisp-runtime:autolisp-eval
+                     (clautolisp.autolisp-runtime:autolisp-read-from-string text)
+                     (clautolisp.autolisp-runtime:current-evaluation-context))
+                  (error (e) (set-message ui "inspect: ~A" e) nil))
+                nil)
+            text)))
 
 (defun %open-inspector-window (ui value)
   "Open an inspector window over VALUE (a fresh standalone inspector) beside the
@@ -1804,7 +1864,9 @@ active window, and select it. Returns the window."
   "`M-x make-inspector-window': inspect ARG (or a prompted form's value) in a new
 window beside the active one. Returns NIL."
   (declare (ignore session hit))
-  (%open-inspector-window ui (%inspector-target-from-arg ui arg))
+  (multiple-value-bind (value text) (%inspector-target-from-arg ui arg)
+    (note-window-recipe ui (%open-inspector-window ui value)
+                        "make-inspector-window" text))
   nil)
 
 (clautolisp.interactor:define-interactor-template "inspector"
@@ -1889,11 +1951,7 @@ bindings (selected binding marked)."
     (nreverse out)))
 
 (defun close-stack-browser-window (ui)
-  (let ((window (active-window ui)))
-    (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
-    (let ((now (active-window ui)))
-      (when now (pushnew :window-manager (window-stack now))))
-    (set-message ui "stack browser closed")))
+  (close-user-window ui (active-window ui) "stack browser closed"))
 
 (defun stack-browser-window-key (activation ui key)
   "Drive a STACK window: n/p change frame; up/down move the binding cursor; i
@@ -1936,6 +1994,7 @@ new window. Needs a stop (a captured snapshot). Returns NIL."
               (window (clautolisp.ui.tui:add-window-to-frame
                        (ncurses-ui-frame ui) :name "stack" :role :stack-browser
                        :beside (active-window ui) :split :vertical)))
+          (note-window-recipe ui window "make-stack-browser-window" nil)
           (setf (window-stack window) (list activation))
           (activate-window ui window)
           (set-message ui "stack: n/p frame | up/down binding | i inspect | q close"))))
@@ -1990,11 +2049,7 @@ session."
             (clautolisp.sedit:sedit-state-loc (%navi-state activation))))))
 
 (defun close-navi-window (ui)
-  (let ((window (active-window ui)))
-    (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
-    (let ((now (active-window ui)))
-      (when now (pushnew :window-manager (window-stack now))))
-    (set-message ui "navigator closed")))
+  (close-user-window ui (active-window ui) "navigator closed"))
 
 (defun navi-window-key (activation ui key)
   "Read-only structure motions: d down, u up, >/f next sibling, </b previous,
@@ -2013,26 +2068,28 @@ session."
 
 (defun %navi-target-from-arg (ui arg)
   "A sedit node for make-navi-window: ARG (or a prompted form) parsed; NIL when
-empty or on parse error (a stand-alone nil session)."
-  (let ((text (if (and arg (plusp (length (string-trim " " arg)))) arg
-                  (read-minibuffer ui "navigate form: "))))
-    (if (and text (plusp (length (string-trim " " text))))
-        (handler-case (clautolisp.sedit:parse-form text)
-          (error (e) (set-message ui "navi: ~A" e) nil))
-        nil)))
+empty or on parse error (a stand-alone nil session). The second value is the
+text used (for the recipe)."
+  (let ((text (%arg-text ui arg "navigate form: ")))
+    (values (if text
+                (handler-case (clautolisp.sedit:parse-form text)
+                  (error (e) (set-message ui "navi: ~A" e) nil))
+                nil)
+            text)))
 
 (defun make-navi-window (ui session hit arg)
   "`M-x make-navi-window': navigate ARG's (or a prompted form's) structure in a
 new read-only window beside the active one. Returns NIL."
   (declare (ignore session hit))
-  (let* ((form (%navi-target-from-arg ui arg))
-         (activation (make-navi-activation form))
-         (window (clautolisp.ui.tui:add-window-to-frame
-                  (ncurses-ui-frame ui) :name "navi" :role :navi-view
-                  :beside (active-window ui) :split :vertical)))
-    (setf (window-stack window) (list activation))
-    (activate-window ui window)
-    (set-message ui "navi: d down u up | > < siblings | [ ] first/last | q close"))
+  (multiple-value-bind (form text) (%navi-target-from-arg ui arg)
+    (let ((activation (make-navi-activation form))
+          (window (clautolisp.ui.tui:add-window-to-frame
+                   (ncurses-ui-frame ui) :name "navi" :role :navi-view
+                   :beside (active-window ui) :split :vertical)))
+      (note-window-recipe ui window "make-navi-window" text)
+      (setf (window-stack window) (list activation))
+      (activate-window ui window)
+      (set-message ui "navi: d down u up | > < siblings | [ ] first/last | q close")))
   nil)
 
 (clautolisp.interactor:define-interactor-template "navi"
@@ -2052,26 +2109,28 @@ new read-only window beside the active one. Returns NIL."
 ;;;; aldo windows over DIFFERENT documents (multi-document mode: each a lisp repl
 ;;;; thread + an aldo thread) each refer to their own tail — sharing the tail is
 ;;;; what routes a window's commands to the right debugger + evaluator.
+;;;;
+;;;; The singleton split (windows-and-interactor-templates.issue): an aldo
+;;;; window holds an INSTANCE of the one ALDO interactor, made by the "aldo"
+;;;; template -- the same interactor the line-mode debugger runs. The instance
+;;;; carries the shared backend (SESSION/HIT, the singleton debugger) and its
+;;;; own command-side state (its own dumb-ui); there is no ncurses-only aldo.
 
-(clautolisp.interactor:define-interactor *aldo-view*
-  :name "ALDO-VIEW"
-  :documentation "The debugger command interactor in a window (the aldo half of
-the shared tail): the aldo keys (c s i o f | e x r | a abort) act on ITS stop
-(the session it carries); q closes a stand-alone aldo window.")
-
-(defstruct aldo-view-state
-  "An ALDO-VIEW activation's backend: the debugger SESSION and current HIT it
-drives. Several aldo windows over one document share this activation (and its
-lisp) as their stack bottom; different documents carry different ones."
-  session hit)
-
-(defun make-aldo-view-activation (session hit)
-  (clautolisp.interactor:make-activation
-   *aldo-view* (make-aldo-view-state :session session :hit hit)))
+(defun make-aldo-view-activation (ui session hit)
+  "A new ALDO instance for a window: the \"aldo\" interactor template over the
+stop's SESSION/HIT (the shared debugger backend), named uniquely among UI's live
+instances (\"Aldo debugger\", \"Aldo debugger<2>\"), with its own command-side
+state (a dumb-ui whose output is discarded: in ncurses the command output is
+captured into a pane through *DEBUGGER-OUTPUT*)."
+  (instantiate-in-ui ui "aldo"
+                     (list :session session :hit hit
+                           :input (make-string-input-stream "")
+                           :output (make-broadcast-stream))))
 
 (defun window-entry-aldo-view-p (entry)
+  "True when ENTRY is an ALDO instance (the \"aldo\" template's *ALDO*)."
   (and (clautolisp.interactor:activation-p entry)
-       (eq (clautolisp.interactor:activation-interactor entry) *aldo-view*)))
+       (eq (clautolisp.interactor:activation-interactor entry) clautolisp.ui.dumb:*aldo*)))
 
 (defun window-aldo-view-activation (window)
   (find-if #'window-entry-aldo-view-p (window-stack window)))
@@ -2085,13 +2144,10 @@ global, so multi-document dispatch stays correct)."
     (if (and (characterp key) (char= key #\q)
              (eq (window-role (active-window ui)) :aldo-view))
         (progn
-          (let ((window (active-window ui)))
-            (clautolisp.ui.tui:remove-window-from-frame (ncurses-ui-frame ui) window)
-            (let ((now (active-window ui)))
-              (when now (pushnew :window-manager (window-stack now)))))
-          (set-message ui "aldo window closed")
+          (close-user-window ui (active-window ui) "aldo window closed")
           (values t nil))
-        (aldo-key ui (aldo-view-state-session st) (aldo-view-state-hit st) key))))
+        (aldo-key ui (clautolisp.ui.dumb:aldo-state-session st)
+                  (clautolisp.ui.dumb:aldo-state-hit st) key))))
 
 (defun make-aldo-window (ui session hit arg)
   "`M-x make-aldo-window': open a NEW aldo interactor (aldo<2>) beside the active
@@ -2100,10 +2156,11 @@ document's backend) — so the new aldo refers to exactly the same tail. Returns
 NIL."
   (declare (ignore arg))
   (let* ((bottom (member-if #'window-entry-lisp-p (window-stack (active-window ui))))
-         (aldo (make-aldo-view-activation session hit))
+         (aldo (make-aldo-view-activation ui session hit))
          (window (clautolisp.ui.tui:add-window-to-frame
                   (ncurses-ui-frame ui) :name "aldo" :role :aldo-view
                   :beside (active-window ui) :split :vertical)))
+    (note-window-recipe ui window "make-aldo-window" nil)
     ;; a new aldo over the SHARED lisp bottom (the same cons cell, not a copy)
     (setf (window-stack window) (if bottom (cons aldo bottom) (list aldo)))
     (activate-window ui window)
@@ -2118,7 +2175,17 @@ minibuffer and any user-made window (sedit/inspector/…) are left alone. A comm
 is then resolved by walking the window's real stack — the bottom is where lookup
 ends, with no fall-back to a global aldo."
   (let* ((lisp (ensure-repl-activation ui))
-         (aldo (make-aldo-view-activation session hit))
+         ;; the pane's aldo INSTANCE persists across stops (its own command-side
+         ;; state: display list, browse stack...); only its backend is re-aimed
+         ;; at this stop's session/hit.
+         (aldo (let ((old (let ((w (ui-window ui :interactor)))
+                            (and w (window-aldo-view-activation w)))))
+                 (if old
+                     (let ((st (clautolisp.interactor:activation-state old)))
+                       (setf (clautolisp.ui.dumb:aldo-state-session st) session
+                             (clautolisp.ui.dumb:aldo-state-hit st) hit)
+                       old)
+                     (make-aldo-view-activation ui session hit))))
          (tail (remove nil (list aldo lisp))))          ; the shared (aldo lisp)
     (dolist (w (ui-windows ui))
       (case (window-role w)
@@ -2283,7 +2350,16 @@ the repl pane, and return the command's resume directive. The current stop HIT
 is carried through, so frame-relative commands (up/down, frame, locals, …) act
 on the real stop rather than degrading."
   (let* ((out (make-string-output-stream))
-         (dumb (make-dumb-ui :input (make-string-input-stream "")))
+         ;; the active window's aldo INSTANCE carries the command state (its own
+         ;; dumb-ui: display list, browse stack...), so it persists from one
+         ;; command to the next; without one, a throwaway dumb-ui.
+         (aldo (let ((w (active-window ui)))
+                 (and w (window-aldo-view-activation w))))
+         (dumb (let ((u (and aldo (clautolisp.ui.dumb:aldo-state-ui
+                                   (clautolisp.interactor:activation-state aldo)))))
+                 (if (typep u 'clautolisp.ui.dumb:dumb-ui)
+                     u
+                     (make-dumb-ui :input (make-string-input-stream "")))))
          ;; the generalised output seam: ALDO/NAVI OUT writes here, not to a
          ;; dumb-ui stream — the dumb-ui is only carried for command state.
          (*debugger-output* out))

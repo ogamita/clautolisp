@@ -10,6 +10,8 @@
 (defclass capture-backend (alfe.backend:backend) ())
 
 (defparameter *capture-start-engine-args* nil)
+(defvar *capture-shutdown-error* nil)
+(defvar *capture-cleanup-kept* nil)
 
 (defstruct (capture-session
             (:include alfe.backend:session)
@@ -35,7 +37,8 @@
 (defmethod alfe.backend:start-engine ((backend capture-backend) workdir
                                       &key dialect host mock-input bootstrap-phase
                                            interactive-p load-encoding io-encoding
-                                           cli-options version-text mode dwg)
+                                           cli-options version-text mode dwg
+                                      &allow-other-keys)
   (declare (ignore backend workdir dialect host mock-input bootstrap-phase
                    interactive-p load-encoding io-encoding
                    cli-options version-text))
@@ -55,12 +58,17 @@
 
 (defmethod alfe.backend:shutdown ((session capture-session) &key reason)
   (declare (ignore reason))
+  (when *capture-shutdown-error*
+    (error 'alfe.error:backend-protocol-error :backend :capture
+           :phase :shutdown :code :cleanup-fixture
+           :message "cleanup failed"))
   (alfe.backend:session-state-set session :stopped)
   session)
 
 (defmethod alfe.backend:cleanup-workdir ((backend capture-backend) workdir &key keep-p)
-  (declare (ignore backend keep-p))
-  (when (and workdir (probe-file workdir))
+  (declare (ignore backend))
+  (setf *capture-cleanup-kept* keep-p)
+  (when (and (not keep-p) workdir (probe-file workdir))
     (uiop:delete-directory-tree workdir :validate t
                                         :if-does-not-exist :ignore))
   nil)
@@ -120,6 +128,64 @@ available T -- automation's GUI requirement is a Windows/COM concept."
         (alfe.backend.cad-common:gui-availability)
       (is (eq t available))
       (is (eq :not-applicable keyword)))))
+;;; alfe-cad-launch-new-by-default: a CAD run LAUNCHES a new instance unless
+;;; asked to attach; an attach implies --mode automation.
+
+(defun %policy (&rest argv)
+  (alfe.cli::apply-cad-instance-policy (parse-arguments argv)))
+
+(test cli-cad-instance-policy-defaults-to-launch
+  "Without --backend, a CAD run neither attaches nor changes --mode, and the
+bridges' COM mode is \"launch\" -- whatever --mode says."
+  (let ((opts (%policy "--autocad")))
+    (is (null (alfe.cli::cli-options-backend-variant opts)))
+    (is (eq :auto (cli-options-mode opts))))
+  (let ((old (uiop:getenv "AUTOCAD_COM_MODE")))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "AUTOCAD_COM_MODE") "")
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  (%policy "--autocad") "AUTOCAD_COM_MODE")))
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  nil "AUTOCAD_COM_MODE")))
+           ;; The environment may still pick a mode when the command line
+           ;; does not, and the command line wins over it.
+           (setf (uiop:getenv "AUTOCAD_COM_MODE") "auto")
+           (is (string= "auto" (alfe.backend.cad-common:cad-com-mode
+                                (%policy "--autocad") "AUTOCAD_COM_MODE")))
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  (%policy "--autocad" "--backend" "launch")
+                                  "AUTOCAD_COM_MODE")))
+           (setf (uiop:getenv "AUTOCAD_COM_MODE") "bogus")
+           (is (string= "launch" (alfe.backend.cad-common:cad-com-mode
+                                  (%policy "--autocad") "AUTOCAD_COM_MODE"))))
+      (setf (uiop:getenv "AUTOCAD_COM_MODE") (or old "")))))
+
+(test cli-cad-instance-policy-attach-implies-automation
+  "--backend attach and --attach-pid select the attach COM mode and turn
+--mode auto into automation, in either option order."
+  (let ((opts (%policy "--bricscad" "--backend" "attach")))
+    (is (eq :automation (cli-options-mode opts)))
+    (is (string= "attach" (alfe.backend.cad-common:cad-com-mode
+                           opts "BRICSCAD_COM_MODE"))))
+  (dolist (argv '(("--autocad" "--attach-pid" "4242")
+                  ("--attach-pid=4242" "--autocad")))
+    (let ((opts (apply #'%policy argv)))
+      (is (= 4242 (alfe.cli:cli-options-attach-pid opts)))
+      (is (eq :attach (alfe.cli::cli-options-backend-variant opts)))
+      (is (eq :automation (cli-options-mode opts))))))
+
+(test cli-cad-instance-policy-usage-errors
+  "Contradictions are usage errors, not silent launches."
+  ;; batch always starts its own CAD process
+  (signals cli-usage-error (%policy "--autocad" "--mode" "batch" "--backend" "attach"))
+  (signals cli-usage-error (%policy "--bricscad" "--mode" "batch" "--attach-pid" "12"))
+  ;; --attach-pid against --backend launch, or without a CAD backend
+  (signals cli-usage-error (%policy "--autocad" "--backend" "launch" "--attach-pid" "12"))
+  (signals cli-usage-error (%policy "--attach-pid" "12"))
+  ;; not a process id
+  (signals cli-usage-error (parse-arguments '("--autocad" "--attach-pid" "acad")))
+  (signals cli-usage-error (parse-arguments '("--autocad" "--attach-pid" "0"))))
 
 (test cli-builds-action-plan-in-order
   "Actions appear in the plan in the order they're seen on the CLI."
@@ -218,6 +284,124 @@ bare -E) set BOTH directions — stdout+stderr for out, stdin for in;
                      (list :input  0 :input  (kw "UTF-8")))
                (terminal-encoding-plan (parse-arguments '("-E" "UTF-8")))))))
 
+(test cli-situation-engine-keywords
+  "Section 6 point 1: SITUATION-ENGINE-KEYWORDS gives START-ENGINE one keyword
+per situation x direction. The bare -E reaches source / file / log / terminal
+but NOT console / cadstdio (product-fixed boundaries); a specific option wins
+over the bare -E in any order."
+  (flet ((kws (args &rest keys)
+           (apply #'alfe.cli:situation-engine-keywords (parse-arguments args) keys)))
+    ;; nothing requested: every keyword present, every value NIL
+    (let ((plist (kws '("-x" "(+ 1 2)"))))
+      (is (= 20 (length plist)))
+      (is (every #'null (loop for (nil v) on plist by #'cddr collect v))))
+    ;; NIL options: the same all-NIL plist
+    (is (every #'null (loop for (nil v) on (alfe.cli:situation-engine-keywords nil)
+                            by #'cddr collect v)))
+    ;; the bare -E: source, file, log, terminal -- never console / cadstdio
+    (let ((plist (kws '("-E" "UTF-8"))))
+      (is (equal "UTF-8" (getf plist :source-encoding)))
+      (is (equal "UTF-8" (getf plist :file-read-encoding)))
+      (is (equal "UTF-8" (getf plist :file-write-encoding)))
+      (is (equal "UTF-8" (getf plist :log-encoding)))
+      (is (equal "UTF-8" (getf plist :terminal-in-encoding)))
+      (is (equal "UTF-8" (getf plist :terminal-out-encoding)))
+      (is (null (getf plist :console-in-encoding)))
+      (is (null (getf plist :console-out-encoding)))
+      (is (null (getf plist :cadstdio-in-encoding)))
+      (is (null (getf plist :cadstdio-out-encoding))))
+    ;; a specific option wins over the bare -E, whatever the order
+    (let ((plist (kws '("-Efile-write" "cp1252" "-E" "UTF-8" "-Ecadstdio-out" "latin-1"))))
+      (is (equal "WINDOWS-1252" (getf plist :file-write-encoding)))
+      (is (equal "UTF-8" (getf plist :file-read-encoding)))
+      (is (equal "ISO-8859-1" (getf plist :cadstdio-out-encoding)))
+      (is (null (getf plist :cadstdio-in-encoding))))
+    ;; -Econsole: both directions of the console, explicit
+    (let ((plist (kws '("--bricscad" "-Econsole" "cp1252"))))
+      (is (equal "WINDOWS-1252" (getf plist :console-in-encoding)))
+      (is (equal "WINDOWS-1252" (getf plist :console-out-encoding)))
+      ;; a CAD backend: the console is the CAD's device, not alfe's terminal
+      (is (null (getf plist :terminal-out-encoding))))
+    ;; the clautolisp engine: an explicit -Econsole folds into the terminal pair
+    (let ((plist (kws '("--clautolisp" "-Econsole-out" "cp1252"))))
+      (is (equal "WINDOWS-1252" (getf plist :terminal-out-encoding)))
+      (is (null (getf plist :terminal-in-encoding))))
+    ;; ... but an explicit -Eterminal wins over it
+    (let ((plist (kws '("--clautolisp" "-Econsole" "cp1252" "-Eterminal-in" "utf-8"))))
+      (is (equal "UTF-8" (getf plist :terminal-in-encoding)))
+      (is (equal "WINDOWS-1252" (getf plist :terminal-out-encoding))))
+    ;; the call site's override of the backend test
+    (let ((plist (kws '("-Econsole" "cp1252") :console-is-terminal-p nil)))
+      (is (null (getf plist :terminal-out-encoding))))))
+
+(test cli-console-folds-into-terminal-plan
+  "Under the clautolisp engine (the default backend) the console IS the
+terminal: an explicit -Econsole[-in|-out] stands in for a missing
+-Eterminal[-in|-out] in the terminal plan; an explicit -Eterminal wins; an
+explicit -Econsole wins over the bare -E. Under a CAD backend -Econsole is the
+CAD's console device and leaves alfe's terminal alone."
+  (flet ((kw (name) (clautolisp.autolisp-cli:encoding-keyword name)))
+    (is (alfe.cli:console-is-terminal-p (parse-arguments '("-x" "1"))))
+    (is (alfe.cli:console-is-terminal-p (parse-arguments '("--clautolisp"))))
+    (is (not (alfe.cli:console-is-terminal-p (parse-arguments '("--bricscad")))))
+    (is (not (alfe.cli:console-is-terminal-p (parse-arguments '("--autocad")))))
+    ;; -Econsole-out alone -> stdout + stderr in that encoding
+    (is (equal (list (list :output 1 :output (kw "cp1252"))
+                     (list :error  2 :output (kw "cp1252")))
+               (terminal-encoding-plan (parse-arguments '("-Econsole-out" "cp1252")))))
+    ;; -Econsole -> both directions
+    (is (equal (list (list :output 1 :output (kw "cp1252"))
+                     (list :error  2 :output (kw "cp1252"))
+                     (list :input  0 :input  (kw "cp1252")))
+               (terminal-encoding-plan (parse-arguments '("-Econsole" "cp1252")))))
+    ;; an explicit -Eterminal wins over -Econsole, in either order
+    (is (equal (list (list :output 1 :output (kw "UTF-8"))
+                     (list :error  2 :output (kw "UTF-8"))
+                     (list :input  0 :input  (kw "UTF-8")))
+               (terminal-encoding-plan
+                (parse-arguments '("-Eterminal" "UTF-8" "-Econsole" "cp1252")))))
+    ;; an explicit -Econsole wins over the bare -E
+    (is (equal (list (list :output 1 :output (kw "cp1252"))
+                     (list :error  2 :output (kw "cp1252"))
+                     (list :input  0 :input  (kw "cp1252")))
+               (terminal-encoding-plan
+                (parse-arguments '("-Econsole" "cp1252" "-E" "UTF-8")))))
+    ;; a CAD backend: -Econsole does not touch alfe's terminal
+    (is (null (terminal-encoding-plan
+               (parse-arguments '("--bricscad" "-Econsole" "cp1252")))))))
+
+
+(test cli-terminal-encoding-windows-console-code-pages
+  "-Eterminal on a Windows console sets its code page: the mandatory
+encodings (and the DOS code pages) have one, with or without a newline
+variant; an encoding without one is NIL (the caller warns)."
+  (flet ((cp (name)
+           (alfe.cli::windows-console-code-page
+            (clautolisp.autolisp-cli:encoding-keyword name))))
+    (is (eql 65001 (cp "utf-8")))
+    (is (eql 65001 (cp "utf-8-dos")))
+    (is (eql 1252 (cp "cp1252")))
+    (is (eql 28591 (cp "latin-1")))
+    (is (eql 20127 (cp "us-ascii")))
+    (is (null (alfe.cli::windows-console-code-page :no-such-code-page)))))
+
+#+sbcl
+(test cli-terminal-encoding-applies-without-warning
+  "-Eterminal utf-8 reconfigures alfe's own streams on SBCL -- POSIX by
+reopening the descriptors, Windows over SBCL's std HANDLEs or the console
+code page -- with no 'unavailable' warning
+(windows-terminal-encoding-fd-stream.issue: the Windows lane used to fall
+back to the warning). The streams are rebound, so the suite's own are
+restored."
+  (let ((*standard-output* *standard-output*)
+        (*error-output* *error-output*)
+        (*standard-input* *standard-input*)
+        (warnings '()))
+    (handler-bind ((warning (lambda (w)
+                              (push (princ-to-string w) warnings)
+                              (muffle-warning w))))
+      (alfe.cli::apply-terminal-encoding (parse-arguments '("-Eterminal-out" "utf-8"))))
+    (is (null warnings) "warnings: ~S" warnings)))
 
 (test cli-encoding-typo-rejected
   "A typo'd value signals cli-usage-error at parse time (encoding.issue's
@@ -265,7 +449,7 @@ the default, and the historical spellings are gone."
       (cli-usage-error (condition)
         (is (search "cador, cadtui, nihil"
                     (alfe.error:cli-usage-error-message condition)))
-        (is (= 2 (exit-code-for-condition condition)))))))
+        (is (= clautolisp.sysexits:+ex-usage+ (exit-code-for-condition condition)))))))
 
 (test cli-host-resolves-to-the-right-backend-under-clautolisp
   "resolve-clautolisp-host maps the host keyword to a cador / nihil
@@ -294,9 +478,9 @@ the embedded engine's: it asks for the clautolisp executable."
   "--host cadtui is transmitted to the clautolisp executable: alfe picks the
 subprocess variant for it, on its own. The other hosts stay in-process.
 Cadtui with an explicit --backend direct is a contradiction."
-  (is (eq :direct (%variant-for)))
-  (is (eq :direct (%variant-for "--host" "cador")))
-  (is (eq :direct (%variant-for "--host" "nihil")))
+  (is (eq :direct (%variant-for "-x" "(+ 1 2)")))
+  (is (eq :direct (%variant-for "--host" "cador" "-x" "(+ 1 2)")))
+  (is (eq :direct (%variant-for "--host" "nihil" "-x" "(+ 1 2)")))
   (is (eq :subprocess (%variant-for "--host" "cadtui")))
   (is (eq :subprocess (%variant-for "--host" "cadtui" "--backend" "subprocess")))
   (is (eq :subprocess (%variant-for "--host" "cador" "--backend" "subprocess")))
@@ -304,7 +488,41 @@ Cadtui with an explicit --backend direct is a contradiction."
                        (fail "cadtui with --backend direct was accepted"))
     (cli-usage-error (condition)
       (is (search "--backend direct" (alfe.error:cli-usage-error-message condition)))
-      (is (= 2 (exit-code-for-condition condition))))))
+      (is (= clautolisp.sysexits:+ex-usage+ (exit-code-for-condition condition))))))
+
+(test cli-clautolisp-program-runs-go-to-the-clautolisp-executable
+  "A run that needs the clautolisp PROGRAM's own machinery -- its REPL (-i, or
+no action at all), its recorder (--dribble), its DCL renderers (--dcl gui /
+ncurses) -- is the program's: without --backend alfe picks the subprocess
+variant, and --backend direct is a usage error naming the reason. A batch run,
+or --dcl tui / auto, stays in-process
+(alfe-clautolisp-backend-semantic-parity.issue)."
+  (is (eq :subprocess (%variant-for)))
+  (is (eq :subprocess (%variant-for "-i")))
+  (is (eq :subprocess (%variant-for "-x" "(+ 1 2)" "-i")))
+  (is (eq :subprocess (%variant-for "--dribble" "-x" "(+ 1 2)")))
+  (is (eq :subprocess (%variant-for "--dribble=/tmp/x.log" "-x" "(+ 1 2)")))
+  (is (eq :subprocess (%variant-for "--dcl" "gui" "-x" "(+ 1 2)")))
+  (is (eq :subprocess (%variant-for "--dcl" "ncurses" "-x" "(+ 1 2)")))
+  (is (eq :subprocess (%variant-for "-i" "--backend" "subprocess")))
+  (is (eq :direct (%variant-for "--dcl" "tui" "-x" "(+ 1 2)")))
+  (is (eq :direct (%variant-for "--dcl" "auto" "-x" "(+ 1 2)")))
+  (is (eq :direct (%variant-for "--quit")))
+  (is (eq :direct (%variant-for "--dribble-interactors=t" "-x" "(+ 1 2)")))
+  (dolist (case '((("-i") "an interactive session")
+                  (() "an interactive session")
+                  (("--dribble" "-x" "1") "--dribble")
+                  (("--dcl" "ncurses" "-x" "1") "--dcl ncurses")))
+    (destructuring-bind (argv reason) case
+      (let ((message
+              (handler-case
+                  (progn (apply #'%variant-for "--backend" "direct" argv) nil)
+                (cli-usage-error (condition)
+                  (is (= clautolisp.sysexits:+ex-usage+ (exit-code-for-condition condition)))
+                  (alfe.error:cli-usage-error-message condition)))))
+        (is (and message (search reason message))
+            "~S with --backend direct: ~S" argv message)
+        (is (and message (search "--backend direct" message)))))))
 
 (test cli-host-changes-nothing-for-the-cad-backends
   "Under --bricscad and --autocad the CAD is the host: --host cadtui is
@@ -530,23 +748,23 @@ the test image), prints the resolved plan, and exits 0."
       (is (search "alfe --dry-run" output))
       (is (search "eval" output)))))
 
-(test cli-run-unknown-option-exits-two
-  "An unknown CLI option produces exit code 2 (CLI-USAGE-ERROR)."
+(test cli-run-unknown-option-exits-usage
+  "An unknown CLI option produces exit status EX_USAGE, 64 (CLI-USAGE-ERROR)."
   (let* ((stderr (make-string-output-stream))
          (exit-code
            (let ((*error-output* stderr))
              (run '("--no-such-option") :version "0.0.1"))))
-    (is (= 2 exit-code))
+    (is (= clautolisp.sysexits:+ex-usage+ exit-code))
     (is (search "Unknown option" (get-output-stream-string stderr)))))
 
-(test cli-run-no-backend-exits-three
-  "When the requested backend isn't registered, RUN returns exit code 3."
+(test cli-run-no-backend-exits-unavailable
+  "When the requested backend isn't registered, RUN returns EX_UNAVAILABLE (69)."
   (let* ((stderr (make-string-output-stream))
          (alfe.backend:*backends* (make-hash-table :test #'eql))
          (exit-code
            (let ((*error-output* stderr))
              (run '("--clautolisp" "-x" "(+ 1 2)") :version "0.0.1"))))
-    (is (= 3 exit-code))))
+    (is (= clautolisp.sysexits:+ex-unavailable+ exit-code))))
 
 (test cli-run-plan-forwards-mode-and-dwg-to-start-engine
   "Regression: RUN-PLAN must forward CLI --mode / --dwg into the
@@ -565,6 +783,53 @@ had already parsed them."
                                    :version-text "0.0.1")))
       (is (equal '(:mode :batch :dwg "C:/tmp/test.dwg")
                  *capture-start-engine-args*)))))
+
+;;; alfe-template-option: --template NAME|PATH starts the session on a
+;;; per-run copy of one of the CAD's own templates.
+
+(defun %write-bytes (path bytes)
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output :if-exists :supersede
+                            :element-type '(unsigned-byte 8))
+    (write-sequence (coerce bytes '(vector (unsigned-byte 8))) out))
+  path)
+
+(test cli-template-path-starts-the-session-on-a-copy
+  (uiop:with-temporary-file (:pathname template :type "dwt")
+    (%write-bytes template '(65 67 49 48 51 50))
+    (let ((alfe.backend:*backends* (make-hash-table :test #'eql))
+          (*capture-start-engine-args* nil))
+      (alfe.backend:register-backend :capture (make-capture-backend))
+      (let ((options (parse-arguments (list "--dwg" "C:/tmp/test.dwg"
+                                            "--template" (uiop:native-namestring template)
+                                            "-x" "(+ 1 2)"))))
+        (setf (alfe.cli::cli-options-backend options) :capture)
+        (is (= 0 (alfe.cli::run-plan options (alfe.backend:find-backend :capture)
+                                     :version-text "0.0.1")))
+        (let ((dwg (getf *capture-start-engine-args* :dwg)))
+          ;; the copy in the run's workdir, not the template, not --dwg
+          (is (string= "template.dwg" (file-namestring dwg)))
+          (is (not (equal (uiop:native-namestring template) dwg))))))))
+
+(test template-lookup-searches-only-the-product-folders
+  (let* ((root (uiop:ensure-directory-pathname
+                (merge-pathnames (format nil "alfe-template-test-~D/" (random 999999))
+                                 (uiop:temporary-directory))))
+         (saved (uiop:getenv "LOCALAPPDATA")))
+    (unwind-protect
+         (progn
+           (%write-bytes (merge-pathnames "Bricsys/BricsCAD/V25x64/fr_FR/Templates/Default-m.dwt" root) '(1))
+           (%write-bytes (merge-pathnames "Autodesk/AutoCAD 2022/R24.1/fra/Template/acad.dwt" root) '(2))
+           (%write-bytes (merge-pathnames "Other/deep/Decoy.dwt" root) '(3))
+           (setf (uiop:getenv "LOCALAPPDATA") (uiop:native-namestring root))
+           (is (search "Bricsys" (namestring (alfe.template:find-template "DEFAULT-M.DWT" :bricscad))))
+           (is (null (alfe.template:find-template "Default-m.dwt" :autocad)))
+           (is (search "Autodesk" (namestring (alfe.template:find-template "acad.dwt" :autocad))))
+           (is (null (alfe.template:find-template "Decoy.dwt" nil)))
+           (is (= 2 (count-if (lambda (p) (search (namestring root) (namestring p)))
+                              (alfe.template:list-templates nil)))))
+      (setf (uiop:getenv "LOCALAPPDATA") (or saved ""))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
 
 (test cli-run-eval-plus-1-2-against-echo-prints-three
   "End-to-end: -x \"(+ 1 2)\" against the echo backend prints \"3\\n\"
@@ -627,7 +892,7 @@ quotes around anything with a space, switches left bare."
                 :windows))))
 
 (test cli-run-print-command-rejects-non-cad-backend
-  "--print-command against a non-CAD backend is a usage error (exit 2),
+  "--print-command against a non-CAD backend is a usage error (EX_USAGE, 64),
 not a silent empty answer — `cmd=$(alfe --print-command …)` must fail
 loudly rather than yield an empty string."
   (let* ((stderr (make-string-output-stream))
@@ -637,5 +902,18 @@ loudly rather than yield an empty string."
              (alfe.backend:register-backend
               :echo (alfe.backend.echo:make-echo-backend))
              (run '("--print-command" "-x" "(princ)") :version "0.0.1"))))
-    (is (= 2 exit-code))
+    (is (= clautolisp.sysexits:+ex-usage+ exit-code))
     (is (search "--print-command" (get-output-stream-string stderr)))))
+
+
+(test cli-cleanup-failure-is-not-a-successful-test-run
+  (let ((alfe.backend:*backends* (make-hash-table :test #'eql))
+        (*capture-shutdown-error* t)
+        (*capture-cleanup-kept* nil))
+    (alfe.backend:register-backend :capture (make-capture-backend))
+    (let ((options (parse-arguments '("-x" "(+ 1 2)"))))
+      (setf (alfe.cli::cli-options-backend options) :capture)
+      (signals alfe.error:backend-protocol-error
+        (alfe.cli::run-plan options (alfe.backend:find-backend :capture)
+                            :version-text "test"))
+      (is (not (null *capture-cleanup-kept*))))))

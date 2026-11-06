@@ -275,13 +275,51 @@ build:clautolisp-ci-image:
 .pre-warm-quicklisp-sbcl: &pre-warm-quicklisp-sbcl
   - sbcl --noinform --no-userinit --non-interactive
          --load /root/quicklisp/setup.lisp
-         --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)'
+         --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "cffi" "usocket") :silent t)'
 
 .pre-warm-quicklisp-ccl: &pre-warm-quicklisp-ccl
   - ccl --no-init -b
         -e '(load "/root/quicklisp/setup.lisp")'
-        -e '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "usocket") :silent t)'
+        -e '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria" "cffi" "usocket") :silent t)'
         -e '(ccl:quit)'
+
+# --- ASDF fasl cache (ci-cache-tool-builds.issue) ---------------------------
+#
+# Compiling the project's own Lisp is most of every Lisp lane on poseidon:
+# ~90 of build:alfe:sbcl's 104 s script, 82 of test:clautolisp:sbcl's 105.
+# This template carries the fasls from one run of a job to the next -- but
+# ONLY when they were compiled from exactly the same inputs.
+#
+# The GitLab key is deliberately NOT what decides that. It is one entry per
+# job (bounded storage on the runner's local cache), and every entry holds a
+# KEY file: a content hash of the source tree (git object ids of every
+# top-level entry but issues/, documentation/, probe-results/ and the prose
+# files), of the Lisp implementations, of the Quicklisp dist and releases,
+# and of the image's installed packages. scripts/ci-build-cache.sh compares
+# it with the checkout and either reuses the fasls whole (touching them, so
+# that ASDF -- which only compares file times -- takes them as current) or
+# discards them whole and the job compiles cold. A changed source can
+# therefore never meet an old fasl, which plain time-based reuse cannot
+# promise after a fresh clone (the script's header has the two failure
+# modes, both measured).
+#
+# So a hit happens when nothing compiled changed: a pipeline that touches
+# only issues, documentation or probe results, or a re-run. Measured in
+# the CI image on poseidon, build-alfe-sbcl: 131 s cold, 5 s on a hit.
+#
+# The restore runs in before_script; the save MUST be the last line of
+# `script', not after_script: on the docker executor after_script runs in
+# another container, where /root/.cache (the image's XDG_CACHE_HOME, where
+# the fasls are) is not the one the job wrote. The cache is uploaded only
+# for a successful job. Never used by release:* -- a release builds cold
+# from its tag, by policy, whatever any key says.
+.fasl-cache:
+  cache:
+    key: fasl-v1-$CI_JOB_NAME_SLUG
+    paths: [.ci-cache/fasl/]
+    when: on_success
+  before_script:
+    - sh scripts/ci-build-cache.sh restore fasl
 
 # Does a COMPLETE INSTALLED RELEASE find its native DWG libraries?
 #
@@ -304,13 +342,35 @@ verify:packaged-dwg:linux:
       allow_failure: true
   stage: test
   timeout: 45m
+  # The LibreDWG build cache (scripts/ci-build-cache.sh, kind libredwg): the
+  # vendored LibreDWG + shim are reused whenever the libredwg submodule
+  # commit, clautolisp/drawing-dwg and the toolchain are the same -- whatever
+  # else the clautolisp commit changed, since LibreDWG now carries ITS OWN
+  # version (third-party/libredwg.release) instead of clautolisp's git
+  # describe (libredwg-version-is-superproject-describe). Measured in the CI
+  # image: make build-libraries 164 s cold (27 objects), 1 s and 0 objects on
+  # a hit from another clautolisp commit (cache ~60 MB). The submodule must
+  # be checked out by the runner (recursive), not by `make submodules' later:
+  # the restore runs first and a missing submodule is a MISS that is never
+  # saved. Restore in before_script, save as the LAST script line (as
+  # .fasl-cache); never on release:* lanes, which build cold from their tag.
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive   # libredwg (+ jsmn), before the restore
+  cache:
+    key: libredwg-v1-$CI_JOB_NAME_SLUG
+    paths: [.ci-cache/libredwg/]
+    when: on_success
+  before_script:
+    - sh scripts/ci-build-cache.sh restore libredwg
   script:
     - *pre-warm-quicklisp-sbcl
     - make build-libraries          # vendored libredwg + the CFFI shim
     - make build-programs           # the standalone images
     - bash scripts/verify-packaged-dwg.sh
+    - sh scripts/ci-build-cache.sh save libredwg
 
 test:clautolisp:sbcl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
@@ -318,8 +378,10 @@ test:clautolisp:sbcl:
   script:
     - *pre-warm-quicklisp-sbcl
     - make -C clautolisp test-sbcl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:ccl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
@@ -327,8 +389,10 @@ test:clautolisp:ccl:
   script:
     - *pre-warm-quicklisp-ccl
     - make -C clautolisp test-ccl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:compiler:sbcl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
@@ -350,8 +414,10 @@ test:clautolisp:compiler:sbcl:
     # notices depends on what the prose happens to say, so the structural
     # check is the detector, not the suites.
     - make -C clautolisp check-docstrings
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:compiler:ccl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
@@ -362,6 +428,7 @@ test:clautolisp:compiler:ccl:
     # each has to be asked separately. 2.0.11 is the standing reason: a lane
     # that is not run is not evidence.
     - make -C clautolisp test-shipped-compiler-ccl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:file-compat:sbcl:
   rules:
@@ -401,44 +468,70 @@ test:clautolisp:file-compat:ccl:
 # here keeps both CIs symmetrical.
 
 test:autolisp-test:sbcl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
   stage: test
   script:
     - make -C autolisp-test test
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:sbcl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
   stage: test
+  variables:
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
   script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end test-sbcl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:ccl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
   stage: test
+  variables:
+    ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
   script:
+    # clautolisp-sbcl first: without it every test of the subprocess variant
+    # -- the direct/subprocess parity table above all -- SKIPS, and the lane
+    # looked green while never running it. ALFE_TEST_REQUIRE_CLAUTOLISP turns
+    # such a skip into a failure (alfe-clautolisp-backend-semantic-parity).
+    # (The child is the SBCL program; the CCL alfe drives it -- the
+    # cross-Lisp parity a mixed installation has.)
+    - make -C clautolisp build-clautolisp-sbcl
     - make -C autolisp-front-end test-ccl
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:conformance:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end conformance
+    - sh scripts/ci-build-cache.sh save fasl
 
 test:alfe:spec-coverage:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
   stage: test
   script:
     - make -C autolisp-front-end check-spec-coverage
+    - sh scripts/ci-build-cache.sh save fasl
 
 # --- SCHMS CAD corpus, headless on poseidon --------------------------------
 #
@@ -510,6 +603,7 @@ test:cad:schms:linux:
 # user / system init-file output so the captured stdout is just
 # the (princ) value.
 build:alfe:sbcl:
+  extends: .fasl-cache
   rules:
     - *not-on-schedule
     - when: on_success
@@ -518,6 +612,7 @@ build:alfe:sbcl:
   stage: build
   script:
     - make -C autolisp-front-end build-alfe-sbcl
+    - sh scripts/ci-build-cache.sh save fasl
     - |
       declared=$(sed -n 's/.*\*version\* "\([^"]*\)".*/\1/p' \
                      autolisp-front-end/tools/alfe/source/version.lisp)
@@ -614,6 +709,9 @@ documentation:
     # check-doc-glyph-coverage below verify the result rather than trust it.
     - 'fonts=""; have() { fc-list --format "%{family}\n" 2>/dev/null | grep -q "$1"; }; have "DejaVu Serif" || fonts="$fonts fonts-dejavu"; have "Symbola" || fonts="$fonts fonts-symbola"; have "Noto Sans CJK" || fonts="$fonts fonts-noto-cjk"; [ -z "$fonts" ] || { apt-get update && apt-get install -y $fonts; }'
     - command -v emacs makeinfo xelatex dot fc-list >/dev/null
+    # check-native-pipeline-yaml parses the child pipeline with PyYAML (baked
+    # into the image; this is the stale-:latest fallback).
+    - python3 -c 'import yaml' 2>/dev/null || { apt-get update && apt-get install -y python3-yaml; }
   script:
     # The dialect-warnings annex is generated from the register in
     # autolisp-runtime/source/portability.lisp and TRACKED, so it can go
@@ -621,6 +719,10 @@ documentation:
     # Fail here rather than ship a manual that disagrees with what the
     # program prints.
     - make -C clautolisp check-dialect-warnings-annex
+    # The vendor-only operator table is generated from the spec's
+    # Availability sections: a spec edit that changes who owns an operator
+    # must regenerate it (deferred-clautolisp-out-of-dialect-warnings).
+    - make -C clautolisp check-operator-availability
     # The user-visible rule (AGENTS.md): a CLI option or CLAL- builtin that
     # reaches no manual fails here. Run BEFORE the build -- it is seconds,
     # and the point is to fail on the documentation gap rather than after
@@ -651,6 +753,15 @@ documentation:
     # path may be unclassified -- in the gate, or declared irrelevant on purpose
     # (ci-job-activity-cap-refuses-master-pipelines).
     - make check-native-pipeline-changes
+    # The probe jobs run automatically only when their FAMILY changed, so a
+    # probe file in no family would never be re-measured, in silence
+    # (scripts/ci-detect-probe-changes.py).
+    - make check-probe-families
+    # GitLab refusing the child .gitlab/native.yml fails native:pipeline with
+    # downstream_pipeline_creation_failed and skips EVERY macOS/Windows job,
+    # naming no line; `glab ci lint' only reads this file
+    # (native-pipeline-yaml-not-linted).
+    - make check-native-pipeline-yaml
     # XeLaTeX has NO font fallback: a glyph the body face lacks is dropped,
     # the PDF is produced successfully, and the character is simply gone.
     # Cheap and BEFORE the build, for the same reason as the check above --
@@ -828,18 +939,17 @@ release:linux:arm64:
   # [linux,arm64,docker] runner is kept for optional native validation.
   tags: [linux, arm64, qemu]      # poseidon qemu (was thalassa native)
   image: $ARM64_BASE              # buildpack-deps bookworm, arm64 (digest-pinned)
-  # Cache the libredwg cmake build dir so the slow (emulated) C compile is
-  # reused across runs — cmake rebuilds only changed objects. Per-arch key
-  # (objects are arch-specific). Interim measure (b); the durable fix (a) is
-  # baking libredwg into a per-arch CI image. Bump -v2 to force a cold build.
-  cache:
-    key:
-      prefix: libredwg-arm64-v1
-      files:
-        - .gitmodules
-        - clautolisp/drawing-dwg/build-libredwg.sh
-    paths:
-      - clautolisp/third-party/libredwg/build/
+  # NO libredwg build cache here, and none on any release:* lane
+  # (ci-cache-tool-builds.issue). A release builds every product cold from
+  # its tag. This lane used to cache clautolisp/third-party/libredwg/build/
+  # under a key of .gitmodules + build-libredwg.sh, which does NOT pin the
+  # submodule commit -- and it never saved anything: on release-2.1.0 and
+  # release-2.2.1 the cache was "Successfully extracted" and all 27 C
+  # objects were recompiled anyway (29 minutes both times), because a fresh
+  # clone stamps every source newer than the restored objects. A cache that
+  # cannot help and can only be wrong is not kept. The durable answer for
+  # the emulated build stays (a): libredwg baked into a per-arch CI image.
+  cache: []
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
     - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
@@ -894,17 +1004,8 @@ release:linux:arm32:
     - *on-release-arm32-absent
     - when: manual
       allow_failure: true
-  # Cache the libredwg cmake build dir (see arm64 lane) — the emulated armv7
-  # C compile is the slowest step; reusing objects across runs is the (b)
-  # time-saver until libredwg is baked into a per-arch CI image (a).
-  cache:
-    key:
-      prefix: libredwg-arm32-v1
-      files:
-        - .gitmodules
-        - clautolisp/drawing-dwg/build-libredwg.sh
-    paths:
-      - clautolisp/third-party/libredwg/build/
+  # No libredwg build cache: a release builds cold (see release:linux:arm64).
+  cache: []
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
     # CCL v1.13 32-bit ARM: the linuxarm tarball holds armcl/armcl.image at its
@@ -1163,6 +1264,10 @@ detect:runners:
     - when: never
   script:
     - python3 scripts/ci-detect-runners.py runners.env
+    # Which CAD probe families this change wrote or modified (pjb, 2026-09-28:
+    # run the probes only then -- their results are committed). The child
+    # cannot ask `changes:' itself: in a child pipeline it is always true.
+    - python3 scripts/ci-detect-probe-changes.py emit runners.env
     - cat runners.env
   artifacts:
     reports:
@@ -1187,6 +1292,13 @@ native:pipeline:
   variables:
     MACOS_RUNNER: "$MACOS_RUNNER"
     WINDOWS_RUNNER: "$WINDOWS_RUNNER"
+    ARM64_RUNNER: "$ARM64_RUNNER"
+    PROBES_CHANGED: "$PROBES_CHANGED"
+    # The arm64 lanes in .gitlab/native.yml pick native-vs-emulated on
+    # ARM64_RUNNER and pull the same digest-pinned arm64 base as the parent's
+    # release:linux:arm64 — forwarded here rather than duplicated, since a child
+    # pipeline inherits neither the parent's anchors nor its top-level variables.
+    ARM64_BASE: "$ARM64_BASE"
   rules:
     - *not-on-schedule
     # A TAG and MASTER always spawn the child: those are the refs whose results
@@ -1359,6 +1471,29 @@ pathname:probe:clautolisp:linux:
     - make -C autolisp-front-end build-alfe-sbcl
     - bash scripts/run-pathname-probe.sh --backend clautolisp
 
+intersectwith:probe:clautolisp:linux:
+  # MANUAL: the clautolisp column of the IntersectWith probe (the CAD columns
+  # are the intersectwith:probe:* jobs of the native child), to diff against
+  # them -- cador-intersectwith-missing.issue.
+  stage: test
+  interruptible: true
+  rules:
+    - *not-on-schedule
+    - when: manual
+      allow_failure: true
+  tags: [linux, amd64, docker]
+  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-intersectwith-probe.sh --backend clautolisp
+  artifacts:
+    name: "intersectwith-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/intersectwith/]
+    expire_in: 30 days
+
 .benchmark:
   stage: benchmark
   # A benchmark may not hold a runner for the project default (120 min).
@@ -1525,6 +1660,13 @@ collect:release:
     # actions:read on the repo.
     GH_REPO: "ogamita/clautolisp"
     GH_WORKFLOW: "release.yml"
+    # The release mirror (scripts/mirror-release-to-poseidon.sh) sends as
+    # release-ogamita, the poseidon account owning the ogamita web tree, with
+    # the runners' deploy key (DEPLOY_SSH_PRIVATE_KEY, protected + masked, so
+    # present on release-* tags only) and DEPLOY_KNOWN_HOSTS -- the same two
+    # variables as deploy:documentation (documentation/poseidon-deploy.md).
+    DEPLOY_HOST: poseidon.informatimago.com
+    DEPLOY_USER: release-ogamita
   # EVERY release:* job belongs here: one omitted costs a full build whose
   # artefacts are then discarded in silence (which is what happened to
   # release:linux:arm32). `needs:' cannot be a glob, so
@@ -1573,7 +1715,7 @@ collect:release:
     # zip/unzip are needed for the Windows .zip artefacts and the -all.zip
     # (pjb, 2026-08-16). collect-artefacts ERRORS rather than skipping when
     # they are missing, so a release cannot quietly ship without them.
-    - pkgs=""; for t in bzip2 tar make zip unzip curl; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+    - pkgs=""; for t in bzip2 tar make zip unzip curl rsync ssh python3; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; pkgs=$(echo "$pkgs" | sed 's/\bssh\b/openssh-client/'); [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
     # gh reads $GH_TOKEN from the environment; install it self-contained if the
     # CI image lacks it (TODO: bake gh into the image).
     - |
@@ -1609,22 +1751,33 @@ collect:release:
     # gh nests each artifact under dist/<name>/ — flatten the win zips into dist/.
     - find dist -mindepth 2 -name 'clautolisp-*-windows-*.zip' -exec cp {} dist/ \; 2>/dev/null || true
     - make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
+    # Mirror the set to the poseidon download area HERE, not through a GitLab
+    # artefact: the set (~1 GB for release-2.3.0) is above gitlab.com's
+    # artefact limit -- the upload answered 413 and nothing could be published
+    # by the documented procedure (collect-release-artefact-exceeds-gitlab-
+    # size-limit, option 3). Release tags only: off a tag the job just
+    # assembles. A failed mirror fails the job: a release is not published
+    # until its archives are downloadable.
+    - |
+      if [ -n "${CI_COMMIT_TAG:-}" ]; then
+        bash scripts/mirror-release-to-poseidon.sh "${CI_COMMIT_TAG#release-}" dist/combined
+      else
+        echo "not a release tag: assembled, not mirrored"
+      fi
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-release"
-    paths: [dist/combined/]
-    # FINITE, because the published release links now point at the POSEIDON
-    # mirror (durable, external), not at these artefacts:
-    # make-gitlab-release.py defaults to --links poseidon, and
-    # deploy-release-to-poseidon.sh rsyncs this set to the poseidon web area
-    # before the release is published. So these artefacts are only the
-    # re-mirror SOURCE (and the token-free --links gitlab fallback), not the
-    # live links — a finite expiry no longer rots a release, and it bounds
-    # the permanent namespace cost that otherwise grew ~1 GB per release for
-    # ever (namespace-storage-blocks-ci). 30 days is a generous window to
-    # (re-)mirror to poseidon after the tag. The durability invariant — that
-    # the published links default to poseidon — is enforced by
-    # check-release-lane-integrity.py check (3); if that default is ever
-    # removed, put `expire_in: never' back here.
+    # Only what is small and read later: the manifest (make-gitlab-release.py
+    # reads it to list the release's assets) and the release page. The
+    # archives themselves are on poseidon.
+    paths:
+      - dist/combined/manifest-release-assets.txt
+      - dist/combined/index.html
+    # FINITE: the published release links point at the POSEIDON mirror
+    # (durable, external), which this job wrote; make-gitlab-release.py
+    # defaults to --links poseidon. The durability invariant -- that the
+    # published links default to poseidon -- is enforced by
+    # check-release-lane-integrity.py check (3). 30 days covers publishing
+    # the release after the tag.
     expire_in: 30 days
 
 # --- deploy: publish the spec HTML manual to the poseidon web site -----
@@ -1670,7 +1823,7 @@ deploy:documentation:
   variables:
     GIT_STRATEGY: none                # nothing from the repo is needed — only the artefact
     DEPLOY_HOST: poseidon.informatimago.com
-    DEPLOY_USER: clautolisp-deploy
+    DEPLOY_USER: release-ogamita
     DEPLOY_URL: http://poseidon.informatimago.com/ogamita/autolisp-spec/
   needs:
     - { job: "release:documentation", artifacts: true }
@@ -1698,10 +1851,10 @@ deploy:documentation:
     - if [ -f "$DEPLOY_KNOWN_HOSTS" ]; then base64 -d "$DEPLOY_KNOWN_HOSTS"; else printf '%s' "$DEPLOY_KNOWN_HOSTS" | base64 -d; fi > ~/.ssh/known_hosts
     - chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
     - 'SSH="ssh -i $HOME/.ssh/id_deploy -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o IdentitiesOnly=yes"'
-    # 3. Mirror the manual into the rrsync-restricted dir (empty remote path
-    #    = the restricted root). --delete prunes pages dropped from a newer
-    #    spec build; the dir is pre-provisioned by setup-deploy.sh.
-    - rsync -rlptz --delete -e "$SSH" "$html/" "$DEPLOY_USER@$DEPLOY_HOST:"
+    # 3. Mirror the manual into autolisp-spec/ of the rrsync-restricted ogamita
+    #    tree (paths are relative to it). --delete prunes pages dropped from a
+    #    newer spec build; the tree is provisioned by setup-deploy.sh.
+    - rsync -rlptz --delete --chmod=D755,F644 -e "$SSH" "$html/" "$DEPLOY_USER@$DEPLOY_HOST:autolisp-spec/"
     - 'echo "published to $DEPLOY_URL"'
   environment:
     name: poseidon/autolisp-spec

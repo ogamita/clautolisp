@@ -55,13 +55,21 @@ until the host is online, expected when a branch is pushed for validation.
 poseidon is the only machine that is always on, which is why every lane that
 must run whenever a tag is pushed lives there.
 
-> cecil's two runners follow the `<os>,<arch>,<executor>` convention, so the
-> existing configuration can dispatch to them as it stands — but *nothing does
-> yet*: the arm64 release lane asks for `linux,arm64,qemu` (poseidon's emulated
-> lane), and no job asks for `linux,arm64,docker`. Sending that lane to cecil is
-> a one-line change, complicated only by cecil being intermittent while the
-> parent pipeline cannot gate on runner availability. See
-> `issues/open/cecil-native-arm64-runner.issue`.
+> cecil's two runners follow the `<os>,<arch>,<executor>` convention. The
+> **non-release** arm64 lanes now ask for them: `test:clautolisp:linux-arm64`
+> and `build:clautolisp-ci-image:arm64` request `linux,arm64,docker` (cecil or
+> thalassa, whichever is awake) and run natively when a native arm64 runner is
+> online, **falling back to the qemu-emulated lane** on poseidon when none is.
+> `detect:runners` publishes `ARM64_RUNNER` (from the `arm64` tag) and
+> `native:pipeline` forwards it into `.gitlab/native.yml`, where each arm64 job
+> is a mutually-exclusive `:native`/`:emulated` pair — the same
+> availability-gating framework as the macOS/Windows lanes.
+>
+> The **release** arm64 artefact (`release:linux:arm64`) deliberately stays on
+> `linux,arm64,qemu` (poseidon, always-on): a release tag is pushed when the
+> release is ready, not when an intermittent machine is awake, so an offline
+> native lane would either queue the release or silently drop arm64. See
+> `issues/open/cecil-native-arm64-runner.issue` (Step 2 vs Step 3).
 
 | Job                    | tags                  | runner               | what it builds              |
 |------------------------|-----------------------|----------------------|-----------------------------|
@@ -73,6 +81,10 @@ must run whenever a tag is pushed lives there.
 | `release:linux:arm32`  | `linux, arm32, docker`| **native armv7 (not yet provisioned)** | linux/armv7 — does NOT build under qemu (manual/allow_failure; CCL-only; see note) |
 | `release:darwin:arm64` | `macos, arm64, shell` | thalassa             | native macOS arm64 binaries |
 | `release:windows:x86-64`| `windows, amd64, shell`| windows PC          | windows/amd64 (stub)        |
+| `test:clautolisp:linux-arm64:native` | `linux, arm64, docker`| cecil / thalassa (native) | SBCL unit suite on native arm64 (child pipeline; `ARM64_RUNNER == online`) |
+| `test:clautolisp:linux-arm64:emulated`| `linux, arm64, qemu`  | poseidon (qemu-user) | same suite, emulated fallback (`ARM64_RUNNER != online`; allow_failure) |
+| `build:clautolisp-ci-image:arm64:native` | `linux, arm64, docker`| cecil / thalassa (native) | arm64 CI image (kaniko), pushed `:…-arm64` / `:arm64` |
+| `build:clautolisp-ci-image:arm64:emulated`| `linux, arm64, qemu`  | poseidon (qemu-user) | arm64 CI image via arm64 kaniko under qemu (manual; slow) |
 
 One Apple-Silicon Mac (thalassa) serves **both** arm64 lanes: its Docker
 engine runs `linux/arm64` containers (the docker lane), and the shell

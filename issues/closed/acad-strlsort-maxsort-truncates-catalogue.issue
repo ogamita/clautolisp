@@ -1,0 +1,25 @@
+ACAD_STRLSORT: catalogue sorting must not depend on MAXSORT
+Status: DONE
+Resolved: 2026-10-16, clautolisp/alfe 2.3.23, specification 0.14.4
+
+Dialect classification: case 0, shared AutoCAD/BricsCAD behavior.
+The SCHMS catalogue contains 204 entries. The BricsCAD default MAXSORT=200
+caused the runtime to return nil instead of sorting this list. That gate
+was based on an incorrect specification assumption.
+
+Native AutoCAD 2022 and BricsCAD V25 both sorted 204 strings with MAXSORT
+set to 0, 1, 2, 200 and 1000. MAXSORT controls named GUI lists, not this
+function. Removed the artificial gate and the false AutoCAD-only warning.
+Regression coverage exercises 204 and 1001 strings, including MAXSORT=0.
+The reusable observation probe is probe-acad-strlsort-maxsort.lsp.
+
+Factory defaults remain dialect-dependent: 200 for BricsCAD and 1000 for
+AutoCAD, clautolisp and lax. Tests pin these defaults and preserve explicit
+user values across dialect changes. Users of GUI sorting should choose a
+MAXSORT value appropriate to their data, within 0..32767.
+Exact non-ASCII collation and memory-failure parity remain separately
+tracked in deferred-spec-research.issue.
+
+Sources:
+https://help.autodesk.com/cloudhelp/2025/ENG/AutoCAD-Core/files/GUID-7AD30968-4982-4E1C-9847-69A5EAEB7C63.htm
+https://developer.bricsys.com/bricscad/help/en_US/V22/DevRef/source/acad_strlsort.htm

@@ -110,6 +110,25 @@ same directory on MS-Windows."
             (let ((p (prefix 1))) (when p (push p prefixes)))))
         (nreverse prefixes)))))
 
+(defun bare-lisp-runtime-p (exe)
+  "True when EXE, the running program, is a bare Lisp implementation (sbcl,
+ccl, dx86cl64, wx86cl64 ...) rather than a clautolisp / alfe executable image.
+
+A bare Lisp is what runs a CHECKOUT (the test suites, a REPL loading the ASDF
+systems), and its prefix is the Lisp's, not ours. On the macOS runner it is
+/opt/local -- also clautolisp's default install prefix -- so the in-process
+alfe of the test suite loaded an INSTALLED clal_dwg.dylib, of whatever version
+was installed there, while the checkout's clautolisp-sbcl found none: the
+parity table's \"drawing dwg\" row failed (alfe-clautolisp-backend-semantic-
+parity, test:alfe:macos since 2026-10-23). The running program's prefix is
+only ours when the program is."
+  (and exe
+       (member (pathname-name exe)
+               '("sbcl" "ccl" "ccl64" "dx86cl" "dx86cl64" "lx86cl" "lx86cl64"
+                 "wx86cl" "wx86cl64")
+               :test #'string-equal)
+       t))
+
 (defun %native-library-directories (&key override program-dirs dev-dir
                                          installed-libdir)
   "The directories to search, IN ORDER, built from the pieces that name them:
@@ -153,11 +172,13 @@ and no ASDF sources present."
    :override (let ((env (uiop:getenv "CLAUTOLISP_DWG_LIBDIR")))
                (when (and env (plusp (length env)))
                  (uiop:ensure-directory-pathname env)))
-   :program-dirs (mapcar (lambda (prefix)
-                           (merge-pathnames
-                            (format nil "lib/clautolisp/~A/~A/" (%os) (%arch))
-                            prefix))
-                         (running-program-prefix-candidates))
+   :program-dirs (let ((exe (running-program-pathname)))
+                   (unless (bare-lisp-runtime-p exe)
+                     (mapcar (lambda (prefix)
+                               (merge-pathnames
+                                (format nil "lib/clautolisp/~A/~A/" (%os) (%arch))
+                                prefix))
+                             (running-program-prefix-candidates exe))))
    :dev-dir (uiop:pathname-directory-pathname
              (asdf:system-relative-pathname
               :clautolisp/drawing-dwg "drawing-dwg/source/x"))
@@ -269,7 +290,7 @@ candidate locations. Signals a clear error if no candidate can be used (run
            ;; Present but none usable: name every one and the loader's own
            ;; words for it. "no writer codec registered" is what this used
            ;; to look like from the outside.
-           (error 'drawing-error
+           (error 'drawing-library-unavailable
                   :format-control "no usable DWG native library. Tried ~
 ~{~{~A (~A)~}~^; ~}."
                   :format-arguments
@@ -281,7 +302,7 @@ candidate locations. Signals a clear error if no candidate can be used (run
            ;; (clautolisp-distributed-native-libraries-not-loaded): the Lisp
            ;; module not activated is now impossible -- it is baked into the
            ;; program -- and the other three each say so, with the pathnames.
-           (error 'drawing-error
+           (error 'drawing-library-unavailable
                   :format-control "the DWG native library ~A was not found. ~
 Looked in: ~{~A~^, ~}. A release must ship it under ~
 lib/clautolisp/~A/~A/ beside the program; in a checkout build it with ~

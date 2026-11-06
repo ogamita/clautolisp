@@ -36,11 +36,21 @@ A file with no extension is not gated."
 
 ;;; --- dialect defaults ----------------------------------------------
 
+(defun %product-dialect-name (dialect-name)
+  "DIALECT-NAME with every spelling of a vendor product folded onto that
+product's template keyword: :bricscad-mac, :bricscad-linux, :bricscad-v25
+... -> :bricscad-v26; :autocad-mac, :autocad-2022 ... -> :autocad-2026.
+Comparing the NAME with EQ missed every derived spelling, so
+--dialect bricscad-mac got AutoCAD's SECURELOAD (2026-10-03)."
+  (if dialect-name
+      (clautolisp.autolisp-reader:autolisp-dialect-template-name dialect-name)
+      dialect-name))
+
 (defun secureload-dialect-default (dialect-name)
   "The default SECURELOAD value for DIALECT-NAME (a keyword such as
-:autocad-2026 / :bricscad-v26 / :strict / :lax / :clautolisp). spec
-§ 'Dialect-dependent defaults'."
-  (case dialect-name
+:autocad-2026 / :bricscad-v26 / :strict / :lax / :clautolisp, or any
+derived spelling of a product). spec § 'Dialect-dependent defaults'."
+  (case (%product-dialect-name dialect-name)
     (:autocad-2026 1)
     (:bricscad-v26 0)
     ;; --strict means "the intersection of all dialects" (a program that
@@ -65,7 +75,7 @@ clautolisp controls it; real hosts derive it from the registry. spec
 BricsCAD makes both read-only (admin-configured); AutoCAD and the
 clautolisp dialects leave them settable so users / tests can opt in or
 out. spec § 'Dialect-dependent defaults'."
-  (eq dialect-name :bricscad-v26))
+  (eq (%product-dialect-name dialect-name) :bricscad-v26))
 
 ;;; --- trusted-path parsing ------------------------------------------
 
@@ -459,6 +469,10 @@ spec §§ 'Dialect-dependent defaults', 'New clautolisp system variables',
   host
   base
   applied-dialect
+  ;; The dialect itself (its name), not its template: bricscad-v25 and
+  ;; bricscad-v26 share the :bricscad-v26 template but not their sysvar set
+  ;; (*bricscad-v25-absent-sysvars*), so a switch between them must rebuild.
+  applied-identity
   (user-values '())
   (syncing nil)
   apply-overlays)
@@ -502,7 +516,7 @@ overlay and are reproduced by replaying it."
             (push (cons name value) (sdc-user-values c))))))
   value)
 
-(defun %sync-sysvar-table-to-dialect (c dialect-keyword)
+(defun %sync-sysvar-table-to-dialect (c dialect-keyword &optional (identity dialect-keyword))
   (setf (sdc-syncing c) t)
   (unwind-protect
        (let ((host (sdc-host c)))
@@ -515,21 +529,26 @@ overlay and are reproduced by replaying it."
            ;; stays remembered and unapplied -- see the header.
            (ignore-errors
             (clautolisp.autolisp-host:host-setvar host (car entry) (cdr entry))))
-         (setf (sdc-applied-dialect c) dialect-keyword))
+         (setf (sdc-applied-dialect c) dialect-keyword
+               (sdc-applied-identity c) identity))
     (setf (sdc-syncing c) nil))
   c)
 
-(defun ensure-sysvar-table-matches-dialect (host dialect-keyword)
-  "Rebuild HOST's sysvar table when DIALECT-KEYWORD is no longer the one
-the table reflects. Cheap on the common path: one EQ against the
-last-applied dialect. Called from every sysvar read and write, which is
-what makes `(setq *autolisp-dialect* …)' visible to GETVAR immediately
-without anyone having to notice the assignment."
+(defun ensure-sysvar-table-matches-dialect (host dialect-keyword
+                                            &optional (identity dialect-keyword))
+  "Rebuild HOST's sysvar table when the dialect is no longer the one the
+table reflects. DIALECT-KEYWORD is the template the overlays dispatch on;
+IDENTITY (default: the same) the dialect itself -- two dialects of one
+template (bricscad-v25 / -v26) can still differ. Cheap on the common path:
+two EQs against the last-applied pair. Called from every sysvar read and
+write, which is what makes `(setq *autolisp-dialect* …)' visible to GETVAR
+immediately without anyone having to notice the assignment."
   (let ((c *sysvar-dialect-controller*))
     (when (and c
                dialect-keyword
                (not (sdc-syncing c))
                (eq host (sdc-host c))
-               (not (eq dialect-keyword (sdc-applied-dialect c))))
-      (%sync-sysvar-table-to-dialect c dialect-keyword)))
+               (not (and (eq dialect-keyword (sdc-applied-dialect c))
+                         (eq identity (sdc-applied-identity c)))))
+      (%sync-sysvar-table-to-dialect c dialect-keyword identity)))
   host)

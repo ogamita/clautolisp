@@ -299,6 +299,28 @@ divergence assumée par rapport à la spec.)
   vérifiée sur le binaire : `=dump(/application)` rend l'arbre, `(setq a (+ 1 2))`
   puis `(* a 10)` évaluent (3, 30). clautolisp 2.2.64.
 
+- alref Phase 4 S3 — commandes fichier + règle 3 de la console : **FAIT**
+  (2026-10-03). NEW / OPEN / MENULOAD / CUILOAD s'exécutent dans le cœur cador
+  (cador/source/command-file.lisp : documents ouverts et rendus courants ;
+  MENULOAD/CUILOAD lisent la description de données de la Phase 6 — le « CUIX/MNU
+  simplifié » de la Roadmap 6 — jamais un vrai .cuix/.mnu) ; cador prévient l'UI
+  par *cador-command-ui-hook*, et cadtui reflète l'événement dans l'arbre
+  (apply-file-command-event : un ui-drawing + sa console devient actif ; barre de
+  menus remplacée ; bandeaux ajoutés au dessin actif). cadtui ne dépend PAS de
+  cador : c'est main.lisp (maybe-install-cadtui-host) qui branche les deux.
+  Règle 3 (§5.6) : une ligne qui n'est ni `(` ni `,` ni `!` ni `=` est une ligne
+  de commande CAD — premier mot = commande, les suivants = ses saisies (l'ESPACE
+  vaut ENTRÉE comme chez les vendeurs), fin de ligne = RETURN ; nom inconnu →
+  « Unknown command "X".  Press F1 for help. ». UNE seule logique
+  (cad-command-line-p / -name / -source dans console-runtime.lisp), servie au
+  chemin REPL-hébergé (lecteur de *cadtui-console*) ET au chemin console
+  threadée (%console-repl-step, qui remplace le stand-in « not yet »). Vérifié
+  sur le binaire : « LINE 0,0 4,0 » trace la LINE. Reste : l'écho « nil » après
+  la commande vient de (princ) qui rend nil (ticket
+  princ-without-argument-returns-nil) ; les commandes réellement INTERACTIVES
+  (qui demandent la saisie manquante ligne par ligne, règle 1) attendent les
+  points de parking de host-command (D1 §13.5).
+
 ## MODULE cadtui : COMPLET (scope headless)
 Phases 1-8 livrées et vertes (34+ suites, Fail:0). Restent, hors scope headless
 et explicitement différés (non bloquants pour l'usage principal — test

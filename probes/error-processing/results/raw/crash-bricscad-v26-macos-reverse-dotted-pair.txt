@@ -1,0 +1,58 @@
+-------------------------------------
+Translated Report (Full Report Below)
+-------------------------------------
+Process:             bricscad [64277]
+Path:                /Applications/BricsCAD V26.app/Contents/MacOS/bricscad
+Identifier:          com.bricsys.bricscadv26
+Version:             26.2.7 (26.2.7)
+Code Type:           X86-64 (Translated)
+Role:                Background
+User ID:             501
+
+Date/Time:           2026-11-03 12:18:27.5301 +0100
+Launch Time:         2026-11-03 12:18:04.1835 +0100
+Hardware Model:      Mac15,7
+OS Version:          macOS 26.5 (25F71)
+Release Type:        User
+
+
+[...]
+
+Thread 0 Crashed::  Dispatch queue: com.apple.main-thread
+0   ???                           	       0x1ab1e2dc0 ???
+1   liblispex.dylib               	       0x1a9aff5a5 olinternalapply + 16309
+2   liblispex.dylib               	       0x1a9af94f3 olcallfunctionenv + 211
+3   liblispex.dylib               	       0x1a9afa08f olapply2 + 111
+4   liblispex.dylib               	       0x1a9efde35 ac_vl_catchallapply(int) + 293
+5   liblispex.dylib               	       0x1a9affb59 olinternalsubrc + 441
+6   liblispex.dylib               	       0x1a9afd26b olinternalapply + 7291
+7   liblispex.dylib               	       0x1a9afd0d2 olinternalapply + 6882
+8   liblispex.dylib               	       0x1a9afbf13 olinternalapply + 2339
+9   liblispex.dylib               	       0x1a9afce62 olinternalapply + 6258
+10  liblispex.dylib               	       0x1a9afbf13 olinternalapply + 2339
+11  liblispex.dylib               	       0x1a9aff63e olinternalapply + 16462
+12  liblispex.dylib               	       0x1a9afce62 olinternalapply + 6258
+13  liblispex.dylib               	       0x1a9afce62 olinternalapply + 6258
+14  liblispex.dylib               	       0x1a9afee53 olinternalapply + 14435
+15  liblispex.dylib               	       0x1a9afbf13 olinternalapply + 2339
+16  liblispex.dylib               	       0x1a9aff63e olinternalapply + 16462
+17  liblispex.dylib               	       0x1a9afce62 olinternalapply + 6258
+18  liblispex.dylib               	       0x1a9e9b5e1 _execStringEnv(wchar_t const*, bool) + 369
+19  liblispex.dylib               	       0x1a9e9993a _execString(wchar_t const*, int, bool) + 218
+20  liblispex.dylib               	       0x1a9e9575a execString + 1658
+21  libcadapp.dylib               	       0x11f83b2a3 ca::LispCommand::execute(OdEdCommandContext*) + 467
+22  libcadapp.dylib               	       0x11f65da44 ca::CommandProcessor::execCommand(OdEdCommand*, bool&, bool) + 772
+23  libcadapp.dylib               	       0x11f65c68d ca::CommandProcessor::execStr(OdString&, bool, OdEdCommand*, bool, bool, ca::Alias*) + 3181
+24  libcadapp.dylib               	       0x11f65a979 ca::CommandProcessor::processString(OdString const&, bool) + 1065
+25  libcadapp.dylib               	       0x11f659ace ca::CommandProcessor::processNextCmdItem(int) + 270
+26  libcadapp.dylib               	       0x11f65ac59 ca::CommandProcessor::processIdle() + 361
+27  libcadapp.dylib               	       0x11f6595e6 ca::CommandProcessor::start() + 166
+28  libcadapp.dylib               	       0x11f665743 ca::CommandProcessor::mainWorkFlowProc(void*) + 67
+29  libpth.20.0.27.dylib          	       0x130a5aa9b pth_spawn_trampoline + 27
+30  libpth.20.0.27.dylib          	       0x130a577bd pth_mctx_set_bootstrap + 173
+31  libpth.20.0.27.dylib          	       0x130a57705 pth_mctx_set_trampoline + 37
+32  libsystem_platform.dylib      	    0x7ff8046653d3 _sigtramp + 51
+33  ???                           	               0x0 ???
+34  ???                           	       0x11fad7a98 guard variable for concatenateInitgetStrings(wchar_t const*, wchar_t const*)::result + 8
+35  ???                           	       0x11388dd30 OdGUID::kNull + 16
+

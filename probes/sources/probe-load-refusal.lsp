@@ -62,7 +62,7 @@
 ;;;; against a future BricsCAD that changes any of the three answers,
 ;;;; and the Windows confirmation has still not been run.
 ;;;;
-;;;; issues/open/bricscad-refuses-to-load-what-it-will-run.issue
+;;;; issues/closed/bricscad-refuses-to-load-what-it-will-run.issue
 
 (defun cad-probe-lr--no-body ()
   ;; FOREACH with NO BODY FORMS AT ALL. STATUS UNKNOWN -- first, so that

@@ -23,10 +23,14 @@ system reaching up.")
                 #:read-line-from-input-context #:template-context-target)
   (:import-from #:clautolisp.autolisp-runtime
                 #:current-evaluation-dialect #:current-evaluation-context
-                #:read-current-source #:autolisp-eval-toplevel-progn)
+                #:read-current-source #:autolisp-eval-toplevel-progn
+                #:intern-autolisp-symbol #:lookup-variable #:set-variable)
   (:export
    #:*autolisp*
    #:repl-state #:make-repl-state #:repl-state-p
    #:repl-state-context #:repl-state-session #:repl-state-break-on-error
+   ;; per-instance state (the singleton split): own history + transcript
+   #:repl-state-variables #:repl-state-transcript #:repl-transcript-append
+   #:*repl-instance-variables* #:call-with-repl-instance-variables
    ;; the injectable rich-behaviour hooks (installed by the clautolisp tool)
    #:*repl-eval-hook* #:*repl-source-reader-hook*))

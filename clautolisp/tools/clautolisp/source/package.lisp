@@ -87,5 +87,28 @@
                 #:*default-clautolisp-stems*
                 #:find-init-files
                 #:no-init-requested-p)
+  (:import-from #:clautolisp.autolisp-cli
+                #:validate-debugger-options
+                #:effective-user-interface)
   (:export #:main
-           #:*version*))
+           #:*version*
+           ;; The debugger run machinery, shared with alfe's in-process
+           ;; engine (debugger-public-interface-and-on-error.issue: alfe
+           ;; shares the debugger options, pjb 2026-10-06).
+           #:resolve-debugger-settings
+           #:debugger-settings-on-error
+           #:debugger-settings-debug-ui
+           #:with-debugger-settings
+           #:sync-debugger-policy-mirrors
+           #:call-with-interrupt-handler
+           #:call-with-debug-session
+           #:continue-past-action-errors-p
+           #:run-actions-continuing-past-errors
+           #:run-under-session-debugging
+           #:repl-eval-turn
+           #:install-interrupt-handler
+           #:restore-interrupt-handler
+           #:handle-interrupt
+           ;; The run's dribble streams and CLAL-DRIBBLE, shared with the
+           ;; same engine (alfe-clautolisp-backend-semantic-parity.issue).
+           #:call-with-engine-dribble))

@@ -14,7 +14,7 @@
 ;;;; value, which is the one portable path across all three targets:
 ;;;; on AutoCAD / BricsCAD (entmake) returns the DXF list while
 ;;;; (entmakex) returns the ename, but clautolisp currently returns the
-;;;; DXF list from both (see issues/open/entmakex-returns-list.issue).
+;;;; DXF list from both (see issues/closed/entmakex-returns-list.issue).
 ;;;; (entlast) returns an ename on every target, so the workload is
 ;;;; independent of that divergence.
 ;;;;

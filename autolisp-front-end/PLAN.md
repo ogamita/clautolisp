@@ -112,3 +112,9 @@ See `../issues/open/alfe.plan` for the master plan and the
   plugin model is settled.
 - `vlisp-compile` parity outside `--autocad --mode automation` on
   Windows. Unchanged from the legacy wrapper.
+
+## Ordered CAD teardown (2026-10-29)
+
+- [x] Restore before protocol completion; retain exact COM application reference.
+- [x] Validate process identity disappearance; fail on cleanup timeout.
+- [ ] Qualify on native Windows AutoCAD and BricsCAD CI after local tests.

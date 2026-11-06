@@ -238,26 +238,18 @@ send-action and drain-live, not from the test."
       (ignore-errors (delete-file log))
       (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))
 
-(test alfe-dribble-says-so-when-the-in-process-engine-cannot-record
-  "--dribble with the IN-PROCESS clautolisp engine records nothing, because the
-recording is clautolisp's own REPL tee and only the clautolisp PROGRAM attaches
-it (*DRIBBLE-HOOK*). alfe says that, and names the two ways to get a transcript.
-Silence would be the one unacceptable answer: a user who asked for a record must
-not discover its absence by looking for the file."
-  (let* ((options (parse-arguments '("--dribble" "-x" "(+ 1 2)")))
-         (text (with-output-to-string (err)
-                 (let ((*error-output* err))
-                   (is (alfe.backend.clautolisp::%warn-direct-dribble-unavailable
-                        options))))))
-    (is (search "--dribble records nothing" text))
-    (is (search "--backend subprocess" text)
-        "the warning must name the way to get the engine's own transcript")
-    (is (search "--autocad" text)
-        "and say that the CAD backends do record"))
-  ;; Without --dribble it says nothing at all.
-  (let* ((options (parse-arguments '("-x" "(+ 1 2)")))
-         (text (with-output-to-string (err)
-                 (let ((*error-output* err))
-                   (is (null (alfe.backend.clautolisp::%warn-direct-dribble-unavailable
-                              options)))))))
-    (is (zerop (length text)))))
+(test alfe-dribble-runs-the-clautolisp-program-for-its-recording
+  "--dribble under --clautolisp is the clautolisp PROGRAM's recorder, a tee of
+its own REPL, which alfe's in-process engine does not embed. The run is the
+program's: alfe picks the subprocess variant and forwards the request, so the
+default and --backend subprocess record the same transcript (and --backend
+direct, which cannot, is a usage error rather than a silent no-op)
+(alfe-clautolisp-backend-semantic-parity.issue)."
+  (let ((options (parse-arguments '("--clautolisp" "--dribble=/tmp/alfe-d.log"
+                                    "-x" "(+ 1 2)"))))
+    (is (equal "--dribble" (alfe.cli:clautolisp-program-requirement options)))
+    (is (eq :subprocess
+            (alfe.backend.clautolisp:clautolisp-backend-variant
+             (alfe.cli:resolve-backend options :detect-p nil)))))
+  (is (null (alfe.cli:clautolisp-program-requirement
+             (parse-arguments '("--clautolisp" "-x" "(+ 1 2)"))))))

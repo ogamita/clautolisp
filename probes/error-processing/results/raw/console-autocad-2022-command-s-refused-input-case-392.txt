@@ -1,0 +1,56 @@
+Redirect stdout (file: C:\Users\USER\AppData\Local\Temp\accc117322).
+AcCoreConsole: StdOutConsoleMode: processed-output: disabled,auto
+AutoCAD Core Engine Console - Copyright 2021 Autodesk, Inc.  All rights reserved. (S.203.0.0)
+
+Execution Path:
+C:\Program Files\Autodesk\AutoCAD 2022\accoreconsole.exe
+Current Directory: PROBE-DIR
+
+Version Number: S.203.0.0 (UNICODE)
+LogFilePath has been set to the working folder.
+CoreHeartBeat
+Régénération du modèle.
+CoreHeartBeat
+
+**** Variable système modifiée ****
+1 des variables système gérées a été modifiée par rapport à la valeur préférée. Utilisez la commande MONITEURVARSYS pour afficher les modifications.
+
+
+Utilitaires de menu AutoCAD chargés.
+
+Chargement de AcadDoc.lsp 2022; erreur: no function definition: ACAD-PUSH-DBMOD
+
+Commande:
+Commande:
+
+Commande:
+Commande: (setq m (open "PROBE-DIR/acc22-seul-392/scr-started.txt" "w"))
+#<file "PROBE-DIR/acc22-seul-392/scr-started.txt">
+
+Commande: (close m)
+nil
+
+Commande: (if (getvar "SECURELOAD") (vl-catch-all-apply 'setvar '("SECURELOAD" 0)))
+0
+
+Commande: (setq *probe-dir* "PROBE-DIR/acc22-seul-392" *probe-start* 0)
+0
+
+Commande: (load "PROBE-DIR/probe-error.lsp")
+
+Commande: (load "PROBE-DIR/probe-catalogue.lsp")
+
+Commande: (load "PROBE-DIR/probe-catalogue-skip.lsp")
+
+Commande: (setq *probe-only* (list 392))
+(392)
+
+Commande: PCAT
+_LINE
+Spécifiez le premier point: pas-un-point
+Point incorrect.
+
+Spécifiez le premier point:
+Aucune ligne ou arc à continuer.
+
+Spécifiez le premier point: ￿; avertissement: fonction unwind ignorée exception￿; erreur: une exception s'est produite: 0xC0000005 (Violation d'accès)￿￿Spécifiez le premier point: ￿

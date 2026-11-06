@@ -1,3 +1,11 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: entmake-symbol-table-records — create LAYER/LTYPE/STYLE/BLOCK rows from AutoLISP
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: -
+#+BRANCH: -
+
 entmake-symbol-table-records — create LAYER/LTYPE/STYLE/BLOCK rows from AutoLISP
 ================================================================================
 

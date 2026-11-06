@@ -1,0 +1,48 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-aldb-swank — --aldb-swank: reuse a SLIME swank connection as the aldb channel
+#+STATUS: DEFERRED (explicitly deferred in the spec, C.2; split out 2026-10-06)
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: debugger-public-interface-and-on-error (closed)
+#+BRANCH: feat-aldb-swank
+
+* Context
+
+Split out of =debugger-public-interface-and-on-error= when it was closed
+(clautolisp 2.2.218 / alfe 2.2.162): every other part of that ticket is done
+-- the clal-* API, the --on-error / --on-interrupt / --on-quit policies,
+--debugger-ui, the aldb transports --aldb-listen [HOST:]PORT and --aldb-stdio,
+the options shared with alfe, and --on-interrupt on CCL. This is the one item
+its Part D (C.2) marked "(Optional, deferred.)":
+
+#+begin_example
+--aldb-swank
+    (Optional, deferred.) Reuse an existing SLIME swank connection if one
+    is present (spec §20.1 allows this). Likely a separate follow-up.
+#+end_example
+
+* What it would be
+
+A third aldb transport beside the TCP listener and stdio: when the process
+already runs a swank server with a connected SLIME (a developer running
+clautolisp inside their Lisp), the aldb RPC (clautolisp/autolisp-debug-ui-emacs,
+DN-10) rides on that connection instead of opening its own socket, so
+=aldb.el= attaches without =M-x aldb-connect=.
+
+* Open questions (to settle before implementing)
+
+- How the shipped executables would have swank at all: they do not load it.
+  The option only makes sense in a development image, or with swank loaded on
+  demand (a quicklisp dependency the binaries do not carry today).
+- The framing: aldb's line-oriented S-expr RPC versus swank's own
+  length-prefixed messages; an =:emacs-rex= wrapper on the Emacs side, or a
+  swank contrib.
+- Whether alfe forwards it like the other aldb options (the shared spec makes
+  that the default), and what the CAD backends do with it (refuse, like
+  --aldb-listen).
+
+* See also
+
+- issues/closed/debugger-public-interface-and-on-error.issue (Part D, C.2)
+- clautolisp/documentation/clautolisp-debugger-spec.org §20.1 (the Emacs UI)
+- clautolisp/documentation/clautolisp-debugger-design-notes.org DN-10 (aldb RPC)

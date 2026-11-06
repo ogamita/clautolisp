@@ -21,6 +21,7 @@
                 #:autolisp-catch-all-error-call-stack
                 #:autolisp-string
                 #:autolisp-file-stream
+                #:autolisp-file-external-format
                 #:autolisp-function-list-definition
                 #:autolisp-current-directory
                 #:autolisp-load-file
@@ -147,6 +148,7 @@
                 #:host-entnext
                 #:host-handent
                 #:host-ssget
+                #:host-entsel
                 #:host-ssadd
                 #:host-ssdel
                 #:host-ssname
@@ -165,6 +167,7 @@
                 #:host-dictrename
                 #:host-dictobjname
                 #:host-regapp
+                #:host-getcname
                 #:host-getvar
                 #:host-setvar
                 #:host-snapshot-sysvars
@@ -207,10 +210,14 @@
                 #:host-vlax-queueexpr
                 #:host-vlax-collection-items)
   (:export
+   #:run-session-startup-chain
+   #:run-document-startup-chain
    #:*core-builtin-names*
    #:core-builtins
    #:find-core-builtin
    #:install-core-builtins
+   #:activex-enumeration-constants
+   #:install-activex-enumeration-constants
    #:set-clal-optimization-levels
    #:autolisp-value->string
    #:live-event-policy

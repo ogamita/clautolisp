@@ -2,11 +2,11 @@
 
 ;;;; BricsCAD-dialect sysvar overlay.
 ;;;;
-;;;; The mock host's sysvar catalogue (sysvar-catalogue.lisp) is
+;;;; cador's sysvar catalogue (sysvar-catalogue.lisp) is
 ;;;; generated from the AutoCAD-2026 system-variables inventory, so by
 ;;;; default `clautolisp --bricscad` reports the *AutoCAD* sysvar set —
 ;;;; every dialect answers GETVAR identically (see
-;;;; issues/open/bricscad-dialect-sysvar-parity.issue). This overlay
+;;;; issues/closed/bricscad-dialect-sysvar-parity.issue). This overlay
 ;;;; specialises the table for the bricscad dialect at launch time.
 ;;;;
 ;;;; Phase 1 (this file) covers *existence* only: the variables BricsCAD
@@ -41,6 +41,13 @@
 ;;;; inventory still lists for BricsCAD (edition-/platform-specific
 ;;;; absences we must not assume hold on every BricsCAD build). Both
 ;;;; residues are tracked in the issue.
+;;;;
+;;;; 2026-10-05: 8 names were taken out of this list -- APPAUTOLOAD CLAYOUT
+;;;; PDFSHXBESTFONT PDFSHXLAYER PDFSHXTHRESHOLD SPLDEGREE SPLKNOTS SPLMETHOD:
+;;;; BricsCAD V26 defines them (macOS harvest, job 16913315157), V25 does not
+;;;; (Windows harvest, job 16921381045, ACADVER "25.0 BricsCAD"). They are
+;;;; V26 additions, dropped for the V25 dialects only
+;;;; (*BRICSCAD-V25-ABSENT-SYSVARS*).
 
 (defparameter *bricscad-absent-sysvars*
   '(
@@ -48,7 +55,7 @@
     "ACTIVITYINSIGHTSPATH" "ACTIVITYINSIGHTSSTATE" "ACTIVITYINSIGHTSSUPPORT"
     "ACTIVITYINSIGHTSVIEWEDLOGGING" "ACTPATH" "ACTRECORDERSTATE"
     "ACTRECPATH" "ACTUI" "ADCSTATE"
-    "ANNOSCALEZOOM" "APPAUTOLOAD" "APPLYGLOBALOPACITIES"
+    "ANNOSCALEZOOM" "APPLYGLOBALOPACITIES"
     "APSTATE" "ASSISTANTSTATE" "ATTIPE"
     "ATTMULTI" "AUTODWFPUBLISH" "AUTOMATICPUB"
     "AUTOPLACEMENT" "BCONSTATUSMODE" "BCONVERTLAYER"
@@ -58,7 +65,7 @@
     "BLOCKSTATE" "BLOCKSYNCFOLDER" "BLOCKTARGETCOLOR"
     "BSEARCHINCLUDEEXISTINGBLOCKS" "CACHEMAXFILES" "CACHEMAXTOTALSIZE"
     "CALCINPUT" "CAPTURETHUMBNAILS" "CBARTRANSPARENCY"
-    "CCONSTRAINTFORM" "CLAYOUT" "CMDINPUTHISTORYMAX"
+    "CCONSTRAINTFORM" "CMDINPUTHISTORYMAX"
     "CMFADECOLOR" "CMFADEOPACITY" "CMOSNAP"
     "COMMANDMACROSSTATE" "COMMENTHIGHLIGHT" "COMPARECOLOR1"
     "COMPARECOLOR2" "COMPARECOLORCOMMON" "COMPAREFRONT"
@@ -112,8 +119,8 @@
     "NAVVCUBESIZE" "OSNAPNODELEGACY" "OSNAPOVERRIDE"
     "PALETTEOPAQUE" "PARAMETERSSTATUS" "PASTESPECMODE"
     "PCMSTATE" "PDFIMPORTFILTER" "PDFIMPORTLAYERS"
-    "PDFIMPORTMODE" "PDFSHXBESTFONT" "PDFSHXLAYER"
-    "PDFSHXTHRESHOLD" "PERSPECTIVECLIP" "PLACEMENTSWITCH"
+    "PDFIMPORTMODE" 
+    "PERSPECTIVECLIP" "PLACEMENTSWITCH"
     "PLINEGCENMAX" "PLOTOFFSET" "POINTCLOUDAUTOUPDATE"
     "POINTCLOUDCACHESIZE" "POINTCLOUDCLIPFRAME" "POINTCLOUDDENSITY"
     "POINTCLOUDLIGHTING" "POINTCLOUDLIGHTSOURCE" "POINTCLOUDLOCK"
@@ -138,7 +145,6 @@
     "SHOWNEWSTATE" "SHOWPALETTESTATE" "SMOOTHMESHGRID"
     "SMOOTHMESHMAXFACE" "SMOOTHMESHMAXLEV" "SNAPGRIDLEGACY"
     "SOLIDHIST" "SORTORDER" "SPACESWITCH"
-    "SPLDEGREE" "SPLKNOTS" "SPLMETHOD"
     "SPLPERIODIC" "SSMOPENMODE" "STARTINFOLDER"
     "STUDENTDRAWING" "STYLUSFORCETHRESHOLD" "SUBOBJSELECTIONMODE"
     "SUNPROPERTIESSTATE" "SURFACEASSOCIATIVITY" "SURFACEASSOCIATIVITYDRAG"
@@ -196,19 +202,154 @@ returns nil. See the file header for provenance.")
 ;;;; re-harvest — a pristine BricsCAD profile plus a freshly-created
 ;;;; default drawing — classified with scripts/classify-sysvar-diff.py.
 ;;;; See the "Phase 2 runbook" in
-;;;; issues/open/bricscad-dialect-sysvar-parity.issue. Do NOT invent
+;;;; issues/closed/bricscad-dialect-sysvar-parity.issue. Do NOT invent
 ;;;; values: leave this empty until the pristine-profile dump is
 ;;;; classified and human-vetted for locale/template rows.
 
+(defparameter *bricscad-v25-absent-sysvars*
+  '("APPAUTOLOAD" "CLAYOUT" "PDFSHXBESTFONT" "PDFSHXLAYER" "PDFSHXTHRESHOLD"
+    "SPLDEGREE" "SPLKNOTS" "SPLMETHOD")
+  "Sysvars BricsCAD V26 defines and V25 does not (V26 macOS harvest job
+16913315157 vs V25 Windows harvest job 16921381045): dropped under a BricsCAD
+dialect of version 25 or older, kept from V26.")
+
 (defparameter *bricscad-factory-defaults*
+  ;; ADOPTED 2026-10-03 from harvest:sysvars:bricscad:macos (job
+  ;; 16913315157, BricsCAD V26 macOS, profile <<Profil sans nom>>), vetted
+  ;; row by row: only sysvars saved in the REGISTRY / preferences (never a
+  ;; drawing-saved one: the reference drawing came from a French metric
+  ;; template), never locale, identity, session or window state, and ONLY
+  ;; where the measured value equals the BricsCAD default the vendor
+  ;; documentation states (system-variables-inventory.sexp :divergence).
+  ;; Two independent sources per row. 32 more registry rows matched no
+  ;; documented default and are left out -- see bricscad-dialect-sysvar-
+  ;; parity.issue, "Phase 2 harvest (2026-10-03)".
   '(
-    ;; ("OSMODE" . 4135)   ; example row shape only — NOT adopted.
+    ("AUTOSNAP" . 127)
+    ("CLIPROMPTLINES" . 4)
+    ("CROSSINGAREACOLOR" . 91)
+    ("DELOBJ" . 1)
+    ("DRAGP1" . 10)
+    ("DRAGP2" . 25)
+    ("DWGCHECK" . 0)
+    ("FONTMAP" . "default.fmp")
+    ;; 2026-10-05 (probe-triage3 repr + both harvests, V25 Windows / V26 macOS):
+    ;; BricsCAD's own values where AutoCAD's differ or are doc text.
+    ("INETLOCATION" . "http://www.bricsys.com")
+    ("INTERFERECOLOR" . "BYLAYER")
+    ("RULERTEXTCOLOR" . "#C8C8C8")
+    ("HORIZONBKG_GROUNDHORIZON" . "#434A50")
+    ("HORIZONBKG_GROUNDORIGIN" . "#5F6770")
+    ("HORIZONBKG_SKYHIGH" . "#CCE5EA")
+    ("HORIZONBKG_SKYHORIZON" . "#EEF8FA")
+    ("HORIZONBKG_SKYLOW" . "#EEF8FA")
+    ("GRIPHOT" . 240)
+    ("GRIPHOVER" . 150)
+    ("GRIPSIZE" . 4)
+    ("HPMAXAREAS" . 0)
+    ("HPOBJWARNING" . 10000)
+    ("INSUNITSDEFSOURCE" . 0)
+    ("INSUNITSDEFTARGET" . 0)
+    ("MAXSORT" . 200)
+    ("MENUBAR" . 1)
+    ("MTEXTCOLUMN" . 0)
+    ("NAVVCUBEORIENT" . 0)
+    ("OSMODE" . 4135)
+    ("PARAMETERCOPYMODE" . 3)
+    ("PICKADD" . 1)
+    ("PICKBOX" . 4)
+    ("PICKDRAG" . 0)
+    ("POLARMODE" . 1)
+    ("PROPOBJLIMIT" . 1000)
+    ("PUBLISHCOLLATE" . 0)
+    ("REVCLOUDMAXARCLENGTH" . 0.375d0)
+    ("REVCLOUDMINARCLENGTH" . 0.375d0)
+    ("RIBBONDOCKEDHEIGHT" . 0)
+    ("RTDISPLAY" . 0)
+    ("SAVETIME" . 20)
+    ("SMOOTHMESHCONVERT" . 2)
+    ("SNAPTYPE" . 2)
+    ("SSMPOLLTIME" . 15)
+    ("UCSORTHO" . 0)
+    ("WHIPARC" . 1)
+    ("WHIPTHREAD" . 0)
+    ("XDWGFADECTL" . 70)
+    ("XFADECTL" . 50)
+    ("XLOADCTL" . 1)
+    ("XREFNOTIFY" . 1)
+    ("ZOOMFACTOR" . 40)
+    ;; ADOPTED 2026-10-04: 26 of the 32 registry rows above that matched no
+    ;; documented default, now with a SECOND, independent measurement --
+    ;; harvest:sysvars:bricscad:windows (job 16921381045, BricsCAD V26 on
+    ;; the Windows runner) agrees with the macOS harvest. The 6 that differ
+    ;; between the two platforms are left out (3DOSMODE 11/10,
+    ;; COMMANDASSIST 1/0, CROSSHAIRDRAWMODE 3/2, GLSWAPMODE 0/2, MTFLAGS
+    ;; 2048/3015, USECOMMUNICATOR 0/1).
+    ("BPARAMETERFONT" . "simplex.shx")
+    ("CLIPBOARDFORMAT" . 1)
+    ("DEFLPLSTYLE" . "ByColor")
+    ("DRAWINGVIEWPRESET" . "None")
+    ("DYNINFOTIPS" . 0)
+    ("EXPORTGEOMETRYFLAGS" . 12)
+    ("GEOLATLONGFORMAT" . 1)
+    ("GRIDMAJORCOLOR" . 251)
+    ("GROUPDISPLAYMODE" . 0)
+    ("HPQUICKPREVIEW" . 0)
+    ("LAYEREVALCTL" . 0)
+    ("LAYERPMODE" . 1)
+    ("LOOKFROMZOOMEXTENTS" . 1)
+    ("MTEXTTOOLBAR" . 1)
+    ("NAVBARDISPLAY" . 0)
+    ("PDFIMAGECOMPRESSION" . 0)
+    ("PDFIMPORTJOINLINEANDARCSEGMENTS" . 1)
+    ("PDFSHX" . 0)
+    ("PREVIEWWNDINOPENDLG" . 1)
+    ("RIBBONSELECTMODE" . 0)
+    ("RIBBONSTATE" . 1)
+    ("SELECTIONCYCLING" . 2)
+    ("SMROLLEDEDGELINESDOWNLAYERLINETYPE" . "CONTINUOUS")
+    ("SMROLLEDEDGELINESUPLAYERLINETYPE" . "CONTINUOUS")
+    ("SMSMARTFEATURES" . 7)
+    ("USENEWSTATUSBAR" . 1)
+    ;; LISPSYS 0 on both BricsCAD V26 harvests (the documentation states no
+    ;; default; dialect-platform-version-axis, 2026-10-04).
+    ("LISPSYS" . 0)
     )
   "Alist of (SYSVAR-NAME-STRING . VALUE) BricsCAD factory-default value
 overrides, applied to the AutoCAD-derived catalogue under the bricscad
-dialect only. INTENTIONALLY EMPTY (inert) until the clean-profile harvest
-is classified — see this file's Phase-2 header and the issue's runbook.
-Rows naming an unknown or BricsCAD-absent sysvar are skipped harmlessly.")
+dialect only. Rows naming an unknown or BricsCAD-absent sysvar are skipped
+harmlessly.")
+
+(defparameter *bricscad-platform-factory-defaults*
+  ;; The registry rows the two BricsCAD harvests (V26 macOS job 16913315157,
+  ;; V25 Windows job 16921381045) both answered but with DIFFERENT values: a
+  ;; platform default each, applied by the dialect's platform facet
+  ;; (bricscad-mac -> :macos; bricscad, bricscad-v26 -> :windows; Linux not
+  ;; measured -> none).
+  ;; CAVEAT (2026-10-05): the Windows harvest is BricsCAD V25 (ACADVER "25.0
+  ;; BricsCAD"), not V26 as first recorded, so each difference may be the
+  ;; VERSION rather than the platform; a V26 Windows harvest would tell.
+  '((:macos ("3DOSMODE" . 11) ("COMMANDASSIST" . 1) ("CROSSHAIRDRAWMODE" . 3)
+            ("GLSWAPMODE" . 0) ("MTFLAGS" . 2048) ("USECOMMUNICATOR" . 0))
+    (:windows ("3DOSMODE" . 10) ("COMMANDASSIST" . 0) ("CROSSHAIRDRAWMODE" . 2)
+              ("GLSWAPMODE" . 2) ("MTFLAGS" . 3015) ("USECOMMUNICATOR" . 1)))
+  "Platform -> (SYSVAR . VALUE) BricsCAD factory defaults that differ by OS.")
+
+(defun %current-dialect-version ()
+  (let ((dialect (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect))))
+    (and dialect
+         (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-version dialect)))))
+
+(defun %current-dialect-platform ()
+  (let ((dialect (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect))))
+    (and dialect
+         (ignore-errors (clautolisp.autolisp-reader:autolisp-dialect-platform dialect)))))
+
+(defparameter *bricscad-writable-sysvars*
+  ;; Read-only in the catalogue (AutoCAD's), settable on BricsCAD -- measured:
+  ;; (setvar "SDI" 1) => 1, read back 1, on V25 Windows and V26 macOS
+  ;; (probe-conformance E8); AutoCAD 2022 rejects it.
+  '("SDI"))
 
 (defun apply-bricscad-dialect-sysvars (host)
   "Launch-time bricscad-dialect sysvar overlay. Two effects, both
@@ -224,15 +365,24 @@ bricscad-dialect only, never touching autocad/clautolisp:
   name a dropped sysvar simply no-ops (HOST-SET-DERIVED-SYSVAR skips
   unknown names). Empty until the clean harvest, so this is inert today.
 
-Mock-host only; no-ops on hosts without a sysvar table. Returns HOST."
+cador only; no-ops on hosts without a sysvar table. Returns HOST."
   (when host
     (dolist (name *bricscad-absent-sysvars*)
       (clautolisp.autolisp-host:host-undefine-sysvar host name))
+    (let ((version (%current-dialect-version)))
+      (when (and (integerp version) (<= version 25))
+        (dolist (name *bricscad-v25-absent-sysvars*)
+          (clautolisp.autolisp-host:host-undefine-sysvar host name))))
     (dolist (row *bricscad-factory-defaults*)
       ;; HOST-SET-DERIVED-SYSVAR coerces to the cell's kind, bypasses the
       ;; read-only flag (these are host-populated defaults), and silently
       ;; no-ops when the name is absent/unknown — so an unknown or
       ;; just-dropped name is skipped without error.
       (clautolisp.autolisp-host:host-set-derived-sysvar
-       host (car row) (cdr row))))
+       host (car row) (cdr row)))
+    (dolist (row (rest (assoc (%current-dialect-platform) *bricscad-platform-factory-defaults*)))
+      (clautolisp.autolisp-host:host-set-derived-sysvar host (car row) (cdr row)))
+    (dolist (name *bricscad-writable-sysvars*)
+      (let ((cell (ignore-errors (cador-sysvar host name))))
+        (when cell (setf (sysvar-cell-read-only-p cell) nil)))))
   host)

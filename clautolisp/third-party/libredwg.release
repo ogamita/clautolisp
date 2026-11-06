@@ -1,0 +1,20 @@
+# The LibreDWG STABLE release that the submodule third-party/libredwg is
+# pinned to (libredwg-version-is-superproject-describe).
+#
+# clautolisp follows LibreDWG's stable releases: the GitHub releases of
+# LibreDWG/libredwg with prerelease=false. The per-commit snapshots upstream
+# also publishes (0.14.8590, 0.14.8601, ...) are marked prerelease and are
+# NOT followed.
+#
+#   version  the release tag; build-libredwg.sh writes it to the submodule's
+#            .version, so it is the PACKAGE_VERSION / PACKAGE_STRING of the
+#            libredwg we build and ship ("LibreDWG 0.14"), whatever the
+#            clautolisp commit.
+#   commit   the commit that tag names; build-libredwg.sh refuses to build a
+#            submodule checked out at any other commit, so this file cannot
+#            silently disagree with the gitlink.
+#
+# To follow a new stable release: see AGENTS.md, "CI -- following LibreDWG
+# stable releases" (make check-libredwg-stable-release tells you when).
+version 0.14
+commit d9468ae948b8f07a08efa756c19f8916052358c0

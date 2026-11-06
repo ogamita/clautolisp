@@ -28,6 +28,7 @@
 (if (not cad-probe-platform)     (setq cad-probe-platform     "unknown"))
 (if (not cad-probe-product)      (setq cad-probe-product      "unknown"))
 (if (not cad-probe-run-directory)(setq cad-probe-run-directory "."))
+(if (not cad-probe-sources-directory)(setq cad-probe-sources-directory "./"))
 
 ;; --- record writer ---------------------------------------------------
 

@@ -64,7 +64,10 @@ foreach ($engine in $engines) {
         Write-Host "--- alfe exit $status after ${elapsed}s"
 
         $sawMarker = [bool]($out -match [regex]::Escape($marker))
-        $sawReady  = [bool]($out -match 'READY')
+        # alfe's own "READY after N s" -- not the bare word, which its timeout
+        # messages also carry ("waiting for READY", "[READY-TIMEOUT]"): job
+        # 16990501680 labelled four never-READY timeouts REACHED-READY-THEN-FAILED.
+        $sawReady  = [bool]($out -match 'READY after ')
         $verdict   = if ($status -eq 0 -and $sawMarker) { 'OK' }
                      elseif ($sawReady)                 { 'REACHED-READY-THEN-FAILED' }
                      else                               { 'FAIL' }

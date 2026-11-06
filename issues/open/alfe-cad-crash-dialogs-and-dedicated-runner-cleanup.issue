@@ -1,0 +1,70 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: ALFE must close crashed CAD engines and crash-report dialogs on dedicated CI runners
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+#+BRANCH: fix-alfe-cad-crash-dialogs-and-dedicated-runner-cleanup
+#+DATE: 2026-11-02
+
+* Context
+The owner confirmed on 2026-11-02 that Windows accounts runner0 through runner3
+have no interactive activity: GitLab Runner and successive jobs control them
+exclusively. A surviving AutoCAD or BricsCAD in one of these accounts is residue
+from an earlier job. This policy does not extend to personal accounts, service
+sessions or ALFE attaching to an existing interactive application.
+
+Related existing issues:
+- [[file:alfe-cad-owned-com-teardown.issue][Owned COM teardown and restoration acknowledgement]].
+- [[file:autocad-com-bootstrap-timeout-leaves-detached-engine.issue][Detached RPC-created AutoCAD after bootstrap failure]].
+
+* Problem
+AutoCAD can crash while leaving an Autodesk crash/log submission dialog open.
+The job may hang, retain a CAD/COM process or a file handle, and poison the next
+job's checkout, profile preparation or license acquisition. BricsCAD failure
+and reporting dialogs need equivalent coverage. Ending the bridge or spawned
+launcher alone does not establish that a detached COM server or crash reporter
+has disappeared.
+
+During SCHMS EPURE qualification, a runner0 AutoCAD COM server survived as
+=acad.exe /Automation -Embedding=, parented by RPC rather than the launched
+engine. The owner confirmed it was a disposable test session and authorized
+its closure. Subsequent jobs failed before tests while cleaning locked files:
+[[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/564880][AutoCAD 564880]] and
+[[https://fabrik.sncf.fr/gitlab/dmoe-pop/epure/es/schms/-/jobs/564881][BricsCAD 564881]].
+This incident confirms residual processes/locks; no crash-report dialog was
+observed in it. Crash/log submission dialogs are a separately reported failure
+scenario to reproduce, not an inferred cause of those two jobs.
+
+* Proposal
+- Make ALFE teardown bounded on success, Lisp error, bootstrap timeout, CAD
+  crash, cancellation and bridge failure; use a supervisor that survives bridge
+  failure and records the exact engine/COM identities before blocking calls.
+- Restore live session settings when possible, then close the application and
+  only its owned descendants/reporters. Detect Autodesk crash/log reporting
+  dialogs and dismiss or terminate the owned reporter without submitting logs.
+  Preserve diagnostics first; never convert a crash into a successful test.
+- Cover RPC-parented COM servers, not merely the launcher's descendant tree.
+  Use real Windows owner SID, PID plus creation time and invocation receipts;
+  inherited USERNAME may be stale. Wait for PID disappearance and file release.
+- In explicitly configured dedicated CI accounts, preflight removes residual
+  CAD engines/reporters owned by that exact account before checkout and launch.
+  Keep this broader account policy separate from ordinary ALFE attachment:
+  an attached interactive instance must remain untouched.
+- Archive crash/bridge logs, dialog diagnostics and cleanup receipts as job
+  artifacts. Report incomplete cleanup explicitly and fail the job.
+
+* Acceptance criteria
+1. Deterministic Windows fixtures cover a hung crash-report dialog, a reporter
+   surviving its CAD parent, detached COM activation, timeout, cancellation,
+   normal exit and an inherited USERNAME different from the real identity.
+2. All processes owned by the invocation disappear within a fixed budget and
+   checkout drawing logs can be opened exclusively or removed afterward.
+3. No Autodesk log submission occurs; the original CAD failure stays visible
+   and the job exits nonzero with diagnostic artifacts.
+4. Dedicated-account preflight recovers from a previous job's residue; a second
+   job on the same runner completes checkout and launches AutoCAD/BricsCAD.
+5. A foreign account, service session and pre-existing interactive attachment
+   remain untouched. Ownership tests use SID and process creation identity.
+6. Native Windows qualification covers both AutoCAD and BricsCAD. Do not close
+   this issue on fixture-only or successful-shutdown-only evidence.

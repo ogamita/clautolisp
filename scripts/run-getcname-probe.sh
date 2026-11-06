@@ -7,10 +7,11 @@
 #
 # WHY IT EXISTS. cadtui translates CAD command names international<->local
 # (spec §Localisation, getcname model). The canonical English names are known;
-# their localised forms must be MEASURED on a localised install. getcname is a
-# nil stub in clautolisp, so --clautolisp only validates the probe is well-formed
-# (all ABSENT + a DONE line); the payload comes from bricscad/autocad on a
-# localised runner (the runners' BricsCAD is a French install).
+# their localised forms must be MEASURED on a localised install. clautolisp's
+# getcname answers from tables made of these measurements
+# (scripts/getcname-to-cador.py), so --clautolisp shows what it reproduces;
+# the payload comes from bricscad/autocad on a localised runner (the runners'
+# CADs are French installs).
 #
 # `autocad' (GUI) and `accoreconsole' (headless) are separate backends on
 # purpose: the same product two ways, and whether they translate identically is
@@ -44,7 +45,7 @@ case "$backend" in
   # AcCoreConsole. Whether the two translate identically is being measured.
   autocad)       bargs+=("--autocad" "--mode" "automation" "--timeout" "300") ;;
   accoreconsole) bargs+=("--autocad" "--mode" "batch" "--timeout" "300") ;;
-  clautolisp)    bargs+=("--clautolisp" "--host" "mock") ;;
+  clautolisp)    bargs+=("--clautolisp") ;;
   *) echo "unknown backend: $backend" >&2; exit 2 ;;
 esac
 bargs+=("-l" "$probe")

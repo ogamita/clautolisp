@@ -34,12 +34,32 @@ comment |;"
             (diagnostic-code (first diagnostics))))))
 
 (test strict-vs-lax-real-tokenization
-  (let* ((strict-result (tokenize-string "1e3"))
-         (lax-result (tokenize-string "1e3" :token-mode :lax))
-         (strict-token (first (read-result-objects strict-result)))
-         (lax-token (first (read-result-objects lax-result))))
-    (is (eq :symbol (token-kind strict-token)))
-    (is (eq :real (token-kind lax-token)))))
+  ;; An exponent needs no dot: "1e3" / "1E+03" read as 1000.0 on AutoCAD
+  ;; 2022 and BricsCAD V25 / V26 (probe reader-printer, 2026-10-28) -- in
+  ;; strict mode too, where it used to be a symbol.
+  (dolist (lexeme '("1e3" "1E+03" "-2e-1"))
+    (let* ((strict-token (first (read-result-objects (tokenize-string lexeme))))
+           (lax-token (first (read-result-objects (tokenize-string lexeme :token-mode :lax)))))
+      (is (eq :real (token-kind strict-token)) "strict ~A" lexeme)
+      (is (eq :real (token-kind lax-token)) "lax ~A" lexeme))))
+
+(test string-escapes-as-the-vendors-read-them
+  ;; probe reader-printer (sunset campaign B3), AutoCAD 2022 and BricsCAD
+  ;; V25 / V26: an octal escape is that character; any other unknown escape
+  ;; drops its backslash, in either token mode (the BricsCAD dialects
+  ;; tokenize in :lax mode).
+  (flet ((value (text &optional (mode :strict))
+           (token-value (first (read-result-objects
+                                (tokenize-string text :token-mode mode))))))
+    (is (string= "AAB" (value "\"A\\101B\"")))
+    (is (string= (coerce (list #\A (code-char 255) #\B) 'string) (value "\"A\\377B\"")))
+    (is (string= (coerce (list #\A (code-char 10) #\B) 'string) (value "\"A\\012B\"")))
+    (is (string= "Ax41B" (value "\"A\\x41B\"")))
+    (is (string= "AqB" (value "\"A\\qB\"")))
+    (is (string= "C:dir" (value "\"C:\\dir\"")))     ; (\t would be a tab)
+    (is (string= "AqB" (value "\"A\\qB\"" :lax)))
+    ;; the named escapes as before
+    (is (string= (coerce (list #\A #\Tab #\B) 'string) (value "\"A\\tB\"")))))
 
 (test strict-real-accepts-dot-with-digits-on-either-side
   ;; Regression for issues/closed/strict-dialect-autolisp-divergences
@@ -75,3 +95,59 @@ comment |;"
          (diagnostics (read-result-diagnostics result)))
     (is (eq :real (token-kind token)))
     (is (= 1 (length diagnostics)))))
+
+;;;; A line break written literally inside a string literal
+;;;; (issues/open/lone-cr-in-string-literal.issue, probe
+;;;; probes/sources/probe-multiline-string.lsp). LF and CR LF become one
+;;;; LF in every engine; a LONE CR is kept by READ in every vendor and by
+;;;; AutoCAD's LOAD, turned into LF by BricsCAD's LOAD. The reader keeps
+;;;; it by default and turns it into LF under :lone-cr-in-string :newline.
+
+(defun %string-token-value (text &rest options)
+  (token-value (first (read-result-objects (apply #'tokenize-string text options)))))
+
+(test string-literal-line-feed-is-kept
+  (is (string= (format nil "ab~Ccd" #\Newline)
+               (%string-token-value (format nil "\"ab~Ccd\"" #\Newline)))))
+
+(test string-literal-crlf-becomes-line-feed
+  (is (string= (format nil "ab~Ccd" #\Newline)
+               (%string-token-value (format nil "\"ab~C~Ccd\"" #\Return #\Newline))))
+  (is (string= (format nil "ab~Ccd" #\Newline)
+               (%string-token-value (format nil "\"ab~C~Ccd\"" #\Return #\Newline)
+                                    :lone-cr-in-string :keep))))
+
+(test string-literal-lone-cr-is-kept-by-default
+  (is (string= (format nil "ab~Ccd" #\Return)
+               (%string-token-value (format nil "\"ab~Ccd\"" #\Return))))
+  (is (string= (format nil "ab~C~Ccd" #\Return #\Return)
+               (%string-token-value (format nil "\"ab~C~Ccd\"" #\Return #\Return)))))
+
+(test string-literal-lone-cr-becomes-line-feed-on-request
+  (is (string= (format nil "ab~Ccd" #\Newline)
+               (%string-token-value (format nil "\"ab~Ccd\"" #\Return)
+                                    :lone-cr-in-string :newline))))
+
+(test string-literal-lone-cr-is-signalled-with-its-line
+  (let ((lines '()))
+    (handler-bind ((clautolisp.autolisp-reader:lone-cr-in-string-literal
+                     (lambda (condition)
+                       (push (clautolisp.autolisp-reader:lone-cr-in-string-literal-line
+                              condition)
+                             lines))))
+      (tokenize-string (format nil "a~C\"x~Cy\" \"p~C~Cq\"" #\Newline #\Return #\Return #\Newline)))
+    ;; Only the lone CR is reported; the CR LF in the second string is not.
+    (is (equal '(2) lines))))
+
+(test lone-cr-outside-strings-is-a-line-break
+  (let ((tokens (read-result-objects
+                 (tokenize-string (format nil "a~Cb ; c~Cd" #\Return #\Return)))))
+    (is (equal '(:symbol :symbol :symbol :eof) (mapcar #'token-kind tokens)))
+    (is (equal '(1 2 3)
+               (mapcar (lambda (token) (source-span-start-line (token-span token)))
+                       (butlast tokens))))))
+
+(test line-numbers-advance-across-a-multiline-string
+  (let ((tokens (read-result-objects
+                 (tokenize-string (format nil "\"x~Cy~C~Cz\" w" #\Newline #\Return #\Newline)))))
+    (is (eql 3 (source-span-start-line (token-span (second tokens)))))))

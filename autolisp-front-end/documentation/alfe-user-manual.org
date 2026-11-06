@@ -72,7 +72,7 @@ directory alfe was built in. The search order is:
 4. =/opt/local=, =/usr/local= and =/usr= (=share/alfe/runtime/=).
 
 If either file cannot be found, the CAD is not started. alfe exits
-with status 4 and lists every path it tried (see /Troubleshooting/).
+with status 69 (=EX_UNAVAILABLE=) and lists every path it tried (see /Troubleshooting/).
 
 ** The installed plug-ins
 
@@ -110,6 +110,84 @@ else if $AUTOLISP_BACKEND is set:
 else:
     backend = clautolisp     ; default on every system
 #+end_example
+
+** One engine, two transports
+:PROPERTIES:
+:CUSTOM_ID: one-engine-two-transports
+:END:
+
+=--clautolisp= runs the clautolisp engine one of two ways:
+=--backend direct= (the default) embeds it in alfe, =--backend
+subprocess= runs the installed =clautolisp= executable as a child. They
+are two transports for the same engine, not two products: choosing the
+subprocess for isolation must not change what a program sees. So, for
+every option alfe accepts with =--clautolisp=:
+
+- the same features are present. alfe's image carries every part of the
+  engine the =clautolisp= program has that a program can observe -- in
+  particular the DWG codec, so =--dwg FILE.dwg= opens the drawing in the
+  default direct variant as it does in the subprocess one (the native
+  LibreDWG library is still loaded only when a DWG is first read or
+  written, so an alfe without it starts normally), and the AutoLISP
+  compiler, so the default optimization qualities compile as they do in
+  =clautolisp=;
+- user code sees the same values. The child is handed alfe's own
+  =*AUTOLISP-...*= values (with =--front-end-bindings=), so
+  =*AUTOLISP-FRONTEND*= is =ALFE=, =*AUTOLISP-VERSION*= is alfe's,
+  =*AUTOLISP-ACTIONS*= lists your actions, and =(getvar "PROGRAM")= is
+  =alfe= in both. Only =*AUTOLISP-PROCESS*= tells them apart (=DIRECT= /
+  =SUBPROCESS=), which is its purpose;
+- the diagnostics and the exit status are the same (see /Exit status/): a
+  runtime error is reported in the engine's words with its AutoLISP
+  backtrace (exit 1), =(exit N)=, =(quit N)= and =autolisp-set-status= give
+  exit status =N=, a =-l= file that cannot be opened gives 66
+  (=EX_NOINPUT=), a source the reader refuses 65 (=EX_DATAERR=), a drawing
+  that cannot be opened is =--dwg: cannot open the drawing ...= with 66
+  (missing) or 65 (not a drawing), and =--main FN= runs as =-x "(FN)"= does.
+
+Some of what =clautolisp= offers is not the engine but the =clautolisp=
+/program/ built around it: its REPL (interactors, comma commands, the aldo
+debugger an error breaks into, the Control-C policy), its recorder
+(=--dribble=), its full-screen and GUI DCL renderers, and the cadtui host.
+alfe does not carry a second, poorer copy of them. A run that needs one of
+them /is/ the program's, so alfe runs it as the child by itself -- the same
+command line, the same program, hence the same behaviour whether or not you
+wrote =--backend subprocess=:
+
+| The run asks for                                          | Without =--backend=, or =--backend subprocess= | =--backend direct=                |
+|-----------------------------------------------------------+------------------------------------------------+-----------------------------------|
+| an interactive session: =-i=, or no =-l= / =-x= / =--main= / FILE (a bare =alfe=) | the clautolisp REPL, in the child | usage error (exit 64)|
+| =--dribble=, =--dribble=FILE=                              | the child records its REPL (a batch run has no REPL: nothing is recorded, as with =clautolisp=) | usage error (exit 64)|
+| =--dcl ncurses=, =--dcl gui=                               | the child, on alfe's terminal                  | usage error (exit 64)             |
+| =--host cadtui=                                           | the child                                      | usage error (exit 64)             |
+
+=--dcl tui= and =--dcl auto= (the default) stay in-process: both variants
+show a batch run's dialogs with the line renderer (the child's captured
+standard output is not a terminal, so its =auto= picks the line form too).
+The child reads alfe's standard input in every run, as the in-process
+engine does, so =printf '(princ 42)\n' | alfe -i= and a =GETSTRING= in a
+batch run see the same input under both variants.
+
+Three more things are the same in both variants. A plug-in with
+=:pre-action= / =:post-action= hooks watches the run without changing it:
+the child is one process for the whole plan that stops at each action
+boundary until alfe has called the hooks (alfe starts it with
+=--front-end-action-boundaries DIR=, a directory of small marker files
+through which the two wait for each other; see /Plug-ins/), so a variable
+set by one =-x= is there for the next, as in-process. =--quit= ends the
+plan: =alfe -x A --quit -x B= never runs =B=, and =alfe --quit= runs
+nothing and exits successfully on every platform, including Windows
+(it does not start the child's REPL). =(clal-dribble FILE)= called
+from a =-l= / =-x= action records the run into FILE in both, the last,
+unterminated line included.
+
+The treatment of every option is written down once, in
+=alfe.backend.clautolisp:*clautolisp-option-contract*=, and the test
+suite fails when an option alfe accepts is missing from it; a table of
+runs is executed under both variants and their output, diagnostics, exit
+status and written files compared -- the REPL, dribble and DCL runs
+included (=--host cadtui=, =-i=, =--dribble= and =--dcl= are the
+=:program= entries of that contract).
 
 ** Why not auto-detect?
 
@@ -218,6 +296,60 @@ rather than refusing: no answer is not the same as a negative answer.
 The same ProgID is used to attach, to create, and to quit at the end of
 the run, so alfe never closes an instance of another release.
 
+*** alfe's workdir in AutoCAD's TRUSTEDPATHS
+
+An AutoCAD with =SECURELOAD= set to 2 loads executable files *only* from
+the folders listed in =TRUSTEDPATHS=. alfe's first act on the CAD is to
+load =run-common.lsp= from its fresh temporary workdir, and every =-x=
+form travels through =protocol\alfe-eval.lsp= in the same workdir. Such an
+AutoCAD would refuse all of it, and the run would never reach READY.
+
+So, on MS-Windows and for a real launch only (not =--print-command=),
+alfe adds one entry, =<workdir>\...=, to =TRUSTEDPATHS= *before*
+starting AutoCAD. The trailing =\...= trusts the subfolders too. It
+removes that entry again when the run ends. Setting it from AutoLISP would
+be too late, because the first load is already the refused one.
+
+- *Where.* In *every* AutoCAD profile of the current user:
+  =HKCU\Software\Autodesk\AutoCAD\<release>\<product>\Profiles\<profile>\Variables=,
+  value =TRUSTEDPATHS=. Every profile, because "the current profile" is not
+  one answer. On the project's runner, the =Profiles= key named one profile
+  as the default while =CPROFILE= named another, and AutoCAD and
+  accoreconsole choose between them on their own terms.
+- *What is removed.* Exactly alfe's entry, from whatever the value is *at
+  the end*. Anything you, or another alfe run, added meanwhile stays. The
+  value's type (=REG_SZ= or =REG_EXPAND_SZ=) is kept, and so is every
+  character: alfe reads and writes through PowerShell's registry API, not
+  through =reg.exe='s console codepage. That matters because the workdir
+  lives under =%TEMP%=, and so under your user name. alfe runs
+  =powershell -NoProfile -NonInteractive -EncodedCommand <base64>=: the
+  script travels base64-encoded and strings travel as character codes, so
+  no quoting or codepage can alter them. A site whose policy forbids
+  PowerShell for the user gets no trust entry: alfe then finds no profile
+  (visible with =--debug=) and runs as it did before this existed.
+- *When.* After the AutoCAD alfe created has quit. AutoCAD saves its
+  profile, =TRUSTEDPATHS= included, when it exits, so an entry removed
+  while it still ran would be written back.
+- *A killed run* cannot remove its entry. Two records let the next run do
+  it for you:
+  - =<temp>/alfe-trustedpaths.txt= names each entry with the process id of
+    the alfe that added it.
+  - Any entry naming an alfe workdir (=alfe-autocad-<pid>-<tag>=) whose
+    alfe is no longer running is removed as well.
+
+  A process whose state cannot be determined counts as running. alfe never
+  takes away another run's trust on a guess.
+
+Nothing is changed when no AutoCAD profile exists. If a write is refused,
+alfe warns that a =SECURELOAD=2= AutoCAD will refuse its runtime, and
+carries on. With =SECURELOAD= at 0 or 1, the defaults, the entry is
+harmless and unnecessary.
+
+BricsCAD keeps neither =TRUSTEDPATHS= nor =SECURELOAD= in the registry
+(both are "not saved" there, and the registry of the project's runner has
+neither). alfe's BricsCAD launch script sets =SECURELOAD= to 0 for the
+session instead.
+
 *** When alfe is killed before it can quit AutoCAD
 
 alfe quits the AutoCAD it created — but only if it reaches the end of
@@ -298,10 +430,13 @@ under the BricsCAD reader rules in the in-process engine, which
 is useful for testing.
 
 Whatever the dialect selected, all operators remain callable.
-Out-of-dialect operators are eligible for a diagnostic warning at
-use time (the warning machinery itself is tracked separately —
-see =deferred-clautolisp-out-of-dialect-warnings.issue= in the project
-issue tracker).
+Out-of-dialect operators get a diagnostic at use time: under the
+=clautolisp= backend, an operator only one vendor provides (BricsCAD's
+=vle-*= family, AutoCAD's =acad_*= functions, …) prints one
+=[vendor-operator]= notice per session at its first call, unless the
+dialect is that vendor's or =lax=. =(setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)=
+silences it. Under =--autocad= and =--bricscad= the CAD itself decides:
+an operator it lacks is simply undefined there.
 
 * Host selection
 
@@ -320,7 +455,8 @@ to clautolisp, which supports all three.
 | =--host cadtui= | =cadtui= | The textual UI-tree host, layered on the cador core.  |
 | =--host nihil=  | =nihil=  | No host at all: every host operation is refused.      |
 
-Any other name is a usage error (exit status 2) that lists these three.
+Any other name is a usage error (exit status 64, =EX_USAGE=) that lists
+these three.
 
 =--host= only matters with the =clautolisp= backend. Under =--bricscad=
 and =--autocad= the host is the CAD itself and the option is accepted and
@@ -366,14 +502,35 @@ application-and-console-only configuration.
 alfe does not embed cadtui: the clautolisp executable provides it. So
 =alfe --clautolisp --host cadtui …= runs the installed =clautolisp-sbcl=
 as a child process — alfe selects =--backend subprocess= by itself — and
-gives it the dialect, =--host cadtui=, the source encoding (=-Esource=)
-and one =-l= / =-x= / =-i= per action of the plan, plus =--quiet= and
-=--no-init= (alfe owns the init policy). Other alfe options are not passed
-on. The executable is looked for in =$ALFE_CLAUTOLISP_BIN=, in the
-=tools/clautolisp/bin/= of the checkout alfe was built from, on =$PATH=,
-and in =/usr/local/bin=, in that order; when it is nowhere alfe exits with
-status 3. Asking for cadtui together with =--backend direct=, the
+gives it the run alfe resolved -- the dialect, =--host cadtui=, the
+drawing, the encodings, alfe's =*AUTOLISP-...*= values and one =-l= /
+=-x= / =-i= per action of the plan, plus =--quiet= and =--no-init= (alfe
+owns the init policy) -- exactly as for any =--backend subprocess= run
+(see [[#one-engine-two-transports][One engine, two transports]]). Asking for cadtui together with =--backend direct=, the
 in-process engine, is a usage error.
+
+The engine executable, =clautolisp-sbcl= (=clautolisp-sbcl.exe= on
+MS-Windows), is looked for in this order, by =--host cadtui= and by
+=--backend subprocess= alike, and the first file that exists is run:
+
+1. =$ALFE_CLAUTOLISP_BIN=, when set and not empty;
+2. the engine installed with the running alfe: the =clautolisp-sbcl= in
+   the same directory as the running =alfe-sbcl= image (in a release both
+   live in =PREFIX/libexec/clautolisp/binaries/OS/CPU/=, where the
+   =bin/alfe= launcher dispatches to), then, for an alfe installed in
+   =PREFIX/bin/=, =PREFIX/libexec/clautolisp/binaries/OS/CPU/clautolisp-sbcl=,
+   OS (=linux=, =darwin=, =windows=) and CPU (=x86-64=, =arm64=) named as
+   the launcher names them. PREFIX is derived from where the running
+   executable is, so an installation works under any prefix, spaces
+   included, after being moved, from any current directory, without
+   =$PATH= entries for =libexec= and without =$ALFE_CLAUTOLISP_BIN=;
+3. the =tools/clautolisp/bin/clautolisp-sbcl= of the checkout alfe was
+   built from (=clautolisp-sbcl.exe= on MS-Windows), only when that file still exists;
+4. =clautolisp-sbcl= on =$PATH=;
+5. =/usr/local/bin/clautolisp-sbcl= (not on MS-Windows).
+
+When it is nowhere alfe exits with status 69 (=EX_UNAVAILABLE=), and the
+=NO-SUBPROCESS-BINARY= message lists every place it looked.
 
 #+begin_src sh
 alfe --clautolisp --host cadtui -l dialog-test.lsp     # batch: the output comes back when the child ends
@@ -440,9 +597,13 @@ neither a launch nor a workdir handshake.
 
 | Option                        | Effect                                          |
 |-------------------------------+-------------------------------------------------|
-| =--backend attach\vert{}launch=      | Attach to an already-running CAD, or launch a fresh one. |
+| =--backend launch\vert{}attach=      | Launch a fresh CAD (the default), or attach to the running one -- which implies =--mode automation=. |
+| =--attach-pid PID=            | Attach to the running CAD whose process id is PID (implies =--backend attach=). |
 | =--workdir DIR=               | Override the exchange directory (default: =$AUTOLISP_WORKDIR=). |
 | =--bootstrap-phase PHASE=     | Truncate the bootstrap at =marker=, =core=, =log= or =full=. |
+| =--cad-log FILE=              | After the run, copy the CAD's own command-history log to FILE, in UTF-8 (see [[#cad-log][The CAD's log: =--cad-log=]]). |
+| =--result-file FILE=          | A file the run must have written (a JUnit report...); repeatable. Missing, empty, still growing, or an unclosed XML document: a run that succeeded exits 66 (see [[#owned-cad-cleanup][CAD session cleanup]]). |
+| =--cleanup-report FILE=       | Write the cleanup report -- the frontier, then how the CAD this run created ended, its raw exit code -- to FILE (see [[#owned-cad-cleanup][CAD session cleanup]]). |
 | =--epure=                     | Run BricsCAD or AutoCAD under the EPURE profile (MS-Windows only). Defined by the =epure= plug-in, not by alfe itself: see [[#plugin-epure][The EPURE plug-in]]. |
 
 =--workdir= names the directory through which alfe and the CAD engine
@@ -451,6 +612,18 @@ somewhere you can read when you want to inspect that traffic; combine it
 with =--keep-workdir= (or =$AUTOLISP_KEEP_WORKDIR=), which stops alfe
 deleting the directory at the end of the run, since by default there is
 nothing left to look at.
+
+The process alfe launches for a CAD backend (=accoreconsole=, =bricscad=,
+or the =cscript= / =osascript= launcher) writes its own console — the
+command echoes, prompts and messages the CAD prints, not your program's
+output, which comes back through the protocol — to two files in that
+directory, =engine-console-stdout.txt= and =engine-console-stderr.txt=.
+alfe reads them only when the launch fails, to quote them in its
+message; with =--keep-workdir= they stay for inspection. They used to be
+pipes that nothing read while the CAD ran, so a long, chatty
+=--autocad --mode batch= run (=accoreconsole= echoes its whole command line,
+two bytes a character) filled the pipe and hung until =--timeout=. A file
+never fills, however long the run.
 
 =--bootstrap-phase= truncates the engine-side bootstrap, which is how
 you diagnose a CAD that never reaches =READY= — work *up* from =marker=
@@ -469,6 +642,40 @@ Two consequences worth knowing before you use a truncated phase: under
 is not installed. =--interactive= requires =full= — combined with any
 other phase, alfe exits with code =2=.
 
+** The CAD's log: =--cad-log=
+:PROPERTIES:
+:CUSTOM_ID: cad-log
+:END:
+
+In the =log= and =full= phases the engine-side bootstrap points the CAD's
+=LOGFILEPATH= at the workdir's =logs/= directory and sets =LOGFILEMODE= to
+1, so AutoCAD and BricsCAD write their command-history log there (alfe's
+own =debug.log= sits beside it). That log carries what the CAD prints to
+its command line — command prompts, and on AutoCAD a native =princ= — which
+alfe's captured output does not.
+
+=--cad-log FILE= makes alfe read that log once the engine has shut down,
+and write it to =FILE= (replaced if it exists) in UTF-8 with LF line ends.
+When the CAD wrote several log files (one per drawing), each is preceded by
+a ~==> NAME <==~ line. The CAD writes the log in its own encoding, which
+alfe decodes as follows:
+
+- with =-Elog ENC= (or =--log-encoding ENC=): as =ENC= — =utf-8=,
+  =utf-16le=, =iso-8859-1=, =windows-1252= or =us-ascii=; any other name is
+  warned about and the log is auto-detected. A bare =-E= does *not* reach
+  the log: the CAD does not change its encoding for it;
+- otherwise, as measured: a byte-order mark names the encoding (UTF-8,
+  UTF-16LE); without one, =windows-1252= on MS-Windows, which is what both
+  Windows CADs write (measured: AutoCAD 2022, and BricsCAD V25 — no BOM,
+  an e-acute is the single byte =E9=) and auto-detection elsewhere.
+
+No log, no file: alfe warns instead — BricsCAD on macOS writes none in
+batch mode (measured), and =--bootstrap-phase marker= / =core= do not turn
+logging on. =--cad-log= concerns the CAD backends only; under
+=--clautolisp= it is warned about and ignored (clautolisp writes its own
+=LOGFILEMODE= log where =LOGFILEPATH= points, and =-Elog= sets its
+encoding — see the clautolisp user manual).
+
 =--epure= is not one of alfe's own options: the =epure= plug-in, which
 ships with alfe, defines it ([[#plugin-epure][The EPURE plug-in]]). Before the plug-in system
 alfe accepted =--epure= and did nothing with it. It now launches
@@ -481,6 +688,54 @@ plug-in.
 The environment variables =$AUTOLISP_WORKDIR=, =$AUTOLISP_BOOTSTRAP_PHASE=
 and, for the plug-in option =--epure=, =$AUTOLISP_EPURE= supply the
 defaults; an explicit option always wins.
+
+* The debugger (aldo)
+
+alfe takes the debugger options of the =clautolisp= program, spelled,
+parsed and meant exactly as there (the option specs are shared; the
+=clautolisp= user manual describes the debugger itself). Under
+=--clautolisp= they apply to both engine variants:
+
+- =--backend direct= (the in-process engine) resolves them and starts the
+  aldo session, its user interface and the aldb listener with the
+  =clautolisp= program's own functions;
+- =--backend subprocess= forwards the ones you gave to the =clautolisp=
+  child, which applies them -- and its own defaults to the others. When
+  they start a debugger (=--on-error debug=, =--debugger-ui=, an aldb
+  transport, an explicit =--on-quit debug= / =--on-interrupt debug=) the
+  child runs on alfe's own terminal, as for =-i=, so its prompts reach you.
+
+| Option                      | Under =--clautolisp=                                                                                         | Under =--autocad= / =--bricscad=                       |
+|-----------------------------+--------------------------------------------------------------------------------------------------------------+--------------------------------------------------------|
+| =--on-error POLICY=         | Uncaught AutoLISP error: =quit= reports it and exits 1 (batch default), =debug= stops in aldo at the error (default of an interactive REPL), =ignore= uses no debugger (the AutoLISP =*error*= handler runs, the error is reported and the next =-l= / =-x= runs; the run still exits 1). | Accepted: governs alfe's own reporting only (below). |
+| =--on-interrupt POLICY=     | Control-C: =debug= (break into aldo, the default), =ignore= (resume), =quit= (exit 130). A second Control-C while one is handled exits at once. | Usage error (EX_USAGE, 64).                            |
+| =--on-quit POLICY=          | =(quit)= / =(exit)=: =quit= (default) or =debug= (aldo before the stack unwinds).                            | Usage error (EX_USAGE, 64).                            |
+| =--debugger-ui UI=          | =dumb= (aliases =terminal=, =tui=), =ncurses=, =aldb= (alias =emacs=); selecting one debugs the run.        | Usage error (EX_USAGE, 64).                            |
+| =--aldb-listen [HOST:]PORT= | The aldb (Emacs) listener's address (HOST defaults to 127.0.0.1, PORT 0 = a free port); implies =aldb=.     | Usage error (EX_USAGE, 64).                            |
+| =--aldb-stdio=              | aldb over stdin/stdout; implies =aldb=; excludes =--interactive= and =--aldb-listen= (usage error).          | Usage error (EX_USAGE, 64).                            |
+
+The CAD backends run AutoLISP inside the CAD, which has no aldo: alfe
+refuses the options it could not honour rather than ignoring them,
+=--dry-run= included.
+
+=--on-error= also keeps its older meaning, under every backend: =debug=
+and =ignore= make alfe dump the Common-Lisp backtrace of an unexpected
+condition in alfe ITSELF (captured before the stack unwinds), after the
+terse =alfe: <error>= line; =quit=, or no =--on-error=, prints that line
+only. That reporting concerns a fault of alfe, never the user's AutoLISP.
+
+Control-C: under =--backend direct= the =--on-interrupt= policy applies to
+alfe's process for the run, then Control-C is alfe's again. Under
+=--backend subprocess= alfe leaves Control-C to the child, which applies the
+forwarded policy: alfe passes the signal on when the terminal did not deliver
+it to the child itself (a batch child runs in its own process group).
+
+#+begin_src sh
+alfe --clautolisp --on-error debug -l buggy.lsp          # stop in aldo at the error
+alfe --clautolisp --backend subprocess --on-error debug -l buggy.lsp   # same, in the child
+alfe --clautolisp --aldb-listen 0 -l buggy.lsp           # debug from Emacs (M-x aldb-connect)
+alfe --clautolisp --on-interrupt quit -l long-run.lsp    # Control-C exits 130
+#+end_src
 
 * Actions
 
@@ -497,7 +752,7 @@ REPL with =-i=).
 | =--quit=               | Force engine shutdown after the queue.          |
 | =--dry-run=            | Print the resolved plan; don't run anything.    |
 | =--print-command=      | Stage the workdir for real, print the CAD command line that would be launched, launch nothing. CAD backends only. |
-| =--on-error POLICY=    | How an unexpected Lisp condition escaping alfe itself is reported: =quit= (default — the terse =alfe: <error>= line, then exit) or =debug= / =ignore=, which additionally dump the Common-Lisp backtrace (captured before the stack unwinds). alfe has no debugger of its own, so =debug= and =ignore= behave the same. |
+| =--on-error POLICY=    | What an uncaught AutoLISP error does under =--clautolisp= (=quit=, =debug=, =ignore=), and how alfe reports its own unexpected conditions. See "The debugger (aldo)" below. |
 
 Examples:
 
@@ -570,6 +825,113 @@ helper in your init file:
 alfe -l ~/.autolisp -x "(ep (quote (list 1 2 3)))"
 #+end_src
 
+** How a form reaches a CAD
+
+On the =--bricscad= and =--autocad= backends alfe does not hand an =-l=
+file to the CAD's own =LOAD=: its CAD-side loader reads the file one
+top-level form at a time, so that errors are reported with their file,
+line and enclosing =defun=, and passes each form to the CAD's native
+=LOAD= through a temporary file (=protocol/alfe-eval.lsp= in the
+workdir). =-x= expressions and the forms typed at the REPL take the same
+route.
+
+What that file holds is the form's own *text*, exactly as it was written:
+the CAD reads =(setq a 1.5707963267948966)= with its own reader, and
+=a= gets every digit. A form alfe has to rewrite is rewritten in that text
+too: on AutoCAD, whose =defun= has no =&rest=, a call such as =(princ x)=
+becomes =(autolisp-princ-to x nil)= -- its head replaced and = nil=
+inserted before its closing parenthesis (see [[#autocad-output][Output on AutoCAD]]) -- and
+every other character -- every real literal included -- stays as written. alfe checks the rewritten text by reading it back; only
+when it does not read as the rewritten form, or when there is no text (a
+form built in memory), is the form printed back from its value, each real
+then with as many digits as the CAD's =rtos= can give and its own reader
+confirms (=1.5707963267948966E+00= on BricsCAD; AutoCAD's =rtos= stops at
+16 significant digits and a 2-digit exponent).
+
+/Changed in alfe 2.3.36./ A form the AutoCAD normaliser padded was
+always printed back, so on AutoCAD a literal such as =1.5707963267948966=
+in =(progn (setq a 1.5707963267948966) (princ a))= lost its last digit, and
+one beyond =1e99= its exponent.
+
+/Changed in alfe 2.3.12./ Every form used to be printed back with =princ=,
+which keeps 6 significant digits of a real on AutoCAD (=1.5708=) and 14 on
+BricsCAD (=1.5707963267949=), so real literals of a loaded file, of =-x=
+and of the REPL arrived rounded. Values the CAD computes, and digits held
+in a string, were never affected. =--clautolisp= was never affected.
+
+What a program *prints* is unchanged: =(print 1.5707963267948966)= on
+AutoCAD still shows =1.5708=, as AutoCAD's own =print= does.
+
+*** Output on AutoCAD: what alfe captures, and what it leaves alone
+:PROPERTIES:
+:CUSTOM_ID: autocad-output
+:END:
+
+alfe captures what a program prints so that it reaches alfe's standard
+output (through =protocol/stdout.txt= in the workdir). How it does so
+depends on the CAD's =defun=:
+
+- *BricsCAD* (its =defun= takes =&rest=): alfe replaces =princ=, =print=,
+  =prin1=, =prompt= and =terpri= by variadic versions that accept every
+  arity. What they print is captured, whatever code calls them.
+- *AutoCAD* (no =&rest=, no =&optional=): alfe leaves those five primitives
+  *as AutoCAD defines them*. Instead it rewrites the calls in the code it
+  evaluates itself -- the =-l= files, =-x= expressions, =--main=, the forms
+  typed at the REPL, and the files loaded by a top-level =(load ...)= form
+  of those or by =alfe-load= -- onto functions of its own:
+
+  | Call in your code           | Evaluated as                    |
+  |-----------------------------+---------------------------------|
+  | =(princ)=, =(terpri)=       | =(autolisp-princ-newline)=      |
+  | =(princ x)=, =(princ x f)=  | =(autolisp-princ-to x nil)=, =(autolisp-princ-to-file x f)= |
+  | =(print x)=, =(print x f)=  | =(autolisp-print-to x nil)=, =(autolisp-print-to-file x f)= |
+  | =(prin1 x)=, =(prin1 x f)=  | =(autolisp-prin1-to x nil)=, =(autolisp-prin1-to-file x f)= |
+  | =(prompt x)=                | =(autolisp-emit-prompt x)=      |
+
+  The bytes printed are the same as on BricsCAD. Code alfe does *not*
+  evaluate itself keeps AutoCAD's own primitives, and runs exactly as it
+  would without alfe: a compiled VLX / FAS / DES, a file loaded with the
+  native =load= by an application (EPURE loads its applications that way),
+  =acaddoc.lsp=, MNL and startup-suite files, a file loaded by a =load=
+  called from inside a function, reactor callbacks and command
+  definitions of all of these, and a call through a function value such as
+  =(mapcar 'princ lst)= or =(vl-catch-all-apply 'load (list f))=. What that
+  code prints goes to AutoCAD's command line, not to alfe's output; recover
+  it with =--cad-log FILE= (see [[#cad-log][The CAD's log: =--cad-log=]]) or, in
+  =--mode batch=, from =engine-console-stdout.txt= in a kept workdir.
+
+  A file argument that is =nil= -- =(princ "x" nil)=, or =(princ "x" f)=
+  with =f= nil -- is handed to AutoCAD's own =princ=, which rejects it
+  ("bad argument type: FILE nil", measured on AutoCAD 2022, although
+  Autodesk documents the argument as "File or nil"): such a call fails in
+  code alfe evaluates exactly as it does in compiled code. Omit the
+  argument to print to the console: =(if f (princ x f) (princ x))=.
+
+/Changed in alfe 2.3.88./ A =nil= file argument used to be accepted
+under alfe on AutoCAD (output to alfe's stream), where AutoCAD itself
+rejects it; it now reaches AutoCAD's primitive.
+
+/Changed in alfe 2.3.87./ On AutoCAD alfe used to *redefine* =princ=,
+=print= and =prin1= with exactly two arguments (and =prompt=, =terpri=), and
+only padded the calls of the code it evaluated itself. Every other caller
+-- a VLX, a natively loaded file, a reactor -- then failed with "too few
+arguments" on its first =(princ x)= or =(princ)=, often silently, inside a
+=vl-catch-all-apply=.
+
+The loader knows both AutoLISP comments: a semicolon comments out the rest
+of its line, and =;|= opens a block comment that runs, across lines if
+need be, to the next =|;= -- the form of the documentation blocks
+(=;| @Global ... |;=) many projects put before each =defun=. Nothing inside
+a block comment is read, whatever parentheses, quotes or semicolons it
+holds; =;|= inside a string is text; forms before, after and between
+comments on one line each run once. A block comment still open at the end
+of the file is an error (/unexpected end of file in a ;| block comment/).
+
+/Changed in alfe 2.3.13./ The loader used to know only the line comment,
+so the lines of a block comment after its first were read as code, and a
+parenthesis in the prose was called as a function (/no function
+definition: SYMBOLE/). =--clautolisp= was never affected.
+
 ** Interactive REPL on CAD backends
 
 =alfe --interactive --bricscad= (and =--autocad=) drops into a live
@@ -598,7 +960,31 @@ For =alfe --autocad --mode batch=, the drawing/template selection is:
 =--dwg FILE= first, then =AUTOLISP_DWG=, then a shipped
 =Template/acadiso.dwt= or =Template/acad.dwt= next to the discovered
 AutoCAD install. Only if all three miss does batch mode stop with a
-=NO-DWG= bootstrap error.
+=NO-DWG= bootstrap error. Under =--clautolisp=, =--dwg FILE= (or
+=AUTOLISP_DWG=) is the drawing the engine starts on, in place of its
+untitled =Drawing1.dwg=, as =clautolisp --dwg FILE= does.
+
+=--template NAME|PATH= (or =AUTOLISP_TEMPLATE=) starts the session on
+a drawing made from one of the CAD's own templates, rather than on
+alfe's embedded =empty.dwg= (a French AutoCAD 2005 drawing, whose
+styles, layouts and metric units are not what a new drawing of the
+CAD holds). alfe copies the template into the run's work directory as
+=template.dwg= -- a fresh copy per run, so no other session holds a
+lock on it, and opened as a drawing, so the CAD asks for no units --
+and that copy is the drawing, for every backend; it wins over =--dwg=.
+A PATH (with a =/= or =\=) is used as given. A NAME (=acad.dwt=,
+=acadiso.dwt=, =Default-m.dwt=, case ignored) is looked up in the
+template folders of the backend's CAD -- under clautolisp, of the
+dialect's product: the top-level =Autodesk= or =Bricsys= folders of
+=%LOCALAPPDATA%=, =%APPDATA%=, the Program Files folders and
+=%PROGRAMDATA%=, or of =~/Library/Application Support= and
+=/Applications= on macOS, the user's first. An unknown NAME stops
+the run with exit status 66 and the templates found listed:
+
+#+begin_example
+$ alfe --bricscad --template Default-m.dwt -l probe.lsp   # MEASUREMENT 1
+$ alfe --autocad --mode batch --template acad.dwt -l probe.lsp
+#+end_example
 - Exit with any of: Ctrl-D (EOF), an empty line that equals =:quit=,
   =:q=, =:exit=, =(quit)=, =(exit)=, or by queuing a =--quit= action.
 
@@ -621,7 +1007,7 @@ and a short form =-ES ENC=; bidirectional situations also accept a
 | file       | =-Efile ENC=          | =(open …)= file I/O default.                         |
 | console    | =-Econsole ENC=       | CAD GUI console device I/O.                          |
 | cadstdio   | =-Ecadstdio ENC=      | CAD subprocess stdin/stdout pipes.                  |
-| log        | =-Elog ENC=           | alfe's log/diagnostic stream.                        |
+| log        | =-Elog ENC=           | The CAD's command-history log (=LOGFILEMODE=).       |
 | (all)      | =-E ENC=              | Every situation at once.                            |
 
 Accepted ENC values: =utf-8=, =iso-8859-1= (= =latin-1=),
@@ -649,18 +1035,115 @@ still an error, but a fixed boundary is never silently wrong).
 - =terminal= — applied to alfe's OWN =*standard-output*= / =*standard-input*=
   / =*error-output*=. =-Eterminal-in= drives stdin, =-Eterminal-out= drives
   stdout+stderr; the bare form both. Settable everywhere (it is alfe's own
-  stream).
+  stream). On MS-Windows a redirected stream (a pipe, a file) is re-made in
+  the encoding; a console already receives alfe's text as Unicode, so
+  there the option sets the console's code page (=SetConsoleOutputCP= /
+  =SetConsoleCP=: UTF-8 65001, WINDOWS-1252 1252, ISO-8859-1 28591,
+  US-ASCII 20127, CP850, CP437), which is what other programs writing to
+  it are read in. An encoding without a code page is warned and ignored.
 - =source= — an explicit =-Esource= is forwarded into the CAD's native
   =(load)= so a =.lsp= with non-ASCII literals decodes correctly (BricsCAD
   =,ccs=…=, AutoCAD the =open= 3rd-arg at =LISPSYS= 1/2). Without it the CAD
-  keeps its own default decode.
-- =file= — the default encoding of files the AutoLISP program itself opens.
-  On clautolisp it also drives =*AUTOLISP-FILE-ENCODING*=.
+  keeps its own default decode. A =-l= file in a code page (=-Esource cp1252=)
+  is handed to AutoCAD as a cp1252 copy without a BOM -- read right at every
+  =LISPSYS= -- and to BricsCAD as UTF-8 with a BOM.
+- =file= — the default encoding of files the AutoLISP program itself opens:
+  =-Efile ENC= for both directions, =-Efile-read ENC= / =-Efile-write ENC=
+  for one. On clautolisp it sets =*AUTOLISP-FILE-READ-ENCODING*= /
+  =*AUTOLISP-FILE-WRITE-ENCODING*=, which =open= uses when the program names
+  no encoding; =alfe --clautolisp= forwards them to the engine (in
+  subprocess mode too, with =-Eterminal-in= / =-Eterminal-out= / =-Elog=).
+  On the CADs the variables are transmitted too, but the CAD's own =open=
+  takes an encoding in one case only, measured with the =open-encoding=
+  probe (writing =A=, e-acute, =B=):
+
+  | CAD                       | =(open f "w")= | an encoding requested                               | read           |
+  |---------------------------+----------------+-----------------------------------------------------+----------------|
+  | AutoCAD 2022, =LISPSYS= 0 | cp1252         | any 3rd argument is an error; ~,ccs=~ ignored       | decodes cp1252 |
+  | BricsCAD V25 / Windows    | cp1252         | 3rd argument ignored; ~w,ccs=UTF-8~ and ~w,ccs=UTF-16LE~ honoured, with a BOM | raw octets |
+  | BricsCAD V26 / macOS      | UTF-8, no BOM  | ignored (always UTF-8)                              | raw octets     |
+
+  At =LISPSYS= 1 or 2, AutoCAD 2022's =open= does take a third argument
+  (measured, the =LISPSYS= probe): =(open f "w" "utf8")= writes UTF-8
+  without a BOM, ="utf8-bom"= with one, and a plain ="w"= still writes
+  cp1252; a plain read decodes UTF-8, falling back to cp1252. An append
+  =(open f "a" "utf8")= adds UTF-8, and ="utf8-bom"= on a file that already
+  has its BOM adds no second one.
+
+  So alfe forwards the WRITE direction in two cases, on every action -- the
+  file given to =-l=, =-x= forms, =--main=, REPL input, and code loaded with
+  =alfe-load= -- when =-Efile-write= (or =-Efile=, or the bare =-E=) asks for:
+  - BricsCAD/Windows, =UTF-8= or =UTF-16LE=: a plain =(open f "w")= /
+    =(open f "a")= becomes ~(open f "w,ccs=UTF-8")~ (or =UTF-16LE=), so the
+    file is written in that encoding *with a byte-order mark*; an append
+    adds no second one (measured, BricsCAD V25), whereas a plain ="a"=
+    would append cp1252 bytes to the UTF-8 file; if BricsCAD refuses the
+    mode, the plain one is used;
+  - AutoCAD, =UTF-8=: a plain =(open f "w")= / =(open f "a")= becomes
+    =(open f "w" "utf8")= / =(open f "a" "utf8")= (UTF-8, no BOM) — but
+    only when the running AutoCAD's =LISPSYS= is 1 or 2, which alfe checks
+    in the CAD at the call, since =LISPSYS= is set when AutoCAD starts. At
+    =LISPSYS= 0 the plain mode is used and a warning says why, once per run.
+  A call that already names an encoding (a ~,ccs=~ of its own, a third
+  argument) or a read mode is left alone. alfe rewrites each =open= call
+  written in the code it is given into the bootstrap's =alfe-open*=, in the
+  source text (the rest of the text reaches the CAD as written); so an =open=
+  that only appears at run time -- =(apply 'open ...)=, a quoted
+  =(open ...)= evaluated later, a file read by a native =load= nested inside
+  an expression -- is not forwarded, while a top-level =(load ...)= in an
+  =-l= file or =-x= form, and =alfe-load= anywhere, are. Without
+  =-Efile-write= nothing is rewritten. =cp1252= /
+  =windows-1252= is both Windows CADs' default and needs nothing. Every
+  other request is warned about, once per run, with the measured reason,
+  and not forwarded: any other write encoding on BricsCAD/Windows or on
+  AutoCAD, any write encoding on BricsCAD/macOS except UTF-8, and any read
+  encoding (the CADs' =open= reads in its own default whatever it is asked:
+  cp1252 on AutoCAD at =LISPSYS= 0, UTF-8 then cp1252 at 1/2, octets on
+  BricsCAD).
 - =console= / =cadstdio= — how alfe DECODES the CAD's console/pipe output.
-  accoreconsole is UTF-16LE, *fixed by the product* — a conflicting
-  =-Econsole= is warned and ignored. For other targets the default is an
-  auto-detect cascade (UTF-16LE / UTF-8 / lenient) unless you name a codec.
-- =log= — alfe's own diagnostic stream.
+  accoreconsole is UTF-16LE, *fixed by the product* — =-Econsole= is warned
+  and ignored under =--autocad=; =-Ecadstdio= forces the codec alfe decodes
+  with. A bare =-E= reaches neither, under =--autocad= or =--bricscad=.
+  Under =--bricscad=, =-Econsole[-out]= selects the decode codec, and
+  =-Econsole-in= is warned about and ignored: the console device is
+  product-fixed and alfe's input does not go through it (forms travel over
+  the file protocol). For other targets the default is an auto-detect
+  cascade (UTF-16LE / UTF-8 / lenient) unless you name a codec. In front of
+  clautolisp the console IS the terminal: =-Econsole[-in|-out]= applies to
+  the terminal unless =-Eterminal[-in|-out]= is given.
+- =log= — the command-history log file (=LOGFILEMODE=). On clautolisp,
+  =-Elog= is the encoding clautolisp writes it in. On AutoCAD and BricsCAD
+  the CAD writes it in its own encoding, and =-Elog= is how alfe *decodes*
+  it when =--cad-log FILE= asks for a copy (see [[#cad-log][The CAD's log:
+  =--cad-log=]]); a bare =-E= does not reach it.
+
+** Characters the encoding cannot hold: =-Ereplacement=
+
+=-Ereplacement R= (=--encoding-replacement R=) chooses what a write puts in
+place of a character its encoding cannot hold -- =(chr 300)= written to a
+windows-1252 file: one character (=?=), or =error= (an AutoLISP error),
+=low-byte=, =best-fit= or =escape= (=\U+XXXX=). =-Efile-write-replacement R=
+(=--file-write-encoding-replacement=) and =-Eterminal-out-replacement R=
+(=--terminal-output-encoding-replacement=) restrict it to the files =open=
+makes or to the terminal, and win over the bare one.
+
+- Under =--clautolisp= the options are passed to the engine: in-process as
+  the globals =*AUTOLISP-ENCODING-REPLACEMENT*=,
+  =*AUTOLISP-FILE-WRITE-ENCODING-REPLACEMENT*= and
+  =*AUTOLISP-TERMINAL-ENCODING-REPLACEMENT*=; to a spawned clautolisp
+  (=--backend subprocess=) as the same options on its command line. Without
+  them clautolisp's =CLAUTOLISPENCODINGREPLACEMENT= system / environment
+  variable, then the dialect decides (=autocad= keeps the low byte,
+  =bricscad= best-fits on Windows and escapes elsewhere, the others escape);
+  the policy and the =[encoding-replacement]= warning are clautolisp's,
+  described in its user manual ("Characters the encoding cannot hold").
+  alfe does not touch =$CLAUTOLISPENCODINGREPLACEMENT=: a spawned clautolisp
+  inherits it from alfe's environment, and the in-process engine reads it
+  likewise.
+- Under =--autocad= / =--bricscad= they are ignored, with a warning: each
+  CAD writes such a character its own way -- AutoCAD 2022 the low byte,
+  BricsCAD V25 on Windows a best fit, BricsCAD V26 on macOS =\U+XXXX= --
+  and nothing alfe can pass it changes that.
 
 ** Per-target defaults (measured 2026-07)
 
@@ -672,8 +1155,8 @@ LISPSYS-selected) is tracked in the project's encoding issues.
 |---------------------------+-------------------------+-------------------------------|
 | clautolisp (Linux)        | UTF-8 (settable, LC_*)  | UTF-8                         |
 | BricsCAD V26 / macOS      | UTF-8 under a UTF-8 locale (settable via =LC_ALL=); read needs a BOM | full Unicode (GUI) |
-| BricsCAD V25 / Windows    | ANSI_1252; per-open =,ccs=UTF-8/UTF-16LE= honoured | cp1252 (GUI) |
-| AutoCAD 2022 / accoreconsole | ANSI_1252 / MBCS; =LISPSYS= 1/2 → UTF-8 (restart); =ccs=~ ignored | UTF-16LE, fixed |
+| BricsCAD V25 / Windows    | ANSI_1252; per-open =,ccs=UTF-8/UTF-16LE= honoured on write (with a BOM; =-Efile-write= forwards it), read returns octets | cp1252 (GUI) |
+| AutoCAD 2022 / accoreconsole | ANSI_1252 / MBCS; =LISPSYS= 1/2 → UTF-8 (restart); =ccs=~ ignored; =open= takes no 3rd argument at =LISPSYS= 0 | UTF-16LE, fixed |
 
 * The =alfe-*= operators (for test and REPL code)
 
@@ -703,6 +1186,7 @@ protocol loop. So alfe does *not* shadow the builtins; it offers parallel
 | =(princ obj [file])=  | =(alfe-princ obj)=         | 1-arg convenience; output reaches alfe's stream.   |
 | =(print obj [file])=  | =(alfe-print obj)=         |                                                    |
 | =(prin1 obj [file])=  | =(alfe-prin1 obj)=         |                                                    |
+| =(error msg)=         | =(alfe-error msg)=         | Raises an error with message =msg= on every CAD (below). |
 
 For a call whose arity is not exactly one argument, use the *star* form,
 which takes the argument list, so any arity maps to a fixed-arity call
@@ -713,6 +1197,36 @@ which takes the argument list, so any arity maps to a fixed-arity call
 : (alfe-load*  (list "f.lsp"))      ; = (load "f.lsp")
 
 =alfe-print*=, =alfe-prin1*= and =alfe-load*= follow the same shape.
+
+*** When an =alfe-*= operator fails, and =alfe-error=
+
+A failure inside =alfe-load= (a file that cannot be found, a form that
+signals in the loaded file, a nested load) is an ordinary AutoLISP error,
+and your own handlers see alfe's diagnostic as its message:
+
+: (vl-catch-all-error-message
+:   (vl-catch-all-apply 'alfe-load (list "missing.lsp")))
+: ;; => "LOAD failed: \"missing.lsp\""
+
+The same text reaches a =*error*= function and, on the =clautolisp=
+host, the debugger. (Before alfe 2.3.20 a handler saw only =divide by
+zero=, which was the arithmetic alfe used to abort.) alfe's own request
+report always carries the full diagnostic, whatever the CAD.
+
+alfe raises these errors with =(alfe-error msg)=, which your code can
+call too. It signals an error whose message is =msg= on every CAD alfe
+drives:
+
+- On BricsCAD and clautolisp it is =(error msg)=: =error= exists there
+  (undocumented on BricsCAD), and every handler gets =msg= exactly.
+- AutoCAD has no =error= function, and alfe does not define one: code
+  that tests for it must keep seeing AutoCAD as it is. There
+  =alfe-error= raises AutoCAD's own bad-argument error, whose message
+  quotes =msg=, along the lines of =bad argument type: fixnump: "msg"=.
+
+Under =--clautolisp --dialect autocad= (or the default =strict=),
+clautolisp warns when your code calls =error= itself, since AutoCAD lacks
+it; =alfe-error= never warns.
 
 ** =alfe-load= rewrites the file it loads
 
@@ -746,15 +1260,51 @@ encoding probe reads =(setq ENCSRC "A<e-acute>Z")= back as code points
 =65 233 90= on all three). Native =(load)= of a high byte still FAILS on
 accoreconsole, which is why alfe-owned code must call =alfe-load=.
 
+** Names reserved to alfe on a CAD
+
+On =--autocad= and =--bricscad=, alfe evaluates every form you give it —
+the =-l= file, each =-x=, =--main=, REPL input, a file loaded with
+=alfe-load= — *inside* alfe's own AutoLISP functions running in the CAD.
+AutoLISP binds a function's parameters and locals dynamically, so a name
+those functions bound would capture your =setq=: before alfe 2.3.15 a
+=(setq f 1)= (or =text=, =r=, =path=, =form=, =source=, =result=, ...) set
+alfe's local and was gone when the request returned.
+
+Every variable alfe's CAD-side runtime binds is now named =alfe--NAME=, so
+any other name is yours, globally, exactly as in the CAD itself. In return:
+
+- names starting with =alfe--= are *reserved* to alfe — do not =setq= or
+  bind them;
+- the functions alfe defines in the CAD (=alfe-*=, =autolisp-*=, on
+  BricsCAD the =princ= / =print= / =prin1= / =prompt= / =terpri= shadows,
+  =quit=, =exit=,
+  =clear-input=, =clear-output=, =get_new_guid=) and its globals
+  (=*AUTOLISP…*=, =*ALFE…*=) must not be redefined or assigned.
+
+The =clautolisp= backend evaluates your code in-process and has no such
+functions on the stack, so this concerns the CAD backends only.
+
 * Init files
 
-On startup (unless =--no-init= / =-norc= is given), alfe loads
-the first init file it finds in this order:
+On startup (unless =--no-init= / =-norc= is given, or
+=$AUTOLISP_NO_INIT= / =$ALFE_NO_INIT= is set to =1=), alfe loads
+*every* init file that exists among these four, in this order, so a
+later one can redefine what an earlier one defined:
 
-1. =~/.alfe= or =~/.alferc=
-2. =~/.autolisp= or =~/.autolisprc=
-3. =~/.config/alfe/init=
-4. =~/.config/autolisp/init=
+1. =~/.autolisp=
+2. =~/.config/autolisp/init.lsp=
+3. =~/.alfe=
+4. =~/.config/alfe/init.lsp=
+
+The first two are shared with clautolisp, which loads them too; the
+last two are alfe's own. =~/.autolisp= and =~/.alfe= may have no
+extension; each may also be spelt with =.lsp= (=~/.alfe.lsp=), or be
+compiled (=.fas=, =.des=, =.vlx=), a compiled form being used only
+when it is newer than the =.lsp=. In =~/.config/= the extension is
+required: a file named just =init= is ignored. There are no =rc=
+variants (=~/.alferc=, =~/.autolisprc= are not read). The rules are
+those of clautolisp's init files, described in the /clautolisp User
+Manual/, section /Init files/.
 
 The init file runs under the selected dialect and backend; it's a
 natural place to put =alref-set-root= calls, custom helpers, REPL
@@ -902,7 +1452,7 @@ lists the installed plug-ins.
 An active plug-in's other options take their value from the command
 line, else from their environment variable, else from their default.
 Giving an option of a plug-in that is *not* active is a usage error (exit
-status 2) that names the option activating the plug-in: =alfe
+status 64) that names the option activating the plug-in: =alfe
 --epure-profile Epure …= fails and points at =--epure=.
 
 A plug-in declares the backends it takes part in. Under another backend
@@ -997,8 +1547,8 @@ The default control script is
   AutoCAD.
 
 When the script does not exist the run stops with a
-=backend-bootstrap-error= naming the path (exit status 4) — unless it is
-a =--dry-run=.
+=backend-bootstrap-error= naming the path (exit status 69,
+=EX_UNAVAILABLE=) — unless it is a =--dry-run=.
 
 *** How the control script is run
 
@@ -1060,7 +1610,8 @@ with EPURE 2022_b installed:
   save-parameters dialog's =Sauvprm.lsp=: =toutes_options=,
   =f_DateHeure_UTC= — are *not* there in a fresh session, on either CAD.
 - Run one CAD at a time: an AutoCAD started while the previous run's CAD
-  was still exiting failed before READY (exit 4).
+  was still exiting failed before READY (exit 4 then; 69 since alfe
+  2.2.159).
 - =--mode automation= is *not* the answer for BricsCAD, and is not
   wanted in any case: =--epure= exists for GUI work. On the runner the
   COM bridge hung at attach/create even *without* EPURE, so BricsCAD COM
@@ -1080,7 +1631,7 @@ neither a GUI nor profiles. So:
 | BricsCAD, =batch= (the default)         | Starts =bricscad.exe [template] /p PROFILE /b run.scr= from =UserDataCache=. The =/Automation= switch, which hides the main window, is *dropped*. =run.scr= =LOAD=s the control script, then loads =run-common.lsp=. |
 | BricsCAD, =--mode automation= (COM)     | The bridge tries to activate the profile through =Preferences.Profiles= (a failure is written to the errors file and the run carries on with the current profile), and sends =._SCRIPT= before the load.                        |
 | AutoCAD, =automation= (COM)             | The default under =--epure=. The bridge activates the profile and sends =._SCRIPT= before the load.                                                                                                                             |
-| AutoCAD, =--mode batch= (accoreconsole) | Refused: usage error (exit status 2), "EPURE requires the full AutoCAD GUI; accoreconsole (--mode batch) has no profile support. Use --mode automation."                                                                                                              |
+| AutoCAD, =--mode batch= (accoreconsole) | Refused: usage error (exit status 64), "EPURE requires the full AutoCAD GUI; accoreconsole (--mode batch) has no profile support. Use --mode automation."                                                                                                              |
 
 Under COM the run-time is loaded into the GUI session, and its server
 loop keeps the CAD's UI thread busy for as long as alfe drives it: the
@@ -1318,10 +1869,15 @@ to its environment, as =(NAME . VALUE)= pairs, VALUE NIL to unset.
 The keyword details each hook receives (=:backend=, =:variant=, =:index=,
 =:result=, …) are listed in the specification, chapter /Plug-ins/.
 
-=:pre-action= and =:post-action= make alfe evaluate the plan one action
-at a time and stop at the first failed action — but only when an active
-plug-in registered one of them. Otherwise the whole plan goes to the
-backend in one call. =:launcher-lines=, =:launcher-script=,
+=:pre-action= and =:post-action= are called around each action, but only
+when an active plug-in registered one of them; otherwise the whole plan
+goes to the backend in one call. A CAD backend then evaluates the plan one
+action at a time and stops at the first failed action. The clautolisp
+backend runs the plan as the same single run it makes without the hooks --
+in-process, and in one clautolisp child that stops at each action boundary
+under =--backend subprocess= -- so AutoLISP state carries from one action
+to the next and the run ends where it would end anyway (a runtime error,
+=(exit N)=), whichever transport runs it. =:launcher-lines=, =:launcher-script=,
 =:launch-argv= and =:launch-options= are called by the CAD backends only:
 the clautolisp backend has no launch step.
 
@@ -1361,10 +1917,12 @@ as ANSI), variables declared with =Dim=, strings quoted with the helper
 
 *** Errors raised by a hook
 
-A =cli-usage-error= or a =backend-error= signalled by a handler passes
-through unchanged, with its usual exit status. Any other Lisp error
+A =cli-error= (=cli-usage-error= is one) or a =backend-error= signalled by
+a handler passes through unchanged, with its usual exit status; a
+=cli-error= may carry its own (=:status clautolisp.sysexits:+ex-noinput+=
+for a file an option names that is not there). Any other Lisp error
 becomes an =alfe.error:plugin-error=, reported as =plug-in NAME, hook
-:HOOK: …= with exit status 4.
+:HOOK: …= with exit status 70 (=EX_SOFTWARE=).
 
 * The *AUTOLISP-…* globals
 
@@ -1381,12 +1939,20 @@ state:
 | =*AUTOLISP-FILE-ENCODING*=     | Active source-file encoding (always a string). Empty string =""= means "no preference; fall through to the dialect default" — the documented degenerate case when neither =-Esource= nor any =LC_*= env var resolves an encoding. |
 | =*AUTOLISP-TERMINAL-ENCODING*= | Active terminal encoding (always a string, never empty — falls back to =US-ASCII= in the degenerate case). |
 | =*AUTOLISP-VERSION*=           | Version string of the running engine.                  |
-| =*AUTOLISP-LOAD-PATHNAME*=     | Set by =LOAD= during evaluation of the loaded file.    |
+| =*AUTOLISP-LOAD-PATHNAME*=     | The path of the file being loaded (init file, =-l= file, or =(load …)=), dynamically bound for the duration of its load; nil outside any load. |
 | =*AUTOLISP-EXPRESSION*=        | Set during evaluation of a =-x= expression.            |
 | =*AUTOLISP-INTERACTIVE*=       | =T= when the REPL is active, =NIL= otherwise.          |
 | =*AUTOLISP-PLUGIN-OPTIONS*=    | One symbol per /active/ plug-in, in activation order: =(EPURE)= under =--epure=. The empty list when no plug-in is active (see [[#plugins][Plug-ins]]). |
 
 The specifications document the full set and their lifetimes.
+
+* Blocking dialogs and shutdown stalls
+
+The [[file:alfe-dialogues-bloquants.org][blocking-dialog inventory (French, 5 November 2026)]] separates
+AutoCAD, BricsCAD and EPURE startup and shutdown cases, distinguishing
+reported incidents, dialogs handled by the tooling and unconfirmed hypotheses.
+It also distinguishes a modal prompt from a crash or a surviving process;
+AutoCAD exit code =0xBABE= alone does not establish a crash.
 
 * Recording a session: =--dribble=
 
@@ -1437,19 +2003,15 @@ side:
 
 - Under =--autocad= / =--bricscad=, *alfe* records: those engines have no
   dribble of their own, so the transcript is what alfe sees of the conversation.
-- Under =--clautolisp --backend subprocess=, the request is *forwarded to the
-  engine*, which records its own REPL. That transcript is richer than anything
-  alfe could reconstruct from outside — it has the prompts, the interactor stack
-  and the values — and forwarding means one file per session rather than two
-  partial ones.
-- Under =--clautolisp= with the *in-process* engine (the default =--backend
-  direct=), *nothing is recorded*, and alfe says so on =*error-output*= rather
-  than leaving you to look for a file that is not there. The reason is not an
-  omission: clautolisp's dribble is a REPL tee that belongs to the clautolisp
-  *program* and attaches itself through an internal hook, so in alfe's
-  in-process engine =(clal-dribble …)= is a documented no-op. The two answers
-  alfe names are the honest ones — run the engine as a child
-  (=--backend subprocess=), or use =clautolisp= directly.
+- Under =--clautolisp=, the request is *forwarded to the engine program*,
+  which records its own REPL. That transcript is richer than anything alfe
+  could reconstruct from outside -- it has the prompts, the interactor stack
+  and the values -- and forwarding means one file per session rather than two
+  partial ones. The recorder is the =clautolisp= program's, so a =--dribble=
+  run is the program's: alfe runs it as the child even without =--backend
+  subprocess= (and =--backend direct --dribble= is a usage error). As with
+  =clautolisp=, the recording starts with the REPL: a batch run (=-x= /
+  =-l= only) records nothing.
 
 ** =--dribble-interactors=
 
@@ -1509,10 +2071,66 @@ Two things to know:
 
 =--print-command= requires a CAD backend. Under =--clautolisp= there
 is no external command line — the engine runs in-process — so alfe
-exits 2 with a usage error rather than printing nothing.
+exits 64 (=EX_USAGE=) rather than printing nothing.
 
 It is distinct from =--dry-run=, which resolves nothing, touches no
 disk and just prints the action plan.
+
+* Exit status
+
+alfe's exit status says how the run ended, and is the same whichever
+transport runs the =clautolisp= engine (=--backend direct= or
+=subprocess=). Apart from 1, /N/ and 130, the statuses are the
+semi-standard codes of =<sysexits.h>= (see =sysexits.h(3head)=), with the
+same values on *every* system, MS-Windows included -- a script that tests
+for 66 works everywhere.
+
+| Status | Name             | When                                                                                                    |
+|--------+------------------+---------------------------------------------------------------------------------------------------------|
+|    =0= | =EX_OK=          | Success.                                                                                                |
+|    =1= |                  | The AutoLISP program failed: a runtime error escaped it, on any backend (a CAD request that answered =FAIL=). |
+|    /N/ |                  | Under =--clautolisp=: the program's own =(exit N)=, =(quit N)= or =autolisp-set-status N=, unchanged.    |
+|   =64= | =EX_USAGE=       | The command line is wrong: an unknown option, a missing argument, an invalid value, conflicting options, a plug-in option without its plug-in, =--host cadtui --backend direct=, =--print-command= without a CAD backend, =--dwg= on a host without drawings, =--autocad --mode batch= without a drawing or with =--epure=, an aldo option (=--on-interrupt=, =--on-quit=, =--debugger-ui=, =--aldb-listen=, =--aldb-stdio=) under a CAD backend, =--aldb-stdio= with =--interactive= or =--aldb-listen=. |
+|   =65= | =EX_DATAERR=     | An input is not well formed: a =-l= file or =-x= expression the reader refuses (unbalanced parenthesis, unterminated string, bytes not valid in the source encoding); a =--dwg= file that is not a drawing; a =--compile-plugin= source that does not compile. |
+|   =66= | =EX_NOINPUT=     | An input file does not exist or is not readable: the =-l= file, the =--dwg= drawing, the =--epuree-alpm= file, the =--compile-plugin= source. |
+|   =69= | =EX_UNAVAILABLE= | The backend, or something it needs, is not there or would not start: the CAD is not installed or not supported on this system, no clautolisp executable for =--backend subprocess=, no accoreconsole, EPURE or alpm.lsp not installed, the DWG native library missing, the CAD launcher died before READY. |
+|   =70= | =EX_SOFTWARE=    | An internal error: a defect of alfe, of the engine, or of a plug-in (an error raised by a plug-in hook).  |
+|   =71= | =EX_OSERR=       | The clautolisp child process (=--backend subprocess=) could not be started.                            |
+|   =73= | =EX_CANTCREAT=   | An output cannot be created: the workdir, the =--dribble= transcript.                                    |
+|   =74= | =EX_IOERR=       | An input/output error while reading or writing.                                                         |
+|   =75= | =EX_TEMPFAIL=    | The CAD did not answer in time -- READY within =--timeout=, a request, the shutdown -- or a protocol slot stayed busy. Retrying may succeed. |
+|   =76= | =EX_PROTOCOL=    | The CAD runtime answered something the file protocol does not allow.                                    |
+|  =130= |                  | Interrupted: Control-C under the =quit= interrupt policy (128 + SIGINT).                                 |
+
+The other =<sysexits.h>= codes are not used: alfe looks up no user (67
+=EX_NOUSER=) or host name (68 =EX_NOHOST=), needs no system file (72
+=EX_OSFILE=), reports an unreadable input file as =EX_NOINPUT= the way
+=<sysexits.h>= says rather than as 77 =EX_NOPERM=, and has no
+configuration file whose error stops a run (78 =EX_CONFIG=).
+
+Why 1 for a failing program, and not a =<sysexits.h>= code: those codes
+say what kept a program from running properly -- a bad command line, a
+missing input, an engine that is not there. When everything was in place
+and the AutoLISP program itself signalled an error, the /program/
+failed, and 1 is what a failing program conventionally returns. Keeping
+it at 1 also keeps the meaning of 1 that scripts and CI jobs already test
+for.
+
+#+begin_example
+$ alfe -l no-such-file.lsp ; echo "exit $?"
+clautolisp: The file #P"/home/me/no-such-file.lsp" does not exist: No such file or directory
+exit 66
+$ alfe -x '(princ' ; echo "exit $?"
+clautolisp: <-x>:1:7: read error: Unexpected end of input inside list. [UNEXPECTED-EOF]
+exit 65
+#+end_example
+
+*Changed in alfe 2.2.159.* The codes were 1 (a failing program, or any
+unexpected error), 2 (a usage error, or a =-l= file the =clautolisp=
+engine could not open), 3 (backend not available) and 4 (bootstrap,
+protocol or plug-in error). A script that tested for 2, 3 or 4 must be
+adapted: 2 is now 64 (usage) or 66 (missing file), 3 is 69, and 4 is 69,
+75, 76 or 70 depending on the failure.
 
 * Environment variables
 
@@ -1531,6 +2149,7 @@ always wins.
 | =$AUTOLISP_BACKEND=, =$ALFE_BACKEND_OVERRIDE= | backend selection |
 | =$AUTOLISP_MODE=             | =--mode=            |
 | =$AUTOLISP_DWG=              | =--dwg=             |
+| =$AUTOLISP_TEMPLATE=         | =--template=        |
 | =$AUTOLISP_EPURE=            | =--epure=           |
 | =$AUTOLISP_EPURE_PROFILE=    | =--epure-profile=   |
 | =$AUTOLISP_EPURE_SCRIPT=     | =--epure-script=    |
@@ -1553,15 +2172,19 @@ plug-in is active.
 ** Engine location and launch
 - =$ALFE_CLAUTOLISP_BIN= :: the =clautolisp= executable the clautolisp
   backend runs as a subprocess. Set it to test a build that is not the
-  installed one.
+  installed one. Unset, an installed alfe runs the =clautolisp-sbcl=
+  installed in the same prefix; the whole search order is under
+  /cadtui/ in the hosts chapter.
 - =$ALFE_BOOTSTRAP_LSP=, =$ALFE_RUNTIME_LSP= :: the two CAD runtime
   files, =autolisp-bootstrap.lsp= and =autolisp-remote-io.lsp=, in
   place of the installed ones. A value naming no file is ignored. See
   /The CAD runtime files/ above.
 - =$AUTOCAD_EXE=, =$AUTOCAD_ACCORECONSOLE=, =$BRICSCAD_EXE= :: explicit
   engine binaries, bypassing detection.
-- =$AUTOCAD_COM_MODE=, =$BRICSCAD_COM_MODE= :: =auto= (default) or
-  =off=. =off= is the batch path, without COM.
+- =$AUTOCAD_COM_MODE=, =$BRICSCAD_COM_MODE= :: =launch= (default: a new
+  instance), =attach= (the running one), =auto= (attach when one runs,
+  else launch) or =off= (the batch path, without COM). =--backend= and
+  =--attach-pid= take priority.
 - =$AUTOCAD_PROGID= :: the COM ProgID =--mode automation= asks for, used
   verbatim and without a registry check — the way to name a release alfe
   does not know, or to pin one on a host with several. Unset, alfe
@@ -1639,12 +2262,36 @@ uses =accoreconsole= and needs no COM registration at all.
 ** "AutoCAD COM bridge (cscript) exited before READY"
 
 The COM bridge failed to attach to or create an AutoCAD. The message
-carries the stage (=getobject= / =createobject=), the ProgID asked for,
+carries the stage (=getobject= / =createobject= / =launch-timeout= /
+=launch-exited=), the ProgID asked for,
 and the COM error in decimal and hexadecimal with its description —
 =429 (0x1AD) ActiveX component can't create object= is a registration
 that resolves to no runnable server; try the versioned ProgID as above.
 What exited is =cscript=, the bridge: whether =acad.exe= itself started
 is what the =ATTACHED= / =CREATED= flags report.
+
+The stages =launch-timeout= and =launch-exited= come from alfe's own start
+of AutoCAD (next entry): =acad.exe= did not make itself known in time, or
+exited before it did.
+
+** AutoCAD takes longer than two minutes to start under =--mode automation=
+
+/Changed in alfe 2.3.101./ When no AutoCAD is running, the COM bridge starts
+AutoCAD itself -- the command registered for its ProgID (=LocalServer32=,
+normally =acad.exe /Automation=) -- and waits for it to register, for as long
+as alfe's ready timeout (=--timeout=, or =$AUTOLISP_WAIT_SECS=). Before, it
+used =CreateObject=, which lets Windows (DCOM) start AutoCAD and wait for it
+for a fixed 120 seconds: an AutoCAD that took longer failed with COM error
+=429= after about two minutes, whatever =--timeout= said, and Windows logged
+DCOM event 10010 ("did not register with DCOM within the required timeout").
+If the launched =acad.exe= exits before it registers, alfe says so at once
+(stage =launch-exited=) instead of waiting out the timeout.
+
+When another AutoCAD is already running, the bridge still uses
+=CreateObject=, so that it cannot pick up that other instance: in that case
+the two-minute limit of Windows still applies. A slow start is the CAD's
+own (its profile, its add-ins, the machine); the fix lets alfe wait for it,
+it does not make it faster.
 
 ** "did not reach READY within N s ... the engine never moved past BOOTING"
 
@@ -1722,7 +2369,7 @@ the CAD backends, so a long eval was aborted at the fixed 30 s default.)
 
 =--epure-profile=, =--epure-script=, =--epuree-path=, =--epuree-alpm=
 and every other option a plug-in defines are usage errors (exit status
-2) while their plug-in is not active. The message names the option that
+64) while their plug-in is not active. The message names the option that
 activates it — for =--epure-profile=, that is =--epure=. Add that
 option, or activate the plug-in by name: =--plugin epure=, or
 =$ALFE_PLUGINS=epure= in your shell init. See /Activating a plug-in/.
@@ -1758,15 +2405,17 @@ Run with =--verbose= to see the message saying so, and name the backend.
 
 ** A run under EPURE or EPUREE stops before the script starts
 
-- EPURE control script not found (exit status 4): the message names the
+- EPURE control script not found (exit status 69): the message names the
   path looked at. Install EPURE, or point =--epure-script= (or
   =$AUTOLISP_EPURE_SCRIPT=) at the script. A =--dry-run= does not check.
-- =--autocad --mode batch --epure= is refused (exit status 2):
+- =--autocad --mode batch --epure= is refused (exit status 64):
   accoreconsole has no profile support. Drop =--mode batch=; AutoCAD
   then runs under COM automation.
-- =alpm.lsp= not found under =--epuree=: a usage error listing the places
-  tried. Give =--epuree-alpm FILE=, or set =$ALPM_LSP=.
-- =plug-in NAME, hook :HOOK: …= (exit status 4): a plug-in's hook raised
+- =alpm.lsp= not found under =--epuree=: exit status 66 when the file
+  named by =--epuree-alpm= is not there, 69 when none is installed in the
+  places tried (the message lists them). Give =--epuree-alpm FILE=, or set
+  =$ALPM_LSP=.
+- =plug-in NAME, hook :HOOK: …= (exit status 70): a plug-in's hook raised
   an error that is not a usage or backend error. It is a defect of that
   plug-in.
 
@@ -1785,3 +2434,87 @@ Per the project-wide synchronisation rule (AGENTS.md, Documentation
 Synchronisation section), changes to the code, the alfe
 specifications, this user-manual, or the man page must be
 propagated to every track.
+
+
+* CAD session cleanup and owned COM instances
+:PROPERTIES:
+:CUSTOM_ID: owned-cad-cleanup
+:END:
+
+On Windows, AutoCAD and BricsCAD automation retain the exact COM application
+reference returned at startup. After the evaluation, alfe closes the session in
+this order (contract 2, since alfe 2.3.107):
+
+1. *Results.* alfe decides the run's outcome -- its exit status -- and checks
+   each =--result-file FILE= the run had to write: missing, empty, still
+   growing, or an XML file whose root element is not closed, it fails a run
+   that would otherwise succeed (exit 66). A run whose script failed keeps its
+   own status. alfe imposes no such file: the option is for the scripts that
+   write one, a JUnit report for instance.
+2. *Restoration.* The live runtime restores LOGFILEMODE, LOGFILEPATH and
+   SRCHPATH, closing the current command log first, and acknowledges
+   =RESTORED= only after leaving its protocol loop. Without that
+   acknowledgement the run fails, and the CAD is not asked to close.
+3. *Frontier.* alfe writes =owned-close-frontier.txt= in the work directory:
+   the outcome, the result files checked, the restoration acknowledged, the
+   invocation. From here on, how the CAD ends is a diagnostic, not the result.
+4. *Close.* For an application created by this invocation, the retained bridge
+   closes its documents without saving and calls Quit on that same application;
+   it does not look up a potentially different instance through GetObject. An
+   attached application is only released, never closed.
+5. *Disappearance.* The created process must be gone. alfe's helper reopens it
+   by its captured identity -- PID, UTC creation ticks, image name, session and
+   owner SID, all revalidated -- waits up to 20 seconds, and, past that grace,
+   terminates that handle and waits up to 10 more seconds. A Quit that blocks
+   (a dialog) does not block alfe: after 30 seconds without the bridge's answer,
+   the bridge is stopped and the helper runs with no grace. A process is never
+   ended by its name, by its engine, or because it started at about the same
+   time; a PID that names another process now, or an identity that does not
+   match, is left alone.
+
+Past the frontier, a normal exit, an exit code such as =0xBABE=, a crash code
+such as =0xC0000005= or =0xC0000374=, or a forced termination does not change
+the run's exit status: an assertion that failed still fails, a run that
+succeeded still succeeds. It is logged -- a warning when the CAD was terminated
+or its code is an NTSTATUS error -- and kept in the cleanup report. A process
+still running after its termination, an identity the helper cannot confirm (it
+is then not terminated), or a helper that reports nothing fails the run (exit
+76), keeps the work directory, and names the process in the error.
+
+=--cleanup-report FILE= copies the cleanup report to FILE. It is KEY=VALUE
+lines ending with =end=1=, written to a temporary file and renamed:
+
+| Key                         | Meaning                                                                    |
+|-----------------------------+----------------------------------------------------------------------------|
+| =contract=                  | =2=                                                                        |
+| =frontier=                  | =recorded=, or =absent= when the run ended before deciding its outcome      |
+| =script-status=, =script-exit-code= | the outcome recorded at the frontier                               |
+| =results=                   | =ok=, =incomplete=, =unchecked= (no =--result-file=) or =unknown=          |
+| =result-file-N=             | its status, size and path                                                  |
+| =owned=                     | =created=, =attached=, or =none= (no CAD of the run's own to close)        |
+| =quit-error=                | the bridge's error number for Close/Quit, or =no-answer=                    |
+| =cleanup-outcome=           | =exited=, =forced=, =already-gone=, =pid-reused=, =survived=, =identity-mismatch=, =identity-uncertain= or =error= |
+| =cleanup-forced=            | =1= when the process was terminated                                        |
+| =cleanup-exit-code=, =cleanup-exit-code-hex= | the raw exit code, unsigned decimal and hexadecimal        |
+| =cleanup-pid=, =cleanup-start-ticks=, =cleanup-name=, =cleanup-session=, =cleanup-sid= | the identity       |
+| =cleanup-waited-ms=, =cleanup-kill-waited-ms= | the time spent waiting for the exit, before and after the termination |
+| =cleanup=                   | =ok=, =released= (attached), =none=, or the failure's code                 |
+
+A CI job reads its verdict from the run's exit status, and the cleanup report
+for the diagnostics: it should not require a zero native exit code, nor read
+=close-owned.result=, whose format belongs to the bridge.
+
+The work directory contains =owned-cad-process.ps1=, the captured
+=owned-cad-process.json= identity, the =close-owned.request/result= handshake,
+=owned-close-frontier.txt=, the helper's =owned-cad-cleanup.txt= and the
+=owned-cad-cleanup-report.txt=. These files are private to one invocation and
+must not be reused by another.
+
+The generated PowerShell helper is invoked with a process-scoped execution
+policy; this does not change the machine or user execution-policy settings.
+Domain policy still takes precedence.
+
+For interactive attachment, restoration ends the runtime loop and releases the
+bridge reference, but never closes the pre-existing application or documents.
+CI runners use fresh instances; clearing residual CAD processes of the dedicated
+runner account before a job is a separate runner preflight policy.

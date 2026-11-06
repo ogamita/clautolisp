@@ -2,7 +2,7 @@
 
 (in-suite cador-suite)
 
-;;; --- Phase 13: COM bridge on MockHost ----------------------------
+;;; --- Phase 13: COM bridge on cador ----------------------------
 
 (test vlax-create-object-returns-vla-wrapping-id
   (let* ((mock (make-cador))
@@ -10,22 +10,27 @@
     (is (typep vla 'clautolisp.autolisp-runtime:autolisp-vla-object))
     (let* ((id (clautolisp.autolisp-runtime:autolisp-vla-object-value vla))
            (object (cador-find-com-object mock id)))
-      (is (typep object 'mock-com-object))
-      (is (string= "AutoCAD.Application" (mock-com-object-progid object))))))
+      (is (typep object 'cador-com-object))
+      (is (string= "AutoCAD.Application" (cador-com-object-progid object))))))
+
+(defun %tv-vlax-boolean-p (value name)
+  "True when VALUE is the ActiveX boolean symbol NAME (:VLAX-TRUE / :VLAX-FALSE)."
+  (and (typep value 'clautolisp.autolisp-runtime:autolisp-symbol)
+       (string= name (clautolisp.autolisp-runtime:autolisp-symbol-name value))))
 
 (test vlax-get-property-reads-template-defaults
   (let* ((mock (make-cador))
          (vla (host-vlax-create-object mock "AutoCAD.Application"))
          (visible (host-vlax-get-property mock vla "Visible"))
          (name (host-vlax-get-property mock vla "Name")))
-    (is (eq t visible))
+    (is (%tv-vlax-boolean-p visible ":VLAX-TRUE"))
     (is (string= "Mock AutoCAD" name))))
 
 (test vlax-put-property-mutates-and-rejects-unknown-names
   (let* ((mock (make-cador))
          (vla (host-vlax-create-object mock "AutoCAD.Application")))
     (host-vlax-put-property mock vla "Visible" nil)
-    (is (null (host-vlax-get-property mock vla "Visible")))
+    (is (%tv-vlax-boolean-p (host-vlax-get-property mock vla "Visible") ":VLAX-FALSE"))
     (handler-case
         (host-vlax-put-property mock vla "NoSuch" 42)
       (autolisp-runtime-error (condition)
@@ -110,7 +115,7 @@
     (let ((doc (host-vlax-get-property mock app "ActiveDocument")))
       (is (typep doc 'clautolisp.autolisp-runtime:autolisp-vla-object))
       ;; It really is an AutoCAD.Document — its Name default proves it.
-      (is (string= "Drawing.dwg" (host-vlax-get-property mock doc "Name")))
+      (is (string= "Drawing1.dwg" (autolisp-string-value (host-vlax-get-property mock doc "Name"))))
       ;; And the back-link Document.Application points at the app.
       (let ((back (host-vlax-get-property mock doc "Application")))
         (is (typep back 'clautolisp.autolisp-runtime:autolisp-vla-object))
@@ -455,7 +460,7 @@ the shape of the SCHMS sigfic fixtures."
       (is (string= "SIGFIC_I"
                    (autolisp-string-value
                     (host-vlax-get-property mock insert "Name"))))
-      (is (eq t (host-vlax-get-property mock insert "HasAttributes")))
+      (is (%tv-vlax-boolean-p (host-vlax-get-property mock insert "HasAttributes") ":VLAX-TRUE"))
       ;; The reference (not its attribute run) is the space's member.
       (is (eql 1 (host-vlax-get-property mock modelspace "Count")))
       ;; GetAttributes: the ATTRIB clone of the definition's ATTDEF,
@@ -553,11 +558,36 @@ the shape of the SCHMS sigfic fixtures."
          (vla (host-vlax-ename->vla-object mock ename))
          (box (host-vlax-invoke-method mock vla "GetBoundingBox" '())))
     (is (consp box))
-    (let ((min-corner (first box)) (max-corner (second box)))
-      (is (%tv~= 0.0d0 (first min-corner)))
-      (is (%tv~= 0.0d0 (second min-corner)))
-      ;; The text height extends the box upward.
-      (is (%tv~= 2.5d0 (second max-corner))))))
+    ;; A TEXT at the origin is bounded by its glyph ink, exactly as
+    ;; TEXTBOX measures it (both vendors agree; the box is no longer
+    ;; the bare insertion point stretched by the height).
+    (multiple-value-bind (x0 y0 x1 y1)
+        (clautolisp.autolisp-runtime:text-ink-box "boite" 2.5d0)
+      (let ((min-corner (first box)) (max-corner (second box)))
+        (is (%tv~= x0 (first min-corner)))
+        (is (%tv~= y0 (second min-corner)))
+        (is (%tv~= x1 (first max-corner)))
+        (is (%tv~= y1 (second max-corner)))
+        ;; Real width: five glyphs at height 2.5, not zero.
+        (is (< 5.0d0 (first max-corner) 12.0d0))))))
+
+(test entity-getboundingbox-of-text-matches-the-vendor-measure
+  ;; probe-block-walk.lsp, AutoCAD 2022 and BricsCAD: 10 x M and
+  ;; 10 x i at height 1, TEXTBOX = GetBoundingBox at the origin.
+  (flet ((box-of (string)
+           (let* ((mock (make-cador))
+                  (view (host-entmake
+                         mock (list (cons 0 "TEXT") (cons 8 "0")
+                                    (list 10 0.0d0 0.0d0 0.0d0)
+                                    (cons 40 1.0d0) (cons 1 string))))
+                  (vla (host-vlax-ename->vla-object mock (cdr (first view)))))
+             (host-vlax-invoke-method mock vla "GetBoundingBox" '()))))
+    (let ((m (box-of "MMMMMMMMMM")) (i (box-of "iiiiiiiiii")))
+      (is (< (abs (- 0.103683d0 (first (first m)))) 1d-4))
+      (is (< (abs (- 11.531378d0 (first (second m)))) 1d-4))
+      (is (< (abs (- 1.0d0 (second (second m)))) 1d-4))
+      (is (< (abs (- 0.092769d0 (first (first i)))) 1d-4))
+      (is (< (abs (- 3.008868d0 (first (second i)))) 1d-4)))))
 
 ;;; --- The classic block-contents walk: tblsearch -2 + entget -------
 ;;; (Regression for the SCHMS "attendu 2 LINE dans le bloc sigfic,
@@ -637,8 +667,14 @@ the shape of the SCHMS sigfic fixtures."
          (ename (cdr (first view)))
          (vla (host-vlax-ename->vla-object mock ename))
          (box (host-vlax-invoke-method mock vla "GetBoundingBox" '())))
-    (is (%tv~= 2.5d0 (second (first box))))
-    (is (%tv~= 5.0d0 (second (second box))))))
+    ;; Baseline at 5 - 2.5: the ink of "tl" hangs below the anchor
+    ;; (its curve overshoots the baseline by a hair).
+    (multiple-value-bind (x0 y0 x1 y1)
+        (clautolisp.autolisp-runtime:text-ink-box "tl" 2.5d0)
+      (declare (ignore x0 x1))
+      (is (%tv~= (+ 2.5d0 y0) (second (first box))))
+      (is (%tv~= (+ 2.5d0 y1) (second (second box))))
+      (is (<= (second (second box)) 5.0d0)))))
 
 ;;; --- SCHME A1 object-model surface (cador-schme-a1-activex-coverage) ---
 ;;;
@@ -720,7 +756,7 @@ comparison."
          (docs (host-vlax-get-property host app "Documents"))
          (new (host-vlax-invoke-method host docs "Add" '())))
     (is (string= "AutoCAD.Document"
-                 (mock-com-object-progid (cador-find-com-object
+                 (cador-com-object-progid (cador-find-com-object
                                           host
                                           (clautolisp.autolisp-runtime:autolisp-vla-object-value new)))))
     ;; Its Blocks / Layers are live collections (answer Count).
@@ -792,7 +828,9 @@ merely because an ATTDEF came back."
          (progn
            (host-vlax-invoke-method host doc "SaveAs" (list path))
            (is (probe-file path))
-           (is (string= path (host-vlax-get-property host doc "Name"))))
+           ;; Name is the file's name (DWGNAME), FullName its path.
+           (is (string= (file-namestring path)
+                        (autolisp-string-value (host-vlax-get-property host doc "Name")))))
       (ignore-errors (delete-file path)))))
 
 (test vlax-new-object-surface-is-reported-available
@@ -929,6 +967,106 @@ merely because an ATTDEF came back."
       (clautolisp.autolisp-runtime:set-runtime-session-dialect
        session (clautolisp.autolisp-reader:autolisp-dialect-strict)))))
 
+;;; --- vendor sysvar first, clautolisp as the fallback ---------------------
+;;; pjb, 2026-09-28 (clal-drawing-sysvars-silent-out-of-dialect): under a vendor
+;;; dialect the vendor's own system variable decides when it has one; the
+;;; clautolisp one is the fallback, with a `[clautolisp-sysvar]' notice.
+
+(defmacro %with-dialect ((dialect) &body body)
+  "Run BODY with DIALECT (a registry keyword) as the session dialect, restoring
+strict afterwards, and with the notice's once-per-run memory cleared so each
+test sees its own first use."
+  `(let ((session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:current-evaluation-context))))
+     (clrhash clautolisp.autolisp-runtime:*clautolisp-sysvar-warnings-seen*)
+     (unwind-protect
+          (progn
+            (clautolisp.autolisp-runtime:set-runtime-session-dialect
+             session (clautolisp.autolisp-reader:find-autolisp-dialect ,dialect))
+            ,@body)
+       (clrhash clautolisp.autolisp-runtime:*clautolisp-sysvar-warnings-seen*)
+       (clautolisp.autolisp-runtime:set-runtime-session-dialect
+        session (clautolisp.autolisp-reader:autolisp-dialect-strict)))))
+
+(defmacro %stderr-of (&body body)
+  `(let ((*error-output* (make-string-output-stream)))
+     ,@body
+     (get-output-stream-string *error-output*)))
+
+(defun %temp-template ()
+  "A readable drawing file to name as a template."
+  (let ((path (format nil "/tmp/cador-template-~D.dxf" (random 1000000))))
+    (with-open-file (out path :direction :output :if-exists :supersede)
+      (write-string "0
+EOF
+" out))
+    path))
+
+(test bricscad-dialect-takes-the-template-from-basefile
+  "Under a BricsCAD dialect BASEFILE -- BricsCAD's own variable -- names the
+template, silently; CLAUTOLISPNEWDRAWINGTEMPLATE is ignored when BASEFILE is set."
+  (let ((host (make-cador))
+        (basefile (%temp-template))
+        (ours (%temp-template)))
+    (unwind-protect
+         (%with-dialect (:bricscad-v26)
+           (cador-set-sysvar host "BASEFILE" basefile)
+           (cador-set-sysvar host "CLAUTOLISPNEWDRAWINGTEMPLATE" ours)
+           (let (template)
+             (is (equal "" (%stderr-of
+                             (setf template (clautolisp.cador:cador-new-drawing-template host)))))
+             (is (equal (namestring (truename basefile)) (namestring (truename template))))))
+      (ignore-errors (delete-file basefile))
+      (ignore-errors (delete-file ours)))))
+
+(test bricscad-dialect-falls-back-to-the-clautolisp-template-with-a-notice
+  "BASEFILE empty: the clautolisp variable decides, and the notice names BASEFILE
+as BricsCAD's own."
+  (let ((host (make-cador))
+        (ours (%temp-template)))
+    (unwind-protect
+         (%with-dialect (:bricscad-v26)
+           (cador-set-sysvar host "BASEFILE" "")
+           (cador-set-sysvar host "CLAUTOLISPNEWDRAWINGTEMPLATE" ours)
+           (let* (template
+                  (err (%stderr-of
+                         (setf template (clautolisp.cador:cador-new-drawing-template host)))))
+             (is (equal (namestring (truename ours)) (namestring (truename template))))
+             (is (search "[clautolisp-sysvar]" err) "no notice: ~S" err)
+             (is (search "CLAUTOLISPNEWDRAWINGTEMPLATE" err))
+             (is (search "BASEFILE" err))))
+      (ignore-errors (delete-file ours)))))
+
+(test autocad-dialect-uses-the-clautolisp-sysvars-with-a-notice-once
+  "AutoCAD has no system variable for either: the clautolisp ones decide, with
+the notice -- once per variable per run, not on every use."
+  (let ((host (make-cador)))
+    (%with-dialect (:autocad-2026)
+      (let ((first (%stderr-of (clautolisp.cador:cador-default-drawing-format host)))
+            (second (%stderr-of (clautolisp.cador:cador-default-drawing-format host))))
+        (is (search "[clautolisp-sysvar]" first) "no notice: ~S" first)
+        (is (search "CLAUTOLISPDEFAULTDRAWINGFORMAT" first))
+        (is (search "AutoCAD has no system variable" first))
+        (is (equal "" second) "the notice repeated: ~S" second)))))
+
+(test clautolisp-dialect-is-silent-about-its-own-sysvars
+  (let ((host (make-cador)))
+    (%with-dialect (:clautolisp)
+      (is (equal "" (%stderr-of
+                      (clautolisp.cador:cador-default-drawing-format host)
+                      (host-getvar host "CLAUTOLISPNEWDRAWINGTEMPLATE")))))))
+
+(test getvar-of-a-clautolisp-sysvar-out-of-dialect-gets-the-notice
+  "What the ticket measured: (getvar \"CLAUTOLISPNEWDRAWINGTEMPLATE\") was
+entirely silent under --dialect autocad."
+  (let ((host (make-cador)))
+    (%with-dialect (:autocad-2026)
+      (let ((err (%stderr-of (host-getvar host "CLAUTOLISPNEWDRAWINGTEMPLATE"))))
+        (is (search "[clautolisp-sysvar]" err) "no notice: ~S" err))
+      ;; a vendor sysvar never does
+      (clrhash clautolisp.autolisp-runtime:*clautolisp-sysvar-warnings-seen*)
+      (is (equal "" (%stderr-of (host-getvar host "FILEDIA")))))))
+
 (test vlax-saveas-records-version-from-default
   ;; A DXF-2013 default records both format and version on the drawing even
   ;; when the path extension is unknown (container DXF is a real codec).
@@ -945,3 +1083,494 @@ merely because an ATTDEF came back."
            (is (eq :ac1027
                    (clautolisp.drawing:drawing-version (cador-active-drawing host)))))
       (ignore-errors (delete-file path)))))
+
+(test entmakex-builds-a-block-definition-as-the-vendors-do
+  ;; MEASURED (probes/sources/probe-block-walk.lsp; AutoCAD 2022 and BricsCAD,
+  ;; 2026-10-03): ENTMAKEX of BLOCK returns the block's ename, its members
+  ;; theirs, the block is defined, the entnext walk from TBLOBJNAME yields the
+  ;; members and NOT an ENDBLK. ENDBLK returns NIL on AutoCAD (strict follows
+  ;; it) and the block's NAME on BricsCAD. It used to refuse BLOCK and ENDBLK.
+  (dolist (case '((:strict nil) (:autocad nil) (:bricscad "SIGFIC_X") (:bricscad-mac "SIGFIC_X")))
+    (destructuring-bind (dialect endblk) case
+      (let ((mock (make-cador)))
+        (%with-dialect (dialect)
+          (let ((header (host-entmakex mock (list (cons 0 "BLOCK") (cons 2 "SIGFIC_X") (cons 70 0)
+                                                  (list 10 0.0d0 0.0d0 0.0d0)))))
+            (is (typep header 'autolisp-ename) "~A: BLOCK returns an ename" dialect)
+            (is (typep (host-entmakex mock (%tv-text-dxf "corps")) 'autolisp-ename))
+            (let ((closing (host-entmakex mock (list (cons 0 "ENDBLK")))))
+              (if endblk
+                  (is (and closing (string= endblk (autolisp-string-value closing))) "~A" dialect)
+                  (is (null closing) "~A: ENDBLK returns nil" dialect)))
+            (is (not (null (cador-find-table-record mock :block-record "SIGFIC_X"))))
+            ;; the ename BLOCK returned IS the one tblobjname gives
+            (is (eq header (host-tblobjname mock "BLOCK" "SIGFIC_X")))
+            (let ((first (host-entnext mock header)))
+              (is (not (null first)))
+              (is (null (host-entnext mock first)) "no ENDBLK in the walk"))
+            ;; nothing leaked into model space
+            (is (null (host-entnext mock nil)))))))))
+
+;;; --- Command engine: vendor-specific results (alref Phase 4 S1) ------
+;;; Measured by probes/sources/probe-commands.lsp on AutoCAD 2022 (job
+;;; 16914120564) and BricsCAD V26 (job 16913723746): the commands follow
+;;; AutoCAD by default and under strict, BricsCAD under a BricsCAD dialect.
+
+(test command-trace-draws-mitred-segments-under-bricscad-only
+  (flet ((trace-run ()
+           (let ((mock (make-cador)))
+             (clautolisp.autolisp-host:host-command
+              mock '("_.TRACE" "0.5" "0,0" "4,0" "4,3" "" "_.POINT" "9,9"))
+             mock)))
+    (%with-dialect (:bricscad-mac)
+      (let* ((mock (trace-run))
+             (e1 (host-entnext mock nil))
+             (d1 (host-entget mock e1))
+             (d2 (host-entget mock (host-entnext mock e1))))
+        (is (equal '("TRACE" "TRACE" "POINT") (%ct-types mock)))
+        (is (%ct-near '(0 0.25 0) (%ct-group d1 10)))
+        (is (%ct-near '(4.25 -0.25 0) (%ct-group d1 13)))
+        (is (%ct-near '(3.75 0.25 0) (%ct-group d2 10)))
+        (is (%ct-near '(4.25 3 0) (%ct-group d2 13)))))
+    ;; AutoCAD 2022 makes nothing; the sequence is consumed and the
+    ;; following command still runs.
+    (%with-dialect (:autocad)
+      (is (equal '("POINT") (%ct-types (trace-run)))))))
+
+(test command-mline-style-name-and-spline-tangents-follow-the-product
+  (flet ((mline-style ()
+           (let ((mock (make-cador)))
+             (host-setvar mock "CMLSCALE" 20.0d0)
+             (clautolisp.autolisp-host:host-command mock '("_.MLINE" "0,0" "4,0" ""))
+             (autolisp-string-value (%ct-group (%ct-last-data mock) 2))))
+         (spline-has-tangents ()
+           (let ((mock (%ct-run '("_.SPLINE" "0,0" "1,1" "2,0" "3,1" "" "" ""))))
+             (and (assoc 12 (%ct-last-data mock)) t))))
+    (%with-dialect (:autocad)
+      (is (string= "STANDARD" (mline-style)))
+      (is (not (spline-has-tangents))))
+    (%with-dialect (:bricscad)
+      (is (string= "Standard" (mline-style)))
+      (is (spline-has-tangents)))))
+
+(test entmade-polylines-list-the-vendor-default-groups
+  ;; Both vendors' ENTGET (identical): LWPOLYLINE 43 38 39 and per vertex
+  ;; 40 41 42 91 (a constant width repeats in 40 / 41).
+  (let* ((mock (%ct-run '("_.DONUT" "1" "2" "5,5" "")))
+         (d (%ct-last-data mock))
+         (codes (mapcar #'car d)))
+    (is (every (lambda (c) (member c codes)) '(43 38 39 40 41 42 91)))
+    (is (%ct-near 0.5 (%ct-group d 40)))
+    (is (= 2 (count 91 codes)))))
+
+;;; --- alref Phase 4 S2 rest / S4: arrays, DIVIDE, MEASURE, ADDSELECTED,
+;;; JOIN, FLATTEN -- measured on BricsCAD (job 16914406700) / AutoCAD.
+
+(defun %ct-centers (mock)
+  "The 10 groups of MOCK's live main-space entities, oldest first, rounded."
+  (let ((out '()) (e (host-entnext mock nil)))
+    (loop while e
+          do (let ((p (cdr (assoc 10 (host-entget mock e)))))
+               (push (mapcar (lambda (x) (/ (round (* 1000 x)) 1000)) p) out))
+             (setq e (host-entnext mock e)))
+    (nreverse out)))
+
+(defun %ct-array (tokens)
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock (list "_.CIRCLE" "0,0" "0.5"))
+    (clautolisp.autolisp-host:host-command
+     mock (append (list (car tokens) (host-entlast mock)) (cdr tokens)))
+    mock))
+
+(test command-arrays-make-their-copies-in-the-measured-order
+  ;; -ARRAY: column by column on AutoCAD, row by row on BricsCAD;
+  ;; ARRAYRECT: column by column; 3DARRAY: levels innermost, per vendor.
+  (let ((args '("_.-ARRAY" "" "_R" "2" "3" "2" "3")))
+    (%with-dialect (:autocad)
+      (is (equal '((0 0 0) (0 2 0) (3 0 0) (3 2 0) (6 0 0) (6 2 0))
+                 (%ct-centers (%ct-array args)))))
+    (%with-dialect (:bricscad)
+      (is (equal '((0 0 0) (3 0 0) (6 0 0) (0 2 0) (3 2 0) (6 2 0))
+                 (%ct-centers (%ct-array args))))))
+  (is (equal '((0 0 0) (0 2 0) (3 0 0) (3 2 0) (6 0 0) (6 2 0))
+             (%ct-centers (%ct-array '("_.ARRAYRECT" "" "_AS" "_N" "_COU" "3" "2"
+                                       "_S" "3" "2" "_X")))))
+  ;; 3DARRAY: levels innermost; column by column on AutoCAD (its
+  ;; 3darray.lsp, job 16915676646), row by row on BricsCAD.
+  (let ((args '("_.3DARRAY" "" "_R" "2" "2" "2" "1" "1" "1")))
+    (%with-dialect (:autocad)
+      (is (equal '((0 0 0) (0 0 1) (0 1 0) (0 1 1) (1 0 0) (1 0 1) (1 1 0) (1 1 1))
+                 (%ct-centers (%ct-array args)))))
+    (%with-dialect (:bricscad)
+      (is (equal '((0 0 0) (0 0 1) (1 0 0) (1 0 1) (0 1 0) (0 1 1) (1 1 0) (1 1 1))
+                 (%ct-centers (%ct-array args))))))
+  ;; ARRAY _R: column by column on AutoCAD, row by row on BricsCAD.
+  (let ((args '("_.ARRAY" "" "_R" "_AS" "_N" "_COU" "2" "2" "_S" "3" "3" "_X")))
+    (%with-dialect (:autocad)
+      (is (equal '((0 0 0) (0 3 0) (3 0 0) (3 3 0)) (%ct-centers (%ct-array args)))))
+    (%with-dialect (:bricscad)
+      (is (equal '((0 0 0) (3 0 0) (0 3 0) (3 3 0)) (%ct-centers (%ct-array args)))))))
+
+(test command-polar-array-goes-counter-clockwise-from-the-original
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("_.CIRCLE" "2,0" "0.5"))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.-ARRAY" (host-entlast mock) "" "_P" "0,0" "4" "360" "_Y"))
+    (is (equal '((2 0 0) (0 2 0) (-2 0 0) (0 -2 0)) (%ct-centers mock)))))
+
+(test command-divide-measure-addselected-join-flatten
+  (flet ((after (first-tokens second-builder)
+           (let ((mock (make-cador)))
+             (clautolisp.autolisp-host:host-command mock first-tokens)
+             (clautolisp.autolisp-host:host-command
+              mock (funcall second-builder (host-entlast mock)))
+             mock)))
+    (is (equal '((0 0 0) (1 0 0) (2 0 0) (3 0 0))
+               (%ct-centers (after '("_.LINE" "0,0" "4,0" "")
+                                   (lambda (e) (list "_.DIVIDE" e "4"))))))
+    (is (equal '((0 0 0) (3/2 0 0) (3 0 0))
+               (%ct-centers (after '("_.LINE" "0,0" "4,0" "")
+                                   (lambda (e) (list "_.MEASURE" e "1.5"))))))
+    (is (equal '((0 0 0) (5 5 0))
+               (%ct-centers (after '("_.CIRCLE" "0,0" "1")
+                                   (lambda (e) (list "_.ADDSELECTED" e "5,5" "2"))))))
+    (let ((mock (make-cador)))
+      (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "2,0" ""))
+      (let ((e1 (host-entlast mock)))
+        (clautolisp.autolisp-host:host-command mock '("_.LINE" "2,0" "4,0" ""))
+        (clautolisp.autolisp-host:host-command mock (list "_.JOIN" e1 (host-entlast mock) "")))
+      (is (equal '("LINE") (%ct-types mock)))
+      (is (%ct-near '(4 0 0) (%ct-group (%ct-last-data mock) 11))))
+    (let ((d (%ct-last-data (after '("_.LINE" "0,0,1" "2,0,3" "")
+                                   (lambda (e) (list "_.FLATTEN" e "" "_N"))))))
+      (is (%ct-near '(0 0 0) (%ct-group d 10)))
+      (is (%ct-near '(2 0 0) (%ct-group d 11))))))
+
+(test command-accepts-an-entsel-pick
+  ;; (ename point), the ENTSEL form, picks the object AND says where:
+  ;; LENGTHEN extends the end nearest the point.
+  (let ((mock (make-cador)))
+    (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "4,0" ""))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.LENGTHEN" "_DE" "1" (list (host-entlast mock) '(0.0d0 0.0d0 0.0d0)) ""))
+    (is (%ct-near '(-1 0 0) (%ct-group (%ct-last-data mock) 10)))))
+
+;;; --- alref Phase 4 S6: hatch / boundary -- measured on AutoCAD 2022
+;;; (job 16916189663) and BricsCAD V26 (job 16916189664).
+
+(defun %ct-hatch-after (setup boundary-tokens hatch-builder &key (measurement 1) (hpassoc 1))
+  "A fresh host: SETUP's command, then HATCH-BUILDER's tokens on its
+entity; returns (values HATCH-DATA MOCK)."
+  (let ((mock (make-cador)))
+    (host-setvar mock "MEASUREMENT" measurement)
+    (host-setvar mock "HPASSOC" hpassoc)
+    (clautolisp.autolisp-host:host-command mock (append setup boundary-tokens))
+    (clautolisp.autolisp-host:host-command mock (funcall hatch-builder (host-entlast mock)))
+    (values (%ct-last-data mock) mock)))
+
+(defun %ct-str (data code)
+  "DATA's CODE group as a Lisp string (ENTGET gives AutoLISP strings)."
+  (autolisp-string-value (%ct-group data code)))
+
+(defun %ct-codes-after (data code)
+  "The (code . value) groups of DATA from the first CODE group on."
+  (member code data :key #'car))
+
+(test command-hatch-solid-loops-in-each-vendors-form
+  (flet ((solid-rect ()
+           (%ct-hatch-after '("_.RECTANG" "0,0" "4,2") '()
+                            (lambda (e) (list "_.-HATCH" "_P" "SOLID" "_S" e "" "")))))
+    (%with-dialect (:autocad)
+      ;; Edge loop: 92=1 93=4, each side 72=1 10 11; 75=1; one seed point.
+      (let ((d (solid-rect)))
+        (is (equal "HATCH" (%ct-str d 0)))
+        (is (equal "SOLID" (%ct-str d 2)))
+        (is (eql 1 (%ct-group d 70)))
+        (is (eql 1 (%ct-group d 71)))
+        (is (equal '(1 4 1) (list (%ct-group d 92) (%ct-group d 93) (%ct-group d 72))))
+        (let ((edges (%ct-codes-after d 72)))
+          (is (%ct-near '(0 0 0) (cdr (assoc 10 edges))))
+          (is (%ct-near '(4 0 0) (cdr (assoc 11 edges)))))
+        (is (eql 1 (%ct-group d 97)))
+        (is (eql 1 (%ct-group d 75)))
+        (is (eql 1 (%ct-group d 98)))
+        (is (null (%ct-group d 41)))))
+    (%with-dialect (:bricscad)
+      ;; Polyline loop: 92=3 72=0 73=1 93=4 then the vertices; 75=0; 98=0.
+      (let ((d (solid-rect)))
+        (is (equal '(3 0 1 4) (list (%ct-group d 92) (%ct-group d 72)
+                                    (%ct-group d 73) (%ct-group d 93))))
+        (is (equal '((0 0 0) (4 0 0) (4 2 0) (0 2 0))
+                   (mapcar (lambda (p) (mapcar #'round p))
+                           (subseq (%ct-vertices (%ct-codes-after d 93)) 0 4))))
+        (is (eql 0 (%ct-group d 75)))
+        (is (eql 0 (%ct-group d 98)))))))
+
+(test command-hatch-pattern-lines-and-circle-loops
+  ;; ANSI31 scale 2 angle 45 under MEASUREMENT 1: the line's offset
+  ;; (0, 3.175) scaled and turned by 45 + 45 -> 45=-6.35 46=0 (both vendors).
+  (flet ((ansi31-circle ()
+           (%ct-hatch-after '("_.CIRCLE" "0,0" "1") '()
+                            (lambda (e) (list "_.-HATCH" "_P" "ANSI31" "2" "45" "_S" e "" "")))))
+    (%with-dialect (:autocad)
+      (let ((d (ansi31-circle)))
+        (is (eql 0 (%ct-group d 70)))
+        ;; The circle is one arc edge: 72=2 centre radius 0..2pi ccw.
+        (is (equal '(1 1 2) (list (%ct-group d 92) (%ct-group d 93) (%ct-group d 72))))
+        (let ((edge (%ct-codes-after d 72)))
+          (is (%ct-near 1 (cdr (assoc 40 edge))))
+          (is (%ct-near (* 2 pi) (cdr (assoc 51 edge)))))
+        (is (%ct-near 2 (%ct-group d 41)))
+        (is (eql 1 (%ct-group d 78)))
+        (is (%ct-near -6.35 (%ct-group d 45)))
+        (is (%ct-near 0 (%ct-group d 46)))))
+    (%with-dialect (:bricscad)
+      (let ((d (ansi31-circle)))
+        ;; Two vertices of bulge 1 from (r, 0).
+        (is (equal '(3 1 1 2) (list (%ct-group d 92) (%ct-group d 72)
+                                    (%ct-group d 73) (%ct-group d 93))))
+        (is (%ct-near '(1 0 0) (cdr (assoc 10 (%ct-codes-after d 93)))))
+        (is (%ct-near 1 (cdr (assoc 42 (%ct-codes-after d 93)))))
+        (is (%ct-near -6.35 (%ct-group d 45)))))))
+
+(test command-hatch-associativity-and-hatchedit
+  (%with-dialect (:autocad)
+    (let ((d (%ct-hatch-after '("_.RECTANG" "0,0" "4,2") '()
+                              (lambda (e) (list "_.-HATCH" "_P" "SOLID" "_S" e "" ""))
+                              :hpassoc 0)))
+      (is (eql 0 (%ct-group d 71)))
+      (is (eql 0 (%ct-group d 97)))
+      (is (null (%ct-group d 330))))
+    ;; -HATCHEDIT to ANSI37 scale 1 angle 0: two lines, offsets
+    ;; (-2.245064, +-2.245064); the loops are kept.
+    (multiple-value-bind (d mock)
+        (%ct-hatch-after '("_.RECTANG" "0,0" "4,2") '()
+                         (lambda (e) (list "_.-HATCH" "_P" "SOLID" "_S" e "" "")))
+      (declare (ignore d))
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.-HATCHEDIT" (host-entlast mock) "_P" "ANSI37" "1" "0"))
+      (let ((d (%ct-last-data mock)))
+        (is (equal "ANSI37" (%ct-str d 2)))
+        (is (eql 0 (%ct-group d 70)))
+        (is (eql 4 (%ct-group d 93)))
+        (is (eql 2 (%ct-group d 78)))
+        (is (%ct-near '(-2.245064 2.245064 -2.245064 -2.245064)
+                      (loop for (code . value) in d
+                            when (member code '(45 46)) collect value)))))))
+
+(test command-hatchgenerateboundary-and-boundary
+  (%with-dialect (:bricscad)
+    ;; A non-associative hatch whose rectangle is gone: one closed
+    ;; LWPOLYLINE per loop, and the hatch now associative to it.
+    (let ((mock (make-cador)))
+      (host-setvar mock "HPASSOC" 0)
+      (clautolisp.autolisp-host:host-command mock '("_.RECTANG" "0,0" "4,2"))
+      (let ((r (host-entlast mock)))
+        (clautolisp.autolisp-host:host-command mock (list "_.-HATCH" "_P" "SOLID" "_S" r "" ""))
+        (let ((h (host-entlast mock)))
+          (host-entdel mock r)
+          (clautolisp.autolisp-host:host-command mock (list "_.HATCHGENERATEBOUNDARY" h ""))
+          (let ((p (%ct-last-data mock)))
+            (is (equal "LWPOLYLINE" (%ct-str p 0)))
+            (is (eql 1 (logand 1 (%ct-group p 70))))
+            (is (equal '((0 0) (4 0) (4 2) (0 2))
+                       (mapcar (lambda (v) (mapcar #'round v)) (%ct-vertices p)))))
+          (let ((hd (host-entget mock h)))
+            (is (eql 1 (%ct-group hd 71)))
+            (is (eql 1 (%ct-group hd 97))))))))
+  ;; -BOUNDARY: the rectangle around the point, as a new closed polyline.
+  (let ((mock (%ct-run '("_.RECTANG" "0,0" "4,2"))))
+    (clautolisp.autolisp-host:host-command mock '("_.-BOUNDARY" "2,1" ""))
+    (let ((p (%ct-last-data mock)))
+      (is (equal "LWPOLYLINE" (%ct-str p 0)))
+      (is (equal '((0 0) (4 0) (4 2) (0 2))
+                 (mapcar (lambda (v) (mapcar #'round v)) (%ct-vertices p))))
+      (is (= 2 (length (%ct-types mock)))))))
+
+(test command-hatch-island-on-autocad
+  ;; AutoCAD round 2 (job 16916238722): the island loop is 92=16 and keeps
+  ;; its own edge order.
+  (%with-dialect (:autocad)
+    (let ((mock (make-cador)))
+      (clautolisp.autolisp-host:host-command mock '("_.RECTANG" "0,0" "6,4"))
+      (let ((outer (host-entlast mock)))
+        (clautolisp.autolisp-host:host-command mock '("_.RECTANG" "2,1" "4,3"))
+        (clautolisp.autolisp-host:host-command
+         mock (list "_.-HATCH" "_P" "SOLID" "_S" outer (host-entlast mock) "" ""))
+        (let* ((d (%ct-last-data mock))
+               (island (member 16 (%ct-codes-after d 92) :key #'cdr)))
+          (is (eql 2 (%ct-group d 91)))
+          (is (eql 1 (%ct-group d 92)))
+          (is (consp island))
+          (is (%ct-near '(2 1 0) (cdr (assoc 10 island))))
+          (is (%ct-near '(4 1 0) (cdr (assoc 11 island)))))))))
+
+(test command-hatch-islands-angles-and-imperial-patterns
+  ;; Round 2 (BricsCAD job 16916238723).
+  (%with-dialect (:bricscad)
+    ;; Two nested rectangles: the outer loop 92=3, the island 92=18 walked
+    ;; backwards from its second vertex.
+    (let ((mock (make-cador)))
+      (host-setvar mock "MEASUREMENT" 1)
+      (clautolisp.autolisp-host:host-command mock '("_.RECTANG" "0,0" "6,4"))
+      (let ((outer (host-entlast mock)))
+        (clautolisp.autolisp-host:host-command mock '("_.RECTANG" "2,1" "4,3"))
+        (clautolisp.autolisp-host:host-command
+         mock (list "_.-HATCH" "_P" "SOLID" "_S" outer (host-entlast mock) "" ""))
+        (let* ((d (%ct-last-data mock))
+               (island (member 18 (%ct-codes-after d 92) :key #'cdr)))
+          (is (eql 2 (%ct-group d 91)))
+          (is (eql 3 (%ct-group d 92)))
+          (is (consp island))
+          (is (equal '((4 1) (2 1) (2 3) (4 3))
+                     (mapcar (lambda (p) (mapcar #'round (subseq p 0 2)))
+                             (subseq (%ct-vertices island) 0 4)))))))
+    ;; ANSI37 scale 2 angle 30: 52 = 30 deg, 53 = 75 / 165 deg (radians).
+    (let ((d (%ct-hatch-after '("_.RECTANG" "1,1" "5,3") '()
+                              (lambda (e) (list "_.-HATCH" "_P" "ANSI37" "2" "30" "_S" e "" "")))))
+      (is (%ct-near 0.523599 (%ct-group d 52)))
+      (is (%ct-near '(1.308997 2.879793)
+                    (loop for (code . value) in d when (eql code 53) collect value)))
+      (is (%ct-near '(-6.133629 1.643501 -1.643501 -6.133629)
+                    (loop for (code . value) in d when (member code '(45 46)) collect value))))
+    ;; MEASUREMENT 0: the imperial spacing 0.125.
+    (let ((d (%ct-hatch-after '("_.RECTANG" "0,0" "4,2") '()
+                              (lambda (e) (list "_.-HATCH" "_P" "ANSI31" "1" "0" "_S" e "" ""))
+                              :measurement 0)))
+      (is (%ct-near '(-0.088388 0.088388)
+                    (loop for (code . value) in d when (member code '(45 46)) collect value))))))
+
+;;; --- alref Phase 4 built-ins -- measured on BricsCAD V26 (job
+;;; 16920731857) and AutoCAD 2022 (job 16920731856).
+
+(defun %ct-spline-mock ()
+  (%ct-run '("_.SPLINE" "0,0" "1,1" "2,0" "3,1" "" "" "")))
+
+(test command-xplode-rotate3d-and-arraypath
+  (%with-dialect (:bricscad)
+    ;; XPLODE with the defaults: the rectangle's 4 LINEs.
+    (let ((mock (%ct-run '("_.RECTANG" "0,0" "2,1"))))
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.XPLODE" (host-entlast mock) "" "" ""))
+      (is (equal '("LINE" "LINE" "LINE" "LINE") (%ct-types mock)))))
+  ;; ROTATE3D (both) / 3DROTATE (BricsCAD): (1,0)-(3,0) 90 about Z -> (0,1)-(0,3).
+  (dolist (name '("_.ROTATE3D" "_.3DROTATE"))
+    (let ((mock (%ct-run '("_.LINE" "1,0" "3,0" ""))))
+      (clautolisp.autolisp-host:host-command
+       mock (list name (host-entlast mock) "" "_Z" "0,0,0" "90"))
+      (let ((d (%ct-last-data mock)))
+        (is (%ct-near '(0 1 0) (%ct-group d 10)))
+        (is (%ct-near '(0 3 0) (%ct-group d 11))))))
+  ;; ARRAYPATH along (0,0)-(9,0), divide 4, non-associative: the source
+  ;; replaced by circles at 0 3 6 9, after the path.
+  (let ((mock (%ct-run '("_.CIRCLE" "0,0" "0.5"))))
+    (let ((c (host-entlast mock)))
+      (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "9,0" ""))
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.ARRAYPATH" c "" (host-entlast mock) "_AS" "_N" "_M" "_D" "_I" "4" "_X"))
+      (is (equal '("LINE" "CIRCLE" "CIRCLE" "CIRCLE" "CIRCLE") (%ct-types mock)))
+      (is (equal '((0 0 0) (0 0 0) (3 0 0) (6 0 0) (9 0 0)) (%ct-centers mock))))))
+
+(test command-splinedit-reverse-and-close
+  ;; Reverse (BricsCAD): control and fit points reversed, 12 / 13 kept.
+  (%with-dialect (:bricscad)
+    (let ((mock (%ct-spline-mock)))
+      (clautolisp.autolisp-host:host-command
+       mock (list "_.SPLINEDIT" (host-entlast mock) "_R" "_X"))
+      (let ((d (%ct-last-data mock)))
+        (is (%ct-near '(3 1 0) (%ct-group d 10)))
+        (is (%ct-near '(3 1 0) (%ct-group d 11)))
+        (is (%ct-group d 12)))))
+  ;; Close (both vendors identical): 7 control points, knots to 7.404918,
+  ;; no fit data, flags 1064 -> 3115.
+  (let ((mock (%ct-spline-mock)))
+    (clautolisp.autolisp-host:host-command
+     mock (list "_.SPLINEDIT" (host-entlast mock) "_C" "_X"))
+    (let* ((d (%ct-last-data mock))
+           (controls (loop for (c . v) in d when (eql c 10) collect v)))
+      (is (eql 3115 (%ct-group d 70)))
+      (is (eql 7 (%ct-group d 73)))
+      (is (eql 0 (%ct-group d 74)))
+      (is (null (%ct-group d 11)))
+      (is (%ct-near 7.404918 (car (last (loop for (c . v) in d when (eql c 40) collect v)))))
+      (is (%ct-near '(0 0.254644 0) (second controls)))
+      (is (%ct-near '(1.2 1.847214 0) (third controls)))
+      (is (%ct-near '(4.341641 2.525903 0) (fifth controls)))
+      (is (%ct-near '(0 -0.569401 0) (sixth controls))))))
+
+;;; --- bricscad-dialect-sysvar-parity, Phase 3: host-derived sysvars
+;;; computed live (measured on a fresh BricsCAD drawing, job 16913315157).
+
+(test host-derived-sysvars-are-computed-from-the-session
+  (let ((mock (make-cador)))
+    ;; No entity: the vendors' empty extents.
+    (is (equal '(1d20 1d20 1d20) (host-getvar mock "EXTMIN")))
+    (is (equal '(-1d20 -1d20 -1d20) (host-getvar mock "EXTMAX")))
+    (clautolisp.autolisp-host:host-command mock '("_.LINE" "0,0" "4,2" ""))
+    (is (%ct-near '(0 0 0) (host-getvar mock "EXTMIN")))
+    (is (%ct-near '(4 2 0) (host-getvar mock "EXTMAX")))
+    ;; Created now; TDINDWG counts the days since.
+    (let ((date (host-getvar mock "DATE")) (created (host-getvar mock "TDCREATE")))
+      (is (< (abs (- date created)) 0.01))
+      (is (= created (host-getvar mock "TDUPDATE")))
+      (is (<= 0 (host-getvar mock "TDINDWG") 0.01)))
+    (let ((user (or (uiop:getenv "USER") (uiop:getenv "USERNAME") (uiop:getenv "LOGNAME"))))
+      (when (and user (string/= user ""))
+        (is (string= user (autolisp-string-value (host-getvar mock "LOGINNAME"))))))
+    (is (eql 0 (host-getvar mock "CMDACTIVE")))
+    (let ((prefix (autolisp-string-value (host-getvar mock "DWGPREFIX"))))
+      (is (plusp (length prefix)))
+      (is (char= #\/ (char prefix (1- (length prefix))))))))
+
+(test locale-sysvar-follows-the-locale-under-bricscad
+  (let ((saved (mapcar (lambda (v) (cons v (uiop:getenv v))) '("LC_ALL" "LC_MESSAGES" "LANG"))))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "LC_ALL") "" (uiop:getenv "LC_MESSAGES") ""
+                 (uiop:getenv "LANG") "fr_FR.UTF-8")
+           (%with-dialect (:bricscad)
+             (is (string= "fr_FR" (autolisp-string-value (host-getvar (make-cador) "LOCALE"))))))
+      (loop for (var . value) in saved do (setf (uiop:getenv var) (or value ""))))))
+
+(test bricscad-platform-factory-defaults-follow-the-dialect-platform
+  ;; Measured on both BricsCAD V26 platforms (jobs 16913315157 / 16921381045).
+  (%with-dialect (:bricscad-mac)
+    (let ((mock (make-cador)))
+      (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
+      (is (eql 11 (host-getvar mock "3DOSMODE")))
+      (is (eql 2048 (host-getvar mock "MTFLAGS")))))
+  (%with-dialect (:bricscad)
+    (let ((mock (make-cador)))
+      (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
+      (is (eql 10 (host-getvar mock "3DOSMODE")))
+      (is (eql 3015 (host-getvar mock "MTFLAGS")))
+      ;; One of the 26 rows both platforms agree on.
+      (is (eql 251 (host-getvar mock "GRIDMAJORCOLOR"))))))
+
+;;; --- dialect-platform-version-axis: sysvars by the dialect's version.
+
+(test lispsys-and-locale-follow-the-dialect-version
+  (let ((saved (mapcar (lambda (v) (cons v (uiop:getenv v))) '("LC_ALL" "LC_MESSAGES" "LANG"))))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "LC_ALL") "" (uiop:getenv "LC_MESSAGES") ""
+                 (uiop:getenv "LANG") "fr_FR.UTF-8")
+           ;; LISPSYS: AutoCAD 2021+, BricsCAD V23+ (getvar -> nil before).
+           (%with-dialect (:autocad-2022)
+             (is (eql 1 (host-getvar (make-cador) "LISPSYS")))
+             ;; AutoCAD 2019+: LOCALE is the upper-case language (measured "FR").
+             (is (string= "FR" (autolisp-string-value (host-getvar (make-cador) "LOCALE")))))
+           (%with-dialect (:autocad-2020)
+             (is (null (host-getvar (make-cador) "LISPSYS"))))
+           ;; Before 2019: the three-letter Windows abbreviation (documented).
+           (%with-dialect (:autocad-2018)
+             (is (string= "FRA" (autolisp-string-value (host-getvar (make-cador) "LOCALE")))))
+           (%with-dialect (:bricscad-v22)
+             (is (null (host-getvar (make-cador) "LISPSYS"))))
+           (%with-dialect (:bricscad-v26)
+             (let ((mock (make-cador)))
+               (clautolisp.cador:apply-bricscad-dialect-sysvars mock)
+               ;; BricsCAD's default, on both harvests.
+               (is (eql 0 (host-getvar mock "LISPSYS")))
+               (is (string= "fr_FR" (autolisp-string-value (host-getvar mock "LOCALE")))))))
+      (loop for (var . value) in saved do (setf (uiop:getenv var) (or value ""))))))

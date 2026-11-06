@@ -1,0 +1,77 @@
+# OPEN's third (encoding) argument: clautolisp accepts what both vendors refuse
+
+Status: DONE
+Priority: P2
+Found: 2026-10-06, probes/sources/probe-open-encoding.lsp (MR !432: AutoCAD
+2022 job 16967893842, BricsCAD V26 macOS job 16967893843; BricsCAD V25
+Windows pending).
+
+## Measured
+
+For (open f MODE [ENCODING]) writing "A" e-acute "B":
+
+| form                       | AutoCAD 2022 (LISPSYS 0)  | BricsCAD V26 (macOS)              | clautolisp            |
+|----------------------------+---------------------------+-----------------------------------+-----------------------|
+| (open f "w")               | 3 bytes (cp1252)          | 4 bytes (UTF-8, no BOM)           | 4 bytes (UTF-8)       |
+| (open f "w" "utf8")        | ERROR too many arguments  | accepted, 4 bytes (no effect)     | accepted, 4 bytes     |
+| (open f "w" "utf8-bom")    | ERROR too many arguments  | accepted, 4 bytes (NO BOM)        | accepted, 4 bytes     |
+| (open f "w" "cp1252")      | ERROR too many arguments  | ERROR bad argument type "cp1252"  | accepted              |
+| (open f "w,ccs=UTF-8")     | accepted, ignored (3)     | accepted, ignored (4)             | honoured              |
+| (open f "w,ccs=UTF-16LE")  | accepted, ignored (3)     | accepted, ignored (4)             | honoured (6)          |
+| (open f "r") of UTF-8 text | -                         | raw bytes (195 169)               | decoded (233)         |
+
+## To do
+
+- AutoCAD dialects: OPEN takes no third argument at LISPSYS 0 (the error is
+  arity, "too many arguments"); the documented "utf8" / "utf8-bom" at LISPSYS
+  1 / 2 is still unmeasured (the runner's AutoCAD is at LISPSYS 0) -- probe
+  at LISPSYS 1 before relying on it.
+- BricsCAD dialects: an encoding name it does not know is "bad argument type";
+  "utf8" / "utf8-bom" are accepted and change nothing on macOS (V25 Windows
+  pending).
+- clautolisp's ,ccs= handling is a BricsCAD-Windows behaviour (measured
+  there earlier, honoured); under the AutoCAD and BricsCAD-macOS dialects the
+  suffix is accepted and ignored.
+Decide with pjb how far clautolisp follows (the dialect rule: vendor
+behaviour under vendor dialects, clautolisp's own under clautolisp / lax),
+then implement per dialect with tests.
+
+* Resolution (2026-10-06, clautolisp 2.2.214)
+
+#+STATUS: DONE
+
+pjb's decision (2026-10-06): "open third argument: lenient, but dialect
+warn when it's used in other dialects or strict."
+
+So clautolisp's OPEN always honours its third (encoding) argument and the
+",ccs=ENC" mode suffix, under every dialect; the error the AutoCAD dialects
+used to signal before 2021 / at LISPSYS 0 (%check-open-takes-an-encoding,
+2.2.181) is gone. %dispatch-open-encoding-diagnostic now decides from the
+measured vendor behaviour above (%open-encoding-divergence) and emits
+[enc-foreign-dialect] (vendor dialects) or [enc-extension-used] (strict),
+per call, through signal-encoding-diagnostic (pragma-suppressible; also
+silenced by (setq *AUTOLISP-WARN-OUT-OF-DIALECT* nil)); the static lint
+clal-lint-encoding-extensions uses the same decision.
+
+| dialect                              | "utf8" / "utf8-bom"     | other name ("cp1252") | ",ccs=UTF-8" / UTF-16LE | other ccs  |
+|--------------------------------------+-------------------------+-----------------------+-------------------------+------------|
+| autocad-* LISPSYS 0 (Windows), <2021 | warn: too many args     | warn: too many args   | warn: ignored           | warn       |
+| autocad-* 2021+ LISPSYS 1/2, mac     | silent (documented)     | warn: not documented  | warn: ignored           | warn       |
+| bricscad, -v25, -v26 (Windows)       | warn: no effect         | warn: bad arg type    | silent (honoured)       | warn: unmeasured |
+| bricscad-mac, bricscad-linux         | warn: no effect         | warn: bad arg type    | warn: ignored           | warn       |
+| strict                               | warn: not portable      | warn: not portable    | warn: not portable      | warn       |
+| clautolisp, lax                      | silent                  | silent                | silent                  | silent     |
+
+Tests (autolisp-builtins-core): open-encoding-third-argument-warns-per-dialect
+(the matrix above x the three forms, plus the octets written being the same
+under every dialect), open-encoding-warning-says-what-the-vendor-does,
+open-encoding-argument-is-taken-under-every-dialect (replaces
+open-encoding-argument-is-autocad-2021-unicode-only), and the older OPEN
+dispatch tests updated (clautolisp now silent).
+
+Docs: user manual (Where the dialect changes a returned value; the lint
+list), spec OPEN entry (Measured table + *** clautolisp), release notes.
+
+Still unmeasured: "utf8" / "utf8-bom" at AutoCAD LISPSYS 1 / 2 (documented,
+kept silent); BricsCAD on Linux; ccs names other than UTF-8 / UTF-16LE on
+BricsCAD Windows.

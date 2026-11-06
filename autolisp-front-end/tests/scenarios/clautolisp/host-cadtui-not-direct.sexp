@@ -4,6 +4,6 @@ together with the in-process engine is a usage error."
  :classification :portable
  :argv ("--clautolisp" "--host" "cadtui" "--backend" "direct" "--dry-run"
         "-x" "(+ 1 2)")
- :expected-exit 2
+ :expected-exit 64
  :expected-stderr-includes ("--host cadtui" "--backend direct")
  :covers-options ("--host" "--backend"))

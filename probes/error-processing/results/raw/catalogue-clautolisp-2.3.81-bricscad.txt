@@ -1,0 +1,1162 @@
+FIXTURE *DOC* ERROR Undefined AutoLISP function VLA-GET-ACTIVEDOCUMENT.
+FIXTURE *BLOCKS* ERROR Undefined AutoLISP function VLA-GET-BLOCKS.
+FIXTURE *EMPTY-SA* ERROR VLAX-MAKE-SAFEARRAY: each bound must be (LOW . HIGH) integer pair with LOW <= HIGH, got (0
+                                                                                         . -1).
+=== PCAT ("clautolisp" "2.3.81" "clautolisp" "") start=0
+BEGIN 0
+CASE 0 (/ 1 0) => (ERROR "Division by zero in /.") ; ERRNO=1
+BEGIN 1
+CASE 1 (/ 1.0 0) => (ERROR "Division by zero in /.") ; ERRNO=1
+BEGIN 2
+CASE 2 (/ 1 0.0) => (ERROR "Division by zero in /.") ; ERRNO=1
+BEGIN 3
+CASE 3 (/ 0 0) => (ERROR "Division by zero in /.") ; ERRNO=1
+BEGIN 4
+CASE 4 (/ 0.0 0.0) => (ERROR "AutoLISP builtin / signaled an error: arithmetic error FLOATING-POINT-INVALID-OPERATION signalled") ; ERRNO=6
+BEGIN 5
+CASE 5 (rem 1 0) => (ERROR "Division by zero in REM.") ; ERRNO=1
+BEGIN 6
+CASE 6 (rem 1.0 0.0) => (ERROR "Division by zero in REM.") ; ERRNO=1
+BEGIN 7
+CASE 7 (sqrt -1) => (ERROR "SQRT expects a non-negative number, got -1.") ; ERRNO=4
+BEGIN 8
+CASE 8 (sqrt -1.0) => (ERROR "SQRT expects a non-negative number, got -1.0d0.") ; ERRNO=4
+BEGIN 9
+CASE 9 (log 0) => (ERROR "LOG expects a positive number, got 0.") ; ERRNO=4
+BEGIN 10
+CASE 10 (log -1) => (ERROR "LOG expects a positive number, got -1.") ; ERRNO=4
+BEGIN 11
+CASE 11 (log 0.0) => (ERROR "LOG expects a positive number, got 0.0d0.") ; ERRNO=4
+BEGIN 12
+CASE 12 (expt 0 -1) => (ERROR "EXPT result is undefined for 0^-1.") ; ERRNO=4
+BEGIN 13
+CASE 13 (expt 0.0 -1) => (ERROR "EXPT result is undefined for 0.0d0^-1.") ; ERRNO=4
+BEGIN 14
+CASE 14 (expt -8.0 (/ 1.0 3)) => (ERROR "AutoLISP builtin EXPT signaled an error: The value\n                                           #C(1.0000000000000002d0 1.7320508075688772d0)\n\n                                         is not of type\n                                           REAL") ; ERRNO=6
+BEGIN 15
+CASE 15 (atan 0 0) => (VALUE 0.0) ; ERRNO=0
+BEGIN 16
+CASE 16 (atan 0.0 0.0) => (VALUE 0.0) ; ERRNO=0
+BEGIN 17
+CASE 17 (exp 1000) => (ERROR "AutoLISP builtin EXP signaled an error: arithmetic error FLOATING-POINT-OVERFLOW signalled") ; ERRNO=6
+BEGIN 18
+CASE 18 (exp -1000) => (VALUE 0.0) ; ERRNO=0
+BEGIN 19
+CASE 19 (fix 1e20) => (ERROR "FIX result is outside the AutoLISP 32-bit integer range: 100000000000000000000.") ; ERRNO=1
+BEGIN 20
+CASE 20 (fix -1e20) => (ERROR "FIX result is outside the AutoLISP 32-bit integer range: -100000000000000000000.") ; ERRNO=1
+BEGIN 21
+CASE 21 (+ 2147483647 1) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 22
+CASE 22 (* 65536 65536) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 4294967296.") ; ERRNO=1
+BEGIN 23
+CASE 23 (- -2147483648 1) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: -2147483649.") ; ERRNO=1
+BEGIN 24
+CASE 24 (abs -2147483648) => (VALUE (TYPE-ERROR "No AutoLISP runtime type designator is defined for 2147483648.")) ; ERRNO=1
+BEGIN 25
+CASE 25 (1+ nil) => (ERROR "1+ expects a number, got NIL.") ; ERRNO=4
+BEGIN 26
+CASE 26 (+ 1 nil) => (ERROR "+ expects a number, got NIL.") ; ERRNO=4
+BEGIN 27
+CASE 27 (+ 1 "a") => (ERROR "+ expects a number, got \"a\".") ; ERRNO=4
+BEGIN 28
+CASE 28 (* "a" 1) => (ERROR "* expects a number, got \"a\".") ; ERRNO=4
+BEGIN 29
+CASE 29 (abs nil) => (ERROR "ABS expects a number, got NIL.") ; ERRNO=4
+BEGIN 30
+CASE 30 (max) => (ERROR "AutoLISP builtin MAX signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 31
+CASE 31 (min) => (ERROR "AutoLISP builtin MIN signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 32
+CASE 32 (max 1 nil) => (ERROR "MAX expects a number, got NIL.") ; ERRNO=4
+BEGIN 33
+CASE 33 (min nil 1) => (ERROR "MIN expects a number, got NIL.") ; ERRNO=4
+BEGIN 34
+CASE 34 (gcd 0 0) => (VALUE 0) ; ERRNO=0
+BEGIN 35
+CASE 35 (gcd 1.5 2) => (ERROR "GCD expects a 32-bit AutoLISP integer, got 1.5d0.") ; ERRNO=4
+BEGIN 36
+CASE 36 (lsh 1 40) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 1099511627776.") ; ERRNO=1
+BEGIN 37
+CASE 37 (lsh 1 -40) => (VALUE 0) ; ERRNO=0
+BEGIN 38
+CASE 38 (~ nil) => (ERROR "~ expects a 32-bit AutoLISP integer, got NIL.") ; ERRNO=4
+BEGIN 39
+CASE 39 (~ 1.5) => (ERROR "~ expects a 32-bit AutoLISP integer, got 1.5d0.") ; ERRNO=4
+BEGIN 40
+CASE 40 (float nil) => (ERROR "FLOAT expects a number, got NIL.") ; ERRNO=4
+BEGIN 41
+CASE 41 (boole 99 1 1) => (ERROR "BOOLE selector 99 is not implemented; use LOGAND / LOGIOR / LOGXOR.") ; ERRNO=1
+BEGIN 42
+CASE 42 (minusp nil) => (ERROR "MINUSP expects a number, got NIL.") ; ERRNO=4
+BEGIN 43
+CASE 43 (zerop nil) => (ERROR "ZEROP expects a number, got NIL.") ; ERRNO=4
+BEGIN 44
+CASE 44 (numberp nil) => (VALUE nil) ; ERRNO=0
+BEGIN 45
+CASE 45 (+) => (VALUE 0) ; ERRNO=0
+BEGIN 46
+CASE 46 (-) => (ERROR "AutoLISP builtin - signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 47
+CASE 47 (/) => (ERROR "AutoLISP builtin / signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 48
+CASE 48 (/ 5) => (VALUE 0.2) ; ERRNO=0
+BEGIN 49
+CASE 49 (/ 0) => (ERROR "Division by zero in /.") ; ERRNO=1
+BEGIN 50
+CASE 50 (cos 1e300) => (VALUE -0.575386111957549) ; ERRNO=0
+BEGIN 51
+CASE 51 (sin nil) => (ERROR "SIN expects a number, got NIL.") ; ERRNO=4
+BEGIN 52
+CASE 52 (itoa 1.5) => (ERROR "ITOA expects a 32-bit AutoLISP integer, got 1.5d0.") ; ERRNO=4
+BEGIN 53
+CASE 53 (itoa nil) => (ERROR "ITOA expects a 32-bit AutoLISP integer, got NIL.") ; ERRNO=4
+BEGIN 54
+CASE 54 (atoi nil) => (ERROR "ATOI expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 55
+CASE 55 (atoi "abc") => (VALUE 0) ; ERRNO=0
+BEGIN 56
+CASE 56 (atoi "12abc") => (VALUE 12) ; ERRNO=0
+BEGIN 57
+CASE 57 (atoi "99999999999") => (VALUE (TYPE-ERROR "No AutoLISP runtime type designator is defined for 99999999999.")) ; ERRNO=1
+BEGIN 58
+CASE 58 (atof nil) => (ERROR "ATOF expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 59
+CASE 59 (atof "x") => (VALUE 0.0) ; ERRNO=0
+BEGIN 60
+CASE 60 (atof "1e999") => (ERROR "AutoLISP builtin ATOF signaled an error: arithmetic error FLOATING-POINT-OVERFLOW signalled") ; ERRNO=6
+BEGIN 61
+CASE 61 (rtos nil) => (ERROR "RTOS expects a number, got NIL.") ; ERRNO=4
+BEGIN 62
+CASE 62 (rtos 1.0 9) => (VALUE "1") ; ERRNO=0
+BEGIN 63
+CASE 63 (rtos 1.0 2 -1) => (VALUE "1") ; ERRNO=0
+BEGIN 64
+CASE 64 (rtos 1.0 2 99) => (VALUE "1") ; ERRNO=0
+BEGIN 65
+CASE 65 (distof "abc") => (VALUE nil) ; ERRNO=0
+BEGIN 66
+CASE 66 (distof nil) => (ERROR "DISTOF expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 67
+CASE 67 (distof "1" 9) => (VALUE 1.0) ; ERRNO=0
+BEGIN 68
+CASE 68 (angtof "abc") => (VALUE nil) ; ERRNO=0
+BEGIN 69
+CASE 69 (angtos nil) => (ERROR "ANGTOS expects a number, got NIL.") ; ERRNO=4
+BEGIN 70
+CASE 70 (angtos 1.0 9) => (VALUE "57") ; ERRNO=0
+BEGIN 71
+CASE 71 (cvunit 1 "inch" "nosuchunit") => (ERROR "Undefined AutoLISP function CVUNIT.") ; ERRNO=3
+BEGIN 72
+CASE 72 (cvunit nil "inch" "cm") => (ERROR "Undefined AutoLISP function CVUNIT.") ; ERRNO=3
+BEGIN 73
+CASE 73 (< 1 "a") => (ERROR "<: incompatible comparison arguments 1 \"a\" (expected two numbers or two strings).") ; ERRNO=4
+BEGIN 74
+CASE 74 (< 'a 'b) => (ERROR "<: incompatible comparison arguments A B (expected two numbers or two strings).") ; ERRNO=4
+BEGIN 75
+CASE 75 (= nil) => (VALUE T) ; ERRNO=0
+BEGIN 76
+CASE 76 (<) => (ERROR "< expects at least one argument.") ; ERRNO=4
+BEGIN 77
+CASE 77 (< nil 1) => (VALUE T) ; ERRNO=0
+BEGIN 78
+CASE 78 (> nil 1 "a") => (ERROR ">: incompatible comparison arguments 1 \"a\" (expected two numbers or two strings).") ; ERRNO=4
+BEGIN 79
+CASE 79 (>= 'a nil) => (ERROR ">=: incompatible comparison arguments A NIL (expected two numbers or two strings).") ; ERRNO=4
+BEGIN 80
+CASE 80 (= 1 "1") => (VALUE nil) ; ERRNO=0
+BEGIN 81
+CASE 81 (eq) => (ERROR "AutoLISP builtin EQ signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 82
+CASE 82 (equal 1) => (ERROR "AutoLISP builtin EQUAL signaled an error: invalid number of arguments: 1") ; ERRNO=6
+BEGIN 83
+CASE 83 (equal 1.0 1.05 nil) => (VALUE nil) ; ERRNO=0
+BEGIN 84
+CASE 84 (equal 1.0 1.05 "x") => (ERROR "EQUAL fuzz must be a number, got \"x\".") ; ERRNO=4
+BEGIN 85
+CASE 85 (substr "abc" 0) => (ERROR "SUBSTR expects a positive 1-based start index, got 0.") ; ERRNO=4
+BEGIN 86
+CASE 86 (substr "abc" 5) => (VALUE "") ; ERRNO=0
+BEGIN 87
+CASE 87 (substr "abc" 2 -1) => (ERROR "SUBSTR length must be non-negative, got -1.") ; ERRNO=4
+BEGIN 88
+CASE 88 (substr "abc" 2 99) => (VALUE "bc") ; ERRNO=0
+BEGIN 89
+CASE 89 (substr nil 1) => (ERROR "SUBSTR expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 90
+CASE 90 (substr "abc" nil) => (ERROR "SUBSTR expects a 32-bit AutoLISP integer, got NIL.") ; ERRNO=4
+BEGIN 91
+CASE 91 (strlen nil) => (ERROR "STRLEN expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 92
+CASE 92 (strlen) => (VALUE 0) ; ERRNO=0
+BEGIN 93
+CASE 93 (strlen "a" nil) => (ERROR "STRLEN expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 94
+CASE 94 (strcat) => (VALUE "") ; ERRNO=0
+BEGIN 95
+CASE 95 (strcat nil) => (ERROR "STRCAT expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 96
+CASE 96 (strcat "a" 1) => (ERROR "STRCAT expects an AutoLISP string, got 1.") ; ERRNO=4
+BEGIN 97
+CASE 97 (strcase nil) => (ERROR "STRCASE expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 98
+CASE 98 (strcase "a" 1) => (VALUE "a") ; ERRNO=0
+BEGIN 99
+CASE 99 (ascii "") => (ERROR "ASCII expects a non-empty string.") ; ERRNO=4
+BEGIN 100
+CASE 100 (ascii nil) => (ERROR "ASCII expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 101
+CASE 101 (chr 0) => (VALUE "\000") ; ERRNO=0
+BEGIN 102
+CASE 102 (chr 300) => (VALUE "Ĭ") ; ERRNO=0
+BEGIN 103
+CASE 103 (chr -1) => (ERROR "CHR code does not designate a valid character: -1.") ; ERRNO=4
+BEGIN 104
+CASE 104 (chr 65.5) => (ERROR "CHR expects a 32-bit AutoLISP integer, got 65.5d0.") ; ERRNO=4
+BEGIN 105
+CASE 105 (chr nil) => (ERROR "CHR expects a 32-bit AutoLISP integer, got NIL.") ; ERRNO=4
+BEGIN 106
+CASE 106 (vl-string-search nil "a") => (ERROR "VL-STRING-SEARCH expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 107
+CASE 107 (vl-string-search "a" nil) => (ERROR "VL-STRING-SEARCH expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 108
+CASE 108 (vl-string-search "" "abc") => (VALUE 0) ; ERRNO=0
+BEGIN 109
+CASE 109 (vl-string-search "a" "abc" 99) => (VALUE nil) ; ERRNO=0
+BEGIN 110
+CASE 110 (vl-string-search "a" "abc" -1) => (ERROR "VL-STRING-SEARCH start must be non-negative, got -1.") ; ERRNO=4
+BEGIN 111
+CASE 111 (vl-string-subst nil "a" "b") => (ERROR "VL-STRING-SUBST expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 112
+CASE 112 (vl-string-subst "x" "" "abc") => (VALUE "xabc") ; ERRNO=0
+BEGIN 113
+CASE 113 (vl-string-translate "ab" "x" "aabb") => (VALUE "xx") ; ERRNO=0
+BEGIN 114
+CASE 114 (vl-string-trim nil "a") => (ERROR "VL-STRING-TRIM expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 115
+CASE 115 (vl-string-position 999 "abc") => (VALUE nil) ; ERRNO=0
+BEGIN 116
+CASE 116 (vl-string-position nil "abc") => (ERROR "VL-STRING-POSITION expects a 32-bit AutoLISP integer, got NIL.") ; ERRNO=4
+BEGIN 117
+CASE 117 (vl-string-elt "abc" 9) => (ERROR "VL-STRING-ELT index 9 is out of range for a string of length 3.") ; ERRNO=4
+BEGIN 118
+CASE 118 (vl-string-elt "abc" -1) => (ERROR "VL-STRING-ELT index -1 is out of range for a string of length 3.") ; ERRNO=4
+BEGIN 119
+CASE 119 (vl-string->list nil) => (ERROR "VL-STRING->LIST expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 120
+CASE 120 (vl-list->string '(65 nil)) => (ERROR "VL-LIST->STRING expects a 32-bit AutoLISP integer, got NIL.") ; ERRNO=4
+BEGIN 121
+CASE 121 (vl-list->string '(300)) => (VALUE "Ĭ") ; ERRNO=0
+BEGIN 122
+CASE 122 (wcmatch nil "*") => (ERROR "WCMATCH expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 123
+CASE 123 (wcmatch "a" nil) => (ERROR "WCMATCH expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 124
+CASE 124 (wcmatch "a" "") => (VALUE nil) ; ERRNO=0
+BEGIN 125
+CASE 125 (wcmatch "" "*") => (VALUE T) ; ERRNO=0
+BEGIN 126
+CASE 126 (wcmatch "a" "[") => (VALUE nil) ; ERRNO=0
+BEGIN 127
+CASE 127 (read "") => (VALUE nil) ; ERRNO=0
+BEGIN 128
+CASE 128 (read ")") => (ERROR "READ failed to parse input: #S(DIAGNOSTIC\n                               :SEVERITY ERROR\n                               :CODE UNEXPECTED-RIGHT-PAREN\n                               :MESSAGE Unexpected right parenthesis.\n                               :SPAN #S(SOURCE-SPAN\n                                        :SOURCE-NAME NIL\n                                        :START-LINE 1\n                                        :START-COLUMN 1\n                                        :END-LINE 1\n                                        :END-COLUMN 2))") ; ERRNO=4
+BEGIN 129
+CASE 129 (read "(a") => (ERROR "READ failed to parse input: #S(DIAGNOSTIC\n                               :SEVERITY ERROR\n                               :CODE UNEXPECTED-EOF\n                               :MESSAGE Unexpected end of input inside list.\n                               :SPAN #S(SOURCE-SPAN\n                                        :SOURCE-NAME NIL\n                                        :START-LINE 1\n                                        :START-COLUMN 3\n                                        :END-LINE 1\n                                        :END-COLUMN 3))") ; ERRNO=4
+BEGIN 130
+CASE 130 (read "a b") => (VALUE A) ; ERRNO=0
+BEGIN 131
+CASE 131 (read "'") => (ERROR "READ failed to parse input: #S(DIAGNOSTIC\n                               :SEVERITY ERROR\n                               :CODE UNEXPECTED-EOF\n                               :MESSAGE Unexpected end of input.\n                               :SPAN #S(SOURCE-SPAN\n                                        :SOURCE-NAME NIL\n                                        :START-LINE 1\n                                        :START-COLUMN 2\n                                        :END-LINE 1\n                                        :END-COLUMN 2))") ; ERRNO=4
+BEGIN 132
+CASE 132 (read nil) => (ERROR "READ expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 133
+CASE 133 (read "1e999") => (ERROR "READ failed to parse input: READER-ERROR on #<dynamic-extent STRING-INPUT-STREAM (unavailable) from \"1e999\">:\nfailed to build float from 1e999\nOriginal error: arithmetic error FLOATING-POINT-OVERFLOW signalled") ; ERRNO=4
+BEGIN 134
+CASE 134 (read "#") => (VALUE #) ; ERRNO=0
+BEGIN 135
+CASE 135 (vl-prin1-to-string) => (ERROR "AutoLISP builtin VL-PRIN1-TO-STRING signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 136
+CASE 136 (snvalid nil) => (ERROR "SNVALID expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 137
+CASE 137 (snvalid "a*b") => (VALUE nil) ; ERRNO=0
+BEGIN 138
+CASE 138 (xstrcase nil) => (ERROR "STRCASE expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 139
+CASE 139 (vl-string-left-trim "" "aa") => (VALUE "aa") ; ERRNO=0
+BEGIN 140
+CASE 140 (vl-string-mismatch nil "a") => (ERROR "VL-STRING-MISMATCH expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 141
+CASE 141 (car 1) => (ERROR "CAR expects a list, got 1.") ; ERRNO=4
+BEGIN 142
+CASE 142 (car "a") => (ERROR "CAR expects a list, got \"a\".") ; ERRNO=4
+BEGIN 143
+CASE 143 (cdr "a") => (ERROR "CDR expects a list or dotted pair, got \"a\".") ; ERRNO=4
+BEGIN 144
+CASE 144 (cadr '(1)) => (VALUE nil) ; ERRNO=0
+BEGIN 145
+CASE 145 (caddr 1) => (ERROR "CADDR expects a list, got 1.") ; ERRNO=4
+BEGIN 146
+CASE 146 (nth -1 '(1 2)) => (ERROR "NTH expects a non-negative AutoLISP integer index, got -1.") ; ERRNO=4
+BEGIN 147
+CASE 147 (nth 5 '(1 2)) => (VALUE nil) ; ERRNO=0
+BEGIN 148
+CASE 148 (nth nil '(1)) => (ERROR "NTH expects a non-negative AutoLISP integer index, got NIL.") ; ERRNO=4
+BEGIN 149
+CASE 149 (nth 1.5 '(1 2)) => (ERROR "NTH expects a non-negative AutoLISP integer index, got 1.5d0.") ; ERRNO=4
+BEGIN 150
+CASE 150 (last nil) => (VALUE nil) ; ERRNO=0
+BEGIN 151
+CASE 151 (last 1) => (ERROR "LAST expects a proper list, got 1.") ; ERRNO=4
+BEGIN 152
+CASE 152 (last '(1 . 2)) => (ERROR "LAST expects a proper list, got (1 . 2).") ; ERRNO=4
+BEGIN 153
+CASE 153 (length 1) => (ERROR "LENGTH expects a proper list, got 1.") ; ERRNO=4
+BEGIN 154
+CASE 154 (length '(1 . 2)) => (ERROR "LENGTH expects a proper list, got (1 . 2).") ; ERRNO=4
+BEGIN 155
+CASE 155 (length "abc") => (ERROR "LENGTH expects a proper list, got \"abc\".") ; ERRNO=4
+BEGIN 156
+CASE 156 (reverse 1) => (ERROR "REVERSE expects a proper list, got 1.") ; ERRNO=4
+BEGIN 157
+CASE 157 (reverse '(1 . 2)) => (ERROR "REVERSE expects a proper list, got (1 . 2).") ; ERRNO=4
+BEGIN 158
+CASE 158 (append 1 '(2)) => (ERROR "APPEND expects a proper list, got 1.") ; ERRNO=4
+BEGIN 159
+CASE 159 (append '(1) 2) => (VALUE (1 . 2)) ; ERRNO=0
+BEGIN 160
+CASE 160 (append '(1 . 2) '(3)) => (ERROR "APPEND expects a proper list, got (1 . 2).") ; ERRNO=4
+BEGIN 161
+CASE 161 (assoc 1 1) => (ERROR "ASSOC expects a proper list, got 1.") ; ERRNO=4
+BEGIN 162
+CASE 162 (assoc 1 '(1 2)) => (ERROR "ASSOC expects an alist, got entry 1.") ; ERRNO=4
+BEGIN 163
+CASE 163 (cons 1) => (ERROR "AutoLISP builtin CONS signaled an error: invalid number of arguments: 1") ; ERRNO=6
+BEGIN 164
+CASE 164 (cons) => (ERROR "AutoLISP builtin CONS signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 165
+CASE 165 (member 1 2) => (ERROR "MEMBER expects a proper list, got 2.") ; ERRNO=4
+BEGIN 166
+CASE 166 (vl-position 1 2) => (ERROR "VL-POSITION expects a proper list, got 2.") ; ERRNO=4
+BEGIN 167
+CASE 167 (mapcar '+ '(1 2) '(1)) => (VALUE (2)) ; ERRNO=0
+BEGIN 168
+CASE 168 (mapcar 'car 1) => (ERROR "MAPCAR expects a proper list, got 1.") ; ERRNO=4
+BEGIN 169
+CASE 169 (mapcar 'car '(1)) => (ERROR "CAR expects a list, got 1.") ; ERRNO=4
+BEGIN 170
+CASE 170 (mapcar nil '(1)) => (ERROR "Expected an AutoLISP function designator, got NIL.") ; ERRNO=4
+BEGIN 171
+CASE 171 (apply '+ 1) => (ERROR "APPLY expects a list of arguments, got 1.") ; ERRNO=4
+BEGIN 172
+CASE 172 (apply '+ '(1 . 2)) => (ERROR "AutoLISP builtin APPLY signaled an error: Attempt to use VALUES-LIST on a dotted list or non-list:\n                                            2") ; ERRNO=6
+BEGIN 173
+CASE 173 (apply 'nosuchfn '(1)) => (ERROR "Undefined AutoLISP function NOSUCHFN.") ; ERRNO=3
+BEGIN 174
+CASE 174 (vl-sort 1 '<) => (ERROR "VL-SORT expects a proper list, got 1.") ; ERRNO=4
+BEGIN 175
+CASE 175 (vl-sort '(2 1 nil) '<) => (VALUE (nil 1 2)) ; ERRNO=0
+BEGIN 176
+CASE 176 (vl-sort '("b" 1) '<) => (ERROR "<: incompatible comparison arguments 1 \"b\" (expected two numbers or two strings).") ; ERRNO=4
+BEGIN 177
+CASE 177 (vl-sort-i '(2 1) nil) => (ERROR "Expected an AutoLISP function designator, got NIL.") ; ERRNO=4
+BEGIN 178
+CASE 178 (vl-remove 1 2) => (ERROR "REMOVE expects a proper list, got 2.") ; ERRNO=4
+BEGIN 179
+CASE 179 (vl-remove-if 'numberp 1) => (ERROR "VL-REMOVE-IF expects a proper list, got 1.") ; ERRNO=4
+BEGIN 180
+CASE 180 (subst 1 2 3) => (VALUE 3) ; ERRNO=0
+BEGIN 181
+CASE 181 (list) => (VALUE nil) ; ERRNO=0
+BEGIN 182
+CASE 182 (vl-list* 1) => (VALUE 1) ; ERRNO=0
+BEGIN 183
+CASE 183 (vl-list*) => (ERROR "VL-LIST* expects at least one argument.") ; ERRNO=4
+BEGIN 184
+CASE 184 (acad_strlsort nil) => (VALUE nil) ; ERRNO=0
+BEGIN 185
+CASE 185 (acad_strlsort '(1 2)) => (VALUE nil) ; ERRNO=0
+BEGIN 186
+CASE 186 (acad_strlsort '("b" nil)) => (VALUE nil) ; ERRNO=0
+BEGIN 187
+CASE 187 (vl-every 'numberp 1) => (ERROR "VL-EVERY expects a proper list, got 1.") ; ERRNO=4
+BEGIN 188
+CASE 188 (vl-some 'numberp 1) => (ERROR "VL-SOME expects a proper list, got 1.") ; ERRNO=4
+BEGIN 189
+CASE 189 (vl-member-if 'numberp 1) => (ERROR "VL-MEMBER-IF expects a proper list, got 1.") ; ERRNO=4
+BEGIN 190
+CASE 190 (vl-consp) => (ERROR "AutoLISP builtin VL-CONSP signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 191
+CASE 191 (listp) => (ERROR "AutoLISP builtin LISTP signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 192
+CASE 192 (nth 0 nil) => (VALUE nil) ; ERRNO=0
+BEGIN 193
+CASE 193 (car nil) => (VALUE nil) ; ERRNO=0
+BEGIN 194
+CASE 194 (assoc nil nil) => (VALUE nil) ; ERRNO=0
+BEGIN 195
+CASE 195 (foreach x 1 x) => (ERROR "FOREACH list argument must evaluate to a proper list, got 1.") ; ERRNO=4
+BEGIN 196
+CASE 196 (foreach x '(1 . 2) x) => (ERROR "AutoLISP builtin EVAL signaled an error: The value\n                                           2\n                                         is not of type\n                                           LIST") ; ERRNO=6
+BEGIN 197
+CASE 197 (repeat -1 1) => (VALUE nil) ; ERRNO=0
+BEGIN 198
+CASE 198 (repeat 1.5 1) => (ERROR "REPEAT count must evaluate to an integer, got 1.5d0.") ; ERRNO=4
+BEGIN 199
+CASE 199 (repeat nil 1) => (ERROR "REPEAT count must evaluate to an integer, got NIL.") ; ERRNO=4
+BEGIN 200
+CASE 200 (while) => (ERROR "WHILE expects at least one argument.") ; ERRNO=4
+BEGIN 201
+CASE 201 (if) => (ERROR "IF expects two or three arguments, got 0.") ; ERRNO=4
+BEGIN 202
+CASE 202 (cond (1)) => (VALUE 1) ; ERRNO=0
+BEGIN 203
+CASE 203 (cond) => (VALUE nil) ; ERRNO=0
+BEGIN 204
+CASE 204 (progn) => (VALUE nil) ; ERRNO=0
+BEGIN 205
+CASE 205 (and) => (VALUE T) ; ERRNO=0
+BEGIN 206
+CASE 206 (or) => (VALUE nil) ; ERRNO=0
+BEGIN 207
+CASE 207 (quote) => (ERROR "QUOTE expects exactly one argument, got 0.") ; ERRNO=4
+BEGIN 208
+CASE 208 (eval 'pcat-unbound-var) => (VALUE nil) ; ERRNO=0
+BEGIN 209
+CASE 209 (eval '(pcat-unbound-fn)) => (ERROR "Undefined AutoLISP function PCAT-UNBOUND-FN.") ; ERRNO=3
+BEGIN 210
+CASE 210 (pcat-unbound-fn 1) => (ERROR "Undefined AutoLISP function PCAT-UNBOUND-FN.") ; ERRNO=3
+BEGIN 211
+CASE 211 (set 1 1) => (ERROR "SET place must evaluate to an AutoLISP symbol, got 1.") ; ERRNO=4
+BEGIN 212
+CASE 212 (set "x" 1) => (ERROR "SET place must evaluate to an AutoLISP symbol, got \"x\".") ; ERRNO=4
+BEGIN 213
+CASE 213 (boundp 1) => (ERROR "Expected an AutoLISP symbol, got 1.") ; ERRNO=4
+BEGIN 214
+CASE 214 (boundp nil) => (ERROR "Expected an AutoLISP symbol, got NIL.") ; ERRNO=4
+BEGIN 215
+CASE 215 (type) => (ERROR "AutoLISP builtin TYPE signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 216
+CASE 216 (atoms-family 2) => (ERROR "ATOMS-FAMILY format flag must be 0 or 1, got 2.") ; ERRNO=4
+BEGIN 217
+CASE 217 (vl-symbol-value nil) => (ERROR "Expected an AutoLISP symbol, got NIL.") ; ERRNO=4
+BEGIN 218
+CASE 218 (vl-symbol-value 1) => (ERROR "Expected an AutoLISP symbol, got 1.") ; ERRNO=4
+BEGIN 219
+CASE 219 (vl-symbol-name "x") => (ERROR "Expected an AutoLISP symbol, got \"x\".") ; ERRNO=4
+BEGIN 220
+CASE 220 (vl-symbolp) => (ERROR "AutoLISP builtin VL-SYMBOLP signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 221
+CASE 221 ((lambda (x) x)) => (ERROR "AutoLISP function LAMBDA expects 1 arguments, got 0.") ; ERRNO=4
+BEGIN 222
+CASE 222 ((lambda (x) x) 1 2) => (ERROR "AutoLISP function LAMBDA expects 1 arguments, got 2.") ; ERRNO=4
+BEGIN 223
+CASE 223 ((lambda () 1) 1) => (ERROR "AutoLISP function LAMBDA expects 0 arguments, got 1.") ; ERRNO=4
+BEGIN 224
+CASE 224 (defun) => (ERROR "DEFUN expects at least a name and lambda list, got 0 arguments.") ; ERRNO=4
+BEGIN 225
+CASE 225 (defun 1 () 1) => (ERROR "DEFUN name must be an AutoLISP symbol, got 1.") ; ERRNO=4
+BEGIN 226
+CASE 226 (function 1) => (ERROR "FUNCTION expects a function name or lambda form, got 1.") ; ERRNO=4
+BEGIN 227
+CASE 227 (function pcat-unbound-fn) => (VALUE PCAT-UNBOUND-FN) ; ERRNO=0
+BEGIN 228
+CASE 228 (vl-acad-defun 'pcat-unbound-fn) => (ERROR "AutoLISP builtin VL-ACAD-DEFUN signaled an error: invalid number of arguments: 1") ; ERRNO=6
+BEGIN 229
+CASE 229 (type pcat-unbound-fn) => (VALUE nil) ; ERRNO=0
+BEGIN 230
+CASE 230 (setq) => (VALUE nil) ; ERRNO=0
+BEGIN 231
+CASE 231 (setq a) => (ERROR "SETQ expects an even number of arguments, got 1.") ; ERRNO=4
+BEGIN 232
+CASE 232 (setq 1 2) => (ERROR "SETQ place must be an AutoLISP symbol, got 1.") ; ERRNO=4
+BEGIN 233
+CASE 233 (lambda) => (ERROR "LAMBDA expects a lambda list and at least one body form, got 0 arguments.") ; ERRNO=4
+BEGIN 234
+CASE 234 (eval) => (ERROR "AutoLISP builtin EVAL signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 235
+CASE 235 (apply) => (ERROR "AutoLISP builtin APPLY signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 236
+CASE 236 (vl-catch-all-apply nil nil) => (ERROR "Expected an AutoLISP function designator, got NIL.") ; ERRNO=4
+BEGIN 237
+CASE 237 (vl-catch-all-apply 'pcat-unbound-fn nil) => (ERROR "Undefined AutoLISP function PCAT-UNBOUND-FN.") ; ERRNO=3
+BEGIN 238
+CASE 238 (vl-catch-all-error-message 1) => (ERROR "VL-CATCH-ALL-ERROR-MESSAGE expects a catch-all error object, got 1.") ; ERRNO=4
+BEGIN 239
+CASE 239 (vl-catch-all-error-p) => (ERROR "AutoLISP builtin VL-CATCH-ALL-ERROR-P signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 240
+CASE 240 (vl-catch-all-apply 'car '(1)) => (ERROR "CAR expects a list, got 1.") ; ERRNO=0
+BEGIN 241
+CASE 241 ((lambda (g) (g)) (function (lambda () 1))) => (VALUE 1) ; ERRNO=0
+BEGIN 242
+CASE 242 ((lambda (g) (g)) (lambda () 1)) => (VALUE 1) ; ERRNO=0
+BEGIN 243
+CASE 243 ((lambda (g) (g)) '(lambda () 1)) => (VALUE 1) ; ERRNO=0
+BEGIN 244
+CASE 244 ((lambda (g) (apply g nil)) (function (lambda () 1))) => (VALUE 1) ; ERRNO=0
+BEGIN 245
+CASE 245 ((lambda (g) (apply g nil)) '(lambda () 1)) => (VALUE 1) ; ERRNO=0
+BEGIN 246
+CASE 246 ((lambda (g) (g)) 'pcat-write) => (ERROR "Undefined AutoLISP function G.") ; ERRNO=3
+BEGIN 247
+CASE 247 ((lambda (g) (g 1)) '1+) => (ERROR "Undefined AutoLISP function G.") ; ERRNO=3
+BEGIN 248
+CASE 248 (mapcar (function (lambda (x) x)) '(1)) => (VALUE (1)) ; ERRNO=0
+BEGIN 249
+CASE 249 (mapcar '(lambda (x) x) '(1)) => (VALUE (1)) ; ERRNO=0
+BEGIN 250
+CASE 250 (mapcar (lambda (x) x) '(1)) => (VALUE (1)) ; ERRNO=0
+BEGIN 251
+CASE 251 (exit) => (ERROR "quit / exit abort") ; ERRNO=1
+BEGIN 252
+CASE 252 (quit) => (ERROR "quit / exit abort") ; ERRNO=1
+BEGIN 253
+CASE 253 (exit 1) => (ERROR "quit / exit abort") ; ERRNO=1
+BEGIN 254
+CASE 254 (vl-exit-with-error "x") => (ERROR "") ; ERRNO=1
+BEGIN 255
+CASE 255 (vl-exit-with-value 1) => (ERROR "") ; ERRNO=1
+BEGIN 256
+CASE 256 (error "pcat-message") => (ERROR "pcat-message") ; ERRNO=1
+BEGIN 257
+CASE 257 (error 'sym) => (ERROR "SYM") ; ERRNO=1
+BEGIN 258
+CASE 258 (error) => (ERROR "AutoLISP builtin ERROR signaled an error: invalid number of arguments: 0") ; ERRNO=6
+BEGIN 259
+CASE 259 (*error* "x") => (VALUE nil) ; ERRNO=0
+BEGIN 260
+CASE 260 (vl-bt) => (VALUE nil) ; ERRNO=0
+BEGIN 261
+CASE 261 (polar nil 0 1) => (ERROR "POLAR expects a number, got NIL.") ; ERRNO=4
+BEGIN 262
+CASE 262 (polar '(0 0) nil 1) => (ERROR "POLAR expects a number, got NIL.") ; ERRNO=4
+BEGIN 263
+CASE 263 (polar '(0 0) 0 nil) => (ERROR "POLAR expects a number, got NIL.") ; ERRNO=4
+BEGIN 264
+CASE 264 (polar '(0) 0 1) => (ERROR "POLAR expects a number, got NIL.") ; ERRNO=4
+BEGIN 265
+CASE 265 (distance '(0 0) '(1)) => (VALUE 1.0) ; ERRNO=0
+BEGIN 266
+CASE 266 (distance '(0 0) '(1 1 1)) => (VALUE 1.73205080756888) ; ERRNO=0
+BEGIN 267
+CASE 267 (distance '(0 0 5) '(0 0)) => (VALUE 5.0) ; ERRNO=0
+BEGIN 268
+CASE 268 (distance nil '(1 1)) => (VALUE 1.4142135623731) ; ERRNO=0
+BEGIN 269
+CASE 269 (angle '(0 0) '(0 0)) => (VALUE 0.0) ; ERRNO=0
+BEGIN 270
+CASE 270 (angle nil '(1 1)) => (ERROR "ANGLE expects a number, got NIL.") ; ERRNO=4
+BEGIN 271
+CASE 271 (inters '(0 0) '(1 0) '(0 1) '(1 1)) => (VALUE nil) ; ERRNO=0
+BEGIN 272
+CASE 272 (inters '(0 0) '(1 0) '(2 1) '(2 2)) => (VALUE nil) ; ERRNO=0
+BEGIN 273
+CASE 273 (inters '(0 0) '(1 0) '(2 1) '(2 2) nil) => (VALUE nil) ; ERRNO=0
+BEGIN 274
+CASE 274 (inters '(0 0) '(0 0) '(0 1) '(1 1)) => (VALUE nil) ; ERRNO=0
+BEGIN 275
+CASE 275 (inters nil '(1 1) '(0 1) '(1 0)) => (ERROR "INTERS expects a number, got NIL.") ; ERRNO=4
+BEGIN 276
+CASE 276 (trans '(0 0 0) 0 99) => (VALUE (0.0 0.0 0.0)) ; ERRNO=0
+BEGIN 277
+CASE 277 (trans nil 0 1) => (ERROR "TRANS expects a number, got NIL.") ; ERRNO=4
+BEGIN 278
+CASE 278 (trans '(0 0 0) 0 *t*) => (ERROR "TRANS TO must be an integer or an entity-name list, got <Entity name: 20>.") ; ERRNO=4
+BEGIN 279
+CASE 279 (osnap '(0 0) "_bogus") => (VALUE nil) ; ERRNO=0
+BEGIN 280
+CASE 280 (osnap nil "_end") => (VALUE nil) ; ERRNO=0
+BEGIN 281
+CASE 281 (textbox nil) => (VALUE ((0.0 0.0 0.0) (0.0 0.0 0.0))) ; ERRNO=0
+BEGIN 282
+CASE 282 (textbox '((1 . "a"))) => (VALUE ((0.0504774898290634 -0.0163710787892342 0.0) (0.717598915100098 0.740791261196136 0.0))) ; ERRNO=0
+BEGIN 283
+CASE 283 (entget nil) => (ERROR "ENTGET expects an ENAME, got NIL.") ; ERRNO=4
+BEGIN 284
+CASE 284 (entget "x") => (ERROR "ENTGET expects an ENAME, got \"x\".") ; ERRNO=4
+BEGIN 285
+CASE 285 (entget *dead*) => (VALUE nil) ; ERRNO=0
+BEGIN 286
+CASE 286 (entdel nil) => (ERROR "ENTDEL expects an ENAME, got NIL.") ; ERRNO=4
+BEGIN 287
+CASE 287 (entdel *dead*) => (VALUE ENAME) ; ERRNO=0
+BEGIN 288
+CASE 288 (entnext nil) => (VALUE ENAME) ; ERRNO=0
+BEGIN 289
+CASE 289 (entnext "x") => (ERROR "ENTNEXT expects an ENAME, got \"x\".") ; ERRNO=4
+BEGIN 290
+CASE 290 (entlast 1) => (ERROR "AutoLISP builtin ENTLAST signaled an error: invalid number of arguments: 1") ; ERRNO=6
+BEGIN 291
+CASE 291 (entmake nil) => (VALUE nil) ; ERRNO=0
+BEGIN 292
+CASE 292 (entmake '((0 . "BOGUS"))) => (VALUE ((0 . "BOGUS"))) ; ERRNO=0
+BEGIN 293
+CASE 293 (entmake '((0 . "LINE"))) => (VALUE nil) ; ERRNO=0
+BEGIN 294
+CASE 294 (entmakex '((0 . "LINE") (10 0.0 0.0 0.0))) => (VALUE nil) ; ERRNO=0
+BEGIN 295
+CASE 295 (entmakex (list '(0 . "LINE") (cons 10 nil) '(11 5.0 5.0 0.0))) => (VALUE ENAME) ; ERRNO=0
+BEGIN 296
+CASE 296 (entmakex '((0 . "LINE") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0) (8 . ""))) => (VALUE ENAME) ; ERRNO=0
+BEGIN 297
+CASE 297 (entmakex '((0 . "LINE") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0) (62 . 999))) => (VALUE ENAME) ; ERRNO=0
+BEGIN 298
+CASE 298 (entmakex '((0 . "INSERT") (2 . "PCAT_NO_BLOCK") (10 0.0 0.0 0.0))) => (VALUE nil) ; ERRNO=0
+BEGIN 299
+CASE 299 (entmakex '((0 . "CIRCLE") (10 0.0 0.0 0.0) (40 . -1.0))) => (VALUE ENAME) ; ERRNO=0
+BEGIN 300
+CASE 300 (entmakex '((0 . "TEXT") (10 0.0 0.0 0.0) (40 . 1.0) (1 . "x") (7 . "PCAT_NO_STYLE"))) => (VALUE ENAME) ; ERRNO=0
+BEGIN 301
+CASE 301 (entmod nil) => (ERROR "ENTMOD requires the modified entity's (-1 . <ENAME>) entry in the data list.") ; ERRNO=4
+BEGIN 302
+CASE 302 (entmod '((0 . "LINE"))) => (ERROR "ENTMOD requires the modified entity's (-1 . <ENAME>) entry in the data list.") ; ERRNO=4
+BEGIN 303
+CASE 303 (entmod (subst '(8 . "") (assoc 8 (entget *l*)) (entget *l*))) => (VALUE ((-1 . <Entity name: 1B>) (0 . "LINE") (5 . "1B") (330 . <Entity name: 10>) (100 . "AcDbEntity") (67 . 0) (410 . "Model") (8 . "") (100 . "AcDbLine") (10 0.0 0.0 0.0) (11 10.0 0.0 0.0) (210 0.0 0.0 1.0))) ; ERRNO=0
+BEGIN 304
+CASE 304 (entmod (subst '(62 . 999) '(62 . 999) (append (entget *l*) '((62 . 999))))) => (VALUE ((-1 . <Entity name: 1B>) (0 . "LINE") (5 . "1B") (330 . <Entity name: 10>) (100 . "AcDbEntity") (67 . 0) (410 . "Model") (8 . "") (62 . 999) (100 . "AcDbLine") (10 0.0 0.0 0.0) (11 10.0 0.0 0.0) (210 0.0 0.0 1.0))) ; ERRNO=0
+BEGIN 305
+CASE 305 (entmod (list (cons -1 *dead*) '(8 . "0"))) => (VALUE ((-1 . <Entity name: 21>) (5 . "21") (8 . "0"))) ; ERRNO=0
+BEGIN 306
+CASE 306 (entupd nil) => (ERROR "ENTUPD expects an ENAME, got NIL.") ; ERRNO=4
+BEGIN 307
+CASE 307 (entupd *dead*) => (VALUE ENAME) ; ERRNO=0
+BEGIN 308
+CASE 308 (handent "ZZZZZZ") => (VALUE nil) ; ERRNO=0
+BEGIN 309
+CASE 309 (handent nil) => (ERROR "HANDENT expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 310
+CASE 310 (handent "") => (VALUE nil) ; ERRNO=0
+BEGIN 311
+CASE 311 (ssget "X" '((0 . "PCATNOTYPE"))) => (VALUE nil) ; ERRNO=0
+BEGIN 312
+CASE 312 (ssget "BOGUS") => (ERROR "cador does not yet support ssget mode \"BOGUS\"; accepted modes are \"X\", \"_X\" and \"_I\".") ; ERRNO=1
+BEGIN 313
+CASE 313 (ssname nil 0) => (ERROR "SSNAME expects a PICKSET, got NIL.") ; ERRNO=4
+BEGIN 314
+CASE 314 (ssname *ss* 99) => (VALUE nil) ; ERRNO=0
+BEGIN 315
+CASE 315 (ssname *ss* -1) => (VALUE nil) ; ERRNO=0
+BEGIN 316
+CASE 316 (sslength nil) => (ERROR "SSLENGTH expects a PICKSET, got NIL.") ; ERRNO=4
+BEGIN 317
+CASE 317 (ssadd 1) => (ERROR "SSADD expects an ENAME, got 1.") ; ERRNO=4
+BEGIN 318
+CASE 318 (ssadd *dead* (ssadd)) => (VALUE PICKSET) ; ERRNO=0
+BEGIN 319
+CASE 319 (ssdel *t* *ss*) => (VALUE nil) ; ERRNO=0
+BEGIN 320
+CASE 320 (ssmemb nil *ss*) => (ERROR "SSMEMB expects an ENAME, got NIL.") ; ERRNO=4
+BEGIN 321
+CASE 321 (tblsearch "LAYER" nil) => (ERROR "TBLSEARCH expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 322
+CASE 322 (tblsearch "BOGUS" "0") => (VALUE nil) ; ERRNO=0
+BEGIN 323
+CASE 323 (tblsearch "LAYER" "PCAT_NOPE") => (VALUE nil) ; ERRNO=0
+BEGIN 324
+CASE 324 (tblobjname "LAYER" "PCAT_NOPE") => (VALUE nil) ; ERRNO=0
+BEGIN 325
+CASE 325 (tblnext "BOGUS") => (VALUE nil) ; ERRNO=0
+BEGIN 326
+CASE 326 (dictsearch nil "x") => (ERROR "DICTSEARCH expects an ENAME, got NIL.") ; ERRNO=4
+BEGIN 327
+CASE 327 (dictsearch (namedobjdict) nil) => (ERROR "DICTSEARCH expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 328
+CASE 328 (dictsearch (namedobjdict) "PCAT_NOPE") => (VALUE nil) ; ERRNO=0
+BEGIN 329
+CASE 329 (dictnext nil) => (ERROR "DICTNEXT expects an ENAME, got NIL.") ; ERRNO=4
+BEGIN 330
+CASE 330 (dictremove (namedobjdict) "PCAT_NOPE") => (VALUE nil) ; ERRNO=0
+BEGIN 331
+CASE 331 (regapp nil) => (ERROR "REGAPP expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 332
+CASE 332 (regapp "") => (VALUE nil) ; ERRNO=0
+BEGIN 333
+CASE 333 (regapp "A B") => (VALUE "A B") ; ERRNO=0
+BEGIN 334
+CASE 334 (getvar "PCATNOSUCHVAR") => (VALUE nil) ; ERRNO=0
+BEGIN 335
+CASE 335 (getvar nil) => (ERROR "GETVAR expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 336
+CASE 336 (getvar 1) => (ERROR "GETVAR expects an AutoLISP string, got 1.") ; ERRNO=4
+BEGIN 337
+CASE 337 (setvar "PCATNOSUCHVAR" 1) => (ERROR "cador has no system variable named PCATNOSUCHVAR.") ; ERRNO=1
+BEGIN 338
+CASE 338 (setvar "OSMODE" "a") => (ERROR "Sysvar OSMODE expects an integer, got \"a\".") ; ERRNO=4
+BEGIN 339
+CASE 339 (setvar "OSMODE" 99999) => (VALUE 99999) ; ERRNO=0
+BEGIN 340
+CASE 340 (setvar "OSMODE" -1) => (VALUE -1) ; ERRNO=0
+BEGIN 341
+CASE 341 (setvar "CLAYER" "PCAT_NOPE_LAYER") => (VALUE "PCAT_NOPE_LAYER") ; ERRNO=0
+BEGIN 342
+CASE 342 (setvar "DWGNAME" "x") => (ERROR "Sysvar DWGNAME is read-only.") ; ERRNO=1
+BEGIN 343
+CASE 343 (setvar "CECOLOR" "999") => (VALUE "999") ; ERRNO=0
+BEGIN 344
+CASE 344 (setvar "LUPREC" 99) => (VALUE 99) ; ERRNO=0
+BEGIN 345
+CASE 345 (getenv nil) => (ERROR "GETENV expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 346
+CASE 346 (getenv "PCAT_NO_ENV") => (VALUE nil) ; ERRNO=0
+BEGIN 347
+CASE 347 (setenv nil "x") => (ERROR "SETENV expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 348
+CASE 348 (getcfg nil) => (ERROR "GETCFG expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 349
+CASE 349 (getcfg "Bogus/x") => (VALUE nil) ; ERRNO=0
+BEGIN 350
+CASE 350 (vlax-curve-getPointAtParam *l* 25.0) => (VALUE nil) ; ERRNO=0
+BEGIN 351
+CASE 351 (vlax-curve-getPointAtParam *l* -1.0) => (VALUE nil) ; ERRNO=0
+BEGIN 352
+CASE 352 (vlax-curve-getPointAtDist *l* 25.0) => (VALUE nil) ; ERRNO=0
+BEGIN 353
+CASE 353 (vlax-curve-getPointAtDist *l* -1.0) => (VALUE nil) ; ERRNO=0
+BEGIN 354
+CASE 354 (vlax-curve-getParamAtPoint *l* '(5.0 3.0 0.0)) => (VALUE 0.0) ; ERRNO=0
+BEGIN 355
+CASE 355 (vlax-curve-getParamAtPoint *l* '(5.0 3.0)) => (VALUE 0.0) ; ERRNO=0
+BEGIN 356
+CASE 356 (vlax-curve-getDistAtPoint *l* '(5.0 3.0 0.0)) => (VALUE 0.0) ; ERRNO=0
+BEGIN 357
+CASE 357 (vlax-curve-getParamAtDist *l* 25.0) => (VALUE 25.0) ; ERRNO=0
+BEGIN 358
+CASE 358 (vlax-curve-getDistAtParam *l* 25.0) => (VALUE 25.0) ; ERRNO=0
+BEGIN 359
+CASE 359 (vlax-curve-getParamAtPoint *p* '(5.0 3.0 0.0)) => (VALUE 0.0) ; ERRNO=0
+BEGIN 360
+CASE 360 (vlax-curve-getDistAtPoint *p* '(5.0 3.0 0.0)) => (VALUE 0.0) ; ERRNO=0
+BEGIN 361
+CASE 361 (vlax-curve-getParamAtPoint *pz* '(5.0 3.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 362
+CASE 362 (vlax-curve-getParamAtPoint *pz* '(5.0 0.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 363
+CASE 363 (vlax-curve-getParamAtPoint *pz* '(5.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 364
+CASE 364 (vlax-curve-getParamAtDist *p* 99.0) => (VALUE 20.0) ; ERRNO=0
+BEGIN 365
+CASE 365 (vlax-curve-getPointAtParam *p* 5.0) => (VALUE nil) ; ERRNO=0
+BEGIN 366
+CASE 366 (vlax-curve-getParamAtPoint *a* '(0.0 0.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 367
+CASE 367 (vlax-curve-getParamAtDist *a* 99.0) => (VALUE 15.0) ; ERRNO=0
+BEGIN 368
+CASE 368 (vlax-curve-getDistAtParam *a* 0.0) => (VALUE 0.0) ; ERRNO=0
+BEGIN 369
+CASE 369 (vlax-curve-getDistAtParam *a* 3.0) => (VALUE nil) ; ERRNO=0
+BEGIN 370
+CASE 370 (vlax-curve-getPointAtParam *a* 3.0) => (VALUE nil) ; ERRNO=0
+BEGIN 371
+CASE 371 (vlax-curve-getParamAtDist *c* 99.0) => (VALUE 19.8) ; ERRNO=0
+BEGIN 372
+CASE 372 (vlax-curve-getParamAtPoint *c* '(0.0 0.0 0.0)) => (VALUE nil) ; ERRNO=0
+BEGIN 373
+CASE 373 (vlax-curve-getClosestPointTo *l* nil) => (ERROR "VLAX-CURVE-GETCLOSESTPOINTTO expects a 2D or 3D point, got NIL.") ; ERRNO=4
+BEGIN 374
+CASE 374 (vlax-curve-getClosestPointTo *l* '(20.0 5.0 0.0) T) => (VALUE (20.0 0.0 0.0)) ; ERRNO=0
+BEGIN 375
+CASE 375 (vlax-curve-getClosestPointTo *l* '(20.0 5.0)) => (VALUE (10.0 0.0 0.0)) ; ERRNO=0
+BEGIN 376
+CASE 376 (vlax-curve-getFirstDeriv *l* 25.0) => (VALUE nil) ; ERRNO=0
+BEGIN 377
+CASE 377 (vlax-curve-getSecondDeriv *l* 25.0) => (VALUE (0.0 0.0 0.0)) ; ERRNO=0
+BEGIN 378
+CASE 378 (vlax-curve-getEndParam *t*) => (VALUE nil) ; ERRNO=0
+BEGIN 379
+CASE 379 (vlax-curve-getEndParam nil) => (ERROR "BUILTIN-VLAX-CURVE-GETENDPARAM expects a curve ENAME or VLA-object, got NIL.") ; ERRNO=4
+BEGIN 380
+CASE 380 (vlax-curve-getEndParam *dead*) => (VALUE nil) ; ERRNO=0
+BEGIN 381
+CASE 381 (vlax-curve-getArea *l*) => (VALUE 0.0) ; ERRNO=0
+BEGIN 382
+CASE 382 (vlax-curve-getArea *t*) => (VALUE nil) ; ERRNO=0
+BEGIN 383
+CASE 383 (vlax-curve-isClosed *t*) => (VALUE nil) ; ERRNO=0
+BEGIN 384
+CASE 384 (vlax-curve-getStartPoint *t*) => (VALUE nil) ; ERRNO=0
+BEGIN 385
+CASE 385 (vlax-curve-getPointAtDist *l* nil) => (ERROR "VLAX-CURVE-GETPOINTATDIST expects a number, got NIL.") ; ERRNO=4
+BEGIN 386
+CASE 386 (vlax-curve-getParamAtPoint *l* nil) => (ERROR "VLAX-CURVE-GETPARAMATPOINT expects a 2D or 3D point, got NIL.") ; ERRNO=4
+BEGIN 387
+CASE 387 (vlax-curve-getEndParam 'x) => (ERROR "BUILTIN-VLAX-CURVE-GETENDPARAM expects a curve ENAME or VLA-object, got X.") ; ERRNO=4
+BEGIN 388
+CASE 388 (command "_PCATNOSUCHCMD") => (VALUE nil) ; ERRNO=0
+BEGIN 389
+CASE 389 (command-s "_PCATNOSUCHCMD") => (VALUE nil) ; ERRNO=0
+BEGIN 390
+CASE 390 (vl-cmdf "_PCATNOSUCHCMD") => (VALUE T) ; ERRNO=0
+BEGIN 391
+CASE 391 (command "_LINE" "pas-un-point" "") => (VALUE nil) ; ERRNO=0
+BEGIN 392
+CASE 392 (command-s "_LINE" "pas-un-point" "") => (VALUE nil) ; ERRNO=0
+BEGIN 393
+CASE 393 (vl-cmdf "_LINE" "pas-un-point" "") => (VALUE T) ; ERRNO=0
+BEGIN 394
+CASE 394 (command "_LINE" nil) => (ERROR "COMMAND argument must be a string, number, point list, entity name, or selection set, got NIL.") ; ERRNO=4
+BEGIN 395
+CASE 395 (command-s "_LINE" '(0 0) nil) => (ERROR "COMMAND argument must be a string, number, point list, entity name, or selection set, got NIL.") ; ERRNO=4
+BEGIN 396
+CASE 396 (command "_LAYER" "_S" "PCAT_NOPE_LAYER" "") => (VALUE nil) ; ERRNO=0
+BEGIN 397
+CASE 397 (command-s "_LAYER" "_S" "PCAT_NOPE_LAYER" "") => (VALUE nil) ; ERRNO=0
+BEGIN 398
+CASE 398 (command "_CIRCLE" '(0 0) -5) => (VALUE nil) ; ERRNO=0
+BEGIN 399
+CASE 399 (command-s "_CIRCLE" '(0 0) -5) => (VALUE nil) ; ERRNO=0
+BEGIN 400
+CASE 400 (vl-cmdf "_CIRCLE" '(0 0) -5) => (VALUE T) ; ERRNO=0
+BEGIN 401
+CASE 401 (command 1 2) => (VALUE nil) ; ERRNO=0
+BEGIN 402
+CASE 402 (command-s) => (VALUE nil) ; ERRNO=0
+BEGIN 403
+CASE 403 (command) => (VALUE nil) ; ERRNO=0
+BEGIN 404
+CASE 404 (getvar "CMDACTIVE") => (VALUE 0) ; ERRNO=0
+BEGIN 405
+CASE 405 (vla-item *blocks* "PCAT_NO_BLOCK") => (ERROR "Undefined AutoLISP function VLA-ITEM.") ; ERRNO=3
+BEGIN 406
+CASE 406 (vla-item *blocks* 99999) => (ERROR "Undefined AutoLISP function VLA-ITEM.") ; ERRNO=3
+BEGIN 407
+CASE 407 (vlax-ename->vla-object nil) => (ERROR "VLAX-ENAME->VLA-OBJECT expects an ENAME, got NIL.") ; ERRNO=4
+BEGIN 408
+CASE 408 (vlax-ename->vla-object *dead*) => (VALUE VLA-OBJECT) ; ERRNO=0
+BEGIN 409
+CASE 409 (vla-get-name nil) => (ERROR "Undefined AutoLISP function VLA-GET-NAME.") ; ERRNO=3
+BEGIN 410
+CASE 410 (vlax-get-property *lo* 'PcatBogus) => (ERROR "VLA-OBJECT AutoCAD.Entity has no property named PCATBOGUS.") ; ERRNO=1
+BEGIN 411
+CASE 411 (vlax-put-property *lo* 'Color "red") => (ERROR "Property COLOR expects an integer, got \"red\".") ; ERRNO=4
+BEGIN 412
+CASE 412 (vlax-invoke-method *lo* 'PcatBogus) => (ERROR "VLA-OBJECT AutoCAD.Entity has no method named PCATBOGUS.") ; ERRNO=1
+BEGIN 413
+CASE 413 (vla-get-effectivename *lo*) => (ERROR "Undefined AutoLISP function VLA-GET-EFFECTIVENAME.") ; ERRNO=3
+BEGIN 414
+CASE 414 (vla-get-textstring *lo*) => (ERROR "Undefined AutoLISP function VLA-GET-TEXTSTRING.") ; ERRNO=3
+BEGIN 415
+CASE 415 (vlax-property-available-p *lo* 'PcatBogus) => (VALUE nil) ; ERRNO=0
+BEGIN 416
+CASE 416 (vlax-method-applicable-p *lo* 'PcatBogus) => (VALUE nil) ; ERRNO=0
+BEGIN 417
+CASE 417 (vlax-variant-value nil) => (ERROR "VLAX-VARIANT-VALUE expects a VARIANT, got NIL.") ; ERRNO=4
+BEGIN 418
+CASE 418 (vlax-variant-value 1) => (ERROR "VLAX-VARIANT-VALUE expects a VARIANT, got 1.") ; ERRNO=4
+BEGIN 419
+CASE 419 (vlax-safearray->list nil) => (ERROR "VLAX-SAFEARRAY->LIST expects a SAFEARRAY, got NIL.") ; ERRNO=4
+BEGIN 420
+CASE 420 (vlax-safearray->list *empty-sa*) => (ERROR "VLAX-SAFEARRAY->LIST expects a SAFEARRAY, got NIL.") ; ERRNO=4
+BEGIN 421
+CASE 421 (vlax-make-safearray vlax-vbDouble '(0 . -1)) => (ERROR "VLAX-MAKE-SAFEARRAY: each bound must be (LOW . HIGH) integer pair with LOW <= HIGH, got (0\n                                                                                         . -1).") ; ERRNO=4
+BEGIN 422
+CASE 422 (vlax-make-safearray vlax-vbDouble '(0 . 0)) => (VALUE #<SAFEARRAY :VARIANT ((0 0))>) ; ERRNO=0
+BEGIN 423
+CASE 423 (vlax-make-safearray vlax-vbDouble '(0 . -2)) => (ERROR "VLAX-MAKE-SAFEARRAY: each bound must be (LOW . HIGH) integer pair with LOW <= HIGH, got (0\n                                                                                         . -2).") ; ERRNO=4
+BEGIN 424
+CASE 424 (vlax-make-variant nil) => (VALUE #<VARIANT :EMPTY NIL>) ; ERRNO=0
+BEGIN 425
+CASE 425 (vlax-ldata-get "pcat" "nokey") => (VALUE nil) ; ERRNO=0
+BEGIN 426
+CASE 426 (vlax-ldata-get nil nil) => (ERROR "VLAX-LDATA-GET: dictionary must be a VLA-object or a string, got NIL.") ; ERRNO=4
+BEGIN 427
+CASE 427 (vlax-erased-p *lo*) => (VALUE nil) ; ERRNO=0
+BEGIN 428
+CASE 428 (vlax-erased-p nil) => (ERROR "VLAX-ERASED-P expects a VLA-OBJECT, got NIL.") ; ERRNO=4
+BEGIN 429
+CASE 429 (vlax-read-enabled-p nil) => (ERROR "VLAX-ERASED-P expects a VLA-OBJECT, got NIL.") ; ERRNO=4
+BEGIN 430
+CASE 430 (vlax-get-acad-object 1) => (ERROR "AutoLISP builtin VLAX-GET-ACAD-OBJECT signaled an error: invalid number of arguments: 1") ; ERRNO=6
+BEGIN 431
+CASE 431 (vla-put-layer *lo* "PCAT_NOPE_LAYER") => (ERROR "Undefined AutoLISP function VLA-PUT-LAYER.") ; ERRNO=3
+BEGIN 432
+CASE 432 (vla-put-color *lo* 999) => (ERROR "Undefined AutoLISP function VLA-PUT-COLOR.") ; ERRNO=3
+BEGIN 433
+CASE 433 (vlax-release-object nil) => (ERROR "VLAX-RELEASE-OBJECT expects a VLA-OBJECT, got NIL.") ; ERRNO=4
+BEGIN 434
+CASE 434 (vlax-tmatrix nil) => (ERROR "VLAX-TMATRIX expects four rows, got 0.") ; ERRNO=4
+BEGIN 435
+CASE 435 (vlax-3d-point nil) => (ERROR "VLAX-3D-POINT expects 3 coordinate(s) (or a 2D point), got 0.") ; ERRNO=4
+BEGIN 436
+CASE 436 (vlax-3d-point '(1)) => (ERROR "VLAX-3D-POINT expects 3 coordinate(s) (or a 2D point), got 1.") ; ERRNO=4
+BEGIN 437
+CASE 437 (vla-get-blocks nil) => (ERROR "Undefined AutoLISP function VLA-GET-BLOCKS.") ; ERRNO=3
+BEGIN 438
+CASE 438 (vla-add *blocks* (vlax-3d-point '(0 0 0)) "") => (ERROR "Undefined AutoLISP function VLA-ADD.") ; ERRNO=3
+BEGIN 439
+CASE 439 (vlax-get *lo* 'PcatBogus) => (ERROR "VLA-OBJECT AutoCAD.Entity has no property named PCATBOGUS.") ; ERRNO=1
+BEGIN 440
+CASE 440 (vlax-invoke *lo* 'PcatBogus) => (ERROR "VLA-OBJECT AutoCAD.Entity has no method named PCATBOGUS.") ; ERRNO=1
+BEGIN 441
+CASE 441 (vlax-dump-object nil) => (ERROR "VLAX-DESCRIBE-OBJECT expects a VLA-OBJECT, got NIL.") ; ERRNO=4
+BEGIN 442
+CASE 442 (vla-getboundingbox *lo* 'a 'b) => (ERROR "Undefined AutoLISP function VLA-GETBOUNDINGBOX.") ; ERRNO=3
+BEGIN 443
+CASE 443 (open nil "r") => (ERROR "OPEN expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 444
+CASE 444 (open "Z:/pcat/nonexistent/x.txt" "r") => (VALUE nil) ; ERRNO=0
+BEGIN 445
+CASE 445 (open "pcat.txt" "z") => (ERROR "OPEN mode must be one of \"r\", \"w\", or \"a\", got \"z\".") ; ERRNO=5
+BEGIN 446
+CASE 446 (open "Z:/pcat/nonexistent/x.txt" "w") => (VALUE nil) ; ERRNO=0
+BEGIN 447
+CASE 447 (read-line nil) => (VALUE nil) ; ERRNO=0
+BEGIN 448
+CASE 448 (read-char nil) => (VALUE nil) ; ERRNO=0
+BEGIN 449
+CASE 449 (close nil) => (ERROR "CLOSE expects an AutoLISP file descriptor, got NIL.") ; ERRNO=5
+BEGIN 450
+CASE 450 (write-line 1 nil) => (ERROR "WRITE-LINE expects an AutoLISP string, got 1.") ; ERRNO=4
+BEGIN 451
+CASE 451 (write-line "x" 1) => (ERROR "WRITE-LINE expects an AutoLISP file descriptor, got 1.") ; ERRNO=5
+BEGIN 452
+CASE 452 (findfile nil) => (ERROR "FINDFILE expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 453
+CASE 453 (findfile "") => (VALUE nil) ; ERRNO=0
+BEGIN 454
+CASE 454 (findfile "pcat_nonexistent.lsp") => (VALUE nil) ; ERRNO=0
+BEGIN 455
+CASE 455 (load "pcat_nonexistent_zz") => (VALUE nil) ; ERRNO=0
+BEGIN 456
+CASE 456 (load "pcat_nonexistent_zz" 'pcat-fail) => (ERROR "Undefined AutoLISP function PCAT-FAIL.") ; ERRNO=3
+BEGIN 457
+CASE 457 (load nil) => (ERROR "LOAD expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 458
+CASE 458 (vl-file-delete "pcat_nonexistent") => (VALUE nil) ; ERRNO=0
+BEGIN 459
+CASE 459 (vl-file-delete nil) => (ERROR "VL-FILE-DELETE expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 460
+CASE 460 (vl-file-size "pcat_nonexistent") => (VALUE nil) ; ERRNO=0
+BEGIN 461
+CASE 461 (vl-file-rename "pcat_a" "pcat_b") => (VALUE nil) ; ERRNO=0
+BEGIN 462
+CASE 462 (vl-file-copy "pcat_a" "pcat_b") => (VALUE nil) ; ERRNO=0
+BEGIN 463
+CASE 463 (vl-directory-files "Z:/pcat/nonexistent") => (VALUE nil) ; ERRNO=0
+BEGIN 464
+CASE 464 (vl-directory-files nil nil) => (VALUE ("bad.dcl" "bc-stdout.txt" "bc0.txt" "bc1.txt" "bc2.txt" "bc25-catalogue-log.txt" "cmp-bc.org" "compare.py" "drive-catalogue.sh" "drive-win.sh" "half.lsp" "m0.txt" "m1.txt" "m2.txt" "mac-bricscad.sh" "pid" "probe-catalogue.lsp" "probe-error.lsp" "probe-log.txt" "probe2-log.txt" "probe2.lsp" "result-bricscad-v25-windows.txt" "result-bricscad-v26-macos.txt" "run.scr" "run0.scr" "run1.scr" "run2.scr" "t.lsp" "win-cad.sh" "win-env.sh")) ; ERRNO=0
+BEGIN 465
+CASE 465 (vl-filename-base nil) => (ERROR "VL-FILENAME-BASE expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 466
+CASE 466 (vl-filename-extension "") => (VALUE nil) ; ERRNO=0
+BEGIN 467
+CASE 467 (vl-filename-directory nil) => (ERROR "VL-FILENAME-DIRECTORY expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 468
+CASE 468 (vl-mkdir nil) => (ERROR "VL-MKDIR expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 469
+CASE 469 (vl-file-directory-p nil) => (ERROR "VL-FILE-DIRECTORY-P expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 470
+CASE 470 (vl-filename-mktemp nil nil nil) => (VALUE "/tmp/tmp1U73O13-0") ; ERRNO=0
+BEGIN 471
+CASE 471 (load_dialog "pcat_nonexistent.dcl") => (VALUE -1) ; ERRNO=0
+BEGIN 472
+CASE 472 (load_dialog nil) => (ERROR "LOAD_DIALOG expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 473
+CASE 473 (new_dialog "pcat_nope" 1) => (ERROR "No DCL source is loaded under handle 1.") ; ERRNO=1
+BEGIN 474
+CASE 474 (new_dialog "pcat_nope" 99999) => (ERROR "No DCL source is loaded under handle 99999.") ; ERRNO=1
+BEGIN 475
+CASE 475 (set_tile "x" "y") => (ERROR "SET_TILE: no DCL dialog is currently active.") ; ERRNO=1
+BEGIN 476
+CASE 476 (get_tile "x") => (ERROR "GET_TILE: no DCL dialog is currently active.") ; ERRNO=1
+BEGIN 477
+CASE 477 (done_dialog) => (VALUE 1) ; ERRNO=0
+BEGIN 478
+CASE 478 (unload_dialog 99999) => (VALUE nil) ; ERRNO=0
+BEGIN 479
+CASE 479 (start_list "x") => (ERROR "START_LIST: no DCL dialog is currently active.") ; ERRNO=1
+BEGIN 480
+CASE 480 (add_list "x") => (VALUE "x") ; ERRNO=0
+BEGIN 481
+CASE 481 (end_list) => (VALUE nil) ; ERRNO=0
+BEGIN 482
+CASE 482 (mode_tile "x" 1) => (ERROR "MODE_TILE: no DCL dialog is currently active.") ; ERRNO=1
+BEGIN 483
+CASE 483 (action_tile "x" "(princ)") => (ERROR "ACTION_TILE: no DCL dialog is currently active.") ; ERRNO=1
+BEGIN 484
+CASE 484 (get_attr "x" "y") => (VALUE nil) ; ERRNO=0
+BEGIN 485
+CASE 485 (term_dialog) => (VALUE nil) ; ERRNO=0
+BEGIN 486
+CASE 486 (vl-registry-read "HKEY_NOPE\\x") => (VALUE nil) ; ERRNO=0
+BEGIN 487
+CASE 487 (vl-registry-read nil) => (ERROR "VL-REGISTRY-READ expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 488
+CASE 488 (startapp nil) => (ERROR "STARTAPP expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 489
+CASE 489 (vl-propagate nil) => (ERROR "VL-PROPAGATE expects an AutoLISP symbol, got NIL.") ; ERRNO=4
+BEGIN 490
+CASE 490 (vl-bb-ref nil) => (ERROR "VL-BB-REF expects an AutoLISP symbol, got NIL.") ; ERRNO=4
+BEGIN 491
+CASE 491 (vl-doc-ref nil) => (ERROR "VL-DOC-REF expects an AutoLISP symbol, got NIL.") ; ERRNO=4
+BEGIN 492
+CASE 492 (vlax-add-cmd nil nil) => (ERROR "AutoLISP builtin VLAX-ADD-CMD signaled an error: The value\n                                                   NIL\n                                                 is not of type\n                                                   STRING\n                                                 when setting slot CLAUTOLISP.AUTOLISP-RUNTIME.INTERNAL::VALUE of structure CLAUTOLISP.AUTOLISP-RUNTIME.INTERNAL:AUTOLISP-STRING") ; ERRNO=6
+BEGIN 493
+CASE 493 (arxload "pcat_nonexistent") => (VALUE nil) ; ERRNO=0
+BEGIN 494
+CASE 494 (arxload "pcat_nonexistent" 'pcat-fail) => (VALUE nil) ; ERRNO=0
+BEGIN 495
+CASE 495 (autoload nil nil) => (ERROR "AUTOLOAD expects an AutoLISP string, got NIL.") ; ERRNO=4
+BEGIN 496
+CASE 496 (menucmd nil) => (VALUE "") ; ERRNO=0
+BEGIN 497
+CASE 497 (menucmd "Gbogus.ID_Nope=~") => (VALUE "") ; ERRNO=0
+BEGIN 498
+CASE 498 (grtext -99 "x") => (VALUE nil) ; ERRNO=0
+BEGIN 499
+CASE 499 (grdraw nil nil 1) => (VALUE nil) ; ERRNO=0
+BEGIN 500
+CASE 500 (redraw *dead* 1) => (VALUE nil) ; ERRNO=0
+BEGIN 501
+CASE 501 (alloc -1) => (VALUE -1) ; ERRNO=0
+BEGIN 502
+CASE 502 (mem 1) => (ERROR "AutoLISP builtin MEM signaled an error: invalid number of arguments: 1") ; ERRNO=6
+BEGIN 503
+CASE 503 (ver 1) => (ERROR "AutoLISP builtin VER signaled an error: invalid number of arguments: 1") ; ERRNO=6
+BEGIN 504
+CASE 504 (vl-get-resource "pcat_nope") => (VALUE nil) ; ERRNO=0
+BEGIN 505
+CASE 505 (- 2147483648) => (VALUE -2147483648.0) ; ERRNO=0
+BEGIN 506
+CASE 506 2147483648 => (VALUE 2147483648.0) ; ERRNO=0
+BEGIN 507
+CASE 507 (type 2147483648) => (VALUE REAL) ; ERRNO=0
+BEGIN 508
+CASE 508 (type 2147483647) => (VALUE INT) ; ERRNO=0
+BEGIN 509
+CASE 509 (- -2147483648) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 510
+CASE 510 (- 0 -2147483648) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 511
+CASE 511 (type -2147483648) => (VALUE INT) ; ERRNO=0
+BEGIN 512
+CASE 512 (abs -2147483647) => (VALUE 2147483647) ; ERRNO=0
+BEGIN 513
+CASE 513 (- -2147483647 1) => (VALUE -2147483648) ; ERRNO=0
+BEGIN 514
+CASE 514 (type (- -2147483647 1)) => (VALUE INT) ; ERRNO=0
+BEGIN 515
+CASE 515 (* -1 -2147483648) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 516
+CASE 516 (/ -2147483648 -1) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 517
+CASE 517 (fix 2147483648.0) => (ERROR "FIX result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 518
+CASE 518 (fix 2147483647.0) => (VALUE 2147483647) ; ERRNO=0
+BEGIN 519
+CASE 519 (fix -2147483649.0) => (ERROR "FIX result is outside the AutoLISP 32-bit integer range: -2147483649.") ; ERRNO=1
+BEGIN 520
+CASE 520 (1- -2147483648) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: -2147483649.") ; ERRNO=1
+BEGIN 521
+CASE 521 (type (1- -2147483648)) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: -2147483649.") ; ERRNO=1
+BEGIN 522
+CASE 522 (atoi "2147483648") => (VALUE (TYPE-ERROR "No AutoLISP runtime type designator is defined for 2147483648.")) ; ERRNO=1
+BEGIN 523
+CASE 523 (itoa 2147483648) => (ERROR "ITOA expects a 32-bit AutoLISP integer, got 2.147483648d9.") ; ERRNO=4
+BEGIN 524
+CASE 524 (rtos 2147483648 2 0) => (VALUE "2147483648") ; ERRNO=0
+BEGIN 525
+CASE 525 (rem 2147483648 7) => (VALUE 2.0) ; ERRNO=0
+BEGIN 526
+CASE 526 (gcd 2147483648 6) => (ERROR "GCD expects a 32-bit AutoLISP integer, got 2.147483648d9.") ; ERRNO=4
+BEGIN 527
+CASE 527 (logand 2147483648 1) => (ERROR "LOGAND expects a 32-bit AutoLISP integer, got 2.147483648d9.") ; ERRNO=4
+BEGIN 528
+CASE 528 (lsh 1 31) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 529
+CASE 529 (lsh 1 32) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 4294967296.") ; ERRNO=1
+BEGIN 530
+CASE 530 (~ 2147483647) => (VALUE -2147483648) ; ERRNO=0
+BEGIN 531
+CASE 531 (float 2147483648) => (VALUE 2147483648.0) ; ERRNO=0
+BEGIN 532
+CASE 532 (= 2147483648 2147483648.0) => (VALUE T) ; ERRNO=0
+BEGIN 533
+CASE 533 (eq 2147483648 2147483648) => (VALUE T) ; ERRNO=0
+BEGIN 534
+CASE 534 (numberp 2147483648) => (VALUE T) ; ERRNO=0
+=== PCAT DONE
+FIXTURE *EMPTY-SA* ERROR VLAX-MAKE-SAFEARRAY: each bound must be (LOW . HIGH) integer pair with LOW <= HIGH, got (0
+                                                                                         . -1).
+=== PCAT ("clautolisp" "2.3.81" "clautolisp" "") start=505
+BEGIN 505
+CASE 505 (- 2147483648) => (VALUE -2147483648.0) ; ERRNO=0
+BEGIN 506
+CASE 506 2147483648 => (VALUE 2147483648.0) ; ERRNO=0
+BEGIN 507
+CASE 507 (type 2147483648) => (VALUE REAL) ; ERRNO=0
+BEGIN 508
+CASE 508 (type 2147483647) => (VALUE INT) ; ERRNO=0
+BEGIN 509
+CASE 509 (- -2147483648) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 510
+CASE 510 (- 0 -2147483648) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 511
+CASE 511 (type -2147483648) => (VALUE INT) ; ERRNO=0
+BEGIN 512
+CASE 512 (abs -2147483647) => (VALUE 2147483647) ; ERRNO=0
+BEGIN 513
+CASE 513 (- -2147483647 1) => (VALUE -2147483648) ; ERRNO=0
+BEGIN 514
+CASE 514 (type (- -2147483647 1)) => (VALUE INT) ; ERRNO=0
+BEGIN 515
+CASE 515 (* -1 -2147483648) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 516
+CASE 516 (/ -2147483648 -1) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 517
+CASE 517 (fix 2147483648.0) => (ERROR "FIX result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 518
+CASE 518 (fix 2147483647.0) => (VALUE 2147483647) ; ERRNO=0
+BEGIN 519
+CASE 519 (fix -2147483649.0) => (ERROR "FIX result is outside the AutoLISP 32-bit integer range: -2147483649.") ; ERRNO=1
+BEGIN 520
+CASE 520 (1- -2147483648) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: -2147483649.") ; ERRNO=1
+BEGIN 521
+CASE 521 (type (1- -2147483648)) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: -2147483649.") ; ERRNO=1
+BEGIN 522
+CASE 522 (atoi "2147483648") => (VALUE (TYPE-ERROR "No AutoLISP runtime type designator is defined for 2147483648.")) ; ERRNO=1
+BEGIN 523
+CASE 523 (itoa 2147483648) => (ERROR "ITOA expects a 32-bit AutoLISP integer, got 2.147483648d9.") ; ERRNO=4
+BEGIN 524
+CASE 524 (rtos 2147483648 2 0) => (VALUE "2147483648") ; ERRNO=0
+BEGIN 525
+CASE 525 (rem 2147483648 7) => (VALUE 2.0) ; ERRNO=0
+BEGIN 526
+CASE 526 (gcd 2147483648 6) => (ERROR "GCD expects a 32-bit AutoLISP integer, got 2.147483648d9.") ; ERRNO=4
+BEGIN 527
+CASE 527 (logand 2147483648 1) => (ERROR "LOGAND expects a 32-bit AutoLISP integer, got 2.147483648d9.") ; ERRNO=4
+BEGIN 528
+CASE 528 (lsh 1 31) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 2147483648.") ; ERRNO=1
+BEGIN 529
+CASE 529 (lsh 1 32) => (ERROR "Arithmetic result is outside the AutoLISP 32-bit integer range: 4294967296.") ; ERRNO=1
+BEGIN 530
+CASE 530 (~ 2147483647) => (VALUE -2147483648) ; ERRNO=0
+BEGIN 531
+CASE 531 (float 2147483648) => (VALUE 2147483648.0) ; ERRNO=0
+BEGIN 532
+CASE 532 (= 2147483648 2147483648.0) => (VALUE T) ; ERRNO=0
+BEGIN 533
+CASE 533 (eq 2147483648 2147483648) => (VALUE T) ; ERRNO=0
+BEGIN 534
+CASE 534 (numberp 2147483648) => (VALUE T) ; ERRNO=0
+BEGIN 535
+CASE 535 (pcat-roundtrip (chr 233) nil) => (VALUE ("é" (233 10))) ; ERRNO=0
+BEGIN 536
+CASE 536 (pcat-roundtrip (chr 8364) nil) => (VALUE ("€" (128 10))) ; ERRNO=0
+BEGIN 537
+CASE 537 (pcat-roundtrip (chr 300) nil) => (VALUE ("Ĭ" (300 10))) ; ERRNO=0
+BEGIN 538
+CASE 538 (pcat-roundtrip (strcat "a" (chr 20013) "b") nil) => (VALUE ("a中b" (97 20013 98 10))) ; ERRNO=0
+BEGIN 539
+CASE 539 (pcat-roundtrip (chr 300) "utf8") => (ERROR "OPEN mode must be one of \"r\", \"w\", or \"a\", got \"utf8\".") ; ERRNO=5
+BEGIN 540
+CASE 540 (pcat-roundtrip (chr 300) "w,ccs=UTF-8") => (VALUE ("Ĭ" (65279 300 10))) ; ERRNO=0
+BEGIN 541
+CASE 541 (vl-prin1-to-string (chr 300)) => (VALUE "\"Ĭ\"") ; ERRNO=0
+BEGIN 542
+CASE 542 (vl-princ-to-string (chr 300)) => (VALUE "Ĭ") ; ERRNO=0
+BEGIN 543
+CASE 543 (strlen (chr 300)) => (VALUE 1) ; ERRNO=0
+BEGIN 544
+CASE 544 (ascii (chr 300)) => (VALUE 300) ; ERRNO=0
+BEGIN 545
+CASE 545 (vl-string->list (chr 8364)) => (VALUE (128)) ; ERRNO=0
+=== PCAT DONE

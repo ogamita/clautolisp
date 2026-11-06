@@ -2,7 +2,7 @@
 
 (in-suite cador-suite)
 
-;;; --- Phase 14b: end-to-end reactor dispatch through MockHost ----
+;;; --- Phase 14b: end-to-end reactor dispatch through cador ----
 
 (test cador-entmake-fires-acdb-objectappended
   (let* ((mock (make-cador))
@@ -50,7 +50,7 @@
 
 (test reactor-fires-on-cador-mutation
   ;; Register an acdb reactor on the active document, mutate an
-  ;; entity through MockHost, assert the reactor's callback ran.
+  ;; entity through cador, assert the reactor's callback ran.
   (let* ((mock (make-cador))
          (context (clautolisp.autolisp-runtime:default-evaluation-context))
          (session (clautolisp.autolisp-runtime:evaluation-context-session context))

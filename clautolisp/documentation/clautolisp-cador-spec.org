@@ -2,10 +2,10 @@
 #+TITLE: Clautolisp cador Specification (D2)
 #+SUBTITLE: The headless CAD core — Part I semantics presented to AutoLISP, Part II internal design
 #+AUTHOR: clautolisp project
-#+DATE: 2026-08-06
+#+DATE: 2026-08-06 (refreshed 2026-09-28)
 #+OPTIONS: toc:3 num:t ^:nil
 #+STARTUP: overview
-#+DOCUMENT_VERSION: 0.1.0 (draft for review — cador-3 / epic deliverable D2)
+#+DOCUMENT_VERSION: 0.3.0 (VALIDATED by pjb 2026-10-03 — cador-3 / epic deliverable D2; refreshed against cador-2, command layer (§II.13) and wire host (§9.7) decided by pjb 2026-09-28, cadtui noted — see the refresh at the end)
 
 * 0. Status, scope, and conventions
   :PROPERTIES:
@@ -13,7 +13,7 @@
   :END:
 
 This is deliverable *D2* of the =cador-multidocument-host= epic
-(=issues/open/cador-multidocument-host.issue=, "the epic"). It specifies
+(=issues/closed/cador-multidocument-host.issue=, "the epic"). It specifies
 =cador=, the *headless, in-process CAD core* — the analogue of AutoCAD Core
 Console (=accoreconsole=). The *backend-agnostic* interface =cador= implements
 is deliverable D1, =clautolisp-host-interface-spec.org= (referenced here as
@@ -66,13 +66,14 @@ does *not* introduce a competing session object; it *is* the =host= field of
 that session (D1 §1), holding the CAD-side state (drawings, picksets, COM
 objects) that the language-side session does not.
 
-*Current implementation status.* =cador= today holds *one* active drawing
-(=cador-active-drawing=). [S: =cador/source/model.lisp:56–61=] The multi-drawing
-set (Phase-17f / cador-2) makes that one pointer the *active* member of a set of
-open drawings; the session-level carriers above already exist, so this is an
-extension of =cador=, not of the runtime. Satisfies *C1* (no global Lisp
-environment; N isolated document environments plus blackboard plus application
-context — see §IV).
+*Implementation status (refreshed 2026-09-28): built.* =cador= holds an ordered
+set of open drawings (=cador-documents=, key → drawing) with
+=cador-active-drawing= as the current pointer, and implements D1 §3's Group-1
+generics over it (cador-2 slice 1a) [S: =cador/source/document-api.lisp=]; the
+session-level carriers above were already there, so this was an extension of
+=cador=, not of the runtime. Every sysvar is per-document as a consequence
+(slice 3c). Satisfies *C1* (no global Lisp environment; N isolated document
+environments plus blackboard plus application context — see §IV).
 
 ** I.2 Scheduler — the single-runner cooperative model
    :PROPERTIES:
@@ -82,10 +83,14 @@ context — see §IV).
 *Decision.* =cador= implements the *one runner, N parked contexts* model
 (analysis §4.2) with *no worker thread* (C8). Concretely:
 
-- *Parking is continuation capture.* A context parks at a *park point* — a
+- *Parking is continuation capture, and a continuation is a thread parked on a
+  condition variable* (pjb, 2026-09-13). A context parks at a *park point* — a
   get-family prompt, a prompting =command=, a document lock that must wait, or
-  (wire host only) any host round trip (D1 §13.5). Parking captures the
-  context's continuation and returns control to the single runner.
+  (wire host only) any host round trip (D1 §13.5). Parking returns control to
+  the single runner by notifying the next context's condition and waiting on
+  its own; the handoff is the at-most-one-running rule, so these threads are
+  coroutine carriers, never concurrent workers, and a context that never parks
+  has no thread at all (D1 §10).
 - *Park points* are exactly the HAL operations D1 §13.5 enumerates; in a pure
   =cador= session (config (a)) the only real park points are *interactive
   input* operations, because every other =cador= operation completes in-process
@@ -100,12 +105,17 @@ context — see §IV).
   assumes idleness from parked-ness, and — being single-runner — needs *no
   mutual exclusion* on its data structures (analysis R13, C2).
 
-*Implementation note.* The park/resume machinery is a *cador-2 deliverable*; it
-does not exist in the current tree. [S: no park/coroutine struct in
-=autolisp-runtime/source/= or =cador/source/=.] The document lifecycle states
+*Implementation note (refreshed 2026-09-28): built by cador-2.* The scheduler is
+=autolisp-runtime/source/scheduler.lisp=: =scheduler-activate= is the single
+entry, synchronous for contexts with no thunk (every batch and single-document
+run — no thread) and a thread rendezvous otherwise (=scheduler-spawn-context=,
+=scheduler-switch=); =scheduler-park= parks real interactive reads to the
+driver; each =scheduled-context= carries its per-document =correlation-stack=
+(D1 §13.4). [S: slices 2a–2c, 3d–3g] The document lifecycle states
 (=:loading/:loaded/:active/:inactive/:closing/:closed=) that a parked/resumed
-context transitions through *do* exist. [S: =model.lisp:48–51=] Satisfies *C2*
-and *C8* (§IV).
+context transitions through exist too. [S: =model.lisp:48–51=] What needs a
+wire — envelope, event loop, prompting =host-command= — is cador-4's.
+Satisfies *C2* and *C8* (§IV).
 
 ** I.3 Current versus active document
    :PROPERTIES:
@@ -175,15 +185,13 @@ R3] The runtime already models it as a separate =blackboard-namespace= with its
 own bindings table. [S: =model.lisp:68–70=]
 
 *Copy versus share (R3, E2).* AutoLISP has no mutable conses, so sharing is
-largely unobservable — *except* through =eq=. *Decision:* =cador= *shares*
-(=vl-bb-set= stores the object, =vl-bb-ref= returns the same object, so
-=(eq l (vl-bb-ref 'probe))= is =t=). Rationale: sharing is the zero-copy
-default and is consistent with global symbol interning (§I.4). This is the
-*assumed* answer pending E2 (§III, grade V). *Cost of being wrong:* if a real
-product *copies*, code relying on =eq= identity through the blackboard would
-break on the real product but pass on =cador= — a false-negative in
-conformance. Because the analysis flags this exact risk, the E2 probe is a
-first-class conformance case (D4). Satisfies *C3* (§IV).
+largely unobservable — *except* through =eq=. *Decision (measured,
+2026-10-06): =cador= copies.* E2 ran on the products (probe-conformance, AutoCAD 2022 job 16959485595, BricsCAD V25 Windows job 16959485805, BricsCAD V26 macOS job 16942576104): after =(setq l (list 1 2 3))
+(vl-bb-set 'probe l)=, =(eq l (vl-bb-ref 'probe))= is =nil= and =equal= is =t=
+on all three, so the blackboard holds a *copy* of a list. =blackboard-set=
+stores a =copy-tree= since clautolisp 2.2.201 -- the remedy §III's A2 named.
+(A string reads back =eq= on all three; a copy of the list structure leaves
+atoms alone.) Grade A. Satisfies *C3* (§IV).
 
 ** I.6 System variable scope tiers
    :PROPERTIES:
@@ -345,7 +353,7 @@ interaction contract.
 | Dialog boxes (DCL modal/modeless UI, message boxes)  | =unavailable-in-headless-context=   |
 | Real-time cursor tracking / rubber-band / drag (=grread=, =ssget= pick modes, dragging =getpoint=) | =unavailable-in-headless-context= |
 | Plotting to a physical device / print                | =unavailable-in-headless-context=   |
-| A native command engine that parses =command= tokens into geometry (§II.13) | =command= is =observational= — records + returns =nil=, does *not* signal (a program that only drives =command= runs, it just produces no geometry) |
+| Commands the engine does not implement (§II.13) | *nothing* — an unimplemented command stops the interpretation of the remaining tokens and returns =nil=; it does *not* signal (a program that drives many commands runs where only some exist) |
 
 The transient-graphics primitives (=grdraw=/=grtext=/=grvecs=/=grclear=/=redraw=)
 are *observational* — recorded to the display log, no pixels — rather than
@@ -355,6 +363,12 @@ signals. This split (draw = observe, read = unavailable) is the deliberate
 line. Contributes to *C7* by analogy: just as =nihil= implements *nothing*,
 =cador= implements *everything but the display*, and the boundary is a typed
 condition, not a crash.
+
+These omissions are =cador='s *because it has no display*. =cadtui= — the same
+core with a text display (D1 §2.2) — is specified to perform several of them:
+picking (=ssget= pick modes, =entsel=, =getpoint= by grip), pointer and key
+events for =grread=, dialogs (DCL mirrored into its UI tree, =alert=). They
+are =prop= in the D1 §12 =cadtui= column until built.
 
 * Part II — Internal design
   :PROPERTIES:
@@ -389,14 +403,20 @@ handle-addressed objects, symbol tables, dictionaries, header variables,
 classes) and a DXF codec (HEADER/TABLES/ENTITIES). [S:
 =clautolisp/drawing/source/model.lisp=, =dxf.lisp=] DWG is layered *behind the
 same in-memory model* as an *optional* backend via the =drawing-dwg= system
-(the LibreDWG binding lives in =clautolisp/drawing-dwg/=), used for *read* where
-available and *not required* for a working =cador=. [S: directory
-=clautolisp/drawing-dwg/= exists] This keeps the portable lanes green (native CL
-only) while allowing high-fidelity read where a DWG library is present.
+(the LibreDWG binding lives in =clautolisp/drawing-dwg/=), used for *read and
+write* where available -- the codec converts through DXF both ways -- and *not
+required* for a working =cador=. [S: =clautolisp/drawing-dwg/source/codec.lisp=,
+=register-drawing-codec :dwg=] LibreDWG's DWG *writer* is known-fragile (it writes an
+invalid DWG for an empty drawing) [S:
+=issues/open/libredwg-empty-dwg-write-invalid.issue=], so DXF stays the
+default save format unless a dialect or =CLAUTOLISPDEFAULTDRAWINGFORMAT= says
+otherwise. This keeps the portable lanes green (native CL only) while allowing
+high-fidelity DWG where the library is present.
 
 *Consequences for the fidelity matrix (D1 §12):* entity/table/dictionary
 operations are =full= on =cador= because the in-memory model backs them
-directly; file *format* fidelity is DXF-complete and DWG-read-optional; the
+directly; file *format* fidelity is DXF-complete and DWG read / write
+optional; the
 =native=/=:dwg= distinction is a =drawing-format= slot on the drawing. [S:
 model.lisp:81–90] Consequence for licensing: pure-CL core stays AGPL-clean; the
 optional LibreDWG binding is GPL-compatible and isolated in its own system.
@@ -423,32 +443,43 @@ emulation are very different sizes. A great deal of real AutoLISP drives
 =command= rather than the entity API, so this decision determines how much
 existing code =cador= can run.
 
-*Decision.* =cador= implements the command channel *observationally*, *not* as
-a geometry-producing engine — for now. =(command …)= and =(command-s …)=:
+*Decision (pjb, 2026-09-28).* =nihil= has no command. =cador= and =cadtui=
+*implement the commands they can*, with *one* command engine. The engine lives
+in =cador=; =cadtui= — =cador= with a more specific display and a more
+exhaustive set of operations (D1 §2.2) — uses the same one, so what =cadtui=
+adds to it (localisation, more commands) serves =cador= as well.
 
-- *record* the normalised token list on the host's command log (readable
-  oldest-first via =host-command-log= / =clal-command-log=),
-- *echo* a one-line ="Command: …"= to the console output, and
-- *return =nil== (the documented =command= return-value rule). [S:
-  =cador/source/command-api.lisp:28–42=]
+*The engine as built* (clautolisp 2.2.200) [S: =cador/source/command-*.lisp=,
+=define-cador-command=]. =(command …)= and =(command-s …)=:
 
-For an *unimplemented* command, =(command "LINE" …)= therefore *runs without
-error* but *creates no entity*: the tokens are logged, nothing is drawn. It does
-*not* signal (§I.11) — signalling would break the large corpus that issues
-=command= defensively. =(command-s …)= behaves identically at the host boundary
-(the subroutine-vs-coroutine distinction is a scheduler concern, D1 §13, not a
-=cador= data concern).
+- *interpret* the normalised tokens: 85 commands (the list is D1 §7's) create
+  or change entities, tables, viewports and documents through the same
+  drawing model as the entity API; 24 are recognised no-ops; the =.= and =_=
+  prefixes are stripped, =-= is part of the name;
+- *stop* at a command the engine does not implement, or one that fails: the
+  remaining tokens are not interpreted, and nothing signals (§I.11) —
+  signalling would break the large corpus that issues =command= defensively —
+  but a =; cador: …= notice on the console says what was declined (as a CAD
+  shows its rejection on the command line), silenced by =CMDECHO= 0;
+- *record* the token list on the command log (=host-command-log= /
+  =clal-command-log=) and *echo* ="Command: …"= to the console;
+- *return =nil=* (the documented =command= return-value rule).
 
-*Rationale and the upgrade path.* The *entity API* (=entmake=/=entget=/=entmod=)
-is the primary, fully-implemented surface; corpora that build geometry
-programmatically run fully on =cador=. Corpora that drive =command= run *to
-completion* but produce no geometry — which is the correct behaviour for a probe
-that measures control flow, and a known limitation for one that measures
-drawing output. The upgrade path (a future cador phase, not this epic) is a
-*minimal command set* that maps a curated set of tokens (LINE, CIRCLE, LAYER,
-…) onto the entity API; full emulation is explicitly *not* pursued. This is
-recorded so the observational choice is understood as a floor, not a ceiling.
-Grade: S (current behaviour), design (upgrade path).
+=(command-s …)= behaves identically at the host boundary (the
+subroutine-vs-coroutine distinction is a scheduler concern, D1 §13).
+
+*Localisation — specified, not yet built.* The engine is to accept a command by
+its localised name (=LIGNE=), its international name forced by =_= (=_LINE=),
+and the keyboard aliases (=.pgp=), with option keywords localised per locale
+too, from the per-locale data =clautolisp/cadtui/data/locale/<locale>/=
+(command names, option keywords, aliases), shared with =getcname=. Today only
+English names match — =_LINE= works because the =_= is stripped; =LIGNE= does
+not — and =getcname= is a =nil= stub. See the =cadtui-locale-*= issues.
+
+*Scope.* The entity API (=entmake=/=entget=/=entmod=) remains the complete
+surface; the command engine grows command by command, and full emulation of a
+vendor's command set is not a goal. Grade: S (the engine), design
+(localisation).
 
 ** II.14 Debugger integration surfaces (R16–R21)
    :PROPERTIES:
@@ -499,7 +530,9 @@ host adds config (b), D1 §2.4):
 
 *No CAD-side worker thread* (R21, C8): the two-thread exclusive-handoff design
 is the same-image hosted case; =cador= offers *no thread to hand off to* and
-must not require one. Reactor events (D1 §9) fire on the current context, in its
+must not require one. The threads that carry *parked contexts* (§I.2) are not
+such workers: only the context holding the handoff runs, and a context that
+never parks has none. Reactor events (D1 §9) fire on the current context, in its
 document namespace. [S: =cador/source/sysvar-api.lisp:245–254= raises
 =:vlr-sysvarwillchange=/=:vlr-sysvarchanged=]
 
@@ -513,7 +546,7 @@ document namespace. [S: =cador/source/sysvar-api.lisp:245–254= raises
 | System / package                     | Owns                                                                 |
 |--------------------------------------+----------------------------------------------------------------------|
 | =clautolisp.autolisp-host= (=autolisp-host/=) | the =host= base class, the HAL *generics*, =signal-host-not-supported=, and =nihil= (the negative-contract host). [S: protocol.lisp, nihil.lisp] |
-| =clautolisp.cador= (=cador/=)         | the =cador= class + its HAL *methods*, session-side carriers (=pickset=, =mock-com-object=), sysvar/registry/prompt/command/vlax methods. [S: cador/source/package.lisp] |
+| =clautolisp.cador= (=cador/=)         | the =cador= class + its HAL *methods*, session-side carriers (=pickset=, =cador-com-object=), sysvar/registry/prompt/command/vlax methods. [S: cador/source/package.lisp] |
 | =clautolisp.drawing= (=drawing/=)     | the drawing value object + DXF codec + the drawing-resident carriers (=entity-handle=, =symbol-table-record=, =dictionary=, =sysvar-cell=), imported back into =cador=. [S: cador/source/package.lisp:3–48; drawing/source/model.lisp] |
 | (optional) =clautolisp.drawing-dwg= (=drawing-dwg/=) | the isolated LibreDWG binding for DWG read (§II.12).            |
 
@@ -526,13 +559,20 @@ symbol the core is allowed to reference; a grep for =cador::= /
 =cador= depends *downward* on =autolisp-host= (for the generics) and
 =drawing= (for the carriers), never *upward* on interpreter internals except
 the published runtime API. [S: cador/source/package.lisp import lists]
+The check is a test since cador-4 slice 3 (clautolisp 2.2.200):
+=c6-core-sources-name-no-host-package= (autolisp-host tests) fails on any
+package-qualified =clautolisp.cador:= / =clautolisp.drawing:= /
+=clautolisp.cadtui:= in the reader, runtime, host-interface or builtins
+sources.
 
-*Cleanups this spec mandates* (recorded so they are not lost):
-1. Rename the internal "MockHost" comments/identifiers to =cador= (cosmetic,
-   the class is already =cador=). [S: cador/source/model.lisp header]
-2. Give =nihil= an explicit =host-dictobjname= method (it currently inherits the
-   base not-supported method — benign but inconsistent). [S: nihil.lisp lacks
-   =host-dictobjname=]
+*Cleanups this spec mandates* (recorded so they are not lost) -- all done:
+1. Rename the internal "MockHost" comments/identifiers to =cador=. *Done*
+   (cador-4 slice 3, 2.2.200): =mock-com-object= is =cador-com-object=,
+   =*mock-registry*= =*cador-registry*=, the "MockHost" wording is gone, and
+   cador's functions take a =host=. The values a program can read --
+   Application.Name "Mock AutoCAD", Version "Mock 0.1", =PLATFORM= "Mock
+   CAD" -- are unchanged.
+2. Give =nihil= an explicit =host-dictobjname= method. *Done* (2.2.200).
 3. Change =cador-set-sysvar='s read-only path to raise =sysvar-read-only=, not
    =:host-not-supported= (D1 §15). [S: cador/source/sysvars.lisp:131–132]
 4. Introduce the three missing taxonomy classes and the capability query (D1
@@ -550,12 +590,19 @@ V-graded claims of the analysis.
 
 - *A1 — Symbol identity across the blackboard (E1, §I.4).* Assumed:
   =(eq (vl-bb-ref 'probe) 'my-symbol)= is =t= across documents ⇒ global
-  interning is vendor-correct. Grade V. *Cost of being wrong:* if a real product
+  interning is vendor-correct. *Measured 2026-10-06 (within one drawing):*
+  AutoCAD 2022 answers =t= (=type= =SYM=) -- consistent with global interning;
+  BricsCAD V25 / V26 answer =nil= -- a symbol does not come back from its
+  blackboard at all, even in the same drawing, which says nothing about
+  interning; the BricsCAD dialects now return =nil= for a symbol value (=T=
+  kept, not measured). The cross-drawing case needs LISP in a second
+  document, out of a batch run's reach. Grade A for what was measured. *Cost of being wrong:* if a real product
   returns =nil=, =cador= must switch to per-document obarrays and quoted-symbol
   identity through the blackboard becomes =nil=; a moderate rework of the boxing
   strategy, localised to §I.4. The E1 probe (D4) settles it.
 - *A2 — Blackboard copy vs share (E2, §I.5).* Assumed: *share* ⇒
-  =(eq l (vl-bb-ref 'probe))= is =t=. Grade V. *Cost of being wrong:* if a real
+  =(eq l (vl-bb-ref 'probe))= is =t=. *WRONG -- measured 2026-10-06: both
+  products copy* (§I.5); flipped in 2.2.201 with the =copy-tree= below. *Cost of being wrong:* if a real
   product *copies*, =eq=-through-blackboard code passes on =cador= and fails on
   the product — a conformance false-negative. Cheap to flip (a =copy-tree= at
   =vl-bb-set=), so the risk is a *silent* mismatch, not a hard rework; the E2
@@ -602,30 +649,61 @@ acceptance criterion).
 Each gets a stated resolution or a stated assumption, and a grade.
 
 ** 9.1 =accoreconsole= fidelity envelope
-*Resolution (stated, with an assumed boundary — A3).* =cador= is the analogue
-of AutoCAD Core Console, whose envelope we take to be: a *scripted, non-tty*
-console that runs the command line and AutoLISP/entity APIs headlessly;
-*input primitives* function against the scripted source (the get-family reads
-the script), *dialogs* do not appear (a DCL/modal request has no surface),
-*plotting* to a physical device does not function, and it is *driven by a
-script file* fed on the command line. Grade: the *existence and headless nature*
-of =accoreconsole= is A (Autodesk ships it); the *precise* per-primitive
-boundary (which get-* work, exact dialog behaviour, whether plot-to-file works)
-is *not established from citations here* and is graded V — it must be pinned
-from vendor documentation with citations before the analogy is asserted
-normatively (epic §9.1). =cador='s own boundary is §I.10/§I.11 regardless of
-where =accoreconsole='s falls; any gap is a documentation reconciliation, not a
-=cador= redesign. See A3.
+*Resolution (A3, now cited -- cador-4 slice 6, 2026-10-05).* =cador= is the
+analogue of AutoCAD Core Console. Its envelope, by source:
+
+- *What it is* [A]: "a version of AutoCAD without a graphical user interface
+  ... based on the AutoCAD 'core' (accore.dll)", for batch work "that don't
+  require user interaction, such as providing input in dialog boxes,
+  specifying values at user prompts, and selecting objects"; "any command that
+  displays a dialog box or palette will not be available" -- the command-line
+  variant is used instead. AutoCAD 2025 Developer and ObjectARX Help, "AutoCAD
+  Core Console" (help.autodesk.com/view/OARX/2025/ENU/?guid=AUTOCAD_CORE_CONSOLE).
+  /Wording taken from search excerpts: the page did not load when fetched;
+  check it before quoting it normatively./
+- *How it is driven* [A, same page]: =AcCoreConsole.exe [/i <dwg>] /s <script>
+  [/product ...] [/l <language>] [/isolate <userid> <folder>] [/readonly]
+  [/p[rofile] <profile>] [/loadmodule <module>]=.
+- *What loads* [B: Kean Walmsley, Autodesk, "The AutoCAD 2013 Core Console",
+  keanw.com 2012-02]: AutoLISP, DBX / CRX, and .NET assemblies built against
+  AcCoreMgd.dll; "certain (mostly GUI-oriented) capabilities will not be
+  available". Express Tools =.arx= modules do not load; of the commands tried,
+  573 are accepted, 23 crash the console (LAYER, PAN ...), a few show stray UI
+  [B: keanw.com 2012-03, "Commands that work in the AutoCAD 2013 Core
+  Console"].
+- *No COM / ActiveX* [B: same post, and blog.autodesk.io "Getting started with
+  AcCoreConsole"; *measured*: =vlax-get-acad-object= fails under accoreconsole
+  2022 -- probe-documents, job 16932759881, "NO-COM"].
+- *Loading is gated by =SECURELOAD= / =TRUSTEDPATHS=*, an untrusted file
+  failing silently [C: forum excerpt; S: alfe trusts its work directory in
+  every profile since 2.2.145, verified at =SECURELOAD= 2].
+- *Not established by any source* [V]: the per-primitive behaviour of the
+  get-family, =grread=, DCL and =entsel= picking; plotting / publishing;
+  whether =acad.lsp= / =acaddoc.lsp= / the startup suite load. These are
+  measured, case by case, by the vendor probes, not asserted here.
+
+=cador='s own boundary is §I.10/§I.11 regardless of where =accoreconsole='s
+falls; any gap is a documentation reconciliation, not a =cador= redesign.
 
 ** 9.2 BricsCAD headless equivalent
-*Resolution (stated assumption — A4).* We assume BricsCAD ships *no fully
-equivalent* dedicated headless console under a comparable name; BricsCAD's
-batch/hidden-UI automation is driven differently (see
-=feature-alfe-bricscad-batch-hidden-ui= and the alfe probe work). Grade C/V.
-*Consequence:* the "portable" claim for =cador= rests primarily on the AutoCAD
-=accoreconsole= analogy; if a BricsCAD console exists it becomes a *second*
-reference point (an upside, A4). This asymmetry is recorded so "portable" is not
-over-claimed.
+*Resolution (A4, now cited).* BricsCAD ships *no dedicated headless console*
+comparable to =accoreconsole=. The nearest is the full application started
+with =/Automation= -- "(Windows-only) Starts BricsCAD without displaying the
+main frame window (with hidden UI). This switch is intended for use by COM
+automation, but it can also be useful for batch processing tasks that don't
+use COM" -- and =/B= -- "Runs a script (*.scr) or lisp (*.lsp) at startup"
+[A: Bricsys, BricsCAD V26 "Startup options",
+help.bricsys.com/en-us/document/bricscad/customization/startup-options; the V22
+page says the same]. That a console variant does not exist is a forum answer
+("try using: bricscad.exe /automation") [C: forum.bricsys.com discussion
+36257, 2020; the poster's affiliation unconfirmed]. No windowless mode is
+documented for macOS or Linux [not found], and there COM does not exist
+(=/Automation= and =/regserver= are Windows-only) [A, same page]. Whether COM is
+reachable in a plain =/B= run without =/Automation= is not documented [V].
+*Consequence:* the "portable" claim for =cador= rests on the =accoreconsole=
+analogy; BricsCAD's reference point is its hidden-UI application (what alfe's
+batch mode drives), not a separate console. This asymmetry is recorded so
+"portable" is not over-claimed.
 
 ** 9.3 Database backend
 *Resolution:* native Common Lisp in-memory database with DXF read/write, DWG
@@ -633,10 +711,11 @@ read optional and isolated. Full reasoning and the concrete entity model in
 §II.12. Grade S (the model is implemented) + design (the DWG-read layering).
 
 ** 9.4 Command-layer scope
-*Resolution:* observational command channel (records + echoes + returns =nil=,
-no geometry, does not signal for unimplemented commands); entity API is the
-primary surface; minimal-command-set is the named upgrade path; full emulation
-is not pursued. §II.13. Grade S (current) + design.
+*Resolution (pjb, 2026-09-28):* =nihil= has no command; =cador= and =cadtui=
+implement the commands they can, with one engine in =cador= that =cadtui=
+shares, and localisation of command names is part of that engine. Unimplemented
+commands stop interpretation without signalling. §II.13. Grade S (the engine)
++ design (localisation).
 
 ** 9.5 Locking semantics in a headless core
 *Resolution:* the *middle option* — a *checked no-op*. =cador= does not enforce
@@ -644,13 +723,21 @@ locking for mutual exclusion (single runner, nothing to exclude, C8) but
 *detects and signals the protocol violation* of mutating a non-current document
 without holding its lock, because that catches bugs that would otherwise appear
 only against a real backend (epic §9.5, R20). The =host-lock-document= /
-=host-unlock-document= surface is D1 §10; it is =prop= (cador-2). Grade: design
-(the surface does not exist yet).
+=host-unlock-document= surface is D1 §10, built in cador-4 slice 2 (clautolisp
+2.2.200): a nesting per-document lock count, and the check on changes made
+to a non-current document from application context. Grade: S.
 
 ** 9.6 E1 and E2 outcomes
 *Resolution:* stated as assumptions A1 (symbol identity ⇒ global interning) and
-A2 (blackboard ⇒ share), each with the cost of being wrong (§III). Grade V;
-E1/E2 are first-class conformance probes (D4).
+A2 (blackboard ⇒ share), each with the cost of being wrong (§III). *Measured
+2026-10-06* (probe-conformance, AutoCAD 2022 job 16959485595, BricsCAD V25 Windows job 16959485805, BricsCAD V26 macOS job 16942576104): A2 was wrong -- both copy,
+and cador now does; A1 holds on AutoCAD, BricsCAD drops a symbol value. See
+§III. Originally graded V;
+E1/E2 are first-class conformance probes (D4). *Status 2026-09-28:* E1/E2 run
+as deterministic tests *against cador* (cador-2 slice 3a,
+=autolisp-runtime/tests/multidocument-conformance-tests.lisp=), so cador's side
+is pinned; the *vendor* side — the same probes on AutoCAD and BricsCAD, which
+is what would lift A1/A2 from V to A — has not been run.
 
 ** 9.7 Wire host name
 *Resolution (recommendation, decided separately per epic §11).* The Display
@@ -659,12 +746,13 @@ wire, and *not* suggesting kinship with =alfe=. Recommended shortlist:
 =speculum= (Latin "mirror"), =phantasma=, or =pictor= — a display-server name.
 =cador= keeps the Latin-noun register (=cador= = "I fall"/"chance"?; here a
 project name), and =nihil= is already Latin, so a Latin display-noun
-(=speculum=) is stylistically consistent. This is a *note*, not a decision; the
-placeholder =<wire-host>= stands until the owner chooses. Grade: design.
+(=speculum=) is stylistically consistent. This is a *note*, not a decision.
+*pjb, 2026-09-28:* the wire host is a *deferred feature*; it stays anonymous,
+and the placeholder =<wire-host>= stands. Grade: design.
 
 * Part VI — References
-- =issues/open/cador-multidocument-host.issue= (epic §5, §9, C1–C8).
-- =issues/open/cador-3-host-interface-protocol-spec.issue= (this sub-task).
+- =issues/closed/cador-multidocument-host.issue= (epic §5, §9, C1–C8).
+- =issues/closed/cador-3-host-interface-protocol-spec.issue= (this sub-task).
 - =clautolisp/documentation/clautolisp-host-interface-spec.org= (D1).
 - =clautolisp/documentation/clautolisp-multidocument-analysis.org= (R1–R21,
   E1–E10, A/B/C/V vendor claims).
@@ -698,7 +786,7 @@ changes no normative text.
   =register-runtime-session-document=, =set-runtime-session-current-document=
   (=autolisp-runtime/source/api.lisp:632,665=), which already copies
   =propagated-symbols= cells between namespaces.
-- *The blackboard (I.5) shares by identity*: =blackboard-ref/blackboard-set=
+- *The blackboard (I.5) -- copies since 2.2.201, measured*: =blackboard-ref/blackboard-set=
   (=api.lisp:1012/1019=) over one table; =VL-BB-REF/VL-BB-SET=
   (=autolisp-builtins-core/source/api.lisp:288-304=) already reject functions
   (constraint C3). *E2 (blackboard sharing) largely holds already* — it is
@@ -763,3 +851,72 @@ Kept at DOCUMENT_VERSION 0.1.0 (draft for review). See
 =cador-2-multidocument-runtime= for the implementation this spec governs; the
 Explore of that issue proposes a first landable slice (host holds a
 document→drawing map, scheduler deferred) that this spec should bless.
+
+/This section is the 2026-09-13 record and is kept as such; the refresh below
+supersedes it where they differ./
+
+* Refresh 2026-09-28 — against cador-2's implementation
+  :PROPERTIES:
+  :CUSTOM_ID: refresh-2026-09-28
+  :END:
+
+Version 0.2.0. cador-2 closed on 2026-09-28 with every in-scope slice built;
+this refresh brings the text up to it. D1 carries the two decisions pjb took
+the same day (no capability query; a =host-error= superclass over the four
+condition classes named in §I.11).
+
+** Now built (was "not built" above)
+
+- *Many documents in =cador=* (§I.1) — the document set and the Group-1
+  generics (slice 1a); per-document sysvars (3c).
+- *The cooperative scheduler and real parking* (§I.2) — single runner, N
+  parked contexts; continuations as threads on a condition variable; batch
+  runs spawn no thread (2a–2c, 3d–3f).
+- *The per-document correlation forest* (D1 §13.4) (3g).
+- *C3 blackboard function rejection* enforced and tested (3b).
+- *E1/E2 conformance probes against cador* (3a).
+
+** Corrections to the record above
+
+- *The analysis document exists*: =clautolisp/documentation/clautolisp-multidocument-analysis.org=
+  (R1–R21, E1–E10; E1/E2 at its lines 452–458). The "not found in this
+  worktree" note above was mistaken, as cador-2 slice 3a established.
+- *C2/C8 now trace to code* (=scheduler.lisp=), not "code still to be written".
+
+** Built since, in cador-4 and the multi-document work
+
+- Document-tagged handles and the cross-document dereference signal (C5,
+  §I.7): clautolisp 2.2.186 (multi-document slice 2).
+- The host condition hierarchy (D1 §15): 2.2.146.
+- The HAL document API (open from a file, close with save, =document-of=)
+  and the sysvar scope tier (C4): 2.2.198 (cador-4 slice 1).
+- Document locking, the checked no-op (§9.5): 2.2.199 (slice 2).
+- The §II.15 clean-ups and the C6 boundary as a test: 2.2.200 (slice 3).
+- The command layer's console notice; the command lists as built: 2.2.200
+  (slice 4).
+
+** Still not built (tracked in cador-4)
+
+- The wire-host half of parking (envelope, event loop, prompting
+  =host-command=) -- deferred with the wire host (pjb, 2026-10-05).
+
+** Acceptance-criteria status (cador-3, D2 half)
+
+- [X] Part I reaches a stated decision on each item, and the scheduler/parking
+      decision (§I.2) is settled — and implemented.
+- [X] Part II decisions + every §5/§9 open question resolved with a provenance
+      grade — validated by pjb on 2026-10-03 (cador-3 closed); §9.6's vendor
+      run is the conformance probe (cador-4 slice 5).
+- [X] Constraint traceability C1–C8 — C1/C2/C3/C4/C5/C6/C8 trace to code
+      (C5 since 2.2.186, C4 since 2.2.198, C6 a test since 2.2.200).
+
+** 0.3.0 — decisions of pjb, 2026-09-28
+
+- *§II.13 / §9.4 command layer:* =nihil= has no command; =cador= and =cadtui=
+  implement the commands they can, with one engine in =cador= shared by
+  =cadtui=; localisation of command names belongs to that engine. The
+  "observational, no engine" text of 0.1.0/0.2.0 was out of date: the engine
+  exists (LINE, CIRCLE, ARC, TEXT, PLINE, INSERT, LAYER, …).
+- *§9.7 wire host:* a deferred feature, kept anonymous (=<wire-host>=).
+- *§I.11:* the omissions are =cador='s for want of a display; =cadtui= is
+  specified to perform several of them (D1 §12, =cadtui= column).

@@ -16,7 +16,7 @@
 ;;;; builtin" -- which is what the wiring in api.lisp does.
 
 (defun setup-mock-evaluation-context ()
-  "Install a fresh evaluation context backed by a default MockHost.
+  "Install a fresh evaluation context backed by a default cador.
 Returns the context."
   (clautolisp.autolisp-runtime:reset-default-evaluation-context)
   (let* ((session (clautolisp.autolisp-runtime:evaluation-context-session
@@ -136,7 +136,7 @@ Returns the context."
 (test errno-handent-bad-handle-sets-13
   (setup-mock-evaluation-context)
   (set-autolisp-errno 0)
-  ;; A handle like "ZZZ" never resolves on a fresh MockHost.
+  ;; A handle like "ZZZ" never resolves on a fresh cador.
   (let ((result (clautolisp.autolisp-builtins-core::builtin-handent (make-autolisp-string "ZZZ"))))
     (is (null result))
     (is (eql 13 (autolisp-errno)))))

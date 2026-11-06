@@ -1,0 +1,68 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vle-extension-vendor-divergences -- VLE-* edge semantics as BricsCAD does
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: divergence
+#+DEPENDS: windows-runner-sunset-probe-campaign
+#+BRANCH: fix-b1-b2-divergences
+#+DATE: 2026-10-29
+
+Measured by the sunset campaign's B2 probe (probes/sources/probe-vle.lsp) on
+real hardware 2026-10-24: AutoCAD 2022 + BricsCAD V26, committed under
+probe-results/{autocad/ms-windows/20261024T201442Z,bricscad/macos/20261024T201604Z}/.
+
+The VLE-* family is a BricsCAD extension: AutoCAD returns "no function
+definition" for every one of them, which CONFIRMS the Availability line
+(BricsCAD-only) on all nine probed symbols. The behaviour therefore comes from
+BricsCAD V26, and clautolisp -- as the implementation of a BricsCAD extension --
+should match it. Of the nine SPEC-UNCERTAIN markers probed, five already agree
+with BricsCAD; four diverge.
+
+* Already correct (markers can close to Vendor-cited)
+- vle-subst-nth out-of-range IDX -> list unchanged.
+- vle-list-split -> 2-list (head tail), splitter dropped; at head -> (nil (a b c));
+  not present -> ((a b c) nil).
+- vle-string-replace -> replace ALL; empty new-str deletes.
+- vle-string-split -> empty tokens between adjacent delimiters KEPT.
+
+* Diverging from BricsCAD
+
+** vle-member -- returns the tail, BricsCAD returns T/nil  [FIXED this branch]
+=(vle-member 'b '(a b c))= is =T= on BricsCAD, =(vle-member 'z ...)= is nil;
+clautolisp returned the tail =(b c)=. Adopt the boolean (the tail is still
+reachable via VLE-SEARCH, which is unchanged). Low risk: truthy either way in
+IF/WHILE; only code pulling the tail from vle-member specifically is affected,
+and vle-search covers that.
+
+** vle-vector-normalise -- zero input: nil vs zero vector  [FIXED this branch]
+=(vle-vector-normalise '(0 0 0))= is =(0.0 0.0 0.0)= on BricsCAD; clautolisp
+returned nil. Adopt the zero vector.
+
+** vle-rgb2aci -- argument shape  [TODO: owner decision + arity change]
+BricsCAD accepts a single packed INTEGER (=(vle-rgb2aci 255)= -> 1) and THREE
+ints (=(vle-rgb2aci 255 0 0)= -> 1), and REJECTS the (R G B) LIST form.
+clautolisp accepts ONLY the list. Needs: accept int (packed 24-bit) and the
+3-arg form; and a decision on whether to KEEP the list form as a clautolisp
+lenient extension or reject it like BricsCAD. Arity change + the existing test
+(m3c-vle-rgb2aci-nearest-known asserts the list form) make this the owner's call.
+
+** vle-aci2rgb -- the 10-249 algorithmic range  [TODO: needs the full palette]
+BricsCAD returns real RGB across 10-249 (sampled: 10 -> (255 0 0), 150 ->
+(0 127 255), 249 -> (76 38 47)); clautolisp returns nil there (only 0-9 / 250-255
+tabulated). Three samples are not the table -- this needs the full 256-entry ACI
+palette, either probed exhaustively (extend probe-vle.lsp to sweep 0..255 on
+BricsCAD) or sourced from the documented ACI scheme. Deferred until the table
+exists.
+
+* vle-vector-getucs -- not compared to clautolisp here
+The B2 probe captured BricsCAD's basis for +Z/-Z/near-Z normals; the AutoCAD-vs-
+BricsCAD diff did not include a clautolisp column for getucs, so whether
+clautolisp agrees is unverified. Re-run probe-vle.lsp's clautolisp baseline and
+compare before deciding.
+
+* Status
+
+TODO. vle-member and vle-vector-normalise are FIXED on branch
+fix-b1-b2-divergences (adopt the measured BricsCAD behaviour; markers flipped to
+Vendor cites; tests updated; version bumped). vle-rgb2aci (arity + list-form
+decision) and vle-aci2rgb (full palette) remain, plus the getucs baseline check.

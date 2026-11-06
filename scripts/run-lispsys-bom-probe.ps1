@@ -1,0 +1,176 @@
+<#
+  run-lispsys-bom-probe.ps1 -- encoding-situations-cli-options experiment E1:
+  how AutoCAD's native (load) decodes a source file under LISPSYS 0 / 1 / 2,
+  with and without a UTF-8 BOM, against a windows-1252 file.
+
+  LISPSYS is read when AutoCAD STARTS, so each level is written into EVERY
+  AutoCAD profile's Variables key (which profile accoreconsole starts with is
+  not one answer -- backend-autocad-trustedpaths.lisp) before a fresh alfe /
+  accoreconsole run. SECURELOAD is set to 0 there too, so the fixtures load
+  from their folder without a trusted-path prompt. Both values are restored
+  at the end, whatever happens.
+
+    scripts/run-lispsys-bom-probe.ps1
+
+  At each level it also runs lispsys-forward-probe.lsp under -Efile-write
+  utf-8 THREE ways -- alfe-loaded from an entry file, given to -l, and with
+  its OPEN calls in an -x form: alfe's forwarding of that request as OPEN's
+  third argument "utf8" (LISPSYS 1/2 only), checked end to end on every
+  action path (alfe-efile-write-not-applied-to-l-file).
+
+  Output: dist/encoding/lispsys-bom-autocad-Windows.txt, every probe line
+  prefixed with its LISPSYS level.
+#>
+$ErrorActionPreference = "Continue"
+
+$root = if ($env:CI_PROJECT_DIR) { $env:CI_PROJECT_DIR } else { (Get-Location).Path }
+$alfe = if ($env:ALFE_BIN) { $env:ALFE_BIN } else { Join-Path $root "autolisp-front-end/tools/alfe/bin/alfe-sbcl" }
+# PowerShell runs only $PATHEXT files: use (or make) the .exe (see
+# run-encoding-experiment.ps1 for the history).
+if ($alfe -like '*.exe') {
+  if (-not (Test-Path $alfe)) { Write-Host "alfe binary not found at $alfe"; exit 2 }
+} elseif (Test-Path "$alfe.exe") {
+  $alfe = "$alfe.exe"
+} elseif (Test-Path $alfe) {
+  Copy-Item -Force $alfe "$alfe.exe"; $alfe = "$alfe.exe"
+} else {
+  Write-Host "alfe binary not found at $alfe (build it: make -C autolisp-front-end build-alfe-sbcl)"; exit 2
+}
+
+$probe = Join-Path $root "autolisp-front-end/tests/scenarios/entities/lispsys-bom-probe.lsp"
+# alfe's -Efile-write UTF-8 forwarded as OPEN's third argument "utf8", run at
+# each level too (encoding-situations-cli-options), three ways: ALFE-LOADED
+# from a one-line entry file, given to -l directly, and with the OPEN calls in
+# an -x form (the probe defines the helpers; E1F_MODE=x keeps it from running
+# at load). Expected for EACH way: "w" 4 bytes and "a" 2 at LISPSYS 1/2, no
+# WARN; 3 and 1 bytes and one WARN at 0. Before alfe 2.3.14 only alfe-load
+# rewrote OPEN (the 2026-10-08 run, job 16998925786, loaded the probe with -l
+# and measured nothing forwarded): alfe-efile-write-not-applied-to-l-file.
+$forward = Join-Path $root "autolisp-front-end/tests/scenarios/entities/lispsys-forward-probe.lsp"
+if (-not $env:ALFE_RUNTIME_LSP)   { $env:ALFE_RUNTIME_LSP   = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-remote-io.lsp") -replace '\\','/' }
+if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-bootstrap.lsp") -replace '\\','/' }
+
+$outDir = Join-Path $root "dist/encoding"
+# Start from an empty dist/encoding/ and dist/e1/: the Windows runner reuses
+# its build directory, so this job's artefact also carried older files of
+# OTHER jobs (encoding-probe-artifacts-and-macos-forward). dist/e1/ (the
+# fixtures and the forward files) is in this job's artefact too.
+foreach ($stale in @("dist/encoding", "dist/e1")) {
+  $stalePath = Join-Path $root $stale
+  if (Test-Path $stalePath) { Remove-Item -Recurse -Force $stalePath -ErrorAction SilentlyContinue }
+}
+New-Item -ItemType Directory -Force $outDir | Out-Null
+$report = Join-Path $outDir "lispsys-bom-autocad-Windows.txt"
+# Every write is Add-Content -Encoding utf8: Tee-Object -Append writes UTF-16
+# under Windows PowerShell 5, which left the 2026-10-08 reports mixed
+# (UTF-8 BOM + UTF-16LE body) and hid the DONE line from Select-String
+# (probe-ps1-done-check-misreads-utf16-report).
+Set-Content -Encoding utf8 $report ""
+
+# --- the three fixtures: (setq *e1-value* "AéZ") -----------------------------
+$fixtures = Join-Path $root "dist/e1"
+New-Item -ItemType Directory -Force $fixtures | Out-Null
+$head = [Text.Encoding]::ASCII.GetBytes('(setq *e1-value* "A')
+$tail = [Text.Encoding]::ASCII.GetBytes("Z`")`r`n")
+function Write-Fixture([string]$Name, [byte[]]$Prefix, [byte[]]$Eacute) {
+  $bytes = New-Object System.Collections.Generic.List[byte]
+  $bytes.AddRange($Prefix); $bytes.AddRange($head); $bytes.AddRange($Eacute); $bytes.AddRange($tail)
+  [IO.File]::WriteAllBytes((Join-Path $fixtures $Name), $bytes.ToArray())
+}
+Write-Fixture "e1-cp1252.lsp"  ([byte[]]@())               ([byte[]]@(0xE9))
+Write-Fixture "e1-utf8.lsp"    ([byte[]]@())               ([byte[]]@(0xC3, 0xA9))
+Write-Fixture "e1-utf8bom.lsp" ([byte[]]@(0xEF,0xBB,0xBF)) ([byte[]]@(0xC3, 0xA9))
+$env:E1_DIR = $fixtures -replace '\\','/'
+$forwardEntry = Join-Path $fixtures "e1f-entry.lsp"
+Set-Content -Encoding ascii $forwardEntry ('(alfe-load "{0}")' -f ($forward -replace '\\','/'))
+# The -x way: no double quote in the form (Windows PowerShell 5.1 passes the
+# inner quotes of a native argument unescaped), hence the probe's helpers.
+$forwardX = "(e1f-x (open (e1f-xp 'w) (e1f-xm 'w)) (open (e1f-xp 'a) (e1f-xm 'a)))"
+$forwardWays = @(
+  @{ Label = "forward alfe-load"; Mode = "";  Args = @("-l", $forwardEntry) },
+  @{ Label = "forward -l";        Mode = "";  Args = @("-l", $forward) },
+  @{ Label = "forward -x";        Mode = "x"; Args = @("-l", $forward, "-x", $forwardX) }
+)
+
+# --- every AutoCAD profile's Variables key -----------------------------------
+$hkcu = [Microsoft.Win32.Registry]::CurrentUser
+$base = 'Software\Autodesk\AutoCAD'
+$keys = @()
+$acad = $hkcu.OpenSubKey($base)
+if ($acad) {
+  foreach ($rel in $acad.GetSubKeyNames()) {
+    $relKey = $hkcu.OpenSubKey("$base\$rel")
+    if (-not $relKey) { continue }
+    foreach ($prod in $relKey.GetSubKeyNames()) {
+      $profiles = $hkcu.OpenSubKey("$base\$rel\$prod\Profiles")
+      if (-not $profiles) { continue }
+      foreach ($prof in $profiles.GetSubKeyNames()) {
+        $path = "$base\$rel\$prod\Profiles\$prof\Variables"
+        if ($hkcu.OpenSubKey($path)) { $keys += $path }
+      }
+    }
+  }
+}
+"profiles: $($keys.Count)" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+if ($keys.Count -eq 0) { "NO AUTOCAD PROFILE FOUND" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }; exit 3 }
+
+# Saved state: per key and name, the value and kind, or $null when absent.
+$saved = @{}
+foreach ($k in $keys) {
+  $rk = $hkcu.OpenSubKey($k)
+  foreach ($name in @('LISPSYS','SECURELOAD')) {
+    $v = $rk.GetValue($name, $null, 'DoNotExpandEnvironmentNames')
+    $kind = if ($null -ne $v) { $rk.GetValueKind($name) } else { $null }
+    $saved["$k|$name"] = @($v, $kind)
+    "saved $name in $k = $v ($kind)" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+  }
+}
+
+function Set-All([string]$Name, [string]$Value) {
+  foreach ($k in $keys) {
+    $rk = $hkcu.OpenSubKey($k, $true)
+    $kind = $saved["$k|$Name"][1]
+    if ($kind -eq [Microsoft.Win32.RegistryValueKind]::DWord) {
+      $rk.SetValue($Name, [int]$Value, [Microsoft.Win32.RegistryValueKind]::DWord)
+    } else {
+      $rk.SetValue($Name, $Value, [Microsoft.Win32.RegistryValueKind]::String)
+    }
+  }
+}
+
+try {
+  Set-All 'SECURELOAD' '0'
+  foreach ($level in @('0','1','2')) {
+    Set-All 'LISPSYS' $level
+    ("########## LISPSYS {0} ##########" -f $level) | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+    try {
+      (& $alfe --no-init --autocad --mode batch -l $probe 2>&1) |
+        Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|BOOTSTRAP-FAILED|FAILED' } |
+        ForEach-Object { "[LISPSYS $level] $_" } |
+        ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+    } catch { "[LISPSYS $level] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
+    foreach ($way in $forwardWays) {
+      $tag = "LISPSYS $level $($way.Label)"
+      $env:E1F_MODE = $way.Mode
+      try {
+        $fargs = @("--no-init","--autocad","--mode","batch","-Efile-write","utf-8") + $way.Args
+        (& $alfe @fargs 2>&1) |
+          Where-Object { "$_" -match '^ENC |ENC-PROBE DONE|WARN|ERROR|BOOTSTRAP-FAILED|FAILED' } |
+          ForEach-Object { "[$tag] $_" } |
+          ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+      } catch { "[$tag] LAUNCH-ERROR: $_" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ } }
+      Remove-Item -Path Env:E1F_MODE -ErrorAction SilentlyContinue
+    }
+  }
+} finally {
+  foreach ($k in $keys) {
+    $rk = $hkcu.OpenSubKey($k, $true)
+    foreach ($name in @('LISPSYS','SECURELOAD')) {
+      $v, $kind = $saved["$k|$name"]
+      if ($null -eq $v) { $rk.DeleteValue($name, $false) } else { $rk.SetValue($name, $v, $kind) }
+    }
+  }
+  "restored LISPSYS / SECURELOAD in $($keys.Count) profile(s)" | ForEach-Object { $_; Add-Content -Encoding utf8 -Path $report -Value $_ }
+}
+
+Write-Host "lispsys x BOM experiment -> $report"

@@ -9,6 +9,7 @@
    #:reader-options-warn-on-integer-overflow-p
    #:reader-options-extended-string-escapes-p
    #:reader-options-canonical-case
+   #:reader-options-lone-cr-in-string
    #:reader-options-source-name
    #:source-span
    #:source-span-source-name
@@ -20,6 +21,13 @@
    #:diagnostic-severity
    #:diagnostic-code
    #:diagnostic-message
+   #:lone-cr-in-string-literal
+   #:lone-cr-in-string-literal-source-name
+   #:lone-cr-in-string-literal-line
+   #:lone-cr-in-string-literal-column
+   #:source-decoding-error
+   #:source-decoding-error-pathname
+   #:source-is-a-directory
    #:diagnostic-span
    #:token
    #:token-kind
@@ -97,6 +105,7 @@
    #:autolisp-dialect-default-source-encoding
    #:autolisp-dialect-default-file-encoding
    #:find-autolisp-dialect
+   #:autolisp-dialect-template-name
    #:autolisp-dialect-names
    #:dialect-feature
    #:dialect-feature-for
@@ -111,7 +120,12 @@
    #:external-format-available-p
    #:external-format-base
    #:host-external-format-supported-p
-   #:unencodable-character-error))
+   #:unencodable-character-error
+   ;; encoding-replacement-character-option: what to write for a character
+   ;; the target encoding cannot hold.
+   #:character-encodable-p
+   #:string-encodable-p
+   #:encoding-replacement-text))
 
 (defpackage #:clautolisp.autolisp-reader.internal
   (:use #:cl)
@@ -174,4 +188,11 @@
    #:external-format-newline
    #:host-external-format-supported-p
    #:single-octet-tables
-   #:unencodable-character-error))
+   #:unencodable-character-error
+   #:character-encodable-p
+   #:string-encodable-p
+   #:encoding-replacement-text
+   ;; OPEN under the AutoCAD dialects (autocad-open-encoding-lispsys).
+   #:utf-8-valid-prefix-length
+   #:autocad-open-read-encoding
+   #:autocad-strict-utf-8-text))

@@ -1,6 +1,6 @@
 (in-package #:clautolisp.cador)
 
-;;;; Sysvar HAL methods on MockHost (Phase 11).
+;;;; Sysvar HAL methods on cador (Phase 11).
 ;;;;
 ;;;; Implements: host-getvar, host-setvar.
 ;;;;
@@ -21,7 +21,7 @@
       "~A expects a sysvar name string, got ~S."
       operator-name name))))
 
-(defun mock-string-of (value)
+(defun cador-string-of (value)
   (cond
     ((typep value 'clautolisp.autolisp-runtime:autolisp-string)
      (clautolisp.autolisp-runtime:autolisp-string-value value))
@@ -59,7 +59,7 @@
          "Sysvar ~A expects a real number, got ~S."
          cell-name value))))
     ((:string)
-     (let ((string (mock-string-of value)))
+     (let ((string (cador-string-of value)))
        (or string
            (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
             :invalid-sysvar-value
@@ -91,12 +91,12 @@ autolisp-string wrapper, others are returned as-is."
 ;;; that file/IO/entity/selection builtins set when they return
 ;;; nil-on-failure. The authoritative value lives on the runtime
 ;;; session (slot AUTOLISP-RUNTIME:RUNTIME-SESSION-ERRNO, accessed
-;;; via AUTOLISP-ERRNO / SET-AUTOLISP-ERRNO). The MockHost catalogue
+;;; via AUTOLISP-ERRNO / SET-AUTOLISP-ERRNO). The cador catalogue
 ;;; carries an ERRNO cell only so that snapshot/restore round-trips
 ;;; cleanly; the cell value is not the truth.
 ;;;
 ;;; (getvar "ERRNO") therefore reads the session value, and
-;;; (setvar "ERRNO" v) writes it. The mock cell's value is updated
+;;; (setvar "ERRNO" v) writes it. The host cell's value is updated
 ;;; on every read/write so it stays in sync for the next snapshot.
 
 (defun errno-name-p (string)
@@ -193,14 +193,160 @@ clock."
 (defun compute-clock-sysvar (string)
   (%clock-sysvar-at string (%clock-now-millis)))
 
+;;; --- Host-derived sysvars computed live (Phase 3) -----------------
+;;;
+;;; bricscad-dialect-sysvar-parity, Phase 3: values the vendors fill from
+;;; the session rather than store. Measured on a fresh, untitled BricsCAD
+;;; drawing (harvest job 16913315157): EXTMIN (1e20 1e20 1e20) / EXTMAX
+;;; (-1e20 -1e20 -1e20) with no entities; TDCREATE = TDUPDATE = the
+;;; creation instant as a Julian date (set when the fresh drawing is
+;;; populated, see sysvars.lisp); TDINDWG = TDUSRTIMER = days elapsed since;
+;;; LOGINNAME the OS user; DWGPREFIX the working directory with a trailing
+;;; separator; LOCALE "fr_FR" (BricsCAD only -- AutoCAD's form is not
+;;; measured). CMDACTIVE: 1 while a LISP command runs from COMMAND (the
+;;; documented bit 1), 0 otherwise.
+
+(defparameter *live-sysvar-names*
+  '("EXTMIN" "EXTMAX" "TDINDWG" "TDUSRTIMER" "LOGINNAME" "DWGPREFIX"
+    "DWGNAME" "DWGTITLED" "DBMOD"
+    "CMDACTIVE" "LOCALE" "CVPORT" "LOGFILENAME"))
+
+(defvar *drawing-open-julian* (make-hash-table :test #'eq)
+  "Drawing -> the Julian date its session began (for TDINDWG / TDUSRTIMER).")
+
+(defun live-sysvar-name-p (string)
+  (and (stringp string) (member string *live-sysvar-names* :test #'string-equal)))
+
+(defun %drawing-extents (host)
+  (let ((boxes (loop for e in (%selectable-entities host)
+                     for box = (ignore-errors (%entity-bounding-box host e))
+                     when box collect box)))
+    (if (null boxes)
+        (values (list 1d20 1d20 1d20) (list -1d20 -1d20 -1d20))
+        (values (loop for i below 3
+                      collect (%num (reduce #'min (mapcar (lambda (b) (or (nth i (first b)) 0)) boxes))))
+                (loop for i below 3
+                      collect (%num (reduce #'max (mapcar (lambda (b) (or (nth i (second b)) 0)) boxes))))))))
+
+(defun %locale-language-territory ()
+  "\"fr_FR\" from the locale (LC_ALL, LC_MESSAGES, LANG), or NIL."
+  (let ((locale (loop for var in '("LC_ALL" "LC_MESSAGES" "LANG")
+                      for value = (uiop:getenv var)
+                      when (and value (string/= value "")) return value)))
+    (and locale
+         (let ((end (position-if (lambda (c) (member c '(#\. #\@))) locale)))
+           (subseq locale 0 end)))))
+
+(defparameter *windows-language-abbreviations*
+  ;; Windows' LOCALE_SABBREVLANGNAME, the form AutoCAD's LOCALE took before
+  ;; 2019: "ll_TT" -> code, then "ll" -> the language's main locale's code.
+  '(("en_US" . "ENU") ("en_GB" . "ENG") ("en_AU" . "ENA") ("en_CA" . "ENC")
+    ("en_NZ" . "ENZ") ("en_IE" . "ENI") ("en_ZA" . "ENS")
+    ("fr_FR" . "FRA") ("fr_BE" . "FRB") ("fr_CA" . "FRC") ("fr_CH" . "FRS")
+    ("fr_LU" . "FRL") ("de_DE" . "DEU") ("de_AT" . "DEA") ("de_CH" . "DES")
+    ("de_LU" . "DEL") ("de_LI" . "DEC") ("it_IT" . "ITA") ("it_CH" . "ITS")
+    ("es_ES" . "ESN") ("es_MX" . "ESM") ("es_AR" . "ESS") ("pt_BR" . "PTB")
+    ("pt_PT" . "PTG") ("nl_NL" . "NLD") ("nl_BE" . "NLB") ("ja_JP" . "JPN")
+    ("ko_KR" . "KOR") ("zh_CN" . "CHS") ("zh_TW" . "CHT") ("zh_HK" . "ZHH")
+    ("zh_SG" . "ZHI") ("ru_RU" . "RUS") ("pl_PL" . "PLK") ("cs_CZ" . "CSY")
+    ("hu_HU" . "HUN") ("sv_SE" . "SVE") ("da_DK" . "DAN") ("nb_NO" . "NOR")
+    ("fi_FI" . "FIN") ("tr_TR" . "TRK") ("el_GR" . "ELL") ("he_IL" . "HEB")
+    ("ar_SA" . "ARA") ("uk_UA" . "UKR") ("sk_SK" . "SKY") ("sl_SI" . "SLV")
+    ("ro_RO" . "ROM") ("bg_BG" . "BGR") ("hr_HR" . "HRV")
+    ("en" . "ENU") ("fr" . "FRA") ("de" . "DEU") ("it" . "ITA") ("es" . "ESN")
+    ("pt" . "PTB") ("nl" . "NLD") ("ja" . "JPN") ("ko" . "KOR") ("zh" . "CHS")
+    ("ru" . "RUS") ("pl" . "PLK") ("cs" . "CSY") ("hu" . "HUN") ("sv" . "SVE")
+    ("da" . "DAN") ("nb" . "NOR") ("no" . "NOR") ("fi" . "FIN") ("tr" . "TRK")
+    ("el" . "ELL") ("he" . "HEB") ("ar" . "ARA") ("uk" . "UKR") ("sk" . "SKY")
+    ("sl" . "SLV") ("ro" . "ROM") ("bg" . "BGR") ("hr" . "HRV")))
+
+(defun %windows-language-abbreviation (code)
+  "The LOCALE_SABBREVLANGNAME of the locale CODE (\"fr_FR\"), or NIL."
+  (let ((language (subseq code 0 (or (position #\_ code) (length code)))))
+    (cdr (or (assoc code *windows-language-abbreviations* :test #'string-equal)
+             (assoc language *windows-language-abbreviations* :test #'string-equal)))))
+
+(defun %current-dialect-feature (feature)
+  "FEATURE's value in the active dialect's feature/version matrix cell
+\(dialect-platform-version-axis), and whether a row matched."
+  (let ((dialect (ignore-errors (clautolisp.autolisp-runtime:current-evaluation-dialect))))
+    (if dialect
+        (clautolisp.autolisp-reader:dialect-feature-for dialect feature)
+        (values nil nil))))
+
+(defun %sysvar-absent-in-dialect-version-p (string)
+  "True when the active dialect's product VERSION predates sysvar STRING
+\(LISPSYS: AutoCAD 2021, BricsCAD V23) -- GETVAR answers nil there."
+  (and (string-equal string "LISPSYS")
+       (multiple-value-bind (value foundp) (%current-dialect-feature :lispsys)
+         (and foundp (null value)))))
+
+(defun compute-live-sysvar (host string cell)
+  "The live value of the host-derived sysvar STRING, or the stored CELL value
+where the session cannot say."
+  (let ((now (compute-clock-sysvar "DATE"))
+        (drawing (cador-active-drawing host)))
+    (flet ((stored () (sysvar-cell-value cell)))
+      (cond
+        ((string-equal string "EXTMIN") (nth-value 0 (%drawing-extents host)))
+        ((string-equal string "EXTMAX") (nth-value 1 (%drawing-extents host)))
+        ((member string '("TDINDWG" "TDUSRTIMER") :test #'string-equal)
+         (let ((open (or (gethash drawing *drawing-open-julian*)
+                         (setf (gethash drawing *drawing-open-julian*) now))))
+           (+ (%num (or (stored) 0)) (max 0d0 (- now open)))))
+        ((string-equal string "LOGINNAME")
+         (or (loop for var in '("USER" "USERNAME" "LOGNAME")
+                   for value = (uiop:getenv var)
+                   when (and value (string/= value "")) return value)
+             (stored)))
+        ((string-equal string "DWGPREFIX")
+         (let ((path (ignore-errors (clautolisp.drawing:drawing-path drawing))))
+           (namestring (if path
+                           (uiop:pathname-directory-pathname path)
+                           (uiop:getcwd)))))
+        ((string-equal string "CMDACTIVE") (if *cador-in-lisp-command* 1 0))
+        ;; command-log.lisp: the current document's log file name.
+        ((string-equal string "LOGFILENAME") (funcall 'command-log-name host))
+        ;; The current document's own (multi-document slice 3).
+        ((string-equal string "DWGNAME") (clautolisp.drawing:drawing-name drawing))
+        ((string-equal string "DWGTITLED")
+         (if (ignore-errors (clautolisp.drawing:drawing-path drawing)) 1 0))
+        ((string-equal string "DBMOD") (clautolisp.drawing:drawing-dbmod drawing))
+        ;; viewports.lisp: 1 in paper space, else the current tiled viewport.
+        ((string-equal string "CVPORT") (funcall 'cador-current-viewport-id host))
+        ((string-equal string "LOCALE")
+         ;; The dialect's documented / measured form (feature :locale-form):
+         ;; BricsCAD "fr_FR"; AutoCAD 2019+ the upper-case language, "FR";
+         ;; AutoCAD before 2019 the Windows abbreviation, "FRA".
+         (let ((form (%current-dialect-feature :locale-form))
+               (code (%locale-language-territory)))
+           (or (and code
+                    (case form
+                      (:language-territory code)
+                      (:abbreviation (%windows-language-abbreviation code))
+                      (:language (string-upcase (subseq code 0 (or (position #\_ code)
+                                                                   (length code)))))))
+               (stored))))
+        (t (stored))))))
+
 ;;; --- Method definitions ------------------------------------------
+
+(defun %note-clautolisp-sysvar-access (string)
+  "GETVAR / SETVAR of a clautolisp-only system variable out of dialect gets the
+`[clautolisp-sysvar]' notice (clal-drawing-sysvars-silent-out-of-dialect): it
+does not exist on the vendor's product, where GETVAR answers nil."
+  (when (member string *clautolisp-extension-sysvar-names* :test #'string=)
+    (warn-clautolisp-sysvar-use string)))
 
 (defmethod host-getvar ((host cador) name)
   (let* ((string (ensure-sysvar-name name 'getvar))
          (cell (cador-sysvar host string)))
+    (%note-clautolisp-sysvar-access string)
     (cond
       ;; Unknown name -> nil (§16 normative rule on unknown names).
       ((null cell) nil)
+      ;; A sysvar the dialect's product version predates (LISPSYS).
+      ((%sysvar-absent-in-dialect-version-p string) nil)
       ;; ERRNO is sourced from the live runtime session.
       ((errno-name-p string)
        (let ((v (clautolisp.autolisp-runtime:autolisp-errno)))
@@ -211,6 +357,10 @@ clock."
        (let ((v (compute-clock-sysvar string)))
          (setf (sysvar-cell-value cell) v)
          v))
+      ;; Host-derived state computed from the session (Phase 3).
+      ((live-sysvar-name-p string)
+       (present-sysvar-value (sysvar-cell-kind cell)
+                             (compute-live-sysvar host string cell)))
       (t
        (present-sysvar-value (sysvar-cell-kind cell)
                              (sysvar-cell-value cell))))))
@@ -229,26 +379,47 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
 (defmethod host-setvar ((host cador) name value)
   (let* ((string (ensure-sysvar-name name 'setvar))
          (cell (cador-sysvar host string)))
+    (%note-clautolisp-sysvar-access string)
     (cond
       ((null cell)
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
         :unknown-sysvar
-        "MockHost has no system variable named ~A."
+        "cador has no system variable named ~A."
         string))
+      ;; ERRNO is documented read-only by both vendors, and both ACCEPT
+      ;; (setvar "ERRNO" n) (AutoCAD 2022, BricsCAD V25, V26 -- the
+      ;; error-processing catalogue resets it that way before each case):
+      ;; write the session errno, return the value, and flag the
+      ;; undocumented tolerance (errno-setvar-accepted-by-vendors).
+      ((errno-name-p string)
+       (let ((coerced (coerce-sysvar-value (sysvar-cell-kind cell) value string)))
+         (clautolisp.autolisp-runtime:emit-errno-setvar-warning coerced)
+         (clautolisp.autolisp-runtime:set-autolisp-errno coerced)
+         (setf (sysvar-cell-value cell) coerced)
+         coerced))
       ((sysvar-cell-read-only-p cell)
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
         :sysvar-read-only
         "Sysvar ~A is read-only."
         string))
       (t
-       (let* ((coerced (coerce-sysvar-value (sysvar-cell-kind cell) value string))
+       (let* ((coerced (funcall 'command-log-before-setvar host string
+                                (coerce-sysvar-value (sysvar-cell-kind cell) value string)))
               (document
                (clautolisp.autolisp-runtime:evaluation-context-current-document
                 (clautolisp.autolisp-runtime:current-evaluation-context)))
               (rendered-name (clautolisp.autolisp-runtime:make-autolisp-string string)))
          (clautolisp.autolisp-runtime:signal-document-event
           document :sysvar :vlr-sysvarwillchange (list rendered-name))
+         ;; SNAPANG ... and the VPORT *Active record (viewports.lisp)
+         (funcall 'cador-vport-before-setvar host string coerced)
          (setf (sysvar-cell-value cell) coerced)
+         ;; CVPORT is derived (viewports.lisp): setting it makes that tiled
+         ;; viewport current, as on AutoCAD and BricsCAD (probe-viewports).
+         (when (and (string-equal string "CVPORT") (integerp coerced))
+           (funcall 'cador-set-current-viewport host coerced))
+         ;; LOGFILEMODE / LOGFILEPATH open, close or move the logs.
+         (funcall 'command-log-after-setvar host string coerced)
          (clautolisp.autolisp-runtime:signal-document-event
           document :sysvar :vlr-sysvarchanged (list rendered-name))
          (present-sysvar-value (sysvar-cell-kind cell) coerced))))))
@@ -321,6 +492,8 @@ value."
                                       :kind effective-kind
                                       :value coerced
                                       :read-only-p (and read-only-p t)
-                                      :host-derived-p nil)))
+                                      :host-derived-p nil
+                                      ;; Defined at run time: the session's.
+                                      :scope :not-saved)))
           (setf (gethash string (cador-sysvars host)) new)
           coerced))))

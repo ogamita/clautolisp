@@ -1,0 +1,124 @@
+(in-package #:clautolisp.autolisp-builtins-core.tests)
+
+(in-suite autolisp-builtins-core-suite)
+
+;;;; DIESEL through (menucmd "M=..."): system-variables.issue -- the DATE
+;;;; family had no EDTIME consumer, and MENUCMD was a stub.
+
+(defun %diesel (expression)
+  "(menucmd \"M=EXPRESSION\") under a cador host, as a CL string (NIL when
+menucmd returns nil). EDTIME names are pinned to English here; the locale
+case has its own test."
+  (let* ((clautolisp.autolisp-builtins-core::*edtime-language* :en)
+         (result (%al (format nil "(menucmd ~S)" (concatenate 'string "M=" expression)))))
+    (and result (autolisp-string-value result))))
+
+(defun %jd (year month day &optional (day-fraction 0))
+  "The DATE-sysvar value (Julian Day Number + day fraction) of a date."
+  (+ (clautolisp.cador::%gregorian-julian-day-number year month day) day-fraction))
+
+(test diesel-arithmetic-and-comparison
+  (is (string= "3" (%diesel "$(+,1,2)")))
+  (is (string= "6" (%diesel "$(*,1,2,3)")))
+  (is (string= "0.25" (%diesel "$(/,1,4)")))
+  (is (string= "-1" (%diesel "$(-,1,2)")))
+  (is (string= "1" (%diesel "$(=,2,2.0)")))
+  (is (string= "0" (%diesel "$(>,1,2)")))
+  (is (string= "1" (%diesel "$(!=,1,2)")))
+  (is (string= "2" (%diesel "$(and,6,3)")))
+  (is (string= "7" (%diesel "$(or,6,3)")))
+  (is (string= "3" (%diesel "$(fix,3.7)"))))
+
+(test diesel-strings-and-control
+  (is (string= "yes" (%diesel "$(if,$(=,1,1),yes,no)")))
+  (is (string= "no" (%diesel "$(if,0,yes,no)")))
+  (is (string= "1" (%diesel "$(eq,abc,abc)")))
+  (is (string= "5" (%diesel "$(strlen,hello)")))
+  (is (string= "ell" (%diesel "$(substr,hello,2,3)")))
+  (is (string= "ABC" (%diesel "$(upper,abc)")))
+  (is (string= "b" (%diesel "$(index,1,\"a,b,c\")")) "a quoted comma is text")
+  (is (string= "c" (%diesel "$(nth,2,a,b,c)")))
+  (is (string= "3" (%diesel "$(eval,$(+,1,2))")))
+  (is (string= "x=2!" (%diesel "x=$(+,1,1)!")) "text around a call is copied"))
+
+(test diesel-errors-are-autocad-s-strings
+  ;; MEASURED on AutoCAD (probe-results/autocad/ms-windows/20261003T091920Z):
+  ;; padded with a space each side, an unknown name upper-cased; an
+  ;; out-of-range NTH is an error; (substr) alone is ""; an unclosed $( makes
+  ;; menucmd return nil.
+  (is (string= " $(NOSUCH)?? " (%diesel "$(nosuch,1)")))
+  (is (string= " $(/,??) " (%diesel "$(/,1,0)")))
+  (is (string= " $(+,??) " (%diesel "$(+,a)")))
+  (is (string= " $(NTH,??) " (%diesel "$(nth,7,a,b,c)")))
+  (is (string= "" (%diesel "$(substr)")))
+  (is (null (%diesel "$(+,1"))))
+
+(test diesel-edtime-names-follow-the-locale
+  ;; A French AutoCAD printed "Mardi, 29 Septembre 2026" (20261003T091920Z).
+  (let ((jd (%jd 2026 9 29))
+        (clautolisp.autolisp-builtins-core::*edtime-language* :fr))
+    (is (string= "Mardi, 29 Septembre 2026"
+                 (autolisp-string-value
+                  (%al (format nil "(menucmd ~S)"
+                               (format nil "M=$(edtime,~F,DDDD\",\" D MONTH YYYY)" jd))))))
+    (is (string= "Mar Sep"
+                 (autolisp-string-value
+                  (%al (format nil "(menucmd ~S)" (format nil "M=$(edtime,~F,DDD MON)" jd))))))))
+
+(test diesel-getvar-reads-the-host
+  (is (string= "2" (%diesel "$(getvar,lunits)")))
+  (is (string= "4" (%diesel "$(getvar,luprec)"))))
+
+(test diesel-edtime-formats-a-julian-date
+  ;; the spec's own example shape: DDDD"," D MONTH YYYY
+  (let ((jd (%jd 2026 9 29)))
+    (is (string= "Tuesday, 29 September 2026"
+                 (%diesel (format nil "$(edtime,~F,DDDD\",\" D MONTH YYYY)" jd))))
+    (is (string= "Tue Sep" (%diesel (format nil "$(edtime,~F,DDD MON)" jd))))
+    (is (string= "26-09-29" (%diesel (format nil "$(edtime,~F,YY-MO-DD)" jd))))
+    (is (string= "9/29/2026" (%diesel (format nil "$(edtime,~F,M/D/YYYY)" jd)))))
+  (let ((jd (%jd 2026 1 5 0.75d0)))       ; 18:00
+    (is (string= "06:00:00 PM" (%diesel (format nil "$(edtime,~F,HH:MM:SS AM/PM)" jd))))
+    (is (string= "18:00" (%diesel (format nil "$(edtime,~F,HH:MM)" jd))))
+    (is (string= "6p" (%diesel (format nil "$(edtime,~F,Ha/p)" jd)))))
+  (let ((jd (%jd 2026 1 5 0)))            ; midnight: 12 AM on a 12-hour clock
+    (is (string= "12 AM" (%diesel (format nil "$(edtime,~F,H AM/PM)" jd))))))
+
+(test diesel-edtime-of-zero-is-now
+  ;; $(edtime,0,...) formats the current DATE: at least the year is right.
+  (multiple-value-bind (s m h d mo year) (decode-universal-time (get-universal-time))
+    (declare (ignore s m h d mo))
+    (is (string= (format nil "~D" year) (%diesel "$(edtime,0,YYYY)")))))
+
+(test menucmd-other-areas-stay-empty
+  (is (string= "" (autolisp-string-value (%al "(menucmd \"P1=*\")")))))
+
+(defun %diesel-in (dialect expression)
+  "(menucmd \"M=EXPRESSION\") under DIALECT, English EDTIME names; NIL when
+menucmd returns nil."
+  (let* ((clautolisp.autolisp-builtins-core::*edtime-language* :en)
+         (result (run-autolisp-string
+                  (format nil "(menucmd ~S)" (concatenate 'string "M=" expression))
+                  :setup-fn #'%install-cador-and-core
+                  :dialect (clautolisp.autolisp-reader:find-autolisp-dialect dialect))))
+    (and result (autolisp-string-value result))))
+
+(test diesel-follows-bricscad-under-a-bricscad-dialect
+  ;; The five MEASURED divergences (probe-results/bricscad/ms-windows/
+  ;; 20261003T120059Z vs autocad/ms-windows/20261003T091920Z).
+  (let ((jd (%jd 2026 9 29 0.75d0)))
+    (dolist (case `(("$(/,1,3)"        "0.333333333333" "0.33333333")
+                    ("$(/,2,3)"        "0.666666666667" "0.66666667")
+                    ("$(/,1,0)"        "inf"            " $(/,??) ")
+                    ("$(+,1"           "$?"             nil)
+                    ("$(substr)"       " $(SUBSTR,??) " "")
+                    (,(format nil "$(edtime,~F,HH:MM:SS.MSEC)" jd)
+                     "18:00:00.9SEC" "18:00:00.000")
+                    ;; and where they agree
+                    ("$(+,0.1,0.2)"    "0.3"            "0.3")
+                    ("$(nth,7,a,b,c)"  " $(NTH,??) "    " $(NTH,??) ")))
+      (destructuring-bind (expression bricscad autocad) case
+        (is (equal bricscad (%diesel-in :bricscad expression)) "bricscad ~A" expression)
+        (is (equal bricscad (%diesel-in :bricscad-mac expression)) "bricscad-mac ~A" expression)
+        (is (equal autocad (%diesel-in :autocad expression)) "autocad ~A" expression)
+        (is (equal autocad (%diesel-in :strict expression)) "strict ~A" expression)))))

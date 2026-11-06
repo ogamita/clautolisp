@@ -1,9 +1,9 @@
 (in-package #:clautolisp.cador)
 
-;;;; Command-dispatch HAL methods on MockHost
+;;;; Command-dispatch HAL methods on cador
 ;;;; (deferred-command-special-form issue).
 ;;;;
-;;;; The mock semantics of an AutoLISP (command ...) call:
+;;;; cador's semantics of an AutoLISP (command ...) call:
 ;;;;
 ;;;;   * the normalized token-string list the runtime routed here is
 ;;;;     recorded on the host's COMMAND-LOG (newest first, matching
@@ -57,14 +57,16 @@ so a host that never sets CMDECHO keeps echoing. system-variables.issue
   ;; CMDECHO, matching AutoCAD where CMDECHO=0 silences the prompt echo
   ;; without disabling the command itself.
   (let ((sink (cador-prompt-output host)))
-    (when (and sink (%cador-cmdecho-on-p host))
-      (if arguments
-          (format sink "~&Command:~{ ~A~}~%"
-                  (mapcar #'render-command-token arguments))
-          ;; (command) with no arguments — the vendor-documented
-          ;; "cancel the current command" call.
-          (format sink "~&Command: *Cancel*~%"))
-      (finish-output sink)))
+    (when (%cador-cmdecho-on-p host)
+      (cador-console-write
+       host sink
+       (if arguments
+           (format nil "Command:~{ ~A~}~%"
+                   (mapcar #'render-command-token arguments))
+           ;; (command) with no arguments — the vendor-documented
+           ;; "cancel the current command" call.
+           (format nil "Command: *Cancel*~%"))
+       :fresh-line t)))
   (%execute-command-tokens host arguments)
   nil)
 
@@ -318,6 +320,17 @@ solid repeats the third corner, as the vendors do."
                                  (cons 12 p3) (cons 13 p4)))))))
   tokens)
 
+(defun %entsel-token-p (token)
+  "Whether TOKEN is the ENTSEL form (ename point) COMMAND passes live."
+  (and (consp token)
+       (typep (first token) 'clautolisp.autolisp-runtime:autolisp-ename)))
+
+(defun %entsel-entity (host token)
+  "The entity of an ENTSEL-form TOKEN (and, second value, its pick point)."
+  (values (cador-find-entity-by-handle
+           host (clautolisp.autolisp-runtime:autolisp-ename-value (first token)))
+          (second token)))
+
 (defun %command-selection (host tokens)
   "Consume object-selection input: live selection sets, entity-handle
 tokens and the _Last option, up to the closing RETURN. Returns
@@ -327,6 +340,17 @@ tokens and the _Last option, up to the closing RETURN. Returns
       (let ((token (first tokens)))
         (cond
           ((null tokens) (return))
+          ((%entsel-token-p token)
+           (let ((entity (%entsel-entity host token)))
+             (when entity (pushnew entity entities)))
+           (pop tokens))
+          ;; A raw ename (a host caller handing one straight in; COMMAND
+          ;; itself spells an ename as its handle string).
+          ((typep token 'clautolisp.autolisp-runtime:autolisp-ename)
+           (let ((entity (cador-find-entity-by-handle
+                          host (clautolisp.autolisp-runtime:autolisp-ename-value token))))
+             (when entity (pushnew entity entities)))
+           (pop tokens))
           ((typep token 'clautolisp.autolisp-runtime:autolisp-pickset)
            (let ((set (ignore-errors (ap->pickset host token 'command))))
              (when set
@@ -336,6 +360,25 @@ tokens and the _Last option, up to the closing RETURN. Returns
            (pop tokens))
           ((not (stringp token)) (return))
           ((equal token "") (pop tokens) (return))
+          ;; Window / Crossing + two corners (alref Phase 4 S2): entities
+          ;; wholly inside, or inside-or-crossing, the rectangle.
+          ((and (%command-option-p token "w" "window" "c" "crossing")
+                (%command-token-point (second tokens))
+                (%command-token-point (third tokens)))
+           (let ((crossing (%command-option-p token "c" "crossing")))
+             (dolist (entity (%window-selection host
+                                                (%command-token-point (second tokens))
+                                                (%command-token-point (third tokens))
+                                                crossing))
+               (pushnew entity entities))
+             (setf tokens (cdddr tokens))))
+          ;; A point picks the object under it (the newest, as the vendors
+          ;; pick the topmost); a point on nothing ends the selection.
+          ((%command-token-point token)
+           (let ((entity (%pick-entity host (%command-token-point token))))
+             (unless entity (return))
+             (pushnew entity entities)
+             (pop tokens)))
           ((%command-option-p token "l" "last")
            (let* ((ename (host-entlast host))
                   (entity
@@ -560,27 +603,77 @@ they are collinear."
   (flet ((norm (v) (mod v (* 2.0d0 pi))))
     (<= (norm (- x a)) (norm (- b a)))))
 
+(defun %norm-angle (a)
+  "Angle A (radians) normalised into [0, 2pi), as entget reports an ARC's
+50/51 groups."
+  (let ((m (mod a (* 2.0d0 pi)))) (if (>= m (* 2.0d0 pi)) 0.0d0 m)))
+
+(defun %arc-entity (host center radius start end)
+  (%command-entity
+   host
+   (list (cons 0 "ARC") (cons 8 (%current-layer-name host))
+         (cons 10 (list (first center) (second center) (or (third center) 0.0d0)))
+         (cons 40 radius)
+         (cons 50 (%norm-angle start)) (cons 51 (%norm-angle end)))))
+
+(defun %point-angle (center p)
+  (atan (- (second p) (second center)) (- (first p) (first center))))
+
+(defun %arc-from-center (host center start-point tokens)
+  "The Center forms after CENTER and START-POINT: an end point (it only
+fixes the end angle; the arc runs CCW), or Angle DEGREES (included angle,
+negative = clockwise). Returns the remaining tokens."
+  (let ((radius (sqrt (+ (expt (- (first start-point) (first center)) 2)
+                         (expt (- (second start-point) (second center)) 2))))
+        (a1 (%point-angle center start-point))
+        (token (first tokens)))
+    (cond
+      ((%command-token-point token)
+       (pop tokens)
+       (%arc-entity host center radius a1 (%point-angle center (%command-token-point token))))
+      ((and (%command-option-p token "a" "angle")
+            (%command-token-number (second tokens)))
+       (let ((included (* (/ pi 180d0) (%command-token-number (second tokens)))))
+         (setf tokens (cddr tokens))
+         (if (minusp included)
+             (%arc-entity host center radius (+ a1 included) a1)
+             (%arc-entity host center radius a1 (+ a1 included))))))
+    tokens))
+
 (defun %cmd-arc (host tokens)
   "ARC: three points (start, a point on the arc, end) -> an ARC entity with
-CCW start/end angles (group 50/51) oriented so the middle point lies on it.
-The Center/Angle keyword forms degrade to record-only."
-  (multiple-value-bind (points tokens) (%collect-points tokens)
-    (when (= (length points) 3)
-      (destructuring-bind (p1 p2 p3) points
-        (multiple-value-bind (center radius) (%circumscribe p1 p2 p3)
-          (when center
-            (let* ((cx (first center)) (cy (second center))
-                   (a1 (atan (- (second p1) cy) (- (first p1) cx)))
-                   (a2 (atan (- (second p2) cy) (- (first p2) cx)))
-                   (a3 (atan (- (second p3) cy) (- (first p3) cx))))
-              (multiple-value-bind (start end)
-                  (if (%ccw-between-p a1 a3 a2) (values a1 a3) (values a3 a1))
-                (%command-entity
-                 host
-                 (list (cons 0 "ARC") (cons 8 (%current-layer-name host))
-                       (cons 10 (list cx cy 0.0d0)) (cons 40 radius)
-                       (cons 50 start) (cons 51 end)))))))))
-    tokens))
+CCW start/end angles (group 50/51, radians in [0, 2pi)) oriented so the
+middle point lies on it. The Center forms -- C center start end|Angle deg,
+and start C center end|Angle deg -- are supported too; the other keyword
+forms (End, chord Length, Direction, Radius) degrade to record-only."
+  (cond
+    ((%command-option-p (first tokens) "c" "center" "centre")
+     (let ((center (%command-token-point (second tokens)))
+           (start (%command-token-point (third tokens))))
+       (if (and center start)
+           (%arc-from-center host center start (cdddr tokens))
+           (rest tokens))))
+    ((and (%command-token-point (first tokens))
+          (%command-option-p (second tokens) "c" "center" "centre"))
+     (let ((start (%command-token-point (first tokens)))
+           (center (%command-token-point (third tokens))))
+       (if center
+           (%arc-from-center host center start (cdddr tokens))
+           (cddr tokens))))
+    (t
+     (multiple-value-bind (points tokens) (%collect-points tokens)
+       (when (= (length points) 3)
+         (destructuring-bind (p1 p2 p3) points
+           (multiple-value-bind (center radius) (%circumscribe p1 p2 p3)
+             (when center
+               (let* ((cx (first center)) (cy (second center))
+                      (a1 (atan (- (second p1) cy) (- (first p1) cx)))
+                      (a2 (atan (- (second p2) cy) (- (first p2) cx)))
+                      (a3 (atan (- (second p3) cy) (- (first p3) cx))))
+                 (multiple-value-bind (start end)
+                     (if (%ccw-between-p a1 a3 a2) (values a1 a3) (values a3 a1))
+                   (%arc-entity host (list cx cy 0.0d0) radius start end)))))))
+       tokens))))
 
 (defun %cmd-pline (host tokens)
   "PLINE: vertex points until Close/RETURN -> one LWPOLYLINE. The Arc/Width/
@@ -843,7 +936,7 @@ are honoured (New/Off/... accept them)."
 
 (defun %cmd-linetype (host tokens)
   "LINETYPE / -LINETYPE: Load creates an :ltype record (its definition file is
-ignored — the mock has none); Set sets CELTYPE; Create is consumed. The loop
+ignored — cador has none); Set sets CELTYPE; Create is consumed. The loop
 ends at RETURN."
   (loop
     (let ((token (first tokens)))
@@ -881,59 +974,134 @@ context (cador is model-only, WCS); BROWSER/SHELL launch external processes
   (declare (ignore host))
   (%consume-through-return tokens))
 
+;;; --- The command table --------------------------------------------
+;;;
+;;; Command name -> handler (HOST TOKENS) -> remaining TOKENS. Each
+;;; spelling is registered explicitly: a leading "-" names a distinct
+;;; console form, never a modifier (see %COMMAND-NAME). On this TUI-only
+;;; host a dialog command and its "-" console form project onto the same
+;;; console grammar, so both spellings run one handler.
+
+(defvar *cador-commands* (make-hash-table :test #'equal)
+  "Upcased command name -> handler function (HOST TOKENS) returning the
+tokens it did not consume.")
+
+(defun define-cador-command (names handler)
+  "Register HANDLER under every spelling in NAMES (a string or a list)."
+  (dolist (name (if (listp names) names (list names)))
+    (setf (gethash (string-upcase name) *cador-commands*) handler))
+  names)
+
+(defun cador-command-names ()
+  "Every command name the engine runs or recognises, sorted."
+  (sort (loop for name being the hash-keys of *cador-commands* collect name)
+        #'string<))
+
+(define-cador-command "LINE"   '%cmd-line)
+(define-cador-command "CIRCLE" '%cmd-circle)
+(define-cador-command "TEXT"   '%cmd-text)
+(define-cador-command "DONUT"  '%cmd-donut)
+(define-cador-command "SOLID"  '%cmd-solid)
+(define-cador-command "ERASE"  '%cmd-erase)
+(define-cador-command "MOVE"   '%cmd-move)
+(define-cador-command "COPY"   '%cmd-copy)
+(define-cador-command "ROTATE" '%cmd-rotate)
+(define-cador-command '("BLOCK" "-BLOCK") '%cmd-block)
+;; The 14 SCHMS-driven commands (schms-call-inventory section 9).
+(define-cador-command "ARC"     '%cmd-arc)
+(define-cador-command "PLINE"   '%cmd-pline)
+(define-cador-command "MTEXT"   '%cmd-mtext)
+(define-cador-command "WIPEOUT" '%cmd-wipeout)
+(define-cador-command "MIRROR"  '%cmd-mirror)
+(define-cador-command '("INSERT" "-INSERT")     '%cmd-insert)
+(define-cador-command '("LAYER" "-LAYER")       '%cmd-layer)
+(define-cador-command '("LINETYPE" "-LINETYPE") '%cmd-linetype)
+;; Recognised, but model-only no-ops (viewport / coordinate context /
+;; external process / deferred edit): consume the input line and keep
+;; flowing.
+(define-cador-command '("ZOOM" "UCS" "BROWSER" "SHELL")
+                      '%cmd-recognised-noop)
+;; Core-now commands (alref Phase 4 S1) whose subject the headless model
+;; does not hold: a palette or dialog (PROPERTIES, MLSTYLE), raster /
+;; PDF underlay / online-map / point-cloud data (IMAGE*, CLIPIT, PDFCLIP,
+;; -PDFIMPORT, GEOMAPIMAGE*, POINTCLOUDCROP) and freehand pointer input
+;; (SKETCH). Recognised, so a driven sequence keeps flowing.
+(define-cador-command '("PROPERTIES" "MLSTYLE"
+                        "IMAGEADJUST" "IMAGECLIP" "IMAGEEDIT" "CLIPIT"
+                        "PDFCLIP" "-PDFIMPORT"
+                        "GEOMAPIMAGE" "GEOMAPIMAGEUPDATE" "POINTCLOUDCROP"
+                        "SKETCH")
+                      '%cmd-recognised-noop)
+;; S2: draw order (DRAWORDER, TEXTTOFRONT, HATCHTOBACK, CDORDER) is
+;; display state, and TRANSPARENCY toggles a raster image's background --
+;; neither is held by the headless model.
+(define-cador-command '("DRAWORDER" "TEXTTOFRONT" "HATCHTOBACK" "CDORDER"
+                        "TRANSPARENCY")
+                      '%cmd-recognised-noop)
+
 (defun %execute-command-tokens (host tokens)
   "Interpret TOKENS — one HOST-COMMAND call's normalized sequence —
-executing the drawing commands the engine knows; the first unknown
-command name stops interpretation (the sequence stays recorded on the
-command log either way). Never signals."
-  (handler-case
-      (loop while tokens
-            do (let ((name (%command-name (first tokens))))
-                 (unless name (return))
-                 (setf tokens (rest tokens))
-                 (setf tokens
-                       (cond
-                         ((string= name "LINE")   (%cmd-line host tokens))
-                         ((string= name "CIRCLE") (%cmd-circle host tokens))
-                         ((string= name "TEXT")   (%cmd-text host tokens))
-                         ((string= name "DONUT")  (%cmd-donut host tokens))
-                         ((string= name "SOLID")  (%cmd-solid host tokens))
-                         ((string= name "ERASE")  (%cmd-erase host tokens))
-                         ((string= name "MOVE")   (%cmd-move host tokens))
-                         ((string= name "COPY")   (%cmd-copy host tokens))
-                         ((string= name "ROTATE") (%cmd-rotate host tokens))
-                         ;; -BLOCK is the explicitly-defined console
-                         ;; form of BLOCK; on this TUI-only host the
-                         ;; dialog form projects onto the same console
-                         ;; grammar, so both spellings run it.
-                         ((or (string= name "-BLOCK")
-                              (string= name "BLOCK"))
-                          (%cmd-block host tokens))
-                         ;; The 14 SCHMS-driven commands (schms-call-inventory §9).
-                         ((string= name "ARC")      (%cmd-arc host tokens))
-                         ((string= name "PLINE")    (%cmd-pline host tokens))
-                         ((string= name "MTEXT")    (%cmd-mtext host tokens))
-                         ((string= name "WIPEOUT")  (%cmd-wipeout host tokens))
-                         ((string= name "MIRROR")   (%cmd-mirror host tokens))
-                         ((or (string= name "INSERT")
-                              (string= name "-INSERT"))
-                          (%cmd-insert host tokens))
-                         ((or (string= name "LAYER")
-                              (string= name "-LAYER"))
-                          (%cmd-layer host tokens))
-                         ((or (string= name "LINETYPE")
-                              (string= name "-LINETYPE"))
-                          (%cmd-linetype host tokens))
-                         ;; Recognised, but model-only no-ops (viewport /
-                         ;; coordinate context / external process / deferred
-                         ;; edit): consume the input line and keep flowing.
-                         ((member name '("ZOOM" "UCS" "PEDIT" "BREAK"
-                                         "BROWSER" "SHELL")
-                                  :test #'string=)
-                          (%cmd-recognised-noop host tokens))
-                         (t (return))))))
-    (error () nil))
+executing the drawing commands the engine knows, and the LISP commands
+registered with vlax-add-cmd; the first unknown command name stops
+interpretation (the sequence stays recorded on the command log either way).
+An engine command never signals (a CAD rejects bad input to COMMAND without a
+LISP error); a LISP command's own errors propagate. An engine command that
+fails, and an unknown command, are reported on the console with a `; cador:'
+notice (subject to CMDECHO, as the echo is) instead of vanishing: either is
+clautolisp declining what the program asked for (cador-4 slice 4)."
+  (loop while tokens
+        do (let* ((name (%command-name (first tokens)))
+                  (handler (and name (gethash name *cador-commands*)))
+                  (lisp (and name (not handler) (%registered-lisp-command host name))))
+             (cond (handler
+                    (multiple-value-bind (rest ok)
+                        (handler-case (values (funcall handler host (rest tokens)) t)
+                          (error (condition)
+                            (%command-notice host "~A failed: ~A" name condition)
+                            (values nil nil)))
+                      (unless ok (return))
+                      (setf tokens rest)))
+                   ;; A LISP command: its own errors are the program's to see.
+                   (lisp (setf tokens (%run-lisp-command host lisp (rest tokens))))
+                   (t
+                    (when name (%command-notice host "unknown command ~A" name))
+                    (return)))))
   nil)
+
+(defun %command-notice (host control &rest arguments)
+  "Print `; cador: <message> -- the rest of the command sequence is ignored.'
+on HOST's console when the command echo is on."
+  (let ((sink (cador-prompt-output host)))
+    (when (%cador-cmdecho-on-p host)
+      (cador-console-write
+       host sink
+       (format nil "; cador: ~? -- the rest of the command sequence is ignored.~%"
+               control arguments)
+       :fresh-line t))))
+
+(defun %registered-lisp-command (host name)
+  "The function of the LISP command NAME registered with vlax-add-cmd (by
+its global or local name), or NIL. As on the vendors, a C: function is a
+command for COMMAND only once registered."
+  (loop for entry in (cador-registered-commands host)
+        when (and (eq (first entry) :cmd)
+                  (or (string-equal name (second entry))
+                      (string-equal name (third entry))))
+          return (fourth entry)))
+
+(defun %run-lisp-command (host function tokens)
+  "Run the LISP command FUNCTION with TOKENS as its pending input (its
+get* / entsel / ssget calls consume them); return the tokens it left, which
+go on as further commands."
+  (let ((saved (cador-pending-input host))
+        (*cador-in-lisp-command* t))
+    (setf (cador-pending-input host) tokens)
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-runtime:call-autolisp-function
+            (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function))
+           (cador-pending-input host))
+      (setf (cador-pending-input host) saved))))
 
 (defmethod host-command-log ((host cador))
   (reverse (cador-command-log host)))

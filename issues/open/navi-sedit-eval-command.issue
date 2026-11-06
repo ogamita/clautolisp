@@ -3,6 +3,8 @@
 #+STATUS: DRAFT
 #+TYPE: enhancement
 #+DEPENDS: -
+#+PRIORITY: P3
+#+BRANCH: -
 
 DRAFT: still needs work — specify the command (key binding, what
 "selection" means in navi vs sedit, where the result is printed,

@@ -1,9 +1,9 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cador-4-epic-remainder — remaining cador epic work (DB backend, command layer, migration adaptation, conformance, wire host)
-#+STATUS: DEFERRED
+#+STATUS: DEFERRED (only the wire host remains, 2026-10-06)
 #+PRIORITY: P3
 #+TYPE: epic
-#+DEPENDS: cador-1-split-nihil-cador cador-2-multidocument-runtime cador-3-host-interface-protocol-spec
+#+DEPENDS: cador-3-host-interface-protocol-spec (cador-1, cador-2 closed)
 #+BRANCH: cador
 
 * Context
@@ -40,6 +40,80 @@ issues as each becomes actionable.
 - **Wire host (epic §1 third host, §9.7).** Specify and name the W2
   display/editor server host. Out of scope for the epic itself; tracked
   here so it is not forgotten.
+- **From cador-2 (closed 2026-09-28), deferred by pjb to the wire host.**
+  cador-2 built the scheduler, real parking (threads parked on a condition
+  variable) and the per-document correlation forest; what needs a wire to
+  exist is:
+  - the request/response *envelope* and its serialisation (D1 §13.6), with
+    the document discriminator (R10);
+  - a full *driver / event loop* that serves N parked contexts;
+  - a *prompting =host-command=* (a command that asks for input parks);
+  - wiring *correlation frames* (=with-host-request=) into the live host
+    generics, so nested requests route through the forest.
+- **From cador-3 (pjb, 2026-09-28): the host condition hierarchy.** D1 §15
+  now specifies a superclass =host-error= with four subclasses
+  (not-supported-by-this-host / unavailable-in-headless-context /
+  not-yet-implemented / backend-error). Implement it in the runtime and
+  re-grade cador's raisers (e.g. =cador-set-sysvar='s read-only path) --
+  keeping the existing =code= keywords so handlers that test the code keep
+  working.
+  *DONE, clautolisp 2.2.146 (2026-09-29).* The classes are in autolisp-runtime,
+  and the class is chosen from the code, so every existing raise is re-graded
+  without being touched. The raisers are =signal-{host-not-supported,
+  unavailable-in-headless,not-yet-implemented,backend-error}= in
+  autolisp-host. On cador, pick-mode =ssget= now signals
+  =unavailable-in-headless-context=, and =cador-set-sysvar= signals
+  =:sysvar-read-only=. Tests: autolisp-host/tests/host-error-tests.lisp.
+  Two spec/code divergences (=grread= keyboard, =gr*= drawing not logged)
+  are recorded in D1 §15, not changed.
+
+* Progress (pjb 2026-10-05: "keep wire host deferred, implement the rest")
+
+An audit (2026-10-05) found persistence already built (DXF read/write, DWG
+through libredwg, the codec registry; D2 §5.12 records the decision) and the
+command table at ~105 spellings. The rest, in slices:
+
+- *Slice 1 DONE (2.2.200)* -- the HAL document API D1 §3 left design-ahead:
+  host-open-document-from-file (OPEN and Documents.Open use it),
+  host-close-document &key save file, host-document-of; and the sysvar scope
+  tier (C4): a =scope= slot on every cell, host-sysvar-scope.
+- *Slice 2 DONE (2.2.200)* -- locking, the checked no-op of D1 §10:
+  host-lock-document / host-unlock-document (nesting count, unbalanced
+  unlock = backend-error); changes to a non-current document from
+  application context without its lock signal :document-not-locked
+  (drawing *drawing-modification-hook*); AutoLISP's COM calls (document
+  context) are not checked.
+- *Slice 3 DONE (2.2.200)* -- the §7.4 adaptation: the mock identifiers
+  renamed (cador-com-object, *cador-registry*, host parameters, the
+  MockHost wording), nihil's explicit host-dictobjname, and the C6
+  boundary as a test. The COM values "Mock AutoCAD" / "Mock 0.1" and
+  PLATFORM "Mock CAD" are behaviour, left as they are.
+- *Slice 4 DONE (2.2.200)* -- command layer: an unknown command or a
+  failing engine command still stops the sequence without a LISP error, but
+  leaves a "; cador: ..." console notice; D1 §7 / D2 §II.13 list the 83
+  commands and 24 no-ops as built. Localisation (LIGNE, .pgp aliases) and
+  getcname stay with the cadtui-locale-* tickets (they need the localised
+  CAD data).
+- *Slice 5 DONE (2.2.201)* -- conformance as vendor probes: probe-
+  conformance.lsp measured E1 / E2 / E8 / E10 on AutoCAD 2022 and BricsCAD
+  V25 / V26 (table in the analysis, section 9). Acted on: the blackboard
+  copies (A2 was wrong), BricsCAD drops a symbol value (E1), SDI is settable
+  under the BricsCAD dialects (E8); MTFLAGS already matched (E10; AutoCAD's
+  core console has none, the AutoCAD dialect models the full product). E3 /
+  E6 (a second document's namespace) and E4 / E5 (a live UI) are out of a
+  batch run's reach: they need alfe's automation mode driving documents
+  over COM, not built.
+- *Slice 6 DONE* -- the accoreconsole / BricsCAD headless envelope, cited
+  in D2 sections 9.1 / 9.2 (Autodesk OARX 2025 core-console page -- wording
+  to re-check, it did not load when fetched; Kean Walmsley's 2012 posts;
+  Bricsys V26 startup options /Automation and /B). What no source states
+  (get-family, grread, DCL, plotting, startup files headless) stays grade V,
+  for the probes.
+- *Slice 7 DONE* -- D1 / D2 brought level with what is built: the
+  fidelity matrix (open from file, document-of, scope tier, locking,
+  dictobjname), DWG read AND write (libredwg writer caveat cited), the
+  "still not built" list down to the wire host, the cador-3 acceptance
+  items checked (pjb validated D1 / D2 on 2026-10-03).
 
 * Acceptance criteria
 
@@ -51,3 +125,11 @@ issues as each becomes actionable.
 
 Most of this is gated on cador-1..3 and, for the conformance reference
 rows, on live CAD access (BricsCAD/AutoCAD) — hence DEFERRED for now.
+
+* What remains (2026-10-06)
+
+Everything above except the wire host is built (slices 1-7, clautolisp
+2.2.197-2.2.201). This ticket now tracks only the wire host (epic section 1,
+third host; section 9.7) and the cador-2 items deferred to it: the envelope
+and its serialisation (D1 section 13.6), the driver / event loop, a prompting
+host-command, and correlation frames wired into the live host generics.

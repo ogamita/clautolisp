@@ -1,6 +1,6 @@
 (in-package #:clautolisp.cador)
 
-;;;; Selection-set HAL methods on MockHost (Phase 11).
+;;;; Selection-set HAL methods on cador (Phase 11).
 ;;;;
 ;;;; Implements: host-ssget, host-ssadd, host-ssdel, host-ssname,
 ;;;; host-sslength, host-ssmemb, host-ssgetfirst, host-sssetfirst.
@@ -54,7 +54,7 @@ identity mismatch."
 ;;; <XOR plus their > closers) is *not* yet honoured; entities are
 ;;; assumed to AND-match every supplied pair. Phase 12+ may extend.
 
-(defun mock-string-value (object)
+(defun cador-string-value (object)
   "Return the host CL-string corresponding to OBJECT (an
 AutoLISP-string wrapper, a CL string, or nil)."
   (cond
@@ -96,8 +96,8 @@ EQUAL."
   (cond
     ((or (stringp target)
          (typep target 'clautolisp.autolisp-runtime:autolisp-string))
-     (let ((target-str (mock-string-value target))
-           (actual-str (mock-string-value actual)))
+     (let ((target-str (cador-string-value target))
+           (actual-str (cador-string-value actual)))
        (and target-str actual-str
             (simple-wildcard-match-p actual-str target-str))))
     ((and (numberp target) (numberp actual)) (= target actual))
@@ -135,7 +135,7 @@ EQUAL."
 (defun %ss-operator (pair)
   "The operator string of a (-4 . \"OP\") cell, or NIL if PAIR is not one."
   (and (consp pair) (group-code-equal-p (car pair) -4)
-       (mock-string-value (cdr pair))))
+       (cador-string-value (cdr pair))))
 
 (defun %entity-values-for-code (entity code)
   "All values the entity carries under group CODE, in order (a code may
@@ -164,8 +164,8 @@ the filter TARGET-VALUE."
                  ((string= op "<=") (<= av tv))
                  ((string= op ">=") (>= av tv)))
            ;; String ordering fallback.
-           (let ((ts (mock-string-value target-value))
-                 (as (mock-string-value actual-value)))
+           (let ((ts (cador-string-value target-value))
+                 (as (cador-string-value actual-value)))
              (and ts as
                   (cond ((string= op "<")  (string< as ts))
                         ((string= op ">")  (string> as ts))
@@ -194,7 +194,7 @@ extra xdata pairs in the sublist must be present under that application."
   (let ((groups (%ss-xdata-groups entity)))
     (every
      (lambda (sub)
-       (let* ((name (mock-string-value (car sub)))
+       (let* ((name (cador-string-value (car sub)))
               (match (and name
                           (find-if (lambda (g)
                                      (and (consp g) (stringp (car g))
@@ -298,14 +298,29 @@ than signalling (the builtin layer validates gross filter shape)."
 (defmethod host-ssget ((host cador) filter &key mode)
   ;; Phase-11 supported modes:
   ;;   "X" / "_X"     all entities, optionally filtered.
-  ;;   nil            (interactive) — not supported headlessly,
-  ;;                  signals :host-not-supported.
+  ;;   nil            (interactive pick) — needs a pointer: signals
+  ;;                  UNAVAILABLE-IN-HEADLESS-CONTEXT, code
+  ;;                  :host-unavailable-headless (D1 §15). A design
+  ;;                  boundary of a headless host, not a gap.
   ;; Other modes (window, crossing, fence, last, previous, etc.)
   ;; signal :unsupported-ssget-mode for now.
-  (let ((mode-string (and mode (mock-string-value mode))))
+  (let ((mode-string (and mode (cador-string-value mode))))
     (cond
+      ;; Inside a LISP command run by COMMAND, the selection comes from
+      ;; COMMAND's remaining input, up to its RETURN (as on the vendors).
+      ((and (null mode-string) (cador-pending-input host))
+       (multiple-value-bind (entities rest)
+           (%command-selection host (cador-pending-input host))
+         (setf (cador-pending-input host) rest)
+         (let ((members (remove-if-not (lambda (e) (or (null filter)
+                                                       (entity-matches-filter-p e filter)))
+                                       entities)))
+           (and members
+                (let ((set (make-pickset :members members)))
+                  (cador-register-pickset host set)
+                  (pickset->ap set))))))
       ((null mode-string)
-       (signal-host-not-supported host 'ssget))
+       (signal-unavailable-in-headless host 'ssget))
       ((or (string-equal mode-string "X")
            (string-equal mode-string "_X"))
        (let* ((order (reverse (cador-creation-order host)))
@@ -359,7 +374,7 @@ than signalling (the builtin layer validates gross filter shape)."
       (t
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
         :unsupported-ssget-mode
-        "MockHost does not yet support ssget mode ~S; accepted modes are ~S, ~S and ~S."
+        "cador does not yet support ssget mode ~S; accepted modes are ~S, ~S and ~S."
         mode-string "X" "_X" "_I")))))
 
 (defmethod host-ssadd ((host cador) ap ename)
@@ -427,7 +442,7 @@ than signalling (the builtin layer validates gross filter shape)."
     (and entity (member entity (pickset-members set)) ename)))
 
 (defmethod host-ssgetfirst ((host cador))
-  ;; AutoLISP returns a list of (grip-set . pickset). MockHost has
+  ;; AutoLISP returns a list of (grip-set . pickset). cador has
   ;; no grip semantics; we model it as (nil . PICKSET).
   (let ((current (cador-pickfirst host)))
     (and current

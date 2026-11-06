@@ -2,7 +2,7 @@
   (:use #:cl)
   (:import-from #:clautolisp.drawing
                 ;; Phase 17a: the drawing value object and its data
-                ;; carriers now live in clautolisp.drawing. MockHost
+                ;; carriers now live in clautolisp.drawing. cador
                 ;; holds a drawing and re-exports these so code/tests
                 ;; that imported the carriers from this package before
                 ;; the extraction keep resolving to the same symbols.
@@ -43,6 +43,7 @@
                 #:dictionary-entries
                 #:sysvar-cell
                 #:make-sysvar-cell
+                #:sysvar-cell-scope
                 #:copy-sysvar-cell
                 #:sysvar-cell-name
                 #:sysvar-cell-kind
@@ -53,6 +54,7 @@
                 #:host
                 #:host-name
                 #:signal-host-not-supported
+                #:signal-unavailable-in-headless
                 ;; HAL generic-function names — needed by entity-api.lisp
                 ;; (and the upcoming Phase-11 selection / sysvar files)
                 ;; so that defmethod attaches a method to the *host*
@@ -62,6 +64,13 @@
                 #:host-activate-document
                 #:host-current-document
                 #:host-document-list
+                #:host-open-startup-drawing
+                #:host-viewports
+                #:host-open-document-from-file
+                #:host-document-of
+                #:host-sysvar-scope
+                #:host-lock-document
+                #:host-unlock-document
                 #:host-entget
                 #:host-entmod
                 #:host-entmake
@@ -72,6 +81,7 @@
                 #:host-entnext
                 #:host-handent
                 #:host-ssget
+                #:host-entsel
                 #:host-ssadd
                 #:host-ssdel
                 #:host-ssname
@@ -90,6 +100,7 @@
                 #:host-dictrename
                 #:host-dictobjname
                 #:host-regapp
+                #:host-getcname
                 #:host-getvar
                 #:host-setvar
                 #:host-set-derived-sysvar
@@ -141,10 +152,13 @@
                 #:host-vlax-queueexpr
                 #:host-vlax-collection-items)
   (:export
+   #:cador-close-document
+   #:*cador-command-ui-hook*
+   #:cador-command-names
    ;; Class hierarchy
    #:cador
    #:make-cador
-   #:*mock-registry-path*
+   #:*cador-registry-path*
    ;; Drawing value object (re-exported from clautolisp.drawing) +
    ;; the host's active-drawing accessor.
    #:drawing
@@ -199,7 +213,7 @@
    ;; Generated full catalogue (1836 entries from
    ;; autolisp-spec/documentation/system-variables-inventory.sexp).
    #:*full-sysvar-catalogue*
-   ;; MockHost accessors
+   ;; cador accessors
    #:cador-entities
    #:cador-picksets
    #:cador-vla-objects
@@ -239,6 +253,15 @@
    #:*bricscad-absent-sysvars*
    #:*bricscad-factory-defaults*
    #:apply-bricscad-dialect-sysvars
+   ;; command-log.lisp: the per-drawing command-history log
+   #:apply-command-log-preferences
+   #:command-log-state-directory
+   #:command-log-output
+   #:command-log-input-line
+   #:command-log-name
+   #:cador-open-command-log
+   #:cador-close-command-log
+   #:*command-log-channel-active*
    ;; Entity-allocation helpers (Phase 10)
    #:cador-creation-order
    #:cador-next-handle-counter
@@ -251,16 +274,16 @@
    #:initget-bits
    #:initget-keywords
    ;; COM bridge (Phase 13)
-   #:mock-com-object
-   #:make-mock-com-object
-   #:mock-com-object-id
-   #:mock-com-object-progid
-   #:mock-com-object-properties
-   #:mock-com-object-methods
-   #:mock-com-object-released-p
-   #:mock-com-object-collection-p
-   #:mock-com-object-collection-members
-   #:mock-com-object-collection-kind
+   #:cador-com-object
+   #:make-cador-com-object
+   #:cador-com-object-id
+   #:cador-com-object-progid
+   #:cador-com-object-properties
+   #:cador-com-object-methods
+   #:cador-com-object-released-p
+   #:cador-com-object-collection-p
+   #:cador-com-object-collection-members
+   #:cador-com-object-collection-kind
    #:cador-com-objects
    #:cador-next-com-counter
    #:cador-allocate-com-id

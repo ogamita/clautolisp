@@ -5,7 +5,7 @@
 ;;;; End-to-end AutoLISP tests for the drawing-data + selection layer
 ;;;; (REGAPP, XData round-trip, the named-object-dictionary tree,
 ;;;; XRECORD lifecycle, symbol tables, and the ssget filter grammar)
-;;;; driven through the reader + evaluator against a fresh MockHost.
+;;;; driven through the reader + evaluator against a fresh cador.
 ;;;;
 ;;;; Each program returns an integer (a count, or 1/0 for a boolean)
 ;;;; so the CL-side assertion is a simple EQL — no wrapper unwrapping.
@@ -247,8 +247,8 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
                   (list (list -3 (list \"APP\"
                                        (cons 1000 \"str\")
                                        (cons 1002 \"{\")
-                                       (cons 1003 \"LAYER0\")
-                                       (cons 1005 \"2A\")
+                                       (cons 1003 \"0\")
+                                       (cons 1005 (cdr (assoc 5 (entget e))))
                                        (cons 1040 1.5)
                                        (cons 1070 42)
                                        (cons 1071 100000)
@@ -256,6 +256,32 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
   (setq xd (cdr (assoc -3 (entget e (list \"APP\")))))
   ;; xd = ((\"APP\" (1000 . str) (1002 . {) ...)); count the xdata pairs
   (length (cdr (car xd)))"))))
+
+(defun %xd-verdict (dialect-keyword pair-source)
+  "Under DIALECT-KEYWORD, ENTMOD a fresh CIRCLE with one xdata pair built by
+PAIR-SOURCE (AutoLISP text; E is the circle). Return (ENTMOD-RETURNED-P
+PAIRS-READ-BACK) as a two-digit integer: 10 * (entmod non-nil) + pairs."
+  (%d1-run (format nil "
+  (regapp \"APP\")
+  (setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0))))
+  (setq r (entmod (append (entget e) (list (list -3 (list \"APP\" ~A))))))
+  (+ (if r 10 0) (length (cdr (car (cdr (assoc -3 (entget e (list \"APP\"))))))))" pair-source)
+           dialect-keyword))
+
+(test dd-xdata-entmod-checks-handles-and-layers-as-the-vendors-do
+  ;; probes/sources/probe-xdata.lsp, 2026-10-03. AutoCAD rejects the whole
+  ;; ENTMOD (nil, nothing attached) for a 1005 handle naming no object or a
+  ;; 1003 naming no layer; BricsCAD accepts the dangling handle and, for
+  ;; the missing layer, returns the list but drops the xdata.
+  (dolist (d '(:autocad :strict))
+    (is (eql 0  (%xd-verdict d "(cons 1005 \"2A\")")) "~S dangling 1005" d)
+    (is (eql 0  (%xd-verdict d "(cons 1003 \"NO_SUCH_LAYER\")")) "~S missing layer" d)
+    (is (eql 11 (%xd-verdict d "(cons 1005 (cdr (assoc 5 (entget e))))")) "~S live 1005" d)
+    (is (eql 11 (%xd-verdict d "(cons 1003 \"0\")")) "~S layer 0" d))
+  (dolist (d '(:bricscad :bricscad-mac))
+    (is (eql 11 (%xd-verdict d "(cons 1005 \"2A\")")) "~S dangling 1005" d)
+    (is (eql 10 (%xd-verdict d "(cons 1003 \"NO_SUCH_LAYER\")")) "~S missing layer" d)
+    (is (eql 11 (%xd-verdict d "(cons 1003 \"0\")")) "~S layer 0" d)))
 
 (test dd-xdata-preserves-order-and-multiplicity
   ;; Two 1000 strings in a set order must come back in the same order.
@@ -296,6 +322,151 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
            (= (length (cdr (assoc -3 (entget e (list \"A2\"))))) 1)
            (= (length (cdr (assoc -3 (entget e (list \"*\"))))) 2))
       1 0)"))))
+
+;;; --- XDSIZE / XDROOM (xdata size accounting) -------------------
+;;;
+;;; The vendor numbers MEASURED by probes/sources/probe-xdata.lsp
+;;; (suites "xdsize" / "xdroom"; 2026-10-23) on AutoCAD 2022 Windows,
+;;; BricsCAD V25 Windows and BricsCAD V26 macOS, replayed case by case
+;;; under the matching dialect (see XDATA-GROUP-BYTE-SIZE and
+;;; issues/open/xdroom-xdsize-not-implemented.issue, "* Measured").
+;;; The applications are the probe's: "CLAUTOLISP_XDP" (14 chars) and
+;;; "CLAUTOLISP_XDPX" (15). -1 stands for a NIL result.
+
+(defparameter *xd-probe-cases*
+  ;; (CASE XDSIZE-ARGUMENT AUTOCAD BRICSCAD-WINDOWS BRICSCAD-MACOS)
+  '(("header"                  "(list (list app))"                          0  30  60)
+    ("header +1 char"          "(list (list app2))"                         0  32  64)
+    ("-3 sentinel form"        "(list -3 (list app))"                       0  30  60)
+    ("1000 empty string"       "(list (list app '(1000 . \"\")))"           6  30  60)
+    ("1000 3 chars"            "(list (list app '(1000 . \"abc\")))"       12  36  72)
+    ("1000 10 chars"           "(list (list app '(1000 . \"abcdefghij\")))" 26  50 100)
+    ("1000 non-ASCII 1 char"   "(list (list app (cons 1000 (chr 233))))"    8  32  64)
+    ("1002 brace pair"         "(list (list app '(1002 . \"{\") '(1002 . \"}\")))" 7 34 68)
+    ("1003 layer 0"            "(list (list app '(1003 . \"0\")))"          6  32  64)
+    ("1004 binary 4 bytes"     "(list (list app '(1004 . \"DEADBEEF\")))"   9  46  92)
+    ("1005 handle 1 char"      "(list (list app '(1005 . \"1\")))"         12  32  64)
+    ("1005 handle 2 chars"     "(list (list app '(1005 . \"2A\")))"        12  34  68)
+    ("1010 point"              "(list (list app '(1010 1.0 2.0 3.0)))"     28  55  85)
+    ("1011 world position"     "(list (list app '(1011 1.0 2.0 3.0)))"     28  55  85)
+    ("1040 real"               "(list (list app '(1040 . 1.5)))"           12  39  69)
+    ("1041 distance"           "(list (list app '(1041 . 1.5)))"           12  39  69)
+    ("1042 scale"              "(list (list app '(1042 . 1.5)))"           12  39  69)
+    ("1070 int16"              "(list (list app '(1070 . 42)))"             6  33  63)
+    ("1071 int32"              "(list (list app '(1071 . 100000)))"         8  35  65)
+    ("two applications"
+     "(list (list app '(1000 . \"abc\")) (list app2 '(1040 . 1.5)))"       24  36  72)
+    ("documented example"
+     "(list -3 (list app '(1000 . \"SUITOFARMOR\") '(1002 . \"{\") '(1040 . 0.0)
+                    '(1040 . 1.0) '(1002 . \"}\")))"                        50  74 130)
+    ("error unregistered app"
+     "(list (list \"CLAUTOLISP_NOT_REGISTERED\" '(1000 . \"x\")))"         -1  54 108)
+    ("error unknown code 1099" "(list (list app '(1099 . 1)))"             -1  30  60)
+    ("error unbalanced brace"  "(list (list app '(1002 . \"{\")))"          5  32  64)))
+
+(defparameter *xd-probe-dialects*
+  ;; dialect keyword -> column of *xd-probe-cases*
+  '((:autocad . 2) (:bricscad . 3) (:bricscad-mac . 4)))
+
+(defun %xd-run (source dialect-keyword)
+  (values (%d1-run (concatenate 'string
+                                "(setq app \"CLAUTOLISP_XDP\" app2 \"CLAUTOLISP_XDPX\")
+                                 (regapp app) (regapp app2) "
+                                source)
+                   dialect-keyword)))
+
+(defun %xd-size (argument dialect-keyword)
+  (%xd-run (format nil "(setq r (xdsize ~A)) (if r r -1)" argument) dialect-keyword))
+
+(test dd-xdsize-measured-vendor-sizes
+  (loop for (dialect . column) in *xd-probe-dialects*
+        do (loop for case in *xd-probe-cases*
+                 for expected = (nth column case)
+                 for got = (%xd-size (second case) dialect)
+                 do (is (eql expected got)
+                        "xdsize ~S under ~S: expected ~S, got ~S"
+                        (first case) dialect expected got))))
+
+(test dd-xdsize-autocad-nil-sets-errno
+  ;; AutoCAD answers NIL, not an error; ERRNO tells why (unmeasured
+  ;; codes, from the Error Codes Reference: 50 bad application, 48 bad
+  ;; group). Success clears ERRNO.
+  (is (eql 50 (%xd-run "(if (null (xdsize '((\"NOAPP\" (1000 . \"x\"))))) (getvar \"ERRNO\") -1)"
+                       :autocad)))
+  (is (eql 48 (%xd-run "(if (null (xdsize (list (list app '(1099 . 1))))) (getvar \"ERRNO\") -1)"
+                       :autocad)))
+  (is (eql 48 (%xd-run "(if (null (xdsize (list (list app '(1070 . \"x\"))))) (getvar \"ERRNO\") -1)"
+                       :autocad)))
+  (is (eql 0 (%xd-run "(xdsize (list (list app '(1070 . 1)))) (getvar \"ERRNO\")" :autocad))))
+
+(test dd-xdsize-default-dialect-follows-autocad
+  ;; Every non-BricsCAD dialect follows AutoCAD (the default too).
+  (is (eql 50 (%dd-run "(regapp \"MYAPP\")
+  (xdsize '(-3 (\"MYAPP\" (1000 . \"SUITOFARMOR\") (1002 . \"{\")
+                           (1040 . 0.0) (1040 . 1.0) (1002 . \"}\"))))")))
+  (is (eql 1 (%dd-run "(if (xdsize '((\"NOAPP\" (1000 . \"x\")))) 0 1)")))
+  (is (eql 24 (%xd-size "(list (list app '(1000 . \"abc\")) (list app2 '(1040 . 1.5)))"
+                        :clautolisp))))
+
+(test dd-xdsize-argument-errors
+  ;; not a list / no argument
+  (is (eql 1 (%dd-run "(if (vl-catch-all-error-p (vl-catch-all-apply 'xdsize '(42))) 1 0)")))
+  (is (eql 1 (%dd-run "(if (vl-catch-all-error-p (vl-catch-all-apply 'xdsize nil)) 1 0)")))
+  ;; the empty list sizes to 0 on both products (unmeasured)
+  (is (eql 0 (%xd-run "(xdsize '())" :autocad)))
+  (is (eql 0 (%xd-run "(xdsize '())" :bricscad))))
+
+(defparameter *xd-probe-xdroom*
+  "(setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0))))
+   (setq fresh (xdroom e))
+   (entmod (append (entget e)
+                   (list (list -3 (list app '(1000 . \"abc\") '(1070 . 1) '(1040 . 1.5))))))
+   (list fresh (xdroom e) (xdsize (assoc -3 (entget e (list app)))))")
+
+(test dd-xdroom-measured-vendor-room
+  ;; (fresh circle, after 1000 "abc" + 1070 + 1040, xdsize of that xdata)
+  (is (equal '(16383 16359 24) (%xd-run *xd-probe-xdroom* :autocad)))
+  (is (equal '(16383 16352 48) (%xd-run *xd-probe-xdroom* :bricscad)))
+  (is (equal '(16383 16352 84) (%xd-run *xd-probe-xdroom* :bricscad-mac))))
+
+(test dd-xdroom-reports-remaining-xdata-room
+  ;; attached xdata is deducted, every application counted:
+  ;; AutoCAD (3 + 9) + (3 + 9); BricsCAD (10 + 9) + (10 + 9)
+  (let ((source "(entmod (append (entget (setq e (entmakex (list (cons 0 \"CIRCLE\")
+                                   (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0)))))
+                  (list (list -3 (list app (cons 1000 \"abc\"))
+                                  (list app2 (cons 1040 2.5))))))
+  (xdroom e)"))
+    (is (eql (- 16383 24) (%xd-run source :autocad)))
+    (is (eql (- 16383 38) (%xd-run source :bricscad))))
+  ;; AutoCAD: xdroom + xdsize of the entity's own xdata = the budget
+  (is (eql 16383 (%dd-run "
+  (regapp \"APP\")
+  (setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0))))
+  (entmod (append (entget e) (list (list -3 (list \"APP\" (cons 1070 7) (list 1010 1.0 2.0 0.0))))))
+  (+ (xdroom e) (xdsize (assoc -3 (entget e (list \"*\")))))"))))
+
+(test dd-xdroom-argument-errors
+  ;; a non-ename argument is an error
+  (is (eql 1 (%dd-run "(if (vl-catch-all-error-p (vl-catch-all-apply 'xdroom '(\"x\"))) 1 0)")))
+  (is (eql 1 (%dd-run "(if (vl-catch-all-error-p (vl-catch-all-apply 'xdroom nil)) 1 0)")))
+  ;; a deleted entity: nil
+  (is (eql 1 (%dd-run "
+  (setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0))))
+  (entdel e)
+  (if (xdroom e) 0 1)"))))
+
+(test dd-xdsize-on-the-nihil-host
+  ;; Without a drawing (the nihil host) an empty xdata list still sizes
+  ;; to 0, but under AutoCAD rules an application name cannot be checked
+  ;; against an APPID table: the call signals (host-not-supported),
+  ;; catchably.
+  (reset-autolisp-symbol-table)
+  (is (eql 0 (run-autolisp-string "(xdsize '())" :setup-fn #'install-core-into)))
+  (reset-autolisp-symbol-table)
+  (is (eql 1 (run-autolisp-string
+              "(if (vl-catch-all-error-p (vl-catch-all-apply 'xdsize '(((\"APP\" (1070 . 1)))))) 1 0)"
+              :setup-fn #'install-core-into))))
 
 ;;; --- Named-object dictionary + XRECORD lifecycle ----------------
 
@@ -348,6 +519,9 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
   (if (null (dictsearch nod \"K\")) 1 0)"))))
 
 (test dd-dictnext-enumerates-entries
+  ;; Counts the test's XRECORDs (group 1): a fresh drawing's NOD also holds
+  ;; the vendors' default entries (cador-entget-subclass-layout-and-record-
+  ;; pointers, item 5).
   (is (eql 3
            (%dd-run "
   (setq nod (namedobjdict))
@@ -356,7 +530,7 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
   (dictadd nod \"C\" (entmakex (list (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\") (cons 1 \"c\"))))
   (setq n 0)
   (setq d (dictnext nod T))
-  (while d (setq n (1+ n)) (setq d (dictnext nod)))
+  (while d (if (assoc 1 d) (setq n (1+ n))) (setq d (dictnext nod)))
   n"))))
 
 ;;; --- Symbol tables ----------------------------------------------
@@ -465,3 +639,10 @@ WALL/WALL/DOOR) and one CIRCLE bearing MYAPP xdata."
   (is (eql 1 (%dd-run "(if (vl-catch-all-error-p
                             (vl-catch-all-apply 'ssget (list \"_CP\")))
                           1 0)"))))         ; crossing-polygon mode
+
+(test dd-type-of-a-catch-all-error
+  ;; (type (vl-catch-all-apply ...)) of an error is VL-CATCH-ALL-APPLY-ERROR
+  ;; (entget-pointers probe, section 13); clautolisp used to signal.
+  (is (string= "VL-CATCH-ALL-APPLY-ERROR"
+               (clautolisp.autolisp-runtime:autolisp-symbol-name
+                (%dd-run "(type (vl-catch-all-apply (quote /) (list 1 0)))")))))

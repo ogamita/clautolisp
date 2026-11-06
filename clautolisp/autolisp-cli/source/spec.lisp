@@ -77,7 +77,7 @@ suppress output a user explicitly asked for."
 
 ;;; --- encoding SITUATIONS + the -E<situation> option family -----------
 ;;;
-;;; See issues/open/encoding-situations-cli-options.issue. The old generic
+;;; See issues/closed/encoding-situations-cli-options.issue. The old generic
 ;;; -e (load) / -E (io) are DROPPED in favour of one option per situation,
 ;;; generated from this registry. `source' and `terminal' mirror the two
 ;;; legacy slots (load-encoding / io-encoding) so downstream consumers are
@@ -108,24 +108,24 @@ bare -E/--encoding that sets them all.")
 (defparameter *situation-backend-table*
   '((:clautolisp
      ("source"   "settable"        "-Esource / *AUTOLISP-FILE-ENCODING* / LC_*; default UTF-8")
-     ("file"     "settable"        "-Efile / *AUTOLISP-FILE-ENCODING*; default UTF-8")
-     ("console"  "n/a"             "in-process — same stream as terminal")
+     ("file"     "settable"        "-Efile[-read|-write] -> *AUTOLISP-FILE-READ/WRITE-ENCODING*, OPEN's default")
+     ("console"  "= terminal"      "in-process — same stream as terminal: -Econsole[-in|-out] folds into it; -Eterminal wins")
      ("cadstdio" "n/a"             "no CAD subprocess")
-     ("log"      "n/a"             "—")
-     ("terminal" "settable"        "-Eterminal — applied to alfe's own streams"))
+     ("log"      "settable"        "-Elog -> the LOGFILEMODE log; default windows-1252 (AutoCAD dialects), else UTF-8")
+     ("terminal" "settable"        "-Eterminal — applied to the REPL's own streams"))
     (:bricscad
      ("source"   "locale/BOM"      "UTF-8 with a BOM / locale; -Esource forwarded to the native load")
-     ("file"     "default+ccs"     "default from locale / SYSCODEPAGE; per-open ,ccs=UTF-8/UTF-16LE")
-     ("console"  "product-fixed"   "GUI device: macOS full-Unicode, Windows cp1252")
+     ("file"     "default+ccs"     "Windows cp1252, macOS UTF-8; -Efile-write UTF-8/UTF-16LE -> OPEN ,ccs= on Windows (BOM); read never decodes; else warned")
+     ("console"  "product-fixed"   "GUI device: macOS full-Unicode, Windows cp1252; -Econsole[-out] = drain codec, -Econsole-in warned and ignored")
      ("cadstdio" "auto / -Ecadstdio" "drain auto-detects; -Ecadstdio overrides")
-     ("log"      "unmeasured"      "LOGFILEMODE; encoding not yet measured")
+     ("log"      "product-fixed"   "LOGFILEMODE: windows-1252 or UTF-8+BOM (unsettled); --cad-log decodes a BOM, else windows-1252 on Windows; -Elog overrides")
      ("terminal" "settable"        "-Eterminal — alfe's own stream"))
     (:autocad
      ("source"   "LISPSYS"         "LISPSYS 0=cp1252, 1/2=UTF-8 (restart); -Esource forwarded at 1/2")
-     ("file"     "LISPSYS / MBCS"  "MBCS at LISPSYS 0; ccs= ignored by accoreconsole")
-     ("console"  "product-fixed"   "accoreconsole UTF-16LE (fixed); GUI acad cp1252")
-     ("cadstdio" "product-fixed"   "accoreconsole UTF-16LE")
-     ("log"      "unmeasured"      "—")
+     ("file"     "LISPSYS / MBCS"  "writes cp1252 at every LISPSYS; reads cp1252 at 0, UTF-8 else cp1252 at 1/2; OPEN takes no encoding at 0; -Efile-write UTF-8 -> OPEN \"utf8\" at LISPSYS 1/2 (warned at 0, and for \"a\"); -Efile-read warned, not forwarded")
+     ("console"  "product-fixed"   "accoreconsole UTF-16LE; -Econsole warned and ignored")
+     ("cadstdio" "-Ecadstdio"      "drain: the CAD's file bytes (cp1252, E3), auto-detected; -Ecadstdio forces")
+     ("log"      "product-fixed"   "LOGFILEMODE: windows-1252 (measured, AutoCAD 2022); --cad-log decodes it so; -Elog overrides")
      ("terminal" "settable"        "-Eterminal — alfe's own stream")))
   "Per-backend encoding-situation provenance for --list-situations, distilled
 from the measured (os × tool × version) findings. Approximate at the CLI
@@ -146,9 +146,10 @@ with directions."
        (dolist (row rows)
          (destructuring-bind (name provenance note) row
            (format stream "  -E~11A~18A ~A~%" name provenance note)))
-       (format stream "~%A product-fixed situation still accepts -E<situation> ~
-but WARNS that it is ignored and keeps the product value. Full (os × version) ~
-defaults with byte evidence: the alfe user-manual Encoding section.~%"))
+       (format stream "~%A product-fixed situation (AutoCAD's console, BricsCAD's console ~
+input) still accepts -E<situation> but warns that it is ignored and keeps the product value; a bare ~
+-E does not reach it. Full (os × version) defaults with byte evidence: the alfe ~
+user-manual Encoding section.~%"))
       (t
        (format stream "Encoding situations — set with -E<situation>[-<dir>] ENC ~
 or --<situation>[-<dir>]-encoding ENC~%(a bare -E / --encoding sets them ~
@@ -167,11 +168,14 @@ all; --list-situations under a backend flag shows that backend's defaults):~%~%"
 
 (defun %encoding-store (opts key canon)
   "Record encoding CANON under KEY (\"all\" | \"<name>\" | \"<name>/<dir>\")
-in OPTS's situation table, and mirror the two legacy slots so existing
-downstream keeps working: source -> load-encoding, terminal -> io-encoding."
+in OPTS's situation table, and recompute the two legacy slots the downstream
+reads -- load-encoding (source) and io-encoding (terminal) -- through
+CLI-SITUATION-ENCODING, so the bare -E reaches them too, a specific option
+winning over it whatever the order (it used to set neither: -E UTF-8 left the
+source encoding alone)."
   (push (cons key canon) (cli-options-situation-encodings opts))
-  (cond ((string= key "source")   (setf (cli-options-load-encoding opts) canon))
-        ((string= key "terminal") (setf (cli-options-io-encoding opts) canon))))
+  (setf (cli-options-load-encoding opts) (cli-situation-encoding opts "source")
+        (cli-options-io-encoding opts) (cli-situation-encoding opts "terminal")))
 
 (defun cli-situation-encoding (opts situation &optional direction)
   "The user-requested encoding for SITUATION (and optional DIRECTION), by
@@ -183,6 +187,15 @@ then falls through to the variable/fixed default for that boundary)."
              (cdr (assoc (format nil "~A/~A" situation direction) tbl :test #'string=)))
         (cdr (assoc situation tbl :test #'string=))
         (cdr (assoc "all" tbl :test #'string=)))))
+
+(defun cli-situation-encoding-explicit (opts situation &optional direction)
+  "Like CLI-SITUATION-ENCODING without the bare -E fallback: only an option
+that names SITUATION. For the boundaries a bare -E must not reach -- a
+product-fixed device, where a blanket choice would silently override it."
+  (let ((tbl (cli-options-situation-encodings opts)))
+    (or (and direction
+             (cdr (assoc (format nil "~A/~A" situation direction) tbl :test #'string=)))
+        (cdr (assoc situation tbl :test #'string=)))))
 
 (defun %encoding-option-specs ()
   "Generate the -E<situation>[-<dir>] / --<situation>[-<longdir>]-encoding
@@ -214,6 +227,55 @@ family + the bare -E/--encoding (sets every situation)."
                               (%encoding-store
                                opts k (canonical-encoding-name value (or nm k))))))
                 specs))))))
+
+(defparameter *encoding-replacement-options*
+  '(("all"          "--encoding-replacement"                "-Ereplacement")
+    ("file/write"   "--file-write-encoding-replacement"     "-Efile-write-replacement")
+    ("terminal/out" "--terminal-output-encoding-replacement" "-Eterminal-out-replacement"))
+  "The encoding-replacement options (encoding-replacement-character-option):
+KEY in the cli-options table, long name, short name. The bare one reaches
+every output situation, a specific one wins over it whatever the order.")
+
+(defun %encoding-replacement-store (opts key value option)
+  "Record the replacement policy VALUE (validated, canonical spelling) under
+KEY, or signal a usage error naming OPTION."
+  (let ((policy (clautolisp.autolisp-runtime:parse-encoding-replacement (or value ""))))
+    (when (or (null policy) (eq policy :invalid))
+      (error 'cli-usage-error
+             :option option
+             :message (format nil "~A expects one character, or error, low-byte, ~
+best-fit or escape; got ~S" option value)))
+    (push (cons key (clautolisp.autolisp-runtime:encoding-replacement-policy-name policy))
+          (cli-options-encoding-replacements opts))))
+
+(defun cli-encoding-replacement (opts &optional situation)
+  "The replacement policy name requested for SITUATION (\"file/write\" or
+\"terminal/out\"), or for every situation when SITUATION is NIL: the specific
+option, else the bare -Ereplacement; NIL when none was given (the dialect
+default then applies)."
+  (let ((tbl (cli-options-encoding-replacements opts)))
+    (or (and situation (cdr (assoc situation tbl :test #'string=)))
+        (cdr (assoc "all" tbl :test #'string=)))))
+
+(defun cli-encoding-replacement-explicit (opts situation)
+  "Only the option naming SITUATION (\"all\" for the bare one), or NIL."
+  (cdr (assoc situation (cli-options-encoding-replacements opts) :test #'string=)))
+
+(defun encoding-replacement-option-arguments (opts)
+  "The argv fragment that gives a child clautolisp the replacement options of
+OPTS, short spellings, in the table's order: (\"-Ereplacement\" \"?\" ...)."
+  (loop for (key nil short) in *encoding-replacement-options*
+        for value = (cli-encoding-replacement-explicit opts key)
+        when value append (list short value)))
+
+(defun %encoding-replacement-option-specs ()
+  (loop for (key long short) in *encoding-replacement-options*
+        collect (make-option-spec
+                 :longs (list long) :shorts (list short) :takes-arg-p t
+                 :handler (let ((k key) (default-name short))
+                            (lambda (opts value name)
+                              (%encoding-replacement-store
+                               opts k value (or name default-name)))))))
 
 (defun %make-common-option-specs ()
   "Build the common-option-specs list once at load time. Returned as
@@ -341,6 +403,16 @@ specs without mutating the shared template."
     :handler (lambda (opts value name)
                (setf (cli-options-dcl opts) (parse-dcl-mode value name))))
 
+   ;; --- drawing -----------------------------------------------------
+   ;; The drawing argument: the session's first drawing (clautolisp: in
+   ;; place of the untitled Drawing1.dwg; alfe: the drawing the CAD opens).
+   ;; alfe has its own --dwg spec ahead of this one.
+   (make-option-spec
+    :longs '("--dwg") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-dwg opts) value)))
+
    ;; --- actions ---------------------------------------------------
    (make-option-spec
     :longs '("--load") :shorts '("-l") :takes-arg-p t
@@ -382,13 +454,53 @@ specs without mutating the shared template."
     :longs '("--no-color") :shorts nil :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value name))
-               (setf (cli-options-no-color-p opts) t)))))
+               (setf (cli-options-no-color-p opts) t)))
+
+   ;; --- debugger (aldo) options ---------------------------------
+   ;; debugger command reference §10, debugger-public-interface-and-
+   ;; on-error.issue Parts B-D. SHARED since the alfe decision of
+   ;; 2026-10-06 (pjb): alfe accepts them with the same spelling,
+   ;; parsing and semantics -- its clautolisp engine applies them in
+   ;; both variants, and alfe refuses the ones a CAD backend cannot honour
+   ;; (see DEBUGGER-OPTIONS-FOR-CAD-BACKEND). The slots stay NIL unless
+   ;; given: each program applies the context-dependent defaults itself.
+   (make-option-spec
+    :longs '("--on-error") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-on-error opts) (parse-on-error value name))))
+   (make-option-spec
+    :longs '("--on-interrupt") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-on-interrupt opts) (parse-on-interrupt value name))))
+   (make-option-spec
+    :longs '("--on-quit") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-on-quit opts) (parse-on-quit value name))))
+   (make-option-spec
+    :longs '("--debugger-ui") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-user-interface opts)
+                     (parse-user-interface value name))))
+   (make-option-spec
+    :longs '("--aldb-listen") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (multiple-value-bind (host port) (parse-aldb-listen value name)
+                 (setf (cli-options-aldb-address opts) host
+                       (cli-options-aldb-port opts) port))))
+   (make-option-spec
+    :longs '("--aldb-stdio") :shorts nil :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-aldb-stdio-p opts) t)))))
 
 (defparameter *common-option-specs*
-  (append (%make-common-option-specs) (%encoding-option-specs))
+  (append (%make-common-option-specs) (%encoding-option-specs)
+          (%encoding-replacement-option-specs))
   "The intersection of CLI options accepted by both clautolisp and
 alfe. Each tool builds its full spec list by appending its
 tool-specific specs (alfe's --mode/--backend/--dwg/etc.;
-clautolisp's --mock-input/--gui/--trace). Tools may also append
+clautolisp's --mock-input/--gui/--trace). The debugger options
+(--on-error, --on-interrupt, --on-quit, --debugger-ui, --aldb-listen,
+--aldb-stdio) are here too: both programs accept them. Tools may also append
 duplicate handlers — the first match wins, so prepending a custom
 handler replaces the common one without removing it.")

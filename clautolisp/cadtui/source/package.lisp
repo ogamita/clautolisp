@@ -85,6 +85,9 @@ dialogs and CAD commands. Phase 1 lands the CLOS UI-node tree model only —
 no rendering, no interaction language, no threads. See
 documentation/cadtui-specifications.org (normative).")
   (:export
+   #:*cadtui-activate-document-function*
+   #:*cadtui-close-document-function*
+   #:ensure-drawing-node
    ;; Phase 1: the UI-node model (spec §\"Modèle de données\").
    #:ui-node
    #:ui-application
@@ -150,6 +153,11 @@ documentation/cadtui-specifications.org (normative).")
    #:build-band
    #:install-menu-bar
    #:add-band
+   #:apply-file-command-event
+   #:*cad-command-known-p*
+   #:cad-command-line-p
+   #:cad-command-line-source
+   #:cad-command-line-name
    #:ui-description-error
    #:ui-description-error-form
    #:ui-description-error-reason
@@ -235,6 +243,9 @@ documentation/cadtui-specifications.org (normative).")
    #:register-locale-dictionary
    #:local-name
    #:international-name
+   #:local-option-keyword
+   #:international-option-keyword
+   #:option-keyword-abbreviation
    #:resolve-locale
    #:set-current-locale
    #:init-locale-from-environment

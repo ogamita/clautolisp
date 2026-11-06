@@ -3,6 +3,8 @@
 #+STATUS: DRAFT
 #+TYPE: bug
 #+DEPENDS: -
+#+PRIORITY: P3
+#+BRANCH: -
 
 DRAFT: still needs work — capture the exact reproduction steps and
 decide the intended quit semantics (one q = leave NAVI and ALDO, or

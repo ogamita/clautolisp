@@ -425,6 +425,13 @@ side contributes only poll points and blocking round trips.
   value-only, which suffices for a table), materialised filters per document,
   rebuilt when a document opens and inherits the intent.
 
+  *Decision (pjb, 2026-11-04).* The user decides the scope of each
+  breakpoint: *global* -- the function in whatever document it is loaded,
+  whether shared (=vl-load-all=) or loaded separately in each -- or
+  *current document only*. The default is the current document; an
+  auxiliary word (=all=) on the breakpoint command applies it to every
+  occurrence of the function / poll point in every document.
+
 - *R19 — Concurrent debugger contexts.* Two documents can be parked in the
   debugger simultaneously.  The ~salve~ protocol and the ~aldb~ Emacs UI must
   therefore support N concurrent debugger sessions, not merely nested levels
@@ -432,6 +439,10 @@ side contributes only poll points and blocking round trips.
   single connection; here the contexts are siblings, each with its own level
   stack.  Buffer naming, keybindings and the ~*aldb*~ buffer list must reflect
   the document.
+
+  *Confirmed (pjb, 2026-11-04),* with one addition: each debugging context
+  may route to a *different user interface* (=dumb=, =ncurses=, =aldb=), so
+  the UI is a property of the context, not of the session.
 
 - *R20 — Cross-document evaluation goes through locking.* Re-evaluatable
   accessor S-expressions produced by the inspector must default to the owning
@@ -501,6 +512,18 @@ and the result recorded as a lesson.
   reached from project mode (~.prv~ ~(:separate-namespace)~) as well as
   from the single-file form.
 
+- *E1 / E2 / E8 / E10 -- measured 2026-10-06* (probe-conformance, one
+  routine in one drawing; AutoCAD 2022 job 16959485595, BricsCAD V25 Windows job 16959485805, BricsCAD V26 macOS job 16942576104):
+  | experiment | AutoCAD 2022 | BricsCAD V25 (Win) | BricsCAD V26 (macOS) |
+  |------------+--------------+--------------------+----------------------|
+  | E1 symbol through the blackboard: eq / type | T / SYM | nil / nil | nil / nil |
+  | E2 list: eq / equal                | nil / T (copy) | nil / T (copy) | nil / T (copy) |
+  | E2 string: eq / equal              | T / T        | T / T              | T / T                |
+  | E8 SDI; (setvar "SDI" 1)           | 0; rejected  | 0; accepted        | 0; accepted          |
+  | E10 MTFLAGS; set 4095              | nil (no such variable in the core console); rejected | 3015; accepted | 2048; accepted |
+  So R3 is settled: the blackboard COPIES. BricsCAD's blackboard does not keep a
+  symbol value. The cross-drawing halves of E1, and E3 / E6, need LISP in a
+  second document, out of a batch run's reach; E4 / E5 need a live UI.
 - *E10 — MTFLAGS interaction.*  Confirm that no ~MTFLAGS~ setting introduces
   parallel Lisp evaluation, i.e. that the invariant of §4.2 holds with
   ~MTFLAGS~ at its default 3015 and at 4095.

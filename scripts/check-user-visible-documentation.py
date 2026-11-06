@@ -224,6 +224,27 @@ EXEMPTIONS = {
         "input of the file-compat test launcher, not a knob of the program",
     "CLAUTOLISP_FILE_COMPAT_ARGS_FILE":
         "input of the file-compat test launcher, not a knob of the program",
+    # Arguments alfe passes to POWERSHELL (and to its own emitted script) to
+    # ask which process COM hands out for --attach-pid: PowerShell's own
+    # option vocabulary, not options of alfe.
+    "-ExecutionPolicy":
+        "an argument of powershell.exe in CHECK-COM-ATTACH-PID, not an alfe option",
+    "-ProgId":
+        "a parameter of alfe's emitted com-active-pid.ps1, not an alfe option",
+    # Parameters of alfe's emitted owned-cad-process.ps1, which RUN-OWNED-CAD-
+    # HELPER calls to prove the CAD it created gone (owned-CAD close contract
+    # 2): the helper's own calling convention, documented with the workdir
+    # files in the user manual's CAD session cleanup, not options of alfe.
+    "-Operation":
+        "a parameter of alfe's emitted owned-cad-process.ps1, not an alfe option",
+    "-IdentityFile":
+        "a parameter of alfe's emitted owned-cad-process.ps1, not an alfe option",
+    "-ReportFile":
+        "a parameter of alfe's emitted owned-cad-process.ps1, not an alfe option",
+    "-GraceSeconds":
+        "a parameter of alfe's emitted owned-cad-process.ps1, not an alfe option",
+    "-KillSeconds":
+        "a parameter of alfe's emitted owned-cad-process.ps1, not an alfe option",
 }
 
 

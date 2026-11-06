@@ -1,0 +1,99 @@
+Diagnostic warnings when an out-of-dialect operator is used.
+
+The dialect-selection contract documented in
+clautolisp-user-manual.org § Dialect selection and in
+clautolisp-specifications.org § Dialect selection states:
+
+  "Whatever the dialect selected, all the operators are available.
+   Only those that are not specifically inside the set defined by
+   the dialect produce warnings when compiled and when used."
+
+This issue tracks the warning machinery itself — currently the
+runtime accepts every operator silently regardless of dialect.
+The default-dialect.issue work added the contract to the spec
+and the user-manual but deferred the warning implementation to
+this dedicated track because it touches multiple layers and
+needs design work.
+
+Design questions to answer first:
+
+  1. Source of truth — where is the per-dialect operator set
+     defined? The autolisp-spec catalog (pages/symbols.txt) has
+     a "kind" column per entry but no per-dialect availability
+     bitmap. The closest existing data is in the Availability
+     section of each Function Entry .org page. We may need to
+     extend build-paged-spec.el to emit a per-symbol availability
+     bitmap (autocad / bricscad / clautolisp tri-state) into a
+     new artefact (e.g. pages/availability.txt).
+
+  2. Warn on read or on first use? Read-time warning catches
+     dead code, but conflicts with macros and conditional
+     compilation. First-use warning catches only live calls but
+     adds runtime cost. Probably first-use (or first-resolve),
+     emitted once per (operator, session) pair.
+
+  3. Warning channel — *error-output*? a separate stream
+     accessible from AutoLISP? bound to a session-level toggle
+     so production code can silence it?
+
+  4. Strict / lax — under :strict dialect, do all dialect-
+     specific operators warn (autocad-only AND bricscad-only)?
+     Probably yes. Under :clautolisp, dialect-specific operators
+     from any vendor warn unless reimplemented in clautolisp.
+
+Acceptance:
+
+  - A per-symbol availability data file derived from the spec
+    (autolisp-spec build outputs it; clautolisp install consumes
+    it).
+  - A new mechanism in the runtime that, on the FIRST call to an
+    operator outside the current dialect's set, emits a single
+    diagnostic per (operator, session) pair to *error-output*.
+  - The diagnostic is silenced by *AUTOLISP-WARN-OUT-OF-DIALECT*
+    bound to NIL.
+  - Tests: under --strict, calling a bricscad-only operator emits
+    exactly one warning; the second call is silent.
+  - User-manual + specifications updated to point at the
+    implementation (currently they point at this issue).
+
+Out of scope:
+
+  - Compile-time warnings (issue title says "compiled and when
+    used" but clautolisp has no separate compile step today; the
+    "when used" half is the practical contract).
+  - Cross-dialect operator polyfills (separate work; see
+    missing-functions.issue for the inventory).
+
+Resolution — DONE, clautolisp 2.2.147 (2026-09-29; pjb asked for it)
+
+Design questions, as answered:
+  1. Source of truth: the spec's `*** Availability' sections. The paged spec
+     build already turned them into the A/B/AB flag of symbols.txt;
+     tools/generate-operator-availability.py keeps the A-only and B-only
+     Function / Special Form rows (minus CLAL-* / CLAUTOLISP-*, clautolisp's
+     own) as the committed autolisp-runtime/source/operator-availability.lisp
+     (66 AutoCAD-only, 473 BricsCAD-only). `make -C clautolisp
+     operator-availability' regenerates it; `check-operator-availability'
+     (documentation CI job) fails on drift -- seen red on a corrupted row.
+     THE SPEC PARSER WAS WRONG: it credited only the vendor a line STARTED
+     with, so `- AutoCAD 2022, BricsCAD V25 and V26: verified' made LOAD,
+     FINDFILE, READ-CHAR, WRITE-CHAR, VL-DIRECTORY-FILES and DEFUN-Q
+     AutoCAD-only. Fixed in autolisp-spec/scripts/build-paged-spec.el (every
+     vendor named before the colon, and `Status: ... both vendors').
+  2. First CALL, once per (operator, session): the owner is a slot of the
+     builtin subr, set at install; the subr branch of
+     CALL-AUTOLISP-FUNCTION-IN-CONTEXT tests it -- one slot test for every
+     portable call. Interpreted and compiled calls both pass there.
+  3. *error-output*, register format `[vendor-operator]' (register entry in
+     portability.lisp, annex regenerated). (setq *AUTOLISP-WARN-OUT-OF-DIALECT*
+     nil) silences; unbound = on. portability-warning-mode :error signals
+     :non-portable-construct.
+  4. Spec ch.25 case 1: warns in every dialect except the owner's PRODUCT
+     (so bricscad-mac is BricsCAD) and lax -- strict and clautolisp warn.
+
+Tests: autolisp-builtins-core/tests/vendor-operator-tests.lisp (9 tests,
+including the acceptance one: strict, BricsCAD-only operator, exactly one
+warning over three calls). clautolisp suites 34/34, alfe 1358/1358, the
+autolisp-test corpus unchanged (3699 pass / 207 fail, same as master).
+Docs: specifications (operator availability rule), user manual (dialect
+selection), alfe manual, AGENTS.md.

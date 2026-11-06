@@ -1,0 +1,19 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-alfe-template-default-and-macos -- alfe --template default, and --template on the macOS runner
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: alfe-template-option
+#+BRANCH: -
+#+DATE: 2026-10-26
+
+alfe-template-option (closed 2026-10-26, alfe 2.3.68) left:
+
+1. =--template default=: the product's own default template -- AutoCAD's
+   QNEW template, else acad.dwt / acadiso.dwt by MEASUREINIT; BricsCAD's
+   BASEFILE. Needs reading those settings (registry on Windows, the
+   product's preferences on macOS) without a running CAD.
+2. The macOS run: verify:alfe-template has a Windows job only; BricsCAD V26
+   on thalassa (Default-imperial / Default-m under ~/Library/Application
+   Support/Bricsys) was not checked -- thalassa could not resolve
+   gitlab.com on 2026-10-26.

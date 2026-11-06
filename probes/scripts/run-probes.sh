@@ -322,6 +322,8 @@ emit_step_marker() {
   printf '(setq cad-probe-platform "%s")\n'      "$(lisp_escape "$platform")"
   printf '(setq cad-probe-product "%s")\n'       "$(lisp_escape "$product")"
   printf '(setq cad-probe-run-directory "%s")\n' "$(lisp_escape "$(cad_path "$run_dir")")"
+  # For suites that load committed fixture files (sources/fixtures/).
+  printf '(setq cad-probe-sources-directory "%s/")\n' "$(lisp_escape "$(cad_path "$sources_dir")")"
   # Write a marker BEFORE anything else can fail, so an empty result file
   # and a wrapper that started are distinguishable. Without it, "the load
   # failed" and "a suite died on its first form" look identical from
@@ -496,14 +498,94 @@ write_metadata "prepared" 0
 # workdir (issues/closed/empty-ressource.issue); the probe harness is a
 # second caller of the same idea, not a second implementation of it --
 # the bytes come from the one committed file.
+#
+# PROBE_TEMPLATE: run on a copy of one of the CAD's OWN templates instead
+# (a NAME looked up where the products keep them, or a PATH). empty.dwg was
+# written by a French AutoCAD 2005: what a probe reads of a drawing's
+# defaults on it is that file's, not a new drawing's (alfe-template-option).
+# A .dwt and a .dwg share the format; the copy is named .dwg so the CAD
+# opens it as a drawing, with no units dialog.
+template_roots() {
+  local v
+  for v in LOCALAPPDATA APPDATA PROGRAMFILES ProgramW6432 PROGRAMDATA; do
+    [[ -n "${!v:-}" ]] || continue
+    if command -v cygpath >/dev/null 2>&1; then
+      cygpath -u "${!v}"
+    else
+      printf '%s\n' "${!v}"
+    fi
+  done
+  printf '%s\n' "$HOME/Library/Application Support/Bricsys" "/Applications"
+}
+# Only the probed product's folders: thalassa has AutoCAD 2026 too, and its
+# acad.dwt is no BricsCAD template. The user's own templates (AppData,
+# Application Support) come before the installation's.
+template_path_pattern() {
+  case "$product" in
+    autocad)  printf '%s\n' '*autodesk*' ;;
+    bricscad) printf '%s\n' '*brics*' ;;
+    *)        printf '%s\n' '*' ;;
+  esac
+}
+# The product's own folders: a root that is one already (Application
+# Support/Bricsys), else the root's top-level folders the pattern names
+# (AppData/Local/Bricsys, Program Files/Autodesk, BricsCAD V26.app). The
+# search used to walk each whole root to depth 9 and filter on the path
+# afterwards: 12m45s through %LOCALAPPDATA% on PF5S26B (job 17450398554).
+product_dirs() {
+  local root pattern
+  pattern="$(template_path_pattern)"
+  while IFS= read -r root; do
+    [[ -d "$root" ]] || continue
+    shopt -s nocasematch
+    if [[ "$root" == $pattern ]]; then
+      shopt -u nocasematch
+      printf '%s\n' "$root"
+    else
+      shopt -u nocasematch
+      find "$root" -mindepth 1 -maxdepth 1 -type d -iname "$pattern" 2>/dev/null
+    fi
+  done < <(template_roots)
+}
+find_template() {
+  local name="$1" dir hit
+  if [[ "$name" == */* && -f "$name" ]]; then printf '%s\n' "$name"; return 0; fi
+  while IFS= read -r dir; do
+    hit="$(find "$dir" -maxdepth 8 -type f -iname "$name" 2>/dev/null | head -n 1)"
+    if [[ -n "$hit" ]]; then printf '%s\n' "$hit"; return 0; fi
+  done < <(product_dirs)
+  return 1
+}
 drawing_file=""
-if [[ "$runner_template" == *__DRAWING_FILE__* ]]; then
-  drawing_source="$repo_root/autolisp-front-end/source/empty.dwg"
-  if [[ -f "$drawing_source" ]]; then
-    drawing_file="$run_dir/empty.dwg"
-    cp -f "$drawing_source" "$drawing_file"
+template_file=""
+if [[ -n "${PROBE_TEMPLATE:-}" ]]; then
+  if template_source="$(find_template "$PROBE_TEMPLATE")"; then
+    template_file="$run_dir/template.dwg"
+    cp -f "$template_source" "$template_file"
+    echo "run-probes: template $PROBE_TEMPLATE -> $template_source" >&2
+    # The alfe route (BricsCAD) has no __DRAWING_FILE__: alfe opens
+    # $AUTOLISP_DWG instead of its embedded empty.dwg (backend-bricscad).
+    AUTOLISP_DWG="$(cad_arg_path "$template_file")"
+    export AUTOLISP_DWG
   else
-    echo "run-probes: no empty drawing at $drawing_source; launching without one" >&2
+    echo "run-probes: no template named $PROBE_TEMPLATE; the templates found:" >&2
+    while IFS= read -r dir; do
+      find "$dir" -maxdepth 8 -type f -iname '*.dwt' 2>/dev/null
+    done < <(product_dirs) | sort -u | sed 's/^/    /' >&2
+    exit 2
+  fi
+fi
+if [[ "$runner_template" == *__DRAWING_FILE__* ]]; then
+  if [[ -n "$template_file" ]]; then
+    drawing_file="$template_file"
+  else
+    drawing_source="$repo_root/autolisp-front-end/source/empty.dwg"
+    if [[ -f "$drawing_source" ]]; then
+      drawing_file="$run_dir/empty.dwg"
+      cp -f "$drawing_source" "$drawing_file"
+    else
+      echo "run-probes: no empty drawing at $drawing_source; launching without one" >&2
+    fi
   fi
 fi
 

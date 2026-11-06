@@ -1,0 +1,483 @@
+# AutoCAD / BricsCAD commands: collect, specify, classify, and implement
+
+Status: closed (2026-10-06)
+Baseline: origin/master
+Spec: autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+
+## Summary
+
+Commands are missing from the alref reference, and indeed from
+autolisp-spec. As we included system variables in the spec and alref, we
+should add the specifications of the commands of BricsCAD and AutoCAD
+(and the specific commands of clautolisp — we already virtually have a
+few) in a specific chapter of the autolisp-spec.
+
+CAD *commands* (the things typed at the command prompt, or driven by
+`(command "NAME" ...)` / `(command-s ...)` / `(vl-cmdf ...)`) are a
+namespace *distinct from* both AutoLISP functions and system variables:
+they live in the host/engine, are addressed by (localisable) name, take
+an option/keyword grammar and a positional input sequence rather than a
+Lisp lambda list, and many are package- or version-specific. AutoCAD
+ships ~1000+; BricsCAD ships its own overlapping-but-not-identical set.
+
+clautolisp today has NO command specification and only a token engine:
+
+  - Spec: `command` / `command-s` / `vl-cmdf` / `initcommandversion` are
+    documented as Function Entries; individual commands appear only as
+    prose inside those entries. There is NO command chapter and no
+    per-command entry analogous to a Function or System Variable Entry.
+  - Implementation: the cador MockHost EXECUTES exactly 10 commands
+    against the drawing model — LINE, CIRCLE, TEXT, DONUT, SOLID, ERASE,
+    MOVE, COPY, ROTATE, BLOCK/-BLOCK (`clautolisp/cador/source/command-api.lisp`
+    `%execute-command-tokens`). Every other command name is recorded on
+    the command log but not executed (the interpreter stops at the first
+    unknown name). cadtui has no command→tree layer at all (NEW does not
+    create a drawing, MENULOAD does not load a ribbon).
+  - The only enumerated command *name* list is the cadtui localisation
+    dictionary `cadtui/data/locale/fr_FR/command.sexp` (118 names).
+
+This issue covers four phases, mirroring the system-variables pass:
+(1) collect commands from the AutoCAD and BricsCAD ONLINE references
+into a machine-readable inventory; (2) add a "Commands" chapter to
+autolisp-spec built from that inventory; (3) classify them (domain
+category + support tier — some commands are package-specialised and out
+of near-term scope); (4) implement the categories cador and cadtui need.
+
+## Goals / deliverables
+
+  1. `autolisp-spec/documentation/commands-inventory.sexp` — one record
+     per command, per the schema below, sourced from the vendor ONLINE
+     references (NOT invented).
+  2. A new spec chapter specifying commands (entry template below),
+     generated/curated from the inventory. Bump the spec minor version.
+  3. A classification: each command tagged with a domain category and a
+     support tier (core-now / package-specific / deferred).
+  4. clautolisp implementation of the categories cador (execute against
+     the drawing) and cadtui (tree effects: NEW→drawing, OPEN→drawing,
+     MENULOAD/CUILOAD→bands) actually need, data-driven from the
+     inventory where possible.
+  5. A generated coverage report (analogue of builtins-coverage.md):
+     per-category implemented / specified / total.
+
+Non-goal: implementing the full ~1000-command surface, or matching a
+specific CAD build byte-for-byte. Package-specialised commands are
+specified-and-classified but not necessarily implemented.
+
+## Phase 1 — Data collection
+
+### Sources (ONLINE vendor references)
+
+  - AutoCAD 2026: the "Commands Reference" (alphabetical) in the Autodesk
+    online help. Per-command pages are fetchable as static cloudhelp
+    HTML: `https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-<GUID>.htm`
+    (the `?guid=` SPA form returns no content; the `/files/GUID-*.htm`
+    form works). Locate each GUID from the master command list / search.
+    Harvest across the versions we care about; note version deltas.
+  - BricsCAD V25: `https://help.bricsys.com/document/_commandreference--CMD_<name>/V25/EN_US`
+    — verbatim description, aliases, and command-line options.
+  - Cross-check localised NAMES against the runners' getcname probes
+    (already feeding cadtui `command.sexp`), and aliases against acad.pgp
+    (already feeding `alias.sexp`).
+
+### Inventory schema (`commands-inventory.sexp`)
+
+One plist per command, sorted by :name:
+
+    (:name "LINE"
+     :category :draw            ; :draw :modify :view :file :customization
+                               ; :block :query :dimension :3d :render :...
+     :aliases ("L" "3DLINE")   ; documented short names (may be ())
+     :intl-name "_LINE"        ; the international, _-forced spelling
+     :synopsis "Creates a series of straight line segments."
+     :options ("Close" "Undo") ; command-line keywords (may be ())
+     :arguments "point; point; ...; RETURN"  ; the (command ...) input seq
+     :description "..."
+     :availability :both        ; :both :autocad-only :bricscad-only :clautolisp
+     :autocad-versions "all"
+     :bricscad-versions "all"
+     :source-autocad  "https://help.autodesk.com/cloudhelp/.../GUID-....htm"
+     :source-bricscad "https://help.bricsys.com/document/_commandreference--CMD_line/V25/EN_US")
+
+## Phase 2 — Spec chapter
+
+New chapter `Commands` in the draft org, each command a subsection:
+
+    ** Command Entry: LINE
+    *** Name
+    *** Aliases
+    *** Synopsis
+    *** Options
+    *** Argument Sequence
+    *** Description
+    *** Category
+    *** Compatibility          ; AutoCAD & BricsCAD availability + versions
+    *** clautolisp             ; implementation status: cador / cadtui / not-yet
+    *** Source Notes           ; vendor URLs
+    #+LATEX: \newpage
+
+Pages are emitted one-per-subsection by `scripts/build-paged-spec.el`;
+add "Command" to its entry-type regex for consistent slugging.
+
+## Phase 3 — Classification
+
+Domain categories (initial): draw, modify, view, file, customization,
+block, query, dimension, 3d, render, and a catch-all. Support tiers:
+  - core-now: implement in cador/cadtui in this initiative.
+  - package-specific: AutoCAD-only or BricsCAD-only surface we won't
+    support immediately (specified + classified, not implemented).
+  - deferred: in scope eventually, not now.
+
+## Phase 4 — Implementation (cador + cadtui)
+
+  - cador: extend `%execute-command-tokens` (or a data-driven dispatch)
+    for the core-now draw/modify set beyond the current 10.
+  - cadtui: a command→tree layer for file/customization (NEW/OPEN create
+    a ui-drawing; MENULOAD/CUILOAD populate bands), and wire spec §5.6
+    rule 3 so a bare command name at the `cad>` console dispatches.
+  - autolisp-test conformance records for the commands we implement.
+
+## Progress
+
+  - Pilot (2026-09-14): ~25 core commands harvested end-to-end
+    (draw/modify/view/file/customization/block) to validate the pipeline
+    inventory→pages→build→coverage before scaling to the full surface.
+  - State re-measured 2026-10-03 (the Progress above had gone stale):
+    - Phase 1 DONE: commands-inventory.sexp, 1621 commands (AutoCAD 2026
+      + BricsCAD V25; both 561, AutoCAD-only 352, BricsCAD-only 708).
+    - Phase 2 DONE: 1621 "** Command Entry:" sections in the draft
+      (autolisp-spec 0.13.0, "Commands chapter COMPLETE");
+      commands-coverage.md generated (18 executed by cador, 6 no-ops).
+    - Phase 3 HALF: every command carries a :category (3D 298, VIEW 177,
+      FILE 130, BLOCK 118, SYSTEM 111, MODIFY 109, ...), but NO command
+      carries a support tier (core-now / package-specific / deferred).
+    - Phase 4 NOT STARTED, and it cannot start before the tiers: "core-now"
+      is the list of commands this initiative implements, a scoping
+      decision. QUESTION FOR PJB: which commands are core-now? (A natural
+      first cut: the DRAW + MODIFY commands both vendors share, plus
+      NEW/OPEN/MENULOAD/CUILOAD for the cadtui tree layer.)
+    - DECIDED (pjb, 2026-10-03: "yes, you're correct"): core-now = the
+      DRAW + MODIFY commands both vendors share, plus NEW / OPEN /
+      MENULOAD / CUILOAD. Next: stamp :tier on the inventory accordingly,
+      then Phase 4.
+    - Phase 3 DONE (2026-10-03): merge-command-parts.lisp computes :tier
+      (an explicit one is kept) -- 105 core-now, 1059 package-specific,
+      457 deferred; gen-command-entries.lisp states it in every entry's
+      *** clautolisp section; commands-coverage.md gains the table. Of the
+      105, cador executes 13 and no-ops 2: Phase 4 = the other 90, plus the
+      cadtui tree layer and the cad> bare-command dispatch.
+
+## Phase 4 plan (2026-10-03, pjb: "go ahead with alref Phase 4")
+
+The 90 core-now commands cador does not run yet, bucketed by what they
+need; one MR per stage, each command built against MEASURED vendor output
+(probes/sources/probe-commands.lsp drives (command ...) on AutoCAD and
+BricsCAD and records the entities it makes), not the documentation alone.
+
+  S1  infrastructure: a data-driven command table replacing the COND in
+      %execute-command-tokens; the vendor command probe; then the draw
+      constructions POINT RAY XLINE ELLIPSE POLYGON RECTANG SPLINE 3DPOLY
+      HELIX TRACE SHAPE REGION MLINE; and the headless no-ops (dialogs,
+      raster/PDF/geomap/point-cloud, SKETCH's freehand): PROPERTIES
+      IMAGEADJUST IMAGECLIP IMAGEEDIT CLIPIT PDFCLIP -PDFIMPORT GEOMAPIMAGE
+      GEOMAPIMAGEUPDATE POINTCLOUDCROP SKETCH MLSTYLE.
+  S2  modify / properties: ADDSELECTED (it starts the selected object's own
+      command with its properties -- real behaviour, moved from S1) SCALE STRETCH MSTRETCH ALIGN 3DROTATE CHPROP
+      CHANGE MATCHPROP SETBYLAYER TRANSPARENCY CHSPACE EXPLODE XPLODE COPYM
+      NCOPY FLATTEN DIVIDE MEASURE LENGTHEN JOIN CONVERTPOLY UNGROUP
+      DRAWORDER TEXTTOFRONT HATCHTOBACK CDORDER.
+  S3  cadtui: NEW OPEN MENULOAD CUILOAD (the tree layer) + spec 5.6 rule 3
+      (a bare command name at the cad> console dispatches).
+  S4  arrays: ARRAY -ARRAY ARRAYCLASSIC ARRAYRECT ARRAYPOLAR ARRAYPATH
+      ARRAYEDIT ARRAYCLOSE 3DARRAY.
+  S5  geometry: TRIM EXTEND FILLET CHAMFER OFFSET EXOFFSET BTRIM BEXTEND
+      EXTRIM BREAKLINE OVERKILL -OVERKILL MPEDIT SPLINEDIT TREX MOCORO
+      (and PEDIT / BREAK, today's no-ops).
+  S6  hatch / boundary: HATCH -HATCH HATCHEDIT -HATCHEDIT GRADIENT
+      SUPERHATCH BOUNDARY -BOUNDARY HATCHGENERATEBOUNDARY.
+Conformance records (autolisp-test) land with each stage.
+
+## Phase 4 S1 -- done (2026-10-03, MR !380)
+
+Measured first: probes/sources/probe-commands.lsp on AutoCAD 2022 and
+BricsCAD V26 (21 cases; 16 identical across the two vendors). cador now:
+  - dispatches through a command table (*cador-commands*);
+  - draws POINT RAY XLINE ELLIPSE POLYGON RECTANG SPLINE 3DPOLY TRACE
+    MLINE -- 18 of 21 probe cases identical to AutoCAD under the default
+    dialect, and to BricsCAD under bricscad-mac; where the vendors differ
+    the dialect decides (TRACE: AutoCAD makes nothing; MLINE style
+    "STANDARD" vs "Standard"; SPLINE default tangents omitted on AutoCAD);
+  - recognises the 12 headless no-ops;
+  - lists the polyline default groups both vendors' ENTGET shows;
+  - (side fixes) COMMAND is also a function; fresh drawings get the
+    imperial-template sysvar values (sysvar-template-defaults-undocumented
+    for the 18 without a documented value -- CMLSCALE among them, the one
+    remaining MLINE difference).
+Deferred: HELIX -> S5 (each vendor approximates the helix with its own
+spline -- AutoCAD 46 control points for 3 turns, BricsCAD 27; matching
+either means reverse-engineering it). REGION -> S6 (needs ACIS SAT data).
+The probe hung AutoCAD twice before the CMDACTIVE fix (bit 4 = script).
+
+## Phase 4 S2 (partial) and S3 -- done (2026-10-03)
+
+S2: window / crossing / point selection (command-geometry.lisp); SCALE
+ALIGN STRETCH LENGTHEN CHANGE CHPROP MATCHPROP SETBYLAYER EXPLODE
+CONVERTPOLY -- each equal to BricsCAD on probe-commands, and to AutoCAD
+on the cases the headless AutoCAD answered (SCALE ALIGN CHPROP CHANGE
+EXPLODE; it has no view, so its window / point picks select nothing).
+DRAWORDER TEXTTOFRONT HATCHTOBACK CDORDER TRANSPARENCY recognised.
+Still to measure (cases in the probe, this MR's vendor run): DIVIDE,
+MEASURE, JOIN (corrected), ADDSELECTED, COPYM, FLATTEN, 3DROTATE,
+XPLODE; then MSTRETCH, CHSPACE, NCOPY, UNGROUP.
+S3: NEW OPEN MENULOAD CUILOAD (cador; cadtui mirrors them through
+*cador-command-ui-hook*) and spec 5.6 rule 3 at the cad> console (one
+logic for the REPL-hosted and threaded consoles). Interactive prompting
+for missing input waits for host-command park points (D1 13.5).
+S4: the array cases are in the probe already.
+
+## Phase 4 S2 rest + S4 -- (2026-10-03)
+
+Built against the vendors (BricsCAD job 16914406700, AutoCAD 16914406699):
+-ARRAY, ARRAYRECT, ARRAYPOLAR, ARRAY, 3DARRAY (the copy ORDER measured:
+-ARRAY row by row, ARRAYRECT column by column, ARRAY column by column on
+AutoCAD / row by row on BricsCAD, 3DARRAY rows-columns-levels; modelled
+non-associative), DIVIDE, MEASURE, ADDSELECTED, JOIN (collinear lines),
+FLATTEN. COMMAND accepts the ENTSEL form (ename point). 47 + 19 of 105.
+Left in S2: MSTRETCH 3DROTATE CHSPACE XPLODE COPYM NCOPY UNGROUP (Express
+Tools / gizmo / layouts / groups: AutoCAD's console and BricsCAD answered
+nothing for the ones probed). S4: ARRAYPATH ARRAYEDIT ARRAYCLOSE (need
+associative arrays), ARRAYCLASSIC (dialog). S5's cases are in the probe.
+
+## Phase 4 S5 (core) -- 2026-10-03
+
+TRIM EXTEND (quick and classic modes) OFFSET BREAK FILLET CHAMFER PEDIT
+OVERKILL / -OVERKILL, in cador/source/command-edit.lisp. Implemented from
+the commands' geometry -- the CAD runners were asleep, so the S5 probe
+cases (in probe-commands.lsp since !382) have not been answered yet:
+CONFIRM against them on the next vendor run (the merged MRs' probe jobs
+were cancelled with their child pipelines). Scope: LINEs edited; lines and
+circles / arcs as edges; OFFSET of circles and arcs; BREAK of circles.
+56 + 17 of 105. Left in S5: EXOFFSET BTRIM BEXTEND EXTRIM BREAKLINE MPEDIT
+SPLINEDIT TREX MOCORO (Express Tools / spline editing) and HELIX.
+
+## CORRECTION (2026-10-03, S5 vendor run)
+
+The S2-rest / S4 note above says ARRAY _R goes "column by column on AutoCAD":
+that was NOT measured. AutoCAD's run had derailed before the array cases, and
+the comparison tool silently skipped records with no value, so an absence read
+as agreement. The real AutoCAD answer (job 16915375455) is for -ARRAY:
+column by column on AutoCAD -- (0,0) (0,2) (3,0) ... -- while BricsCAD goes row
+by row; cador now follows each (it had -ARRAY row by row everywhere). ARRAY _R
+on AutoCAD is still unanswered (its ARRAY left the console waiting); column by
+column there follows -ARRAY and is marked UNVERIFIED in the code. Lesson kept
+in the comparison: a vendor record with no value is MISSING, not equal.
+
+The probe's command check now covers only a list of commands seen absent or
+from Express Tools (GETCNAME reported RECTANG unknown), and the S5 cases run
+ahead of the arrays, so an array derail cannot take them with it.
+
+## Note: AutoCAD's console and the AutoLISP add-on commands (2026-10-03)
+
+Several core-now commands are not built into AutoCAD but AutoLISP add-ons
+loaded on demand: 3DARRAY is 3darray.lsp in the LOCALISED Support folder
+(pjb: e.g. '/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/
+Resources/Support/@fr@/3darray.lsp'); C:3DARRAY is an autoload stub. The
+CI runner's accoreconsole did not find the file (no localised Support path),
+so the stub failed and the probe hung; MATCHPROP is absent from the console
+altogether. probe-commands now skips such commands on AutoCAD (BricsCAD
+answers them). To measure them on AutoCAD: give the console the localised
+Support folder on its search path (a runner setting -- not changed here).
+
+Policy (pjb, 2026-10-03): "We may provide an implementation, notably if
+bricscad has one, but if we are able to load autocad's code directly (with
+dialect autocad), it's good enough." So for an add-on command, being able to
+load and run the vendor's own .lsp under dialect autocad suffices; a native
+cador command is optional (3DARRAY has one, as BricsCAD has it built in).
+Probe recipe for the console (pjb): (vl-load-com) (load "3darray")
+(vlax-add-cmd "3darray" 'c:3darray), then (command "3darray" ...) --
+probe-commands follows it on AutoCAD (follow-up MR), finding the file in a
+subfolder of the support path when FINDFILE does not.
+
+## S5 confirmed against AutoCAD (2026-10-03, job 16915617788)
+
+The full commands suite ran on AutoCAD 2022's console (54 cases, no hang).
+TRIM EXTEND FILLET CHAMFER OFFSET (line, circle) BREAK PEDIT: geometry
+identical to clautolisp, as on BricsCAD (job 16914861740 era, 9/9).
+OVERKILL: skipped on AutoCAD (Express Tools), BricsCAD-confirmed.
+Other differences in that run, none S5:
+  - HELIX, REGION: deferred (see S1); MLINE: CMLSCALE (see S1);
+  - STRETCH: the console has no view, its crossing window selects nothing;
+  - ARRAYRECT: AutoCAD made an ASSOCIATIVE array (INSERT of *U3) despite
+    "_AS" "_N"; ARRAYPOLAR left only the source circle -- the probe's input
+    sequence does not fit AutoCAD's prompts for these two (UNANSWERED on
+    AutoCAD; cador follows BricsCAD's measured answer). To probe: drive
+    ARRAYASSOCIATIVITY 0 instead of the _AS option.
+
+## 3DARRAY measured on AutoCAD through its add-on (2026-10-03, job 16915676646)
+
+pjb's recipe works on the console: 3darray.lsp found below the support path,
+loaded, C:3DARRAY registered with vlax-add-cmd, (command "3DARRAY" ...) made
+the 8 circles. Its ORDER is column by column -- (0,0,0) (0,0,1) (0,1,0) ...
+(1,0,0) -- like AutoCAD's -ARRAY, where BricsCAD goes row by row; levels
+innermost on both. cador 2.2.165 follows each dialect (!385).
+
+## Phase 4 S6 (hatch / boundary) -- 2026-10-04
+
+Measured first, in two probe rounds (round 1: AutoCAD 16916189663,
+BricsCAD macOS 16916189664; round 2: BricsCAD 16916238723, AutoCAD
+16916238722). New cador/source/command-hatch.lisp:
+  - HATCH / -HATCH: _Properties (name; scale and angle unless SOLID),
+    _Select objects (closed LWPOLYLINEs, CIRCLEs), internal points (the
+    smallest enclosing boundary), RETURN. Vendor forms per dialect:
+    AutoCAD edge loops (92=1; island 92=16 in its own order; a circle one
+    arc edge 0..2pi), 75=1, a seed point 98=1 10=0,0,0; BricsCAD polyline
+    loops (92=3; island 92=18 walked back from its second vertex; a circle
+    two vertices of bulge 1), 75=0, 98=0. Associativity per HPASSOC
+    (71, 97, 330 to the source).
+  - Patterns: 52 = hatch angle, 53 = line angle + hatch angle (radians);
+    each line's base turned by the hatch angle, its offset scaled and
+    turned by the line angle. SOLID, ANSI31, ANSI37 measured in both units
+    (metric 3.175, imperial 0.125); any other name makes a hatch with no
+    pattern lines (to measure, or read from the vendor's .pat file).
+  - HATCHEDIT / -HATCHEDIT _Properties; HATCHGENERATEBOUNDARY (a closed
+    LWPOLYLINE per loop, hatch made associative -- BricsCAD; AutoCAD 2022's
+    console lacks it); BOUNDARY / -BOUNDARY (a closed LWPOLYLINE copy of the
+    boundary around each point -- BricsCAD); GRADIENT, SUPERHATCH no-ops.
+Against AutoCAD's round 2, every hatch case gives the same groups; the
+metric-pattern cases differ only in 45/46 because the vendors' fresh
+drawings have MEASUREMENT 1 and cador's 0 (sysvar-template-defaults
+question, not changed here).
+Open: BricsCAD's -HATCH by internal point made NO hatch in both rounds
+(-BOUNDARY at the same point works); cador makes one, as documented.
+63 + 19 of 105; 23 to go (S1 SHAPE REGION, S2/S4/S5 remainders).
+
+## Phase 4 remainder: which commands are vendor LISP add-ons (2026-10-04)
+
+pjb (2026-10-03): "We may provide an implementation, notably if bricscad has
+one, but if we are able to load autocad's code directly (with dialect
+autocad), it's good enough." pjb's recipe for AutoCAD's 3darray.lsp:
+(vl-load-com) (load "3darray") (vlax-add-cmd "3darray" 'c:3darray)
+(command "3darray" ...).
+
+Measured (BricsCAD V26 macOS, job 16920470455, case "command classes"):
+  LISP add-ons on BricsCAD -- its reimplementation of AutoCAD's Express
+  Tools: MSTRETCH COPYM NCOPY EXOFFSET BTRIM BEXTEND EXTRIM BREAKLINE MPEDIT
+  TREX MOCORO (and SUPERHATCH).
+  Built in: 3DROTATE CHSPACE XPLODE UNGROUP ARRAYPATH ARRAYEDIT ARRAYCLOSE
+  ARRAYCLASSIC SPLINEDIT HELIX SHAPE REGION.
+Driving the LISP ones through COMMAND did nothing on BricsCAD (job
+16920411987; EXTRIM's own pick prompt ended the session), so the probe
+records them as LISP commands instead of running them.
+
+clautolisp 2.2.170 makes pjb's rule hold: COMMAND runs a C: function
+registered with vlax-add-cmd, feeding it the rest of its arguments through
+get*, entsel (now real) and ssget, the leftover input going on as further
+commands. So the 11 LISP add-ons are covered by loading the vendor's code;
+no native cador implementation is planned for them. Native work left: the
+12 built-ins (HELIX, REGION, SHAPE deferred as before: vendor spline
+approximation, ACIS data, SHX shapes).
+
+AutoCAD 2022's console (job 16920579886, same case): BUILTIN 3DROTATE NCOPY
+UNGROUP ARRAYPATH ARRAYEDIT ARRAYCLOSE SPLINEDIT HELIX SHAPE REGION
+(3DARRAY: its autoload stub); ABSENT MSTRETCH CHSPACE XPLODE COPYM
+ARRAYCLASSIC EXOFFSET BTRIM BEXTEND EXTRIM BREAKLINE MPEDIT TREX MOCORO
+FLATTEN OVERKILL SUPERHATCH -- the Express Tools, not loaded by the console
+(GETCNAME there has been seen wrong before: indicative). NCOPY is built in
+on AutoCAD but a LISP add-on on BricsCAD; CHSPACE / XPLODE / ARRAYCLASSIC
+built in on BricsCAD, Express or GUI on AutoCAD.
+
+## The 12 built-ins: inputs from the documentation (2026-10-04)
+
+The prompts were researched in the AutoCAD 2022 help and the BricsCAD
+V17/V18/V26 command reference. Findings that shape the probe:
+  - XPLODE, CHSPACE, NCOPY are AutoCAD 2022 CORE commands, not Express
+    Tools; XPLODE is reported unavailable in the core console. XPLODE's
+    "do it" keyword differs: AutoCAD E(xplode), BricsCAD X(plode) -- the old
+    "_E" input explains BricsCAD doing nothing; RETURN takes the default on
+    both.
+  - 3DROTATE on AutoCAD takes its axis by gizmo pick only; BricsCAD's
+    accepts X / Y / Z keywords. ROTATE3D is the keyboard form on both.
+  - ARRAYCLASSIC is a dialog on both -> a recognised no-op.
+  - Deferred: ARRAYEDIT / ARRAYCLOSE (associative arrays, which the
+    headless model does not hold; ARRAYEDIT Source and ARRAYCLOSE open
+    modal dialogs), CHSPACE (needs a layout with viewports), NCOPY (nested
+    picks need a view; a LISP add-on on BricsCAD anyway).
+Probe round: XPLODE (BricsCAD), 3DROTATE by keyword (BricsCAD), ROTATE3D,
+-GROUP then UNGROUP (the GROUP object reported), ARRAYPATH divide 4
+non-associative, SPLINEDIT Reverse / Close.
+
+## Built-ins round 1 -- done (2026-10-04, clautolisp 2.2.171)
+
+Measured (BricsCAD 16920731857, AutoCAD 16920731856) and built in
+cador/source/command-builtins.lisp:
+  - XPLODE with the defaults = EXPLODE (BricsCAD: 4 LINEs).
+  - ROTATE3D (both) / 3DROTATE (BricsCAD, axis keyword): (1,0)-(3,0) 90
+    about Z -> (0,1)-(0,3); X / Y / 2-point axes turn the 3D point groups.
+  - ARRAYPATH divide 4 non-associative (BricsCAD): the source replaced by
+    copies at 0 3 6 9 along the path, listed after it; Measure too; Align
+    turns copies along a curved path. AutoCAD did nothing with this input.
+  - SPLINEDIT Reverse (BricsCAD; AutoCAD unchanged -- unanswered) and Close
+    (IDENTICAL on both: the closed cubic through the fit points and back,
+    chord-length clamped knots, equal first and second derivatives at the
+    join; 7 control points match to 1e-6; flags + 1 + 2 + 2048, fit data
+    dropped).
+  - ARRAYCLASSIC: a dialog on both -> recognised.
+67 executed + 20 recognised + 11 vendor-LISP of 105. Left: UNGROUP (needs
+-GROUP / GROUP objects; the probe's group report failed both times -- fix
+the helper, then measure), ARRAYEDIT / ARRAYCLOSE (associative arrays),
+CHSPACE (viewports), HELIX / SHAPE / REGION (deferred since S1).
+
+## UNGROUP: first measurement, deferred (2026-10-04)
+
+-GROUP _C PROBEG "probe group" a b "" then UNGROUP _N PROBEG, with the
+GROUP object read back from ACAD_GROUP (jobs 16920779022 / 16920779021):
+  - BricsCAD: the group exists after -GROUP and is gone after UNGROUP (so
+    UNGROUP by name removes the GROUP from ACAD_GROUP), but the object read
+    back showed no 70 / 71 / 300 and no 340 member handle -- either
+    BricsCAD's GROUP data is not where the probe looks, or -GROUP took the
+    input differently. Not measured yet.
+  - AutoCAD: an empty answer -- presumably the -GROUP input left the
+    console waiting.
+UNGROUP needs GROUP objects (and -GROUP, outside the core-now set) in
+cador; deferred until a probe reads the GROUP object cleanly (next step:
+record (entget group) whole, and check CMDACTIVE after -GROUP on AutoCAD).
+Left: UNGROUP, ARRAYEDIT, ARRAYCLOSE, CHSPACE, HELIX, SHAPE, REGION.
+
+## Final round, measured (2026-10-06, MR !423)
+
+probe-commands, the last cases (AutoCAD 2022 job 16961057455, BricsCAD V25
+16961057459, V26 16961057456):
+
+  - SHAPE -- after (command "_.LOAD" "ltypeshp.shx"), SHAPE TRACK1 at 0,0 size
+    1 rotation 0 makes, identically on both, 0=SHAPE 8=0 10=0,0,0 40=1
+    2=TRACK1 50=0 41=1 51=0. BUILT (clautolisp 2.2.203): LOAD records a shape
+    file found on disk or the support path, SHAPE makes that entity (cador
+    does not read .shx files: any name, once one is loaded).
+  - -GROUP / UNGROUP -- the GROUP object still reads back EMPTY on both
+    (BricsCAD: the dictionary entry is found and carries no groups; AutoCAD:
+    nothing). The DXF route does not see the GROUP; next probe: the COM
+    Groups collection (vla-get-groups) on BricsCAD. Deferred.
+  - HELIX -- a HELIX entity on both, but its spline differs by vendor
+    (AutoCAD 50 knots, BricsCAD 31): matching it means each vendor's spline
+    fit. Deferred.
+  - REGION -- a REGION carrying ACIS data: AutoCAD's encrypted, BricsCAD's
+    plain SAT 7.0 ("Open Design Alliance ACIS Builder"). Needs an ACIS
+    writer. Deferred.
+  - CHSPACE -- AutoCAD moves the SAME entity to paper space (67=1, 410 the
+    layout, the points through the viewport's view); BricsCAD makes a NEW
+    entity there. The points depend on the viewport's view (centre / height),
+    which cador's viewports do not model. Deferred.
+  - ARRAYRECT associative -- AutoCAD's core console left the circle alone;
+    BricsCAD makes an INSERT of an anonymous block (*U9). ARRAYEDIT /
+    ARRAYCLOSE act on that block and its association objects. Deferred.
+Left: UNGROUP, HELIX, REGION, CHSPACE, ARRAYEDIT, ARRAYCLOSE -- each needs
+the piece named above first.
+
+## Closed (2026-10-06)
+
+All four phases are done, and the commands are in alref: alref-apropos lists
+them as Command (alref 1.4.0, !425) in their own namespace beside functions,
+variables and system variables (alref 1.5.0, !426), each page giving its
+Availability and its clautolisp status read from cador. The six commands left
+above (UNGROUP, HELIX, REGION, CHSPACE, ARRAYEDIT, ARRAYCLOSE) moved to
+issues/open/deferred-commands-awaiting-models.issue, each with the piece it
+waits on.

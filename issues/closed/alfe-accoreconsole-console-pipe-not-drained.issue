@@ -1,0 +1,209 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-accoreconsole-console-pipe-not-drained — a long accoreconsole run may block on its own console pipe (suspected)
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: windows-access (console-flood:probe:accoreconsole:windows to confirm on the AutoCAD runner)
+#+BRANCH: fix-alfe-drain-engine-pipes
+
+* Context
+
+Found while harvesting option keywords (cadtui-locale-option-keywords.issue,
+2026-10-08). The optkw probe enters 13 commands in ONE accoreconsole session
+(alfe --autocad --mode batch). Three runs hung part-way, each after a
+DIFFERENT command:
+
+| job         | order                                   | completed                    | hung at |
+|-------------+-----------------------------------------+------------------------------+---------|
+| 16981155886 | OFFSET..SCALE, ZOOM, RECTANG..          | 8 (OFFSET..SCALE)            | ZOOM    |
+| 16998925798 | OFFSET..SCALE, RECTANG, PLINE.., ZOOM   | 8 (OFFSET..SCALE)            | RECTANG |
+| 17026576122 | PLINE BREAK LENGTHEN OFFSET..SCALE ..   | 9 (PLINE..MIRROR)            | ROTATE  |
+
+In each run every completed command's log carries the same second as the
+start, and then the job sits silent until alfe's --timeout 300 expires (the
+probe step lasts ~5 min 20 s). So it is a hang, not a crash, and it is
+neither a particular command (ROTATE completed after MIRROR in the first two
+runs; it hung after MIRROR in the third) nor the Nth command (8 vs 9). The
+same probe on BricsCAD V25 Windows (job 17026576124) completes all 13.
+
+* Problem (suspected cause -- not yet proven)
+
+backend-autocad.lisp launches accoreconsole with =:output :stream
+:error-output :stream= (START-ENGINE, CALL-LAUNCHER) and reads those pipes
+only once the process is DEAD (PROCESS-EXIT-DETAILS,
+LAUNCHER-FAILURE-DETAILS). Nothing reads them while the engine runs: the
+payload comes through the file protocol. accoreconsole writes its whole
+command line to that console (UTF-16LE: every command echo, prompt and cancel
+-- 2 bytes a character). Once the pipe's buffer is full, accoreconsole's next
+console write blocks for ever: the hang depends on the cumulative console
+OUTPUT, which is what the three runs show (a fixed amount reached at a
+different command depending on what came before). The output volumes before
+the three hang points are close (about 3.6k-4.0k characters of probe output)
+but my estimate of what the console itself receives is too rough to pin one
+capacity, hence "suspected".
+
+Any long accoreconsole run with chatty commands (command-driving probes,
+user scripts run through alfe --mode batch) is exposed.
+
+* Proposal
+
+1. Confirm: a probe that only PRINCs (no command) N kilobytes in one
+   accoreconsole session, for N = 2, 4, 8, 16: a cliff at a fixed N confirms
+   the pipe; no cliff refutes it.
+2. Fix: drain accoreconsole's stdout/stderr WHILE it runs -- a reader thread
+   per pipe accumulating into a buffer (kept for the diagnostics that now
+   read the pipes after exit), or launch with =:output= / =:error-output=
+   pointing at files in the workdir and read those after exit.
+3. Meanwhile the optkw wrapper runs accoreconsole one command per session
+   (scripts/run-optkw-probe.ps1, OPTKW_COMMANDS), which keeps each session's
+   output small.
+
+* Acceptance criteria
+
+- The N-kilobyte probe (or the optkw probe in ONE session) completes on
+  AutoCAD 2022's accoreconsole.
+- The launch diagnostics (exit details, failure details) still show the
+  console text.
+
+* Resolution (clautolisp 2.3.11 / alfe 2.3.11, 2026-10-08, branch fix-alfe-drain-engine-pipes) -- fixed, awaiting the runner probe
+
+** Evidence from the runner: one session per command completes
+
+With the optkw probe changed to run ONE accoreconsole session per command
+(MR !461, job 17027498898, optkw:probe:accoreconsole:windows) all 13
+commands complete -- PLINE BREAK LENGTHEN OFFSET TRIM EXTEND FILLET CHAMFER
+MIRROR ROTATE SCALE RECTANG ZOOM -- including ROTATE, RECTANG and ZOOM, which
+hung in the single-session runs 16981155886, 16998925798 and 17026576122
+(each after 8-9 commands, ~3.6-4k characters of console output). No command
+hangs by itself; the cumulative console output of one session does --
+consistent with an undrained pipe.
+
+** The mechanism, demonstrated off the runner
+
+A regression test runs a REAL child process (the host Lisp) through
+START-ENGINE's own launch keywords; the child writes 1 MiB to its standard
+output and 1 MiB to its standard error before it does its job. Against the
+code as it was (pipes read only after exit) all four variants -- AutoCAD and
+BricsCAD start paths, READY and exit-before-READY -- BLOCKED in the middle of
+the flood and failed on the 30 s READY timeout (146 s for the four, on
+poseidon/SBCL); with the fix they pass in about 2 s. So the hang is real for
+any engine that writes more than a pipe buffer to its console, which is what
+accoreconsole does. Whether THAT is what stopped the three optkw runs is for
+the probe below to confirm on AutoCAD 2022.
+
+** Audit -- every place alfe (and clautolisp) starts a child
+
+| site                                                                   | what it did                                         | now |
+|------------------------------------------------------------------------+-----------------------------------------------------+-----|
+| backend-autocad START-ENGINE (accoreconsole batch, cscript bridge)     | :output/:error-output :stream, read after exit only | FIXED: files in the workdir |
+| backend-autocad QUIT-CREATED-AUTOCAD (quit cscript)                    | :output/:error-output :stream, never read           | FIXED: :output nil :error-output nil (discarded) |
+| backend-bricscad START-ENGINE (bricscad batch, cscript, osascript)     | :output/:error-output :stream, read after non-zero exit only | FIXED: files in the workdir |
+| backend-clautolisp %RUN-ENGINE-CHILD (alfe -> clautolisp-sbcl child)   | output/error to temporary FILES, or :interactive    | already safe (unchanged) |
+| backend-autocad %RUN-CAPTURING-TEXT (reg.exe), trustedpaths %RUN-POWERSHELL, cad-common AppleLanguages (defaults read) | uiop:run-program :output :string, :error-output nil | safe: RUN-PROGRAM drains while it waits (unchanged) |
+| clautolisp autolisp-dcl subprocess-renderer (Qt GUI driver)            | :input/:output :stream, :error-output :interactive  | safe: a request/response protocol reads its output (unchanged) |
+| clautolisp autolisp-file-compat product runner                         | :output *standard-output* :error-output *error-output*, then wait-process | safe: the copy runs during WAIT-PROCESS (unchanged) |
+| clautolisp builtins startapp, vle-startapp, doc-clipboard (api.lisp)   | :output nil :error-output nil, or run-program       | safe (unchanged) |
+| clautolisp debug-ui-dumb pager, tools/clautolisp shell escape, sedit clipboard, pathname-mapping uname/mount, terminal-color | run-program with :interactive / :string / a string input | safe (unchanged) |
+
+The scripts that drive alfe (scripts/run-*.ps1, run-*.sh) read alfe's own
+output through PowerShell / shell pipelines that are consumed as they run;
+not affected. Nothing under clautolisp/cador was touched (no launch there).
+
+** The fix
+
+autolisp-front-end/source/backend-cad-common.lisp: a CONSOLE-CAPTURE (two paths
+and an external format) made by MAKE-CONSOLE-CAPTURE in the run's workdir --
+=engine-console-stdout.txt=, =engine-console-stderr.txt= --
+CONSOLE-CAPTURE-LAUNCH-KEYS (:output PATH :if-output-exists :supersede
+:error-output PATH :if-error-output-exists :supersede) and
+PROCESS-CONSOLE-TEXT (the file's text, then whatever a pipe still holds when a
+test launcher returned one). Files rather than reader threads: a file never
+fills, reading it can never block -- not even when a grandchild (the
+bricscad.exe a cscript started) still holds the handle, which would block a
+read of a pipe to its end-of-file -- it needs no thread (same on SBCL/CCL,
+Windows/POSIX; it is the shape the clautolisp child already had), and
+--keep-workdir leaves the console for a post-mortem. Standard input stays a
+pipe.
+
+The diagnostics are unchanged in content: PROCESS-EXIT-DETAILS (AutoCAD
+exit-before-READY: exit code + stdout/stderr, NULs of UTF-16LE stripped,
+decoded with the same -Econsole / -Ecadstdio / $ALFE_AUTOCAD_CONSOLE_ENCODING
+/ ISO-8859-1 choice as the pipe was) and LAUNCHER-FAILURE-DETAILS (BricsCAD,
+4000-character tails) now read the capture files.
+
+Documented: alfe user manual, /CAD engine control/; alfe specification,
+/Workdir and timeout/ (the engine's console); RELEASE_NOTES (alfe).
+
+** The tests
+
+autolisp-front-end/tests/console-flood-tests.lisp (4 tests, FiveAM =is=):
+autocad-batch-console-flood-does-not-block-the-engine,
+bricscad-console-flood-does-not-block-the-engine,
+autocad-batch-console-flood-keeps-exit-diagnostics,
+bricscad-console-flood-keeps-launcher-failure-details. The child is the host
+Lisp (SBCL runtime+core, CCL kernel+image), so they run on every lane,
+Windows included; a deadlock fails each in 30 s. The Windows-only
+autocad-start-engine-batch-surfaces-early-process-exit now passes START-ENGINE's
+keywords through instead of forcing :stream pipes.
+
+** To confirm on the runner (why this stays NEXT)
+
+=console-flood:probe:accoreconsole:windows= (.gitlab/native.yml, probe family
+=console-flood=; automatic on a merge-request pipeline that changes the probe,
+manual otherwise) runs scripts/run-console-flood-probe.ps1:
+console-flood-probe.lsp drives about 1 MB into accoreconsole's own console in
+ONE session (--autocad --mode batch --timeout 300, --keep-workdir), measuring
+the size of engine-console-stdout.txt after every chunk (FLOOD-STEP lines) and
+per driver (FLOOD-DRIVER ... live|dead): PROMPT, native PRINC (through APPLY,
+so alfe's load rewriter leaves it alone), (command "_.SETVAR" "USERI1" n) with
+CMDECHO 1 -- the echoed command line that filled the console in the optkw
+runs -- and (command "_.REGEN"), until 1 MB reached the console. Report
+dist/console-flood/accoreconsole-Windows.txt: FLOOD-VERDICT = complete with
+that many console bytes; FLOOD-INCOMPLETE (red) = the session stopped, at the
+last FLOOD-STEP; FLOOD-WEAK (red) = completed but the console received under
+256 KB, which proves nothing about a full pipe.
+
+First run, job 17028620750 (MR !465, b2c56dfe): the first version PROMPTed
+350 KB and completed in 15 s, but engine-console-stdout.txt held only 2290
+bytes -- a (prompt) evaluated inside alfe's protocol does not reach
+accoreconsole's stdout -- so it proved nothing; and the wrapper missed its own
+FLOOD-DONE (Select-String over a report mixing a UTF-8 header with Tee-Object's
+UTF-16LE lines) and went red. Both fixed: the probe measures and switches
+driver, the verdict is computed from the captured lines.
+
+Second run, job 17030198222 (c5997f0f): the prompt driver added 0 bytes
+(dead), then the run DIED in the princ driver -- errors.txt: "nombre
+d'arguments insuffisants" at the driver loop. On AutoCAD alfe's princ takes
+(OBJ FILE); its load rewriter pads direct calls, but a 1-argument princ
+reached through APPLY is not rewritten. Fixed: the driver passes the stream
+(apply 'princ (list LINE nil)); prompt and princ are now small (64 KB) and
+GUARDED by vl-catch-all-apply, so an error ends that driver (FLOOD-DRIVER ...
+error MSG), not the run; the command-echo SETVAR driver (CMDECHO 1) is the
+primary flood with the whole 1 MB target, then REGEN if still short -- both
+unguarded (vl-catch-all-apply around COMMAND aborts AutoCAD runs), hence last.
+
+Close this ticket when that job has reported FLOOD-VERDICT with this fix; then the optkw probe can go back to one
+session (and benchmark:autocad:windows, which also runs --mode batch and died
+mid-suite on 2026-09-28, can be re-run against it --
+autocad-com-fails-in-disconnected-windows-session.issue).
+
+* Verified on the runner (2026-10-08, job 17032195060) -- DONE
+
+console-flood:probe:accoreconsole:windows on MR !465 (alfe with the fix):
+
+#+begin_example
+FLOOD-ENGINE  acad 24.1
+FLOOD-DRIVER  prompt 200 added 0 dead
+FLOOD-DRIVER  princ 200 added 0 dead
+FLOOD-DRIVER  setvar 4200 added 1053916 live
+FLOOD-DONE    1055866 (1053916 added)
+FLOOD-RUN     alfe exit 0 after 12 s
+FLOOD-CONSOLE engine-console-stdout.txt = 1056196 bytes
+FLOOD-VERDICT complete, 1056196 console bytes in one session
+#+end_example
+
+About 1 MB of accoreconsole command echo (the CMDECHO SETVAR driver -- the
+kind of output that hung the single-session option-keyword runs after
+~4 KB) went through ONE session to the workdir file, and the run finished
+in 12 s. Neither (prompt ...) nor alfe's protocol-captured princ reaches the
+console; command echo does. The hypothesis is confirmed and the fix holds.

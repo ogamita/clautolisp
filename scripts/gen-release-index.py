@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """Generate index.html pages for the clautolisp releases web area.
-Usage: gen-index.py <releases-root>
-Scans <root>/<version>/ dirs, writes <version>/index.html (archive listing) and
-<root>/index.html (release listing). Idempotent; safe to re-run after each mirror."""
+
+Usage: gen-release-index.py <releases-root>
+         Scans <root>/<version>/ dirs, writes <version>/index.html (archive
+         listing) and <root>/index.html (release listing). Idempotent; safe to
+         re-run after each mirror.
+       gen-release-index.py --version <dir> <version>
+         Writes <dir>/index.html for the one release whose archives <dir>
+         holds (the CI mirror builds it from the collected set).
+       gen-release-index.py --root-index <file> <version>...
+         Writes the release listing to <file> for the given versions (the CI
+         mirror lists them from the server: it has no copy of the tree).
+"""
 import sys, os, html
-ROOT = sys.argv[1]
+ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
 CSS = ("body{font:16px/1.5 system-ui,sans-serif;max-width:48rem;margin:3rem auto;padding:0 1rem;color:#222}"
        "h1{font-size:1.6rem}a{color:#0645ad;text-decoration:none}a:hover{text-decoration:underline}"
        "nav{color:#888;font-size:.9rem;margin-bottom:1.2rem}ul{list-style:none;padding:0}"
@@ -20,11 +29,7 @@ def human(n):
 def vkey(v):
     try: return tuple(int(x) for x in v.split("."))
     except Exception: return (0,)
-versions=[]
-for name in os.listdir(ROOT):
-    d=os.path.join(ROOT,name)
-    if not os.path.isdir(d): continue
-    versions.append(name)
+def write_version_page(d, name):
     files=sorted(f for f in os.listdir(d) if os.path.isfile(os.path.join(d,f)) and f!="index.html")
     rows="".join('<tr><td><a href="%s">%s</a></td><td class="s">%s</td></tr>'%(
         html.escape(f),html.escape(f),human(os.path.getsize(os.path.join(d,f)))) for f in files) or "<tr><td>(empty)</td></tr>"
@@ -37,13 +42,30 @@ for name in os.listdir(ROOT):
 <table>%s</table>
 <footer><a href="https://ogamita.com/clautolisp">ogamita.com/clautolisp</a> &middot; <a href="https://gitlab.com/ogamita/clautolisp">source</a></footer>
 </body></html>"""%(html.escape(name),CSS,html.escape(name),rows))
-versions.sort(key=vkey,reverse=True)
-items="".join('<li><a href="%s/">clautolisp %s</a></li>'%(html.escape(v),html.escape(v)) for v in versions) or "<li>(no releases yet)</li>"
-open(os.path.join(ROOT,"index.html"),"w").write(
+
+def write_root_index(path, versions):
+    versions=sorted(set(versions),key=vkey,reverse=True)
+    items="".join('<li><a href="%s/">clautolisp %s</a></li>'%(html.escape(v),html.escape(v)) for v in versions) or "<li>(no releases yet)</li>"
+    open(path,"w").write(
 """<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width, initial-scale=1">
 <title>clautolisp releases</title><style>%s</style></head><body>
 <nav><a href="../">&larr; clautolisp</a> &middot; <a href="../../">ogamita</a></nav>
 <h1>clautolisp &mdash; releases</h1><ul>%s</ul>
 <footer><a href="https://ogamita.com/clautolisp">ogamita.com/clautolisp</a> &middot; <a href="https://gitlab.com/ogamita/clautolisp">source</a></footer>
 </body></html>"""%(CSS,items))
-print("generated %d release page(s) + releases index"%len(versions))
+
+if sys.argv[1:2]==["--version"]:
+    write_version_page(sys.argv[2], sys.argv[3])
+    print("generated the %s release page"%sys.argv[3])
+elif sys.argv[1:2]==["--root-index"]:
+    write_root_index(sys.argv[2], sys.argv[3:])
+    print("generated the releases index (%d release(s))"%len(set(sys.argv[3:])))
+else:
+    versions=[]
+    for name in os.listdir(ROOT):
+        d=os.path.join(ROOT,name)
+        if not os.path.isdir(d): continue
+        versions.append(name)
+        write_version_page(d, name)
+    write_root_index(os.path.join(ROOT,"index.html"), versions)
+    print("generated %d release page(s) + releases index"%len(versions))

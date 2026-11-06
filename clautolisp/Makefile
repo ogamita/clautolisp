@@ -23,6 +23,11 @@ endif
 # (uiop:getcwd), which is always spelled natively (c:/… on Windows).
 ASD_FILE := $(ROOT_DIR)/clautolisp.asd
 XDG_CACHE_HOME ?= $(ROOT_DIR)/.cache
+# The test suites never write a real registry / defaults database: SETVAR
+# of LISPSYS persists, and CLAUTOLISP_REGISTRY_FILE makes the host use this
+# sexp store instead, on every platform (lispsys persistence, 2026-10-04).
+TEST_REGISTRY_FILE ?= $(XDG_CACHE_HOME)/test-registry.sexp
+test test-sbcl test-ccl test-compiler-equivalence test-lexical-locals test-debug-compiled check-docstrings test-shipped-compiler test-shipped-compiler-ccl test-shipped-debug-flag test-shipped-debug-flag-ccl test-shipped-interrupt test-shipped-interrupt-ccl: export CLAUTOLISP_REGISTRY_FILE = $(TEST_REGISTRY_FILE)
 
 # Install destination. Override on the command line:
 #   make install PREFIX=/usr/local DESTDIR=/staging
@@ -142,9 +147,11 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard autolisp-*/documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
+.PHONY: text-metrics
 .PHONY: all test test-sbcl test-ccl test-compiler-equivalence \
         test-debug-compiled test-shipped-compiler test-shipped-compiler-ccl \
-        check-docstrings \
+        test-shipped-interrupt test-shipped-interrupt-ccl \
+        check-docstrings spec-symbols operator-availability check-operator-availability \
         build build-sbcl build-ccl probe-check \
         submodules build-libredwg test-libredwg-compiler-path \
         build-read-autolisp-sbcl build-read-autolisp-ccl \
@@ -152,7 +159,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
         run-file-compat run-file-compat-sbcl run-file-compat-ccl \
         run-file-compat-autocad run-file-compat-bricscad \
         audit-file-compat-autocad audit-file-compat-bricscad \
-        documentation user-manual clean-pdf specifications builtins-coverage \
+        documentation user-manual tutorial clean-pdf specifications builtins-coverage \
         run-file-compat-bricscad-macos run-file-compat-bricscad-windows \
         run-file-compat-autocad-windows
 ifneq ($(HAVE_QT6_GUI),yes)
@@ -266,16 +273,24 @@ check-docstrings:  ## Fail if any definition body holds dead forms — the signa
 test-shipped-compiler: build-clautolisp-sbcl  ## Assert the BUILT executable has a compiler in it: .lap round-trip + -O. Nothing else in the corpus runs the program that ships.
 	tools/clautolisp/tests/shipped-compiler-test.sh
 	"$(MAKE)" test-shipped-debug-flag
+	"$(MAKE)" test-shipped-interrupt
 
 test-shipped-compiler-ccl: build-clautolisp-ccl  ## Same, against the CCL executable. A .lap is a native host FASL, so each host ships its own compiler and each has to be asked.
 	tools/clautolisp/tests/shipped-compiler-test.sh tools/clautolisp/bin/clautolisp-ccl
 	"$(MAKE)" test-shipped-debug-flag-ccl
+	"$(MAKE)" test-shipped-interrupt-ccl
 
 test-shipped-debug-flag: build-clautolisp-sbcl  ## Assert the BUILT executable receives -d/--debug.
 	tools/clautolisp/tests/shipped-debug-flag-test.sh tools/clautolisp/bin/clautolisp-sbcl -x '(/ 1 0)'
 
 test-shipped-debug-flag-ccl: build-clautolisp-ccl  ## Same for CCL, whose kernel removes -d/--debug from argv (alfe-ccl-executable-drops-log-output).
 	tools/clautolisp/tests/shipped-debug-flag-test.sh tools/clautolisp/bin/clautolisp-ccl -x '(/ 1 0)'
+
+test-shipped-interrupt: build-clautolisp-sbcl  ## Assert the BUILT executable applies --on-interrupt quit/ignore/debug to a real SIGINT (no host break loop).
+	tools/clautolisp/tests/shipped-interrupt-test.sh tools/clautolisp/bin/clautolisp-sbcl
+
+test-shipped-interrupt-ccl: build-clautolisp-ccl  ## Same for CCL, which had no SIGINT handler before 2.2.218 (Control-C fell into CCL's break loop).
+	tools/clautolisp/tests/shipped-interrupt-test.sh tools/clautolisp/bin/clautolisp-ccl
 
 # CCL EXIT STATUS (issues/open/ccl-test-lanes-cannot-fail.issue).
 # Without --batch, CCL does not exit on an unhandled error in an --eval:
@@ -391,6 +406,7 @@ documentation: $(PDF_FILES) $(INFO_FILES) $(BUILD_DIR)/documentation/RELEASE_NOT
 
 user-manual: $(BUILD_DIR)/documentation/clautolisp-user-manual.pdf $(BUILD_DIR)/documentation/clautolisp-user-manual.info
 specifications: $(BUILD_DIR)/documentation/clautolisp-specifications.pdf $(BUILD_DIR)/documentation/clautolisp-specifications.info
+tutorial: $(BUILD_DIR)/documentation/tutorial.pdf $(BUILD_DIR)/documentation/tutorial-fr.pdf
 
 # The dialect-warnings annex is GENERATED from the register in
 # autolisp-runtime/source/portability.lisp, so a warning's wording,
@@ -399,6 +415,26 @@ specifications: $(BUILD_DIR)/documentation/clautolisp-specifications.pdf $(BUILD
 # The generated .org is tracked, because it ships in the manual and is
 # built to PDF/Info like every other doc.
 DIALECT_WARNINGS_ANNEX := documentation/clautolisp-dialect-warnings.org
+
+# The vendor-only operator table (deferred-clautolisp-out-of-dialect-warnings)
+# is GENERATED from the spec's Availability sections, via the flags the paged
+# spec build writes into symbols.txt. Needs emacs (the spec build).
+SPEC_SYMBOLS := ../autolisp-spec/build/pages/symbols.txt
+OPERATOR_AVAILABILITY := autolisp-runtime/source/operator-availability.lisp
+
+spec-symbols:
+	$(MAKE) -C ../autolisp-spec pages
+
+operator-availability: spec-symbols  ## Regenerate the vendor-only operator table from the spec.
+	python3 tools/generate-operator-availability.py "$(SPEC_SYMBOLS)" "$(OPERATOR_AVAILABILITY)"
+
+check-operator-availability: spec-symbols  ## Fail if the vendor-only operator table is stale w.r.t. the spec.
+	python3 tools/generate-operator-availability.py --check "$(SPEC_SYMBOLS)" "$(OPERATOR_AVAILABILITY)"
+
+TEXT_METRICS_BRICSCAD ?= ../probe-results/bricscad/macos/20261003T130100Z/results.sexp
+TEXT_METRICS_AUTOCAD  ?= ../probe-results/autocad/ms-windows/20261003T130228Z/results.sexp
+text-metrics:  ## Regenerate the Standard-font glyph metrics (TEXTBOX, TEXT bounding box) from the vendors' text-metrics probe runs.
+	python3 tools/generate-text-metrics.py "$(TEXT_METRICS_BRICSCAD)" "$(TEXT_METRICS_AUTOCAD)" autolisp-runtime/source/text-metrics.lisp
 
 dialect-warnings-annex:  ## Regenerate the manual's dialect-warnings annex from the register.
 	"$(SBCL)" --non-interactive --disable-debugger \
@@ -618,7 +654,12 @@ RUN_FILE_COMPAT_BIN   := $(RUN_FILE_COMPAT)
 
 INSTALL_BINARIES_sbcl := $(CLAUTOLISP_SBCL) $(READ_AUTOLISP_SBCL)
 INSTALL_BINARIES_ccl  := $(CLAUTOLISP_CCL)  $(READ_AUTOLISP_CCL)
-INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARIES_$(impl)))
+# INSTALL_LISPS narrows that to the Lisps actually BUILT: the root
+# stage-programs builds only $(RELEASE_LISPS) and passes it here, so a
+# stale image of a Lisp it did not build (an old *-ccl left in bin/) is
+# not shipped -- nor used to compile the plug-ins against current source.
+INSTALL_LISPS ?= $(AVAILABLE_IMPLEMENTATIONS)
+INSTALL_BINARIES := $(foreach impl,$(INSTALL_LISPS),$(INSTALL_BINARIES_$(impl)))
 
 .PHONY: install install-programs install-documentation install-libraries \
         install-lisp-systems install-emacs uninstall

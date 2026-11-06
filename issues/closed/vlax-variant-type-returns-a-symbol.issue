@@ -1,0 +1,63 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vlax-variant-type-returns-a-symbol — vlax-variant-type answers ARRAY / REAL / ... instead of the integer VARIANT type code
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-vlax-variant-type-returns-a-symbol
+#+DATE: 2026-10-08
+
+* Symptom
+
+Found while implementing IntersectWith (cador-intersectwith-missing):
+
+: (vl-load-com)
+: (vlax-variant-type (vlax-3d-point 1 2 3))   ; clautolisp => ARRAY
+
+The specification (=** Function Entry: VLAX-VARIANT-TYPE=, Return Values)
+says "Integer type code": 0 vlax-vbEmpty, 1 vlax-vbNull, 2 vlax-vbInteger,
+3 vlax-vbLong, 4 vlax-vbSingle, 5 vlax-vbDouble, 8 vlax-vbString,
+9 vlax-vbObject, 11 vlax-vbBoolean, and 8192 + n for a safearray of type n
+(so 8197 for an array of doubles, the result of every point property and of
+IntersectWith).
+
+* Cause
+
+=builtin-vlax-variant-type= (=clautolisp/autolisp-builtins-core/source/api.lisp=)
+interns the variant's internal type KEYWORD (=:array=, =:real=, ...) as an
+AutoLISP symbol instead of mapping it to the VARIANT type code. For an array
+variant the element type lives in the inner safearray's type tag, which it
+does not consult. Code that tests =(= (vlax-variant-type v) 8197)= or
+=(>= (vlax-variant-type v) 8192)= -- the classic idiom -- is always false.
+
+* Proposal
+
+Map the internal tag to the code (and for =:array= add 8192 to the code of
+the safearray's element type); check =vlax-variant-change-type= and
+=vlax-make-variant='s type argument for the same confusion. The probe
+=intersectwith-probe.lsp= writes the vendor's value for an IntersectWith
+result (field VARIANT-TYPE).
+
+* Acceptance criteria
+
+- =(vlax-variant-type (vlax-3d-point 1 2 3))= = 8197;
+  =(vlax-variant-type (vlax-make-variant 1.0))= = 5; strings 8; integers per
+  the vendor default (to confirm).
+- Builtins tests for each type.
+
+* Resolved (2026-10-08, clautolisp 2.3.10, branch fix-cador-intersectwith)
+
+- vlax-variant-type returns the vlax-vb* code: 0 empty, 2 short, 3 for an
+  AutoLISP integer (vlax-vbLong, the reference's default), 5 real, 8
+  string, 9 object, 11 boolean, 12 variant, and 8192 + the element code for
+  an array -- 8197 for a point or an IntersectWith result, as AutoCAD 2022
+  and BricsCAD V25 / V26 return (intersectwith-probe, jobs 17029587293 /
+  294 / 295); 8204 for BricsCAD's empty IntersectWith result.
+- vlax-safearray-type returns the element code likewise.
+- vlax-make-variant, vlax-variant-change-type and vlax-make-safearray accept
+  an integer type code (they used to turn it into VARIANT).
+- Tests: builtin-tests (variant / safearray type tests updated from the
+  symbols to the codes), intersectwith-tests
+  vlax-variant-type-returns-the-vb-type-code.
+- Still missing: the vlax-vb* constant NAMES are unbound --
+  vlax-vb-constants-unbound.issue.

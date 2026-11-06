@@ -51,6 +51,10 @@
                 #:build-band
                 #:install-menu-bar
                 #:add-band
+                #:apply-file-command-event
+                #:cad-command-line-p
+                #:cad-command-line-name
+                #:cad-command-line-source
                 #:ui-description-error
                 #:ui-band-style
                 ;; Phase 7: localisation
@@ -58,6 +62,9 @@
                 #:register-locale-dictionary
                 #:local-name
                 #:international-name
+                #:local-option-keyword
+                #:international-option-keyword
+                #:option-keyword-abbreviation
                 #:resolve-locale
                 #:load-locale-data-from-directory
                 #:localise-meta-line

@@ -532,8 +532,11 @@ ref**; anything still fixable gets fixed.
 4. push the tag and both pointers to `origin`;
 5. post-release bump on master, so no untagged commit claims a released
    version;
-6. mirror the collected artefacts to the poseidon download area (on poseidon):
-   `GITLAB_TOKEN=<api> bash scripts/deploy-release-to-poseidon.sh release-M.m.d`;
+6. wait for `collect:release` to succeed: it assembles the set AND mirrors it
+   to the poseidon download area itself (`scripts/mirror-release-to-poseidon.sh`,
+   the rrsync-restricted release key; its GitLab artefact keeps only the
+   manifest). To re-mirror by hand, on poseidon: `bash
+   scripts/deploy-release-to-poseidon.sh release-M.m.d --from DIR`;
 7. publish: `python3 scripts/make-gitlab-release.py release-M.m.d`.
 
 **Release runbook — the concrete commands and gotchas (as run end-to-end for
@@ -564,21 +567,18 @@ the whole thing; the traps below are what cost time the first time.
 - *Program stamps (step 1).* `scripts/manifest-versions.sh` names the three:
   `clautolisp`, `alfe`, `read-autolisp`. `alfe` tracks `clautolisp` — bump it to
   the release `M.m`; `read-autolisp` bumps only if `autolisp-reader` changed.
-- *Steps 6–7: CHECK `hostname` FIRST.* The release session may itself BE
-  `poseidon` — then the web tree is local, `sudo -n` works, and you run
-  `bash scripts/deploy-release-to-poseidon.sh release-M.m.d` **directly**. Do NOT
-  `ssh poseidon` from poseidon: that loopback fails `Permission denied
-  (publickey)` and is a red herring, not a real lack of access. The deploy
-  script's token comes from `$GITLAB_TOKEN` or, absent it, `~claude/.authinfo`
-  port `claude` — so on poseidon you set nothing.
+- *Step 6 is CI's.* `collect:release` mirrors the set itself, on the release
+  tag, as `release-ogamita` (the poseidon account owning the ogamita web
+  tree, rrsync-restricted to it; `documentation/setup-deploy.sh`) with the
+  runners' `DEPLOY_SSH_PRIVATE_KEY` protected variable. Only to RE-mirror by hand, on
+  poseidon as `claude` or `runners` (each has a `~/.ssh/release-ogamita` key;
+  no sudo), collect locally and run
+  `bash scripts/deploy-release-to-poseidon.sh release-M.m.d --from DIR`.
 - *`make-gitlab-release.py` uses glab's stored auth* (no token env of its own)
   and creates/updates the Release itself. Run `--dry-run` first (it verifies
-  every link), then for real. `--links poseidon` (default, durable) needs the
-  step-6 mirror up; from a box with NO poseidon shell, publish `--links gitlab`
-  (token-free; artefacts are `expire_in: 30 days`, so do it within that window)
-  and upgrade the links in place
-  later from poseidon: `make-gitlab-release.py release-M.m.d --update --links
-  poseidon`.
+  every link), then for real. `--links poseidon` (default) needs the step-6
+  mirror up; `--links gitlab` only works for a release collected before
+  clautolisp 2.3.52, whose artefact still held the archives.
 - *The collect:release manifest is the authority on what ships, not the
   per-platform lane colour.* `make-gitlab-release.py --dry-run` lists it (15
   assets for 2.1.0). For 2.1.0 `collect:release` reached `success` and bundled
@@ -587,6 +587,22 @@ the whole thing; the traps below are what cost time the first time.
   `stuck_pending_no_matching_runners` — so a red per-platform lane is NOT proof
   the platform is missing. Wait for `collect:release=success` (poll its terminal
   state) before mirroring/publishing.
+- *collect:release ran but could not store its artefact (GitLab `413 Payload
+  Too Large`).* release-2.3.0's set was ~1.07 GB, above gitlab.com's artefact
+  limit: the job ASSEMBLED all 15 assets (its log lists them), then failed at
+  upload, so neither script could fetch it. Reproduce the collect on poseidon
+  and publish from the local set: extract the tag (`git archive release-M.m.d`),
+  download each `release:*` job's artefacts and the GitHub Windows run
+  (`gh run download <id> -R ogamita/clautolisp -p 'clautolisp-*-windows-*'`),
+  copy the Windows zips into `dist/`, run `make collect-artefacts COLLECT_IN=dist
+  COLLECT_OUT=dist/combined`, then
+  `bash scripts/deploy-release-to-poseidon.sh release-M.m.d --from dist/combined`
+  and `python3 scripts/make-gitlab-release.py release-M.m.d --links poseidon
+  --manifest dist/combined/manifest-release-assets.txt` (dry run first). The
+  links are poseidon's, so nothing depends on the missing GitLab artefact
+  (collect-release-artefact-exceeds-gitlab-size-limit.issue). Since 2.3.52
+  this cannot happen: collect:release mirrors the set to poseidon and stores
+  only the manifest as its artefact.
 
 **Mirroring to poseidon (step 6).** Release archives are hosted on a
 **durable poseidon web area**, not on GitLab job artefacts. The `ogamita`
@@ -595,14 +611,19 @@ refused (`namespace-storage-blocks-ci.issue`) and, worse, any purge to get
 back under the limit kills every GitLab-artefact link a release points at.
 So the published release must not depend on GitLab storage surviving.
 
-`scripts/deploy-release-to-poseidon.sh release-M.m.d`, run **on poseidon**
-(it needs `sudo` to the web tree and a `GITLAB_TOKEN` with `api`), downloads
-that tag's `collect:release` set, rsyncs it to
-`https://poseidon.informatimago.com/ogamita/clautolisp/releases/<ver>/`, and
-regenerates the index pages (`scripts/gen-release-index.py`). See
-`~/admin.org` on poseidon for the web layout. Do this **before** step 7 —
-`make-gitlab-release.py` fetches every link first and aborts if the mirror
-is not up yet.
+`collect:release` does it on the release tag: after `make collect-artefacts`
+it runs `scripts/mirror-release-to-poseidon.sh <ver> dist/combined`, which
+rsyncs the set over SSH as `release-ogamita` (an rrsync forced command
+chrooted to the ogamita web tree; files 444, directories 755) to
+`https://poseidon.informatimago.com/ogamita/clautolisp/releases/<ver>/` and
+regenerates the index pages (`scripts/gen-release-index.py --version` /
+`--root-index`; the version list comes from the server). A failed mirror
+fails the job. Its GitLab artefact keeps only `manifest-release-assets.txt`
+and the release page: the ~1 GB set is above gitlab.com's artefact limit
+(collect-release-artefact-exceeds-gitlab-size-limit). See `~/admin.org` on
+poseidon for the web layout, and `documentation/poseidon-deploy.md` for the
+key. `make-gitlab-release.py` fetches every link first and aborts if the
+mirror is not up.
 
 **Publishing the release (step 7).** Use the script, not `glab release
 create` by hand. It reads `manifest-release-assets.txt` — which
@@ -817,10 +838,14 @@ clautolisp-only extension used under a non-clautolisp dialect emits a
 `emit-…-extension-warning`, gated by `(member dialect '(:clautolisp :lax))`.
 Model: `emit-lambda-list-extension-warning`; canonical case `(terpri <file>)`
 (real AutoCAD 2026 + BricsCAD V26 `terpri` is zero-arity/command-line-only).
-**Do not make these hard errors** — pjb corrected exactly this. The broad
-sweep of remaining hard dialect errors that should become warnings is
-`issues/open/deferred-clautolisp-out-of-dialect-warnings.issue` (DEFERRED —
-don't start without asking). This is the *implementation* companion to the
+**Do not make these hard errors** — pjb corrected exactly this. The
+VENDOR-ONLY operators have theirs since 2.2.147 (pjb asked for it
+2026-09-29): `emit-vendor-operator-warning`, fired from the subr call site on
+a builtin whose `autolisp-subr-owner` is set from the GENERATED
+`operator-availability.lisp` (spec Availability → `make -C clautolisp
+operator-availability`; the documentation job checks it for drift). A wrong
+owner is fixed in the spec, never by hand in the table
+(`issues/closed/deferred-clautolisp-out-of-dialect-warnings.issue`). This is the *implementation* companion to the
 normative **Dialect Divergence and Warnings** section above.
 
 ## Version-bump discipline
@@ -831,8 +856,9 @@ normative **Dialect Divergence and Warnings** section above.
 every commit that touches source** — any file outside `documentation/` and
 `issues/` (lisp sources, tests, `.asd`, Makefiles). Docs-only / issues-only
 commits do **not** bump. Put the version in the commit subject (e.g.
-`clautolisp 1.7.18: …`). alfe carries its own version axis (see the
-Programs-versus-release note above). Watch for version-bump **conflicts**
+`clautolisp 1.7.18: …`). alfe embeds the clautolisp runtime: keep both program versions exactly
+aligned, and increment both whenever either program or its embedded libraries
+change (pjb, 2026-10-14). Watch for version-bump **conflicts**
 when merging parallel work branches — resolve to the higher DEVELOP.
 
 ## CI — GitLab is source of truth; mirror common lanes to GitHub
@@ -892,6 +918,17 @@ macOS (thalassa) and Windows (PF5S26BT) GitLab runners
   `glab api projects/ogamita%2Fclautolisp/pipelines/<id>/jobs` then
   `/jobs/<jid>/trace`.
 
+## CI — the alfe lanes need clautolisp-sbcl
+
+Every alfe test of the `--backend subprocess` variant (the direct/subprocess
+parity table, the per-action hook rows) SKIPS as a passing assertion when no
+`clautolisp-sbcl` is built -- and until alfe 2.2.232 no CI lane built it, so
+the table never ran in CI. A lane running the alfe suite builds it first
+(`make -C clautolisp build-clautolisp-sbcl`) and sets
+`ALFE_TEST_REQUIRE_CLAUTOLISP=1`, which turns that skip into a failure
+(`clautolisp-binary-required-p` in `tests/backend-clautolisp-tests.lisp`). A
+new skip-when-absent test uses the same predicate.
+
 ## CI — adding a Quicklisp dependency
 
 A new **quicklisp** dep breaks the alfe SBCL/CCL lanes with
@@ -912,6 +949,79 @@ thalassa (`macos,arm64,shell`) or the Windows PC (`windows,amd64,shell`)
 only when **genuinely platform-bound** (native macOS/Windows builds, GUI
 BricsCAD/AutoCAD). `release:linux:arm64` is the one lane that could move to
 poseidon but can't yet (needs a qemu arm64 runner).
+
+## CI — build caches (`scripts/ci-build-cache.sh`)
+
+The Lisp lanes on poseidon and the macOS unit lanes reuse the project's ASDF
+fasls across pipelines (`.fasl-cache` in `.gitlab-ci.yml` and
+`.gitlab/native.yml`, ci-cache-tool-builds.issue). Rules for anyone touching
+it or adding a lane:
+
+- **Never trust file times.** A cache is reused only when its KEY file (a
+  content hash of the source tree's git object ids, the Lisps, the Quicklisp
+  releases, the image's packages) equals the checkout's; otherwise it is
+  discarded whole. Reuse after a fresh clone by timestamps alone either
+  rebuilds everything or -- worse -- ships stale code (both measured; see the
+  script header).
+- **A new Lisp lane** gets `extends: .fasl-cache` and, as the LAST line of
+  `script` (never `after_script`: another container on docker),
+  `sh scripts/ci-build-cache.sh save fasl`. A job that leaves the checkout
+  modified is simply not saved.
+- **A file read at compile time outside the hashed tree** (today every
+  top-level entry except `issues/`, `documentation/`, `probe-results/`,
+  `.github/` and the root prose files) must be added to the key in
+  `source_tree`, or a stale fasl becomes possible.
+- **`release:*` never uses a build cache**; a release builds cold from its tag.
+- **Windows is deliberately uncached**: its `-ffd` clean keeps the working
+  tree (and `clautolisp/.cache`) between jobs, which is the one reuse path
+  there; `release-windows.sh` clears it for releases.
+- **LibreDWG** (kind `libredwg`, since clautolisp 2.2.230) is cached on the one
+  non-release Linux lane that builds it, `verify:packaged-dwg:linux`. Its key
+  is the submodule commit + `clautolisp/drawing-dwg` + the toolchain, NOT the
+  whole tree, so another clautolisp commit still hits and compiles 0 objects.
+  That only holds because LibreDWG's `config.h` no longer carries clautolisp's
+  `git describe` (next section). A lane that wants it needs
+  `GIT_SUBMODULE_STRATEGY: recursive`: the restore runs before any `make
+  submodules`, and a missing submodule is a miss that is never saved.
+
+## CI -- following LibreDWG stable releases
+
+clautolisp follows LibreDWG's **stable** releases (pjb, 2026-10-07): the GitHub
+releases of `LibreDWG/libredwg` with `prerelease=false` (`0.13.4`, `0.14`).
+The per-commit snapshots upstream also publishes as releases (`0.14.8590`,
+...) are prereleases and are NOT followed.
+
+`clautolisp/third-party/libredwg.release` records the followed release
+(`version 0.14`) and the commit its tag names. `build-libredwg.sh` writes that
+version to the submodule's `.version` and runs cmake from inside the
+submodule, so the shipped library reports `LibreDWG 0.14` (before 2.2.230 it
+reported clautolisp's `git describe`, because upstream's CMakeLists resolves
+`.version` / `git describe` in cmake's working directory --
+`issues/closed/libredwg-version-is-superproject-describe.issue`). The build
+FAILS if the submodule is not at the recorded commit, or if that commit's tags
+(when fetched) do not include the recorded version; `make check-libredwg-release`
+(part of `make check-release`, offline) fails if the gitlink disagrees with the
+file.
+
+`make check-libredwg-stable-release` (network: GitHub API + `git ls-remote`;
+manual or periodic, deliberately in no CI lane) says whether upstream has a
+newer stable release, and prints its commit. To follow one:
+
+1. `git -C clautolisp/third-party/libredwg fetch --tags origin` and
+   `git -C clautolisp/third-party/libredwg checkout <tag>`;
+2. set `version <tag>` and `commit <sha>` in
+   `clautolisp/third-party/libredwg.release`;
+3. `git add clautolisp/third-party/libredwg clautolisp/third-party/libredwg.release`;
+4. `make -C clautolisp build-libredwg` (the configure log says
+   `PACKAGE_VERSION: <tag>`), then the DWG tests
+   (`make -C clautolisp test-sbcl TEST_SYSTEM=clautolisp/drawing-dwg`), the
+   usual suites and the native Windows/macOS lanes (a LibreDWG change has broken
+   the MinGW build before -- see the notes in `build-libredwg.sh`);
+5. bump clautolisp (a shipped artefact changed) and add a RELEASE_NOTES bullet
+   naming the new LibreDWG release.
+
+The first build after a move recompiles every object (a new `config.h`); the
+libredwg build cache misses by key, as it must.
 
 ## CI — where to PLAY a manual CAD job, and how long it will wait
 
@@ -960,6 +1070,25 @@ default (`/tmp/` | `C:/Temp/`) via `apply-tempprefix-default`. Evidence:
 `autolisp-front-end/tests/scenarios/entities/pathname-probe.lsp`
 (`pathname:probe:*` CI jobs, `when: manual`).
 
+## Dialect versions and products
+
+**Dispatch on the PRODUCT, never on a dialect keyword with EQ.** A derived
+spelling (`--dialect bricscad-mac`, `bricscad-linux`, `bricscad-v25`,
+`autocad-mac`, `autocad-2022`) is its own descriptor, named after itself, so
+`(eq name :bricscad-v26)` silently treats it as AutoCAD. Fold the name first:
+`autolisp-dialect-template-name` (reader) maps any spelling of a product onto
+`:bricscad-v26` / `:autocad-2026`; or test `autolisp-dialect-product`.
+(clautolisp 2.2.156 fixed eleven call sites that got this wrong.)
+
+**Version differences documented by the vendor are implemented, even when no
+runner can test them** (pjb, 2026-10-03). Put the behaviour behind the
+dialect's version facet (`autolisp-dialect-version`, e.g. autocad-2022 vs
+autocad-2026) and write a probe in `probes/sources/` for it, so users on that
+version can contribute results later. AutoCAD 2022 is the last version we can
+TEST; 2026 stays the behavioural template (`*autolisp-dialect-latest-version*`,
+the web reference the catalogue was built from). No bump to 2027 until it is
+characterised.
+
 ## Documenting clautolisp deviations
 
 Whenever clautolisp deviates from / extends AutoCAD/BricsCAD, document in
@@ -981,7 +1110,7 @@ the related source-marker discipline.
 
 All interaction loops (REPL / ALDO debugger / NAVI / LAVI / INSPECT / SEDIT)
 run on `clautolisp/autolisp-interactor` (package `clautolisp.interactor`,
-dependency-free). Design record: `issues/open/interactor-design-revision.issue`
+dependency-free). Design record: `issues/closed/interactor-design-revision.issue`
 (interactor-unification CLOSED at 1.6.1).
 
 - Interactors are **singletons**; `*interactor-stack*` holds **activations**
@@ -1110,3 +1239,13 @@ newer runner on that machine, which is pjb's call; until then this is the rule.
   `.claude/skills/bytecode-vm-and-compiler/SKILL.md` when that work starts.
 - P1 items are largely gated on CAD hardware access, `pjb-decision`, or
   upstream (libredwg) — see TRIAGE.org for the current gates.
+
+
+## Dedicated CAD CI runner accounts
+
+A CAD CI job owns its dedicated runner account for the duration of the job.
+Its preflight should stop residual acad.exe, accoreconsole.exe and bricscad.exe
+processes belonging to that exact account before launching the job's CAD.
+Verify the owner SID; do not apply this policy to another account, a service
+session, or an interactive attachment. ALFE's own teardown still restores the
+live session before closing only the COM application created by that invocation.
