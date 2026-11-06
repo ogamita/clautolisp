@@ -1,0 +1,91 @@
+#+TITLE: Terminer le CAD possede apres resultats persistants, independamment de son code de sortie
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: enhancement
+#+DEPENDS: none
+#+BRANCH: codex/alfe-recorded-result-termination
+#+DATE: 2026-11-06
+
+* Decision de Pascal, 6 novembre 2026
+Apres que le script a termine, enregistre ses resultats et confirme par le
+protocole la fin du travail et la restauration, les evenements ulterieurs du
+CAD ne doivent plus invalider ces resultats. ALFE doit garantir la disparition
+du processus qu'il a cree : fermeture normale bornee, puis terminaison forcee
+si necessaire. Le code natif (zero, BABE, crash) reste un diagnostic, pas un
+critere de succes apres cette frontiere.
+
+Cette issue demande une implementation. Ce commit de documentation ne modifie
+ni ALFE, ni les criteres CI actuels, et ne qualifie aucune pipeline bloquee.
+Les recherches de cause dans AutoCAD, BricsCAD, EPURE et les DLL sans sources
+sont arretees ; conserver leurs observations, sans nouvelle capture.
+Voir [[file:../documentation/cad-termination-observations-20261106.org][le bilan factuel et les limites des observations]].
+
+* Contrat a implementer
+** 1. Fixer une frontiere persistante avant de fermer le CAD
+- Enregistrer atomiquement les resultats du script, leur statut et les fichiers
+  attendus. Pour les tests : JUnit complet et lisible, pas seulement un compteur
+  imprime. ALFE reste generique : aucun JUnit impose aux scripts ordinaires.
+- Restaurer dans la session encore vivante le journal et les reglages modifies
+  par ALFE, avant SHUTDOWN, Quit ou terminaison forcee.
+- Persister l'acquittement final lie a l'invocation, attestant fin du script et
+  restauration (RESTORED ou equivalent documente). La simple emission de CLOSE,
+  le retour de Quit, ou la fin de cscript ne suffisent pas.
+- Enregistrer cette frontiere avant l'action de fermeture ; un message SHUTDOWN
+  terminal peut manquer si Quit ferme deja le canal. Il ne doit pas etre requis
+  apres disparition du processus si les preuves prealables sont completes.
+
+** 2. Garantir la disparition de la seule instance creee
+- Conserver avant fermeture un handle natif et l'identite d'origine : PID,
+  date/heure de creation, SID proprietaire, session, moteur et invocation.
+- Demander la fermeture sans enregistrer de modification non demandee, attendre
+  un delai borne, puis terminer l'instance possedee si elle reste bloquee.
+- Preferer le handle d'origine pour eviter la reutilisation de PID ; toute
+  reouverture exige de revalider l'identite complete. Ne jamais tuer par nom,
+  par moteur ou par simple proximite temporelle.
+- Attendre et confirmer la disparition effective ; si impossible, echouer sur
+  le nettoyage et signaler le processus residuel. Une demande de terminaison
+  acceptee sans disparition ne constitue pas un succes.
+- Ne pas fermer/terminer une instance interactive attachee ou une instance
+  inconnue. La politique de prevol des comptes CI exclusifs reste distincte.
+- Apres disparition, restaurer les fichiers/profils/installation temporaires
+  hors processus, liberer les ressources du bridge et confirmer le nettoyage.
+
+** 3. Separer resultat et diagnostic de terminaison
+Apres la frontiere valide et la disparition confirmee, un code natif non nul,
+un crash ou une terminaison forcee ne remplace pas le resultat du script.
+Conserver code brut hexadecimal/decimal, fermeture demandee, delais, recours
+force, identite et preuves de disparition dans un rapport de nettoyage.
+Ne pas transformer une assertion echouee en succes. Ne pas ignorer un crash
+avant la frontiere, une exception de script, un timeout de calcul, un resultat
+absent/incomplet ou une restauration non acquittee. Les echecs du nettoyage
+hors processus restent visibles. Pas de liste blanche de codes/binaires pour
+la politique post-frontiere, ni de masquage general des erreurs ALFE.
+
+* Tests d'acceptation
+- Resultat persiste + restauration acquittee + sortie 0 : resultat conserve.
+- Meme sequence + BABE, C0000005 ou C0000374 apres demande de fermeture :
+  resultat conserve, code brut diagnostique, disparition prouvee.
+- Meme sequence + CAD bloque : delai borne, terminaison de la seule incarnation
+  possedee, attente effective puis restauration hors processus.
+- CAD disparu avant SHUTDOWN final, mais apres preuves persistantes completes :
+  resultat conserve ; la fermeture du canal n'est pas confondue avec un echec.
+- Crash avant resultat/acquittement, JUnit absent/incomplet, erreur de script,
+  echec de restauration ou processus impossible a terminer : echec explicite.
+- Assertion echouee suivie de crash : assertion reste echouee.
+- Instance attachee, SID/session differents, PID reutilise ou origine incertaine :
+  aucune terminaison, diagnostic precis ; aucune autre instance touchee.
+- Publications de fichiers partielles et courses sortie/relecture : lecture
+  atomique ou attente bornee, aucun acquittement invente.
+- Verifier sous SBCL et CCL, puis AutoCAD et BricsCAD : resultats, protocole,
+  restauration du journal/profil et disparition reelle. Documenter la force
+  eventuellement utilisee, sans l'appeler fermeture normale.
+- Adapter les consommateurs CI qui imposent actuellement un code natif normal
+  ou close-owned.result=0 : utiliser le nouveau contrat versionne, sans modifier
+  les tolerances d'assertion EPURE-GEP ni accepter un ancien artefact.
+
+* Suivi
+Cette decision remplace le critere de code natif normal utilise dans les
+experiences privees ALFE 97-100. La disparition reste obligatoire. Elle complete
+[[file:alfe-cad-owned-com-teardown.issue][la restauration ordonnee et la fermeture du COM possede]], sans clore
+cette implementation avant validation. Aucun correctif de composant tiers
+n'est revendique et aucun dump prive n'est ajoute au depot.

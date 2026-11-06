@@ -961,3 +961,10 @@ Resolved notes) stay.
 | P3 | DONE | optimization | DEBUG >= SPACE / SPEED levels, clal-compile-system and the lexical-locals fork all shipped with the compiler epic. issues/closed/ |
 | P3 | TODO | [[file:sysvar-corpus-generator-drift.issue][sysvar-corpus-generator-drift]] | inventory-coverage.lsp drifted from generate-sysvar-corpus.lisp (~120 lines of getvar-default tests); found fixing errno-setvar |
 | P3 | NOTE | referentiel-qualite-autolisp.md | research note (French, 2026-10-08) on an AutoLISP quality / security rule set; reference material, not an actionable issue |
+
+* NEXT alfe-owned-cad-termination-after-recorded-results (P1)
+[[file:alfe-owned-cad-termination-after-recorded-results.issue][Decision pjb 2026-11-06 : resultats persistants puis terminaison garantie du seul CAD cree]].
+Apres fin du script et restauration acquittees, conserver le resultat quel que
+soit le code natif ; forcer si necessaire, confirmer disparition et nettoyage.
+Implementation a faire ; pas de qualification retroactive. Bilan et arret des
+recherches de crash tiers : [[file:../documentation/cad-termination-observations-20261106.org]].
