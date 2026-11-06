@@ -57,6 +57,20 @@ the launched process exits. With another AutoCAD already running, GetObject
 could return THAT instance, so the bridge keeps CreateObject there (alfe
 launches a new instance by default: alfe-cad-launch-new-by-default).
 
+* Regression in 2.3.101, fixed in 2.3.104
+
+The first version launched with WScript.Shell.Exec. Exec creates the child
+with handle inheritance, so acad.exe held the bridge's standard handles (the
+pipes back to alfe and to whatever reads alfe's output). In
+probe:cad-session-state:windows on MR !514 (job 17776483886) the
+=--autocad --mode automation= row never returned and the job hit its 1 h
+limit, with --timeout 180. 2.3.104 launches with WScript.Shell.Run
+(ShellExecute, no handles passed), finds the launched PID the way
+RecordCreatedProcesses does (new acad.exe with /Automation), and terminates
+that acad.exe when the deadline passes, since nothing else can reach an
+AutoCAD that never registered. Whether that row reached READY before hanging
+is unknown: the job log stops at the row's header.
+
 * Acceptance
 
 - The template launches the LocalServer32 command and polls GetObject for

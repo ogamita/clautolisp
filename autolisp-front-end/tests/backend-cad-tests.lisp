@@ -788,7 +788,7 @@ itself and polls GetObject for LAUNCH_SECS -- alfe's ready timeout -- giving up
 early if the launched process exits. CreateObject stays for the case where
 another AutoCAD runs, since GetObject could then return that one."
   (let* ((text alfe.backend.autocad::*bridge-autocad-vbs-template*)
-         (launch (search "LaunchAndWait(serverCmd, launchSecs)" text))
+         (launch (search "LaunchAndWait(serverCmd, launchSecs, pidsBefore)" text))
          (create (search "Set app = CreateObject(progId)" text)))
     (is (search "launchSecs  = ${LAUNCH_SECS}" text)
         "the launch deadline must be a placeholder alfe fills in")
@@ -796,8 +796,17 @@ another AutoCAD runs, since GetObject could then return that one."
         "the command must be the one COM itself would run: LocalServer32")
     (is (search "GetObject(, progId)" text :start2 (or (search "Function LaunchAndWait" text) 0))
         "the launched server must be reached by polling GetObject")
-    (is (search "proc.Status <> 0" text)
+    (is (search "If Not PidAlive(pid) Then" text)
         "a launched process that exits must end the wait, not run out the clock")
+    ;; alfe 2.3.101 launched with WScript.Shell.Exec: acad.exe inherited the
+    ;; script's standard handles, and a run whose AutoCAD never quit hung its
+    ;; caller until the CI job's 1 h limit (probe job 17776483886).
+    (is (null (search ".Exec(" text))
+        "acad.exe must not be started with Exec: it inherits the bridge's handles")
+    (is (search "sh.Run cmd, 1, False" text)
+        "acad.exe is started through Run, which passes no handles")
+    (is (search "TerminatePid pid" text)
+        "an AutoCAD this run launched and that never registered is terminated")
     (is (and launch create)
         "both paths must exist: our own launch, and CreateObject beside another AutoCAD")
     (is (search "If pidsBefore = \",\" And serverCmd <> \"\" Then" text)

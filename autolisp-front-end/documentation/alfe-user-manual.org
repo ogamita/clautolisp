@@ -2269,7 +2269,11 @@ for a fixed 120 seconds: an AutoCAD that took longer failed with COM error
 =429= after about two minutes, whatever =--timeout= said, and Windows logged
 DCOM event 10010 ("did not register with DCOM within the required timeout").
 If the launched =acad.exe= exits before it registers, alfe says so at once
-(stage =launch-exited=) instead of waiting out the timeout.
+(stage =launch-exited=) instead of waiting out the timeout; if it is still
+starting when the timeout runs out, alfe ends that =acad.exe= (stage
+=launch-timeout=), so no invisible AutoCAD is left behind. /Changed in alfe
+2.3.104:/ in 2.3.101 to 2.3.103 such an AutoCAD was left running and could
+hold alfe's output open, so the command did not return.
 
 When another AutoCAD is already running, the bridge still uses
 =CreateObject=, so that it cannot pick up that other instance: in that case

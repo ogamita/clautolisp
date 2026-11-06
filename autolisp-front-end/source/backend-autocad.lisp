@@ -787,6 +787,60 @@ Function ServerCommand(id)
   ServerCommand = cmd
 End Function
 
+' The acad.exe this run launched: the first one with /Automation on its
+' command line whose PID is not in BEFORE (AcadPidList, taken before the
+' launch). \"\" while none is there yet.
+Function LaunchedPid(before)
+  Dim wmi, processes, proc
+  LaunchedPid = \"\"
+  On Error Resume Next
+  Set wmi = GetObject(\"winmgmts:\\\\.\\root\\cimv2\")
+  If Err.Number <> 0 Then
+    Err.Clear
+    On Error GoTo 0
+    Exit Function
+  End If
+  Set processes = wmi.ExecQuery(\"SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name = 'acad.exe'\")
+  For Each proc In processes
+    If InStr(1, proc.CommandLine & \"\", \"/Automation\", 1) > 0 _
+       And InStr(before, \",\" & proc.ProcessId & \",\") = 0 Then
+      LaunchedPid = CStr(proc.ProcessId)
+      Exit For
+    End If
+  Next
+  Err.Clear
+  On Error GoTo 0
+End Function
+
+' Whether process PID still exists. True when WMI cannot tell: the wait
+' then runs to its deadline rather than ending on a guess.
+Function PidAlive(pid)
+  Dim wmi, processes
+  PidAlive = True
+  On Error Resume Next
+  Set wmi = GetObject(\"winmgmts:\\\\.\\root\\cimv2\")
+  Set processes = wmi.ExecQuery(\"SELECT ProcessId FROM Win32_Process WHERE ProcessId = \" & pid)
+  If Err.Number = 0 Then PidAlive = (processes.Count > 0)
+  Err.Clear
+  On Error GoTo 0
+End Function
+
+' End the acad.exe THIS RUN launched and that never registered: nobody
+' else can reach it (it has no COM client), so left alive it is an orphan
+' on the runner.
+Sub TerminatePid(pid)
+  Dim wmi, processes, proc
+  On Error Resume Next
+  Set wmi = GetObject(\"winmgmts:\\\\.\\root\\cimv2\")
+  Set processes = wmi.ExecQuery(\"SELECT * FROM Win32_Process WHERE ProcessId = \" & pid & \" AND Name = 'acad.exe'\")
+  For Each proc In processes
+    proc.Terminate
+    VBSDebug \"terminated our own acad.exe pid \" & pid
+  Next
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
 ' START THE SERVER OURSELVES AND WAIT FOR IT, instead of CreateObject.
 ' CreateObject has DCOM start the server and wait for it to register its
 ' class object -- for 120 s, fixed by Windows. AutoCAD registers at the END
@@ -794,16 +848,27 @@ End Function
 ' 120 s: past 120 s CreateObject returned 429 and abandoned the AutoCAD it
 ' had started, whatever --timeout said
 ' (autocad-com-launch-bounded-by-dcom-timeout). Here the wait is
-' launchSecs, and a launched process that exits ends it at once. Returns
-' the application, or Nothing with launchStage, errNumber and
+' launchSecs; a launched process that exits ends it at once, and one that
+' never registers is terminated when it runs out.
+'
+' WScript.Shell.Run, NOT Exec. Exec creates the child with handle
+' inheritance, so acad.exe held this script's standard handles -- the pipes
+' back to alfe and to whoever reads alfe -- and a run whose AutoCAD never
+' quit hung its caller until the CI job's own limit (1 h, probe job
+' 17776483886, alfe 2.3.101). Run goes through ShellExecute and passes no
+' handles, as DCOM's own launch did not. Run gives no PID: LaunchedPid finds
+' it the same way RecordCreatedProcesses does.
+'
+' Returns the application, or Nothing with launchStage, errNumber and
 ' errDescription saying why.
-Function LaunchAndWait(cmd, secs)
-  Dim sh, proc, deadline, obj
+Function LaunchAndWait(cmd, secs, before)
+  Dim sh, pid, deadline, obj
   Set LaunchAndWait = Nothing
   Set obj = Nothing
+  pid = \"\"
   Set sh = CreateObject(\"WScript.Shell\")
   On Error Resume Next
-  Set proc = sh.Exec(cmd)
+  sh.Run cmd, 1, False
   errNumber = Err.Number
   errDescription = Err.Description
   Err.Clear
@@ -812,9 +877,10 @@ Function LaunchAndWait(cmd, secs)
     launchStage = \"launch\"
     Exit Function
   End If
-  VBSDebug \"launched \" & cmd & \" as pid \" & proc.ProcessID & \"; waiting up to \" & secs & \" s\"
+  VBSDebug \"launched \" & cmd & \"; waiting up to \" & secs & \" s\"
   deadline = DateAdd(\"s\", secs, Now)
   Do While Now < deadline
+    If pid = \"\" Then pid = LaunchedPid(before)
     On Error Resume Next
     Set obj = GetObject(, progId)
     errNumber = Err.Number
@@ -822,22 +888,28 @@ Function LaunchAndWait(cmd, secs)
     Err.Clear
     On Error GoTo 0
     If errNumber = 0 And Not (obj Is Nothing) Then
-      VBSDebug \"pid \" & proc.ProcessID & \" registered \" & progId
+      VBSDebug \"acad.exe pid \" & pid & \" registered \" & progId
       Set LaunchAndWait = obj
       Exit Function
     End If
-    If proc.Status <> 0 Then
-      launchStage = \"launch-exited\"
-      errNumber = proc.ExitCode
-      errDescription = \"acad.exe (pid \" & proc.ProcessID & \") exited with code \" & _
-        proc.ExitCode & \" before registering \" & progId
-      Exit Function
+    If pid <> \"\" Then
+      If Not PidAlive(pid) Then
+        launchStage = \"launch-exited\"
+        errNumber = 0
+        errDescription = \"acad.exe (pid \" & pid & \") exited before registering \" & progId
+        Exit Function
+      End If
     End If
     WScript.Sleep 1000
   Loop
   launchStage = \"launch-timeout\"
-  errDescription = \"acad.exe (pid \" & proc.ProcessID & \") did not register \" & _
-    progId & \" within \" & secs & \" s\"
+  errNumber = 0
+  errDescription = \"acad.exe (pid \" & pid & \") did not register \" & progId & _
+    \" within \" & secs & \" s\"
+  If pid <> \"\" Then
+    TerminatePid pid
+    errDescription = errDescription & \"; terminated it\"
+  End If
 End Function
 
 ' RPC_E_CALL_REJECTED (&H80010001, \"L'appel a ete rejete par l'appele\")
@@ -896,7 +968,7 @@ If app Is Nothing Then
   ' acad.exe runs: beside another one, GetObject could return that one, and
   ' CreateObject (a new instance, alfe-cad-launch-new-by-default) is kept.
   If pidsBefore = \",\" And serverCmd <> \"\" Then
-    Set app = LaunchAndWait(serverCmd, launchSecs)
+    Set app = LaunchAndWait(serverCmd, launchSecs, pidsBefore)
     If app Is Nothing Then
       AppendLine errFile, \"ERROR COM bridge: could not launch \" & progId & \": \" & errDescription
       RecordComError launchStage, errNumber, errDescription
