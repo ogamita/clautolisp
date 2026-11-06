@@ -60,3 +60,14 @@ wait for the child. Parent pipelines could remain green after a native failure.
 The new native:qualification bridge inherits the native setup and mirrors its
 child status, with allow_failure false, only for explicitly labelled MRs.
 GitLab lint and live failed-child propagation are required before closing.
+
+* Contract 2, 2026-11-06
+pjb's decision ([[file:alfe-owned-cad-termination-after-recorded-results.issue][alfe-owned-cad-termination-after-recorded-results]]) replaces
+the native-exit-zero criterion of verify-epure-lifecycle.ps1: the verdict is
+alfe's exit status, the functional checks, the unchanged drawing, and the
+created CAD proved gone (cleanup=ok in alfe's --cleanup-report, then the gate's
+own handle). A nonzero native code, a crash event or a dump after the frontier
+is recorded in the receipt, not failed. test-epure-lifecycle.ps1 now expects
+the crash and BABE fixtures to pass with their codes recorded, and a run
+without a cleanup report to fail.
+
