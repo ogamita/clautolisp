@@ -963,9 +963,9 @@ Resolved notes) stay.
 | P3 | NOTE | referentiel-qualite-autolisp.md | research note (French, 2026-10-08) on an AutoLISP quality / security rule set; reference material, not an actionable issue |
 
 * IN-PROGRESS alfe-owned-cad-termination-after-recorded-results (P1)
-Implemente en 2.3.107 (contrat 2, --result-file, --cleanup-report) ; reste la
-validation native AutoCAD/BricsCAD (verify:autocad-activex:windows) et
-l'adaptation des consommateurs CI SCHME.
+Implemente en 2.3.107 (contrat 2, --result-file, --cleanup-report) ; valide
+nativement sur AutoCAD 2022 et BricsCAD V25 (verify:autocad-activex:windows,
+2026-11-06) ; reste l'adaptation des consommateurs CI SCHME.
 [[file:alfe-owned-cad-termination-after-recorded-results.issue][Decision pjb 2026-11-06 : resultats persistants puis terminaison garantie du seul CAD cree]].
 Apres fin du script et restauration acquittees, conserver le resultat quel que
 soit le code natif ; forcer si necessaire, confirmer disparition et nettoyage.
