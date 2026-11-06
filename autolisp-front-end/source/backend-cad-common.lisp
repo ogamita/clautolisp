@@ -14,7 +14,10 @@
                 #:backend-protocol-error
                 #:backend-eval-error)
   (:import-from #:alfe.backend
-                #:make-eval-result)
+                #:make-eval-result
+                #:write-key-value-file
+                #:read-key-value-file
+                #:key-value)
   (:import-from #:alfe.logging
                 #:log-debug
                 #:log-verbose
@@ -1910,36 +1913,122 @@ that cannot be read is warned about and skipped."
 
 
 ;;; Owned COM lifecycle: keep the startup bridge and its exact APP reference.
+;;;
+;;; Contract 2 (alfe-owned-cad-termination-after-recorded-results, pjb
+;;; 2026-11-06). Once the run's results are recorded and the live CAD has
+;;; acknowledged RESTORED, alfe writes the FRONTIER, owned-close-frontier.txt.
+;;; Past it, what the CAD does while it goes away is a diagnostic, not the
+;;; run's result. The retained startup bridge closes the documents without
+;;; saving, calls Quit on its exact object and says so (close-owned.result).
+;;; alfe then has the helper wait a bounded time for THAT process --
+;;; revalidated by PID, creation ticks, image name, session and owner SID --
+;;; and terminate it if it outlives the grace. The process must be gone: a
+;;; survivor, or an identity alfe cannot confirm, fails the run. Its exit code
+;;; (0, 0xBABE, 0xC0000005...) and whether it was forced go to the cleanup
+;;; report. A Quit that blocks (a dialog) cannot block alfe: past QUIT-TIMEOUT
+;;; the bridge is stopped and the helper runs with no grace.
+;;;
+;;; Every file of the handshake is written to a .tmp and renamed, and read only
+;;; once complete -- its last line end=1 -- so a half-written file is never
+;;; taken for an answer (alfe-owned-com-close-reads-partial-result).
+
+(defparameter *owned-cad-close-contract* 2
+  "Version of the owned-CAD close contract the handshake files carry.")
+
+(defun %elapsed-seconds (start)
+  (/ (float (- (get-internal-real-time) start)) internal-time-units-per-second))
+
+(defun %utc-timestamp (&optional (time (get-universal-time)))
+  (multiple-value-bind (s mi h d mo y) (decode-universal-time time 0)
+    (format nil "~4,'0D-~2,'0D-~2,'0DT~2,'0D:~2,'0D:~2,'0DZ" y mo d h mi s)))
+
 (defparameter *owned-cad-process-script*
-  "param([ValidateSet('Capture','Wait')][string]$Operation,[string]$IdentityFile,[Int64]$WindowHandle=0,[int]$TimeoutSeconds=20)
+  "param([ValidateSet('Capture','Finish')][string]$Operation,[string]$IdentityFile,[Int64]$WindowHandle=0,[int]$ProcessId=0,[string]$Invocation='',[string]$ReportFile='',[int]$GraceSeconds=20,[int]$KillSeconds=10)
 $ErrorActionPreference='Stop'
+function Write-Atomic([string]$Path,[string[]]$Lines) {
+ $tmp=$Path+'.tmp'
+ Set-Content -LiteralPath $tmp -Value $Lines -Encoding ASCII
+ Move-Item -LiteralPath $tmp -Destination $Path -Force
+}
+function Get-OwnerSid([int]$Id) {
+ try {
+  $w=Get-CimInstance Win32_Process -Filter ('ProcessId='+$Id)
+  if(!$w){return ''}
+  $o=Invoke-CimMethod -InputObject $w -MethodName GetOwnerSid
+  if($o.ReturnValue -ne 0){return ''}
+  return [string]$o.Sid
+ } catch { return '' }
+}
 if($Operation -eq 'Capture') {
- Add-Type -TypeDefinition @'
+ [uint32]$cadId=$ProcessId
+ if(!$cadId) {
+  Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class OwnedCadWindow {
  [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
 }
 '@
- [uint32]$cadId=0
- [void][OwnedCadWindow]::GetWindowThreadProcessId([IntPtr]$WindowHandle,[ref]$cadId)
+  [void][OwnedCadWindow]::GetWindowThreadProcessId([IntPtr]$WindowHandle,[ref]$cadId)
+ }
  if(!$cadId){throw 'Cannot identify the COM application window process.'}
  $cad=Get-Process -Id $cadId -ErrorAction Stop
- $identity=@{pid=$cadId;startTicks=$cad.StartTime.ToUniversalTime().Ticks.ToString()}
- $identity | ConvertTo-Json | Set-Content -LiteralPath $IdentityFile -Encoding ASCII
+ $identity=[ordered]@{pid=[int]$cadId;startTicks=$cad.StartTime.ToUniversalTime().Ticks.ToString();name=$cad.ProcessName;session=[int]$cad.SessionId;sid=(Get-OwnerSid ([int]$cadId));invocation=$Invocation;capturedUtc=[DateTime]::UtcNow.ToString('o')}
+ Write-Atomic $IdentityFile @(($identity | ConvertTo-Json))
  exit 0
 }
-$identity=Get-Content -LiteralPath $IdentityFile -Raw | ConvertFrom-Json
-$deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
-do {
- $cad=Get-Process -Id $identity.pid -ErrorAction SilentlyContinue
- if(!$cad){exit 0}
- try { $actualStart=$cad.StartTime.ToUniversalTime().Ticks }
- catch { if($cad.HasExited){exit 0}; throw }
- if($actualStart -ne [int64]$identity.startTicks){exit 0}
- if([DateTime]::UtcNow -ge $deadline){throw 'The owned CAD process did not exit within the cleanup deadline.'}
- Start-Sleep -Milliseconds 100
-} while($true)
+# Finish: the process captured above must be gone. Wait for it, terminate it
+# past the grace -- through the handle whose identity was just revalidated,
+# never by name -- and report what happened. Exit 0 only when it is gone.
+$r=[ordered]@{contract='2';pid='';'start-ticks'='';name='';session='';sid='';invocation='';'grace-seconds'=[string]$GraceSeconds;'kill-seconds'=[string]$KillSeconds;outcome='';forced='0';disappeared='0';'exit-code'='';'exit-code-hex'='';'waited-ms'='0';'kill-waited-ms'='0';detail='';'finished-utc'=''}
+try {
+ $id=Get-Content -LiteralPath $IdentityFile -Raw | ConvertFrom-Json
+ $r.pid=[string]$id.pid; $r.'start-ticks'=[string]$id.startTicks; $r.name=[string]$id.name
+ $r.session=[string]$id.session; $r.sid=[string]$id.sid; $r.invocation=[string]$id.invocation
+ $p=$null
+ try { $p=Get-Process -Id ([int]$id.pid) -ErrorAction Stop; $null=$p.Handle } catch { $p=$null }
+ if(!$p) { $r.outcome='already-gone'; $r.disappeared='1' }
+ else {
+  $start=$null
+  try { $start=$p.StartTime.ToUniversalTime().Ticks } catch { $start=$null }
+  if($null -eq $start) {
+   if($p.HasExited) { $r.outcome='already-gone'; $r.disappeared='1'; $r.detail='exited before its creation time could be read' }
+   else { $r.outcome='identity-uncertain'; $r.detail='creation time unreadable; left untouched' }
+  }
+  elseif($start -ne [int64]$id.startTicks) { $r.outcome='pid-reused'; $r.disappeared='1'; $r.detail='the PID names another process now; left untouched' }
+  else {
+   $sid=Get-OwnerSid $p.Id
+   if(!$p.HasExited -and ($p.ProcessName -ne $id.name -or [int]$p.SessionId -ne [int]$id.session -or ($id.sid -and $sid -ne $id.sid))) {
+    $r.outcome='identity-mismatch'
+    $r.detail=('name {0} session {1} sid {2}; left untouched' -f $p.ProcessName,$p.SessionId,$sid)
+   }
+   else {
+    $sw=[Diagnostics.Stopwatch]::StartNew()
+    $done=$p.WaitForExit([Math]::Max(0,$GraceSeconds)*1000)
+    $r.'waited-ms'=[string]$sw.ElapsedMilliseconds
+    if($done) { $r.outcome='exited' }
+    else {
+     $r.forced='1'
+     try { $p.Kill() } catch { $r.detail='Kill: '+$_.Exception.Message }
+     $sw=[Diagnostics.Stopwatch]::StartNew()
+     $gone=$p.WaitForExit([Math]::Max(1,$KillSeconds)*1000)
+     $r.'kill-waited-ms'=[string]$sw.ElapsedMilliseconds
+     if($gone) { $r.outcome='forced' } else { $r.outcome='survived' }
+    }
+    if($p.HasExited) {
+     $u=[BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$p.ExitCode),0)
+     $r.'exit-code'=[string]$u; $r.'exit-code-hex'=('0x{0:X8}' -f $u); $r.disappeared='1'
+    }
+   }
+  }
+ }
+} catch { $r.outcome='error'; $r.detail=$_.Exception.Message }
+$r.'finished-utc'=[DateTime]::UtcNow.ToString('o')
+$lines=@(); foreach($k in $r.Keys){ $lines+=($k+'='+(([string]$r[$k]) -replace '[\\r\\n]',' ')) }
+$lines+='end=1'
+Write-Atomic $ReportFile $lines
+if($r.disappeared -eq '1'){exit 0}
+exit 1
 ")
 (defparameter *owned-com-capture-vbs*
   "' Keep this exact COM reference; never rediscover an arbitrary ROT instance.
@@ -1951,7 +2040,7 @@ lifeIdentity = fso.BuildPath(lifeRoot, \"owned-cad-process.json\")
 lifeRequest = fso.BuildPath(lifeRoot, \"close-owned.request\")
 lifeResult = fso.BuildPath(lifeRoot, \"close-owned.result\")
 If created Then
-  lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Capture -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34) & \" -WindowHandle \" & CStr(app.HWND), 0, True)
+  lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Capture -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34) & \" -Invocation \" & Chr(34) & lifeRoot & Chr(34) & \" -WindowHandle \" & CStr(app.HWND), 0, True)
   If lifeCode <> 0 Then WScript.Quit 5
 End If
 ' The load below enters the file protocol loop; retain APP while it runs.
@@ -1970,16 +2059,25 @@ End If
       If Err.Number = 0 Then Call app.Quit
       lifeCode = Err.Number
       Err.Clear
+      Set lifeDoc = Nothing
+      Set app = Nothing
+      Err.Clear
       On Error GoTo 0
-      ' A disconnected COM call can mean Quit succeeded. Only process identity
-      ' disappearance, not COM disconnection, validates successful cleanup.
-      lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Wait -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34), 0, True)
+      ' A disconnected COM call can mean Quit succeeded. alfe, not this
+      ' bridge, then proves the created process gone (or ends it).
     End If
     Set lifeStream = fso.CreateTextFile(lifeResult & \".tmp\", True)
-    lifeStream.WriteLine CStr(lifeCode)
+    lifeStream.WriteLine \"contract=2\"
+    If created Then
+      lifeStream.WriteLine \"owned=created\"
+    Else
+      lifeStream.WriteLine \"owned=attached\"
+    End If
+    lifeStream.WriteLine \"quit-error=\" & CStr(lifeCode)
+    lifeStream.WriteLine \"end=1\"
     lifeStream.Close
     fso.MoveFile lifeResult & \".tmp\", lifeResult
-    WScript.Quit lifeCode
+    WScript.Quit 0
   End If
   If fso.FileExists(statusFile) Then
     Set lifeStream = fso.OpenTextFile(statusFile, 1)
@@ -1987,7 +2085,10 @@ End If
     lifeStream.Close
     If lifeCode = \"STOPPED\" And Not created Then
       Set lifeStream = fso.CreateTextFile(lifeResult & \".tmp\", True)
-      lifeStream.WriteLine \"0\"
+      lifeStream.WriteLine \"contract=2\"
+      lifeStream.WriteLine \"owned=attached\"
+      lifeStream.WriteLine \"quit-error=0\"
+      lifeStream.WriteLine \"end=1\"
       lifeStream.Close
       fso.MoveFile lifeResult & \".tmp\", lifeResult
       WScript.Quit 0
@@ -2012,25 +2113,213 @@ Loop
                  (subseq text before end) *owned-com-wait-vbs*
                  (subseq text (+ end (length "WScript.Quit 0"))))))
 
-(defun close-owned-com-bridge (workdir &key (timeout 35))
-  "Request Quit on the startup bridge's object, then require process-exit proof.
-The bridge never quits an attached object. No process is killed here."
+(defun run-owned-cad-helper (workdir &key (grace 20) (kill-timeout 10)
+                                          (launcher #'uiop:launch-program))
+  "Run the helper's Finish on the identity the bridge captured: wait GRACE
+seconds for that process to exit, terminate it if it has not, wait up to
+KILL-TIMEOUT seconds for it to be gone, and write owned-cad-cleanup.txt.
+The helper bounds itself; it is still polled, and stopped past its bound
+plus a margin, so a PowerShell that hangs cannot hang alfe. Returns its
+exit code, or NIL when it had to be stopped."
+  (let* ((info (funcall launcher
+                        (list "powershell" "-NoProfile" "-NonInteractive"
+                              "-ExecutionPolicy" "Bypass"
+                              "-File" (uiop:native-namestring
+                                       (merge-pathnames "owned-cad-process.ps1" workdir))
+                              "-Operation" "Finish"
+                              "-IdentityFile" (uiop:native-namestring
+                                               (merge-pathnames "owned-cad-process.json" workdir))
+                              "-ReportFile" (uiop:native-namestring
+                                             (merge-pathnames "owned-cad-cleanup.txt" workdir))
+                              "-GraceSeconds" (princ-to-string grace)
+                              "-KillSeconds" (princ-to-string kill-timeout))
+                        :output nil :error-output nil))
+         (bound (+ grace kill-timeout 30))
+         (start (get-internal-real-time)))
+    (loop while (and (ignore-errors (uiop:process-alive-p info))
+                     (< (%elapsed-seconds start) bound))
+          do (sleep 0.2))
+    (prog1 (launcher-exit-code info)
+      (kill-engine-process info))))
+
+(defun %parse-quit-error (answer)
+  (let ((text (key-value answer "quit-error")))
+    (or (and text (ignore-errors (parse-integer text))) text)))
+
+(defun close-owned-com-bridge (workdir &key (quit-timeout 30) (grace 20) (kill-timeout 10)
+                                            bridge-process-info
+                                            (helper #'run-owned-cad-helper))
+  "Ask the retained startup bridge to close what it owns, then make sure the
+process it created is gone. Returns a plist:
+  :OWNED        :CREATED, or :ATTACHED (an attached CAD is released, never
+                closed, and the helper does not run);
+  :QUIT-ERROR   the bridge's Err.Number for Close/Quit, or :NO-ANSWER when
+                it did not answer within QUIT-TIMEOUT (a Quit blocked on a
+                dialog, a dead bridge): the bridge is then stopped and the
+                helper runs with no grace;
+  :CLEANUP      the helper's report, an alist (NIL when it wrote none);
+  :DISAPPEARED  true only when that report proves the created process gone;
+  :FAILURE      NIL, or the code of a failed cleanup.
+Signals :OWNED-CAD-CLOSE-TIMEOUT only when the bridge neither answered nor
+recorded a created CAD: nothing then says what it owns, so nothing is ended.
+HELPER is RUN-OWNED-CAD-HELPER's stand-in for the tests."
   (let ((request (merge-pathnames "close-owned.request" workdir))
         (result (merge-pathnames "close-owned.result" workdir))
-        (start (get-internal-real-time)))
+        (identity (merge-pathnames "owned-cad-process.json" workdir))
+        (report (merge-pathnames "owned-cad-cleanup.txt" workdir))
+        (start (get-internal-real-time))
+        (answer nil))
     (with-open-file (out request :direction :output :if-exists :supersede
                                  :if-does-not-exist :create)
       (write-line "CLOSE" out))
     (loop
-      (when (probe-file result)
-        (let ((code (string-trim '(#\Space #\Tab #\Return #\Newline)
-                                 (uiop:read-file-string result))))
-          (unless (string= code "0")
-            (error 'backend-protocol-error :backend :cad :phase :shutdown :code :owned-cad-close-failed
-                   :message "The owned CAD did not close normally."))
-          (return t)))
-      (when (>= (/ (- (get-internal-real-time) start)
-                   internal-time-units-per-second) timeout)
-        (error 'backend-protocol-error :backend :cad :phase :shutdown :code :owned-cad-close-timeout
-               :message "Timed out awaiting owned CAD process disappearance."))
-      (sleep 0.1))))
+      (setf answer (read-key-value-file result))
+      (when (or answer (>= (%elapsed-seconds start) quit-timeout))
+        (return))
+      (when (and bridge-process-info
+                 (not (ignore-errors (uiop:process-alive-p bridge-process-info))))
+        ;; The bridge is gone: one last look, it may have answered as it went.
+        (setf answer (read-key-value-file result))
+        (return))
+      (sleep 0.1))
+    (let ((owned (cond (answer (if (equal (key-value answer "owned") "attached")
+                                   :attached :created))
+                       ((probe-file identity) :created))))
+      (unless owned
+        (error 'backend-protocol-error :backend :cad :phase :shutdown
+               :code :owned-cad-close-timeout
+               :message "The CAD bridge did not answer the close request and recorded no CAD it created."))
+      (when (eq owned :attached)
+        (return-from close-owned-com-bridge
+          (list :owned :attached :quit-error (%parse-quit-error answer)
+                :cleanup nil :disappeared nil :failure nil)))
+      (unless answer
+        ;; Stop the bridge before ending its CAD: a Quit that returns once the
+        ;; process is gone must not have it write an answer nobody awaits.
+        (kill-engine-process bridge-process-info))
+      (funcall helper workdir :grace (if answer grace 0) :kill-timeout kill-timeout)
+      (let* ((cleanup (read-key-value-file report))
+             (outcome (key-value cleanup "outcome"))
+             (gone (equal (key-value cleanup "disappeared") "1")))
+        (list :owned :created
+              :quit-error (if answer (%parse-quit-error answer) :no-answer)
+              :cleanup cleanup
+              :disappeared gone
+              :failure (cond ((null cleanup) :owned-cad-cleanup-unreported)
+                             (gone nil)
+                             ((member outcome '("identity-mismatch" "identity-uncertain")
+                                      :test #'equal)
+                              :owned-cad-identity-uncertain)
+                             ((equal outcome "error") :owned-cad-cleanup-error)
+                             (t :owned-cad-survived)))))))
+
+;;; --- the frontier and the cleanup report ----------------------------
+
+(defun %results-word (outcome)
+  (cond ((null outcome) "unknown")
+        ((null (getf outcome :result-files)) "unchecked")
+        ((getf outcome :results-ok) "ok")
+        (t "incomplete")))
+
+(defun owned-close-frontier-pairs (backend workdir outcome)
+  "The KEY=VALUE pairs of the frontier: what was recorded before the CAD that
+this run created was asked to go. OUTCOME is ALFE.BACKEND:*RECORDED-OUTCOME*;
+NIL (frontier=absent) when the run ended before deciding one."
+  (append
+   `(("contract" . ,*owned-cad-close-contract*)
+     ("backend" . ,(string-downcase (princ-to-string backend)))
+     ("invocation" . ,(and workdir (uiop:native-namestring workdir)))
+     ("recorded-utc" . ,(%utc-timestamp))
+     ("restored" . "acknowledged")
+     ("frontier" . ,(if outcome "recorded" "absent"))
+     ("script-status" . ,(if outcome
+                             (string-downcase (princ-to-string (getf outcome :status)))
+                             "unknown"))
+     ("script-exit-code" . ,(and outcome (getf outcome :exit-code)))
+     ("results" . ,(%results-word outcome)))
+   (loop for file in (and outcome (getf outcome :result-files))
+         for i from 1
+         collect (cons (format nil "result-file-~D" i)
+                       (format nil "~(~A~) ~D ~A" (getf file :status)
+                               (or (getf file :size) 0) (getf file :path))))))
+
+(defun %owned-cleanup-word (close)
+  (cond ((eq (getf close :owned) :attached) "released")
+        ((getf close :failure) (string-downcase (princ-to-string (getf close :failure))))
+        (t "ok")))
+
+(defun owned-cleanup-report-pairs (frontier close)
+  "The cleanup report: the FRONTIER pairs, then what the close did -- the
+bridge's answer, and the helper's report prefixed cleanup- -- then the
+verdict, cleanup=ok|released|<failure>."
+  (append frontier
+          `(("owned" . ,(string-downcase (princ-to-string (getf close :owned))))
+            ("quit-error" . ,(let ((q (getf close :quit-error)))
+                               (if (eq q :no-answer) "no-answer" q))))
+          (loop for (key . value) in (getf close :cleanup)
+                collect (cons (concatenate 'string "cleanup-" key) value))
+          `(("cleanup" . ,(%owned-cleanup-word close)))))
+
+(defun %abnormal-exit-code-p (cleanup)
+  "True when the exit code in CLEANUP is an NTSTATUS error (0x8xxxxxxx and
+up): a crash, as far as a code can say. Only the log level depends on it."
+  (let ((code (ignore-errors (parse-integer (or (key-value cleanup "exit-code") "")))))
+    (and code (>= code #x80000000))))
+
+(defun %log-owned-cleanup (backend close)
+  (let* ((cleanup (getf close :cleanup))
+         (pid (key-value cleanup "pid"))
+         (outcome (key-value cleanup "outcome"))
+         (hex (let ((h (key-value cleanup "exit-code-hex"))) (and h (plusp (length h)) h))))
+    (cond ((eq (getf close :owned) :attached)
+           (log-verbose "backend ~(~A~): released the attached CAD (not closed)" backend))
+          ((getf close :failure) nil)   ; the error says it
+          ((or (equal outcome "forced") (%abnormal-exit-code-p cleanup))
+           (log-warn "backend ~(~A~): the CAD this run created (pid ~A) ~:[exited~;was terminated~]~@[ ~
+with code ~A~] after the results were recorded and the session restored; ~
+diagnostic only, the run's result stands"
+                     backend pid (equal outcome "forced") hex))
+          (t
+           (log-verbose "backend ~(~A~): the CAD this run created (pid ~A) is gone (~A~@[, code ~A~])"
+                        backend pid outcome hex)))))
+
+(defun %owned-failure-message (failure cleanup)
+  (let ((pid (key-value cleanup "pid"))
+        (detail (key-value cleanup "detail")))
+    (format nil "~A~@[ (pid ~A)~]~@[: ~A~]"
+            (ecase failure
+              (:owned-cad-survived "The CAD this run created is still running after its termination.")
+              (:owned-cad-identity-uncertain "The CAD this run created cannot be identified with certainty; it was not terminated.")
+              (:owned-cad-cleanup-error "The owned CAD cleanup helper failed.")
+              (:owned-cad-cleanup-unreported "The owned CAD cleanup helper wrote no report."))
+            pid (and detail (plusp (length detail)) detail))))
+
+(defun finish-owned-com-session (protocol workdir &key (backend :cad) bridge-process-info
+                                                       (close #'close-owned-com-bridge))
+  "The Windows COM-automation shutdown, contract 2, in its order:
+1. the live CAD restores the session and acknowledges RESTORED (otherwise
+   this signals, and nothing is closed: an unacknowledged restoration does
+   not authorize the close);
+2. the FRONTIER is written, owned-close-frontier.txt;
+3. the bridge closes what it owns, and the CAD this run created is proved
+   gone -- ended by its revalidated handle if it outlives the grace;
+4. the cleanup report, ALFE.BACKEND:*CLEANUP-REPORT-FILE-NAME*, is written,
+   and only then a failed cleanup signals.
+A non-zero exit or a forced end past the frontier is logged, not signalled:
+it does not replace the run's result. Returns CLOSE's plist."
+  (alfe.protocol.file::prepare-cad-shutdown protocol)
+  (let* ((frontier (owned-close-frontier-pairs backend workdir
+                                               alfe.backend:*recorded-outcome*)))
+    (when workdir
+      (write-key-value-file (merge-pathnames "owned-close-frontier.txt" workdir) frontier))
+    (let ((result (funcall close workdir :bridge-process-info bridge-process-info)))
+      (when workdir
+        (write-key-value-file (merge-pathnames alfe.backend:*cleanup-report-file-name* workdir)
+                              (owned-cleanup-report-pairs frontier result)))
+      (%log-owned-cleanup backend result)
+      (let ((failure (getf result :failure)))
+        (when failure
+          (error 'backend-protocol-error :backend backend :phase :shutdown :code failure
+                 :message (%owned-failure-message failure (getf result :cleanup))
+                 :details (list :workdir workdir :cleanup (getf result :cleanup)))))
+      result)))

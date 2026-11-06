@@ -66,7 +66,8 @@
                 #:log-debug
                 #:log-verbose
                 #:log-info
-                #:log-warn)
+                #:log-warn
+                #:log-error)
   ;; The plug-in system. alfe.cli drives it (loading, option parsing,
   ;; hook call sites); alfe.plugin never depends on alfe.cli.
   (:import-from #:alfe.plugin
@@ -137,6 +138,8 @@
                 #:cli-options-keep-workdir-p
                 #:cli-options-write-workdir-path
                 #:cli-options-cad-log
+                #:cli-options-result-files
+                #:cli-options-cleanup-report
                 #:cli-options-main
                 #:cli-options-positional
                 #:make-option-spec
@@ -399,6 +402,16 @@ Bootstrap and runtime:
                          into its workdir) to FILE in UTF-8, decoded per -Elog,
                          else as measured (a BOM's encoding; windows-1252 on
                          MS-Windows; auto-detected elsewhere).
+  --result-file FILE     A file the run must have written (a JUnit report...);
+                         repeatable. Checked after the run, before the CAD is
+                         closed: missing, empty, still growing, or an XML file
+                         whose root element is not closed, it fails a run that
+                         would otherwise succeed (exit 66).
+  --cleanup-report FILE  Write the cleanup report of the run's CAD to FILE
+                         (KEY=VALUE lines): the frontier recorded before the
+                         close, then how the CAD this run created ended --
+                         normally or forced, its raw exit code. owned=none when
+                         alfe created no CAD to close.
   --dribble              Record the session (forms sent, output `;; O:', error
                          output `;; E:', conditions `;; C:') into
                          $XDG_STATE_HOME/alfe/dribbles/BACKEND/TIMESTAMP.log.
@@ -746,6 +759,21 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (declare (ignore name))
                (setf (cli-options-cad-log opts) value)))
+   ;; --result-file FILE (repeatable) / --cleanup-report FILE: the recorded
+   ;; results and the owned-CAD cleanup report
+   ;; (alfe-owned-cad-termination-after-recorded-results). CHECK-RESULT-FILES,
+   ;; WRITE-CLEANUP-REPORT-IF-ASKED.
+   (make-option-spec
+    :longs '("--result-file") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-result-files opts)
+                     (append (cli-options-result-files opts) (list value)))))
+   (make-option-spec
+    :longs '("--cleanup-report") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-cleanup-report opts) value)))
    ;; --- dribble (alfe-dribble.issue) -------------------------------
    ;; The slots live in the SHARED cli-options struct, which already
    ;; carried them ("clautolisp today, alfe planned"); only the specs
@@ -1742,81 +1770,193 @@ engine."
     ;; of the same session (alfe-dribble.issue; pjb's split).
     (%warn-encoding-replacement-ignored options backend)
     (%start-dribble-if-asked options version-text)
-    (unwind-protect
-         (progn
-           (run-hook :engine-started session)
-           (log-verbose "cli: resolved plan with ~D action~:P" (length plan))
-           (loop for action in plan
-                 for i from 1
-                 do (log-verbose "cli: plan[~D] = ~A"
-                                 i (render-action action)))
-           (let ((result (if (or (hook-active-p :pre-action)
-                                 (hook-active-p :post-action))
-                             (%eval-plan-with-hooks session plan)
-                             (eval-plan session plan))))
-             ;; The backend contract is: EVAL-PLAN writes live output
-             ;; to *STANDARD-OUTPUT* / *ERROR-OUTPUT* during the call,
-             ;; AND captures a copy in EVAL-RESULT-{OUTPUT,ERROR-OUTPUT}
-             ;; for tests and diagnostics. We do not re-echo the capture
-             ;; here — doing so would double-print everything the backend
-             ;; already wrote to the live streams. Backends that genuinely
-             ;; capture-only (e.g. the file-IPC drivers, which read
-             ;; stdout.txt back from disk *after* the engine wrote it)
-             ;; are responsible for replaying their own capture to the
-             ;; live streams from inside EVAL-PLAN.
-             ;;
-             ;; We intentionally do NOT auto-print EVAL-RESULT-VALUE
-             ;; here. Per the alfe spec ("Action output semantics"),
-             ;; `-x EXPR' / `-l FILE' / `--main FN' are not REPL
-             ;; steps — they are batch evaluations whose value is
-             ;; discarded unless the user wrote an explicit
-             ;; (print …) / (princ …) / (prin1 …). That makes alfe
-             ;; behave identically across all three backends (the CAD
-             ;; backends never had auto-print) and matches AutoLISP's
-             ;; convention where only the top-level REPL prints
-             ;; values automatically.
-             ;;
-             ;; Earlier alfe versions did auto-print the value for the
-             ;; clautolisp backend ("alfe -x '(+ 1 2)' → 3"); that was
-             ;; surprising both because it diverged from the CAD
-             ;; backends and because it produced double output when
-             ;; the user's expression already printed (e.g.
-             ;; "(princ \"hi\")" yielded "hi\"hi\""). The auto-print
-             ;; is removed; users who want the value back must wrap
-             ;; with (print …).
-             (finish-output)
-             (finish-output *error-output*)
-             (let ((exit-code (run-hook :exit-code
-                                        ;; The engine's own status when it
-                                        ;; decided one (the clautolisp backend:
-                                        ;; (exit N), a file error), else the
-                                        ;; outcome's.
-                                        ;; :aborted is a CAD that did not
-                                        ;; answer in time: EX_TEMPFAIL.
-                                        (or (eval-result-exit-code result)
-                                            (ecase (eval-result-status result)
-                                              (:success  clautolisp.sysexits:+ex-ok+)
-                                              (:failed   clautolisp.sysexits:+exit-autolisp-error+)
-                                              (:aborted  clautolisp.sysexits:+ex-tempfail+)))
-                                        :result result))
-                   (elapsed (/ (float (- (get-internal-real-time) started-at))
-                               internal-time-units-per-second)))
-               (log-verbose "cli: plan finished status=~S exit=~D elapsed=~,2Fs"
-                            (eval-result-status result) exit-code elapsed)
-               exit-code)))
-      (%safe-hook :pre-shutdown session :reason :cli-exit)
-      (let ((cleanup-error nil))
-        (handler-case (shutdown session :reason :cli-exit)
-          (error (condition) (setf cleanup-error condition)))
-        (%safe-hook :post-shutdown session :workdir workdir)
-        (ignore-errors (write-cad-log-if-asked options backend workdir))
-        (ignore-errors (alfe.dribble:stop-dribble))
-        ;; Failed cleanup is observable and retains the evidence. It must not
-        ;; turn successful assertions into a successful unattended CI job.
-        (ignore-errors (cleanup-workdir backend workdir
-                          :keep-p (or cleanup-error
-                                      (cli-options-keep-workdir-p options))))
-        (when cleanup-error (error cleanup-error))))))
+    (let ((alfe.backend:*recorded-outcome* nil))
+      (unwind-protect
+           (progn
+             (run-hook :engine-started session)
+             (log-verbose "cli: resolved plan with ~D action~:P" (length plan))
+             (loop for action in plan
+                   for i from 1
+                   do (log-verbose "cli: plan[~D] = ~A"
+                                   i (render-action action)))
+             (let ((result (if (or (hook-active-p :pre-action)
+                                   (hook-active-p :post-action))
+                               (%eval-plan-with-hooks session plan)
+                               (eval-plan session plan))))
+               ;; The backend contract is: EVAL-PLAN writes live output
+               ;; to *STANDARD-OUTPUT* / *ERROR-OUTPUT* during the call,
+               ;; AND captures a copy in EVAL-RESULT-{OUTPUT,ERROR-OUTPUT}
+               ;; for tests and diagnostics. We do not re-echo the capture
+               ;; here — doing so would double-print everything the backend
+               ;; already wrote to the live streams. Backends that genuinely
+               ;; capture-only (e.g. the file-IPC drivers, which read
+               ;; stdout.txt back from disk *after* the engine wrote it)
+               ;; are responsible for replaying their own capture to the
+               ;; live streams from inside EVAL-PLAN.
+               ;;
+               ;; We intentionally do NOT auto-print EVAL-RESULT-VALUE
+               ;; here. Per the alfe spec ("Action output semantics"),
+               ;; `-x EXPR' / `-l FILE' / `--main FN' are not REPL
+               ;; steps — they are batch evaluations whose value is
+               ;; discarded unless the user wrote an explicit
+               ;; (print …) / (princ …) / (prin1 …). That makes alfe
+               ;; behave identically across all three backends (the CAD
+               ;; backends never had auto-print) and matches AutoLISP's
+               ;; convention where only the top-level REPL prints
+               ;; values automatically.
+               ;;
+               ;; Earlier alfe versions did auto-print the value for the
+               ;; clautolisp backend ("alfe -x '(+ 1 2)' → 3"); that was
+               ;; surprising both because it diverged from the CAD
+               ;; backends and because it produced double output when
+               ;; the user's expression already printed (e.g.
+               ;; "(princ \"hi\")" yielded "hi\"hi\""). The auto-print
+               ;; is removed; users who want the value back must wrap
+               ;; with (print …).
+               (finish-output)
+               (finish-output *error-output*)
+               (let ((exit-code (run-hook :exit-code
+                                          ;; The engine's own status when it
+                                          ;; decided one (the clautolisp backend:
+                                          ;; (exit N), a file error), else the
+                                          ;; outcome's.
+                                          ;; :aborted is a CAD that did not
+                                          ;; answer in time: EX_TEMPFAIL.
+                                          (or (eval-result-exit-code result)
+                                              (ecase (eval-result-status result)
+                                                (:success  clautolisp.sysexits:+ex-ok+)
+                                                (:failed   clautolisp.sysexits:+exit-autolisp-error+)
+                                                (:aborted  clautolisp.sysexits:+ex-tempfail+)))
+                                          :result result))
+                     (elapsed (/ (float (- (get-internal-real-time) started-at))
+                                 internal-time-units-per-second)))
+                 ;; The frontier: the results are checked and the outcome
+                 ;; recorded BEFORE the shutdown closes a CAD this run created,
+                 ;; whose own exit is past that point only a diagnostic
+                 ;; (alfe-owned-cad-termination-after-recorded-results).
+                 (let* ((checked (check-result-files (cli-options-result-files options)))
+                        (results-ok (every (lambda (f) (eq (getf f :status) :ok)) checked)))
+                   (when (and (not results-ok) (eql exit-code clautolisp.sysexits:+ex-ok+))
+                     (setf exit-code clautolisp.sysexits:+ex-noinput+))
+                   (setf alfe.backend:*recorded-outcome*
+                         (list :status (eval-result-status result)
+                               :exit-code exit-code
+                               :result-files checked
+                               :results-ok results-ok)))
+                 (log-verbose "cli: plan finished status=~S exit=~D elapsed=~,2Fs"
+                              (eval-result-status result) exit-code elapsed)
+                 exit-code)))
+        (%safe-hook :pre-shutdown session :reason :cli-exit)
+        (let ((cleanup-error nil))
+          (handler-case (shutdown session :reason :cli-exit)
+            (error (condition) (setf cleanup-error condition)))
+          (%safe-hook :post-shutdown session :workdir workdir)
+          (ignore-errors (write-cad-log-if-asked options backend workdir))
+          (write-cleanup-report-if-asked options workdir cleanup-error)
+          (ignore-errors (alfe.dribble:stop-dribble))
+          ;; Failed cleanup is observable and retains the evidence. It must not
+          ;; turn successful assertions into a successful unattended CI job.
+          (ignore-errors (cleanup-workdir backend workdir
+                            :keep-p (or cleanup-error
+                                        (cli-options-keep-workdir-p options))))
+          (when cleanup-error (error cleanup-error)))))))
+
+;;; --- recorded results and the cleanup report -------------------------
+;;; (alfe-owned-cad-termination-after-recorded-results)
+
+(defun %file-octet-length (path)
+  (ignore-errors
+   (with-open-file (in path :element-type '(unsigned-byte 8)) (file-length in))))
+
+(defun xml-document-complete-p (text)
+  "True when TEXT, an XML document, ends by closing its root element: the
+check that a report written by a run that stopped half-way fails. Not a
+validation: only the prolog (<?...?>, comments, <!DOCTYPE>) is skipped and
+the root's end tag (or its self-closing tag) looked for at the very end."
+  (let* ((s (string-right-trim '(#\Space #\Tab #\Return #\Newline) text))
+         (pos (position #\< s)))
+    (loop while pos
+          do (cond ((and (< (1+ pos) (length s)) (char= (char s (1+ pos)) #\?))
+                    (let ((end (search "?>" s :start2 pos)))
+                      (setf pos (and end (position #\< s :start (+ end 2))))))
+                   ((string= "<!--" s :start2 pos :end2 (min (length s) (+ pos 4)))
+                    (let ((end (search "-->" s :start2 pos)))
+                      (setf pos (and end (position #\< s :start (+ end 3))))))
+                   ((and (< (1+ pos) (length s)) (char= (char s (1+ pos)) #\!))
+                    (let ((end (position #\> s :start pos)))
+                      (setf pos (and end (position #\< s :start (1+ end))))))
+                   (t (return))))
+    (when pos
+      (let* ((name-end (or (position-if (lambda (c) (member c '(#\Space #\Tab #\Return #\Newline #\/ #\>)))
+                                        s :start (1+ pos))
+                           (length s)))
+             (name (subseq s (1+ pos) name-end))
+             (tag-end (position #\> s :start pos)))
+        (and (plusp (length name))
+             tag-end
+             (or (and (= tag-end (1- (length s)))
+                      (char= (char s (1- tag-end)) #\/))
+                 (let ((close (format nil "</~A>" name)))
+                   (and (> (length s) (length close))
+                        (string= close s :start2 (- (length s) (length close)))))))))))
+
+(defun check-result-file (path &key (settle 0.2))
+  "Check that the run wrote PATH completely. Returns (:PATH P :STATUS S :SIZE N)
+with S :OK, :MISSING, :EMPTY, :UNSTABLE (its size changed over SETTLE
+seconds: still being written) or :INCOMPLETE (an .xml file whose root
+element is not closed)."
+  (let ((file (probe-file path)))
+    (if (null file)
+        (list :path path :status :missing :size 0)
+        (let ((size (%file-octet-length file)))
+          (when (and size (plusp size) (plusp settle))
+            (sleep settle))
+          (let ((again (%file-octet-length file)))
+            (list :path path
+                  :size (or again 0)
+                  :status (cond ((or (null again) (zerop again)) :empty)
+                                ((not (eql size again)) :unstable)
+                                ((and (equalp (pathname-type file) "xml")
+                                      (not (xml-document-complete-p
+                                            (uiop:read-file-string file :external-format :latin-1))))
+                                 :incomplete)
+                                (t :ok))))))))
+
+(defun check-result-files (paths)
+  "CHECK-RESULT-FILE on each of PATHS (--result-file), each failure reported."
+  (loop for path in paths
+        for checked = (check-result-file path)
+        unless (eq (getf checked :status) :ok)
+          do (log-error "cli: --result-file ~A: ~(~A~)" path (getf checked :status))
+        collect checked))
+
+(defun write-cleanup-report-if-asked (options workdir cleanup-error)
+  "--cleanup-report FILE: copy the cleanup report the backend wrote in WORKDIR
+(ALFE.BACKEND:*CLEANUP-REPORT-FILE-NAME*) to FILE; when it wrote none (no CAD
+of its own to close, or a shutdown that failed before), write one that says so.
+A report that cannot be written is warned about."
+  (let ((file (cli-options-cleanup-report options)))
+    (when file
+      (handler-case
+          (let ((source (and workdir
+                             (probe-file (merge-pathnames
+                                          alfe.backend:*cleanup-report-file-name* workdir)))))
+            (if source
+                (uiop:copy-file source file)
+                (alfe.backend:write-key-value-file
+                 (uiop:parse-native-namestring file)
+                 `(("contract" . 2)
+                   ("owned" . ,(if cleanup-error "unknown" "none"))
+                   ("cleanup" . ,(if cleanup-error
+                                     (string-downcase
+                                      (princ-to-string
+                                       (if (typep cleanup-error 'alfe.error:backend-error)
+                                           (alfe.error:backend-error-code cleanup-error)
+                                           :error)))
+                                     "none"))
+                   ("detail" . ,(and cleanup-error (princ-to-string cleanup-error)))))))
+        (error (e)
+          (log-warn "cli: --cleanup-report ~A cannot be written: ~A" file e))))))
 
 (defun %warn-encoding-replacement-ignored (options backend)
   "-Ereplacement and its per-situation forms are clautolisp's: a CAD writes an

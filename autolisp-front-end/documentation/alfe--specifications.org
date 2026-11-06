@@ -2919,16 +2919,53 @@ and prints only the action plan.
 
 * Ordered Windows COM teardown
 
+Contract 2 (alfe-owned-cad-termination-after-recorded-results, 2026-11-06).
+
+The CLI decides the run's outcome first: its exit status, and the check of each
+=--result-file= (missing, empty, unstable or an unclosed XML root turns a
+successful status into 66; a failed one is kept). It binds the outcome as
+=ALFE.BACKEND:*RECORDED-OUTCOME*= before SHUTDOWN.
+
 PREPARE-SHUTDOWN is an out-of-band control command. The CAD restores the live
 session settings and leaves the server loop before publishing RESTORED. Failure
 publishes FAILED session restoration and does not authorize bridge closure.
-The alfe side then publishes close-owned.request. The retained startup bridge
-uses its exact application reference; created instances close normally and are
-validated by PID plus creation time, attached instances only release the bridge.
-The atomic close-owned.result contains zero only after successful cleanup.
-No final STOPPED from a process already exited is required. All acknowledgement
-and process-exit waits are bounded. Batch engines retain SHUTDOWN/STOPPED, with
-restoration preceding STOPPING.
+
+After RESTORED, alfe writes the frontier, =owned-close-frontier.txt=: the
+outcome, the result files, the restoration acknowledged, the invocation. It then
+publishes close-owned.request. The retained startup bridge uses its exact
+application reference: a created instance has its documents closed without
+saving and Quit called; an attached one is only released. The bridge answers
+=close-owned.result= -- =contract=, =owned= (=created= or =attached=),
+=quit-error= -- and does not wait for the process.
+
+For a created instance, alfe runs the helper's Finish operation on the identity
+captured at startup (PID, UTC creation ticks, image name, session, owner SID).
+The helper reopens the process and revalidates all of it: a missing process is
+=already-gone=, other creation ticks are =pid-reused= (left alone, the owned one
+is gone), another name, session or SID is =identity-mismatch= (left alone). It
+waits the grace (20 s) for the exit, terminates that handle past it, waits up to
+10 s more, and writes =owned-cad-cleanup.txt=: the outcome, =forced=,
+=disappeared=, the raw exit code in unsigned decimal and hexadecimal, the waits.
+Without the bridge's answer after 30 s (Quit blocked), the bridge process is
+stopped and the helper runs with no grace. Without a captured identity, nothing
+is terminated and the close times out (=owned-cad-close-timeout=).
+
+The disappearance is required; its manner is a diagnostic. Past the frontier, an
+exit code (0, 0xBABE, 0xC0000005...) or a forced termination does not replace
+the run's exit status. =owned-cad-survived=, =owned-cad-identity-uncertain=,
+=owned-cad-cleanup-error= and =owned-cad-cleanup-unreported= fail the shutdown
+(EX_PROTOCOL, 76) after the cleanup report is written. That report,
+=owned-cad-cleanup-report.txt= (=ALFE.BACKEND:*CLEANUP-REPORT-FILE-NAME*=), is
+the frontier's pairs, the bridge's answer and the helper's pairs prefixed
+=cleanup-=, then =cleanup= (=ok=, =released= or the failure); =--cleanup-report
+FILE= copies it out, or writes =owned=none= when the backend closed no CAD of
+its own.
+
+Every handshake file is KEY=VALUE lines ending with =end=1=, written to a
+temporary file and renamed; a reader takes it only once complete, so a
+half-written file is never an answer. No final STOPPED from a process already
+exited is required. All acknowledgement and process-exit waits are bounded.
+Batch engines retain SHUTDOWN/STOPPED, with restoration preceding STOPPING.
 
 ** EPURE document startup in COM mode
 After opening the job drawing and activating the EPURE profile, the common

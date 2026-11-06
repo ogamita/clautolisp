@@ -231,6 +231,20 @@ EXEMPTIONS = {
         "an argument of powershell.exe in CHECK-COM-ATTACH-PID, not an alfe option",
     "-ProgId":
         "a parameter of alfe's emitted com-active-pid.ps1, not an alfe option",
+    # Parameters of alfe's emitted owned-cad-process.ps1, which RUN-OWNED-CAD-
+    # HELPER calls to prove the CAD it created gone (owned-CAD close contract
+    # 2): the helper's own calling convention, documented with the workdir
+    # files in the user manual's CAD session cleanup, not options of alfe.
+    "-Operation":
+        "a parameter of alfe's emitted owned-cad-process.ps1, not an alfe option",
+    "-IdentityFile":
+        "a parameter of alfe's emitted owned-cad-process.ps1, not an alfe option",
+    "-ReportFile":
+        "a parameter of alfe's emitted owned-cad-process.ps1, not an alfe option",
+    "-GraceSeconds":
+        "a parameter of alfe's emitted owned-cad-process.ps1, not an alfe option",
+    "-KillSeconds":
+        "a parameter of alfe's emitted owned-cad-process.ps1, not an alfe option",
 }
 
 

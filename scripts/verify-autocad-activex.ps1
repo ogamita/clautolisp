@@ -13,6 +13,14 @@
 #
 # On failure the workdir is kept and the bridge's own files are dumped --
 # com-flags.txt and the error file are where a COM failure is recorded.
+#
+# It also checks the owned-CAD close (contract 2, alfe 2.3.107,
+# alfe-owned-cad-termination-after-recorded-results): the probe writes a
+# small JUnit file that alfe checks (--result-file) before it closes the CAD
+# it created, and the cleanup report (--cleanup-report) must say that CAD is
+# gone -- normally or terminated, its raw exit code is only printed. The
+# check passes on alfe's exit status plus that disappearance, never on the
+# CAD's own exit code.
 
 $ErrorActionPreference = 'Continue'
 
@@ -33,24 +41,65 @@ if (-not $timeout) { $timeout = '240' }
 # values themselves came through. A file is passed by name and read by
 # AutoLISP itself, so the source arrives as written.
 $probe = Join-Path ([System.IO.Path]::GetTempPath()) 'alfe-activex-probe.lsp'
-@'
+$junit = Join-Path ([System.IO.Path]::GetTempPath()) "alfe-activex-junit-$PID.xml"
+$cleanup = Join-Path ([System.IO.Path]::GetTempPath()) "alfe-activex-cleanup-$PID.txt"
+Remove-Item -Force $junit, $cleanup -ErrorAction SilentlyContinue
+$junitLisp = $junit -replace '\\', '/'
+$probeText = @'
 (progn
   (setq app (vlax-get-acad-object))
   (princ "ACTIVEX.APP=")      (princ (if app "yes" "no"))   (terpri)
   (princ "ACTIVEX.VERSION=")  (princ (vla-get-Version app)) (terpri)
   (setq doc (vla-get-ActiveDocument app))
   (princ "ACTIVEX.DOCUMENT=") (princ (vla-get-Name doc))    (terpri)
+  (setq junit (open "@JUNIT@" "w"))
+  (write-line "<testsuites tests=\"1\"><testsuite name=\"activex\" tests=\"1\"><testcase name=\"version\"/></testsuite></testsuites>" junit)
+  (close junit)
   (princ "ACTIVEX.RESULT=SUCCESS")
   (princ))
-'@ | Set-Content -Path $probe -Encoding ASCII
+'@
+$probeText.Replace('@JUNIT@', $junitLisp) | Set-Content -Path $probe -Encoding ASCII
 Write-Host "--- probe file $probe"
 Get-Content $probe | Out-String | Write-Host
 
 Write-Host "=== alfe --cad $selection --mode automation (timeout ${timeout}s)"
 & $alfe --no-init --debug --cad $selection --mode automation `
-    --timeout $timeout --keep-workdir -l $probe 2>&1 | Out-String | Write-Host
+    --timeout $timeout --keep-workdir --result-file $junit `
+    --cleanup-report $cleanup -l $probe 2>&1 | Out-String | Write-Host
 $status = $LASTEXITCODE
 Write-Host "--- alfe exit $status"
+
+# The owned-CAD close: the report must exist and say the created CAD is gone,
+# and no process may hold its PID with its creation time.
+Write-Host ""
+Write-Host "=== cleanup report $cleanup"
+$report = @{}
+if (Test-Path $cleanup) {
+    Get-Content $cleanup | ForEach-Object {
+        Write-Host "  $_"
+        $at = $_.IndexOf('=')
+        if ($at -gt 0) { $report[$_.Substring(0, $at)] = $_.Substring($at + 1) }
+    }
+} else {
+    Write-Host "  (missing)"
+}
+$cleanupOk = ($report['end'] -eq '1') -and ($report['owned'] -eq 'created') `
+    -and ($report['cleanup'] -eq 'ok') -and ($report['cleanup-disappeared'] -eq '1') `
+    -and ($report['frontier'] -eq 'recorded') -and ($report['results'] -eq 'ok')
+if ($report['cleanup-pid']) {
+    $left = Get-Process -Id ([int]$report['cleanup-pid']) -ErrorAction SilentlyContinue
+    if ($left -and ($left.StartTime.ToUniversalTime().Ticks -eq [int64]$report['cleanup-start-ticks'])) {
+        Write-Host "  FAIL: the created CAD (pid $($report['cleanup-pid'])) is still running"
+        $cleanupOk = $false
+    }
+}
+Write-Host ("  the created CAD ended: {0}, forced={1}, exit code {2}" -f `
+    $report['cleanup-outcome'], $report['cleanup-forced'], $report['cleanup-exit-code-hex'])
+if ($status -eq 0 -and -not $cleanupOk) {
+    Write-Host "--- FAIL: alfe exited 0 but the cleanup report does not prove the created CAD gone"
+    $status = 1
+}
+Remove-Item -Force $junit -ErrorAction SilentlyContinue
 
 # The workdir name is in the debug trace; find the newest one either way.
 $workdir = Get-ChildItem -Path $env:TEMP, 'C:\msys64\tmp' -Filter 'alfe-autocad-*' `
