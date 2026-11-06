@@ -34,3 +34,6 @@ resultats et restauration acquittes ne doit plus invalider le resultat du
 script. Un SHUTDOWN final apres Quit n'est pas indispensable si les preuves
 prealables sont persistantes. Cette evolution reste a implementer/valider ;
 les anciennes observations ci-dessus ne sont pas une qualification actuelle.
+
+Implementee en 2.3.107 (contrat 2) : voir la section Implementation de
+[[file:alfe-owned-cad-termination-after-recorded-results.issue][l'issue de terminaison]] ; validation native en attente.

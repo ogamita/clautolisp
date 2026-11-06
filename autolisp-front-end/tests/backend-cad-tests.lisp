@@ -4047,27 +4047,397 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
           (is (search "lifeDoc.Close False" text))
           (is (search "Call app.Quit" text))
           (is (search "If created Then" text))
-          (is (search "close-owned.result" text)))
+          (is (search "close-owned.result" text))
+          ;; contract 2: a complete answer (end=1), the invocation recorded
+          (is (search "owned=created" text))
+          (is (search "end=1" text))
+          (is (search "-Invocation" text)))
         (is (probe-file (merge-pathnames "owned-cad-process.ps1" dir)))))))
 
 
-(test owned-com-close-requires-process-exit-result
+;;; --- owned CAD close, contract 2 ------------------------------------
+;;; (alfe-owned-cad-termination-after-recorded-results): past the frontier
+;;; (results recorded, RESTORED acknowledged), the CAD this run created must
+;;; be gone -- ended by its revalidated handle if needed -- and its exit code
+;;; is a diagnostic, never the run's result. Before the frontier, and when the
+;;; process survives or cannot be identified, the run fails.
+
+(defun %owned-close-fixture (dir &key answer (identity t) (partial-first t))
+  "Leave DIR as a startup bridge would: the identity it captured (IDENTITY),
+and a worker thread that, once close-owned.request appears, publishes ANSWER
+(KEY . VALUE pairs) as close-owned.result -- after first leaving a
+half-written one there (PARTIAL-FIRST), which must never be taken for an
+answer (alfe-owned-com-close-reads-partial-result). Returns the thread."
+  (when identity
+    (with-open-file (out (merge-pathnames "owned-cad-process.json" dir)
+                         :direction :output :if-exists :supersede)
+      (write-line "{\"pid\": 4242}" out)))
+  (bordeaux-threads:make-thread
+   (lambda ()
+     (let ((request (merge-pathnames "close-owned.request" dir))
+           (result (merge-pathnames "close-owned.result" dir)))
+       (loop repeat 500 until (probe-file request) do (sleep 0.01))
+       (when answer
+         (when partial-first
+           (with-open-file (out result :direction :output :if-exists :supersede)
+             (write-line "contract=2" out)
+             (write-line "owned=" out))
+           (sleep 0.3))
+         (alfe.backend.cad-common::write-key-value-file result answer))))))
+
+(defun %helper-reporting (pairs &optional calls)
+  "A stand-in for RUN-OWNED-CAD-HELPER that writes PAIRS as the cleanup
+report (none when PAIRS is NIL), recording each call's keys in the CAR of
+CALLS when given."
+  (lambda (workdir &key grace kill-timeout)
+    (when calls (push (list :grace grace :kill-timeout kill-timeout) (car calls)))
+    (when pairs
+      (alfe.backend.cad-common::write-key-value-file
+       (merge-pathnames "owned-cad-cleanup.txt" workdir) pairs))
+    0))
+
+(defun %cleanup-pairs (outcome &key (disappeared "1") (forced "0") exit-code hex)
+  `(("contract" . "2") ("pid" . "4242") ("start-ticks" . "638") ("name" . "acad")
+    ("session" . "2") ("sid" . "S-1-5-21-1") ("outcome" . ,outcome)
+    ("forced" . ,forced) ("disappeared" . ,disappeared)
+    ("exit-code" . ,exit-code) ("exit-code-hex" . ,hex) ("detail" . "")))
+
+(defparameter +created-answer+
+  '(("contract" . "2") ("owned" . "created") ("quit-error" . "0")))
+
+(defun %finish-owned (dir cleanup &key (outcome '(:status :success :exit-code 0
+                                                  :result-files nil :results-ok t))
+                                       (answer +created-answer+)
+                                       (identity t)
+                                       frontier-seen)
+  "FINISH-OWNED-COM-SESSION on DIR with the restoration acknowledged (stubbed),
+the bridge answering ANSWER and the helper reporting CLEANUP. FRONTIER-SEEN,
+a cons, gets in its CAR whether the frontier file existed when the close was
+asked for. Returns the close plist, or signals as FINISH-OWNED-COM-SESSION."
+  (let* ((restore-name 'alfe.protocol.file::prepare-cad-shutdown)
+         (old-restore (symbol-function restore-name))
+         (worker (%owned-close-fixture dir :answer answer :identity identity)))
+    (unwind-protect
+         (progn
+           (setf (symbol-function restore-name)
+                 (lambda (&rest args) (declare (ignore args)) t))
+           (let ((alfe.backend:*recorded-outcome* outcome))
+             (alfe.backend.cad-common::finish-owned-com-session
+              :mock dir :backend :autocad
+              :close (lambda (workdir &rest keys)
+                       (when frontier-seen
+                         (setf (car frontier-seen)
+                               (probe-file (merge-pathnames "owned-close-frontier.txt" workdir))))
+                       (apply #'alfe.backend.cad-common::close-owned-com-bridge workdir
+                              :quit-timeout 3 :helper (%helper-reporting cleanup)
+                              keys)))))
+      (setf (symbol-function restore-name) old-restore)
+      (bordeaux-threads:join-thread worker))))
+
+(defun %report (dir)
+  (alfe.backend.cad-common::read-key-value-file
+   (merge-pathnames alfe.backend:*cleanup-report-file-name* dir)))
+
+(test owned-com-close-reads-only-a-complete-answer
+  "close-owned.result is read once complete (end=1): a half-written one
+(alfe-owned-com-close-reads-partial-result) is waited past, not taken for a
+failed close; then the helper runs with the full grace."
   (with-cad-test-directories
     (let* ((dir (%fresh-test-directory))
-           (request (merge-pathnames "close-owned.request" dir))
-           (result (merge-pathnames "close-owned.result" dir))
-           (worker (bordeaux-threads:make-thread
-                    (lambda ()
-                      (loop repeat 200 until (probe-file request) do (sleep 0.01))
-                      (with-open-file (out result :direction :output
-                                                 :if-exists :supersede)
-                        (write-line "0" out))))))
-      (unwind-protect
-           (is (alfe.backend.cad-common::close-owned-com-bridge dir :timeout 3))
-        (bordeaux-threads:join-thread worker)))
-    (signals alfe.error:backend-protocol-error
-      (alfe.backend.cad-common::close-owned-com-bridge
-       (%fresh-test-directory) :timeout 0))))
+           (calls (list nil))
+           (worker (%owned-close-fixture dir :answer +created-answer+))
+           (close (unwind-protect
+                       (alfe.backend.cad-common::close-owned-com-bridge
+                        dir :quit-timeout 3
+                            :helper (%helper-reporting
+                                     (%cleanup-pairs "exited" :exit-code "0" :hex "0x00000000")
+                                     calls))
+                    (bordeaux-threads:join-thread worker))))
+      (is (eq :created (getf close :owned)))
+      (is (eql 0 (getf close :quit-error)))
+      (is (getf close :disappeared))
+      (is (null (getf close :failure)))
+      (is (equal '((:grace 20 :kill-timeout 10)) (car calls))))))
+
+(test owned-com-close-keeps-the-result-past-the-cads-exit-code
+  "Results recorded and restoration acknowledged, then the CAD exits 0, 0xBABE,
+or crashes (C0000005, C0000374) once asked to close: no error, the frontier was
+on disk before the close, and the report keeps the raw code beside the run's
+own exit code."
+  (with-cad-test-directories
+    (dolist (code '(("0" . "0x00000000") ("47806" . "0x0000BABE")
+                    ("3221225477" . "0xC0000005") ("3221226356" . "0xC0000374")))
+      (let* ((dir (%fresh-test-directory))
+             (seen (list nil))
+             (close (%finish-owned dir (%cleanup-pairs "exited" :exit-code (car code)
+                                                                :hex (cdr code))
+                                   :frontier-seen seen))
+             (report (%report dir)))
+        (is (null (getf close :failure)))
+        (is (car seen) "the frontier is written before the close is asked for")
+        (is (equal "recorded" (alfe.backend.cad-common::key-value report "frontier")))
+        (is (equal "0" (alfe.backend.cad-common::key-value report "script-exit-code")))
+        (is (equal (cdr code) (alfe.backend.cad-common::key-value report "cleanup-exit-code-hex")))
+        (is (equal "ok" (alfe.backend.cad-common::key-value report "cleanup")))))))
+
+(test owned-com-close-forced-end-is-a-diagnostic
+  "A CAD that outlived the grace and was terminated: the run's result stands,
+and the report says it was forced -- not a normal close."
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (close (%finish-owned dir (%cleanup-pairs "forced" :forced "1"
+                                                              :exit-code "4294967295"
+                                                              :hex "0xFFFFFFFF")))
+           (report (%report dir)))
+      (is (null (getf close :failure)))
+      (is (equal "forced" (alfe.backend.cad-common::key-value report "cleanup-outcome")))
+      (is (equal "1" (alfe.backend.cad-common::key-value report "cleanup-forced")))
+      (is (equal "ok" (alfe.backend.cad-common::key-value report "cleanup"))))))
+
+(test owned-com-close-failed-assertion-stays-failed-past-a-crash
+  "An assertion that failed is recorded as such; a crash after it changes
+nothing: the frontier and report keep the run's failing status and code."
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (close (%finish-owned dir (%cleanup-pairs "exited" :exit-code "3221225477"
+                                                              :hex "0xC0000005")
+                                 :outcome '(:status :failed :exit-code 1
+                                            :result-files nil :results-ok t)))
+           (report (%report dir)))
+      (is (null (getf close :failure)))
+      (is (equal "failed" (alfe.backend.cad-common::key-value report "script-status")))
+      (is (equal "1" (alfe.backend.cad-common::key-value report "script-exit-code"))))))
+
+(test owned-com-close-fails-when-the-cad-survives-or-is-uncertain
+  "A process still running after its termination, an identity the helper could
+not confirm (nothing then is terminated), a helper error, or no report at all:
+each fails the shutdown -- with its own code -- after the report is written."
+  (with-cad-test-directories
+    (loop for (cleanup code) in
+          (list (list (%cleanup-pairs "survived" :disappeared "0" :forced "1") :owned-cad-survived)
+                (list (%cleanup-pairs "identity-mismatch" :disappeared "0") :owned-cad-identity-uncertain)
+                (list (%cleanup-pairs "pid-reused" :disappeared "1") nil)
+                (list (%cleanup-pairs "error" :disappeared "0") :owned-cad-cleanup-error)
+                (list nil :owned-cad-cleanup-unreported))
+          do (let ((dir (%fresh-test-directory)))
+               (if code
+                   (handler-case
+                       (progn (%finish-owned dir cleanup)
+                              (fail "~S: no error" code))
+                     (alfe.error:backend-protocol-error (e)
+                       (is (eq code (alfe.error:backend-error-code e)))))
+                   (is (null (getf (%finish-owned dir cleanup) :failure))))
+               (let ((report (%report dir)))
+                 (is (equal (if code (string-downcase (symbol-name code)) "ok")
+                            (alfe.backend.cad-common::key-value report "cleanup"))))))))
+
+(test owned-com-close-attached-cad-is-only-released
+  "An attached CAD (not created by this run) is released: the helper never
+runs, nothing is terminated."
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (calls (list nil))
+           (worker (%owned-close-fixture
+                    dir :identity nil
+                        :answer '(("contract" . "2") ("owned" . "attached") ("quit-error" . "0"))))
+           (close (unwind-protect
+                       (alfe.backend.cad-common::close-owned-com-bridge
+                        dir :quit-timeout 3 :helper (%helper-reporting nil calls))
+                    (bordeaux-threads:join-thread worker))))
+      (is (eq :attached (getf close :owned)))
+      (is (null (getf close :failure)))
+      (is (null (car calls))))))
+
+(test owned-com-close-blocked-quit-is-bounded
+  "A bridge that does not answer (Quit blocked on a dialog) but captured the
+CAD it created: past QUIT-TIMEOUT the helper runs with no grace. A bridge that
+neither answered nor captured anything: nothing is ended, the close times out."
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (calls (list nil))
+           (worker (%owned-close-fixture dir :answer nil))
+           (close (unwind-protect
+                       (alfe.backend.cad-common::close-owned-com-bridge
+                        dir :quit-timeout 0.3
+                            :helper (%helper-reporting
+                                     (%cleanup-pairs "forced" :forced "1") calls))
+                    (bordeaux-threads:join-thread worker))))
+      (is (eq :no-answer (getf close :quit-error)))
+      (is (getf close :disappeared))
+      (is (equal '((:grace 0 :kill-timeout 10)) (car calls))))
+    (let ((calls (list nil)))
+      (signals alfe.error:backend-protocol-error
+        (alfe.backend.cad-common::close-owned-com-bridge
+         (%fresh-test-directory) :quit-timeout 0 :helper (%helper-reporting nil calls)))
+      (is (null (car calls))))))
+
+(test owned-close-frontier-without-a-recorded-outcome
+  "A run that ended before deciding its outcome (an error in the plan) has
+no frontier: the report says frontier=absent, results unknown."
+  (let ((pairs (alfe.backend.cad-common::owned-close-frontier-pairs :bricscad nil nil)))
+    (is (equal "absent" (alfe.backend.cad-common::key-value pairs "frontier")))
+    (is (equal "unknown" (alfe.backend.cad-common::key-value pairs "results")))
+    (is (equal "acknowledged" (alfe.backend.cad-common::key-value pairs "restored")))))
+
+(test key-value-files-are-written-whole
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (path (merge-pathnames "kv.txt" dir)))
+      (alfe.backend.cad-common::write-key-value-file
+       path '(("a" . 1) ("b" . nil) ("c" . "x=y") ("d" . "two
+lines")))
+      (is (equal '(("a" . "1") ("b" . "") ("c" . "x=y") ("d" . "two lines"))
+                 (alfe.backend.cad-common::read-key-value-file path)))
+      (is (null (probe-file (merge-pathnames "kv.txt.tmp" dir))))
+      (with-open-file (out path :direction :output :if-exists :supersede)
+        (write-line "a=1" out))
+      (is (null (alfe.backend.cad-common::read-key-value-file path))))))
+
+;;; --- --result-file and --cleanup-report ----------------------------
+
+(test result-file-checks
+  "--result-file: a missing, an empty, or an .xml file whose root element is
+not closed is not a recorded result; a complete one is."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+      (flet ((put (name text)
+               (let ((path (merge-pathnames name dir)))
+                 (with-open-file (out path :direction :output :if-exists :supersede)
+                   (write-string text out))
+                 path))
+             (status (path)
+               (getf (alfe.cli::check-result-file path :settle 0) :status)))
+        (is (eq :missing (status (merge-pathnames "none.xml" dir))))
+        (is (eq :empty (status (put "empty.xml" ""))))
+        (is (eq :incomplete (status (put "half.xml" "<?xml version=\"1.0\"?>
+<testsuites><testsuite name=\"a\"><testcase name=\"t\"/>"))))
+        (is (eq :ok (status (put "junit.xml" "<?xml version=\"1.0\"?>
+<!-- generated -->
+<testsuites><testsuite name=\"a\"><testcase name=\"t\"/></testsuite></testsuites>
+"))))
+        (is (eq :ok (status (put "single.xml" "<testsuites tests=\"0\"/>"))))
+        (is (eq :ok (status (put "plain.txt" "23/23"))))))))
+
+(test cli-result-file-fails-only-a-successful-run
+  "A run that succeeded but did not write its --result-file exits 66; a run
+that wrote it exits 0; a run whose script failed keeps its own status."
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (junit (merge-pathnames "junit.xml" dir))
+           (lisp-path (substitute #\/ #\\ (namestring junit))))
+      (flet ((run (&rest args)
+               (let ((*standard-output* (make-broadcast-stream)))
+                 (alfe.cli:run (append (list "--no-init" "--no-plugins" "--clautolisp"
+                                             "--result-file" (namestring junit))
+                                       args)
+                               :version "0.0.2"))))
+        (is (= 66 (run "-x" "(princ 1)")))
+        (let ((code (run "-x" "(car 1)")))
+          (is (not (member code '(0 66))) "a failed script keeps its own status, not ~D" code))
+        (is (= 0 (run "-x" (format nil "(progn (setq f (open ~S \"w\")) (write-line \"<testsuites/>\" f) (close f))"
+                                   lisp-path))))))))
+
+(test cli-cleanup-report-without-an-owned-cad
+  "--cleanup-report with no CAD of the run's own to close: owned=none."
+  (with-cad-test-directories
+    (let* ((dir (%fresh-test-directory))
+           (report (merge-pathnames "cleanup.txt" dir)))
+      (let ((*standard-output* (make-broadcast-stream)))
+        (is (= 0 (alfe.cli:run (list "--no-init" "--no-plugins" "--clautolisp"
+                                     "--cleanup-report" (namestring report)
+                                     "-x" "(princ 1)")
+                               :version "0.0.2"))))
+      (let ((pairs (alfe.backend.cad-common::read-key-value-file report)))
+        (is (equal "none" (alfe.backend.cad-common::key-value pairs "owned")))
+        (is (equal "none" (alfe.backend.cad-common::key-value pairs "cleanup")))))))
+
+;;; --- the helper on real processes (MS-Windows) -----------------------
+;;; The Finish operation of owned-cad-process.ps1 against processes this test
+;;; starts: a natural exit keeps its raw code, a process outliving the grace
+;;; is terminated by its handle, and a PID reused or an identity that does
+;;; not match is left running. Native only: the helper is PowerShell.
+
+(defun %start-test-process (seconds &optional exit-code)
+  (uiop:launch-program
+   (list "powershell" "-NoProfile" "-NonInteractive" "-Command"
+         (format nil "Start-Sleep -Seconds ~D~@[; exit ~D~]" seconds exit-code))
+   :output nil :error-output nil))
+
+(defun %helper-run (dir &rest arguments)
+  (uiop:run-program
+   (append (list "powershell" "-NoProfile" "-NonInteractive" "-ExecutionPolicy" "Bypass"
+                 "-File" (uiop:native-namestring (merge-pathnames "owned-cad-process.ps1" dir)))
+           arguments)
+   :ignore-error-status t :output nil :error-output nil)
+  (alfe.backend.cad-common::read-key-value-file (merge-pathnames "owned-cad-cleanup.txt" dir)))
+
+(defun %helper-capture (dir pid)
+  (with-open-file (out (merge-pathnames "owned-cad-process.ps1" dir) :direction :output
+                       :if-exists :supersede :external-format :utf-8)
+    (write-string alfe.backend.cad-common::*owned-cad-process-script* out))
+  (uiop:run-program
+   (list "powershell" "-NoProfile" "-NonInteractive" "-ExecutionPolicy" "Bypass"
+         "-File" (uiop:native-namestring (merge-pathnames "owned-cad-process.ps1" dir))
+         "-Operation" "Capture" "-ProcessId" (princ-to-string pid)
+         "-Invocation" "alfe-test"
+         "-IdentityFile" (uiop:native-namestring (merge-pathnames "owned-cad-process.json" dir)))
+   :output nil :error-output nil))
+
+(defun %helper-finish (dir grace)
+  (%helper-run dir "-Operation" "Finish"
+               "-IdentityFile" (uiop:native-namestring (merge-pathnames "owned-cad-process.json" dir))
+               "-ReportFile" (uiop:native-namestring (merge-pathnames "owned-cad-cleanup.txt" dir))
+               "-GraceSeconds" (princ-to-string grace) "-KillSeconds" "10"))
+
+(test owned-cad-helper-on-real-processes
+  (if (not (alfe.backend.cad-common:windows-p))
+      (fiveam:skip "owned-cad-process.ps1 runs on MS-Windows only")
+      (with-cad-test-directories
+        (flet ((kv (pairs key) (alfe.backend.cad-common::key-value pairs key)))
+          ;; natural exits, their raw codes kept: 0xBABE, and a crash code
+          (dolist (code '((47806 "0x0000BABE") (-1073741819 "0xC0000005")))
+            (let* ((dir (%fresh-test-directory))
+                   (process (%start-test-process 8 (first code))))
+              (%helper-capture dir (uiop:process-info-pid process))
+              (let ((report (%helper-finish dir 60)))
+                (is (equal "exited" (kv report "outcome")))
+                (is (equal "0" (kv report "forced")))
+                (is (equal "1" (kv report "disappeared")))
+                (is (equal (second code) (kv report "exit-code-hex"))))))
+          ;; outliving the grace: terminated through its handle, and gone
+          (let* ((dir (%fresh-test-directory))
+                 (process (%start-test-process 120)))
+            (%helper-capture dir (uiop:process-info-pid process))
+            (let ((report (%helper-finish dir 1)))
+              (is (equal "forced" (kv report "outcome")))
+              (is (equal "1" (kv report "forced")))
+              (is (equal "1" (kv report "disappeared")))
+              (is (not (uiop:process-alive-p process)))))
+          ;; a PID that names another process now, and an identity that does
+          ;; not match: neither is touched
+          (dolist (edit '(("startTicks" . "1") ("name" . "not-the-cad")))
+            (let* ((dir (%fresh-test-directory))
+                   (process (%start-test-process 120))
+                   (identity (merge-pathnames "owned-cad-process.json" dir)))
+              (unwind-protect
+                   (progn
+                     (%helper-capture dir (uiop:process-info-pid process))
+                     (let ((json (uiop:read-file-string identity))
+                           (key (format nil "\"~A\":" (car edit))))
+                       ;; ConvertTo-Json writes "key":  "value"; replace the value
+                       (let* ((at (search key json))
+                              (q1 (position #\" json :start (+ at (length key))))
+                              (q2 (position #\" json :start (1+ q1))))
+                         (with-open-file (out identity :direction :output :if-exists :supersede)
+                           (write-string (concatenate 'string (subseq json 0 (1+ q1)) (cdr edit)
+                                                      (subseq json q2))
+                                         out))))
+                     (let ((report (%helper-finish dir 1)))
+                       (is (equal (if (string= (car edit) "startTicks") "pid-reused" "identity-mismatch")
+                                  (kv report "outcome")))
+                       (is (equal "0" (kv report "forced")))
+                       (is (uiop:process-alive-p process) "~A: left running" (car edit))))
+                (alfe.backend.cad-common:kill-engine-process process))))))))
 
 (test protocol-prepared-close-restores-before-loop-exit
   (let ((binary (clautolisp-engine-binary)))
@@ -4101,7 +4471,7 @@ The clautolisp backend has none to collect: :UNSUPPORTED, warned, no file."
                    (push :restore events) t)
                  (symbol-function close-name)
                  (lambda (&rest args) (declare (ignore args))
-                   (push :close events) t))
+                   (push :close events) (list :owned :attached)))
            (let ((alfe.backend.cad-common:*host-os-override* :windows))
              (dolist (session
                       (list (alfe.backend.bricscad::%make-bricscad-session

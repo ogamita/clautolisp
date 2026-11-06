@@ -70,6 +70,8 @@
     ("--workdir"            :front-end "alfe's workdir; *AUTOLISP-WORKDIR* via the shared bindings")
     ("--keep-workdir"       :front-end "alfe's workdir cleanup")
     ("--write-workdir-path" :front-end "written by alfe")
+    ("--result-file"        :front-end "checked by alfe after the run, the same in both variants")
+    ("--cleanup-report"     :front-end "written by alfe: owned=none, no CAD of its own to close")
     ("--plugin"             :front-end "alfe plug-ins; *AUTOLISP-PLUGIN-OPTIONS* via the shared bindings")
     ("--plugin-path"        :front-end "alfe plug-ins")
     ("--no-plugins"         :front-end "alfe plug-ins")

@@ -2132,13 +2132,14 @@ own."
            (when protocol
              (if (and (windows-p)
                       (eq (bricscad-session-variant session) :automation))
-                 ;; The retained bridge quits only its CREATED object. Its
-                 ;; result requires PID + creation-time disappearance; no
-                 ;; STOPPED message is required from an engine that just quit.
-                 (progn
-                   (alfe.protocol.file::prepare-cad-shutdown protocol)
-                   (alfe.backend.cad-common::close-owned-com-bridge
-                    (session-workdir session)))
+                 ;; Contract 2: RESTORED, then the frontier, then the bridge
+                 ;; quits only its CREATED object, which must be proved gone
+                 ;; -- ended by its revalidated handle past the grace. Its
+                 ;; exit code is then a diagnostic; no STOPPED is required
+                 ;; from an engine that just quit.
+                 (alfe.backend.cad-common::finish-owned-com-session
+                  protocol (session-workdir session)
+                  :backend :bricscad :bridge-process-info info)
                  (progn
                    (alfe.protocol.file:send-control protocol :shutdown)
                    (unless (alfe.protocol.file:wait-for-status

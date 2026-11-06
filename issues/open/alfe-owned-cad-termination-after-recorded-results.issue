@@ -1,5 +1,5 @@
 #+TITLE: Terminer le CAD possede apres resultats persistants, independamment de son code de sortie
-#+STATUS: NEXT
+#+STATUS: IN-PROGRESS
 #+PRIORITY: P1
 #+TYPE: enhancement
 #+DEPENDS: none
@@ -82,6 +82,51 @@ la politique post-frontiere, ni de masquage general des erreurs ALFE.
 - Adapter les consommateurs CI qui imposent actuellement un code natif normal
   ou close-owned.result=0 : utiliser le nouveau contrat versionne, sans modifier
   les tolerances d'assertion EPURE-GEP ni accepter un ancien artefact.
+
+* Implementation, alfe / clautolisp 2.3.107 (2026-11-06)
+Branche =codex/alfe-recorded-result-termination=. Contrat versionne 2,
+documente dans le manuel (CAD session cleanup and owned COM instances) et la
+specification (Ordered Windows COM teardown).
+- Frontiere : la CLI decide le statut, verifie chaque =--result-file= (absent,
+  vide, en croissance, XML dont la racine n'est pas fermee : un succes devient
+  66, un echec garde son code) et lie =ALFE.BACKEND:*RECORDED-OUTCOME*= avant
+  SHUTDOWN. Apres RESTORED, =owned-close-frontier.txt= est ecrit atomiquement
+  avant toute demande de fermeture. Sans RESTORED : echec, aucune fermeture.
+- Fermeture : le bridge ferme les documents sans enregistrer, appelle Quit sur
+  son objet exact et repond =close-owned.result= (=owned=, =quit-error=,
+  =end=1=) sans attendre le processus. Une instance attachee est seulement
+  liberee.
+- Disparition : alfe lance l'operation Finish du helper sur l'identite capturee
+  (PID, ticks de creation UTC, nom d'image, session, SID proprietaire). Le
+  processus est rouvert et toute l'identite revalidee ; absent =already-gone=,
+  autres ticks =pid-reused=, autre nom/session/SID =identity-mismatch= : non
+  touche. Attente bornee de 20 s, puis Kill sur ce handle, puis 10 s ; code brut
+  recupere par le handle. Quit bloque (pas de reponse en 30 s) : le bridge est
+  arrete et Finish part sans delai de grace. Sans identite capturee : rien n'est
+  termine, =owned-cad-close-timeout=.
+- Resultat : apres la frontiere, code natif ou terminaison forcee = diagnostic
+  (journal, avertissement si force ou NTSTATUS d'erreur) dans
+  =owned-cad-cleanup-report.txt=, copie par =--cleanup-report FILE=.
+  =owned-cad-survived=, =owned-cad-identity-uncertain=, =owned-cad-cleanup-error=,
+  =owned-cad-cleanup-unreported= : echec (76) apres ecriture du rapport.
+- Tous les fichiers de la poignee de main sont KEY=VALUE termines par =end=1=,
+  ecrits en .tmp puis renommes, lus seulement complets :
+  [[file:../closed/alfe-owned-com-close-reads-partial-result.issue][la lecture partielle]] est close.
+- Tests (SBCL et CCL, tous hotes) : sortie 0, BABE, C0000005, C0000374 apres
+  fermeture ; terminaison forcee ; assertion echouee suivie de crash ; survivant,
+  identite incertaine, erreur et absence de rapport ; instance attachee ; Quit
+  bloque ; frontiere absente ; fichiers atomiques ; =--result-file= et
+  =--cleanup-report= de bout en bout. Sous MS-Windows (test:alfe:windows), le
+  helper sur de vrais processus : codes naturels BABE et C0000005, terminaison
+  par le handle, PID reutilise et identite differente laisses vivants.
+- Natif CAD : =verify:autocad-activex:windows= (=ACTIVEX_CAD= autocad ou
+  bricscad) passe =--result-file= et =--cleanup-report= et exige la disparition
+  du CAD cree, quel que soit son code de sortie.
+
+Reste avant cloture : la validation native AutoCAD et BricsCAD de ce job, puis
+l'adaptation des consommateurs CI SCHME (verdict = statut d'alfe ; rapport de
+nettoyage pour le diagnostic ; plus de lecture de =close-owned.result= ni
+d'exigence de code natif nul), sans changer les tolerances EPURE-GEP.
 
 * Suivi
 Cette decision remplace le critere de code natif normal utilise dans les

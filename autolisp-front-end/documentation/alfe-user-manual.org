@@ -588,6 +588,8 @@ neither a launch nor a workdir handshake.
 | =--workdir DIR=               | Override the exchange directory (default: =$AUTOLISP_WORKDIR=). |
 | =--bootstrap-phase PHASE=     | Truncate the bootstrap at =marker=, =core=, =log= or =full=. |
 | =--cad-log FILE=              | After the run, copy the CAD's own command-history log to FILE, in UTF-8 (see [[#cad-log][The CAD's log: =--cad-log=]]). |
+| =--result-file FILE=          | A file the run must have written (a JUnit report...); repeatable. Missing, empty, still growing, or an unclosed XML document: a run that succeeded exits 66 (see [[#owned-cad-cleanup][CAD session cleanup]]). |
+| =--cleanup-report FILE=       | Write the cleanup report -- the frontier, then how the CAD this run created ended, its raw exit code -- to FILE (see [[#owned-cad-cleanup][CAD session cleanup]]). |
 | =--epure=                     | Run BricsCAD or AutoCAD under the EPURE profile (MS-Windows only). Defined by the =epure= plug-in, not by alfe itself: see [[#plugin-epure][The EPURE plug-in]]. |
 
 =--workdir= names the directory through which alfe and the CAD engine
@@ -2421,33 +2423,84 @@ propagated to every track.
 
 
 * CAD session cleanup and owned COM instances
+:PROPERTIES:
+:CUSTOM_ID: owned-cad-cleanup
+:END:
 
 On Windows, AutoCAD and BricsCAD automation retain the exact COM application
-reference returned at startup. After the evaluation results have been collected,
-alfe asks the live runtime to restore LOGFILEMODE, LOGFILEPATH and SRCHPATH.
-The runtime closes the current command log first, restores the saved settings,
-and acknowledges =RESTORED= only after leaving its protocol loop.
+reference returned at startup. After the evaluation, alfe closes the session in
+this order (contract 2, since alfe 2.3.107):
 
-For an application created by this invocation, the retained bridge closes its
-documents without saving and calls Quit on that same application. It does not
-look up a potentially different instance through GetObject. Successful cleanup
-requires disappearance of the captured window's process identity (PID plus UTC
-creation ticks), within 20 seconds. An absent final protocol SHUTDOWN/STOPPED
-message is normal after this owned process exits. A COM disconnection alone
-is not sufficient, and a timeout or failed restoration fails the invocation.
-Only the bridge subprocess is terminated on failure; the cleanup does not kill
-an unrelated CAD. Failure preserves the work directory for diagnosis.
+1. *Results.* alfe decides the run's outcome -- its exit status -- and checks
+   each =--result-file FILE= the run had to write: missing, empty, still
+   growing, or an XML file whose root element is not closed, it fails a run
+   that would otherwise succeed (exit 66). A run whose script failed keeps its
+   own status. alfe imposes no such file: the option is for the scripts that
+   write one, a JUnit report for instance.
+2. *Restoration.* The live runtime restores LOGFILEMODE, LOGFILEPATH and
+   SRCHPATH, closing the current command log first, and acknowledges
+   =RESTORED= only after leaving its protocol loop. Without that
+   acknowledgement the run fails, and the CAD is not asked to close.
+3. *Frontier.* alfe writes =owned-close-frontier.txt= in the work directory:
+   the outcome, the result files checked, the restoration acknowledged, the
+   invocation. From here on, how the CAD ends is a diagnostic, not the result.
+4. *Close.* For an application created by this invocation, the retained bridge
+   closes its documents without saving and calls Quit on that same application;
+   it does not look up a potentially different instance through GetObject. An
+   attached application is only released, never closed.
+5. *Disappearance.* The created process must be gone. alfe's helper reopens it
+   by its captured identity -- PID, UTC creation ticks, image name, session and
+   owner SID, all revalidated -- waits up to 20 seconds, and, past that grace,
+   terminates that handle and waits up to 10 more seconds. A Quit that blocks
+   (a dialog) does not block alfe: after 30 seconds without the bridge's answer,
+   the bridge is stopped and the helper runs with no grace. A process is never
+   ended by its name, by its engine, or because it started at about the same
+   time; a PID that names another process now, or an identity that does not
+   match, is left alone.
+
+Past the frontier, a normal exit, an exit code such as =0xBABE=, a crash code
+such as =0xC0000005= or =0xC0000374=, or a forced termination does not change
+the run's exit status: an assertion that failed still fails, a run that
+succeeded still succeeds. It is logged -- a warning when the CAD was terminated
+or its code is an NTSTATUS error -- and kept in the cleanup report. A process
+still running after its termination, an identity the helper cannot confirm (it
+is then not terminated), or a helper that reports nothing fails the run (exit
+76), keeps the work directory, and names the process in the error.
+
+=--cleanup-report FILE= copies the cleanup report to FILE. It is KEY=VALUE
+lines ending with =end=1=, written to a temporary file and renamed:
+
+| Key                         | Meaning                                                                    |
+|-----------------------------+----------------------------------------------------------------------------|
+| =contract=                  | =2=                                                                        |
+| =frontier=                  | =recorded=, or =absent= when the run ended before deciding its outcome      |
+| =script-status=, =script-exit-code= | the outcome recorded at the frontier                               |
+| =results=                   | =ok=, =incomplete=, =unchecked= (no =--result-file=) or =unknown=          |
+| =result-file-N=             | its status, size and path                                                  |
+| =owned=                     | =created=, =attached=, or =none= (no CAD of the run's own to close)        |
+| =quit-error=                | the bridge's error number for Close/Quit, or =no-answer=                    |
+| =cleanup-outcome=           | =exited=, =forced=, =already-gone=, =pid-reused=, =survived=, =identity-mismatch=, =identity-uncertain= or =error= |
+| =cleanup-forced=            | =1= when the process was terminated                                        |
+| =cleanup-exit-code=, =cleanup-exit-code-hex= | the raw exit code, unsigned decimal and hexadecimal        |
+| =cleanup-pid=, =cleanup-start-ticks=, =cleanup-name=, =cleanup-session=, =cleanup-sid= | the identity       |
+| =cleanup-waited-ms=, =cleanup-kill-waited-ms= | the time spent waiting for the exit, before and after the termination |
+| =cleanup=                   | =ok=, =released= (attached), =none=, or the failure's code                 |
+
+A CI job reads its verdict from the run's exit status, and the cleanup report
+for the diagnostics: it should not require a zero native exit code, nor read
+=close-owned.result=, whose format belongs to the bridge.
+
+The work directory contains =owned-cad-process.ps1=, the captured
+=owned-cad-process.json= identity, the =close-owned.request/result= handshake,
+=owned-close-frontier.txt=, the helper's =owned-cad-cleanup.txt= and the
+=owned-cad-cleanup-report.txt=. These files are private to one invocation and
+must not be reused by another.
+
+The generated PowerShell helper is invoked with a process-scoped execution
+policy; this does not change the machine or user execution-policy settings.
+Domain policy still takes precedence.
 
 For interactive attachment, restoration ends the runtime loop and releases the
 bridge reference, but never closes the pre-existing application or documents.
 CI runners use fresh instances; clearing residual CAD processes of the dedicated
 runner account before a job is a separate runner preflight policy.
-
-The work directory contains =owned-cad-process.ps1=, a captured
-=owned-cad-process.json= identity, and the =close-owned.request/result= handshake.
-These files are private to one invocation and must not be reused by another.
-
-The generated PowerShell helper is invoked with a process-scoped execution
-policy; this does not change the machine or user execution-policy settings.
-Domain policy still takes precedence. A process exiting while its creation
-time is queried is accepted only when its process object confirms exit.

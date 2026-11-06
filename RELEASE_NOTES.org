@@ -1950,6 +1950,15 @@ separate binary for tool integrators.
   AutoCAD running, alfe starts it itself and waits for the ready timeout
   (~--timeout~) instead of the fixed 120 s of ~CreateObject~. See the user
   manual, /AutoCAD takes longer than two minutes to start/.
+- Windows ~--mode automation~ / ~--epure~ (alfe 2.3.107): once the results are
+  recorded and the session restored, the CAD the run created must disappear --
+  closed normally, or terminated through its revalidated handle past a 20 s
+  grace -- and its own exit code (0, 0xBABE, a crash code) no longer changes
+  the run's status. A CAD still running, or one alfe cannot identify with
+  certainty, still fails the run. New ~--result-file FILE~ (a file the run
+  must have written, checked before the close) and ~--cleanup-report FILE~
+  (how the CAD ended, its raw exit code). See the user manual, /CAD session
+  cleanup and owned COM instances/.
 
 ** alfe 2.3.78: ordered Windows CAD cleanup
 Restore native log/search settings before ending the protocol; quit the exact
