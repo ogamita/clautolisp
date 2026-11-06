@@ -105,3 +105,21 @@ thread-state lifetime defect without being stopped by the unrelated small
 allocation. Settings are backed up/restored by existence, type and value.
 The limited capture task is registered but not started; administrator READY
 and a newly coordinated reservation are still required. No merge.
+
+** 2026-11-06: focused PageHeap confirms the stale-state write
+Full first-chance shutdown dump PID8152, SHA256
+BF7762B63B60CD43AF1AE3C26CD3061056239F1A0F542511B1E2E41195E8D941,
+confirms a released 480-byte _AFX_THREAD_STATE. AfxTermExtensionModule
+frees it; AFX_MAINTAIN_STATE2::~AFX_MAINTAIN_STATE2 later writes NULL at
+user+8 (mfc140u+137b4c), naturally exiting C0000005 with no forced close.
+CLR target token060004e4, a unique observed native precode and independent
+IL/native-thunk review strongly identify SNCFEG_Traverses64.dll's
+On_kUnloadAppMsg -> CAcExtensionModule.DetachInstance path. Shared-stub
+and reconstructed Desktop CLR layout limitations are documented, rather
+than treating a creator Module pointer alone as attribution.
+See the dated section in the offline analysis report for exact addresses,
+free stack, hashes and restoration receipts. All analysis ran off Windows.
+IFEO/profile were restored and runners released; no product fix or merge.
+This issue remains OPEN pending a source-level lifecycle fix and native
+qualification. Do not suppress the crash or remove Detach without its SDK
+ownership contract and validation.

@@ -301,3 +301,170 @@ VCRUNTIME140 PDB identity: 724C8CA1-45D5-E181-3863-A893D4FED39E, age1.
 The limited task is registered and its principal/action/idle state verified;
 its administrator controller is prepared but has not been run. A new admin
 READY/reservation handshake is required; no diagnostic setting is active.
+
+* 2026-11-06: focused 480-byte PageHeap capture during shutdown
+
+This completes the previously prepared experiment. The original shutdown
+corruption is a use-after-free of the 480-byte MFC thread state. The EPURE
+component SNCFEG_Traverses64.dll is now very strongly implicated by the CLR
+stub, the unique observed native entry, and its matching unload code.
+No vendor binary or product code was patched; this is diagnostic evidence,
+not a successful native qualification or a delivered fix.
+
+** Capture and restoration
+
+After coordinating with the other chats, both PF5 runners were paused for
+admission. The active session-state probe finished normally as a CI job.
+Its two residual CAD processes were matched by SID, session, parent and exact
+native creation ticks before closing them. No active job was interrupted.
+The pure-COM capture used the limited PPBN account in interactive session1.
+
+- Native PID8152, creation ticks639295527621869482; no ALFE/test Lisp.
+- Start09:06:01UTC; active profile Epure; initial DBMOD=0.
+- Quit requested09:06:50.8048147UTC; first-chance C0000005 at09:06:58UTC.
+- Full dump acad.exe_261106_100658.dmp: 1813057615 bytes.
+- SHA256 BF7762B63B60CD43AF1AE3C26CD3061056239F1A0F542511B1E2E41195E8D941.
+- Native exitC0000005, Forced=false, Error=null, ProfileRestored=true.
+- Dump was streamed to the private off-Windows pageheap480-1 evidence
+  directory on poseidon. Its complete SHA256 matches the Windows receipt.
+- Effective verifier globals IN THE DUMP: flags0x83, size range480..480.
+  This verifies the runtime filter, in addition to registry preflight.
+- Administrator controller finished09:07:59.8139478UTC: Restored=true,
+  Error=null, CaptureStillRunning=false; limited capture task removed.
+- Independent readback: GlobalFlag, PageHeapFlags, PageHeapSizeRangeStart
+  and PageHeapSizeRangeEnd all absent, exactly as before. No CAD/ProcDump
+  process remained; both runners53622032/54942908 restored paused=false.
+
+All parsing, disassembly, CLR reconstruction and symbol lookup below ran
+OFF Windows. Windows only ran the controlled capture and operational checks.
+
+** The write and its earlier free
+
+Exception thread17120 writes eight bytes to 0x1e608139e28. RIP is
+mfc140u.dll+0x137b4c, symbol AFX_MAINTAIN_STATE2::~AFX_MAINTAIN_STATE2+0xc:
+
+#+begin_example
+mov rdx,[rcx+8]       ; saved thread-state pointer
+mov rax,[rcx]         ; saved module state = NULL
+mov [rdx+8],rax       ; fault: restoring state into released memory
+RDX=0x1e608139e20, RAX=0
+#+end_example
+
+PE-unwound callers, rather than arbitrary raw-stack pointers:
+
+#+begin_example
+mfc140u+137b4c -> accore+187408 -> acad+74aa -> acad+4f771
+-> mfc140u+2b19e0 -> acad+792ca -> kernel32+2dda7
+#+end_example
+
+The live verifier PDB describes a 104-byte DPH_HEAP_BLOCK (the older ntdll
+128-byte type MUST NOT be substituted). Node0x1e6080d1ee8 records:
+
+- pUserAllocation0x1e608139e20, nUserRequestedSize480.
+- pVirtualBlock0x1e608139000, nVirtualBlockSize0x2000.
+- Flags4: Delay bit2 set, allocation already released into delayed free.
+- ThreadId17120, the same thread that later performs the invalid write.
+- StackTrace0x1e607262fe0, RTL_STACK_TRACE_ENTRY Depth9.
+
+Its retained free stack is:
+
+#+begin_example
+ntdll+108317 -> ntdll+37db7 -> ntdll+278b0 -> KERNELBASE+11d00
+-> mfc140u+137bae (_AFX_THREAD_STATE scalar deleting destructor+2e)
+-> mfc140u+152089 (CThreadSlotData::DeleteValues+79)
+-> mfc140u+152170 (CThreadSlotData::DeleteValues+60)
+-> mfc140u+2ba5ac (AfxTermExtensionModule+8c)
+-> JIT stub return0x7ffc845c89f3
+#+end_example
+
+This captures the stale-pointer write hypothesized in the earlier normal
+heap dump, instead of observing its later allocator failure. With normal
+heap bookkeeping, the state field at user+8 overlaps the free-list Blink;
+the zero write explains the later null-link coalescing failure. Different
+runs have different addresses and instrumentation: their exact allocator
+layouts are not claimed identical.
+
+** Attribution to SNCFEG_Traverses64.dll
+
+Original DLL SHA256:
+94dce16359ace59ed3d270251ec4fab1595ad602dbf6b99c554d6f6ab8959be7.
+MVID4ab4bd89-3275-4ca1-b340-946d39722da2, assembly1.0.8032.21525.
+The independent second chat verified its metadata, IL and native thunk.
+
+The reconstructed CLR chain is:
+
+#+begin_example
+JIT code start 0x7ffc845c8980
+  -> indirect code header 0x7ffc8497f730
+  -> DynamicMethodDesc 0x7ffc84987f88 (IL_STUB_PInvoke)
+  -> ILStubResolver 0x7ffc84987fd0
+  -> target MethodDesc 0x7ffc8475d210
+  -> chunk 0x7ffc8475d1b0, method token0x060004e4
+#+end_example
+
+The target metadata scope includes the string SNCFEG_Traverses64.
+In the original DLL, MethodDef0x060004e4 is exactly AfxTermExtensionModule,
+native/unmanaged/preserveSig, RVA0x1208b, signature
+0002200501205d0f11ab4408. Its thunk ff253fb40000 jumps through
+IAT0x1d4d0, importing mfc140u ordinal2336, exported RVA0x2ba520.
+
+A CLR stub may be cached/shared; its creator Module/Resolver ALONE would
+not prove the actual caller. We therefore also inspected the live native
+precode at0x7ffc845a4158:
+
+#+begin_example
+49 ba 10 d2 75 84 fc 7f 00 00  mov r10,0x7ffc8475d210
+40 e9 18 48 02 00              jmp 0x7ffc845c8980
+#+end_example
+
+A scan of all captured executable memory intersections (593174528 bytes)
+finds exactly one E9 jump to this stub: that precode. This corroborates the
+Traverses target dynamically; it does not universally exclude arbitrary
+indirect calls or an entry no longer resident at capture time. The native
+CLR layouts were reconstructed and cross-checked against consistent dump
+fields and public CoreCLR layouts, not obtained through a matching Desktop
+CLR DAC. These are explicit limits on the attribution.
+
+The static unload chain in Traverses independently matches the free:
+
+#+begin_example
+CEG_TraversesApp.On_kUnloadAppMsg, MethodDef0600015c, RVA935c
+  calls base06000105
+  loads field04001091
+  calls CAcExtensionModule.DetachInstance, MethodDef06000102, RVA9380
+    calls AfxTermExtensionModule(this+24, FALSE), MethodDef060004e4
+#+end_example
+
+Only Traverses among the four inspected SNCF mixed-mode DLLs has this named
+MethodDef and this IL call path. All four importing the same MFC ordinal
+would not by itself identify the caller.
+
+** What follows, and what is not fixed
+
+The immediate fault and preceding free are proven. The component-level
+attribution to Traverses is very strongly supported by independent static
+and dynamic evidence, with the CLR-sharing limitations above. The lifecycle
+violation is freeing MFC thread state while an outer AutoCAD/MFC state guard
+still retains its pointer and will restore through it.
+
+The next source-level review should inspect Traverses Attach/Detach ownership
+and its On_kUnloadAppMsg order against the AutoCAD2022 SDK and the lifetime
+of the last active AFX_MAINTAIN_STATE2. There are no accessible Traverses
+sources here. Removing Detach, moving it blindly to DllMain, accepting
+C0000005, or patching ALFE to disguise the crash is not a validated remedy.
+No source fix, binary patch, new release or merge was performed.
+
+This evidence does not attribute the separate ARX missing-USERPROFILE startup
+failure or the global-PageHeap 14-byte startup over-read to Traverses, nor
+does it explain an unrelated BricsCAD crash by analogy.
+
+Private evidence inventory in pageheap480-1: SHA256SUMS,
+dph-block-and-free-stack.txt, target-methoddesc-and-module.txt,
+precode-sharing-scan.txt, effective-verifier-filter.txt, capture receipt,
+controller state/final operational readback and runner release receipts.
+
+CLR layout references used as reconstruction aids (not a Desktop CLR DAC):
+- https://github.com/dotnet/coreclr/blob/release/1.1.0/src/vm/codeman.h
+- https://github.com/dotnet/coreclr/blob/release/1.1.0/src/vm/method.hpp
+- https://github.com/dotnet/coreclr/blob/release/1.1.0/src/vm/ilstubresolver.h
+- https://github.com/dotnet/coreclr/blob/release/1.1.0/src/vm/ilstubcache.cpp
