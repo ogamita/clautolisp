@@ -1,0 +1,39 @@
+#+TITLE: ALFE must supply a missing Windows USERPROFILE to CAD child processes
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS:
+
+* Symptom and reproduction
+An SSH Windows session may have no USERPROFILE even though Windows has a
+valid profile for the account. Launching AutoCAD under EPURE in that
+environment can fail before READY. The captured startup dump identifies
+SNCFOutilsARX64.arx+0x10379, C0000409, fast-fail parameter 2.
+
+Off-host analysis establishes that the vendor routine checks the DWORD
+GetEnvironmentVariableW result only for a negative value, then appends
+ntuser.dat to an uninitialized stack buffer when the result is zero.
+See ../open/alfe-autocad-sncf-arx-startup-failure.issue for the vendor defect.
+
+* Required ALFE behavior
+On native Windows, supply a missing or empty inherited USERPROFILE when
+launching child processes. Resolve the actual account profile with
+SHGetKnownFolderPath(FOLDERID_Profile); do not guess from HOME or an MSYS
+home. Preserve a nonempty inherited value and explicit launch overrides.
+Fail bootstrap clearly if the Windows profile cannot be resolved.
+Scope the repair to the launch and restore the parent's environment.
+Do not modify registry, account settings or proprietary binaries.
+
+* Resolved on the unmerged qualification branches, 2026-11-03
+Implemented in the shared backend-cad-common.lisp launcher in !507
+(commit 27d25b80, version 2.3.94) and !476 (commit 193a844e, version 2.3.97).
+Both program versions remain aligned. This issue records the ALFE safeguard,
+not a claim that the vendor ARX or the separate shutdown crash is fixed.
+
+Native Windows regressions cover overrides, absent/empty inherited values,
+resolution failure, known-folder resolution without USERPROFILE, a real
+cscript child's environment and restoration of the parent. Compilation and
+loading of the native FASL were verified as well.
+Final source heads db2d7ca2 (!507) and e85db5ab (!476) pass their Windows ALFE
+unit lanes (jobs 17694845084 and 17694882856). The !507 suite reports 2481
+checks and zero failures. No merge or release has been performed.

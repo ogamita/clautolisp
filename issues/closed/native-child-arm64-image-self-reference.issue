@@ -1,0 +1,30 @@
+#+TITLE: Native ARM64 child receives a literal image variable
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: ci
+#+DEPENDS: pipeline-validation
+#+BRANCH: -
+#+DATE: 2026-11-02
+
+* Evidence
+Job17671615228 never starts Lisp: Docker attempts to pull $ARM64_BASE and
+rejects its uppercase repository name. The parent defines a pinned image,
+but native:pipeline shadows that default with ARM64_BASE: "$ARM64_BASE".
+
+* Correction under qualification
+Remove the self-referencing job variable. Default YAML variables are already
+forwarded to child pipelines; retain the single pinned digest in the parent.
+Correct the misleading comments about variable inheritance. Runner-status
+variables from dotenv retain their separate explicit forwarding.
+
+* Acceptance
+The native ARM64 job must resolve the pinned digest and start the container;
+no literal $ARM64_BASE may reach Docker. Run the actual native child to verify.
+
+* Reference
+https://docs.gitlab.com/ci/pipelines/downstream_pipelines/#pass-yaml-defined-cicd-variables
+
+* Qualification
+Pinned ARM64 image started; added CFFI to the Quicklisp toolchain warmup.
+Native ARM64 test jobs 17673570542 and 17673614493 passed on 2026-11-02. An isolated ARM64
+container also loaded CFFI and called native strlen successfully.

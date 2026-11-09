@@ -1,0 +1,303 @@
+#+TITLE: AutoCAD EPURE shutdown: offline exception and heap analysis
+#+DATE: 2026-11-03
+
+* Initial termination dump: result and attribution boundary
+The available exit dump localizes an access violation to Windows heap
+coalescing while MFC destroys its OLE module state. The specific released
+member is AFX_MODULE_STATE::m_strUnregisterList, not a Lisp request or a
+COM document close operation. This is consistent with damaged heap metadata;
+it does not identify the earlier writer, allocator mismatch or double free.
+No specific proprietary EPURE component can yet be blamed from this dump.
+
+The independent clean-profile control still establishes the broader trigger:
+AutoCAD with an unchanged initial drawing exits zero under its unnamed
+profile, but abnormally under its installed EPURE profile, without ALFE.
+The dump below comes from a DIFFERENT private diagnostic invocation. Do not
+represent it as the dump of that independent control or as qualification
+of either MR's final head.
+
+* Evidence identity and scope
+- Captured process: acad.exe PID 1072, creation ticks 639292933401354390.
+- Diagnostic started 2026-11-03 09:02:19 UTC; natural exit observed 09:03:05 UTC.
+- Dump SHA256: 54fa7776cc44a2216992176570c1ab5ec95e877a48cec9ea731d111590a3b1a0.
+- Native receipt: exit 0x012EBABE, CLI exit zero, Forced=false,
+  CleanupRequested=false, two distinct APIs, exact drawing verified,
+  dirty drawing verified, original DWG hash unchanged. Verdict remains false.
+- Diagnostic image: ALFE 2.3.91, SHA256
+  CCDFBAB358516676E6BDB7DBBFE81C048294A7BDBF46838171CE07F61D39EA7E,
+  with uncommitted diagnostic plugin changes on detached source 8acbe1ff.
+  It is not a final-head !476/!507 CI result.
+- Analysis, disassembly, symbol resolution and dump parsing ran off Windows.
+  Existing DLLs and receipts were copied read-only for off-host inspection.
+  No new CAD trial, Windows debugger session, registry change, binary patch,
+  installation, merge or release was performed for this analysis.
+
+* Why the exit code alone was insufficient
+The existing ProcDump log records, in order:
+- E06D7363, boost::interprocess::interprocess_exception;
+- C0000005, ACCESS_VIOLATION;
+- process exit 0x012EBABE.
+The earlier C++ exception is not established as the heap corruption cause.
+This particular BABE exit accompanies an access violation. That does not
+classify every BABE variant, and none is whitelisted by the lifecycle gate.
+The receipt's empty WER/default-CrashDumps arrays do not contradict the
+separately captured dump in the diagnostic's private crash-data directory.
+
+* Recovering the active exception
+The exit minidump has no ExceptionStream. Its final ThreadList context is
+in NtTerminateProcess, reached through RtlpWaitOnCriticalSection and CLR's
+exception handling path. Raw module-looking stack values are NOT a backtrace.
+
+Reconstructing x64 frames using each matching PE's .pdata/UNWIND_INFO,
+including chained unwind records, reaches RtlpExecuteHandlerForException,
+RtlDispatchException and KiUserExceptionDispatcher. The dispatcher's stack
+points to a still-present original AMD64 CONTEXT (flags 0x10005F) and
+EXCEPTION_RECORD. Thus the recovered context belongs to the active dispatch,
+not merely to an arbitrary stale address found by scanning.
+
+The record contains C0000005, a read operation, address zero, with exception
+address ntdll.dll+0x9750. The saved original R15 is zero. The instruction at
+that RVA is mov rax,[r15], exactly matching the recorded null read.
+
+* Reconstructed original failure path
+From the original exception context, x64 unwind metadata yields:
+1. ntdll.dll+0x9750: RtlpCoalesceFreeBlocks+0x300.
+2. ntdll.dll+0x374EF: RtlpFreeHeap+0x12F.
+3. ntdll.dll+0x278B0: RtlFreeHeap+0x620.
+4. ucrtbase.dll+0x12D7B: _free_base+0x1B.
+5. mfc140u.dll+0x137E62: AFX_MODULE_STATE destructor+0x82.
+6. ucrtbase.dll+0x49C85 / +0x498A7 / +0x4985D: on-exit callback execution.
+7. mfc140u.dll+0x2C395D / +0x2C3A7D: CRT DLL detach dispatch.
+8. ntdll.dll+0x11EF6A / +0x1B2E3: loader initialization/detach callbacks.
+9. ntdll.dll+0x8027F / +0x7EF8E: LdrShutdownProcess / RtlExitUserProcess.
+
+The recovered nonvolatile RBX in frame 5 points to MFC RVA 0x3D18B0.
+Microsoft's private data symbol names it _afxOleModuleState. Its type is
+AFX_MODULE_STATE. The destructor releases the CString at object+0x68;
+PDB type information names offset 104 m_strUnregisterList. Disassembly
+shows the CString reference-count decrement and virtual string-manager free
+immediately before return address +0x137E62.
+
+The released CString data pointer and the heap node being coalesced are
+outside the dump's captured MemoryList ranges. There is no allocation/free
+history. The original corrupting write cannot be recovered from these data.
+
+* Symbols and validation
+Microsoft symbol-server PDBs were obtained off-host using the DLLs' RSDS
+identities. Module image size/timestamp and executable instructions were
+checked against the dump; named function boundaries agree with PE unwind
+ranges. Relevant symbol identities:
+- MFC: GUID F7286964-2050-B9BF-900F-E69E3BEF03A0; DLL RSDS age 1,
+  PDB DBI age 1 (PDB info-stream age 3). Public destructor and private
+  _afxOleModuleState/type layout agree independently with the instructions.
+- ntdll: GUID C031D45B-0DA1-8A6E-74D0-6ED6AB2DD9E1, age 1.
+- mscoreei: GUID B073A4FB-419B-483A-9522-4CBAB5B57F5E, age 4.
+MFC DLL SHA256:
+fc9b1f94752d7080436824b480e83ba1ec930e3f7baa881f4e842b882e715cfc.
+
+* EPURE candidates and exclusions
+The unloaded-module stream records DOSLib24x64.arx and SNCFOutilsARX64.arx
+already unloaded. This excludes a direct instruction fault inside those
+modules at the captured point; it does NOT exclude an earlier heap overwrite.
+FLSNCFIG.dll addresses occur in raw stack memory but are not frames of the
+reconstructed original exception path. Mere presence is not attribution.
+The copied FLSNCFIG.dll has no dynamic MFC import and no literal matching
+the recorded boost exception type. Neither observation rules it out entirely.
+The accessible SCHMS EPURELIB sources show no direct unsafe/DllImport hook
+into these components; this is not an audit of unavailable EPURE sources.
+
+The separately proven USERPROFILE stack-buffer failure in SNCFOutilsARX64.arx
+is a startup C0000409, not evidence that this later heap failure shares its
+cause. ALFE's known-folder environment safeguard remains warranted.
+
+* What is needed to identify the originating component
+The existing mini dump lacks the relevant heap blocks and allocation/free
+stacks. A full dump at the FIRST access violation would allow inspection of
+heap neighbors; allocation instrumentation, or a controlled same-environment
+component bisect, is needed to identify an earlier writer/free operation.
+Those would be separate native experiments, not conclusions from this file.
+No new native experiment was launched here. Keep both MRs unmerged and the
+native lifecycle gate blocking until the shutdown defect is resolved.
+
+* Reference context
+Microsoft's module-state description explains the separation between module,
+process and thread state. It supplies general integration context, not proof
+that a particular vendor DLL violates the contract in this captured failure:
+https://learn.microsoft.com/en-us/cpp/mfc/tn058-mfc-module-state-implementation
+Symbol files were retrieved from Microsoft's symbol server, using the RSDS
+identities listed above: https://msdl.microsoft.com/download/symbols/
+
+* First-chance full dump captured on 2026-11-03
+** Isolation, capture and restoration
+The follow-up used a new pure-COM AutoCAD.Application.24.1 instance under the
+Epure profile, with its initial drawing unchanged (DBMOD=0), without ALFE,
+Lisp tests or a test DWG. The other chat confirmed the PF5 reservation.
+No CAD process was active before launch. The created HWND/PID, start ticks,
+owner SID and interactive session were checked before attachment.
+
+- Native PID: 36612; creation ticks: 639293070136555377.
+- Quit requested: 12:50:43 UTC (13:50:43 Europe/Paris).
+- First observed matching exception: 12:50:46 UTC (13:50:46 Europe/Paris).
+- ProcDump: -ma -e 1 -g -f C0000005 -n 1, attached before Quit.
+  Nonmatching first-chance exceptions were logged but did not trigger dumps.
+- File size: 1444478238 bytes; SHA256:
+  6fea6f5f93984f2a30f40b365e6171f65fdce56ab16fee752da72c02cd27d91f.
+- Off-host SHA256 equals the Windows capture receipt. Minidump flags
+  0x661826 include MiniDumpWithFullMemory; Memory64List and ExceptionStream
+  are present. The exception context is direct, not reconstructed from a
+  termination dump.
+- No forced cleanup; profile restored to its exact original Epure value.
+  The receipt formats the held native process's final exit as zero; this
+  instrumented run is not a clean-lifecycle qualification. Its recorded
+  first-chance access violation is independent of that final exit value.
+- The temporary capture task was removed, no CAD/debugger process remained,
+  and the runner was reactivated. All dump parsing and binary analysis ran
+  outside Windows. Raw memory remains private, outside Git and CI artifacts.
+
+** Original failure reproduced with full memory
+ExceptionStream contains C0000005, read from address zero, at ntdll+9750.
+The direct saved R15 is zero, matching mov rax,[r15]. Unwind metadata again
+leads through RtlpCoalesceFreeBlocks -> RtlpFreeHeap -> RtlFreeHeap ->
+_free_base -> AFX_MODULE_STATE destructor+82, releasing the CString in
+_afxOleModuleState.m_strUnregisterList during MFC process detach.
+
+The full memory snapshot now permits inspection of the two adjacent blocks:
+- The CString header remains consistent with length zero and allocation
+  length 4096 characters. It is being released normally by its MFC manager.
+- Immediately before its heap entry is a 0x1F0-byte free block: 16-byte heap
+  header plus 480-byte former user allocation. Its free-list Flink points
+  to a valid bucket/list structure, but its Blink is zero. Reading that
+  null Blink produces the captured access violation.
+- Its remaining payload is consistent with _AFX_THREAD_STATE (Microsoft
+  PDB type size 480): m_szTempClassName at offset 216 contains an Afx:...
+  generated window-class name, matching the type's precise inline layout.
+  m_pModuleState is at offset 8 of that former object, exactly overlapping
+  Blink after the allocator reuses the object's first two words as links.
+- A later write of a null module state through a stale thread-state pointer
+  would therefore explain the precise corruption. This is a strong
+  use-after-free hypothesis, not a captured write instruction or proof of
+  the identity of its caller.
+
+The complete snapshot has one remaining thread. AutoCAD still has a global
+reference to this former object; static references found in acad.exe use its
+current-message fields. A retained pointer is not proof of a post-free write.
+No proprietary EPURE instruction is on the reconstructed failing stack.
+The available heap is not recording allocation/free backtraces, so this dump
+does not identify which call first invalidated the block or later wrote it.
+Do not convert this hypothesis into blame against SNCFOutilsARX64.arx,
+FLSNCFIG.dll, EPURELIB, AutoCAD or MFC itself without observing the operation.
+
+** Follow-up instrumentation and access boundary
+A second capture was prepared to enable full page heap for acad.exe only,
+backing up its exact existing image option and restoring it in finally.
+The purpose is to catch access to the former object at the offending
+instruction rather than at the subsequent heap coalescing operation.
+The existing account cannot register the required elevated task:
+Register-ScheduledTask with RunLevel Highest returns access denied.
+The task never started, its workdir was never created, no image option was
+written, and no second CAD instance was launched. Final read-only checks
+show no GlobalFlag value for acad.exe and no remaining capture task/process.
+Both PF5 CAD/general Windows runners were restored to paused=false.
+An administrative execution path is needed for that prepared capture.
+
+Microsoft documents full page heap for an image as FLG_HEAP_PAGE_ALLOCS
+0x02000000, equivalent to gflags /i ImageFile +hpa; it is intended to make
+invalid heap accesses fault at their source. No such setting was enabled
+in the completed first capture, or left enabled after the denied attempt.
+https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/enable-page-heap
+https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/gflags-and-pageheap
+
+** Current conclusion
+The full first-chance capture confirms the same defect independently of
+ALFE and narrows the damaged neighbor to a former MFC thread-state object.
+It still does not identify an EPURE writer. The precise next evidence is a
+page-heap capture of the offending access with allocation/free provenance.
+No source workaround, vendor binary patch, exit-code whitelist or merge is
+justified by this snapshot.
+
+* Global page-heap capture: startup over-read, 2026-11-03
+** Coordinated execution and restoration
+The administrator controller and limited capture task were deliberately
+separated: AutoCAD ran under its existing PPBN02261 interactive account,
+not the administrator's account. The capture task was registered by the CAD
+account itself after cross-account task registration failed to resolve its
+cloud SID. The other chat confirmed the PF5 slot. Both PF5 runners were
+paused only after confirming no running jobs and no CAD processes.
+A fresh nonce/timestamp reservation signal released the waiting controller.
+
+The controller temporarily set acad.exe's GlobalFlag to 0x02000000 and
+started the limited-user task. Native PID33364, creation ticks
+639293171372805793, was verified by HWND, account SID, session and start time
+before ProcDump attached (-ma -e 1 -g -f C0000005 -n 1).
+The target started at 15:38:57 UTC; the dump was triggered at 15:39:49 UTC
+(16:39:49 Europe/Paris), while waiting for quiescence, BEFORE any Quit request.
+
+Full dump: 3767186581 bytes, SHA256
+7f8f0cdf97d5d7f210debc2ff078f56d30a264e4d2e6a77543dc3a8337fa8a51.
+The full off-host copy matches the Windows receipt and includes a direct
+ExceptionStream and Memory64List. Capture finished at 15:42:50 UTC after
+COM quiescence timed out. The exact owned instance required forced cleanup;
+its recorded final exit is FFFFFFFF. DBMOD and the actual active profile
+could not be queried. Epure was selected before creation and the profile
+setting was restored afterwards. This run is NOT shutdown qualification.
+
+Controller receipt: Restored=true, Error=null, CaptureStillRunning=false;
+the limited task was unregistered. Read-only final checks found no GlobalFlag
+value and no CAD/debugger process. Both runners were restored to paused=false,
+and the slot was released explicitly to the other chat. No merge occurred.
+Raw dumps, DLLs and PDBs remain private outside the repository/CI artifacts.
+The Windows side performed capture, file copying and compression only;
+all parsing, symbol resolution and disassembly ran off Windows.
+
+** What the first protected exception establishes
+The read fault is VCRUNTIME140.dll+0x10B36, memcpy_avx_ermsb_amd+0x126,
+not the previous ntdll+9750 heap coalescing fault. The instruction is
+movdqu xmm1,[rdx], with R8=16 bytes. Source starts eight bytes before a
+protected page; this 16-byte load crosses into that page.
+
+The source lies eight bytes inside an allocation requested as 14 bytes.
+Its DPH_BLOCK_INFORMATION allocation stamp is ABCDBBBB (allocated), not
+a freed-block stamp. Thus only six requested bytes remain at the source,
+followed by two fill bytes and the protected page. This is an allocated
+buffer over-read, not the previously hypothesized freed 480-byte thread state.
+
+Matching PE unwind tables reconstruct memcpy -> accore+78E5D ->
+accore+9832E -> accore+98017 -> accore+2078BC, followed by further accore
+initialization frames, acad+4F765, MFC startup and acad's entry path.
+The accore helpers construct a wide std::basic_string using an explicit
+count of eight characters, leading to a 16-byte copy from that short source.
+The source allocation header is present; its allocation backtrace is not
+stored in that header. Autodesk's matching accore PDB request returned 404,
+so internal function names are not asserted from nearest exports.
+No proprietary EPURE native frame appears in the reconstructed stack.
+That does not exclude an application/profile input trigger, and does not
+establish a relationship with the earlier MFC shutdown corruption.
+
+A separate open issue records this startup obstacle. Do not relabel this
+capture as the writer of the original heap corruption or as a clean exit.
+
+** Prepared narrower follow-up; not executed
+Global full page heap finds this earlier over-read before the shutdown path
+can be reached. The next prepared capture narrows protected allocations to
+requested size 480 bytes, the size of the former _AFX_THREAD_STATE identified
+in the preceding full shutdown dump. Other allocation sizes remain outside
+full guard-page selection; the startup over-read remains reported separately.
+This changes instrumentation coverage, not product code or exit acceptance.
+
+The installed verifier.dll and its matching Microsoft PDB were inspected
+OFF Windows to verify the configuration rather than guess registry names.
+AVrfpDphShouldAllocateInPageHeap tests bit 0x80 and compares the requested
+size inclusively against AVrfpDphSizeRangeStart/End. The initialization code
+reads DWORD PageHeapSizeRangeStart and PageHeapSizeRangeEnd.
+The prepared controller uses PageHeapFlags=0x83 (full selection 0x01,
+base 0x02, size range 0x80), both range values 480, and GlobalFlag 0x02000000.
+Its backup/finally logic preserves/restores the exact existence, type and
+value of ALL FOUR settings. The limited task checks the expected filter
+before creating AutoCAD. The next dump must verify the effective runtime
+filter before any attribution is made.
+
+Verifier PDB identity: 2EFDAF32-8395-3477-8CAC-51F2B1127025, age1.
+VCRUNTIME140 PDB identity: 724C8CA1-45D5-E181-3863-A893D4FED39E, age1.
+The limited task is registered and its principal/action/idle state verified;
+its administrator controller is prepared but has not been run. A new admin
+READY/reservation handshake is required; no diagnostic setting is active.

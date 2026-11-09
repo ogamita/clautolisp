@@ -320,14 +320,14 @@ directory when there is none."
                      (lines :before-load :scr)))
           (is (null (lines :after-load :scr)))
           ;; VBScript: ASCII, quotes doubled.
-          (let ((after-app (format nil "~{~A~%~}" (lines :after-app :vbs)))
+          (let ((after-document (format nil "~{~A~%~}" (lines :after-document :vbs)))
+                (after-app (format nil "~{~A~%~}" (lines :after-app :vbs)))
                 (before-load (format nil "~{~A~%~}" (lines :before-load :vbs))))
-            (is (search "app.Preferences.Profiles.ActiveProfile = \"Ep\"\"ure\"" after-app))
-            (is (search "On Error Resume Next" after-app))
-            (is (search "._SCRIPT" before-load))
-            (is (search script before-load))
-            (is (search "doc.SendCommand(epureCmd)" before-load))
-            (is (every (lambda (c) (< (char-code c) 128)) (concatenate 'string after-app before-load)))))))))
+            (is (string= "" after-app))
+            (is (search "app.Preferences.Profiles.ActiveProfile = \"Ep\"\"ure\"" after-document))
+            (is (search "On Error Resume Next" after-document))
+            (is (string= "" before-load))
+            (is (every (lambda (c) (< (char-code c) 128)) (concatenate 'string after-app after-document before-load)))))))))
 
 ;;; --- EPURE through the backends (mock CAD, --print-command) ---------------
 
@@ -403,9 +403,8 @@ EPURE's control script before it loads alfe's run-common.lsp. Without
               (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))))))
 
 (test epure-autocad-automation-end-to-end
-  "--autocad --epure: COM automation, the bridge activates the profile after
-the application exists (before it waits for it) and sends the control script
-after the document is active, before the (load …) of run-common.lsp."
+  "--autocad --epure: select the document before activating its profile,
+then load EPURE synchronously in run-common before the bootstrap."
   (with-shipped-plugins
     (with-plugin-temp-directory (dir)
       (let* ((script (namestring (%write-file (merge-pathnames "control.scr" dir) "x")))
@@ -424,14 +423,19 @@ after the document is active, before the (load …) of run-common.lsp."
                         (profile (search "ActiveProfile = \"Epure\"" vbs))
                         (quiescent (search "WaitQuiescent app, waitSecs" vbs))
                         (active (search "Set doc = app.ActiveDocument" vbs))
-                        (sends (search "epureCmd = \"._SCRIPT \"" vbs))
                         (load (search "SendCommand (load" vbs)))
                    (is (search "cscript" command))
                    (is (not (search "${" vbs)) "no unfilled slot")
-                   (is (every #'integerp (list profile quiescent active sends load)))
-                   (is (< profile quiescent))
-                   (is (< active sends load))
-                   (is (search "control.scr" vbs)))
+                   (is (every #'integerp (list profile quiescent active load)))
+                   (is (< quiescent active profile load))
+                   (is (not (search "epureCmd" vbs)))
+                   (let* ((runtime (uiop:read-file-string
+                                    (merge-pathnames "run-common.lsp" workdir)))
+                          (control (search (format nil "(load ~S)" script) runtime))
+                          (bootstrap (search "loading bootstrap:" runtime)))
+                     (is (integerp control))
+                     (is (integerp bootstrap))
+                     (is (< control bootstrap))))
               (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))))))
 
 (test cad-launcher-scripts-are-unchanged-without-plug-ins
@@ -457,12 +461,13 @@ templates: the slot lines are removed, nothing else changes."
             (let ((text (emitted function)))
               (is (search "${PLUGIN_AFTER_APP}" template))
               (is (search "${PLUGIN_BEFORE_LOAD}" template))
+              (is (search "${PLUGIN_AFTER_DOCUMENT}" template))
               (is (not (search "PLUGIN_" text)))
               ;; The base now includes the retained COM lifecycle; plug-ins
               ;; still contribute no lines when none are enabled.
               (let ((base (alfe.backend.cad-common::instrument-owned-com-bridge
-                           template (merge-pathnames "x.vbs" dir))))
-                (is (= (- (length (%lines base)) 2) (length (%lines text))))))))))))
+                           template (merge-pathnames "x.vbs" dir) :trust-runtime-p t)))
+                (is (= (- (length (%lines base)) 3) (length (%lines text))))))))))))
 
 (test epure-shows-in-dry-run-and-run-off-windows
   "The scenario every CI host can run: --epure with --bricscad, dry run."
@@ -615,3 +620,39 @@ places the run is refused with the places tried."
             (is (search "(epuree-initialize)" out))
             (is (< (search "alpm-load-system" out) (search "(epuree-initialize)" out)))
             (is (< (search "(epuree-initialize)" out) (search "(+ 1 2)" out)))))))))
+
+(test epure-com-loads-in-runtime-prelude-without-command-queue-race
+  "The control LOAD and bootstrap execute in one native Lisp command."
+  (with-shipped-plugins
+    (dolist (backend '(:bricscad :autocad))
+      (with-epure-context (options (list (if (eq backend :bricscad) "--bricscad" "--autocad")
+                                        "--epure" "--mode" "automation"
+                                        "--epure-script" "C:/epure/control.scr")
+                                  :backend backend)
+        (is (equal (list "(load \"C:/epure/control.scr\")"
+                         (format nil "(if (not com_startup_exe) (progn (alfe-debug-log \"EPURE document startup\") (load ~S) (s::startup)))"
+                                 (if (eq backend :bricscad) "on_start.lsp" "AcadDoc.lsp")))
+                   (alfe.plugin:run-hook :run-common-prelude nil :variant :automation)))
+        (is (null (alfe.plugin:run-hook :launcher-lines :before-load
+                                        :kind :vbs :variant :automation)))
+        (is (null (alfe.plugin:run-hook :run-common-prelude nil :variant :batch)))))))
+
+(test epure-bricscad-com-startup-precedes-bootstrap
+  "The selected document runs the real EPURE document startup before READY."
+  (with-shipped-plugins
+    (with-plugin-temp-directory (dir)
+      (let* ((script (namestring (%write-file (merge-pathnames "control.scr" dir) "x")))
+             (backend (alfe.backend.bricscad:make-bricscad-backend
+                       :executable-path (%fake-cad dir "bricscad.exe") :variant :automation)))
+        (with-epure-context (options (list "--bricscad" "--mode" "automation" "--epure"
+                                         "--epure-script" script "-x" "(princ 1)"))
+          (multiple-value-bind (command workdir) (%print-command options backend)
+            (declare (ignore command))
+            (unwind-protect
+                 (let* ((runtime (uiop:read-file-string (merge-pathnames "run-common.lsp" workdir)))
+                        (control (search (format nil "(load ~S)" script) runtime))
+                        (startup (search "(if (not com_startup_exe)" runtime))
+                        (bootstrap (search "loading bootstrap:" runtime)))
+                   (is (and control startup bootstrap (< control startup bootstrap)))
+                   (is (search "(load \"on_start.lsp\") (s::startup)" runtime)))
+              (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))))))

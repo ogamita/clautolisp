@@ -1,0 +1,66 @@
+#+TITLE: Native EPURE shutdown leaves save dialogs and output callbacks active
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native Windows CAD qualification
+#+BRANCH: codex/fermeture-cao-20261023
+
+* Reproduction
+Run installed SCHME or SCHMS under ALFE on AutoCAD 2022 or BricsCAD V25
+with EPURE. Successful assertions can be followed by a Dessin1 save dialog,
+a forced BricsCAD termination, or an AutoCAD callback error during shutdown.
+
+* Findings and corrections under qualification
+- Keep native printers until the entire protocol server loop and its final
+  logging finish, then restore them. Restoring at C:MAIN return is too early.
+- Close AutoCAD documents without saving, wait for quiescence and retry
+  transient COM rejections. Never Quit after a failed document close.
+- Close the active BricsCAD batch document explicitly with SaveChanges=False
+  before QUIT; even AutoLISP command with a discard answer leaves a dialog
+  on SCHME. Allow bounded natural exit before fallback.
+
+* Evidence (2026-10-23)
+34 targeted checks pass on both SBCL and CCL, including ownership, bridge generation,
+protocol restoration ordering and bounded process shutdown. Windows cscript
+mocks show retry success and refusal to Quit after permanent close failure.
+SCHMS on pb: 3 assertions pass and BricsCAD exits naturally with code 0
+using the isolated qualification plugin. Further native account/project
+qualification is still pending; no full-matrix success is claimed.
+
+* Additional lifecycle finding
+On this Windows host, GetExitCodeProcess can return 47806 and .NET
+Process.HasExited can be true while WaitForSingleObject(handle, 0) returns
+WAIT_TIMEOUT and Restart Manager still lists the process as a DLL owner.
+Native qualification must use the process handle signal, not only the
+reported exit code. The operational collector now has that stronger test.
+
+SCHME on pb: 5 assertions pass and BricsCAD exits naturally with code 0
+using explicit ActiveDocument.Close(False), isolated plugin V12.
+The preceding V11 matrix passed SCHMS on both engines, but SCHME BricsCAD
+needed forced termination and SCHME AutoCAD exited with 0xc0020001.
+Those V11 SCHME rows remain failed qualification.
+
+Full pb matrix (V13 plugin): SCHME 5/5 and SCHMS 3/3 on both engines,
+Make=0 throughout, BricsCAD native exit=0 and AutoCAD native exit=47806
+with signaled process handles. Release document references and wait for
+idle again after Close(False), before Quit. 37 targeted checks pass on
+both SBCL and CCL. Runner matrices are still pending.
+
+* Private drawing correction (2026-10-23)
+The BricsCAD batch argv builder used only the template cached at backend
+detection, which normally is NIL. It never called workdir-aware discovery,
+so the promised private empty.dwg was missing from batch launches. Resolve
+the default drawing after the session workdir exists, preserving explicit
+template overrides. A regression stages two Windows batch sessions and
+checks that both drawings exist at distinct paths. This fixes the batch
+default; the origin of reported cadinst-bricscad-A/B names is still under
+investigation and is not attributed to this code without evidence.
+
+* Requested drawing forwarding
+The BricsCAD start-engine method also declared DWG ignored, silently
+dropping the CLI fixture in batch mode. Forward it into the batch argv
+builder, ahead of the cached template and default resource. An end-to-end
+launcher-injection regression checks the requested fixture reaches argv
+and no replacement empty.dwg is written. 61 targeted checks pass on
+SBCL and CCL. Explicit fixture ownership remains the caller's decision;
+test harnesses stage private copies rather than opening shared sources.

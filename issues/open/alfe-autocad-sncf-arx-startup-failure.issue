@@ -1,0 +1,67 @@
+#+TITLE: SNCF native ARX fails during AutoCAD startup in SSH diagnostics
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+
+* Evidence
+On 2026-11-02 at20:20 UTC, isolated SSH diagnostic AutoCAD PID28608 exits
+before READY. Windows Application events1000/1001 identify
+sncfoutilsarx64.arx version1.0.0.1, offset0x10379, exception0xC0000409,
+BEX64, fast-fail parameter2. A matching acad.exe.28608.dmp exists.
+The executable used in the first diagnostic was2.3.94 (MR !476), copied
+from a reused CI workspace, not the intended MR !507 build. That run is
+not qualification evidence for !507. A separately built2.3.91 also fails
+before READY under SSH. No owned COM identity was captured before failure;
+there is no CAD process left afterwards.
+
+* Investigation
+Keep this startup failure distinct from the earlier post-test0xC0000005
+and variable0x...BABE exits. Compare the normal GitLab runner environment
+with SSH and preserve the matching WER report and dump. Do not attribute
+all AutoCAD failures to one module without matching process evidence.
+
+** Further isolated native controls (2026-11-02)
+On pfenny, starting from the existing unnamed AutoCAD profile avoids the
+early SNCF ARX failure in this trial. Control loading alone exposes neither
+EPURE API. Explicit AcadDoc.lsp/S::STARTUP after opening the job DWG restores
+both APIs. The modified private DWG is discarded with its SHA256 unchanged.
+AutoCAD nevertheless exits 0x0141BABE without forced cleanup, WER event or dump.
+A preceding cold-profile run with neither EPURE API loaded exits 0x013CBABE.
+Therefore BABE alone does not establish that EPURE caused the exit; its meaning
+remains unclassified and the strict lifecycle gate continues to fail it.
+ProcDump attached to the exact owned process observed no C0000005 in these
+two trials. Earlier real C0000005 and startup C0000409 evidence is retained.
+The startup timeout left PID9584 recorded by this diagnostic launcher; its
+67 MB dump was preserved before terminating that exact PID after verifying
+creation time and owner. User profiles were restored to Epure and temporary
+scheduled tasks removed. No generic shutdown experiment is shipped.
+
+** Offline native analysis and scoped mitigation (2026-11-03)
+No disassembly or dump analysis was performed on Windows. Private copies of
+the ARX and captured dumps were analyzed off-host; no vendor binary is patched
+or committed. The ARX SHA256 is
+ee093357e74701bf80061f6aaea65d50a50826b0c784889a92c2c9841c2af97c.
+
+RVA 10379 is the MSVC INT 29 / fast-fail code 2, not the original bad write.
+The checked caller a160..a456 calls GetEnvironmentVariableW(USERPROFILE) into
+a 260-wchar stack buffer, checks only for a negative signed result, then calls
+unbounded wcscat with the ntuser.dat suffix. Windows returns zero on failure.
+The startup dump's native PEB has no USERPROFILE, the buffer contains CC debug
+fill and the cookie is overwritten by UTF16 ntuser.dat fragments.
+
+The shared launcher now supplies a missing USERPROFILE using FOLDERID_Profile.
+Native Windows tests verify known-folder resolution with the variable absent,
+FASL compilation/loading, an actual cscript child's environment, and parent
+restoration. A new owned AutoCAD dump confirms the repaired native PEB value
+and no C0000409; SSH COM still times out waiting for quiescence in that trial,
+so this is not claimed as complete SSH GUI qualification. Normal interactive
+runner launches reach READY and both APIs.
+
+The vendor routine itself remains defective for callers bypassing this
+safeguard or explicitly supplying an empty/oversized value. The separate
+post-test C0000005 shutdown is tracked in epure-autocad-clean-profile-quit.issue.
+
+The implemented ALFE environment requirement has its own resolved issue:
+[[file:../closed/alfe-windows-missing-userprofile.issue]]. The proprietary
+ARX defect tracked here remains open; neither issue resolves shutdown.
