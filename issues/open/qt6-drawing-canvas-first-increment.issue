@@ -1,0 +1,207 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: qt6-drawing-canvas-first-increment — a Qt6 interactive canvas on top of the cador engine (increment 1)
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: feature-proposal
+#+DEPENDS: -
+#+BRANCH: qt6-canvas-first-increment
+#+DATE: 2026-11-09
+
+* Context — why this is a small increment, not a rewrite
+
+cador is already a headless, AutoCAD-compatible 2D document engine (~42 k LOC):
+a =DRAWING= object model with ~24 entity kinds, selection sets, a ~1900-line
+system-variable catalogue, a vlax/ActiveX surface, geometry intersect, and
+command modules (draw/edit/modify/hatch/array/geometry/file).  clautolisp has
+the full AutoLISP/Visual LISP language, and DCL dialogs already render in a
+real Qt process over an s-expression wire.
+
+What is missing for anything that looks like AutoCAD is the *interactive
+graphical canvas*: a viewport that draws the model, pans/zooms, and feeds
+pointer/selection input back to =getpoint=/=entsel=/=ssget=.  This ticket
+specifies the FIRST increment of exactly that, deliberately thin, reusing the
+existing seams rather than inventing new ones.
+
+NON-GOAL of this ticket: "a CAD application".  GOAL: the smallest canvas that
+renders the cador model and makes interactive =getpoint=/=entsel=/=ssget= and
+LISP =C:= commands work from the mouse, with pan/zoom — the foundation every
+later increment builds on.
+
+* The seams this reuses (measured, origin/master)
+
+- *Transport:* the DCL Qt GUI is a subprocess over stdin/stdout speaking
+  newline-framed s-expressions, grammar in lockstep in
+  =clautolisp/autolisp-dcl/source/sexp-wire.lisp= (=*sexp-protocol-version* 1=)
+  and =clautolisp/tools/clautolisp-gui-qt/source/sexp.{hpp,cpp}=.  The C++
+  reader counts paren depth (pipe-safe) and dispatches one form per message on
+  the main thread.  There is already a one-way raster channel —
+  =(:image-paint DID KEY (PRIM...))= with =(:fill ...)= / =(:vector ...)=
+  primitives painted by =DialogWindow::paintImage= via =QPainter=, with an
+  ACI-index→QColor map (=aciToRgb=).  It is the closest existing analog to a
+  canvas; it is strictly request/response and modal, with no upstream pointer
+  events.
+- *Model:* a drawing is a =DRAWING= CLOS value (=clautolisp/drawing/source/
+  model.lisp=); entities are =entity-handle= structs whose =data= slot is the
+  *DXF group-code alist* (=((0 . "LINE") (8 . "0") (10 x y z) (11 ...) ...)=),
+  with =kind=, =block= (owner space =*Model_Space=/=*Paper_Space=/block), and
+  =layer=.  The current space is enumerated by reversing
+  =cador-creation-order= and filtering =main-space-entity-p= +
+  =clautolisp.drawing:graphical-entity-p= — the exact loop =host-ssget "X"=
+  uses (=selection-api.lisp=).
+- *Input is injectable:* every =host-get*= reads one text line from
+  =cador-prompt-stream= through the single chokepoint =read-prompt-line=
+  (=cador/source/prompt-api.lisp=); that is how =--mock-input FILE= already
+  drives the engine.  =host-getpoint= parses ="x,y[,z]"=; =host-entsel=
+  hit-tests with =%pick-entity=.  A cooperative scheduler
+  (=autolisp-runtime/source/scheduler.lisp=) already has a *park seam*,
+  =%cador-maybe-park-read=, that yields instead of blocking when an
+  interactive read would block.
+- *Hit-testing already exists* in =cador/source/command-geometry.lisp=:
+  =%pick-entity host point= (nearest within =*pick-tolerance*=) and
+  =%window-selection host p1 p2 crossing= over =%entity-outline=.  Interactive
+  =ssget= with =nil= mode currently signals =:host-unavailable-headless= — so
+  the geometry is done; only the *wiring* is missing.
+
+* Architecture decision (the one that matters)
+
+*Out-of-process, reusing the proven sexp-over-stdio subprocess wire; the
+canvas owns the view transform; Lisp owns hit-testing and the model.*
+
+Rationale:
+- Out-of-process keeps SBCL and Qt in separate address spaces (embedding Qt in
+  the Lisp image is fragile); it reuses the existing, tested wire and its
+  ACI→RGB map and paren-framed reader, and crashes stay isolated.
+- The *canvas holds the scene in WORLD coordinates and does pan/zoom/extents
+  locally*, so interaction is pure Qt with zero Lisp round-trip — the single
+  most important UX/perf call.  Lisp re-sends the scene only on a model change
+  (regen), as tessellated world-space polylines per entity.
+- *Lisp keeps hit-testing* (=%pick-entity= / =%window-selection=): a click
+  sends world coords up, Lisp resolves the entity/pickset.  No geometry logic
+  is duplicated in C++.
+
+This requires two protocol additions only (bump to =*sexp-protocol-version* 2=):
+a non-modal canvas window, and upstream pointer/selection/command events.
+
+* Protocol v2 additions (sexp-wire.lisp ↔ sexp.{hpp,cpp}/wire.cpp)
+
+Downstream (runtime → canvas):
+#+begin_example
+(:open-canvas  CID NAME)
+(:canvas-scene CID (ENT ...))     ; ENT = (HANDLE LAYER ACI (:poly x y x y ...) ...)
+(:canvas-prompt CID TEXT)         ; echo the current prompt to the command line
+(:canvas-mode  CID MODE)          ; :point | :pick | :window | :command | :idle
+(:canvas-highlight CID (HANDLE...))
+(:close-canvas CID STATUS)
+#+end_example
+Upstream (canvas → runtime):
+#+begin_example
+(:point   CID X Y)                ; left click in :point mode
+(:pick    CID X Y)                ; left click in :pick mode -> Lisp %pick-entity
+(:window  CID X1 Y1 X2 Y2 CROSSING)
+(:key     CID CODE)
+(:command CID STRING)             ; text entered in the canvas command line
+#+end_example
+Keep the existing =(:hello V)=, =(:error MSG)=, =(:done ...)=, =(:bye)=.  World
+coordinates throughout; the canvas does the view transform, Lisp never sees
+device pixels.
+
+* Scope — IN (increment 1)
+
+1. *Protocol v2* in =sexp-wire.lisp= + =sexp.{hpp,cpp}= (the messages above),
+   with Lisp unit tests against a *mock wire* — no Qt needed — mirroring how
+   DCL is tested.
+2. *Scene exporter* (new, small, Lisp): walk the current space (the
+   =host-ssget "X"= loop) and tessellate each =entity-handle= =data= alist to
+   world-space polylines — LINE→segment, LWPOLYLINE/POLYLINE→segments,
+   CIRCLE/ARC/ELLIPSE→polyline (reuse the geometry already in
+   =command-geometry.lisp= / =intersect.lisp=), TEXT/MTEXT→baseline box
+   placeholder, INSERT→block bounding box.  Tag each with handle + layer + ACI.
+   Emit =(:canvas-scene ...)=.  Unit-tested on a fixture drawing.
+3. *Qt6 canvas widget* (new C++, =QWidget= + =QPainter= first; =QOpenGLWidget=
+   later): holds the world scene, draws polylines in ACI colours over a grid +
+   axes + crosshair; pan (middle-drag), zoom (wheel, cursor-anchored),
+   zoom-extents (key); a command-line =QLineEdit= at the bottom.  Reuses
+   =aciToRgb=.  Non-modal (new run mode beside the modal DCL dialog loop).
+4. *Input bridge* (Lisp): while a =get*=/=entsel=/=ssget= is pending, put the
+   canvas in the matching =:canvas-mode=; convert the upstream
+   =(:point|:pick|:window ...)= to the text/ename the prompt path expects and
+   feed =cador-prompt-stream= (or resume the parked read via
+   =%cador-maybe-park-read=).  This makes bare =(getpoint)= / =(entsel)= /
+   =(ssget)= and any LISP =C:= command work from the mouse *unchanged*.
+5. *Command line + regen loop*: =(:command CID STRING)= is evaluated on the
+   same path as =repl-loop= (so =(command "LINE" "0,0" "10,10" "")= and LISP
+   =C:= commands both run); after each top-level eval that changes =dbmod=, the
+   scene is re-exported and re-sent.  Coarse "regen after every form" first;
+   incremental later.
+6. A =--gui-canvas= CLI flag (beside =--gui=) selecting this mode; env
+   =CLAUTOLISP_GUI_CANVAS=.
+
+* Scope — OUT (named, so the boundary is honest)
+
+- *Interactive engine draw commands pulling live points.*  =host-command='s
+  =%cmd-*= handlers consume TOKEN arguments and never read the prompt-stream
+  (documented FUTURE park point D1 §13.5).  So in increment 1 the built-in
+  =LINE= command still takes tokens; live "click-to-draw with the built-in
+  command" is *increment 2* (wire =%cmd-*= to park on canvas input).  Increment
+  1 delivers interactive input through =get*=/=entsel=/=ssget= + LISP commands,
+  which is enough to prove the loop end to end.
+- Rubber-band / drag preview of an in-progress command; grips; osnap; object
+  snap tracking; dynamic input.  (A crosshair yes; a rubber-band to the pending
+  point needs command-level feedback — increment 2+.)
+- 3D: ortho top view only, Z ignored.  No visual styles, no OpenGL shading.
+- Fidelity: no true text glyphs (box placeholder), no hatch fill (boundary
+  only), no linetypes/lineweights (solid 1 px), no dimension rendering.
+- No DWG open/save from the canvas UI (load via existing CLI / AutoLISP).
+- No Qt app shell (ribbon, properties/layer palettes, layout tabs) — a single
+  canvas window + command line only.
+- =nentsel= (nested selection) — not implemented in cador yet; out of scope.
+
+* Buildable slices (each independently testable)
+
+- *A. Protocol v2* (sexp-wire.lisp + sexp.{hpp,cpp}) + Lisp mock-wire tests.  No Qt.
+- *B. Scene exporter* (entity-handle → world polylines) + fixture unit tests.
+- *C. Qt6 canvas widget*: render scene, pan/zoom/extents, crosshair, command line.
+- *D. Input bridge*: point/pick/window → prompt-stream / scheduler resume, so
+  =getpoint=/=entsel=/=ssget= work from the mouse.
+- *E. Command line + regen-on-change*: the end-to-end LISP-command demo.
+
+* Acceptance criteria
+
+- =clautolisp --gui-canvas= opens a Qt6 window: empty modelspace, grid, axes,
+  crosshair; pan (middle-drag), wheel-zoom (cursor-anchored) and zoom-extents
+  all work *locally* with no Lisp round-trip.
+- =(command "LINE" "0,0" "10,10" "")= (REPL or canvas command line) draws a
+  line that appears after regen.
+- =(getpoint)= puts the canvas in point mode; a click returns the world point
+  as the call's result and the command line echoes the prompt.
+- =(entsel)= → clicking a rendered line returns its ename (via =%pick-entity=)
+  and highlights it.
+- =(ssget)= window/crossing drag returns a pickset of the enclosed/crossed
+  entities (via =%window-selection=).
+- A sample LISP =C:= command that calls =getpoint= + =entsel= runs end to end
+  from the mouse.
+- A fixture drawing with LINE/CIRCLE/ARC/LWPOLYLINE/TEXT(box)/INSERT(bbox)
+  renders correctly in ortho top view.
+- CI: slices A, B, D are covered by Lisp unit tests against a mock wire (no Qt);
+  the Qt build/run is a manual/gui lane, as the DCL Qt tool already is.
+
+* Rough effort (agent-fleet framing)
+
+Small by the standards of this project — the headless half exists.  Order of a
+*few agent-weeks* of fleet work plus human steering on the canvas *feel* (the
+part that does not compress): pan/zoom cursor-anchoring, crosshair, pick
+tolerance in device vs world units, regen cadence.  Slices A/B/D are mostly
+mechanical and testable; slice C is where human visual judgement is the limiter.
+
+This increment is the enabling foundation.  Increment 2 (wire =%cmd-*= to park
+on live canvas input → click-to-draw with the built-in commands; rubber-band;
+osnap/grips) and increment 3 (OpenGL, 3D, fidelity: glyphs/hatch/linetypes,
+the Qt app shell) are separate tickets.
+
+* Note
+
+Written as a design sketch at pjb's request while estimating the gap between
+clautolisp and a full AutoCAD clone.  It commits no code; it fixes the
+architecture decision (out-of-process, world-space canvas, Lisp-side
+hit-testing) and the minimal protocol so a first increment is a few testable
+slices rather than an open-ended rewrite.
