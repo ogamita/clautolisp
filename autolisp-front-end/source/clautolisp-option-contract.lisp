@@ -55,6 +55,7 @@
     ("--list-situations"    :front-end "printed by alfe")
     ("--list-hosts"         :front-end "printed by alfe")
     ("--list-cad-programs"  :front-end "printed by alfe")
+    ("--probe-gui"          :front-end "printed by alfe: the desktop's availability for CAD automation")
     ("--list-plugins"       :front-end "printed by alfe")
     ("--compile-plugin"     :front-end "alfe compiles the plug-in")
     ("--dry-run"            :front-end "alfe prints the plan; no engine")

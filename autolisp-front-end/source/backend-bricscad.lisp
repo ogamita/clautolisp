@@ -1918,6 +1918,10 @@ own."
         (let ((variant (choose-effective-mode backend mode
                                               (%attach-requested-p cli-options))))
           (log-verbose "backend BRICSCAD: effective mode = ~A" variant)
+          ;; Under --verbose, say whether the interactive desktop is available;
+          ;; BricsCAD --mode automation is COM too and needs it
+          ;; (autocad-com-fails-in-disconnected-windows-session).
+          (alfe.backend.cad-common:announce-gui-availability "backend BRICSCAD" variant)
           (case variant
             (:batch
              (let ((scr (emit-run-scr workdir run-common
