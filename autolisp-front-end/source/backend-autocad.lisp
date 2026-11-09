@@ -761,6 +761,8 @@ Dim errNumber, errDescription, lastTouchError, pidsBefore
 Dim launchSecs, serverCmd, launchStage
 
 Set fso = CreateObject(\"Scripting.FileSystemObject\")
+Dim dwgFile
+dwgFile = \"${DWGFILE}\"
 runFile     = \"${RUNLSPFILE}\"
 statusFile  = \"${STATUSFILE}\"
 errFile     = \"${ERRFILE}\"
@@ -1204,12 +1206,16 @@ WaitQuiescent app, waitSecs
 ' \"transient\" looks like.
 Dim docReady, docAttempt
 docReady = False
+Set doc = Nothing
 For docAttempt = 1 To 20
   On Error Resume Next
-  If app.Documents.Count = 0 Then
-    Call app.Documents.Add(\"\")
+  If dwgFile <> \"\" Then
+    If doc Is Nothing Then Set doc = app.Documents.Open(dwgFile)
+    If Not (doc Is Nothing) Then doc.Activate
+  Else
+    If app.Documents.Count = 0 Then Call app.Documents.Add(\"\")
+    Set doc = app.ActiveDocument
   End If
-  Set doc = app.ActiveDocument
   If Err.Number = 0 Then
     On Error GoTo 0
     docReady = True
@@ -1230,6 +1236,7 @@ If Not docReady Then
   WScript.Quit 4
 End If
 
+${PLUGIN_AFTER_DOCUMENT}
 ${PLUGIN_BEFORE_LOAD}
 VBSDebug \"SendCommand (load ...)\"
 Dim cmd
@@ -1275,22 +1282,59 @@ If Err.Number <> 0 Then WScript.Quit 0
 If app Is Nothing Then WScript.Quit 0
 Err.Clear
 
-' Close every document WITHOUT saving, downwards because closing
-' shortens the collection. Not app.Quit on its own: the document this
-' bridge added is UNNAMED (Dessin1/Drawing1), so a quit with unsaved
-' changes raises the Save-changes dialog — and a modal dialog on an
-' unattended runner is the very hang this is meant to end.
-For i = app.Documents.Count - 1 To 0 Step -1
-  Set doc = app.Documents.Item(i)
-  If Err.Number = 0 Then
-    doc.Close False
-  End If
-  Err.Clear
-Next
+ ' A STOPPED protocol can precede the native LOAD returning. Closing a
+' document while AutoCAD is still evaluating Lisp can reject the COM call.
+' Never call Quit after a failed Close: that opens the Save-changes dialog.
+Function WaitIdle()
+  On Error Resume Next
+  Dim attempt, stable, idle
+  stable = 0
+  For attempt = 1 To 50
+    Err.Clear
+    idle = app.GetAcadState.IsQuiescent
+    If Err.Number = 0 And idle Then
+      stable = stable + 1
+      If stable >= 5 Then
+        WaitIdle = True
+        Exit Function
+      End If
+    Else
+      stable = 0
+    End If
+    WScript.Sleep 200
+  Next
+  WaitIdle = False
+End Function
+If Not WaitIdle() Then WScript.Quit 5
 
-app.Quit
+Dim count, attempt, closed
 Err.Clear
-WScript.Quit 0
+count = app.Documents.Count
+If Err.Number <> 0 Then WScript.Quit 5
+For i = count - 1 To 0 Step -1
+  closed = False
+  For attempt = 1 To 25
+    Err.Clear
+    Set doc = app.Documents.Item(i)
+    If Err.Number = 0 Then doc.Close False
+    If Err.Number = 0 Then
+      closed = True
+      Exit For
+    End If
+    WScript.Sleep 200
+  Next
+  If Not closed Then WScript.Quit 5
+  Set doc = Nothing
+Next
+If Not WaitIdle() Then WScript.Quit 5
+
+For attempt = 1 To 25
+  Err.Clear
+  app.Quit
+  If Err.Number = 0 Then WScript.Quit 0
+  WScript.Sleep 200
+Next
+WScript.Quit 5
 "
   "VBScript that attaches to the running AutoCAD and quits it.")
 
@@ -1353,6 +1397,7 @@ TASKLIST's CSV output; NIL when TASKLIST cannot be run."
 
 (defun emit-bridge-vbs (path
                         &key runtime-load-path
+                             drawing-path
                              status-path
                              error-path
                              debug-path
@@ -1369,8 +1414,9 @@ TASKLIST's CSV output; NIL when TASKLIST cannot be run."
                (expand-plugin-slots
                 (substitute-placeholders
                  (alfe.backend.cad-common::instrument-owned-com-bridge
-                  *bridge-autocad-vbs-template* path)
-                 `(("RUNLSPFILE"  . ,(namestring runtime-load-path))
+                  *bridge-autocad-vbs-template* path :trust-runtime-p t)
+                 `(("DWGFILE" . ,(etypecase drawing-path (string drawing-path) (pathname (uiop:native-namestring drawing-path)) (null "")))
+                   ("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
                    ("COMMODE"     . ,com-mode)
@@ -1804,6 +1850,7 @@ started is what ATTACHED/CREATED say.")
                  (check-com-attach-pid :autocad progid pid workdir)))
              (emit-bridge-vbs
               vbs
+              :drawing-path dwg
               :runtime-load-path run-common
               :status-path (alfe.protocol.file:protocol-session-status-path protocol)
               :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
@@ -1852,12 +1899,13 @@ started is what ATTACHED/CREATED say.")
                          :protocol-session protocol
                          :variant variant
                          :progid progid))
-               ;; BEFORE the launch: with SECURELOAD=2 the CAD's first load,
+               ;; BEFORE a console launch: with SECURELOAD=2 the CAD's first load,
                ;; run-common.lsp from this workdir, is itself refused unless
                ;; the workdir is already trusted. Only for a REAL launch --
                ;; --print-command and the tests pass their own launcher, and
                ;; a dry run must not write the user's registry.
-               (_ (when (eq launcher #'uiop:launch-program)
+               (_ (when (and (eq variant :batch)
+                               (eq launcher #'uiop:launch-program))
                     (setf (autocad-session-trusted session)
                           (ignore-errors (trust-workdir-for-run workdir)))))
                (_ (log-verbose "backend AUTOCAD: launching: ~{~A~^ ~}" argv))
@@ -2141,7 +2189,7 @@ the one this run created (~{~D~^, ~}) by its process id" created-pids)
                      (error 'backend-protocol-error :backend :autocad
                             :code :shutdown-timeout
                             :message "CAD did not stop its protocol.")))))
-        (kill-engine-process info)))
+        (kill-engine-process info :grace 10)))
     (ignore-errors (untrust-workdir (autocad-session-trusted session)))
     (setf (autocad-session-trusted session) nil)
     (session-state-set session :stopped))

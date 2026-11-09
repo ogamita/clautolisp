@@ -896,6 +896,12 @@ opendcl-conformance. All =TODO=.
 |-------+------+--------+-------|
 | alfe-windows-hosted-log-cleanup | bug | TODO | Intermittent locked Drawing1 log during protocol-real-literals cleanup; next Windows SBCL run passes, lock owner unverified. |
 
+* Native EPURE qualification (2026-10-23)
+- NEXT =cad-epure-shutdown-dialogs= (P1) -- save dialogs, printer restoration,
+  COM close retries and native exit verification; account matrix pending.
+- TODO =autocad-created-process-recording-scope= (P1) -- creation registry and
+  quit bridge need exact identity when another Automation instance exists.
+
 * SCHMS qualification -- 2026-10-27
 
 | Issue | Priority | Status | Evidence / scope |
@@ -930,6 +936,26 @@ opendcl-conformance. All =TODO=.
 
 - NEXT =equal-list-fuzz= — P2, EQUAL ignores numeric fuzz inside lists; scalar/list reproducer and SCHMS rotation test reference included.
 
+* SCHME historical-suite qualification incidents
+| Status | Priority | Issue | Remaining validation |
+| NEXT | P1 | [[file:alfe-com-dwg-ignored.issue][COM ignores explicit DWG]] | Native AutoCAD and BricsCAD |
+| NEXT | P1 | [[file:alfe-bricscad-bootstrap-secureload-zero.issue][BricsCAD bootstrap security]] | Native COM and separate batch correction |
+
+** NEXT Owned COM close transient rejection :P1:
+[[file:alfe-owned-com-close-transient-rejection.issue]] — Native SCHME !339
+564957: 23 assertions pass, RESTORED, process still alive. Bounded close retries
+and reference release are under qualification; native close error not yet known.
+
+** NEXT COM readiness before explicit DWG open :P1:
+[[file:alfe-com-open-before-quiescent.issue]] — Native BricsCAD dies after early
+Documents.Open; require quiescence and capture ownership first. Crash cause
+not yet proven; native qualification required.
+
+** NEXT EPURE profile before target document guard :P1:
+[[file:alfe-epure-profile-before-target-document.issue]] — Human-confirmed
+SCHME news dialogue before READY. New :after-document profile ordering and
+shared native ACK guard are awaiting qualification.
+
 * 2026-11-02 Collecte des données de crash CAO par ALFE
 
 | Priority | Status | Issue | Scope |
@@ -961,6 +987,37 @@ Resolved notes) stay.
 | P3 | DONE | optimization | DEBUG >= SPACE / SPEED levels, clal-compile-system and the lexical-locals fork all shipped with the compiler epic. issues/closed/ |
 | P3 | TODO | [[file:sysvar-corpus-generator-drift.issue][sysvar-corpus-generator-drift]] | inventory-coverage.lsp drifted from generate-sysvar-corpus.lisp (~120 lines of getvar-default tests); found fixing errno-setvar |
 | P3 | NOTE | referentiel-qualite-autolisp.md | research note (French, 2026-10-08) on an AutoLISP quality / security rule set; reference material, not an actionable issue |
+* NEXT Windows installed-prefix diagnostic wrapping (P3)
+[[file:verify-installed-prefix-powershell-wraps-stderr.issue]] — Native stderr formatting truncates source paths; Windows CI validation pending.
+* DONE Windows installed-prefix diagnostic wrapping (P3)
+[[file:../closed/verify-installed-prefix-powershell-wraps-stderr.issue]] — Windows CI17671893337 passes after preserving complete native stderr paths.
+
+* NEXT Native child ARM64 image self-reference (P3)
+[[file:../closed/native-child-arm64-image-self-reference.issue]] — Docker receives the literal variable; inherited pinned digest must be qualified.
+
+* NEXT Strict EPURE native lifecycle qualification (P1)
+[[file:epure-qualification-accepts-failed-lifecycle.issue]] — Diagnostic green is insufficient; owned PID/kernel/exit and API assertions are required.
+
+** DONE Hosted tests share Windows log preferences
+   [[file:../closed/alfe-hosted-tests-share-windows-log-preferences.issue]]
+
+** NEXT EPURE COM script/runtime ordering
+[[file:alfe-epure-com-script-runtime-race.issue]]
+
+** NEXT SNCF ARX startup failure under SSH
+[[file:alfe-autocad-sncf-arx-startup-failure.issue]]
+
+** NEXT EPURE AutoCAD clean quit outside ALFE
+[[file:epure-autocad-clean-profile-quit.issue]] — Native C0000005 under the EPURE profile, exit0 under the unnamed-profile control. Blocks !476/!507 qualification.
+
+** DONE Parallel Windows unit temporary fixtures
+[[file:../closed/ci-windows-unit-temp-collision.issue]] — Per-job TEMP/TMP/TMPDIR for unit lanes; native Windows/macOS parallel-process regression passes.
+
+** DONE Supply missing Windows USERPROFILE in ALFE child launches
+[[file:../closed/alfe-windows-missing-userprofile.issue]] — Known-folder resolution, scoped environment and native child regression; implemented on unmerged !476/!507.
+
+** NEXT AutoCAD page-heap startup wide-string over-read
+[[file:autocad-pageheap-startup-wide-string-overread.issue]] — First protected AV precedes Quit; keep separate from MFC shutdown corruption.
 
 * IN-PROGRESS alfe-owned-cad-termination-after-recorded-results (P1)
 Implemente en 2.3.107 (contrat 2, --result-file, --cleanup-report) ; valide

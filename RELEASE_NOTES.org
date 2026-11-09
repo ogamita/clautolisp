@@ -1956,7 +1956,7 @@ separate binary for tool integrators.
   the timeout runs out (alfe 2.3.105: also when AutoCAD's registered command
   has an unquoted path, as AutoCAD 2022's does; 2.3.106: with -Embedding, as
   COM adds it, so AutoCAD does not stop at its startup dialog).
-- macOS ~--autocad~ (alfe 2.3.118): an installed AutoCAD's AcCoreConsole is
+- macOS ~--autocad~ (alfe 2.3.119): an installed AutoCAD's AcCoreConsole is
   found and used for batch runs, but only once a short probe has seen it run
   AutoLISP. An install that cannot run (no licence, bootstrap failure) is
   reported unavailable (exit 69) with the reason, so a corpus skips its AutoCAD
@@ -1971,6 +1971,38 @@ separate binary for tool integrators.
   must have written, checked before the close) and ~--cleanup-report FILE~
   (how the CAD ended, its raw exit code). See the user manual, /CAD session
   cleanup and owned COM instances/.
+
+** Synchronous EPURE initialization in COM
+The native runtime prelude LOADs EPURE before the bootstrap and server loop,
+so separate COM commands cannot start the runtime ahead of EPURE.
+See the alfe user manual, /How the control script is run/.
+
+
+** alfe 2.3.85: order native COM document and EPURE initialization
+Both COM bridges require a quiescent application before opening the job DWG.
+The check is bounded to 30 seconds and fails explicitly, without a blank-file
+fallback. Capture the exact created application's process before file open,
+so a native crash during drawing startup leaves ownership evidence.
+The EPURE profile is activated only after selecting the target document,
+before its explicit control script. Shared test guards can therefore run in
+the correct document before profile activation triggers native application UI.
+
+** alfe 2.3.84: bounded owned COM close retries
+After native RESTORED, closing the retained application's documents and Quit
+are retried for up to 40 attempts, with errors preserved. Automation references
+are released before requiring disappearance of the captured process identity.
+A persistent rejection, failed restoration or live process still fails cleanup.
+No unrelated instance is discovered or terminated.
+
+** alfe 2.3.83: scoped runtime trust for both COM backends
+AutoCAD COM now uses the same temporary native TRUSTEDPATHS scope as BricsCAD,
+restoring it before cleanup. Only accoreconsole still needs the registry
+bootstrap path; COM no longer writes every profile's registry value.
+
+** alfe 2.3.82: explicit drawings in Windows COM sessions
+AutoCAD and BricsCAD open and activate the requested =--dwg= before plug-in
+startup and runtime loading. BricsCAD COM trusts only its runtime directory
+and restores the previous trusted paths without disabling =SECURELOAD=.
 
 ** alfe 2.3.78: ordered Windows CAD cleanup
 Restore native log/search settings before ending the protocol; quit the exact
@@ -2045,6 +2077,13 @@ file or COM), and forwards the workload.
   documented VarType value; AutoCAD binds no =vlax-vbDecimal=, neither binds
   =vlax-vbByte=, and clautolisp now follows that per dialect (2.3.32 bound
   all 17 from the documentation).
+
+- *Native CAD batch isolation and shutdown* (2.3.87): BricsCAD batch
+  launches honor =--dwg= and otherwise stage a private empty drawing.
+  Shutdown restores the native printer functions after the protocol loop,
+  closes documents without saving, retries transient AutoCAD COM rejections
+  and bounds process cleanup. This does not resolve the intermittent EPURE
+  WPF exception observed at AutoCAD exit.
 
 - *READ and PRIN1 as AutoCAD and BricsCAD* (2.3.76): =1e3= and =1E+03= read
   as the real 1000.0 (they were symbols outside the BricsCAD dialects); an
@@ -3031,3 +3070,26 @@ or test clautolisp — and is loaded explicitly:
 (asdf:load-asd #p"$PREFIX/share/common-lisp/source/clautolisp/autolisp-debug-ui-tui-charms/clautolisp-charms.asd")
 (asdf:load-system "clautolisp/autolisp-debug-ui-tui-charms")
 #+END_EXAMPLE
+
+* CAD qualification: Windows installed-prefix diagnostics
+Windows installed-prefix verification preserves full native diagnostic paths,
+including prefixes containing spaces; verified in Windows CI17671893337.
+
+* EPURE COM document initialization
+Replay the installed document startup once after profile activation so the
+selected job drawing exposes the EPURE API on BricsCAD and AutoCAD. Native
+qualification now requires a modified drawing to be discarded without changing
+the delivered fixture and rejects every unclassified nonzero native exit.
+
+* Windows CAD launch and required native qualification
+Resolve a missing USERPROFILE from the actual Windows known folder before a
+CAD launch, preserving explicit values and restoring the parent environment.
+This guards EPURE helpers whose missing-profile handling corrupts the stack.
+MRs requiring EPURE lifecycle qualification now mirror the native child status
+in the parent pipeline. Unexpected native exits remain blocking.
+
+* Native Windows unit isolation
+Give parallel Windows unit jobs separate temporary directories through a
+shared initializer and clean only their own files. CAD orphan/trust journals
+retain their durable location. This prevents cross-job fixture overwrites,
+locked-file cleanup errors and missing SECURELOAD fixtures.

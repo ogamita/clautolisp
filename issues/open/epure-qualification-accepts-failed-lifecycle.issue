@@ -1,0 +1,73 @@
+#+TITLE: EPURE diagnostic jobs do not qualify native process closure
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: test
+#+DEPENDS: native-windows-validation
+#+BRANCH: -
+#+DATE: 2026-11-02
+
+* Confirmed gaps
+verify-epure-windows.ps1 counts a missing marker only when CLI exit is zero;
+nonzero exits and labels ending with an explicit mode can escape its verdict.
+verify-epure-api.ps1 counts Ts without requiring exit zero, and Wait-NoCad
+force-stops all CAD instances instead of just its owned invocation. These
+older diagnostic jobs cannot establish successful native lifecycle validation.
+
+* Correction under qualification
+A separate verify:epure-lifecycle:windows gate follows the invocation's COM
+identity receipt or batch parent/PID/private-workdir evidence. Exclude every
+pre-existing CAD identity, verify account/session/creation and retain a native
+process handle. Require both EPURE API assertions, CLI success, kernel exit,
+accepted native exit and no correlated crash event/dump. Cleanup after failure
+is limited to the captured instance and makes the case fail, even on exit0.
+AutoCAD's observed47806 sentinel remains explicit in the receipt and is accepted
+only after actual signaled termination and no correlated crash evidence.
+MRs labelled qualification::epure-lifecycle get a blocking manual native gate;
+other pipelines retain the optional manual job. Existing diagnostic jobs are
+not proof and are not invoked for this qualification.
+
+* Acceptance
+Run AutoCAD and BricsCAD automation; the COM drawing branch additionally
+requires the requested DWG, and the batch-shutdown branch includes BricsCAD
+batch. Preserve raw stdout/stderr, full workdirs, identities, commands, code
+hash, exit status and delayed crash events as artifacts and lifecycle JUnit.
+A failed bootstrap, missing identity/report, timeout, crash or forced cleanup
+must fail. Never touch attached or pre-existing foreign instances.
+
+* Real native qualification, 2026-11-02
+MR !476 job17673022413 at commit0d6dffc9: valid JUnit, 3 cases,
+2 failures. AutoCAD PID24008 exposed both EPURE APIs, ALFE exited0,
+close-owned.result was0, but the retained native process handle reported
+0xC0000005. No forced cleanup occurred. BricsCAD COM exited0 but lacked
+both EPURE APIs. BricsCAD batch passed both APIs, the exact private DWG,
+native exit0 and post-exit observation. No crash root cause is established.
+MR !507 job17673025098 refused an existing workspace before starting CAD.
+Its archived reports were leftovers from !476, explicitly rejected as
+evidence. Subsequent jobs isolate artifacts under CI_JOB_ID.
+
+* Diagnostic expansion, 2026-11-02
+Record lower/uppercase ATOMS-FAMILY results, effective profile, SECURELOAD,
+SNCF_Com.lsp resolution and APPDATA. Add separately named controls without
+the EPURE plugin to distinguish COM/runtime exit behaviour from EPURE.
+A control never replaces either required EPURE API assertion. The fake
+native-process fixture now proves missing APIs fail EPURE cases even when
+controls pass. SSH on pfenny timed out before the banner; native evidence
+therefore continues through its still-responsive GitLab runner.
+
+** Parent status propagation (2026-11-03)
+The labelled child job was blocking, but native:pipeline intentionally did not
+wait for the child. Parent pipelines could remain green after a native failure.
+The new native:qualification bridge inherits the native setup and mirrors its
+child status, with allow_failure false, only for explicitly labelled MRs.
+GitLab lint and live failed-child propagation are required before closing.
+
+* Contract 2, 2026-11-06
+pjb's decision ([[file:alfe-owned-cad-termination-after-recorded-results.issue][alfe-owned-cad-termination-after-recorded-results]]) replaces
+the native-exit-zero criterion of verify-epure-lifecycle.ps1: the verdict is
+alfe's exit status, the functional checks, the unchanged drawing, and the
+created CAD proved gone (cleanup=ok in alfe's --cleanup-report, then the gate's
+own handle). A nonzero native code, a crash event or a dump after the frontier
+is recorded in the receipt, not failed. test-epure-lifecycle.ps1 now expects
+the crash and BABE fixtures to pass with their codes recorded, and a run
+without a cleanup report to fail.
+

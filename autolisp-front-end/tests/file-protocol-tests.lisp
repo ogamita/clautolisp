@@ -1503,12 +1503,15 @@ FORMS-FN, a function of the workdir called once the session exists and
 before the engine starts, returns the forms to send instead of FORMS —
 for a test that has to stage files of its own next to the session.
 OPEN-WRITE-CCS is emitted as *ALFE-OPEN-WRITE-CCS*, OPEN-WRITE-ARG as
-*ALFE-OPEN-WRITE-ARG*."
+*ALFE-OPEN-WRITE-ARG*. The subprocess uses a private registry store, so its
+LOGFILEMODE/LOGFILEPATH changes cannot reopen another concurrent test
+process's log through the shared Windows registry."
   (let ((workdir (make-test-workdir (if assume-no-rest-p
                                         "hosted-norest"
                                         "hosted-rest")))
         (engine nil)
-        (previous-trustedpaths nil))
+        (previous-trustedpaths nil)
+        (previous-registry (uiop:getenv "CLAUTOLISP_REGISTRY_FILE")))
     (unwind-protect
          (multiple-value-bind (session path)
              (emit-run-common-with-real-runtime
@@ -1523,6 +1526,10 @@ OPEN-WRITE-CCS is emitted as *ALFE-OPEN-WRITE-CCS*, OPEN-WRITE-ARG as
            (setf previous-trustedpaths
                  (set-environment-variable "TRUSTEDPATHS"
                                            (trustedpaths-spec workdir)))
+           (setf previous-registry
+                 (set-environment-variable
+                  "CLAUTOLISP_REGISTRY_FILE"
+                  (namestring (merge-pathnames "registry.sexp" workdir))))
            (setf engine (uiop:launch-program
                          (list binary "-norc" "-q" "-l" (namestring path))
                          :output nil
@@ -1580,6 +1587,8 @@ OPEN-WRITE-CCS is emitted as *ALFE-OPEN-WRITE-CCS*, OPEN-WRITE-ARG as
         (ignore-errors (uiop:wait-process engine)))
       (set-environment-variable "TRUSTEDPATHS"
                                 (or previous-trustedpaths ""))
+      (set-environment-variable "CLAUTOLISP_REGISTRY_FILE"
+                                (or previous-registry ""))
       (delete-workdir workdir))))
 
 (defun without-returns (string)
@@ -3702,6 +3711,22 @@ is passed through untouched. Skipped when clautolisp-sbcl is not on disk."
           (is (search "Undefined AutoLISP function NO_SUCH_FUNCTION" stderr))
           (is (not (search "[form: (NO_SUCH_FUNCTION 1)]" stderr))
               "an informative message must not be padded: ~S" stderr)))))
+
+(test protocol-native-printers-restored-after-loop
+  "Native MNL callbacks need the original printer arities after the protocol ends."
+  (let ((workdir (make-test-workdir "restore-native-output")))
+    (unwind-protect
+        (multiple-value-bind (session path)
+            (emit-run-common-with-real-runtime workdir)
+          (declare (ignore session))
+          (let* ((text (alfe.protocol.file:read-file-as-string path))
+                 (capture (search "(setq *ALFE-NATIVE-OUTPUT*" text))
+                 (bootstrap (search "loading bootstrap:" text))
+                 (finished (search "server-loop returned normally" text))
+                 (restore (search "(setq princ (car *ALFE-NATIVE-OUTPUT*)" text)))
+            (is (and capture bootstrap (< capture bootstrap)))
+            (is (and finished restore (< finished restore)))))
+      (delete-workdir workdir))))
 
 ;;; --- an unattended quit never SAVES -----------------------------------
 ;;;

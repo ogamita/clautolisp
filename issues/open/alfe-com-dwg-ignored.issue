@@ -1,0 +1,18 @@
+#+TITLE: Windows COM backends ignore the explicit job DWG
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+#+BRANCH: codex/alfe-com-job-drawing
+
+* Evidence
+SCHME !339 job 564204 ran ALFE 2.3.78 with a unique job DWG, but the emitted
+BricsCAD bridge only used Documents.Add / ActiveDocument, never Documents.Open.
+The historical suite then loaded its resources from the runner's Documents
+folder. AutoCAD's COM emitter has the same omission. The emitted bridges and
+native logs are retained by the SCHME qualification job.
+
+* Implementation
+Pass the requested DWG into both COM emitters, open it before plug-in startup
+and activate it. No failed open may silently fall back to a blank drawing.
+Unit emitter checks pass under SBCL; native validation is still required.

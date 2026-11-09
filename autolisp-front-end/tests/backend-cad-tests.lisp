@@ -289,6 +289,10 @@ closing shortens the collection."
     (is (search "GetObject(, progId)" text))
     (is (search "${PROGID}" text))
     (is (search "doc.Close False" text))
+    (let ((released (search "Set doc = Nothing" text)))
+      (is (not (null released)))
+      (is (< released (search "If Not WaitIdle()" text :start2 released)
+             (search "  app.Quit" text))))
     (is (search "app.Quit" text))
     (is (search "Step -1" text)
         "the close loop must run downwards")
@@ -446,7 +450,7 @@ creates it. Backs the pre-launch quarantine of a corrupt per-user default.cui."
   "EMIT-RUN-SCR writes a SCR that:
    - loads run-common.lsp,
    - disables FILEDIA,
-   - issues _QUIT _N when QUIT-ON-FINISH-P is on."
+   - closes without saving before _QUIT when QUIT-ON-FINISH-P is on."
   (let* ((workdir (uiop:ensure-directory-pathname
                    (merge-pathnames
                     (format nil "alfe-test-bcad-scr-~D/" (random 999999))
@@ -466,7 +470,8 @@ creates it. Backs the pre-launch quarantine of a corrupt per-user default.cui."
             (is (search "(load" content))
             (is (search "run-common.lsp" content))
             (is (search "_FILEDIA 0" content))
-            (is (search "_QUIT _N" content))))
+            (is (search "(vla-close (vla-get-ActiveDocument (vlax-get-acad-object)) :vlax-false)" content))
+            (is (< (search "(vla-close" content) (search "._QUIT" content)))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
@@ -1999,6 +2004,56 @@ locale; no preference keeps discovery order."
                   :workdir (uiop:ensure-directory-pathname "/tmp/argv-probe/"))))
     (alfe.backend.bricscad:build-launch-argv backend session :mode :batch)))
 
+(test bricscad-batch-start-engine-forwards-requested-drawing
+  "The CLI's requested DWG reaches the native batch launch argv."
+  (with-cad-test-directories
+    (let* ((workdir (%fresh-test-directory))
+           (drawing (alfe.drawing:fresh-empty-dwg workdir :name "fixture.dwg"))
+           (backend (alfe.backend.bricscad:make-bricscad-backend
+                     :executable-path "/fake/bricscad.exe" :variant :batch))
+           (alfe.backend.cad-common:*host-os-override* :windows)
+           (captured nil))
+      (alfe.backend:start-engine
+       backend workdir :mode :batch :dwg (namestring drawing)
+       :wait-for-ready nil
+       :launcher (lambda (argv &rest ignored)
+                   (declare (ignore ignored))
+                   (setf captured argv)
+                   nil))
+      ;; DWG was passed as a CLI string; preserve that exact spelling.
+      ;; A pathname would instead be rendered with native Windows separators.
+      (is (member (namestring drawing) captured :test #'equal))
+      (is (not (probe-file (merge-pathnames "empty.dwg" workdir)))))))
+
+(test bricscad-batch-drawings-are-private-to-each-session
+  "Two default batch launches must not open the same writable drawing."
+  (let* ((root (merge-pathnames
+                (format nil "alfe-batch-private-~D/" (random 1000000000))
+                (uiop:temporary-directory)))
+         (a (merge-pathnames "a/" root))
+         (b (merge-pathnames "b/" root))
+         (backend (alfe.backend.bricscad:make-bricscad-backend
+                   :executable-path "/fake/bricscad.exe" :variant :batch))
+         (alfe.backend.cad-common:*host-os-override* :windows))
+    (unwind-protect
+        (let ((drawings
+                (loop for dir in (list a b)
+                      for session = (alfe.protocol.file::%make-protocol-session
+                                     :workdir dir)
+                      for argv = (alfe.backend.bricscad:build-launch-argv
+                                  backend session :mode :batch)
+                      for drawing = (find-if
+                                      (lambda (arg) (search "empty.dwg" arg))
+                                      argv)
+                      collect drawing)))
+          (is (every #'identity drawings))
+          (when (every #'identity drawings)
+            (is (not (equal (first drawings) (second drawings))))
+            (dolist (dir (list a b))
+              (is (probe-file (merge-pathnames "empty.dwg" dir))))))
+      (uiop:delete-directory-tree root :validate t
+                                     :if-does-not-exist :ignore))))
+
 (test bricscad-windows-batch-argv-has-single-automation-before-b
   "On Windows the direct batch argv carries exactly one /Automation, and it
 precedes the /b script pair (alfe-bricscad-batch-hidden-ui)."
@@ -2786,6 +2841,14 @@ fallback step, not the explicit-override steps ahead of it."
     (alfe.backend.cad-common:kill-engine-process info :timeout 5)
     (is (not (uiop:process-alive-p info))
         "the process outlived kill-engine-process")))
+
+(test kill-engine-process-allows-natural-exit
+  "A CAD that has acknowledged shutdown may still be finishing QUIT."
+  (let ((info (uiop:launch-program (list "sh" "-c" "sleep 0.3; exit 0")
+                                   :output nil :error-output nil)))
+    (alfe.backend.cad-common:kill-engine-process info :grace 2 :timeout 1)
+    (is (not (uiop:process-alive-p info)))
+    (is (= 0 (uiop:wait-process info)))))
 
 (test kill-engine-process-is-bounded-not-blocking
   "The point of the function: it must RETURN, even for a child that
@@ -4653,3 +4716,251 @@ runs; one that cannot is reported unavailable, naming it and why."
                        (fail "a macOS without AutoCAD was reported available"))
               (alfe.error:backend-not-available (e)
                 (is (eq :unsupported-os (alfe.error:backend-error-code e))))))))))
+(test automation-bridges-open-the-requested-job-drawing
+  "An explicit drawing must be opened before any plug-in or runtime load."
+  (let ((work (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-com-dwg-~D/" (random 1000000))
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist work)
+           (dolist (engine '(:autocad :bricscad))
+             (let ((vbs (merge-pathnames (format nil "~A.vbs" engine) work)))
+               (funcall (if (eq engine :autocad)
+                            #'alfe.backend.autocad:emit-bridge-vbs
+                            #'alfe.backend.bricscad:emit-bridge-vbs)
+                        vbs :runtime-load-path (merge-pathnames "run-common.lsp" work)
+                        :status-path (merge-pathnames "protocol/status.txt" work)
+                        :error-path (merge-pathnames "protocol/stderr.txt" work)
+                        :drawing-path "C:/job with spaces/dessin.dwg")
+               (let* ((text (read-back vbs))
+                      (open (search "app.Documents.Open(dwgFile)" text))
+                      (load (search "Call doc.SendCommand(cmd)" text)))
+                 (is (search "C:/job with spaces/dessin.dwg" text))
+                 (is (and open load (< open load)))
+                 (is (search "doc.Activate" text))))))
+      (uiop:delete-directory-tree work :validate t :if-does-not-exist :ignore))))
+
+(test bricscad-com-bootstrap-trust-is-scoped-and-restored
+  "Loading the runtime must not disable SECURELOAD or leak a trusted path."
+  (let ((work (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-bcad-trust-~D/" (random 1000000))
+                                (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist work)
+           (dolist (emitter (list #'alfe.backend.bricscad:emit-bridge-vbs
+                                  #'alfe.backend.autocad:emit-bridge-vbs))
+            (let ((vbs (merge-pathnames "bridge.vbs" work)))
+             (funcall emitter vbs :runtime-load-path (merge-pathnames "run-common.lsp" work)
+              :status-path (merge-pathnames "protocol/status.txt" work)
+              :error-path (merge-pathnames "protocol/stderr.txt" work))
+             (let ((text (read-back vbs)))
+               (is (not (search "setvar \"\"SECURELOAD\"\" 0" text)))
+               (is (search "originalTrustedPaths = doc.GetVariable(" text))
+               (is (search "Call doc.SetVariable(" text))
+               (let* ((needle "Call RestoreBridgeTrust()")
+                      (first (search needle text)))
+                 (is (and first (search needle text :start2 (+ first (length needle))))))
+               (is (< (search "Call RestoreBridgeTrust()" text)
+                      (search "For lifeIndex = app.Documents.Count" text)))))))
+      (uiop:delete-directory-tree work :validate t :if-does-not-exist :ignore))))
+
+(test owned-com-close-retries-and-releases-before-answering
+  "A busy COM application gets bounded retries, then the bridge releases its
+references and answers contract 2; alfe, not the bridge, then proves the
+process gone (alfe-owned-cad-termination-after-recorded-results)."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+    (dolist (emitter (list #'alfe.backend.autocad:emit-bridge-vbs
+                          #'alfe.backend.bricscad::emit-bridge-vbs))
+      (let ((path (merge-pathnames "cleanup-retry.vbs" dir)))
+        (funcall emitter path :runtime-load-path #p"/w/run-common.lsp"
+                             :status-path #p"/w/s" :error-path #p"/w/e")
+        (let* ((text (uiop:read-file-string path))
+               (retry (search "For lifeAttempt = 1 To 40" text))
+               (quit (search "If Err.Number = 0 Then Call app.Quit" text))
+               (release (search "Set app = Nothing" text :start2 (or quit 0)))
+               (answer (search "lifeStream.WriteLine \"contract=2\"" text
+                               :start2 (or release 0))))
+          (is (and retry quit (< retry quit)))
+          (is (and quit release answer (< quit release answer)))
+          (is (not (search "-Operation Wait" text)))
+          (is (search "OWNED-COM-CLOSE attempt=" text))
+          (is (search "WScript.Sleep 250" text))))))))
+
+(test owned-com-close-windows-mocked-lifecycle
+  "Exercise emitted VBScript with fake automation objects, never a real CAD."
+  (if (not (uiop:os-windows-p))
+      (fiveam:skip "Native cscript fixture requires Windows.")
+      (with-cad-test-directories
+        (let* ((dir (%fresh-test-directory))
+               (path (merge-pathnames "close-fixture.vbs" dir))
+               (prefix (uiop:read-file-string
+                        (asdf:system-relative-pathname
+                         "autolisp-front-end" "tests/fixtures/owned-com-close-mock.vbs"))))
+          (with-open-file (out path :direction :output :if-exists :supersede)
+            (write-string prefix out)
+            (write-string alfe.backend.cad-common::*owned-com-wait-vbs* out))
+          ;; Contract 2: the bridge always answers (exit 0) with the last
+          ;; Close/Quit error; the retries are counted in its error file.
+          (loop for (case owned quit-error failed-attempts)
+                  in '(("transient" "created" "0" 2)
+                       ("persistent" "created" "-2147418111" 40)
+                       ("attached" "attached" "0" 0))
+                do (multiple-value-bind (stdout stderr code)
+                       (uiop:run-program (list "cscript.exe" "//nologo" (namestring path)
+                                               (namestring dir) case)
+                                         :output :string :error-output :string
+                                         :ignore-error-status t)
+                     (declare (ignore stdout stderr))
+                     (is (= 0 code) "~A: the bridge exits 0 once it has answered" case))
+                   (let ((answer (alfe.backend:read-key-value-file
+                                  (merge-pathnames (concatenate 'string case ".result") dir)))
+                         (errors (merge-pathnames (concatenate 'string case ".errors") dir)))
+                     (is (equal "2" (alfe.backend:key-value answer "contract")))
+                     (is (equal owned (alfe.backend:key-value answer "owned")))
+                     (is (equal quit-error (alfe.backend:key-value answer "quit-error")))
+                     (is (= failed-attempts
+                            (if (probe-file errors)
+                                (count-if (lambda (line) (search "OWNED-COM-CLOSE attempt=" line))
+                                          (uiop:read-file-lines errors))
+                                0))
+                         "~A: ~D failed attempts expected" case failed-attempts)))))))
+
+(test owned-com-startup-is-quiescent-and-identified-before-open
+  "Do not open a drawing in a starting application or lose its identity on a crash."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+      (dolist (emitter (list #'alfe.backend.autocad:emit-bridge-vbs
+                            #'alfe.backend.bricscad::emit-bridge-vbs))
+        (let ((path (merge-pathnames "startup-ready.vbs" dir)))
+          (funcall emitter path :runtime-load-path #p"/w/run-common.lsp"
+                               :drawing-path "C:/job/dessin.dwg"
+                               :status-path #p"/w/s" :error-path #p"/w/e")
+          (let* ((text (uiop:read-file-string path))
+                 (ready (search "If Not OwnedComIsReady(app, 30) Then" text))
+                 (capture (search " -Operation Capture -IdentityFile " text))
+                 (open (search "app.Documents.Open(dwgFile)" text)))
+            (is (and ready capture open (< ready capture open)))
+            (is (search "Set state = a.GetAcadState" text))
+            (is (search "COM application did not become quiescent before opening the job drawing" text))))))))
+
+(test owned-com-ready-windows-mocked-handshake
+  "Exercise native VBScript object returns and bounded non-ready outcomes."
+  (if (not (uiop:os-windows-p))
+      (fiveam:skip "Native cscript fixture requires Windows.")
+      (with-cad-test-directories
+        (let* ((dir (%fresh-test-directory))
+               (path (merge-pathnames "ready-fixture.vbs" dir))
+               (prefix (uiop:read-file-string
+                        (asdf:system-relative-pathname
+                         "autolisp-front-end" "tests/fixtures/owned-com-ready-mock.vbs")))
+               (ready alfe.backend.cad-common::*owned-com-ready-vbs*))
+          (with-open-file (out path :direction :output :if-exists :supersede)
+            (write-string prefix out)
+            (write-string (subseq ready 0 (search "If Not OwnedComIsReady(app, 30) Then" ready)) out)
+            (write-string "result=OwnedComIsReady(app, seconds)
+expected=(scenario=\"ready\")
+If result<>expected Then WScript.Quit 1
+If expected And calls<>3 Then WScript.Quit 2
+If Not expected And calls<>1 Then WScript.Quit 3
+WScript.Echo \"PASS \" & scenario
+" out))
+          (dolist (case '("ready" "busy" "rejected"))
+            (multiple-value-bind (stdout stderr code)
+                (uiop:run-program (list "cscript.exe" "//nologo" (namestring path) case)
+                                  :output :string :error-output :string :ignore-error-status t)
+              (declare (ignore stderr))
+              (is (= 0 code))
+              (is (search (concatenate 'string "PASS " case) stdout))))))))
+(test cad-batch-shutdown-allows-native-quit-after-stopped
+  "STOPPED acknowledges the loop, not completion of the CAD's final QUIT."
+  (with-cad-test-directories
+    (dolist (constructor '(alfe.backend.bricscad::%make-bricscad-session
+                           alfe.backend.autocad::%make-autocad-session))
+      (let* ((workdir (%fresh-test-directory))
+             (protocol (alfe.protocol.file:init-session workdir))
+             (info (uiop:launch-program '("sh" "-c" "sleep 0.3; exit 0")
+                                        :output nil :error-output nil))
+             (session (funcall constructor :workdir workdir :state :ready
+                              :variant :batch :protocol-session protocol
+                              :process-info info)))
+        (unwind-protect
+            (progn
+              (with-open-file (out (alfe.protocol.file:protocol-session-status-path protocol)
+                                   :direction :output :if-exists :supersede)
+                (write-line "STOPPED" out))
+              (alfe.backend:shutdown session)
+              (is (= 0 (uiop:wait-process info))
+                  "shutdown killed the native process before its final QUIT")
+              (is (eq :stopped (alfe.backend:session-state session))))
+          (alfe.backend.cad-common:kill-engine-process info))))))
+
+(test cad-windows-profile-environment-preserves-overrides
+  "Do not overwrite an explicit launch environment or an existing profile."
+  (let ((environment '(("APPDATA" . "C:/Users/real/AppData/Roaming")))
+        (explicit '(("userprofile" . "D:/Profile"))))
+    (flet ((must-not-resolve () (error "Unexpected profile lookup")))
+      (is (eq explicit (alfe.backend.cad-common::windows-profile-environment
+                        explicit nil #'must-not-resolve)))
+      (is (eq environment (alfe.backend.cad-common::windows-profile-environment
+                           environment "C:/Users/real" #'must-not-resolve))))))
+
+(test cad-windows-profile-environment-resolves-missing-profile
+  "Resolve the actual Windows profile, preserving unrelated settings."
+  (let* ((environment '(("APPDATA" . "C:/Users/real/AppData/Roaming")))
+         (calls 0)
+         (result (alfe.backend.cad-common::windows-profile-environment
+                  environment "" (lambda () (incf calls) "C:/Users/real"))))
+    (is (= 1 calls))
+    (is (equal "C:/Users/real" (cdr (assoc "USERPROFILE" result :test #'string-equal))))
+    (is (equal environment (cdr result)))
+    (is (= 1 (length environment)))))
+
+(test cad-windows-profile-environment-rejects-unresolved-profile
+  "Fail before launching CAD rather than passing an empty vendor input."
+  (signals alfe.error:backend-bootstrap-error
+    (alfe.backend.cad-common::windows-profile-environment nil nil (constantly nil)))
+  (signals alfe.error:backend-bootstrap-error
+    (alfe.backend.cad-common::windows-profile-environment nil nil (constantly ""))))
+
+#+(or win32 windows mswindows)
+(test cad-windows-known-profile-does-not-require-userprofile-environment
+  "Exercise the native known-folder API with USERPROFILE absent."
+  (let ((previous (uiop:getenv "USERPROFILE")))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "USERPROFILE") "")
+           (let ((profile (alfe.backend.cad-common::windows-user-profile-directory)))
+             (is (and (stringp profile) (plusp (length profile))))
+             (is (uiop:directory-exists-p profile))))
+      (setf (uiop:getenv "USERPROFILE") (or previous "")))))
+
+#+(or win32 windows mswindows)
+(test cad-windows-profile-reaches-native-child-and-restores-parent
+  "A real cscript child receives the repaired Windows process environment."
+  (let ((previous (uiop:getenv "USERPROFILE"))
+        (expected (alfe.backend.cad-common::windows-user-profile-directory)))
+    (unwind-protect
+         (uiop:with-temporary-file (:stream stream :pathname path :type "vbs")
+           (write-line "Set sh = CreateObject(\"WScript.Shell\")" stream)
+           ;; ASCII hex preserves native UTF-16 code units across console locales.
+           (write-line "value = sh.Environment(\"PROCESS\")(\"USERPROFILE\")" stream)
+           (write-line "For i = 1 To Len(value)" stream)
+           (write-line "WScript.StdOut.Write Right(\"0000\" & Hex(AscW(Mid(value,i,1))),4)" stream)
+           (write-line "Next" stream)
+           (close stream)
+           (setf (uiop:getenv "USERPROFILE") "")
+           (multiple-value-bind (out err code)
+               (alfe.backend.cad-common:call-launcher
+                #'uiop:run-program (list "cscript" "//nologo" (uiop:native-namestring path))
+                nil :output :string :error-output :string
+                :ignore-error-status t)
+             (declare (ignore err))
+             (is (= 0 code))
+             (is (equal (format nil "~{~2,'0X~}"
+                                (coerce (babel:string-to-octets expected :encoding :utf-16be) 'list))
+                        (string-trim '(#\Return #\Newline #\Space) out)))
+             (is (zerop (length (or (uiop:getenv "USERPROFILE") ""))))))
+      (setf (uiop:getenv "USERPROFILE") (or previous "")))))

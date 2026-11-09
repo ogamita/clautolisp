@@ -1,0 +1,107 @@
+#+TITLE: EPURE AutoCAD profile returns C0000005 on an unchanged drawing quit
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: native-cad-validation
+
+** Minimal native control
+On pfenny, normal interactive Windows account, AutoCAD.Application.24.1
+(AutoCAD 2022), create a fresh COM application, wait for quiescence, inspect
+the initial document (DBMOD=0), release the document reference and call Quit.
+No ALFE, test Lisp, target drawing, runtime trust or file protocol is used.
+Temporarily select the existing unnamed profile or Epure before creation;
+restore the original profile in finally. Record native PID, creation ticks,
+owner SID, kernel handle and natural exit. Never reuse a foreign instance.
+
+| Profile | Native exit | Forced | Error |
+| unnamed, no loaded EPURE modules | 00000000 | false | none |
+| Epure, initial unchanged drawing | C0000005 | false | none |
+
+A separate visible-window control posts WM_CLOSE to the exact owned AutoCAD
+window under Epure; it also exits C0000005 naturally. The corresponding COM
+visible-window trial was rejected as transiently busy and forced to clean up;
+it is NOT used as successful closure evidence.
+
+** Scope and evidence
+This reproduces outside ALFE. It does not identify which EPURE component is
+responsible. Loaded native components include DOSLib24x64.arx,
+SNCFOutilsARX64.arx, FLSNCFIG.dll and several SNCF DLLs.
+Proprietary EPURE sources/PDBs are unavailable to the project maintainer.
+Do not blame the ARX's separately established USERPROFILE startup buffer bug
+for this shutdown without matching evidence. No vendor binaries are patched.
+
+CI native jobs17691248610 (!507, 4f10bab7) and17691251293 (!476, efb2377f)
+pass EPURE API checks and the exact dirty-drawing discard invariant. BricsCAD
+COM passes naturally with exit0 in both MRs; BricsCAD batch also passes in
+!476. AutoCAD exits BABE variants or C0000005, without forced cleanup.
+The lifecycle JUnit records these as failures. A first-chance AV monitor
+attached after the test observed no C0000005 exception in one C0000005-exit
+trial; its earlier startup was not monitored, so the exit remains unclassified.
+
+** Required resolution
+Identify and correct the EPURE profile shutdown defect, or obtain vendor
+confirmation of its intended exit contract with sufficient independent crash
+evidence. Do not whitelist C0000005/BABE, kill the process as success, or
+disable vendor shutdown callbacks merely to obtain a green pipeline.
+Keep both MRs unmerged and native qualification blocking.
+
+** Offline shutdown dump analysis (2026-11-03)
+The existing PID1072 termination dump retains the active exception's original
+CONTEXT and EXCEPTION_RECORD, despite lacking an ExceptionStream. x64 unwind
+metadata reconstructs RtlDispatchException/KiUserExceptionDispatcher and the
+original failure: read of address zero at ntdll+9750,
+RtlpCoalesceFreeBlocks+300 -> RtlpFreeHeap -> RtlFreeHeap -> _free_base ->
+AFX_MODULE_STATE::~AFX_MODULE_STATE+82 during CRT/MFC DLL process detach.
+Microsoft PDBs identify the object as _afxOleModuleState and the CString
+member being released as m_strUnregisterList (offset 104). The relevant heap
+blocks are absent, so the originating overwrite/free remains unattributed.
+
+ProcDump records C0000005 before this diagnostic's natural 012EBABE exit.
+Therefore that particular BABE value accompanies a real access violation;
+absence of a WER event does not establish a clean exit. This is a private
+ALFE2.3.91 diagnostic with candidate plugins, not a final-head MR result or
+the independent pure-COM control. SNCFOutilsARX64.arx and DOSLib are already
+unloaded; FLSNCFIG pointers found in raw stack memory are not true frames.
+Do not assign blame to those modules or the managed SCHMS library without
+identifying the earlier writer. No new native test or binary modification
+was performed for this analysis.
+
+Detailed evidence, symbol identities and limits:
+[[file:../../autolisp-front-end/documentation/epure-autocad-shutdown-offline-analysis.org]].
+The ALFE USERPROFILE safeguard is recorded separately in
+[[file:../closed/alfe-windows-missing-userprofile.issue]].
+
+** Full first-chance capture (2026-11-03)
+Pure COM, no ALFE, Epure profile, DBMOD=0, owned PID36612. ProcDump full
+first-chance C0000005 capture is 1444478238 bytes, off-host SHA256 verified:
+6fea6f5f93984f2a30f40b365e6171f65fdce56ab16fee752da72c02cd27d91f.
+The direct ExceptionStream reproduces ntdll+9750 and the MFC OLE-state
+CString destructor path. The adjacent 0x1F0-byte free block has a null Blink
+and payload matching _AFX_THREAD_STATE (480 bytes, exact inline class-name
+layout). Its m_pModuleState at offset8 overlaps the null Blink: a strong
+use-after-free hypothesis. The earlier writer/free caller is still unknown.
+This is not proof against a specific proprietary EPURE module.
+
+A page-heap follow-up capture is prepared but could not start: elevated task
+creation is denied to PPBN02261. No GlobalFlag change or second CAD launch
+occurred. No leftover capture task/CAD/debugger; profile restored, both PF5
+runners unpaused. Administrative execution is needed for the next capture.
+Detailed receipt, full-memory findings and limits are in the linked report.
+Keep the issue open and both MRs unmerged; do not whitelist the exit.
+
+** Administrator-assisted page heap follow-up (2026-11-03)
+Global full page heap was enabled by a separate administrator controller;
+AutoCAD remained under the existing CAD account. First AV was captured in
+memcpy from accore's wide-string initialization before quiescence/Quit,
+not in the MFC shutdown path. Source allocation is14 bytes, source+8,
+requested copy16: an allocated-buffer over-read into a guard page.
+See autocad-pageheap-startup-wide-string-overread.issue for that obstacle.
+Capture timeout required cleanup of the exact owned instance, recorded as
+Forced=true. The controller restored its exact image option, removed the
+capture task, and both runners were reactivated. No shutdown success claim.
+
+A 480-byte protected-allocation filter is prepared to target the suspected
+thread-state lifetime defect without being stopped by the unrelated small
+allocation. Settings are backed up/restored by existence, type and value.
+The limited capture task is registered but not started; administrator READY
+and a newly coordinated reservation are still required. No merge.

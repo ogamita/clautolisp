@@ -133,7 +133,7 @@ a temp file — and "LogFilePath has been set to the working folder" (LOGFILEPAT
 works). Both are alternative capture paths worth revisiting then. See
 [[autocad-no-rest-output-capture]].
 
-* Availability verified dynamically (alfe 2.3.118, 2026-11-09)
+* Availability verified dynamically (alfe 2.3.119, 2026-11-09)
 pjb: the macOS AutoCADs here are installed but unlicensed (an unlicensed install
 runs only for a trial period), so probing them is the right behaviour, and
 reporting AutoCAD unavailable once a run has failed is correct. alfe now finds

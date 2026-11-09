@@ -802,3 +802,25 @@ without saving its documents, and verifies that its PID and creation-time
 identity disappears. A missing final protocol message is normal after that
 exit; failed restoration or a cleanup timeout fails the invocation.
 Attached interactive applications are restored and left open.
+
+.SH WINDOWS COM DRAWINGS
+With an explicit \-\-dwg, AutoCAD and BricsCAD open and activate that file
+before plug-in startup and runtime loading. Opening failure is an error;
+an unnamed active drawing is not used as a substitute.
+Both COM backends preserve SECURELOAD, temporarily trusts the runtime directory,
+and restores the original TRUSTEDPATHS before session cleanup.
+
+.SS EPURE initialization through COM
+The EPURE control script is loaded synchronously in the runtime prelude,
+before the bootstrap and protocol loop, in the selected job document.
+The bridge does not enqueue a separate SCRIPT command.
+
+.SH EPURE DOCUMENT STARTUP
+COM mode runs the installed EPURE document startup after synchronous control
+loading when com_startup_exe is unset: on_start.lsp on BricsCAD, AcadDoc.lsp
+on AutoCAD. Selecting a profile alone does not initialize an open drawing.
+
+.SH WINDOWS PROFILE ENVIRONMENT
+A missing USERPROFILE is resolved with the Windows known-folder API for CAD
+child launches. Existing values and explicit launch overrides are preserved.
+The parent environment is restored after spawning; no registry value is changed.

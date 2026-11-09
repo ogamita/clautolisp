@@ -924,9 +924,9 @@ an ordinary path."
     (string path)
     (pathname (uiop:native-namestring path))))
 
-(defun kill-engine-process (info &key (timeout 6))
+(defun kill-engine-process (info &key (timeout 6) (grace 0))
   "Best-effort terminate the launched engine within TIMEOUT seconds, NEVER
-blocking indefinitely.
+blocking indefinitely. GRACE optionally allows natural exit before termination.
 
 `uiop:wait-process' can hang on Windows when the engine (a GUI CAD) is
 slow to die, or when a child of it shares the handles — that would freeze
@@ -940,8 +940,19 @@ same way — and having only one backend own the careful version is exactly
 how the other one kept the unbounded `wait-process' that this docstring
 warns about. Shared here so both use it."
   (when info
+    ;; A STOPPED protocol precedes the final QUIT in the CAD script.
+    ;; Give that command a bounded opportunity to close naturally.
+    (let ((start (get-internal-real-time)))
+      (loop while (and (ignore-errors (uiop:process-alive-p info))
+                       (< (/ (float (- (get-internal-real-time) start))
+                             internal-time-units-per-second)
+                          grace))
+            do (sleep 0.2)))
     (ignore-errors
-     (when (uiop:process-alive-p info) (uiop:terminate-process info)))
+     (when (uiop:process-alive-p info)
+       (when (plusp grace)
+         (log-warn "CAD still alive after ~A s of natural shutdown; terminating it" grace))
+       (uiop:terminate-process info)))
     (let ((start (get-internal-real-time)))
       (loop while (and (ignore-errors (uiop:process-alive-p info))
                        (< (/ (float (- (get-internal-real-time) start))
@@ -1076,12 +1087,13 @@ live pipe to its end would wait for the process."
   (alfe.plugin:run-hook :launcher-lines slot :kind kind :variant variant))
 
 (defun expand-plugin-slots (template variant)
-  "TEMPLATE with each of its two VBScript plug-in slot lines,
-${PLUGIN_AFTER_APP} and ${PLUGIN_BEFORE_LOAD}, replaced by the lines the
+  "TEMPLATE with each of its three VBScript plug-in slot lines,
+${PLUGIN_AFTER_APP}, ${PLUGIN_AFTER_DOCUMENT} and ${PLUGIN_BEFORE_LOAD}, replaced by the lines the
 active plug-ins provide for it, or removed with its newline when there are
 none — so a run with no plug-in emits the template byte for byte."
   (let ((out template))
     (loop for (placeholder slot) in '(("${PLUGIN_AFTER_APP}"   :after-app)
+                                      ("${PLUGIN_AFTER_DOCUMENT}" :after-document)
                                       ("${PLUGIN_BEFORE_LOAD}" :before-load))
           do (let ((lines (launcher-lines slot :vbs variant)))
                ;; A string replaces the placeholder; NIL removes it, and with
@@ -1108,12 +1120,85 @@ sets the variable to the empty string (the portable form of \"unset\")."
       (dolist (pair previous)
         (setf (uiop:getenv (car pair)) (or (cdr pair) ""))))))
 
+#+(or win32 windows mswindows)
+(progn
+  (cffi:define-foreign-library cad-profile-shell32 (t "shell32.dll"))
+  (cffi:define-foreign-library cad-profile-ole32 (t "ole32.dll")))
+
+(defun windows-user-profile-directory ()
+  "Resolve the current user's profile with SHGetKnownFolderPath, or NIL.
+This uses FOLDERID_Profile rather than HOME or an assumed C:/Users path;
+SSH/MSYS may omit USERPROFILE and use a different HOME. The Windows-allocated
+UTF-16 result is always released, including on conversion failure."
+  #+(or win32 windows mswindows)
+  (handler-case
+      (progn
+        (cffi:use-foreign-library cad-profile-shell32)
+        (cffi:use-foreign-library cad-profile-ole32)
+        (cffi:with-foreign-objects ((guid :uint8 16) (result :pointer))
+          ;; FOLDERID_Profile {5E6C858F-0E22-4760-9AFE-EA3317B67173},
+          ;; with the first three GUID fields in Windows little-endian order.
+          (loop for octet across #(#x8f #x85 #x6c #x5e #x22 #x0e #x60 #x47
+                                   #x9a #xfe #xea #x33 #x17 #xb6 #x71 #x73)
+                for index from 0
+                do (setf (cffi:mem-aref guid :uint8 index) octet))
+          (setf (cffi:mem-ref result :pointer) (cffi:null-pointer))
+          (unwind-protect
+               (when (zerop
+                      (cffi:foreign-funcall-pointer
+                       (cffi:foreign-symbol-pointer "SHGetKnownFolderPath"
+                                                    :library 'cad-profile-shell32)
+                       (:convention :stdcall)
+                       :pointer guid :uint32 0 :pointer (cffi:null-pointer)
+                       :pointer result :int32))
+                 (let ((pointer (cffi:mem-ref result :pointer)))
+                   (unless (cffi:null-pointer-p pointer)
+                     (cffi:foreign-string-to-lisp pointer :encoding :utf-16le))))
+            (let ((pointer (cffi:mem-ref result :pointer)))
+              (unless (cffi:null-pointer-p pointer)
+                (cffi:foreign-funcall-pointer
+                 (cffi:foreign-symbol-pointer "CoTaskMemFree"
+                                              :library 'cad-profile-ole32)
+                 (:convention :stdcall)
+                 :pointer pointer :void))))))
+    (error (condition)
+      (log-debug "Cannot resolve the Windows user profile: ~A" condition)
+      nil))
+  #-(or win32 windows mswindows)
+  nil)
+
+(defun windows-profile-environment (environment current-profile resolver)
+  "Return ENVIRONMENT with a missing USERPROFILE resolved for the child.
+An explicit launch override, even an unset value, takes precedence. A nonempty
+CURRENT-PROFILE needs no repair. Otherwise call RESOLVER once and add its
+nonempty result without modifying ENVIRONMENT; fail before spawning if the
+actual Windows profile cannot be resolved. No registry setting is changed."
+  (cond
+    ((or (assoc "USERPROFILE" environment :test #'string-equal)
+         (and (stringp current-profile) (plusp (length current-profile))))
+     environment)
+    (t
+     (let ((profile (funcall resolver)))
+       (unless (and (stringp profile) (plusp (length profile)))
+         (error 'backend-bootstrap-error :backend :cad :code :missing-user-profile
+                :message "USERPROFILE is missing and the Windows profile could not be resolved; supply the actual Windows user profile before launching CAD."))
+       (log-debug "Restoring missing USERPROFILE for the CAD launcher from the Windows known folder")
+       (acons "USERPROFILE" profile environment)))))
+
 (defun call-launcher (launcher argv launch-options &rest keys)
   "Call LAUNCHER as (LAUNCHER ARGV . KEYS), adding :DIRECTORY and applying
 the :ENVIRONMENT that LAUNCH-OPTIONS, the result of the :launch-options
-hook, carries. The mock launchers of the test suite ignore extra keys."
+hook, carries. The mock launchers of the test suite ignore extra keys.
+On native Windows,
+a missing USERPROFILE is resolved from the current Windows known folder for
+the child launch only; explicit launch environment overrides take precedence."
   (let ((directory (getf launch-options :directory))
-        (environment (getf launch-options :environment)))
+        (environment #+(or win32 windows mswindows)
+                       (windows-profile-environment
+                        (getf launch-options :environment) (uiop:getenv "USERPROFILE")
+                        #'windows-user-profile-directory)
+                       #-(or win32 windows mswindows)
+                       (getf launch-options :environment)))
     (flet ((launch ()
              (apply launcher argv
                     (append (when directory (list :directory directory)) keys))))
@@ -2111,7 +2196,7 @@ exit 1
 ")
 (defparameter *owned-com-capture-vbs*
   "' Keep this exact COM reference; never rediscover an arbitrary ROT instance.
-Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream
+Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription
 Set lifeShell = CreateObject(\"WScript.Shell\")
 lifeRoot = fso.GetParentFolderName(runFile)
 lifeHelper = fso.BuildPath(lifeRoot, \"owned-cad-process.ps1\")
@@ -2129,19 +2214,30 @@ End If
   If fso.FileExists(lifeRequest) Then
     lifeCode = 0
     If created Then
-      On Error Resume Next
-      For lifeIndex = app.Documents.Count - 1 To 0 Step -1
-        Set lifeDoc = app.Documents.Item(lifeIndex)
-        lifeDoc.Close False
-        If Err.Number <> 0 Then Exit For
+      ' The native command can still be unwinding after RESTORED.
+      ' Bound retries on this exact application; never rediscover or kill one.
+      For lifeAttempt = 1 To 40
+        On Error Resume Next
+        Err.Clear
+        For lifeIndex = app.Documents.Count - 1 To 0 Step -1
+          Set lifeDoc = app.Documents.Item(lifeIndex)
+          lifeDoc.Close False
+          If Err.Number <> 0 Then Exit For
+        Next
+        If Err.Number = 0 Then Call app.Quit
+        lifeError = Err.Number
+        lifeDescription = Err.Description
+        Err.Clear
+        On Error GoTo 0
+        If lifeError = 0 Then Exit For
+        AppendLine errFile, \"OWNED-COM-CLOSE attempt=\" & lifeAttempt & \" error=\" & lifeError & \" description=\" & lifeDescription
+        WScript.Sleep 250
       Next
-      If Err.Number = 0 Then Call app.Quit
-      lifeCode = Err.Number
-      Err.Clear
+      lifeCode = lifeError
+      ' Quit may need the last automation references released before exit.
       Set lifeDoc = Nothing
+      Set doc = Nothing
       Set app = Nothing
-      Err.Clear
-      On Error GoTo 0
       ' A disconnected COM call can mean Quit succeeded. alfe, not this
       ' bridge, then proves the created process gone (or ends it).
     End If
@@ -2177,9 +2273,66 @@ End If
 Loop
 ")
 
-(defun instrument-owned-com-bridge (text path)
+(defparameter *com-runtime-trust-vbs*
+  "Dim originalTrustedPaths, bridgeTrustChanged
+bridgeTrustChanged = False
+Sub RestoreBridgeTrust()
+  If bridgeTrustChanged Then
+    Call doc.SetVariable(\"TRUSTEDPATHS\", originalTrustedPaths)
+    bridgeTrustChanged = False
+  End If
+End Sub
+' Approve only this invocation's runtime directory, preserving SECURELOAD.
+originalTrustedPaths = doc.GetVariable(\"TRUSTEDPATHS\")
+Call doc.SetVariable(\"TRUSTEDPATHS\", originalTrustedPaths & \";\" & Replace(fso.GetParentFolderName(runFile), \"\\\", \"/\") & \"/...\")
+bridgeTrustChanged = True
+
+")
+
+(defparameter *owned-com-ready-vbs*
+  "Function OwnedComIsReady(a, secs)
+  Dim deadline, state, idle, problem, detail
+  deadline = DateAdd(\"s\", secs, Now)
+  OwnedComIsReady = False
+  Do
+    Set state = Nothing
+    idle = False
+    On Error Resume Next
+    Err.Clear
+    Set state = a.GetAcadState
+    If Err.Number = 0 Then idle = state.IsQuiescent
+    problem = Err.Number
+    detail = Err.Description
+    Err.Clear
+    On Error GoTo 0
+    If problem = 0 And idle Then
+      OwnedComIsReady = True
+      Exit Function
+    End If
+    If Now >= deadline Then Exit Do
+    WScript.Sleep 250
+  Loop
+  AppendLine errFile, \"COM.READY.ERROR=\" & problem & \" \" & detail
+End Function
+If Not OwnedComIsReady(app, 30) Then
+  AppendLine errFile, \"ERROR COM bridge: COM application did not become quiescent before opening the job drawing\"
+  If created Then
+    On Error Resume Next
+    app.Quit
+    On Error GoTo 0
+  End If
+  WScript.Quit 4
+End If
+")
+
+(defun instrument-owned-com-bridge (text path &key before-close-vbs trust-runtime-p)
   "Retain the exact COM object and validate its PID plus creation time on exit."
-  (let* ((marker "${PLUGIN_BEFORE_LOAD}")
+  (let* ((document-start (or (search "Dim docReady, docAttempt" text)
+                             (error "Cannot locate COM drawing open boundary.")))
+         (text (concatenate 'string (subseq text 0 document-start)
+                            *owned-com-ready-vbs* *owned-com-capture-vbs*
+                            (subseq text document-start)))
+         (marker "${PLUGIN_BEFORE_LOAD}")
          (before (search marker text))
          (end (search "WScript.Quit 0" text :from-end t))
          (helper (merge-pathnames "owned-cad-process.ps1" path)))
@@ -2188,9 +2341,23 @@ Loop
     (with-open-file (out helper :direction :output :if-exists :supersede
                                 :if-does-not-exist :create :external-format :utf-8)
       (write-string *owned-cad-process-script* out))
-    (concatenate 'string (subseq text 0 before) *owned-com-capture-vbs*
-                 (subseq text before end) *owned-com-wait-vbs*
-                 (subseq text (+ end (length "WScript.Quit 0"))))))
+    (let ((wait *owned-com-wait-vbs*)
+          (before-close-vbs (or before-close-vbs
+                                (and trust-runtime-p
+                                     (format nil "    Call RestoreBridgeTrust()~%")))))
+      (when before-close-vbs
+        ;; Restore bridge-owned settings while its exact document still lives,
+        ;; both on an explicit close request and on an attached STOPPED exit.
+        (dolist (marker '("      Set lifeStream = fso.CreateTextFile"
+                          "    lifeCode = 0"))
+          (let ((position (search marker wait)))
+            (unless position (error "Missing owned-close restoration boundary."))
+            (setf wait (concatenate 'string (subseq wait 0 position)
+                                   before-close-vbs (subseq wait position))))))
+      (concatenate 'string (subseq text 0 before)
+                   (if trust-runtime-p *com-runtime-trust-vbs* "")
+                   (subseq text before end) wait
+                   (subseq text (+ end (length "WScript.Quit 0")))))))
 
 (defun run-owned-cad-helper (workdir &key (grace 20) (kill-timeout 10)
                                           (launcher #'uiop:launch-program))

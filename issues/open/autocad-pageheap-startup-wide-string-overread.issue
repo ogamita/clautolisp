@@ -1,0 +1,34 @@
+#+TITLE: Global page heap exposes an AutoCAD startup wide-string over-read
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: vendor-cad-validation
+
+* Evidence
+An isolated pure-COM AutoCAD2022 instance under the existing EPURE account
+and selected Epure profile, with full page heap, faults before quiescence.
+PID33364, first-chance full dump3767186581 bytes, SHA256
+7f8f0cdf97d5d7f210debc2ff078f56d30a264e4d2e6a77543dc3a8337fa8a51.
+No ALFE/Lisp test or Quit request was involved.
+VCRUNTIME140+10B36 is memcpy_avx_ermsb_amd+126, a16-byte load crossing a
+protected page. The source is8 bytes into an allocated14-byte buffer.
+The matching allocated DPH stamp and direct ExceptionStream are captured.
+PE unwind tables show accore wide-string helpers requesting8 wchar_t from
+that short source, followed by accore/acad/MFC initialization frames.
+No proprietary EPURE native code appears in that stack; the profile/input
+trigger and exact internal Autodesk function names remain unclassified.
+This is not proof of the original MFC thread-state shutdown corruption.
+
+* Operational result
+Quiescence timed out, then the exact owned CAD required forced cleanup.
+Do not qualify shutdown from this run. The administrator controller restored
+the image option, removed its task and released both runners. No binary or
+product source was patched. All dump/binary analysis was performed off Windows.
+
+* Next evidence
+Preserve this as a separate startup over-read. Narrow full guard pages to
+480-byte allocations to investigate the original thread-state lifetime bug;
+verify the effective filter in that next capture. Obtain matching Autodesk
+symbols/source if needed to name the startup helper and its input contract.
+Detailed evidence is in
+[[file:../../autolisp-front-end/documentation/epure-autocad-shutdown-offline-analysis.org]].

@@ -2149,6 +2149,7 @@ slot; the handler returns its lines when the slot is one it cares about.
 | =:scr=  | =run.scr= (BricsCAD batch), the accoreconsole SCR | =:before-load= | immediately before the =(load run-common.lsp)= line |
 |         |                                     | =:after-load=   | after it, before the final =_QUIT= (the load only returns when the session ends) |
 | =:vbs=  | =bridge-bricscad.vbs=, =bridge-autocad.vbs= | =:after-app= | once the COM application object exists, before waiting for it and before the document is used |
+|        | | =:after-document= | target document selected; before profile-triggered application initialization and runtime trust setup |
 |         |                                     | =:before-load=  | once the document is active, immediately before the =(load run-common.lsp)= is sent |
 
 SCR lines are script lines (a command, its answers, or an AutoLISP form).
@@ -2218,9 +2219,9 @@ GUI nor profiles, so:
 
 | Backend, mode              | What =--epure= does                                                       |
 |----------------------------+---------------------------------------------------------------------------|
-| BricsCAD, =batch= (default) | =bricscad.exe [template] /p PROFILE /b run.scr= from =UserDataCache=; =/Automation= (headless start) is *dropped*; =run.scr= runs =._SCRIPT= on the control script, then loads =run-common.lsp= |
-| BricsCAD, =automation= (COM) | the bridge tries to activate the profile through =Preferences.Profiles= (a failure is written to the errors file and the run continues on the current profile) and sends =._SCRIPT= before the load |
-| AutoCAD, =automation= (COM) | the default under =--epure=; the bridge activates the profile, sends =._SCRIPT= before the load |
+| BricsCAD, =batch= (default) | =bricscad.exe [template] /p PROFILE /b run.scr= from =UserDataCache=; =/Automation= (headless start) is *dropped*; =run.scr= LOADs the control script, then loads =run-common.lsp= |
+| BricsCAD, =automation= (COM) | the bridge tries to activate the profile through =Preferences.Profiles= (a failure is written to the errors file and the run continues on the current profile) and loads the control script synchronously in the runtime prelude |
+| AutoCAD, =automation= (COM) | the default under =--epure=; the bridge activates the profile; the runtime prelude LOADs the control script before the bootstrap |
 | AutoCAD, =batch= (accoreconsole) | refused: usage error (exit 64), "EPURE requires the full AutoCAD GUI; accoreconsole (--mode batch) has no profile support. Use --mode automation." |
 
 Under COM the run-time is loaded into the GUI session and its server loop
@@ -2228,13 +2229,12 @@ keeps the CAD's UI thread busy for as long as alfe drives it: the GUI is
 blocked for the duration of the run — acceptable for a scripted run, not for
 an interactive one.
 
-*Not validated on real CADs.* The plug-in was written and tested against the
-mock CAD, =--print-command= and an OS override, not against EPURE. Two
-assumptions come from the legacy wrapper and are tracked by
-=alfe-plugin-epure-windows-validation=: that a =._SCRIPT= nested in a =/b=
-script returns to the outer script, and that two consecutive COM
-=SendCommand= calls run in order. Should the first not hold, =--mode
-automation= (COM) is the fallback under BricsCAD too.
+Under COM, =:run-common-prelude= emits a native =(load CONTROL)= before
+the bootstrap. It executes on the same Lisp stack as the runtime, in
+the selected document; a separate asynchronous =SendCommand= for
+=SCRIPT= is not used. BricsCAD batch retains its sequential native
+LOADs. Native qualification must verify API presence and owned process
+closure separately from ALFE's own exit status.
 
 * EPUREE
 :PROPERTIES:
@@ -2984,3 +2984,50 @@ temporary file and renamed; a reader takes it only once complete, so a
 half-written file is never an answer. No final STOPPED from a process already
 exited is required. All acknowledgement and process-exit waits are bounded.
 Batch engines retain SHUTDOWN/STOPPED, with restoration preceding STOPPING.
+
+* Windows COM document selection
+An explicit =--dwg= SHALL select that exact drawing before launch plug-ins
+and runtime loading. Both COM backends SHALL fail if the file cannot be
+opened; they SHALL NOT silently replace it with an unnamed active document.
+Both COM backends SHALL preserve =SECURELOAD= and restore any temporary workdir
+entry in =TRUSTEDPATHS= before closing an owned application or leaving an
+attached application open.
+
+** EPURE document startup in COM mode
+After opening the job drawing and activating the EPURE profile, the common
+runtime loads the control script synchronously, then runs the installed
+=on_start.lsp= (BricsCAD) or =AcadDoc.lsp= (AutoCAD) and =s::startup= when
+=com_startup_exe= is nil. Profile activation alone does not initialize the
+already open document. Batch launchers retain their existing startup path.
+
+Native lifecycle qualification also modifies the private test drawing and
+checks its SHA256 remains unchanged after shutdown. Its verdict follows
+contract 2: alfe's exit status and the created CAD proved gone. A nonzero
+native exit (BABE included), a crash or a forced termination after the
+frontier is recorded in the receipt, not a qualification failure.
+
+** Native Windows profile environment
+Before launching CAD on Windows, alfe resolves a missing =USERPROFILE= with
+=SHGetKnownFolderPath(FOLDERID_Profile)=. It supplies that value for the child
+launch and restores the parent environment afterwards. Existing values and
+explicit launch environment overrides take precedence. It does not infer a
+Windows profile from MSYS =HOME= or write registry settings. If Windows cannot
+resolve the profile, bootstrap fails before spawning CAD. This avoids passing
+an absent profile to native EPURE helpers that do not validate that input.
+A GUI COM server still needs a working interactive Windows session.
+
+** Required EPURE lifecycle qualification
+An MR labelled =qualification::epure-lifecycle= uses the =native:qualification=
+bridge with =strategy: mirror= and =allow_failure: false=. Its parent waits for
+the blocking native lifecycle job and reflects its failure. The regular native
+bridge retains its optional behavior for other pipelines. Native nonzero exit
+codes, correlated crashes and forced termination after alfe's frontier are
+recorded in the receipt (contract 2); alfe's failure, a CAD still running after
+alfe returned, or a missing cleanup report fails qualification.
+
+** Windows CI unit temporary directories
+Native Windows unit lanes initialize process-scoped TEMP, TMP and TMPDIR
+under a CI job ID directory outside the checkout. The shared PowerShell helper
+is invoked in the current shell with =&=; spawning a new PowerShell process
+for initialization would not propagate the environment. CAD jobs retain their
+cross-job journals. Unit cleanup is scoped to the current numeric job ID.

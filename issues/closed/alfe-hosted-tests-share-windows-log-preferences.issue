@@ -1,0 +1,33 @@
+#+TITLE: Hosted runtime tests share persistent Windows logging preferences
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+
+* Evidence
+MR !507 Windows job17673025002: 2453 checks passed, two cleanup failures.
+PROTOCOL-PREPARED-CLOSE-RESTORES-BEFORE-LOOP-EXIT and
+CAD-RESTORE-SESSION-IS-IDEMPOTENT-AND-CLOSES-CURRENT-LOG-FIRST
+failed deleting Drawing1 logs with a Windows sharing violation. The hosted
+child was waited for, but LOGFILEMODE and LOGFILEPATH are shared persisted
+preferences: another concurrent process can reopen the same log.
+
+* Correction under qualification
+DRIVE-HOSTED-ENGINE gives each child CLAUTOLISP_REGISTRY_FILE in its own
+workdir and restores the caller environment afterwards. No locked file
+is ignored and no cleanup assertion is removed. Require both regressions
+and the full native Windows ALFE suite to pass before closing this issue.
+
+* Qualification
+MR !507 Windows job17673828857 passes2459/2459, no skips or failures.
+MR !476 job17673832295 no longer has locked log failures. It exposes one
+unrelated pathname-spelling assertion: the CLI string uses forward slashes
+while CAD-ARGUMENT-PATH of the fixture pathname uses native Windows slashes.
+The regression now compares the exact CLI string supplied to START-ENGINE.
+Targeted real Windows SBCL run passes2/2 on2026-11-02; no native CAD was
+started by that fake-launcher test.
+
+* Resolved in 2.3.91 (2.3.94 in the EPURE shutdown series)
+The private registry store removes both locked-log failures on Windows.
+MR !507 Windows job17673828857 passes2459/2459 with no skips.
+MR !476 Windows job17673832295 has neither log failure; its independent
+CLI/pathname spelling assertion was corrected and passes2/2 on Windows.

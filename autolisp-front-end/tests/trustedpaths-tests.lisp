@@ -156,7 +156,8 @@ REG (the table), JOURNAL (its path) and KEY (the subkey)."
   (let ((text (uiop:read-file-string
                (asdf:system-relative-pathname "autolisp-front-end"
                                               "source/backend-autocad.lisp"))))
-    (is (search "(when (eq launcher #'uiop:launch-program)" text))
+    (is (search "(when (and (eq variant :batch)" text))
+    (is (search "(eq launcher #'uiop:launch-program))" text))
     (is (search "(trust-workdir-for-run workdir)" text))))
 
 (test trustedpaths-real-registry-round-trip-on-windows

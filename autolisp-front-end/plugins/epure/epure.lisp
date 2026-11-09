@@ -187,18 +187,21 @@ to the errors file and the run goes on with the current profile."
         "End If"
         "On Error GoTo 0"))
 
-(defun send-script-lines (script)
-  "VBScript: ask the running CAD to run SCRIPT, as the legacy bridge did."
-  (list "Dim epureCmd"
-        (format nil "epureCmd = \"._SCRIPT \" & Chr(34) & \"~A\" & Chr(34) & vbCr"
-                (vbs-escape script))
-        "On Error Resume Next"
-        "Call doc.SendCommand(epureCmd)"
-        "If Err.Number <> 0 Then"
-        "  AppendLine errFile, \"WARN COM bridge: EPURE _SCRIPT send failed: \" & Err.Description"
-        "  Err.Clear"
-        "End If"
-        "On Error GoTo 0"))
+(define-plugin-hook "epure" :run-common-prelude (ctx value &key variant)
+  ;; COM SendCommand dispatches asynchronously on BricsCAD. Sending SCRIPT
+  ;; followed by the runtime load can enter the protocol loop before EPURE
+  ;; has finished loading. Execute both loads on the same native Lisp stack.
+  (declare (ignore value))
+  (when (eq variant :automation)
+    (let ((script (control-script (context-backend ctx))))
+      (when script
+        (append (list (format nil "(load ~S)" script))
+                ;; Profile activation does not replay document startup in the
+                ;; already opened job drawing. Use EPURE's installed entry point
+                ;; once, rather than loading selected API implementation files.
+                (list (format nil "(if (not com_startup_exe) (progn (alfe-debug-log \"EPURE document startup\") (load ~S) (s::startup)))"
+                              (if (eq (context-backend ctx) :bricscad)
+                                  "on_start.lsp" "AcadDoc.lsp"))))))))
 
 (define-plugin-hook "epure" :launcher-lines (ctx slot &key kind backend)
   (let ((script (control-script backend)))
@@ -220,5 +223,6 @@ to the errors file and the run goes on with the current profile."
       (:scr (when (and (eq slot :before-load) script)
               (list (format nil "(load ~S)" script))))
       (:vbs (case slot
-              (:after-app (profile-activation-lines (plugin-option :profile)))
-              (:before-load (when script (send-script-lines script))))))))
+              ;; Select the target document before profile activation: a caller
+              ;; can install its native UI guard in that exact namespace first.
+              (:after-document (profile-activation-lines (plugin-option :profile))))))))
