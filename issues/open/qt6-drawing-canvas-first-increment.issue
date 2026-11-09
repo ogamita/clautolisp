@@ -401,3 +401,63 @@ Even though it is slightly more work than Alternative 1, *in-process-embedded +
 C/C++ SDK IS the AutoCAD/BricsCAD architecture*.  If the goal is genuine parity
 including a native extension ecosystem, this is the target; Alternative 1's
 out-of-process wire is a bootstrap, not the destination.
+
+* Estimate basis — recalibrated from agent throughput, not human teams
+
+*Honest correction (pjb's challenge, 2026-11-09).*  The year-scale figures in
+the sections above were anchored on HUMAN-team calibration (BricsCAD ~15-20
+years, hundreds of engineers) with a compression factor applied — not computed
+bottom-up from observed agent throughput.  That is the wrong basis, and it
+over-estimates.  Recomputing:
+
+- *Observed throughput on THIS codebase:* cador + the engine (~157 k LOC of
+  tested, reviewed CAD-domain Lisp) were built largely by agent sessions over
+  *months* — on the order of 10-30 k LOC/month of MERGED, tested code — and
+  individual well-specified features that a human plan would call "weeks" land
+  in a day or two.  That is the number to extrapolate from, not a human-year.
+- *Code volume is NOT the gate.*  With a fleet (and more compute scales it
+  further), the throughput-bound work — GUI breadth, 2D fidelity, the command
+  set, DWG mapping, CRX breadth — collapses toward its validation floor.  The
+  per-option "person-years" above are a *human-equivalent SCOPE* measure (an
+  upper bound), not a calendar.
+
+** What actually sets the calendar (latency floors, independent of agent count)
+
+1. *Real-CAD validation round-trips* — DWG/behaviour parity is checked against a
+   real AutoCAD/BricsCAD, i.e. the intermittent Windows/CAD runner; those jobs
+   already wait hours-to-days for a slot.  Dedicated always-on CAD validation
+   hardware moves this floor more than any coding speed does.
+2. *3D geometry-kernel robustness* — integrating OpenCASCADE is fast; taming
+   boolean/tolerance failures on REAL models is an empirical, long-tailed
+   debugging loop.  This is the long pole; agents help but do not remove it.
+3. *Human review / decision bandwidth* — architecture calls, "does it behave
+   right" judgements, merge gating (pjb's own caveat).  If the human is the
+   bottleneck, calendar = human attention, not agent speed.
+4. *UX feel approval* — compressed hugely by the offscreen screenshot-diff tests
+   (an auxiliary goal), but a human still sets the bar each round.
+
+** Agent-computed calendar (supersedes the year figures above)
+
+Assumes a fleet + enough validation hardware (always-on CAD runners) + a
+responsive reviewer:
+
+| milestone                                   | agent-computed calendar      |
+|---------------------------------------------+------------------------------|
+| M1 interactive 2D canvas (this ticket)      | days - ~2 weeks              |
+| M2 usable 2D CAD (BricsCAD-like 2D)         | ~2 weeks - 3 months          |
+| M3 fidelity: dims / tables / blocks / constr| ~1 - 4 months                |
+| M4 3D via OpenCASCADE + ACIS round-trip     | ~3 - 12 months  (long pole)  |
+| M5 polish / perf / packaging (overlaps)     | ~1 - 3 months                |
+| *Near-parity total (Alt 1 / 2)*             | *~6 - 18 months*             |
+| Alt 3 add: ECL port + embed + usable CRX    | +~2 - 8 months               |
+| *Near-parity + native CRX (Alt 3)*          | *~9 - 24 months*             |
+
+The spread is dominated by the 3D-kernel / real-CAD-validation tail (floors 1-2),
+NOT by how much code there is.  Resource the real floors (always-on CAD
+validation, generous compute, a dedicated reviewer) and these land near the LOW
+end; starve them and near the high end.  Honest residual uncertainty: no full
+CAD has been built this way, so M4 especially is a projection — but it is now
+computed from agent throughput + real latency floors, not from a human-team
+analogy.  The person-year numbers in the earlier sections should be read as
+"human-equivalent scope", i.e. the upper bound, and this table as the expected
+calendar.
