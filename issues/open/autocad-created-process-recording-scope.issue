@@ -1,0 +1,21 @@
+#+TITLE: AutoCAD creation record includes unrelated Automation instances
+#+STATUS: TODO
+#+PRIORITY: P1
+#+TYPE: bug
+#+DEPENDS: exact instance identity from COM activation
+#+BRANCH: codex/fermeture-cao-20261023
+
+* Finding
+RecordCreatedProcesses in backend-autocad.lisp queries every acad.exe with
+/Automation in its command line and appends every matching PID and creation
+time. It does not establish that each instance was created by this run.
+
+* Risk
+The orphan sweeper trusts those records as ownership evidence. In addition,
+the quit bridge attaches by ProgID; with several instances of one release,
+the COM object it retrieves is not proven to be the instance this run created.
+Do not use these records alone to terminate an instance during qualification.
+
+* Required correction
+Record an exact activation identity, pass it to shutdown, verify it before
+closing any documents, and regression-test concurrent existing instances.

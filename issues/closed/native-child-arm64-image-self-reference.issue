@@ -26,5 +26,5 @@ https://docs.gitlab.com/ci/pipelines/downstream_pipelines/#pass-yaml-defined-cic
 
 * Qualification
 Pinned ARM64 image started; added CFFI to the Quicklisp toolchain warmup.
-Native ARM64 test job17673570542 passed on 2026-11-02. An isolated ARM64
+Native ARM64 test jobs 17673570542 and 17673614493 passed on 2026-11-02. An isolated ARM64
 container also loaded CFFI and called native strlen successfully.

@@ -384,7 +384,7 @@ unnamed \"<<Profil sans nom>>\") rather than trust the default."
   "Write WORKDIR/run.scr — the SCR script BricsCAD runs in batch
 (-B) mode. The script loads run-common.lsp (which itself loads the
 autolisp-remote-io runtime) and, when QUIT-ON-FINISH-P is true,
-disables FILEDIA and issues _QUIT _N so the engine doesn't hang
+closes the active document without saving and issues _QUIT so the engine doesn't hang
 on a save-changes dialog.
 
 Returns the path of the emitted file."
@@ -420,7 +420,9 @@ Returns the path of the emitted file."
                    ;; intentional — BricsCAD's SCR parser treats the
                    ;; newline as the command terminator.
                    (format out "._FILEDIA 0~%")
-                   (format out "._QUIT _N~%"))))
+                   ;; QUIT can open a GUI save dialog even with a Lisp answer.
+                   ;; Close the owned batch document explicitly first.
+                   (format out "(vl-load-com)~%(vla-close (vla-get-ActiveDocument (vlax-get-acad-object)) :vlax-false)~%._QUIT~%"))))
          (text (alfe.plugin:run-hook :launcher-script raw
                                      :kind :scr :variant :batch :path path)))
     (with-open-file (out path :direction :output
@@ -1576,7 +1578,7 @@ or --attach-pid, which APPLY-CAD-INSTANCE-POLICY turned into it)."
        (eq :attach (alfe.cli:cli-options-backend-variant cli-options))))
 
 (defun build-launch-argv (backend protocol-session
-                          &key (mode :auto) attach-p)
+                          &key (mode :auto) dwg attach-p)
   "Return the argv list to launch the BricsCAD engine for SESSION
 under MODE. The returned list has the binary in CAR; the caller
 typically hands it to UIOP:LAUNCH-PROGRAM."
@@ -1586,7 +1588,9 @@ typically hands it to UIOP:LAUNCH-PROGRAM."
     (case variant
       (:batch
        (let ((scr (merge-pathnames "run.scr" workdir))
-             (template (bricscad-backend-template-path backend))
+             (template (or dwg (bricscad-backend-template-path backend)
+                           (discover-bricscad-template
+                            :executable-path binary :workdir workdir)))
              (profile (bricscad-backend-profile backend)))
          (append (list binary)
                  ;; Windows-only: /Automation starts BricsCAD WITHOUT its main
@@ -1979,8 +1983,7 @@ own."
                   (log-debug "backend BRICSCAD: wrote launcher.applescript -> ~A" apl))))))
           (let* ((argv (alfe.plugin:run-hook
                         :launch-argv
-                        (build-launch-argv backend protocol
-                                           :mode mode
+                        (build-launch-argv backend protocol :mode mode :dwg dwg
                                            :attach-p (%attach-requested-p cli-options))
                         :variant variant :workdir workdir))
                  (launch-options (alfe.plugin:run-hook
@@ -2142,9 +2145,9 @@ own."
 ;;; the hazard it guards against (an unbounded wait-process on a GUI CAD
 ;;; that will not die) is not BricsCAD-specific, and AutoCAD had kept the
 ;;; unbounded `wait-process' this very code exists to avoid.
-(defun %kill-engine-process (info &key (timeout 6))
+(defun %kill-engine-process (info &key (timeout 6) (grace 0))
   "Deprecated local name; see ALFE.BACKEND.CAD-COMMON:KILL-ENGINE-PROCESS."
-  (kill-engine-process info :timeout timeout))
+  (kill-engine-process info :timeout timeout :grace grace))
 
 (defmethod shutdown ((session bricscad-session) &key reason)
   (declare (ignore reason))
@@ -2170,7 +2173,7 @@ own."
                      (error 'backend-protocol-error :backend :bricscad
                             :code :shutdown-timeout
                             :message "CAD did not stop its protocol.")))))
-        (kill-engine-process info)))
+        (kill-engine-process info :grace 10)))
     (session-state-set session :stopped))
   session)
 
