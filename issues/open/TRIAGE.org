@@ -1014,9 +1014,9 @@ Resolved notes) stay.
 [[file:autocad-pageheap-startup-wide-string-overread.issue]] — First protected AV precedes Quit; keep separate from MFC shutdown corruption.
 
 * IN-PROGRESS alfe-owned-cad-termination-after-recorded-results (P1)
-Implemente en 2.3.107 (contrat 2, --result-file, --cleanup-report) ; reste la
-validation native AutoCAD/BricsCAD (verify:autocad-activex:windows) et
-l'adaptation des consommateurs CI SCHME.
+Implemente en 2.3.107 (contrat 2, --result-file, --cleanup-report) ; valide
+nativement sur AutoCAD 2022 et BricsCAD V25 (verify:autocad-activex:windows,
+2026-11-06) ; reste l'adaptation des consommateurs CI SCHME.
 [[file:alfe-owned-cad-termination-after-recorded-results.issue][Decision pjb 2026-11-06 : resultats persistants puis terminaison garantie du seul CAD cree]].
 Apres fin du script et restauration acquittees, conserver le resultat quel que
 soit le code natif ; forcer si necessaire, confirmer disparition et nettoyage.
