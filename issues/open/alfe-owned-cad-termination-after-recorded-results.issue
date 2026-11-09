@@ -123,10 +123,29 @@ specification (Ordered Windows COM teardown).
   bricscad) passe =--result-file= et =--cleanup-report= et exige la disparition
   du CAD cree, quel que soit son code de sortie.
 
-Reste avant cloture : la validation native AutoCAD et BricsCAD de ce job, puis
-l'adaptation des consommateurs CI SCHME (verdict = statut d'alfe ; rapport de
-nettoyage pour le diagnostic ; plus de lecture de =close-owned.result= ni
-d'exigence de code natif nul), sans changer les tolerances EPURE-GEP.
+* Validation native, 2026-11-06 (PF5S26B, session console active)
+=verify:autocad-activex:windows=, alfe 2.3.107 :
+- AutoCAD 2022 (24.1s), job 17806574295, pipeline master 3036650030 : sortie
+  alfe 0 ; frontier=recorded, results=ok (JUnit 111 octets), owned=created,
+  quit-error=0 ; acad.exe PID 11696, meme SID et session, outcome=exited apres
+  1787 ms, forced=0, code natif 0x00B2BABE (diagnostic seulement : l'ancien
+  critere l'aurait refuse) ; cleanup=ok.
+- BricsCAD V25.0, job 17807853176 (pipeline de !355, =ACTIVEX_CAD=bricscad=) :
+  sortie alfe 0 ; frontier=recorded, results=ok, owned=created, quit-error=0 ;
+  bricscad.exe outcome=exited apres 271 ms, forced=0, code 0x00000000 ;
+  cleanup=ok.
+- Non explique : un premier essai AutoCAD (job 17806100133, meme code ;
+  =ACTIVEX_CAD= n'avait pas ete transmise) n'a rien affiche apres le lancement
+  d'alfe et a atteint la limite de 30 min du job, malgre =--timeout 240=. Le
+  script ne voit la sortie d'alfe qu'a son retour (=Out-String=), donc on ne
+  sait pas si le blocage etait au demarrage ou a la fermeture. Candidat
+  connu : l'heritage des handles de sortie d'alfe par acad.exe, corrige par
+  !515 (pas encore sur master). A surveiller ; non reproduit au second essai.
+
+Reste avant cloture : l'adaptation des consommateurs CI SCHME (verdict =
+statut d'alfe ; rapport de nettoyage pour le diagnostic ; plus de lecture de
+=close-owned.result= ni d'exigence de code natif nul), sans changer les
+tolerances EPURE-GEP.
 
 * Suivi
 Cette decision remplace le critere de code natif normal utilise dans les
