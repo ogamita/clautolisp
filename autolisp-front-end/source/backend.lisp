@@ -75,6 +75,8 @@
            #:eval-result-exit-code
            ;; the recorded run, for a shutdown that outlives its engine
            #:*recorded-outcome*
+           #:*interrupt-requested*
+           #:*forced-shutdown*
            #:*cleanup-report-file-name*
            #:write-key-value-file
            #:read-key-value-file
@@ -90,6 +92,16 @@
 none is (a plan that ended in an error). The CLI binds it around a run; a
 backend whose shutdown ends a CAD process it created writes it down as the
 frontier past which that process's own exit is a diagnostic, not the result.")
+
+(defvar *interrupt-requested* nil
+  "True once the user pressed Control-C during a CAD run: the CLI forwarded
+INTERRUPT through the protocol, and the plan stops before its next action
+(alfe-cad-lifecycle-rules, rule 4).")
+
+(defvar *forced-shutdown* nil
+  "True after a SECOND Control-C: the shutdown does not wait for the CAD --
+it kills a CAD alfe launched at once, and disconnects from one it attached
+to (rule 4).")
 
 (defparameter *cleanup-report-file-name* "owned-cad-cleanup-report.txt"
   "The KEY=VALUE cleanup report a backend writes in its workdir when its

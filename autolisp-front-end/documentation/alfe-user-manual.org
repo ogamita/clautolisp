@@ -332,6 +332,29 @@ The script's status comes first (alfe 2.3.122):
   then exits with the shutdown's status (76). A CI job that only needs the
   test's result can look for that line and ignore the bad shutdown.
 
+*** Interrupting a CAD run: Control-C
+
+Control-C during a CAD run (alfe 2.3.123):
+
+1. *The first one* is forwarded to the CAD through the protocol. The CAD
+   acknowledges it between two requests: it puts its settings back and ends
+   its session; alfe sends nothing more, shuts the CAD down as usual (quitting
+   one it launched, releasing one it attached to), and exits with 130. A CAD
+   busy with a long request acknowledges it only once that request is done;
+   alfe says so: =alfe: interrupt: asking the CAD to stop (press Control-C
+   again to force it)=.
+2. *A second one* -- or the first while the CAD is still starting -- forces
+   the end: a CAD alfe launched is killed at once, alfe disconnects from one it
+   attached to, the workdir is cleaned up, and alfe exits with 130.
+
+Under =--clautolisp=, Control-C follows =--on-interrupt= instead (see /The
+debugger/).
+
+The COM bridge also watches alfe and the CAD: if alfe is killed, the bridge
+closes the CAD as alfe would have (a created one is quit, an attached one keeps
+its own documents and is released); if the CAD dies, the bridge stops, and alfe
+reports the request as aborted at once instead of waiting.
+
 *** A start that fails
 
 If the CAD does not start -- no =READY= in time, a bootstrap =FAILED=, the

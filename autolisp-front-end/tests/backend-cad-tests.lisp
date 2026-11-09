@@ -4637,6 +4637,7 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
                          "autolisp-front-end" "tests/fixtures/owned-com-close-mock.vbs"))))
           (with-open-file (out path :direction :output :if-exists :supersede)
             (write-string prefix out)
+            (write-string alfe.backend.cad-common::*owned-com-watch-vbs* out)
             (write-string alfe.backend.cad-common::*owned-com-snapshot-vbs* out)
             (write-string alfe.backend.cad-common::*owned-com-wait-vbs* out))
           ;; Contract 2: the bridge always answers (exit 0) with the last
@@ -4961,4 +4962,108 @@ once, the status giving the reason, instead of costing the whole timeout."
     (is (= 60 (ready :batch "--timeout" "30")))
     (is (= 500 (ready :automation "--timeout" "500")))
     (is (= 42 (ready :automation "--ready-timeout" "42" "--timeout" "500")))))
+
+;;; --- alfe-cad-lifecycle-rules (MR-C): Control-C, watchdogs -------------
+
+(test cad-interrupt-first-forwards-second-forces
+  "Rule 4: the first Control-C of a running CAD is forwarded (INTERRUPT) and
+lets the run go on to its shutdown; a second one -- or the first while the
+CAD is still starting -- forces the shutdown and abandons the run (130)."
+  (let ((alfe.backend:*interrupt-requested* nil)
+        (alfe.backend:*forced-shutdown* nil)
+        (*error-output* (make-string-output-stream))
+        (session (alfe.backend.bricscad::%make-bricscad-session
+                  :variant :batch :protocol-session nil)))
+    (is (null (alfe.cli::%on-cad-interrupt 1 session)))
+    (is (eq t alfe.backend:*interrupt-requested*))
+    (is (null alfe.backend:*forced-shutdown*))
+    (handler-case (progn (alfe.cli::%on-cad-interrupt 2 session)
+                         (fail "a second Control-C did not force"))
+      (clautolisp.autolisp-cli:cli-error (e)
+        (is (= 130 (clautolisp.autolisp-cli:cli-error-status e)))))
+    (is (eq t alfe.backend:*forced-shutdown*)))
+  (let ((alfe.backend:*interrupt-requested* nil)
+        (alfe.backend:*forced-shutdown* nil)
+        (*error-output* (make-string-output-stream)))
+    (signals clautolisp.autolisp-cli:cli-error (alfe.cli::%on-cad-interrupt 1 nil))
+    (is (eq t alfe.backend:*forced-shutdown*) "still starting: forced at once")))
+
+(test interrupted-plan-stops-before-its-next-action
+  "Once INTERRUPT is forwarded the plan sends no further action, and the
+run's status is 130."
+  (with-cad-test-directories
+    (let* ((protocol (alfe.protocol.file:init-session (%fresh-test-directory)))
+           (alfe.backend:*interrupt-requested* t)
+           (result (alfe.backend.cad-common:drive-protocol-actions
+                    protocol (list (alfe.backend:action-eval "(princ 1)")
+                                   (alfe.backend:action-quit))
+                    :output-stream (make-broadcast-stream)
+                    :error-stream (make-broadcast-stream))))
+      (is (eq :aborted (alfe.backend:eval-result-status result)))
+      (is (= 130 (alfe.backend:eval-result-exit-code result)))
+      (is (null (probe-file (alfe.protocol.file:protocol-session-stdin-path protocol)))
+          "no request was sent"))))
+
+(test request-wait-ends-when-the-runtime-ended-its-loop
+  "A request's DONE never comes once the runtime acknowledged an INTERRUPT
+and ended its loop: INTERRUPTED or STOPPED end the wait."
+  (with-cad-test-directories
+    (dolist (status '("INTERRUPTED" "STOPPED"))
+      (let ((protocol (alfe.protocol.file:init-session (%fresh-test-directory))))
+        (with-open-file (out (alfe.protocol.file:protocol-session-status-path protocol)
+                             :direction :output :if-exists :supersede)
+          (write-line status out))
+        (is (null (alfe.protocol.file:wait-for-status-prefix
+                   protocol "DONE 1" :timeout 30
+                                     :fail-prefix '("INTERRUPTED" "STOPPED"))))))))
+
+(test runtime-acknowledges-interrupt-like-shutdown
+  "The CAD-side runtime handles INTERRUPT between requests as SHUTDOWN does:
+it restores the session, publishes INTERRUPTED and ends its loop."
+  (let* ((path (asdf:system-relative-pathname
+                "autolisp-front-end" "source/runtime/autolisp-remote-io.lsp"))
+         (text (uiop:read-file-string path))
+         (at (search "((= alfe--control \"INTERRUPT\")" text)))
+    (is (not (null at)))
+    (when at
+      (let ((clause (subseq text at (search "    (T nil)" text :start2 at))))
+        (is (search "(autolisp-restore-session)" clause))
+        (is (search "\"INTERRUPTED\"" clause))
+        (is (search "*AUTOLISP_PROTOCOL_STOP* T" clause))))))
+
+(test forced-shutdown-kills-a-launched-cad-at-once
+  "After a second Control-C a launched CAD is killed with no grace, and the
+shutdown reports how it ended rather than waiting for a STOPPED."
+  (if (uiop:os-windows-p)
+      (fiveam:skip "uses a POSIX sh child")
+      (let* ((alfe.backend:*forced-shutdown* t)
+             (info (uiop:launch-program (list "sh" "-c" "sleep 30")
+                                        :output nil :error-output nil))
+             (start (get-internal-real-time)))
+        (is (member (alfe.backend.cad-common::shutdown-cad-session :bricscad nil info)
+                    '(:terminated :killed)))
+        (is (not (uiop:process-alive-p info)))
+        ;; no natural-exit grace (20 s): at most the kill's own wait
+        (is (< (/ (- (get-internal-real-time) start) internal-time-units-per-second)
+               (+ alfe.backend.cad-common::*cad-kill-wait* 5))))))
+
+(test owned-com-bridge-watches-alfe-and-the-cad
+  "Both bridges: the bridge outlives neither alfe -- gone, it closes as alfe
+would have asked -- nor the CAD -- gone, it exits so alfe's wait ends. An
+attached CAD is captured for the watch only, in a file never used to end it."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+      (dolist (emitter (list #'alfe.backend.autocad:emit-bridge-vbs
+                             #'alfe.backend.bricscad::emit-bridge-vbs))
+        (let ((path (merge-pathnames "watch.vbs" dir)))
+          (funcall emitter path :runtime-load-path #p"/w/run-common.lsp"
+                               :status-path #p"/w/s" :error-path #p"/w/e")
+          (let ((text (uiop:read-file-string path)))
+            (is (search "Function ProcessAlive(pid)" text))
+            (is (not (search "${ALFE_PID}" text)) "alfe's PID is substituted")
+            (is (search "lifeAlfePid = CLng(\"0" text))
+            (is (search "attached-cad-process.json" text))
+            (is (search "If Not ProcessAlive(lifeAlfePid) Then" text))
+            (is (search "If Not ProcessAlive(lifeCadPid) Then" text))
+            (is (search "WScript.Quit 6" text))))))))
 

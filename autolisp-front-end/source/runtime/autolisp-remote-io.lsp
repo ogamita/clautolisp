@@ -146,6 +146,14 @@
       (autolisp-protocol-set-status "STOPPING")
       (setq *AUTOLISP_PROTOCOL_STOP* T)
       T)
+    ;; Control-C on alfe's side, forwarded: acknowledged here, between two
+    ;; requests -- restore the session and end the loop, as SHUTDOWN does.
+    ;; alfe then runs its usual shutdown (alfe-cad-lifecycle-rules, rule 4).
+    ((= alfe--control "INTERRUPT")
+      (autolisp-restore-session)
+      (autolisp-protocol-set-status "INTERRUPTED")
+      (setq *AUTOLISP_PROTOCOL_STOP* T)
+      T)
     (T nil)))
 
 (defun autolisp-protocol-queue-input-lines (alfe--lines)

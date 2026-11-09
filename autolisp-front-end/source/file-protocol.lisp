@@ -572,7 +572,8 @@ unchanged plain wall-clock timeout."
       ;; said it will never get there -- return at once, the status holding
       ;; its reason.
       (when (and fail-prefix last-seen
-                 (eql 0 (search fail-prefix last-seen)))
+                 (some (lambda (p) (eql 0 (search p last-seen)))
+                       (if (listp fail-prefix) fail-prefix (list fail-prefix))))
         (stream-debug-log-to-logger session)
         (return (values nil (seconds-elapsed-since start) last-seen)))
       ;; A dead engine aborts immediately — never wait out the remaining

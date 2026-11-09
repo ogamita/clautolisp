@@ -802,6 +802,15 @@ Pascal J. Bourguignon and contributors.
 .SH BUGS
 Report at https://gitlab.com/informatimago/lisp/-/issues.
 
+.SH SIGNALS
+During a CAD run, the first Control-C is forwarded to the CAD through the
+protocol: it ends its session between two requests, alfe shuts it down as
+usual and exits with 130. A second Control-C (or the first while the CAD is
+starting) forces it: a CAD alfe launched is killed, alfe disconnects from one
+it attached to, and exits with 130. Under
+.BR \-\-clautolisp ,
+Control-C follows
+.BR \-\-on-interrupt .
 .SH CAD CLEANUP
 Windows COM runs restore the CAD log and search path before ending the runtime
 protocol. The retained startup bridge quits only an application it created,
