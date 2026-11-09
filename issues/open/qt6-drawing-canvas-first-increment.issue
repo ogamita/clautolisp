@@ -315,3 +315,89 @@ agent-friendly; this architecture is chosen so that it is.
   maintaining a per-product compatibility matrix.
 - Niche subsystems (point clouds, BIM, parametric sheet-metal, photorealistic
   render) are OUT of "near parity" unless separately scoped.
+
+* Alternative 2 — embed clautolisp via ECL, with a C/C++ extension API (CRX)
+
+** The idea
+
+Port clautolisp (already ANSI CL on SBCL + CCL) to *ECL* (Embeddable Common
+Lisp), compile it as a library, and *link it into the Qt6 application* — ONE
+process, the Lisp engine + cador document + Qt UI sharing one address space.
+This is the AutoCAD/BricsCAD architecture (embedded engine + native SDK), and it
+unlocks a C/C++ extension API, *"CRX"* (the ObjectARX/BRX analog): third-party
+shared libraries (=.dll= / =.dylib= / =.so=) loaded into the app that register
+commands, define custom entities/objects, hook reactors and draw, through a
+stable C ABI.  ECL is the enabler — it is callable FROM C and calls INTO C, so
+the two-way bridge is clean.
+
+** What it buys over the out-of-process design (Alternative 1)
+
+- *In-process:* the canvas reads the cador model directly (no scene serialised
+  over a pipe), reactors update the UI live, modeless palettes bind to live Lisp
+  objects, far lower latency.  Closer to AutoCAD/BricsCAD.
+- *A real C/C++ SDK (CRX):* native-code extensions, not only AutoLISP — the
+  thing ARX/BRX provide and that a serious CAD ecosystem needs.
+- No cross-process protocol to design/maintain (removes the sexp-wire tax for
+  the production path).
+
+** What it costs (new work vs Alternative 1)
+
+- *ECL port* of ~157 k LOC: already portable (runs on SBCL + CCL, so most
+  impl-specific code is abstracted), but ECL has real quirks — compiled code
+  slower than SBCL (keep hot geometry/regen in C++/OpenCASCADE, leave
+  commands/AutoLISP in ECL), its FFI, its thread model, unicode/external-format
+  setup, and mapping the cooperative scheduler (thread-parked continuations)
+  onto Qt's event loop.  ~2-6 months, agent-heavy but gated by ECL-specific
+  debugging; adds a 3rd CI lane.
+- *Embedding* into the Qt app: GC/thread discipline (which thread runs Lisp),
+  signal handling, ECL↔Qt call bridges, lifecycle, the scheduler/event-loop
+  marriage.  Fiddly, judgement-heavy integration.  ~2-4 months.
+- *CRX C/C++ SDK* (the big new deliverable): the versioned C header SDK (entity
+  access, command registration, selection, prompts, transactions, reactors,
+  custom-object derivation, draw/snap/grip protocols), the platform loader
+  (=dlopen= / =LoadLibrary=), the marshalling bridge C-ABI ↔ cador Lisp objects,
+  ABI-stability discipline, samples + docs.  Scope-dependent: a USABLE CRX
+  (commands, entity CRUD, selection, prompts, reactors, simple custom objects)
+  ~6-12 months; a BROAD CRX (full custom-entity graphics/snap/grip protocols,
+  matching more of ARX) +1-2 years.
+
+** Trade-offs
+
+- *Crash isolation lost:* in-process, a bad CRX module or an ECL/Qt fault takes
+  the whole app down — exactly the ARX trade AutoCAD made.  (Optional mitigation:
+  run untrusted CRX in a sandbox/subprocess.)
+- *Performance:* ECL < SBCL; the mitigation (heavy geometry in C++/OCCT, ECL for
+  orchestration) is a natural split but a real architectural constraint.
+- *ABI is a long-term commitment:* a stable C ABI to maintain across releases;
+  design it right once.
+
+** Recommended sequencing
+
+Keep increment 1's out-of-process canvas to validate the render/interaction
+model cheaply, but treat the *ECL embed as the production architecture* from M2
+on: the world-space canvas + command-token design port to in-process cleanly,
+and CRX is only possible in-process.
+
+** Estimate — 100 % agent vs hybrid team
+
+- *Scope:* Alternative 1's ~150-400 person-years PLUS the ECL port + embedding +
+  CRX SDK (~another 1-2 years of calendar work, overlapping).
+- *100 % AI-agent build* + small steering team: ~*4-7 years* to
+  near-parity-WITH-a-C-extension-API; a usable 2D CAD still ~1-1.5 years (the
+  ECL port + embed land early so M2 is already in-process).
+- *Hybrid team* (expert humans on the gnarly bits — ECL embedding, CRX ABI
+  design, kernel integration, perf; agents on the breadth): ~*3-5 years*, and
+  crucially LOWER RISK.  For THIS option the hybrid advantage is LARGER than for
+  Alternatives 1-2, because its hard parts (embedding threading/GC, a stable C
+  ABI) are *expertise-bound, not breadth-bound* — exactly where a human expert
+  beats agent trial-and-error, which on ABI/embedding work is slow and
+  dangerous.  A Lisp/ECL expert nails the embed in weeks; a CAD-SDK architect
+  designs CRX right the first time; agents then fill the enormous breadth behind
+  them.
+
+** Why this is the right destination anyway
+
+Even though it is slightly more work than Alternative 1, *in-process-embedded +
+C/C++ SDK IS the AutoCAD/BricsCAD architecture*.  If the goal is genuine parity
+including a native extension ecosystem, this is the target; Alternative 1's
+out-of-process wire is a bootstrap, not the destination.
