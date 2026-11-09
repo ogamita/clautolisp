@@ -1112,10 +1112,19 @@ release named in their =LocalServer32=.
 When the bridge must create an AutoCAD (no attach) and no =acad.exe= is
 running, it does not call =CreateObject=. It reads the command COM itself
 would run -- the =LocalServer32= of =HKCR\<progid>\CLSID=, environment
-variables expanded, =/Automation= appended when absent -- starts it with
-=WScript.Shell.Exec=, and polls =GetObject(, progid)= once a second until it
-answers, for =${LAUNCH_SECS}= seconds (alfe's ready timeout). It stops early
-when the launched process exits. Reason: =CreateObject= has DCOM wait for the
+variables expanded, the executable quoted when the value is not (AutoCAD
+2022 registers it unquoted), =/Automation= and =-Embedding= appended when
+absent (=-Embedding= is what COM adds; without it AutoCAD shows its startup
+dialog and never registers) -- starts it with
+=WScript.Shell.Run= (not =Exec=: an =Exec= child inherits the bridge's
+standard handles, and an AutoCAD that never quit then held alfe's pipes open
+and hung the caller), and polls =GetObject(, progid)= once a second until it
+answers, for =${LAUNCH_SECS}= seconds (alfe's ready timeout less 15 s,
+at least 30, so the bridge ends before alfe stops waiting). The launched
+process is identified as the new =acad.exe= with =/Automation= on its command
+line; the wait stops early when it exits, and when the time runs out the
+bridge terminates it, since nothing else can reach an AutoCAD that never
+registered. Reason: =CreateObject= has DCOM wait for the
 server's class registration for a fixed 120 s, not settable by the client;
 AutoCAD registers at the end of its start, so a start longer than 120 s
 failed with =429= regardless of =--timeout=
