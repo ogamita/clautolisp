@@ -2636,7 +2636,8 @@ when one exists.
 | Variable                                   | Values     | CLI         | Effect                                                            |
 |--------------------------------------------+------------+-------------+-------------------------------------------------------------------|
 | =AUTOLISP_WORKDIR=                         | path       |             | Workdir root.                                                     |
-| =AUTOLISP_WAIT_SECS=                       | seconds    | =--timeout= | Per-request engine-wait timeout; raises the READY handshake bound. |
+| =AUTOLISP_WAIT_SECS=                       | seconds    | =--timeout= | Per-request engine-wait timeout; a longer one raises the READY bound. |
+| =AUTOLISP_READY_WAIT_SECS=                 | seconds    | =--ready-timeout= | READY handshake bound (default 60 batch, 300 automation, 420 EPURE). |
 | =AUTOLISP_TIMEOUT=                         | seconds    |             | Old name, still accepted as a fallback.                           |
 | =AUTOLISP_BRICSCAD_BATCH_STARTUP_TIMEOUT=  | seconds    |             | macOS BricsCAD batch startup timeout (default =15=).              |
 | =AUTOLISP_BRICSCAD_BATCH_EXIT_TIMEOUT=     | seconds    |             | Exit timeout after the final status (default =10=).               |
@@ -2652,6 +2653,30 @@ promptly. Passing an explicit =--timeout N= (or =AUTOLISP_WAIT_SECS=) turns the
 wait into a hard cap of =N= seconds that restricts as well as extends, so
 =alfe --timeout 1= aborts a long eval and =alfe --timeout 600= grants it ten
 minutes.
+
+*Timeouts (alfe-cad-lifecycle-rules, 2.3.122).* The READY bound is
+=--ready-timeout= when given, else 60 s (batch) or 300 s (automation), or
+=--timeout= when longer; EPURE raises it to 420 s when no =--ready-timeout= is
+given (never =--timeout=). The COM bridges receive it and end their own
+start-up waits (=WaitQuiescent=, the readiness check, the document opens) 10 s
+before it, so they report their failure and end a CAD they created before alfe
+gives up; =CreateObject= alone cannot be bounded (DCOM's fixed 120 s). A status
+starting with =FAILED= ends the READY wait at once. The shutdown is the same for
+every CAD: the stop acknowledgement (=STOPPED= or =RESTORED=) within 15 s; the
+bridge's close answer within 30 s; a CAD alfe started has 20 s to exit after its
+QUIT, then is terminated, and 10 s to be gone.
+
+*Exit status of a run (rule 2).* The script's status is the run's when the
+script failed; a shutdown problem is then a warning. When the script succeeded
+and the shutdown did not (a CAD terminated after its QUIT --
+=:cad-terminated=, =:owned-cad-forced= --, one that survived or could not be
+identified, a restoration not acknowledged), alfe writes =alfe: the script
+succeeded (exit status 0); the CAD shutdown did not.= and exits with the
+shutdown's status (76). An error raised while starting or running is the
+run's; a shutdown failure after it is a warning. The start is protected: on
+any failure, the CAD alfe launched is ended (batch: its process; automation:
+the CAD the bridge created, by its captured identity) and the workdir cleaned
+up.
 
 *The engine's console.* A CAD backend launches its process (=accoreconsole=,
 =bricscad=, or the =cscript= / =osascript= launcher) with standard output and

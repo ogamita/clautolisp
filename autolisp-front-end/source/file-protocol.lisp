@@ -525,7 +525,7 @@ suffix carries a request-counter we don't pin a priori."
        (string= prefix string :end2 (length prefix))))
 
 (defun wait-for-status-prefix (session prefix
-                               &key (timeout 10) running-prefix alive-p)
+                               &key (timeout 10) running-prefix alive-p fail-prefix)
   "Like WAIT-FOR-STATUS but matches by prefix — the spec's status
 table has parameterised states (`READY N`, `RUNNING N`, `DONE N OK`)
 whose counter is set by the runtime.
@@ -568,6 +568,13 @@ unchanged plain wall-clock timeout."
         (log-debug "protocol: status now ~S (elapsed ~,2F s)"
                    last-seen (seconds-elapsed-since start))
         (setf prev-status last-seen))
+      ;; FAIL-PREFIX (e.g. "FAILED" while waiting for READY): the engine
+      ;; said it will never get there -- return at once, the status holding
+      ;; its reason.
+      (when (and fail-prefix last-seen
+                 (eql 0 (search fail-prefix last-seen)))
+        (stream-debug-log-to-logger session)
+        (return (values nil (seconds-elapsed-since start) last-seen)))
       ;; A dead engine aborts immediately — never wait out the remaining
       ;; deadline for a process that can no longer publish anything.
       (when (and alive-p (not (funcall alive-p)))

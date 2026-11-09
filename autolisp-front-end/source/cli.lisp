@@ -139,6 +139,7 @@
                 #:cli-options-keep-workdir-p
                 #:cli-options-write-workdir-path
                 #:cli-options-cad-log
+                #:cli-options-ready-timeout
                 #:cli-options-result-files
                 #:cli-options-cleanup-report
                 #:cli-options-main
@@ -189,6 +190,7 @@
            #:cli-options-verbosity
            #:cli-options-workdir
            #:cli-options-timeout
+           #:cli-options-ready-timeout
            #:cli-options-help-p
            #:cli-options-version-p
            #:cli-options-list-encodings-p
@@ -260,6 +262,7 @@ a rebuild. Bound per RUN; set by RUN from the parsed option.")
 (defparameter +env-defaults+
   '((:workdir          . "AUTOLISP_WORKDIR")
     (:timeout          . "AUTOLISP_WAIT_SECS")
+    (:ready-timeout    . "AUTOLISP_READY_WAIT_SECS")
     (:mode             . "AUTOLISP_MODE")
     (:backend          . "AUTOLISP_BACKEND")
     (:os               . "AUTOLISP_OS")
@@ -385,7 +388,15 @@ Plug-ins:
 Bootstrap and runtime:
   --bootstrap-phase {marker,core,log,full}   Truncate the bootstrap.
   --workdir DIR          Override $AUTOLISP_WORKDIR.
-  --timeout SECS         Per-action timeout.
+  --timeout SECS         How long a request may go unanswered: a CAD must
+                         acknowledge it (RUNNING) within SECS; with no
+                         --timeout a request that is RUNNING may take as long
+                         as it needs while the CAD lives, an explicit one is a
+                         hard cap. A larger --timeout also lengthens the start.
+  --ready-timeout SECS   How long a CAD may take to start (READY). Defaults:
+                         60 s in batch mode, 300 s in automation, 420 s under
+                         --epure; never less than --timeout.
+                         Mirrors $AUTOLISP_READY_WAIT_SECS.
   --no-init, -norc       Skip the user init files, loaded in this order (all
                          that exist): ~/.autolisp, ~/.config/autolisp/init.lsp,
                          ~/.alfe, ~/.config/alfe/init.lsp.
@@ -510,6 +521,7 @@ front-end's --help text."
 argument parsing so explicit CLI options always win."
   (let ((env-workdir (env-default :workdir))
         (env-timeout (env-default :timeout))
+        (env-ready-timeout (env-default :ready-timeout))
         (env-mode    (env-default :mode))
         (env-backend (env-default :backend))
         (env-bootstrap (env-default :bootstrap-phase))
@@ -527,6 +539,14 @@ argument parsing so explicit CLI options always win."
                        :message
                        (format nil "AUTOLISP_WAIT_SECS=~A is not an integer"
                                env-timeout)))))
+    (when env-ready-timeout
+      (setf (cli-options-ready-timeout options)
+            (or (parse-integer env-ready-timeout :junk-allowed t)
+                (error 'cli-usage-error
+                       :option "AUTOLISP_READY_WAIT_SECS"
+                       :message
+                       (format nil "AUTOLISP_READY_WAIT_SECS=~A is not an integer"
+                               env-ready-timeout)))))
     (when env-mode
       (setf (cli-options-mode options) (parse-mode env-mode "AUTOLISP_MODE")))
     (when env-backend
@@ -740,6 +760,13 @@ error rather than silently last-winning."
     :longs '("--timeout") :takes-arg-p t
     :handler (lambda (opts value name)
                (setf (cli-options-timeout opts)
+                     (parse-timeout value name))))
+   ;; --ready-timeout SECS: how long a CAD may take to start (READY), apart
+   ;; from --timeout, a request's (alfe-cad-lifecycle-rules, timeouts).
+   (make-option-spec
+    :longs '("--ready-timeout") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-ready-timeout opts)
                      (parse-timeout value name))))
    (make-option-spec
     :longs '("--dry-run") :takes-arg-p nil
@@ -1757,12 +1784,20 @@ engine."
          ;; plug-in that cannot build its part of it (EPUREE without ALPM)
          ;; says so at once, not after a two-minute CAD start.
          (plan (effective-plan options))
-         (workdir (let ((wd (%prepare-workdir-or-fail
-                             backend (cli-options-workdir options))))
-                    (%write-workdir-path-file options wd)
-                    (run-hook :workdir-prepared wd)
-                    wd))
-         (session (apply #'start-engine backend workdir
+         (workdir (%prepare-workdir-or-fail backend (cli-options-workdir options)))
+         (session nil)
+         (exit-code nil)
+         (completed nil)
+         (shutdown-error nil)
+         (alfe.backend:*recorded-outcome* nil))
+    ;; Everything after the workdir exists is protected: whatever fails --
+    ;; a hook, the engine's start, the plan -- the CAD alfe started is shut
+    ;; down and the workdir cleaned up (alfe-cad-lifecycle-rules, rule 5).
+    (unwind-protect
+         (progn
+           (%write-workdir-path-file options workdir)
+           (run-hook :workdir-prepared workdir)
+           (setf session (apply #'start-engine backend workdir
                          :dialect (effective-dialect options)
                          :host (cli-options-host options)
                          :mock-input nil
@@ -1783,16 +1818,16 @@ engine."
                          (situation-engine-keywords
                           options
                           :console-is-terminal-p
-                          (eq (alfe.backend:backend-name backend) :clautolisp)))))
-    ;; Start recording, for the backends alfe records itself. The clautolisp
-    ;; backend is NOT one of them: its flags were forwarded to the engine, which
-    ;; records its own REPL, and a second alfe-side file would be a poorer copy
-    ;; of the same session (alfe-dribble.issue; pjb's split).
-    (%warn-encoding-replacement-ignored options backend)
-    (%start-dribble-if-asked options version-text)
-    (let ((alfe.backend:*recorded-outcome* nil))
-      (unwind-protect
-           (progn
+                          (eq (alfe.backend:backend-name backend) :clautolisp))))
+           ;; Start recording, for the backends alfe records itself. The
+           ;; clautolisp backend is NOT one of them: its flags were forwarded
+           ;; to the engine, which records its own REPL, and a second alfe-side
+           ;; file would be a poorer copy of the same session
+           ;; (alfe-dribble.issue; pjb's split).
+           (%warn-encoding-replacement-ignored options backend)
+           (%start-dribble-if-asked options version-text)
+           (setf exit-code
+             (progn
              (run-hook :engine-started session)
              (log-verbose "cli: resolved plan with ~D action~:P" (length plan))
              (loop for action in plan
@@ -1865,21 +1900,60 @@ engine."
                                :results-ok results-ok)))
                  (log-verbose "cli: plan finished status=~S exit=~D elapsed=~,2Fs"
                               (eval-result-status result) exit-code elapsed)
-                 exit-code)))
-        (%safe-hook :pre-shutdown session :reason :cli-exit)
-        (let ((cleanup-error nil))
-          (handler-case (shutdown session :reason :cli-exit)
-            (error (condition) (setf cleanup-error condition)))
-          (%safe-hook :post-shutdown session :workdir workdir)
-          (ignore-errors (write-cad-log-if-asked options backend workdir))
-          (write-cleanup-report-if-asked options workdir cleanup-error)
-          (ignore-errors (alfe.dribble:stop-dribble))
-          ;; Failed cleanup is observable and retains the evidence. It must not
-          ;; turn successful assertions into a successful unattended CI job.
-          (ignore-errors (cleanup-workdir backend workdir
-                            :keep-p (or cleanup-error
-                                        (cli-options-keep-workdir-p options))))
-          (when cleanup-error (error cleanup-error)))))))
+                 exit-code))))
+           (setf completed t))
+      ;; Runs on every exit, the start's failures included; never signals:
+      ;; a shutdown problem must not hide the error that is unwinding.
+      (setf shutdown-error
+            (%teardown-run options backend workdir session completed)))
+    ;; Only a run that completed gets here; an error has gone on unwinding.
+    (%run-exit-status exit-code shutdown-error)))
+
+(defun %teardown-run (options backend workdir session completed)
+  "Shut SESSION down (when the engine started) and clean up after the run:
+hooks, --cad-log, --cleanup-report, the dribble, the workdir. Returns the
+shutdown's error, or NIL; never signals. COMPLETED is NIL when an error is
+unwinding: a shutdown problem is then only warned about, the run's own
+error being what is reported. The workdir is kept on a shutdown error (its
+evidence) or with --keep-workdir."
+  (let ((shutdown-error nil))
+    (when session
+      (%safe-hook :pre-shutdown session :reason :cli-exit)
+      (handler-case (shutdown session :reason :cli-exit)
+        (error (condition) (setf shutdown-error condition)))
+      (%safe-hook :post-shutdown session :workdir workdir))
+    (when (and shutdown-error (not completed))
+      (format *error-output* "~&alfe: warning: the CAD shutdown after that failure: ~A~%"
+              shutdown-error))
+    (ignore-errors (write-cad-log-if-asked options backend workdir))
+    (write-cleanup-report-if-asked options workdir shutdown-error)
+    (ignore-errors (alfe.dribble:stop-dribble))
+    (handler-case (cleanup-workdir backend workdir
+                                   :keep-p (or shutdown-error
+                                               (cli-options-keep-workdir-p options)))
+      (error (condition)
+        (log-warn "cli: the workdir ~A could not be removed: ~A" workdir condition)))
+    shutdown-error))
+
+(defun %run-exit-status (exit-code shutdown-error)
+  "The exit status of a run whose plan gave EXIT-CODE and whose shutdown
+signalled SHUTDOWN-ERROR (or NIL) -- alfe-cad-lifecycle-rules, rule 2:
+- no shutdown error: EXIT-CODE;
+- the script failed (EXIT-CODE not 0): its status is reported, and the
+  shutdown problem is only a warning;
+- the script succeeded: the log says so, then the shutdown's error decides
+  the status (a CAD that had to be killed, could not be identified, did
+  not restore its settings...). A CI job can read the script's result from
+  that line and ignore the bad shutdown."
+  (cond ((null shutdown-error) exit-code)
+        ((not (eql exit-code clautolisp.sysexits:+ex-ok+))
+         (format *error-output* "~&alfe: warning: the CAD shutdown failed: ~A~%~
+alfe: the script's exit status ~D is reported.~%"
+                 shutdown-error exit-code)
+         exit-code)
+        (t
+         (format *error-output* "~&alfe: the script succeeded (exit status 0); the CAD shutdown did not.~%")
+         (error shutdown-error))))
 
 ;;; --- recorded results and the cleanup report -------------------------
 ;;; (alfe-owned-cad-termination-after-recorded-results)

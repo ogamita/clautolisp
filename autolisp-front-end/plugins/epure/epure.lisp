@@ -26,7 +26,8 @@
                 #:vbs-escape)
   (:import-from #:clautolisp.autolisp-cli
                 #:cli-options-mode
-                #:cli-options-timeout))
+                #:cli-options-timeout
+                #:cli-options-ready-timeout))
 
 (in-package #:alfe.plugin.epure)
 
@@ -107,12 +108,15 @@ forward slashes."
        ;; 174.42 s. So `alfe --bricscad --epure -x ...' would fail on the
        ;; default timeout for a run that was working perfectly well --
        ;; the plug-in knows EPURE is being loaded, so it is the thing
-       ;; that should say so. An explicit --timeout is left alone.
-       (unless (cli-options-timeout options)
-         (setf (cli-options-timeout options) *epure-ready-timeout*)
+       ;; that should say so. It raises the START only: --timeout, a
+       ;; request's, is left alone (alfe-cad-lifecycle-rules, timeouts), and
+       ;; an explicit --ready-timeout too.
+       (unless (cli-options-ready-timeout options)
+         (setf (cli-options-ready-timeout options)
+               (max *epure-ready-timeout* (or (cli-options-timeout options) 0)))
          (log-verbose "epure: READY timeout raised to ~A s (EPURE takes minutes ~
-to load; measured 174 s on BricsCAD V25). Pass --timeout to choose another."
-                      *epure-ready-timeout*))
+to load; measured 174 s on BricsCAD V25). Pass --ready-timeout to choose another."
+                      (cli-options-ready-timeout options)))
        (unless dry-run-p
          (let ((script (control-script name)))
            (cond

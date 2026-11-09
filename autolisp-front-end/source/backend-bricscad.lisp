@@ -451,6 +451,7 @@ Returns the path of the emitted file."
 
 Option Explicit
 Dim lifeWasVisible
+${READY_BUDGET}
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile
 Dim attached, created, rc
 
@@ -541,6 +542,7 @@ Dim docReady, docAttempt, docError
 docReady = False
 Set doc = Nothing
 For docAttempt = 1 To 20
+  If docAttempt > 1 And Not BudgetLeft() Then Exit For
   On Error Resume Next
   If dwgFile <> \"\" Then
     If doc Is Nothing Then Set doc = app.Documents.Open(dwgFile)
@@ -623,9 +625,11 @@ turned it into the un-runnable `do shell script \"\"open -a \"\" & ...'."
                              status-path
                              error-path
                              debug-path
-                             (com-mode "launch"))
+                             (com-mode "launch")
+                             (ready-secs 300))
   "Write the BricsCAD VBScript bridge to PATH, with placeholders
-substituted from the provided session paths."
+substituted from the provided session paths. READY-SECS is alfe's READY
+timeout: the bridge's own waits end 10 s before it."
   (let ((text (alfe.plugin:run-hook
                :launcher-script
                ;; The plug-in slots are filled AFTER the placeholders: their
@@ -639,6 +643,7 @@ substituted from the provided session paths."
                    ("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
+                   ("READY_SECS"  . ,(format nil "~D" (max 1 (- (ceiling ready-secs) 10))))
                    ("COMMODE"     . ,com-mode)
                    ("DEBUGFILE"   . ,(if debug-path (namestring debug-path) ""))))
                 :automation)
@@ -1854,12 +1859,12 @@ own."
   (when (and dwg (probe-file dwg))
     (setf (bricscad-backend-template-path backend)
           (uiop:native-namestring (truename dwg))))
-  ;; Let --timeout / $AUTOLISP_WAIT_SECS raise the READY timeout: a cold
-  ;; BricsCAD launch (COM start + license + first document) can take well
-  ;; over the 30 s default, which otherwise reports a spurious
-  ;; READY-TIMEOUT while the engine is still booting.
-  (when (and cli-options (alfe.cli:cli-options-timeout cli-options))
-    (setf ready-timeout (alfe.cli:cli-options-timeout cli-options)))
+  ;; --ready-timeout, else the mode's default, never less than --timeout
+  ;; (EFFECTIVE-READY-TIMEOUT; alfe-cad-lifecycle-rules, timeouts).
+  (when cli-options
+    (setf ready-timeout
+          (alfe.backend.cad-common::effective-ready-timeout
+           cli-options (choose-effective-mode backend mode))))
   (log-debug "backend BRICSCAD: ready-timeout = ~A s; wait-for-ready = ~A"
              ready-timeout wait-for-ready)
   ;; A corrupt per-user default.cui pops a startup modal that stalls a batch
@@ -1935,10 +1940,12 @@ own."
           (alfe.backend.cad-common:announce-gui-availability "backend BRICSCAD" variant)
           (case variant
             (:batch
-             (let ((scr (emit-run-scr workdir run-common
-                                      :quit-on-finish-p (not interactive-p))))
+             ;; Batch always launches the CAD, so it always quits it -- after
+             ;; an interactive session too (alfe-cad-lifecycle-rules, rule 2):
+             ;; a run.scr without _QUIT left BricsCAD to be terminated.
+             (let ((scr (emit-run-scr workdir run-common :quit-on-finish-p t)))
                (log-debug "backend BRICSCAD: wrote run.scr (quit-on-finish-p ~A) -> ~A"
-                          (not interactive-p) scr)))
+                          t scr)))
             (:automation
              (cond
                ((windows-p)
@@ -1950,6 +1957,7 @@ own."
                                           pid workdir))
                   (emit-bridge-vbs
                    vbs
+                   :ready-secs ready-timeout
                    :drawing-path dwg
               :runtime-load-path run-common
                    :status-path (alfe.protocol.file:protocol-session-status-path protocol)
@@ -2047,6 +2055,8 @@ own."
                       (multiple-value-bind (ok elapsed last)
                           (alfe.protocol.file:wait-for-status-prefix
                            protocol "READY" :timeout ready-timeout
+                           ;; the bootstrap's published failure ends the wait
+                           :fail-prefix "FAILED"
                            ;; A launcher that exits NON-ZERO before READY
                            ;; aborts the wait at once; one that exits 0 is a
                            ;; driver that finished its job (osascript after
@@ -2063,6 +2073,13 @@ own."
                           (ok
                            (log-verbose "backend BRICSCAD: READY after ~,2F s (status ~S)"
                                         elapsed last))
+                          ((and last (eql 0 (search "FAILED" last)))
+                           (error 'backend-bootstrap-error
+                                  :backend :bricscad
+                                  :code :bootstrap-failed-status
+                                  :message (format nil "BricsCAD's bootstrap failed before READY (after ~,1F s): ~A"
+                                                   elapsed last)
+                                  :details (list :workdir workdir :last-status last)))
                           (t
                            (let ((failure (launcher-failure-details
                                            (bricscad-session-process-info session)
@@ -2101,7 +2118,13 @@ own."
                       (ignore-errors
                         (log-warn "backend BRICSCAD: start aborted; terminating spawned engine (pid ~A)"
                                   (ignore-errors (uiop:process-info-pid info))))
-                      (%kill-engine-process info)))))))))
+                      (%kill-engine-process info))
+                    ;; The bridge is gone; a CAD it CREATED is ended too
+                    ;; (alfe-cad-lifecycle-rules, rule 3).
+                    (when (and (windows-p)
+                               (eq (bricscad-session-variant session) :automation))
+                      (alfe.backend.cad-common::end-created-com-cad
+                       (session-workdir session))))))))))
     (alfe.error:backend-error (probe)
       (error probe))
     (error (probe)
@@ -2170,26 +2193,14 @@ own."
     (let ((protocol (bricscad-session-protocol-session session))
           (info (bricscad-session-process-info session)))
       (unwind-protect
-           (when protocol
-             (if (and (windows-p)
-                      (eq (bricscad-session-variant session) :automation))
-                 ;; Contract 2: RESTORED, then the frontier, then the bridge
-                 ;; quits only its CREATED object, which must be proved gone
-                 ;; -- ended by its revalidated handle past the grace. Its
-                 ;; exit code is then a diagnostic; no STOPPED is required
-                 ;; from an engine that just quit.
-                 (alfe.backend.cad-common::finish-owned-com-session
-                  protocol (session-workdir session)
-                  :backend :bricscad :bridge-process-info info)
-                 (progn
-                   (alfe.protocol.file:send-control protocol :shutdown)
-                   (unless (alfe.protocol.file:wait-for-status
-                            protocol alfe.protocol.file:+status-stopped+ :timeout 5)
-                     (error 'backend-protocol-error :backend :bricscad
-                            :code :shutdown-timeout
-                            :message "CAD did not stop its protocol.")))))
-        (kill-engine-process info :grace 10)))
-    (session-state-set session :stopped))
+           (alfe.backend.cad-common::shutdown-cad-session
+            :bricscad protocol info
+            :workdir (session-workdir session)
+            :com-p (and (windows-p)
+                        (eq (bricscad-session-variant session) :automation)))
+        ;; Stopped whatever the shutdown signals: a second SHUTDOWN must
+        ;; find nothing to do.
+        (session-state-set session :stopped))))
   session)
 
 ;;; The CAD's own command-history log, which the bootstrap directs into the

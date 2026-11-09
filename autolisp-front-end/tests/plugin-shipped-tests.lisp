@@ -195,7 +195,7 @@ raises the wait; an explicit --timeout is the user's and is left alone."
                                                       extra))
                    (alfe.plugin:run-hook :backend-selected backend
                                          :options options :dry-run-p nil)
-                   (cli-options-timeout options))))
+                   (alfe.cli:cli-options-ready-timeout options))))
           ;; The plug-in's package exists only once the plug-in is
           ;; LOADED, so its symbol is looked up at run time; naming it
           ;; directly would be a read error when this file is compiled.
@@ -204,7 +204,10 @@ raises the wait; an explicit --timeout is the user's and is left alone."
                             (and symbol (boundp symbol) (symbol-value symbol)))))
             (is (eql declared (timeout-after))))
           (is (> (timeout-after) 100) "a 30 s default would fail a working run")
-          (is (eql 42 (timeout-after "--timeout" "42"))))))))
+          ;; an explicit --ready-timeout is the user's; --timeout, a
+          ;; request's, only lengthens the start when it is longer
+          (is (eql 42 (timeout-after "--ready-timeout" "42")))
+          (is (eql 900 (timeout-after "--timeout" "900"))))))))
 
 (test epure-checks-its-control-script
   "The control script must exist — unless this is a dry run — and %APPDATA%
@@ -421,7 +424,7 @@ then load EPURE synchronously in run-common before the bootstrap."
                  (let* ((vbs (uiop:read-file-string
                               (merge-pathnames "bridge-autocad.vbs" workdir)))
                         (profile (search "ActiveProfile = \"Epure\"" vbs))
-                        (quiescent (search "WaitQuiescent app, waitSecs" vbs))
+                        (quiescent (search "WaitQuiescent app, BudgetSecs(waitSecs)" vbs))
                         (active (search "Set doc = app.ActiveDocument" vbs))
                         (load (search "SendCommand (load" vbs)))
                    (is (search "cscript" command))

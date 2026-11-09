@@ -296,6 +296,50 @@ rather than refusing: no answer is not the same as a negative answer.
 The same ProgID is used to attach, to create, and to quit at the end of
 the run, so alfe never closes an instance of another release.
 
+*** Timeouts
+
+Every wait of a CAD run is bounded, and the bounds fit together
+(alfe 2.3.122):
+
+| Phase                                   | Default                                  | Set by |
+|-----------------------------------------+------------------------------------------+--------|
+| Start: the CAD publishes =READY=        | 60 s in batch mode, 300 s in automation, 420 s under =--epure=; never less than =--timeout= | =--ready-timeout SECS=, =$AUTOLISP_READY_WAIT_SECS= |
+| The COM bridge's own start-up waits      | end 10 s before the start's timeout      | (follows the start's) |
+| A request: the CAD acknowledges it (=RUNNING=) | 30 s; once acknowledged, as long as the CAD lives | =--timeout SECS= (then a hard cap), =$AUTOLISP_WAIT_SECS= |
+| Stop: the CAD acknowledges =SHUTDOWN= or =PREPARE-SHUTDOWN= | 15 s                       | |
+| The bridge's answer to the close request | 30 s                                     | |
+| A CAD alfe started exits after its QUIT  | 20 s, then it is terminated              | |
+| A terminated process is gone             | 10 s                                     | |
+
+The start is longest in automation: =CreateObject= alone may take the 120 s
+Windows (DCOM) allows it, and the bridge then waits for the application, opens
+the drawing and loads the runtime. The bridge gives up 10 s before alfe does,
+says why, and ends a CAD it created: alfe never kills a bridge in the middle of
+a wait. A bootstrap that reports =FAILED= ends the start at once.
+
+*** How the run's exit status is decided
+
+The script's status comes first (alfe 2.3.122):
+
+- *The script failed* (an AutoLISP error, an assertion, a timeout...): its
+  status is the run's, whatever the shutdown did; a shutdown problem is only a
+  warning.
+- *The script succeeded* and the shutdown went well: 0.
+- *The script succeeded* but the shutdown did not -- the CAD alfe started had
+  to be terminated after its QUIT, could not be identified with certainty, or
+  did not acknowledge the restoration of its settings: alfe first writes
+  =alfe: the script succeeded (exit status 0); the CAD shutdown did not.=,
+  then exits with the shutdown's status (76). A CI job that only needs the
+  test's result can look for that line and ignore the bad shutdown.
+
+*** A start that fails
+
+If the CAD does not start -- no =READY= in time, a bootstrap =FAILED=, the
+launcher dying -- alfe ends the CAD it launched: the batch process, or the CAD
+the COM bridge created (by its captured identity). A CAD alfe attached to is
+never touched. The workdir is cleaned up as after any run (kept with
+=--keep-workdir=).
+
 *** Closing drawings after an automated run
 
 Two rules hold for every CAD, on every platform (alfe 2.3.121):
@@ -632,6 +676,7 @@ neither a launch nor a workdir handshake.
 | =--attach-pid PID=            | Attach to the running CAD whose process id is PID (implies =--backend attach=). |
 | =--workdir DIR=               | Override the exchange directory (default: =$AUTOLISP_WORKDIR=). |
 | =--bootstrap-phase PHASE=     | Truncate the bootstrap at =marker=, =core=, =log= or =full=. |
+| =--ready-timeout SECS=        | How long the CAD may take to start (=READY=): 60 s batch, 300 s automation, 420 s with =--epure= by default; never less than =--timeout= (see /Timeouts/). |
 | =--cad-log FILE=              | After the run, copy the CAD's own command-history log to FILE, in UTF-8 (see [[#cad-log][The CAD's log: =--cad-log=]]). |
 | =--result-file FILE=          | A file the run must have written (a JUnit report...); repeatable. Missing, empty, still growing, or an unclosed XML document: a run that succeeded exits 66 (see [[#owned-cad-cleanup][CAD session cleanup]]). |
 | =--cleanup-report FILE=       | Write the cleanup report -- the frontier, then how the CAD this run created ended, its raw exit code -- to FILE (see [[#owned-cad-cleanup][CAD session cleanup]]). |
@@ -2201,6 +2246,7 @@ always wins.
 | =$AUTOLISP_WRITE_WORKDIR_PATH= | =--write-workdir-path= |
 | =$AUTOLISP_BOOTSTRAP_PHASE=  | =--bootstrap-phase= |
 | =$AUTOLISP_WAIT_SECS=        | =--timeout=         |
+| =$AUTOLISP_READY_WAIT_SECS=  | =--ready-timeout=   |
 | =$AUTOLISP_NO_INIT=          | =--no-init=         |
 
 The =--epure…= and =--epuree…= options are defined by plug-ins
@@ -2320,7 +2366,7 @@ exited before it did.
 AutoCAD itself -- the command registered for its ProgID (=LocalServer32=,
 normally =acad.exe /Automation=), with =-Embedding= as COM itself adds it, so
 that AutoCAD skips its startup dialog -- and waits for it to register, for
-alfe's ready timeout (=--timeout=, or =$AUTOLISP_WAIT_SECS=) less 15 seconds,
+alfe's ready timeout (=--ready-timeout=; see /Timeouts/) less 15 seconds,
 so that alfe can still end an AutoCAD that did not make it. Before, it
 used =CreateObject=, which lets Windows (DCOM) start AutoCAD and wait for it
 for a fixed 120 seconds: an AutoCAD that took longer failed with COM error

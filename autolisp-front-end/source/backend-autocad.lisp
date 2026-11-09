@@ -756,6 +756,7 @@ The next job reads this file and can end what the last one left."
 
 Option Explicit
 Dim lifeWasVisible
+${READY_BUDGET}
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile, waitSecs
 Dim attached, created, rc, statusReadyFlag, flagsFile, progId, createdFile
 Dim errNumber, errDescription, lastTouchError, pidsBefore
@@ -1191,7 +1192,7 @@ End If
 EmitFlags attached, created
 
 ${PLUGIN_AFTER_APP}
-WaitQuiescent app, waitSecs
+WaitQuiescent app, BudgetSecs(waitSecs)
 
 ' THE CALLS AFTER A SUCCESSFUL TouchApp CAN STILL BE REJECTED, and they used to
 ' be unguarded. A freshly CreateObject'd AutoCAD answers Visible=True and is
@@ -1211,6 +1212,7 @@ Dim docReady, docAttempt
 docReady = False
 Set doc = Nothing
 For docAttempt = 1 To 20
+  If docAttempt > 1 And Not BudgetLeft() Then Exit For
   On Error Resume Next
   If dwgFile <> \"\" Then
     If doc Is Nothing Then Set doc = app.Documents.Open(dwgFile)
@@ -1279,7 +1281,8 @@ EMIT-BRIDGE-VBS.")
                              (created-registry (created-cad-registry-path))
                              (com-mode "launch")
                              (wait-secs 60)
-                             (launch-secs 300))
+                             (launch-secs 300)
+                             (ready-secs 300))
   (let ((text (alfe.plugin:run-hook
                :launcher-script
                ;; The plug-in slots are filled AFTER the placeholders: their
@@ -1300,6 +1303,7 @@ EMIT-BRIDGE-VBS.")
                                          (uiop:native-namestring created-registry)
                                          ""))
                    ("WAIT_SECS"   . ,(format nil "~D" wait-secs))
+                   ("READY_SECS"  . ,(format nil "~D" (max 1 (- (ceiling ready-secs) 10))))
                    ("LAUNCH_SECS" . ,(format nil "~D" (max 1 (ceiling launch-secs))))))
                 :automation)
                :kind :vbs :variant :automation :path path)))
@@ -1558,6 +1562,11 @@ started is what ATTACHED/CREATED say.")
                      "READY" (elapsed))
           (alfe.protocol.file:stream-debug-log-to-logger protocol)
           (return (values :ready (elapsed) last-seen nil)))
+        ;; The bootstrap published its failure: it will not get READY, and
+        ;; waiting out the timeout would only hide that.
+        (when (string-prefix-p "FAILED" last-seen)
+          (alfe.protocol.file:stream-debug-log-to-logger protocol)
+          (return (values :failed (elapsed) last-seen nil)))
         (when (and process-info
                    (not (uiop:process-alive-p process-info)))
           (let ((details (process-exit-details process-info capture)))
@@ -1628,11 +1637,12 @@ started is what ATTACHED/CREATED say.")
                    log-encoding terminal-in-encoding terminal-out-encoding))
   (log-verbose "backend AUTOCAD: starting engine (mode ~A)" mode)
   (log-debug "backend AUTOCAD: workdir = ~A" workdir)
-  ;; Parity with the BricsCAD backend: let --timeout / $AUTOLISP_WAIT_SECS
-  ;; raise the READY timeout too, so a cold accoreconsole launch is not
-  ;; reported as a spurious READY-TIMEOUT while it is still booting.
-  (when (and cli-options (alfe.cli:cli-options-timeout cli-options))
-    (setf ready-timeout (alfe.cli:cli-options-timeout cli-options)))
+  ;; --ready-timeout, else the mode's default, never less than --timeout
+  ;; (EFFECTIVE-READY-TIMEOUT; alfe-cad-lifecycle-rules, timeouts).
+  (when cli-options
+    (setf ready-timeout
+          (alfe.backend.cad-common::effective-ready-timeout
+           cli-options (choose-effective-mode backend mode))))
   (log-debug "backend AUTOCAD: dwg = ~A; ready-timeout = ~A s; wait-for-ready = ~A"
              dwg ready-timeout wait-for-ready)
   (handler-case
@@ -1735,7 +1745,8 @@ started is what ATTACHED/CREATED say.")
               ;; SHORTER than alfe's own wait: alfe kills the bridge at
               ;; READY-TIMEOUT, and a bridge killed while still waiting
               ;; can neither report why nor end the AutoCAD it launched.
-              :launch-secs (max 30 (- ready-timeout 15)))
+              :launch-secs (max 30 (- ready-timeout 15))
+              :ready-secs ready-timeout)
              (log-debug "backend AUTOCAD: wrote bridge-autocad.vbs -> ~A" vbs)))
           (:batch
            (let ((scr (merge-pathnames "run.scr" workdir)))
@@ -1818,6 +1829,10 @@ started is what ATTACHED/CREATED say.")
                    (log-warn "backend AUTOCAD: start aborted; terminating spawned engine (pid ~A)"
                              (ignore-errors (uiop:process-info-pid process-info))))
                   (kill-engine-process process-info))
+                ;; The bridge is gone; a CAD it CREATED is ended too
+                ;; (alfe-cad-lifecycle-rules, rule 3).
+                (when (eq (autocad-session-variant session) :automation)
+                  (alfe.backend.cad-common::end-created-com-cad (session-workdir session)))
                 ;; AFTER the kill: a live AutoCAD saves its profile on exit.
                 (ignore-errors (untrust-workdir (autocad-session-trusted session)))
                 (setf (autocad-session-trusted session) nil))))))
@@ -1848,6 +1863,13 @@ unwind-protect that reaps the engine when it does not get there."
                 ((eq state :ready)
                  (log-verbose "backend AUTOCAD: READY after ~,2F s (status ~S)"
                               elapsed last))
+                ((eq state :failed)
+                 (error 'backend-bootstrap-error
+                        :backend :autocad
+                        :code :bootstrap-failed-status
+                        :message (format nil "AutoCAD's bootstrap failed before READY (after ~,1F s): ~A"
+                                         elapsed last)
+                        :details (list :workdir workdir :last-status last)))
                 ((eq state :exited)
                  (log-warn "backend AUTOCAD: process exited after ~,2F s; last status = ~S"
                            elapsed last)
@@ -1941,28 +1963,16 @@ unwind-protect that reaps the engine when it does not get there."
     (let ((protocol (autocad-session-protocol-session session))
           (info (autocad-session-process-info session)))
       (unwind-protect
-           (when protocol
-             (if (and (windows-p)
-                      (eq (autocad-session-variant session) :automation))
-                 ;; Contract 2: RESTORED, then the frontier, then the bridge
-                 ;; quits only its CREATED object, which must be proved gone
-                 ;; -- ended by its revalidated handle past the grace. Its
-                 ;; exit code is then a diagnostic; no STOPPED is required
-                 ;; from an engine that just quit.
-                 (alfe.backend.cad-common::finish-owned-com-session
-                  protocol (session-workdir session)
-                  :backend :autocad :bridge-process-info info)
-                 (progn
-                   (alfe.protocol.file:send-control protocol :shutdown)
-                   (unless (alfe.protocol.file:wait-for-status
-                            protocol alfe.protocol.file:+status-stopped+ :timeout 5)
-                     (error 'backend-protocol-error :backend :autocad
-                            :code :shutdown-timeout
-                            :message "CAD did not stop its protocol.")))))
-        (kill-engine-process info :grace 10)))
-    (ignore-errors (untrust-workdir (autocad-session-trusted session)))
-    (setf (autocad-session-trusted session) nil)
-    (session-state-set session :stopped))
+           (alfe.backend.cad-common::shutdown-cad-session
+            :autocad protocol info
+            :workdir (session-workdir session)
+            :com-p (and (windows-p)
+                        (eq (autocad-session-variant session) :automation)))
+        ;; Whatever the shutdown signals, the trust entry goes and the
+        ;; session is stopped: a second SHUTDOWN must find nothing to do.
+        (ignore-errors (untrust-workdir (autocad-session-trusted session)))
+        (setf (autocad-session-trusted session) nil)
+        (session-state-set session :stopped))))
   session)
 
 ;;; The CAD's own command-history log, which the bootstrap directs into the
