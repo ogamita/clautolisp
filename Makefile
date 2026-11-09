@@ -368,6 +368,10 @@ check-native-pipeline-changes:  ## Fail if a tracked path is classified by neith
 	python3 scripts/check-native-pipeline-changes.py
 	python3 scripts/tests/test-check-native-pipeline-changes.py
 
+check-ci-classify-changes:  ## Fail if a tracked path is neither code, doc nor meta, or the &changes-code/&changes-doc anchors drifted.
+	python3 scripts/ci-classify-changes.py --check-yaml
+	python3 scripts/tests/test-ci-classify-changes.py
+
 # .gitlab/native.yml is the CHILD pipeline: `glab ci lint' never sees it, and
 # when GitLab refuses it the native:pipeline bridge fails with
 # downstream_pipeline_creation_failed -- every macOS/Windows job skipped, the

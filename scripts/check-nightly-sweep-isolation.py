@@ -42,10 +42,27 @@ if name:
     order.append(name)
 
 
+def anchor_block(name):
+    """The body of a `.name: &name' anchor definition (e.g. a shared rules
+    list), read from the raw text -- the block splitter above does not key on
+    anchor-definition lines because they end with `&name', not `:'."""
+    m = re.search(r'^\.\S*:\s*&%s\s*$' % re.escape(name), text, re.M)
+    if not m:
+        return ''
+    rest = text[m.end():]
+    end = re.search(r'\n(?=\S)', rest)  # next top-level (unindented) line
+    return rest[:end.start()] if end else rest
+
+
 def excluded(n, seen=()):
     b = blocks.get(n, '')
     if '*not-on-schedule' in b:
         return True
+    # A job whose whole rules: list is a shared anchor (rules: *rules-code-change)
+    # is schedule-safe when THAT anchor starts with *not-on-schedule.
+    for ref in re.findall(r'^\s*rules:\s*\*([\w.-]+)\s*$', b, re.M):
+        if '*not-on-schedule' in anchor_block(ref):
+            return True
     m = re.search(r'^\s*extends:\s*(.+)$', b, re.M)
     if m and n not in seen:
         parents = [p.strip(' []') for p in m.group(1).split(',')]
