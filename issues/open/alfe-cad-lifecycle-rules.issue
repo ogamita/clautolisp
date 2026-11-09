@@ -64,8 +64,13 @@ only when the script succeeded, alongside a log line giving the script's result.
   subprocess --timeout is deferred to
   [[file:deferred-clautolisp-request-timeout.issue][deferred-clautolisp-request-timeout]]: it needs the same
   per-action bound in the direct variant (the parity contract).
-- [ ] MR-D: macOS BricsCAD automation tracks, quits and kills the CAD it
-  launched; its liveness check.
+- [X] MR-D (2.3.124): macOS BricsCAD automation -- the AppleScript launcher
+  records the PID and start time of the BricsCAD it launched or attached to;
+  the run watches that process (ALIVE-FN), not the exited osascript; a
+  launched one quits itself after the session (*AUTOLISP_QUIT_AFTER_SESSION*)
+  and END-LAUNCHED-PID terminates it past the grace, on a failed start or a
+  forced shutdown -- only while the PID keeps its start time; an attached one
+  is never signalled.
 - [ ] MR-E: one "Engine lifecycle" chapter in the user manual; the
   specification and the man page aligned (stale exit codes, verbatim
   bridges, status vocabulary, timeout table, Control-C).

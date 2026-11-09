@@ -1272,6 +1272,7 @@ the child launch only; explicit launch environment overrides take precedence."
                                  (request-timeout 30)
                                  (keep-alive-while-running t)
                                  (process-info nil)
+                                 (alive-fn nil)
                                  (shutdown-timeout *cad-stop-ack-timeout*)
                                  (defer-shutdown-p nil)
                                  (input-stream  *standard-input*)
@@ -1317,8 +1318,11 @@ passes KEEP-ALIVE-WHILE-RUNNING NIL to restore a hard cap. PROCESS-INFO
          ;; Liveness probe over the spawned CAD process, or NIL in tests /
          ;; when the caller has no handle. Consulted by wait-for-status-prefix
          ;; to distinguish "engine still computing" from "engine died".
-         (alive-p (when process-info
-                    (lambda () (uiop:process-alive-p process-info))))
+         ;; ALIVE-FN, when given, replaces it: a CAD whose launcher already
+         ;; exited (macOS AppleScript) is watched by its own PID.
+         (alive-p (cond (alive-fn alive-fn)
+                        (process-info
+                         (lambda () (uiop:process-alive-p process-info)))))
          ;; The runtime publishes "READY N" at startup and then walks
          ;; N+1 on each request. We initialise from the currently-
          ;; observed status (typically "READY 0") so the first
@@ -2749,6 +2753,45 @@ diagnostic only, the run's result stands"
               (:owned-cad-cleanup-unreported "The owned CAD cleanup helper wrote no report."))
             pid (and detail (plusp (length detail)) detail))))
 
+(defun %pid-start-time (pid)
+  "The start time `ps' gives for PID (a string), or NIL when no such process."
+  (let ((out (ignore-errors
+              (uiop:run-program (list "ps" "-o" "lstart=" "-p" (princ-to-string pid))
+                                :output :string :error-output nil
+                                :ignore-error-status t))))
+    (and out (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) out)))
+               (and (plusp (length trimmed)) trimmed)))))
+
+(defun launched-pid-alive-p (launched)
+  "True while the process LAUNCHED, a list (PID START-TIME), runs -- the same
+process: a reused PID has another start time."
+  (and launched
+       (equal (%pid-start-time (first launched)) (second launched))))
+
+(defun end-launched-pid (launched &key (grace *cad-natural-exit-grace*))
+  "Give the CAD alfe launched, known by LAUNCHED (PID START-TIME), GRACE
+seconds to exit by itself, then terminate it (SIGTERM, then SIGKILL), only
+while it is still that process. Returns :EXITED, :TERMINATED, :KILLED or
+:SURVIVED; NIL when LAUNCHED is NIL."
+  (when launched
+    (flet ((wait-gone (seconds)
+             (let ((start (get-internal-real-time)))
+               (loop while (and (launched-pid-alive-p launched)
+                                (< (/ (- (get-internal-real-time) start)
+                                      internal-time-units-per-second)
+                                   seconds))
+                     do (sleep 0.2))
+               (not (launched-pid-alive-p launched))))
+           (signal-it (signal)
+             (when (launched-pid-alive-p launched)
+               (ignore-errors
+                (uiop:run-program (list "kill" signal (princ-to-string (first launched)))
+                                  :ignore-error-status t :output nil :error-output nil)))))
+      (cond ((wait-gone grace) :exited)
+            ((progn (signal-it "-TERM") (wait-gone *cad-kill-wait*)) :terminated)
+            ((progn (signal-it "-KILL") (wait-gone 2)) :killed)
+            (t :survived)))))
+
 (defun end-created-com-cad (workdir &key (helper #'run-owned-cad-helper))
   "On a failed start: terminate the CAD the COM bridge CREATED, when it had
 captured its identity (owned-cad-process.json, written only for a created
@@ -2781,7 +2824,7 @@ the batch process's or the created CAD's end."
         (end-created-com-cad workdir))
       (kill-engine-process info :grace 0 :timeout *cad-kill-wait*)))
 
-(defun shutdown-cad-session (backend protocol info &key workdir com-p)
+(defun shutdown-cad-session (backend protocol info &key workdir com-p launched-pid)
   "The shutdown of a CAD session, the same for every CAD
 (alfe-cad-lifecycle-rules). COM-P: Windows automation, through the retained
 bridge (FINISH-OWNED-COM-SESSION: a created CAD is closed and quit, ended if
@@ -2797,7 +2840,8 @@ the owned close's failure, or a CAD that had to be terminated -- a bad
 shutdown, which the CLI reports only when the script succeeded."
   (when alfe.backend:*forced-shutdown*
     (return-from shutdown-cad-session
-      (forced-cad-shutdown backend info :workdir workdir :com-p com-p)))
+      (progn (end-launched-pid launched-pid :grace 0)
+             (forced-cad-shutdown backend info :workdir workdir :com-p com-p))))
   (let ((stop-error nil)
         (outcome nil))
     (unwind-protect
@@ -2828,7 +2872,16 @@ shutdown, which the CLI reports only when the script succeeded."
                                  :timeout *cad-kill-wait*))
       ;; forced while the close was under way: the created CAD goes too
       (when (and com-p alfe.backend:*forced-shutdown*)
-        (end-created-com-cad workdir)))
+        (end-created-com-cad workdir))
+      ;; a CAD launched by a launcher that already exited (macOS AppleScript):
+      ;; it quits itself after its session; give it the same grace
+      (when launched-pid
+        (let ((launched (end-launched-pid launched-pid
+                                          :grace (cond (alfe.backend:*forced-shutdown* 0)
+                                                       (stop-error 0)
+                                                       (t *cad-natural-exit-grace*)))))
+          (unless (eq launched :exited)
+            (setf outcome launched)))))
     (when stop-error
       (error stop-error))
     (when (and (not com-p) (member outcome '(:terminated :killed :survived)))

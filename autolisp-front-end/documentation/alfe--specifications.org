@@ -712,10 +712,21 @@ Workdir: as an exception to the default, macOS batch mode uses
 
 *** =automation= mode
 
-Selected when =--mode automation= is explicit, or when
-=find_macos_bricscad_cli= fails (no CLI binary found). =--backend
-attach= requires an already-running instance; =--backend launch=
-opens BricsCAD before injection.
+Selected when =--mode automation= is given with
+=ALFE_ENABLE_MACOS_AUTOMATION= set (otherwise refused, =:no-automation=), or
+by an attach (=--backend attach=, =--attach-pid=), which requires an
+already-running instance; =--backend launch= (the default) opens a new
+BricsCAD before injection.
+
+*Lifecycle (alfe-cad-lifecycle-rules, 2.3.124).* The launcher writes the PID
+of the BricsCAD it launched (=launched-cad-pid.txt=) or attached to
+(=attached-cad-pid.txt=), with its =ps -o lstart= start time. alfe watches that
+process during the run (the =osascript= launcher has exited, so its liveness
+says nothing). A BricsCAD alfe launched quits itself after the session
+(=*AUTOLISP_QUIT_AFTER_SESSION*=: =autolisp-host-quit=, QUIT answered No); alfe
+gives it 20 s, then SIGTERM, then SIGKILL -- only while the PID still has the
+recorded start time -- and does so at once on a failed start or a second
+Control-C. An attached BricsCAD is never quit or signalled.
 
 The wrapper uses =osascript= to inject the =(load "...")= form into
 the active BricsCAD instance's command line. The AppleScript emitted
