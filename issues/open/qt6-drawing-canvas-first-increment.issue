@@ -205,3 +205,113 @@ clautolisp and a full AutoCAD clone.  It commits no code; it fixes the
 architecture decision (out-of-process, world-space canvas, Lisp-side
 hit-testing) and the minimal protocol so a first increment is a few testable
 slices rather than an open-ended rewrite.
+
+* Alternative target — near AutoCAD/BricsCAD parity, built 100% by AI agents
+
+The increment above is step one toward a larger north star, specified here so
+the first increment is understood as serving it.
+
+** The target
+
+Behave, for a user, close to AutoCAD/BricsCAD.  Because AutoCAD and BricsCAD
+themselves differ in many behaviours, "close to one or the other" gives
+latitude: choose ONE coherent behaviour per feature instead of cloning a
+specific product bug-for-bug.  Backend Common Lisp (clautolisp + cador), UI
+Qt6, on Windows / macOS / Linux.
+
+** Auxiliary goals — and why they are also the ENABLERS of an agent build
+
+Each goal is not just a requirement; it is what makes a 100%-agent build
+*verifiable*, and therefore fast:
+
+- *Every command has a =-command= headless form* (the SCR script + AutoLISP +
+  cador command-token path already lean this way) => every feature is
+  driveable without the mouse, so agents write deterministic command-sequence
+  tests, not brittle UI-click tests.
+- *GUI detachable from the windowing system* (Qt =-platform offscreen= /
+  =QOffscreenSurface=; the increment-1 world-space canvas already renders to a
+  surface that can be a =QImage=) => *screenshot-diff regression tests* with no
+  display server, in CI, on every MR.  This is the single biggest multiplier
+  for agent-built GUI work: it turns "does it look right" into a diffable
+  artefact an agent iterates against unattended.
+- *Scriptable/testable throughout* => the correctness oracle is "same result as
+  the recorded reference / same pixels as the approved baseline", checkable by
+  an agent without a human in the loop.
+
+In short, the auxiliary goals convert subjective CAD/GUI work into
+deterministic, headless, diffable tests — the precondition under which an agent
+fleet is fast and safe.  A conventional click-only GUI would NOT be
+agent-friendly; this architecture is chosen so that it is.
+
+** Architecture (reuse — do not write — the hard kernels)
+
+- *Backend:* clautolisp + cador (document model, ~24 entity kinds, sysvars,
+  selection, vlax, commands) — already ~42 k LOC and headless.
+- *2D render + interaction:* the Qt6 canvas of increment 1, grown to the full
+  2D pipeline (lineweights, linetypes, SHX + TrueType glyphs, hatch fill,
+  transparency, draw order, annotation scaling), grips, all osnap modes +
+  object/polar tracking, dynamic input, the command line, palettes, ribbon or
+  classic UI, model/layout tabs.
+- *3D kernel:* INTEGRATE OpenCASCADE (do not generate a kernel): solids,
+  surfaces, booleans, tessellation; 3D visual styles via OpenGL; orbit/viewcube.
+- *DWG/DXF:* libredwg (read) + the R2018-write fork, extended toward full
+  object fidelity; the ACIS solid stream + dynamic-block + dimension long tail
+  is the hard part, validated by round-trip against real AutoCAD/BricsCAD.
+- *Offscreen:* the renderer targets EITHER an on-screen =QOpenGLWidget= OR an
+  offscreen surface / =QImage=, selected at runtime, so screenshots and CI run
+  headless.
+
+** Milestones (calendar, agent fleet + small human steering team)
+
+- *M1 — interactive 2D canvas* (this ticket): render model, pan/zoom,
+  getpoint/entsel/ssget + LISP commands from the mouse.  ~1-2 months.
+- *M2 — usable 2D CAD* (behaves like BricsCAD in 2D): click-to-draw built-in
+  commands (wire =%cmd-*= to park on canvas input), grips, osnap/tracking,
+  dynamic input, the full 2D draw/modify set, layer + properties palettes, DWG
+  2D round-trip, plot-to-PDF, offscreen screenshot tests in CI.  ~6-12 months.
+- *M3 — fidelity + annotation + blocks:* full associative dimensioning, tables,
+  fields, dynamic blocks + block editor, geometric/dimensional constraints +
+  solver, hatch fidelity, xrefs, layouts / viewports / plot styles.  +~1-1.5 yr.
+- *M4 — 3D:* OpenCASCADE integration, solids/surfaces, 3D visual styles,
+  navigation, 3D DWG/ACIS round-trip.  +~1-2 years (the kernel sets the pace).
+- *M5 — parity polish:* CUIX / menus / DIESEL, the long tail of dialogs,
+  large-file performance (spatial index, incremental regen), cross-platform
+  packaging / signing / notarisation, compatibility hardening.  +~1-1.5 yr,
+  overlapping M3/M4.
+
+** Effort vs time — the honest numbers
+
+- *Raw scope* (human-equivalent) for near-parity: ~*150-400 person-years*.
+  Calibration: BricsCAD took Bricsys ~15-20 years and a team that grew into the
+  hundreds, AND they licensed a kernel (ACIS) and ODA for DWG rather than
+  writing them.  Reusing OpenCASCADE + libredwg + Qt + the existing cador engine
+  removes a large fraction but not the long tail.
+- *With a 100% AI-agent build* + a small human steering/validation team (~2-5
+  people): near-parity calendar ≈ *3-6 years*, with a genuinely useful
+  BricsCAD-like *2D CAD in ~1 year* (M2).  The agent leverage appears as
+  calendar compression (3-6 yr vs BricsCAD's 15-20), not as making the work
+  small: ~60-80 % of the CODE can be agent-authored, and the clautolisp/cador
+  history (~157 k LOC built largely by agent sessions in months) is direct
+  evidence.  "100 % AI-authored" does NOT mean "no human time".
+
+** What does NOT compress (this sets the floor, not code volume)
+
+- *The geometry kernel* — integrate and tame OpenCASCADE; boolean/tolerance
+  edge cases are slow human-judgement debugging.
+- *The UX feel loop* — snap/drag/dynamic-input ergonomics; screenshot-diff tests
+  compress it a lot, but a human still sets the bar each round.
+- *DWG write fidelity for hard objects* (ACIS streams, dynamic blocks) — gated
+  by binary round-trip validation against real AutoCAD/BricsCAD.
+- *Performance at scale* — profiling on real 100 MB+ drawings.
+- *Human review + validation bandwidth* — the hard cap; CAD correctness bugs are
+  subtle, and (pjb's own point) human intervention both steers and rate-limits.
+
+** Deliberate scope cuts (the AutoCAD/BricsCAD-divergence margin buys these)
+
+- No binary ObjectARX / .NET ABI compatibility (cannot be cloned); the
+  extension API is AutoLISP + a documented Lisp/Qt API.  Third-party ARX/.NET
+  plug-ins will not load — accepted.
+- Where AutoCAD and BricsCAD differ, pick one coherent behaviour rather than
+  maintaining a per-product compatibility matrix.
+- Niche subsystems (point clouds, BIM, parametric sheet-metal, photorealistic
+  render) are OUT of "near parity" unless separately scoped.
