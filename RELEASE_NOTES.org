@@ -1950,6 +1950,12 @@ separate binary for tool integrators.
   AutoCAD running, alfe starts it itself and waits for the ready timeout
   (~--timeout~) instead of the fixed 120 s of ~CreateObject~. See the user
   manual, /AutoCAD takes longer than two minutes to start/.
+- Fixed (alfe 2.3.104): with that launch, an AutoCAD that never finished
+  starting could keep alfe's output open, so ~--mode automation~ did not
+  return; alfe now starts it without handing it its handles, and ends it when
+  the timeout runs out (alfe 2.3.105: also when AutoCAD's registered command
+  has an unquoted path, as AutoCAD 2022's does; 2.3.106: with -Embedding, as
+  COM adds it, so AutoCAD does not stop at its startup dialog).
 - Windows ~--mode automation~ / ~--epure~ (alfe 2.3.107): once the results are
   recorded and the session restored, the CAD the run created must disappear --
   closed normally, or terminated through its revalidated handle past a 20 s
