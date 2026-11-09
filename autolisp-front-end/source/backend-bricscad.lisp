@@ -643,6 +643,7 @@ timeout: the bridge's own waits end 10 s before it."
                    ("RUNLSPFILE"  . ,(namestring runtime-load-path))
                    ("STATUSFILE"  . ,(namestring status-path))
                    ("ERRFILE"     . ,(namestring error-path))
+                   ("ALFE_PID"    . ,(format nil "~D" (or (ignore-errors (alfe.workdir::current-pid)) 0)))
                    ("READY_SECS"  . ,(format nil "~D" (max 1 (- (ceiling ready-secs) 10))))
                    ("COMMODE"     . ,com-mode)
                    ("DEBUGFILE"   . ,(if debug-path (namestring debug-path) ""))))

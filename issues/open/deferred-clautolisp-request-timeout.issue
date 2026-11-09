@@ -1,0 +1,34 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-clautolisp-request-timeout -- --timeout does not bound a clautolisp run
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: enhancement
+#+DEPENDS: alfe-cad-lifecycle-rules
+#+BRANCH: -
+#+DATE: 2026-11-09
+
+* Problem
+Found by the launch/quit review of 2026-11-09 (alfe-cad-lifecycle-rules):
+=--timeout= / =$AUTOLISP_WAIT_SECS= bound a CAD request, but neither clautolisp
+variant applies them. =--backend subprocess= waits for its child with an
+unbounded =uiop:wait-process= (backend-clautolisp.lisp, %WAIT-FOR-ENGINE-CHILD),
+and the action-boundary poll has no deadline either: a child that hangs --
+or blocks reading an inherited terminal in a batch run -- hangs alfe.
+=--backend direct= evaluates in-process with no bound.
+
+* Why deferred
+The clautolisp backend has a parity contract (clautolisp-option-contract.lisp,
+CLAUTOLISP-BACKEND-VARIANTS-ARE-SEMANTICALLY-IDENTICAL): =--timeout= is
+=:no-effect= in BOTH variants. Bounding only the subprocess would break it. The
+fix needs the same per-action bound in both:
+- direct: a timer that interrupts the evaluating thread at the deadline (as the
+  Control-C =quit= policy does), reported as EX_TEMPFAIL (75);
+- subprocess: action boundaries enabled whenever =--timeout= is given (today
+  only with :pre-action/:post-action hooks), a deadline per action, and the
+  child killed (then reaped) when it passes, also 75.
+Then the contract entry becomes =:engine=, and the parity table gets a row.
+
+* Acceptance
+- =alfe --clautolisp --timeout 1 -x '(while t)'= exits 75 within a few seconds,
+  in both variants, leaving no child process.
+- Without =--timeout= nothing changes.

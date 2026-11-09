@@ -1480,7 +1480,10 @@ trace line."
                   protocol-session target
                   :timeout request-timeout
                   :running-prefix running-target
-                  :alive-p alive-p)
+                  :alive-p alive-p
+                  ;; the runtime ended its loop (an INTERRUPT it
+                  ;; acknowledged): no DONE will come
+                  :fail-prefix '("INTERRUPTED" "STOPPED"))
                (declare (ignore elapsed))
                (drain-live)
                (sync-verbosity-from-runtime)
@@ -1551,6 +1554,11 @@ shows the error on stderr and the prompt comes back."
                  request-counter)
       (dolist (action plan)
         (unless (eq status :success) (return))
+        ;; Control-C: INTERRUPT went through the protocol; the plan stops
+        ;; here, and the run's shutdown follows (rule 4).
+        (when alfe.backend:*interrupt-requested*
+          (setf status :aborted)
+          (return))
         (log-debug "cad-common: action ~A payload ~S"
                    (alfe.backend:action-kind action)
                    (alfe.backend:action-payload action))
@@ -1603,7 +1611,9 @@ shows the error on stderr and the prompt comes back."
     (finish-output output-stream)
     (finish-output error-stream)
     (make-eval-result
-     :status status
+     :status (if alfe.backend:*interrupt-requested* :aborted status)
+     ;; interrupted by the user: 130, as a Control-C ends a program
+     :exit-code (and alfe.backend:*interrupt-requested* clautolisp.sysexits:+exit-interrupted+)
      :value nil       ; CAD backends don't surface a typed value
      :output (get-output-stream-string captured-stdout)
      :error-output (get-output-stream-string captured-stderr))))
@@ -2200,6 +2210,7 @@ public static class OwnedCadWindow {
  $cad=Get-Process -Id $cadId -ErrorAction Stop
  $identity=[ordered]@{pid=[int]$cadId;startTicks=$cad.StartTime.ToUniversalTime().Ticks.ToString();name=$cad.ProcessName;session=[int]$cad.SessionId;sid=(Get-OwnerSid ([int]$cadId));invocation=$Invocation;capturedUtc=[DateTime]::UtcNow.ToString('o')}
  Write-Atomic $IdentityFile @(($identity | ConvertTo-Json))
+ Write-Atomic ($IdentityFile + '.pid') @([string]$cadId)
  exit 0
 }
 # Finish: the process captured above must be gone. Wait for it, terminate it
@@ -2254,6 +2265,34 @@ $lines+='end=1'
 Write-Atomic $ReportFile $lines
 if($r.disappeared -eq '1'){exit 0}
 exit 1
+")
+(defparameter *owned-com-watch-vbs*
+  "' Watchdog (alfe-cad-lifecycle-rules): the bridge outlives neither alfe nor
+' the CAD. lifeAlfePid and lifeCadPid are set by the capture; left Empty (a
+' test fixture), the watch is off.
+Dim lifeAlfePid, lifeCadPid, lifeTick
+lifeTick = 0
+Function ProcessAlive(pid)
+  Dim procs
+  ProcessAlive = True
+  On Error Resume Next
+  Set procs = GetObject(\"winmgmts:\\\\.\\root\\cimv2\").ExecQuery(\"SELECT ProcessId FROM Win32_Process WHERE ProcessId = \" & CStr(pid))
+  If Err.Number = 0 Then ProcessAlive = (procs.Count > 0)
+  Err.Clear
+  On Error GoTo 0
+End Function
+Function ReadPid(path)
+  Dim stream
+  ReadPid = 0
+  On Error Resume Next
+  If fso.FileExists(path) Then
+    Set stream = fso.OpenTextFile(path, 1)
+    ReadPid = CLng(Trim(stream.ReadAll))
+    stream.Close
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Function
 ")
 (defparameter *owned-com-snapshot-vbs*
   "Dim lifeSnapshot, lifeClosed, lifeIndex
@@ -2310,9 +2349,15 @@ lifeHelper = fso.BuildPath(lifeRoot, \"owned-cad-process.ps1\")
 lifeIdentity = fso.BuildPath(lifeRoot, \"owned-cad-process.json\")
 lifeRequest = fso.BuildPath(lifeRoot, \"close-owned.request\")
 lifeResult = fso.BuildPath(lifeRoot, \"close-owned.result\")
+lifeAlfePid = CLng(\"0${ALFE_PID}\")
 If created Then
   lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Capture -IdentityFile \" & Chr(34) & lifeIdentity & Chr(34) & \" -Invocation \" & Chr(34) & lifeRoot & Chr(34) & \" -WindowHandle \" & CStr(app.HWND), 0, True)
   If lifeCode <> 0 Then WScript.Quit 5
+  lifeCadPid = ReadPid(lifeIdentity & \".pid\")
+Else
+  ' An attached CAD is watched, never ended: its identity goes elsewhere.
+  lifeCode = lifeShell.Run(\"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Capture -IdentityFile \" & Chr(34) & fso.BuildPath(lifeRoot, \"attached-cad-process.json\") & Chr(34) & \" -Invocation \" & Chr(34) & lifeRoot & Chr(34) & \" -WindowHandle \" & CStr(app.HWND), 0, True)
+  If lifeCode = 0 Then lifeCadPid = ReadPid(fso.BuildPath(lifeRoot, \"attached-cad-process.json.pid\"))
 End If
 ' The load below enters the file protocol loop; retain APP while it runs.
 ")
@@ -2400,6 +2445,29 @@ ${PLUGIN_BEFORE_CLOSE}
       WScript.Quit 0
     End If
   End If
+  lifeTick = lifeTick + 1
+  If lifeTick Mod 20 = 0 Then
+    ' alfe gone (killed): close as alfe would have asked -- a created CAD is
+    ' quit, an attached one keeps its own documents and is released.
+    If Not IsEmpty(lifeAlfePid) Then
+      If lifeAlfePid > 0 Then
+        If Not ProcessAlive(lifeAlfePid) Then
+          AppendLine errFile, \"BRIDGE: alfe (pid \" & lifeAlfePid & \") is gone; closing\"
+          Set lifeStream = fso.CreateTextFile(lifeRequest, True)
+          lifeStream.Close
+        End If
+      End If
+    End If
+    ' The CAD gone (crashed): nothing left to bridge; alfe sees this exit.
+    If Not IsEmpty(lifeCadPid) Then
+      If lifeCadPid > 0 Then
+        If Not ProcessAlive(lifeCadPid) Then
+          AppendLine errFile, \"ERROR COM bridge: the CAD process (pid \" & lifeCadPid & \") is gone\"
+          WScript.Quit 6
+        End If
+      End If
+    End If
+  End If
   WScript.Sleep 100
 Loop
 ")
@@ -2466,7 +2534,7 @@ End If
          (text (concatenate 'string (subseq text 0 document-start)
                             ;; identity first: a created CAD that never gets
                             ;; ready can still be ended (rule 3)
-                            *owned-com-capture-vbs* *owned-com-ready-vbs*
+                            *owned-com-watch-vbs* *owned-com-capture-vbs* *owned-com-ready-vbs*
                             *owned-com-snapshot-vbs*
                             (subseq text document-start)))
          (marker "${PLUGIN_BEFORE_LOAD}")
@@ -2700,6 +2768,19 @@ outcome, or NIL when no CAD was created or captured."
                       (t (format nil "could not be ended (~A)" outcome))))
       outcome)))
 
+(defun forced-cad-shutdown (backend info &key workdir com-p)
+  "After a SECOND Control-C (rule 4): no waiting for a busy CAD. A CAD alfe
+launched is killed at once -- the batch process, or the CAD the COM bridge
+created (by its captured identity); from a CAD alfe attached to, it only
+disconnects: the bridge, which holds the COM reference, is ended. Returns
+the batch process's or the created CAD's end."
+  (log-warn "backend ~(~A~): forced shutdown (second Control-C)" backend)
+  (if com-p
+      (progn
+        (kill-engine-process info :grace 0 :timeout *cad-kill-wait*)
+        (end-created-com-cad workdir))
+      (kill-engine-process info :grace 0 :timeout *cad-kill-wait*)))
+
 (defun shutdown-cad-session (backend protocol info &key workdir com-p)
   "The shutdown of a CAD session, the same for every CAD
 (alfe-cad-lifecycle-rules). COM-P: Windows automation, through the retained
@@ -2714,6 +2795,9 @@ the stop was not acknowledged -- before it is terminated.
 Signals, after INFO is gone, the first problem: the stop not acknowledged,
 the owned close's failure, or a CAD that had to be terminated -- a bad
 shutdown, which the CLI reports only when the script succeeded."
+  (when alfe.backend:*forced-shutdown*
+    (return-from shutdown-cad-session
+      (forced-cad-shutdown backend info :workdir workdir :com-p com-p)))
   (let ((stop-error nil)
         (outcome nil))
     (unwind-protect
@@ -2735,11 +2819,16 @@ shutdown, which the CLI reports only when the script succeeded."
       (setf outcome
             (kill-engine-process info
                                  ;; the bridge answers and exits; a CAD that
-                                 ;; acknowledged the stop quits by itself
-                                 :grace (cond (com-p *cad-stop-ack-timeout*)
+                                 ;; acknowledged the stop quits by itself;
+                                 ;; a forced shutdown waits for nothing
+                                 :grace (cond (alfe.backend:*forced-shutdown* 0)
+                                              (com-p *cad-stop-ack-timeout*)
                                               (stop-error 0)
                                               (t *cad-natural-exit-grace*))
-                                 :timeout *cad-kill-wait*)))
+                                 :timeout *cad-kill-wait*))
+      ;; forced while the close was under way: the created CAD goes too
+      (when (and com-p alfe.backend:*forced-shutdown*)
+        (end-created-com-cad workdir)))
     (when stop-error
       (error stop-error))
     (when (and (not com-p) (member outcome '(:terminated :killed :survived)))

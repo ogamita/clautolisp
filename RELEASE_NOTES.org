@@ -1956,6 +1956,12 @@ separate binary for tool integrators.
   the timeout runs out (alfe 2.3.105: also when AutoCAD's registered command
   has an unquoted path, as AutoCAD 2022's does; 2.3.106: with -Embedding, as
   COM adds it, so AutoCAD does not stop at its startup dialog).
+- Control-C during a CAD run (alfe 2.3.123): the first one is forwarded through
+  the protocol (~INTERRUPT~), the CAD ends its session between two requests and
+  alfe shuts it down as usual (exit 130); a second one forces it -- a CAD alfe
+  launched is killed, one it attached to is disconnected. The COM bridge
+  watches alfe (gone: it closes the CAD as alfe would have) and the CAD (gone:
+  alfe stops waiting). See the user manual, /Interrupting a CAD run/.
 - CAD start and exit status (alfe 2.3.122), every CAD and platform: the script's
   status is the run's; a bad shutdown (a CAD terminated after its QUIT,
   survived, unidentified, or a restoration not acknowledged) sets the status

@@ -54,9 +54,16 @@ only when the script succeeded, alongside a log line giving the script's result.
   than --timeout), the bridges' waits inside it, 15 s stop acknowledgement,
   20 s exit grace, 10 s kill. The unimported backend-protocol-error is gone
   with the move of the shutdown code to cad-common.
-- [ ] MR-C: rule 4 (Control-C through the protocol, second one forces);
-  bridge watchdogs (CAD and alfe processes); the clautolisp subprocess
-  honours --timeout.
+- [X] MR-C (2.3.123): rule 4 -- %ON-CAD-INTERRUPT / %CALL-WITH-CAD-INTERRUPTS
+  around the run and its teardown: the first Control-C sends INTERRUPT (the
+  runtime restores, publishes INTERRUPTED, ends its loop) and the plan stops
+  (130); a second one, or the first while starting, forces the shutdown
+  (FORCED-CAD-SHUTDOWN: launched CAD killed, attached one disconnected).
+  Bridge watchdogs: alfe's PID and the CAD's (attached CADs captured to
+  attached-cad-process.json, never used to end them). The clautolisp
+  subprocess --timeout is deferred to
+  [[file:deferred-clautolisp-request-timeout.issue][deferred-clautolisp-request-timeout]]: it needs the same
+  per-action bound in the direct variant (the parity contract).
 - [ ] MR-D: macOS BricsCAD automation tracks, quits and kills the CAD it
   launched; its liveness check.
 - [ ] MR-E: one "Engine lifecycle" chapter in the user manual; the

@@ -1789,10 +1789,15 @@ engine."
          (exit-code nil)
          (completed nil)
          (shutdown-error nil)
-         (alfe.backend:*recorded-outcome* nil))
+         (alfe.backend:*recorded-outcome* nil)
+         (alfe.backend:*interrupt-requested* nil)
+         (alfe.backend:*forced-shutdown* nil))
     ;; Everything after the workdir exists is protected: whatever fails --
     ;; a hook, the engine's start, the plan -- the CAD alfe started is shut
     ;; down and the workdir cleaned up (alfe-cad-lifecycle-rules, rule 5).
+    (%call-with-cad-interrupts
+     backend (lambda () session)
+     (lambda ()
     (unwind-protect
          (progn
            (%write-workdir-path-file options workdir)
@@ -1905,9 +1910,60 @@ engine."
       ;; Runs on every exit, the start's failures included; never signals:
       ;; a shutdown problem must not hide the error that is unwinding.
       (setf shutdown-error
-            (%teardown-run options backend workdir session completed)))
+            (%teardown-run options backend workdir session completed)))))
     ;; Only a run that completed gets here; an error has gone on unwinding.
     (%run-exit-status exit-code shutdown-error)))
+
+(defun %on-cad-interrupt (presses session)
+  "What the PRESSES-th Control-C of a CAD run does (rule 4). The first, once
+SESSION is running: INTERRUPT through the protocol, the plan stopping before
+its next action. A second one -- or a first while the CAD is still starting
+(SESSION NIL) --: the shutdown is forced and the run abandoned, exit 130."
+  (cond
+    ((and (= presses 1) session)
+     (setf alfe.backend:*interrupt-requested* t)
+     (format *error-output* "~&alfe: interrupt: asking the CAD to stop ~
+(press Control-C again to force it)~%")
+     (finish-output *error-output*)
+     (ignore-errors (alfe.backend:request-control session :interrupt))
+     nil)
+    (t
+     (setf alfe.backend:*interrupt-requested* t
+           alfe.backend:*forced-shutdown* t)
+     (format *error-output* "~&alfe: interrupt: forcing the shutdown~%")
+     (finish-output *error-output*)
+     (error 'clautolisp.autolisp-cli:cli-error
+            :status clautolisp.sysexits:+exit-interrupted+
+            :message "interrupted (Control-C)"))))
+
+(defun %call-with-cad-interrupts (backend session-fn thunk)
+  "Call THUNK with Control-C handled as alfe-cad-lifecycle-rules, rule 4,
+says, for a CAD backend (the clautolisp engine applies --on-interrupt):
+- the FIRST Control-C, once the CAD is running, is forwarded through the
+  protocol (INTERRUPT): the CAD acknowledges it between two requests and ends
+  its loop; the plan stops; the usual shutdown follows; the exit status is
+  130. A busy CAD only acknowledges it once its current request is done;
+- a SECOND Control-C -- or the first one while the CAD is still starting --
+  forces it: the run is abandoned (exit status 130) and the shutdown kills a
+  CAD alfe launched at once, or disconnects from one it attached to.
+SESSION-FN returns the session, NIL while the CAD is starting."
+  (if (member (alfe.backend:backend-name backend) '(:clautolisp :echo))
+      (funcall thunk)
+      (let ((presses 0))
+        (flet ((on-interrupt ()
+                 (%on-cad-interrupt (incf presses) (funcall session-fn))))
+          ;; The flags are bound by the caller, around the run AND its
+          ;; teardown: a second Control-C during a slow shutdown forces it.
+          ;; SBCL on MS-Windows has no SIGINT handler (the token is NIL): it
+          ;; signals SB-SYS:INTERACTIVE-INTERRUPT instead, handled the same.
+          (handler-bind (#+sbcl
+                         (sb-sys:interactive-interrupt
+                           (lambda (condition)
+                             (on-interrupt)
+                             (let ((restart (find-restart 'continue condition)))
+                               (when restart (invoke-restart restart))))))
+            (clautolisp.autolisp-cli:call-with-sigint-handler
+             #'on-interrupt thunk))))))
 
 (defun %teardown-run (options backend workdir session completed)
   "Shut SESSION down (when the engine started) and clean up after the run:

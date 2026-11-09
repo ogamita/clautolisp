@@ -524,6 +524,8 @@ The textual statuses written to =*AUTOLISP-PROTOCOL-STATUSFILE*=
 | =DONE N QUIT=          | Request N triggered a shutdown request.            |
 | =STOPPING=             | Shutdown requested and accepted.                   |
 | =STOPPED=              | Runtime loop terminated.                           |
+| =RESTORED=             | Session restored on =PREPARE-SHUTDOWN=; loop ended. |
+| =INTERRUPTED=          | =INTERRUPT= acknowledged; session restored; loop ending. |
 | =WAITING-INPUT=        | The runtime is waiting for an input line.          |
 | =FAILED <phase>=       | Fatal error during the named phase.                |
 | =FAILED READ=          | Fatal error during a protocol read.                |
@@ -2448,9 +2450,13 @@ Reserved for the out-of-band channel. Commands:
 - =PING=: triggers a heartbeat beat;
 - =SHUTDOWN=: requests a clean exit of the runtime loop, which
   publishes =STOPPING= then exits, then =STOPPED=;
-- =INTERRUPT=: cooperative interrupt; sets
-  =*AUTOLISP_PROTOCOL_INTERRUPT*=; cooperative user loops may
-  consult this flag.
+- =PREPARE-SHUTDOWN=: restores the session (log, search path) and ends the
+  loop, which publishes =RESTORED= (or =FAILED session restoration=);
+- =INTERRUPT=: alfe's Control-C, forwarded (alfe-cad-lifecycle-rules, rule
+  4): restores the session, publishes =INTERRUPTED= and ends the loop, as
+  =SHUTDOWN= does. Like every control command it is read between two
+  requests: a CAD busy with a request acknowledges it once that request is
+  done.
 
 The runtime consumes these commands independently of the normal
 =stdin.txt= stream.
@@ -2677,6 +2683,26 @@ run's; a shutdown failure after it is a warning. The start is protected: on
 any failure, the CAD alfe launched is ended (batch: its process; automation:
 the CAD the bridge created, by its captured identity) and the workdir cleaned
 up.
+
+*Control-C (rule 4).* On a CAD backend alfe handles Control-C itself (SBCL
+and CCL; on MS-Windows SBCL through its interactive-interrupt condition). The
+first one, once the CAD is running, is forwarded: alfe writes =INTERRUPT= to
+=control.txt=, sends no further action, and treats =INTERRUPTED= or =STOPPED=
+as the end of a request it is waiting for; the usual shutdown follows and the
+exit status is 130. A second Control-C -- or the first while the CAD is still
+starting -- forces the shutdown: a CAD alfe launched is killed at once (the
+batch process, or the CAD the bridge created, by its identity), alfe
+disconnects from one it attached to (the bridge is ended), the workdir is
+cleaned up, and the exit status is 130. The handler covers the shutdown too: a
+second Control-C during a slow shutdown forces it.
+
+*Bridge watchdog.* The COM bridge records the PID of the CAD -- the created
+one in =owned-cad-process.json=, an attached one in
+=attached-cad-process.json=, which is never used to end it -- and alfe's own.
+About every two seconds it checks both: alfe gone, it closes as alfe would have
+asked (created: documents closed without saving, Quit; attached: the run's
+documents closed, released); the CAD gone, it exits with 6, which ends alfe's
+wait for the current request at once.
 
 *The engine's console.* A CAD backend launches its process (=accoreconsole=,
 =bricscad=, or the =cscript= / =osascript= launcher) with standard output and

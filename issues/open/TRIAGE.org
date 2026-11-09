@@ -1035,3 +1035,8 @@ sauve jamais, ne quitte/tue que le CAD lance par alfe, statut du script
 prioritaire, demarrage protege, Ctrl-C par le protocole, delais coherents.
 MR-A (2.3.121) fait ; MR-B a MR-E a suivre.
 
+* TODO deferred-clautolisp-request-timeout (P2)
+[[file:deferred-clautolisp-request-timeout.issue][--timeout ne borne pas un run clautolisp]] : ni direct ni subprocess ne
+l'appliquent (attente illimitee du fils) ; reporte de alfe-cad-lifecycle-rules
+MR-C car le contrat de parite des deux variantes exige la meme borne par action.
+
