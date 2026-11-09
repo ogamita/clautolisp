@@ -586,12 +586,21 @@ Read for the plug-in roots (see
 .BR PLUG-INS ).
 .TP
 .B BRICSCAD_EXE\fR, \fBAUTOCAD_EXE\fR, \fBAUTOCAD_ACCORECONSOLE
-Explicit Windows CAD binary overrides. When unset,
+Explicit CAD binary overrides. When unset,
 .B alfe
 searches the standard
 .B Program Files
 roots for BricsCAD, AutoCAD and
-.BR accoreconsole.exe .
+.BR accoreconsole.exe ,
+and on macOS the AutoCAD bundles for AcCoreConsole. A discovered macOS
+AcCoreConsole is used only once a short probe has seen it run AutoLISP; one
+that cannot run (no licence, bootstrap failure) makes
+.B \-\-autocad
+unavailable (exit 69). The verdict is cached for 24 hours in
+.IR $XDG_CACHE_HOME/alfe/cad-probe/ .
+An explicit
+.B AUTOCAD_ACCORECONSOLE
+is not probed.
 .TP
 .B AUTOCAD_PROGID
 The COM ProgID

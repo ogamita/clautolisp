@@ -1956,6 +1956,12 @@ separate binary for tool integrators.
   the timeout runs out (alfe 2.3.105: also when AutoCAD's registered command
   has an unquoted path, as AutoCAD 2022's does; 2.3.106: with -Embedding, as
   COM adds it, so AutoCAD does not stop at its startup dialog).
+- macOS ~--autocad~ (alfe 2.3.118): an installed AutoCAD's AcCoreConsole is
+  found and used for batch runs, but only once a short probe has seen it run
+  AutoLISP. An install that cannot run (no licence, bootstrap failure) is
+  reported unavailable (exit 69) with the reason, so a corpus skips its AutoCAD
+  scenarios instead of failing them. The verdict is cached for 24 hours. See
+  the user manual, /alfe --autocad fails on macOS or Linux/.
 - Windows ~--mode automation~ / ~--epure~ (alfe 2.3.107): once the results are
   recorded and the session restored, the CAD the run created must disappear --
   closed normally, or terminated through its revalidated handle past a 20 s

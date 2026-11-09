@@ -2338,9 +2338,29 @@ macOS- and Windows-only. Track =alfe-bricscad-linux.issue=.
 
 ** =alfe --autocad= fails on macOS or Linux
 
-AutoCAD is not distributed for those platforms. =alfe= exits with
-code 3 and a clear message. Use =--bricscad= (where supported) or
-=--clautolisp= instead.
+AutoCAD's GUI, and with it =--mode automation=, is MS-Windows only. On
+macOS the AutoCAD bundle ships the batch engine =AcCoreConsole=, and alfe
+looks for it there -- but whether AutoCAD is *available* is verified, not
+assumed from the install:
+
+- An =AcCoreConsole= found under =/Applications/Autodesk/AutoCAD */= is used
+  only once alfe has seen it run AutoLISP: a short probe runs it on an empty
+  drawing with a script that writes a marker file, bounded to 120 s.
+- An installed version that cannot run -- no licence (an unlicensed install
+  only runs for a trial period), or Autodesk's Qt bootstrap failure -- is
+  reported *unavailable*: alfe exits with 69 (=EX_UNAVAILABLE=), and the
+  message names the binary and why it could not run. The conformance corpus
+  then skips its AutoCAD scenarios instead of failing them.
+- The verdict is cached for 24 hours per binary (path, size and date), in
+  =$XDG_CACHE_HOME/alfe/cad-probe/=, so the probe is not paid on every run; it
+  runs again after that time, or as soon as the install changes. Delete that
+  directory to probe again at once.
+- An =AcCoreConsole= named explicitly -- =--cad accoreconsole=, or
+  =$AUTOCAD_ACCORECONSOLE= -- is not probed: alfe runs it as asked, and a
+  failure is reported as that run's failure.
+
+On Linux there is no AutoCAD: =--autocad= is unavailable (69). Use
+=--bricscad= (where supported) or =--clautolisp= instead.
 
 ** "alfe with no flags is suddenly different"
 

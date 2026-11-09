@@ -563,7 +563,7 @@ backend by default can set =$ALFE_BACKEND_OVERRIDE=bricscad= (or
 | Backend      | macOS                                  | Linux            | MS-Windows                                                      |
 |--------------+----------------------------------------+------------------+-----------------------------------------------------------------|
 | =bricscad=   | =batch= ; =automation= via AppleScript | Not supported¹   | =automation= via COM (default); =batch= via =/Automation … /b run.scr=³ |
-| =autocad=    | Not supported²                         | Not supported²   | =automation= via COM (default); =batch= via =accoreconsole.exe= |
+| =autocad=    | =batch= via =AcCoreConsole=, when verified runnable² | Not supported²   | =automation= via COM (default); =batch= via =accoreconsole.exe= |
 | =clautolisp= | (default) Always supported             | Always supported | Always supported                                                |
 
 ¹ Bricsys distributes BricsCAD for Linux, but the historical wrapper
@@ -571,9 +571,17 @@ did not support it. The new implementation must reuse the same
 pattern as macOS batch (=bricscad -b run.scr=), adjusting paths, and
 without an AppleScript bridge.
 
-² Autodesk distributes neither AutoCAD nor =accoreconsole= for macOS
-or Linux. The =--autocad= combination on those systems fails cleanly
-with code =3=.
+² Autodesk distributes no AutoCAD for Linux; =--autocad= is unavailable
+there (=EX_UNAVAILABLE=, 69). On macOS the AutoCAD bundle ships
+=AcCoreConsole= (batch only; the GUI and COM automation are MS-Windows
+only). Its availability SHALL be verified, not assumed from the install: an
+=AcCoreConsole= discovered under =/Applications/Autodesk/= is used only after a
+bounded probe (an empty drawing and a script whose AutoLISP writes a marker
+file) has seen it run AutoLISP. One that cannot run -- unlicensed, or failing
+at bootstrap -- makes =--autocad= unavailable (69, code =:not-runnable=), the
+message naming the binary and the reason. The verdict is cached per binary
+(path, size, write date) for 24 hours. An =AcCoreConsole= named explicitly
+(=$AUTOCAD_ACCORECONSOLE=, which =--cad accoreconsole= sets) is not probed.
 
 ³ On MS-Windows the direct batch command takes the AutoCAD-lineage
 =/b= (not the Unix =-B=), and alfe prefixes it with =/Automation= —

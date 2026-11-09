@@ -4538,3 +4538,118 @@ that wrote it exits 0; a run whose script failed keeps its own status."
                     :defer-shutdown-p t)))
       (is (eq :success (alfe.backend:eval-result-status result)))
       (is (not (probe-file (alfe.protocol.file:protocol-session-control-path protocol)))))))
+
+;;; --- macOS AcCoreConsole: available only once seen running ------------
+;;; An installed AcCoreConsole can be unrunnable (no licence, Autodesk's Qt
+;;; bootstrap bug): DETECT reports AutoCAD unavailable unless a probe saw it
+;;; run AutoLISP. Fake AcCoreConsoles are POSIX shell scripts, so these tests
+;;; run on Linux and macOS.
+
+(defun %fake-accoreconsole (dir behaviour)
+  "Write a fake AcCoreConsole into a fake macOS AutoCAD bundle under DIR and
+return its path. BEHAVIOUR: :RUNS writes the marker the probe script names
+(as AutoLISP would) and logs the call to DIR/calls.txt; :FAILS exits 3;
+:HANGS sleeps."
+  (let ((exe (merge-pathnames
+              "Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole"
+              dir)))
+    (ensure-directories-exist exe)
+    (with-open-file (out exe :direction :output :if-exists :supersede)
+      (format out "#!/bin/sh~%")
+      (ecase behaviour
+        (:runs (format out "echo call >> '~A'~%marker=$(sed -n 's/.*(open \"\\([^\"]*\\)\" \"w\").*/\\1/p' \"$4\")~%echo ALFE-PROBE-OK > \"$marker\"~%exit 0~%"
+                       (namestring (merge-pathnames "calls.txt" dir))))
+        (:fails (format out "exit 3~%"))
+        (:hangs (format out "sleep 30~%"))))
+    (uiop:run-program (list "chmod" "+x" (namestring exe)))
+    (namestring exe)))
+
+(defmacro with-fake-macos-autocad ((dir) &body body)
+  "BODY on a simulated macOS whose /Applications is under DIR, with no
+AutoCAD environment override, a private verdict cache and no remembered
+verdict."
+  `(let ((alfe.backend.cad-common:*host-os-override* :macos)
+         (alfe.backend.autocad::*macos-accoreconsole-glob*
+           (namestring (merge-pathnames
+                        "Applications/Autodesk/AutoCAD */*.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole"
+                        ,dir)))
+         (alfe.backend.autocad::*accoreconsole-probe-cache-directory*
+           (uiop:ensure-directory-pathname (merge-pathnames "cache/" ,dir)))
+         (alfe.backend.autocad::*accoreconsole-probe-verdicts* (make-hash-table :test #'equal))
+         (saved (list (uiop:getenv "AUTOCAD_ACCORECONSOLE") (uiop:getenv "AUTOCAD_EXE"))))
+     (unwind-protect
+          (progn (setf (uiop:getenv "AUTOCAD_ACCORECONSOLE") ""
+                       (uiop:getenv "AUTOCAD_EXE") "")
+                 ,@body)
+       (setf (uiop:getenv "AUTOCAD_ACCORECONSOLE") (or (first saved) "")
+             (uiop:getenv "AUTOCAD_EXE") (or (second saved) "")))))
+
+(test accoreconsole-probe-sees-autolisp-run
+  "The probe is T only when the binary ran the script's AutoLISP; an exit
+without it, or a hang past the timeout, is NIL with the reason."
+  (if (uiop:os-windows-p)
+      (fiveam:skip "fake AcCoreConsoles are POSIX shell scripts")
+      (with-cad-test-directories
+        (let ((runs (%fake-accoreconsole (%fresh-test-directory) :runs))
+              (fails (%fake-accoreconsole (%fresh-test-directory) :fails))
+              (hangs (%fake-accoreconsole (%fresh-test-directory) :hangs)))
+          (is (eq t (alfe.backend.autocad::probe-accoreconsole runs :timeout 20)))
+          (multiple-value-bind (ok reason)
+              (alfe.backend.autocad::probe-accoreconsole fails :timeout 20)
+            (is (null ok))
+            (is (search "exited with code 3 without running AutoLISP" reason)))
+          (multiple-value-bind (ok reason)
+              (alfe.backend.autocad::probe-accoreconsole hangs :timeout 1)
+            (is (null ok))
+            (is (search "within 1 s" reason)))))))
+
+(test accoreconsole-probe-verdict-is-cached-per-binary
+  "One probe per binary: remembered in the process and on disk (a new process
+does not probe again), and probed again once the binary changes."
+  (if (uiop:os-windows-p)
+      (fiveam:skip "fake AcCoreConsoles are POSIX shell scripts")
+      (with-cad-test-directories
+        (let* ((dir (%fresh-test-directory))
+               (calls (merge-pathnames "calls.txt" dir)))
+          (with-fake-macos-autocad (dir)
+            (let ((exe (%fake-accoreconsole dir :runs)))
+              (flet ((count-calls () (length (uiop:read-file-lines calls))))
+                (is (alfe.backend.autocad::accoreconsole-runnable-p exe))
+                (is (alfe.backend.autocad::accoreconsole-runnable-p exe))
+                (is (= 1 (count-calls)) "remembered in the process")
+                (clrhash alfe.backend.autocad::*accoreconsole-probe-verdicts*)
+                (is (alfe.backend.autocad::accoreconsole-runnable-p exe))
+                (is (= 1 (count-calls)) "remembered on disk")
+                (with-open-file (out exe :direction :output :if-exists :append)
+                  (write-line "# updated install" out))
+                (is (alfe.backend.autocad::accoreconsole-runnable-p exe))
+                (is (= 2 (count-calls)) "probed again once the binary changed"))))))))
+
+(test autocad-detect-on-macos-requires-a-runnable-accoreconsole
+  "On macOS an installed AcCoreConsole makes AutoCAD available only when it
+runs; one that cannot is reported unavailable, naming it and why."
+  (if (uiop:os-windows-p)
+      (fiveam:skip "fake AcCoreConsoles are POSIX shell scripts")
+      (with-cad-test-directories
+        (let ((dir (%fresh-test-directory)))
+          (with-fake-macos-autocad (dir)
+            (let ((exe (%fake-accoreconsole dir :fails)))
+              (handler-case
+                  (progn (alfe.backend:detect (alfe.backend.autocad:make-autocad-backend))
+                         (fail "an unrunnable AcCoreConsole was reported available"))
+                (alfe.error:backend-not-available (e)
+                  (is (eq :not-runnable (alfe.error:backend-error-code e)))
+                  (is (search exe (alfe.error:backend-error-message e)))
+                  (is (search "cannot run here" (alfe.error:backend-error-message e))))))))
+        (let ((dir (%fresh-test-directory)))
+          (with-fake-macos-autocad (dir)
+            (let* ((exe (%fake-accoreconsole dir :runs))
+                   (backend (alfe.backend:detect (alfe.backend.autocad:make-autocad-backend))))
+              (is (equal exe (alfe.backend.autocad::autocad-backend-accoreconsole-path backend))))))
+        (let ((dir (%fresh-test-directory)))
+          (with-fake-macos-autocad (dir)
+            (handler-case
+                (progn (alfe.backend:detect (alfe.backend.autocad:make-autocad-backend))
+                       (fail "a macOS without AutoCAD was reported available"))
+              (alfe.error:backend-not-available (e)
+                (is (eq :unsupported-os (alfe.error:backend-error-code e))))))))))

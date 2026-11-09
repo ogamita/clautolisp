@@ -132,3 +132,17 @@ prints "Redirect stdout (file: /var/tmp/accc……)" — it already tees its std
 a temp file — and "LogFilePath has been set to the working folder" (LOGFILEPATH
 works). Both are alternative capture paths worth revisiting then. See
 [[autocad-no-rest-output-capture]].
+
+* Availability verified dynamically (alfe 2.3.118, 2026-11-09)
+pjb: the macOS AutoCADs here are installed but unlicensed (an unlicensed install
+runs only for a trial period), so probing them is the right behaviour, and
+reporting AutoCAD unavailable once a run has failed is correct. alfe now finds
+the bundled AcCoreConsole on macOS, but DETECT uses it only after a bounded
+probe (empty drawing, a script whose AutoLISP writes a marker file) has seen it
+run AutoLISP. Otherwise --autocad is unavailable (69, :not-runnable), naming
+the binary and the reason, and the conformance corpus skips the AutoCAD
+scenarios instead of failing them. The verdict is cached 24 h per binary. An
+explicit $AUTOCAD_ACCORECONSOLE (--cad accoreconsole) is not probed. This
+issue stays parked on the Autodesk Qt bug: a fixed build, or a licensed one,
+will simply probe as runnable.
+
