@@ -47,7 +47,9 @@ NIL when this implementation is not one we know how to re-launch."
 (defun %console-flood-form (go-path &key exit-code (marker ""))
   "The child's program: flood both console streams, write MARKER on standard
 error, then either exit with EXIT-CODE, or create GO-PATH and idle (the engine
-is `up'; the test's shutdown kills it)."
+is `up') until the protocol says STOPPED -- then exit, as a CAD quits once its
+session has ended (alfe-cad-lifecycle-rules: a CAD that has to be terminated is
+a bad shutdown)."
   (format nil "(progn
   (let ((line (make-string 1023 :initial-element #\\x)))
     (dotimes (i ~D)
@@ -61,8 +63,11 @@ is `up'; the test's shutdown kills it)."
           marker
           (if exit-code
               (%exit-form exit-code)
-              (format nil "(progn (with-open-file (o ~S :direction :output :if-exists :supersede) (write-line \"go\" o)) (loop repeat 1200 do (sleep 0.1)))"
-                      (uiop:native-namestring go-path)))))
+              (format nil "(progn (with-open-file (o ~S :direction :output :if-exists :supersede) (write-line \"go\" o)) (loop repeat 1200 until (ignore-errors (with-open-file (s ~S :if-does-not-exist nil) (and s (search \"STOPPED\" (or (read-line s nil) \"\"))))) do (sleep 0.1)))"
+                      (uiop:native-namestring go-path)
+                      (uiop:native-namestring
+                       (merge-pathnames "protocol/status.txt"
+                                        (uiop:pathname-directory-pathname go-path)))))))
 
 (defun %flooding-launcher (workdir child-form-fn state)
   "A launcher for START-ENGINE's :LAUNCHER. It ignores the CAD argv and runs

@@ -41,8 +41,19 @@ only when the script succeeded, alongside a log line giving the script's result.
   the EPURE profile (new =:before-close= slot), and disconnect; BricsCAD batch
   restores SECURELOAD; the dead AutoCAD quit path (quit-created-autocad,
   quit-autocad.vbs, TASKKILL by PID, com-flags reader) removed.
-- [ ] MR-B: rule 2's status precedence, rules 3 and 5, logical timeouts;
-  FAILED ends the READY wait; the unimported backend-protocol-error.
+- [X] MR-B (2.3.122): rule 2's status precedence (%RUN-EXIT-STATUS: a failed
+  script's status wins; a bad shutdown -- :cad-terminated, :owned-cad-forced,
+  survivor, unidentified, restoration not acknowledged -- sets the status only
+  after a successful script, with a stderr line saying so); rule 5 (the start
+  inside the run's protection, %TEARDOWN-RUN never signals, the first error
+  kept); rule 3 (END-CREATED-COM-CAD on a failed start, the identity captured
+  before the readiness wait); one SHUTDOWN-CAD-SESSION for every CAD (batch
+  always quits, -i included; a restoration not acknowledged still closes);
+  FAILED ends the READY wait; timeouts: --ready-timeout /
+  $AUTOLISP_READY_WAIT_SECS (60 batch, 300 automation, 420 EPURE, never less
+  than --timeout), the bridges' waits inside it, 15 s stop acknowledgement,
+  20 s exit grace, 10 s kill. The unimported backend-protocol-error is gone
+  with the move of the shutdown code to cad-common.
 - [ ] MR-C: rule 4 (Control-C through the protocol, second one forces);
   bridge watchdogs (CAD and alfe processes); the clautolisp subprocess
   honours --timeout.

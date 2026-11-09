@@ -154,6 +154,7 @@
     ("--mode"               :no-effect "CAD launch mode")
     ("--bootstrap-phase"    :no-effect "CAD bootstrap truncation")
     ("--cad-log"            :no-effect "no CAD log to collect: warned and ignored in both variants")
+    ("--ready-timeout"      :no-effect "no CAD start to wait for: the engine is in-process or a child")
     ("--timeout"            :no-effect "no per-action timeout in either variant; *AUTOLISP-TIMEOUT* via the shared bindings")
     ("--cadstdio-encoding"  :no-effect "no CAD subprocess pipes")
     ("--cadstdio-input-encoding"  :no-effect "no CAD subprocess pipes")

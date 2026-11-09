@@ -2709,7 +2709,8 @@ have exited on its own."
   (is (null (alfe.backend.cad-common:kill-engine-process nil)))
   (let ((info (uiop:launch-program (list "true") :output nil :error-output nil)))
     (ignore-errors (uiop:wait-process info))
-    (is (null (alfe.backend.cad-common:kill-engine-process info :timeout 1)))))
+    ;; a process already gone ended by itself
+    (is (eq :exited (alfe.backend.cad-common:kill-engine-process info :timeout 1)))))
 
 (defun %code-lines (text)
   "TEXT's lines with `;'-comments removed. Crude — it does not know about
@@ -3068,7 +3069,7 @@ retried, not reported as a broken server.
 The structural assertion is the one that would have failed before: between
 WaitQuiescent and the ActiveDocument call there must be an error guard."
   (let* ((text alfe.backend.autocad::*bridge-autocad-vbs-template*)
-         (quiescent (search "WaitQuiescent app, waitSecs" text))
+         (quiescent (search "WaitQuiescent app, BudgetSecs(waitSecs)" text))
          (active-doc (search "Set doc = app.ActiveDocument" text)))
     (is (and quiescent active-doc (< quiescent active-doc))
         "the template must still call WaitQuiescent before taking the document")
@@ -4087,19 +4088,24 @@ own exit code."
         (is (equal (cdr code) (alfe.backend.cad-common::key-value report "cleanup-exit-code-hex")))
         (is (equal "ok" (alfe.backend.cad-common::key-value report "cleanup")))))))
 
-(test owned-com-close-forced-end-is-a-diagnostic
-  "A CAD that outlived the grace and was terminated: the run's result stands,
-and the report says it was forced -- not a normal close."
+(test owned-com-close-forced-end-is-a-bad-shutdown
+  "A CAD that outlived the grace and was terminated is a bad shutdown
+(alfe-cad-lifecycle-rules, rule 2): the report says it was forced, and the
+shutdown signals :OWNED-CAD-FORCED -- which the CLI reports only when the
+script succeeded."
   (with-cad-test-directories
-    (let* ((dir (%fresh-test-directory))
-           (close (%finish-owned dir (%cleanup-pairs "forced" :forced "1"
-                                                              :exit-code "4294967295"
-                                                              :hex "0xFFFFFFFF")))
-           (report (%report dir)))
-      (is (null (getf close :failure)))
-      (is (equal "forced" (alfe.backend.cad-common::key-value report "cleanup-outcome")))
-      (is (equal "1" (alfe.backend.cad-common::key-value report "cleanup-forced")))
-      (is (equal "ok" (alfe.backend.cad-common::key-value report "cleanup"))))))
+    (let ((dir (%fresh-test-directory)))
+      (handler-case
+          (progn (%finish-owned dir (%cleanup-pairs "forced" :forced "1"
+                                                             :exit-code "4294967295"
+                                                             :hex "0xFFFFFFFF"))
+                 (fail "a forced end was not reported"))
+        (alfe.error:backend-protocol-error (e)
+          (is (eq :owned-cad-forced (alfe.error:backend-error-code e)))))
+      (let ((report (%report dir)))
+        (is (equal "forced" (alfe.backend.cad-common::key-value report "cleanup-outcome")))
+        (is (equal "1" (alfe.backend.cad-common::key-value report "cleanup-forced")))
+        (is (equal "owned-cad-forced" (alfe.backend.cad-common::key-value report "cleanup")))))))
 
 (test owned-com-close-failed-assertion-stays-failed-past-a-crash
   "An assertion that failed is recorded as such; a crash after it changes
@@ -4396,9 +4402,12 @@ that wrote it exits 0; a run whose script failed keeps its own status."
                  (session (alfe.backend.bricscad::%make-bricscad-session
                            :variant :automation :protocol-session :mock)))
              (setf events nil)
+             ;; An unacknowledged restoration is still reported (a bad
+             ;; shutdown), but the close happens: alfe ends what it started
+             ;; whatever happens (alfe-cad-lifecycle-rules, rule 2).
              (signals error (alfe.backend:shutdown session))
-             (is (null events))
-             (is (not (eq :stopped (alfe.backend:session-state session))))))
+             (is (equal '(:close) events))
+             (is (eq :stopped (alfe.backend:session-state session)))))
       (setf (symbol-function restore-name) old-restore
             (symbol-function close-name) old-close))))
 
@@ -4667,10 +4676,12 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
                                :drawing-path "C:/job/dessin.dwg"
                                :status-path #p"/w/s" :error-path #p"/w/e")
           (let* ((text (uiop:read-file-string path))
-                 (ready (search "If Not OwnedComIsReady(app, 30) Then" text))
+                 (ready (search "If Not OwnedComIsReady(app, BudgetSecs(30)) Then" text))
                  (capture (search " -Operation Capture -IdentityFile " text))
                  (open (search "app.Documents.Open(dwgFile)" text)))
-            (is (and ready capture open (< ready capture open)))
+            ;; identity first: a created CAD that never gets ready can still
+            ;; be ended on the failed start (alfe-cad-lifecycle-rules, rule 3)
+            (is (and ready capture open (< capture ready open)))
             (is (search "Set state = a.GetAcadState" text))
             (is (search "COM application did not become quiescent before opening the job drawing" text))))))))
 
@@ -4687,7 +4698,7 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
                (ready alfe.backend.cad-common::*owned-com-ready-vbs*))
           (with-open-file (out path :direction :output :if-exists :supersede)
             (write-string prefix out)
-            (write-string (subseq ready 0 (search "If Not OwnedComIsReady(app, 30) Then" ready)) out)
+            (write-string (subseq ready 0 (search "If Not OwnedComIsReady(app, BudgetSecs(30)) Then" ready)) out)
             (write-string "result=OwnedComIsReady(app, seconds)
 expected=(scenario=\"ready\")
 If result<>expected Then WScript.Quit 1
@@ -4826,3 +4837,128 @@ and is never quit."
                 (is (not (search ".Quit" branch)) "an attached CAD is never quit")))
             (is (search "lifeWasVisible = " text)
                 "the window visibility is remembered before it is forced")))))))
+
+;;; --- alfe-cad-lifecycle-rules (MR-B): status, startup, timeouts --------
+
+(test run-exit-status-reports-the-script-first
+  "Rule 2: a failed script's status is reported whatever the shutdown did;
+a successful script lets a bad shutdown decide the status -- after a line
+saying the script succeeded, which a CI job can read."
+  (let ((shutdown-error (make-condition 'alfe.error:backend-protocol-error
+                                        :backend :autocad :phase :shutdown
+                                        :code :cad-terminated :message "terminated")))
+    (is (= 0 (alfe.cli::%run-exit-status 0 nil)))
+    (is (= 1 (alfe.cli::%run-exit-status 1 nil)))
+    (let ((*error-output* (make-string-output-stream)))
+      (is (= 1 (alfe.cli::%run-exit-status 1 shutdown-error)))
+      (is (search "exit status 1 is reported" (get-output-stream-string *error-output*))))
+    (let ((*error-output* (make-string-output-stream)))
+      (signals alfe.error:backend-protocol-error
+        (alfe.cli::%run-exit-status 0 shutdown-error))
+      (is (search "the script succeeded" (get-output-stream-string *error-output*))))))
+
+(defclass failing-start-backend (alfe.backend:backend)
+  ((cleaned :initform nil :accessor failing-start-backend-cleaned))
+  (:documentation "A backend whose START-ENGINE fails, for rule 5."))
+
+(defmethod alfe.backend:prepare-workdir ((backend failing-start-backend) root &key)
+  (declare (ignore root))
+  (%fresh-test-directory))
+
+(defmethod alfe.backend:start-engine ((backend failing-start-backend) workdir &key &allow-other-keys)
+  (declare (ignore workdir))
+  (error 'alfe.error:backend-bootstrap-error :backend :test :code :ready-timeout
+                                              :message "no READY"))
+
+(defmethod alfe.backend:cleanup-workdir ((backend failing-start-backend) workdir &key keep-p)
+  (declare (ignore keep-p))
+  (setf (failing-start-backend-cleaned backend) workdir))
+
+(test run-plan-cleans-up-after-a-failed-start
+  "Rule 5: the start is protected too -- a backend whose start fails still
+has its workdir cleaned up, and the start's error is what propagates."
+  (with-cad-test-directories
+    (let ((backend (make-instance 'failing-start-backend :name :test)))
+      (signals alfe.error:backend-bootstrap-error
+        (alfe.cli::run-plan (parse-arguments (list "-x" "(princ 1)")) backend))
+      (is (failing-start-backend-cleaned backend)
+          "the workdir was cleaned up after the failed start"))))
+
+(test batch-shutdown-reports-a-terminated-cad
+  "One shutdown for every CAD: a launched CAD that exits by itself after its
+QUIT is a clean shutdown; one that has to be terminated is a bad one
+(:CAD-TERMINATED), signalled once it is gone."
+  (if (uiop:os-windows-p)
+      (fiveam:skip "uses POSIX sh children")
+      (with-cad-test-directories
+        (let ((alfe.backend.cad-common::*cad-natural-exit-grace* 2)
+              (alfe.backend.cad-common::*cad-stop-ack-timeout* 2))
+          (flet ((session-with (script)
+                   (let* ((dir (%fresh-test-directory))
+                          (protocol (alfe.protocol.file:init-session dir)))
+                     (with-open-file (out (alfe.protocol.file:protocol-session-status-path protocol)
+                                          :direction :output :if-exists :supersede)
+                       (write-line "STOPPED" out))
+                     (values protocol
+                             (uiop:launch-program (list "sh" "-c" script)
+                                                  :output nil :error-output nil)))))
+            (multiple-value-bind (protocol info) (session-with "sleep 0.3; exit 0")
+              (is (eq :exited (alfe.backend.cad-common::shutdown-cad-session
+                               :bricscad protocol info))))
+            (multiple-value-bind (protocol info) (session-with "trap '' TERM; sleep 30")
+              (handler-case
+                  (progn (alfe.backend.cad-common::shutdown-cad-session :autocad protocol info)
+                         (fail "a CAD that had to be terminated was not reported"))
+                (alfe.error:backend-protocol-error (e)
+                  (is (eq :cad-terminated (alfe.error:backend-error-code e)))))
+              (is (not (uiop:process-alive-p info)))))))))
+
+(test failed-start-ends-only-a-created-com-cad
+  "Rule 3: on a failed start the CAD the bridge CREATED -- the only one whose
+identity it captures -- is ended with no grace; with no identity (an
+attached CAD, or none created) nothing is touched."
+  (with-cad-test-directories
+    (let ((calls (list nil))
+          (dir (%fresh-test-directory)))
+      (flet ((helper (workdir &key grace kill-timeout)
+               (declare (ignore kill-timeout))
+               (push grace (car calls))
+               (alfe.backend:write-key-value-file
+                (merge-pathnames "owned-cad-cleanup.txt" workdir)
+                '(("outcome" . "forced") ("disappeared" . "1") ("pid" . "4242")))
+               0))
+        (is (null (alfe.backend.cad-common::end-created-com-cad dir :helper #'helper)))
+        (is (null (car calls)))
+        (with-open-file (out (merge-pathnames "owned-cad-process.json" dir) :direction :output)
+          (write-line "{\"pid\": 4242}" out))
+        (is (equal "forced" (alfe.backend.cad-common::end-created-com-cad dir :helper #'helper)))
+        (is (equal '(0) (car calls)))))))
+
+(test ready-wait-ends-on-a-failed-bootstrap
+  "A bootstrap that publishes FAILED will never be READY: the wait returns at
+once, the status giving the reason, instead of costing the whole timeout."
+  (with-cad-test-directories
+    (let* ((protocol (alfe.protocol.file:init-session (%fresh-test-directory)))
+           (start (get-internal-real-time)))
+      (with-open-file (out (alfe.protocol.file:protocol-session-status-path protocol)
+                           :direction :output :if-exists :supersede)
+        (write-line "FAILED runtime load" out))
+      (multiple-value-bind (ok elapsed last)
+          (alfe.protocol.file:wait-for-status-prefix protocol "READY" :timeout 30
+                                                                     :fail-prefix "FAILED")
+        (declare (ignore elapsed))
+        (is (null ok))
+        (is (search "FAILED" last))
+        (is (< (/ (- (get-internal-real-time) start) internal-time-units-per-second) 5))))))
+
+(test ready-timeout-rules
+  "The start's timeout: --ready-timeout when given; else the mode's default
+(60 s batch, 300 s automation), or --timeout when longer."
+  (flet ((ready (variant &rest args)
+           (alfe.backend.cad-common::effective-ready-timeout (parse-arguments args) variant)))
+    (is (= 60 (ready :batch)))
+    (is (= 300 (ready :automation)))
+    (is (= 60 (ready :batch "--timeout" "30")))
+    (is (= 500 (ready :automation "--timeout" "500")))
+    (is (= 42 (ready :automation "--ready-timeout" "42" "--timeout" "500")))))
+

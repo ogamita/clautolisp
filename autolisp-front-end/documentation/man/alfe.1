@@ -283,7 +283,14 @@ Override
 .BR $AUTOLISP_WORKDIR .
 .TP
 .BR \-\-timeout " " \fISECS\fR
-Per-action timeout.
+How long a request may go unanswered: the CAD must acknowledge it (RUNNING)
+within SECS; without \-\-timeout a request that is RUNNING may take as long as
+it needs while the CAD lives, with one it is a hard cap. A longer
+\-\-timeout also lengthens the start.
+.TP
+.BR \-\-ready-timeout " " \fISECS\fR
+How long the CAD may take to start (READY): 60 s in batch mode, 300 s in
+automation, 420 s with \-\-epure by default; never less than \-\-timeout.
 .TP
 .BR \-\-no-init ", " \-norc
 Skip user init files. Honoured equivalently via
@@ -514,9 +521,9 @@ backends \(em cador, cadtui, nihil \(em with a one-line summary each, and
 exit.
 .SH ENVIRONMENT
 .TP
-.B AUTOLISP_WORKDIR\fR, \fBAUTOLISP_WAIT_SECS\fR, \fBAUTOLISP_MODE
+.B AUTOLISP_WORKDIR\fR, \fBAUTOLISP_WAIT_SECS\fR, \fBAUTOLISP_READY_WAIT_SECS\fR, \fBAUTOLISP_MODE
 Defaults for
-.BR \-\-workdir ", " \-\-timeout ", " \-\-mode .
+.BR \-\-workdir ", " \-\-timeout ", " \-\-ready-timeout ", " \-\-mode .
 .TP
 .B AUTOLISP_BACKEND\fR, \fBALFE_BACKEND_OVERRIDE
 Backend selector defaults; explicit

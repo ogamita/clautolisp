@@ -52,6 +52,8 @@
   ;; Misc
   (workdir          nil)              ; A
   (timeout          nil)              ; A   positive integer
+  (ready-timeout    nil)              ; A   --ready-timeout SECS: the CAD's start
+                                      ;     (READY), apart from --timeout
   (verbosity        :info)            ; AC  :debug / :verbose / :info / :warn
   (help-p           nil)              ; AC
   (version-p        nil)              ; AC

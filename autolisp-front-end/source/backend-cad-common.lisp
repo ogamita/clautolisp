@@ -924,9 +924,65 @@ an ordinary path."
     (string path)
     (pathname (uiop:native-namestring path))))
 
+(defparameter *cad-ready-timeout-batch* 60
+  "Default seconds a CAD launched in batch mode has to publish READY.")
+
+(defparameter *cad-ready-timeout-automation* 300
+  "Default seconds a CAD started or attached through automation has to publish
+READY: CreateObject alone may take DCOM's fixed 120 s, then the bridge waits
+for the application, opens the drawing and loads the runtime.")
+
+(defun effective-ready-timeout (cli-options variant &optional default)
+  "Seconds the CAD has to publish READY: --ready-timeout ($AUTOLISP_READY_WAIT_SECS)
+when given; else the default for VARIANT (:batch or :automation, or DEFAULT
+when given) -- or --timeout, if longer: a request may not wait longer than the
+start it follows (alfe-cad-lifecycle-rules, timeouts)."
+  (let ((explicit (and cli-options (alfe.cli:cli-options-ready-timeout cli-options)))
+        (request (and cli-options (alfe.cli:cli-options-timeout cli-options))))
+    (or explicit
+        (max (or default
+                 (if (eq variant :automation)
+                     *cad-ready-timeout-automation*
+                     *cad-ready-timeout-batch*))
+             (or request 0)))))
+
+(defparameter *cad-ready-budget-vbs*
+  "' The bridge's own waits fit in alfe's READY timeout, less a margin: the
+' bridge gives up first, reports why, and ends a CAD it created -- rather than
+' be killed by alfe in the middle of a wait (alfe-cad-lifecycle-rules).
+Dim readyDeadline
+readyDeadline = DateAdd(\"s\", ${READY_SECS}, Now)
+Function BudgetSecs(cap)
+  Dim left
+  left = DateDiff(\"s\", Now, readyDeadline)
+  If left > cap Then left = cap
+  If left < 1 Then left = 1
+  BudgetSecs = left
+End Function
+Function BudgetLeft()
+  BudgetLeft = (DateDiff(\"s\", Now, readyDeadline) > 0)
+End Function
+"
+  "VBScript included at the top of both COM bridges: READY_SECS is alfe's
+READY timeout less 10 s.")
+
+(defparameter *cad-stop-ack-timeout* 15
+  "Seconds the CAD has to acknowledge SHUTDOWN (STOPPED) or PREPARE-SHUTDOWN
+(RESTORED): it does so between requests, once idle.")
+
+(defparameter *cad-natural-exit-grace* 20
+  "Seconds a CAD alfe started has to exit by itself after its QUIT, before it
+is terminated -- the same for every CAD, batch and automation alike.")
+
+(defparameter *cad-kill-wait* 10
+  "Seconds to wait for a terminated process to be gone.")
+
 (defun kill-engine-process (info &key (timeout 6) (grace 0))
   "Best-effort terminate the launched engine within TIMEOUT seconds, NEVER
 blocking indefinitely. GRACE optionally allows natural exit before termination.
+Returns how it ended: :EXITED (by itself, within GRACE, or already gone),
+:TERMINATED, :KILLED (it outlived the termination: :urgent), :SURVIVED (still
+alive even then), or NIL when INFO is NIL.
 
 `uiop:wait-process' can hang on Windows when the engine (a GUI CAD) is
 slow to die, or when a child of it shares the handles — that would freeze
@@ -939,7 +995,9 @@ paid for. It is not BricsCAD-specific — AutoCAD spawns a GUI process the
 same way — and having only one backend own the careful version is exactly
 how the other one kept the unbounded `wait-process' that this docstring
 warns about. Shared here so both use it."
-  (when info
+  (unless info
+    (return-from kill-engine-process nil))
+  (let ((outcome :exited))
     ;; A STOPPED protocol precedes the final QUIT in the CAD script.
     ;; Give that command a bounded opportunity to close naturally.
     (let ((start (get-internal-real-time)))
@@ -952,6 +1010,7 @@ warns about. Shared here so both use it."
      (when (uiop:process-alive-p info)
        (when (plusp grace)
          (log-warn "CAD still alive after ~A s of natural shutdown; terminating it" grace))
+       (setf outcome :terminated)
        (uiop:terminate-process info)))
     (let ((start (get-internal-real-time)))
       (loop while (and (ignore-errors (uiop:process-alive-p info))
@@ -961,6 +1020,7 @@ warns about. Shared here so both use it."
             do (sleep 0.2)))
     (ignore-errors
      (when (uiop:process-alive-p info)
+       (setf outcome :killed)
        (uiop:terminate-process info :urgent t)
        ;; :urgent is SIGKILL, which the kernel delivers ASYNCHRONOUSLY: the
        ;; process is doomed but not necessarily REAPED the instant
@@ -978,8 +1038,8 @@ warns about. Shared here so both use it."
                           (< (/ (float (- (get-internal-real-time) kstart))
                                 internal-time-units-per-second)
                              2))
-               do (sleep 0.02))))))
-  nil)
+               do (sleep 0.02)))))
+    (if (ignore-errors (uiop:process-alive-p info)) :survived outcome)))
 
 ;;; --- the engine's console: captured to files, never an undrained pipe ---
 ;;;
@@ -1212,7 +1272,7 @@ the child launch only; explicit launch environment overrides take precedence."
                                  (request-timeout 30)
                                  (keep-alive-while-running t)
                                  (process-info nil)
-                                 (shutdown-timeout 10)
+                                 (shutdown-timeout *cad-stop-ack-timeout*)
                                  (defer-shutdown-p nil)
                                  (input-stream  *standard-input*)
                                  (output-stream *standard-output*)
@@ -2385,7 +2445,7 @@ bridgeTrustChanged = True
   Loop
   AppendLine errFile, \"COM.READY.ERROR=\" & problem & \" \" & detail
 End Function
-If Not OwnedComIsReady(app, 30) Then
+If Not OwnedComIsReady(app, BudgetSecs(30)) Then
   AppendLine errFile, \"ERROR COM bridge: COM application did not become quiescent before opening the job drawing\"
   If created Then
     On Error Resume Next
@@ -2398,11 +2458,16 @@ End If
 
 (defun instrument-owned-com-bridge (text path &key before-close-vbs trust-runtime-p)
   "Retain the exact COM object and validate its PID plus creation time on exit."
+  ;; The READY budget is VBScript, spliced in as code (the placeholders that
+  ;; follow are values, quote-doubled): its ${READY_SECS} is filled later.
+  (setf text (uiop:frob-substrings text '("${READY_BUDGET}") *cad-ready-budget-vbs*))
   (let* ((document-start (or (search "Dim docReady, docAttempt" text)
                              (error "Cannot locate COM drawing open boundary.")))
          (text (concatenate 'string (subseq text 0 document-start)
-                            *owned-com-ready-vbs* *owned-com-snapshot-vbs*
-                            *owned-com-capture-vbs*
+                            ;; identity first: a created CAD that never gets
+                            ;; ready can still be ended (rule 3)
+                            *owned-com-capture-vbs* *owned-com-ready-vbs*
+                            *owned-com-snapshot-vbs*
                             (subseq text document-start)))
          (marker "${PLUGIN_BEFORE_LOAD}")
          (before (search marker text))
@@ -2524,6 +2589,9 @@ HELPER is RUN-OWNED-CAD-HELPER's stand-in for the tests."
               :cleanup cleanup
               :disappeared gone
               :failure (cond ((null cleanup) :owned-cad-cleanup-unreported)
+                             ;; gone, but only through its termination: a bad
+                             ;; shutdown (alfe-cad-lifecycle-rules, rule 2)
+                             ((and gone (equal outcome "forced")) :owned-cad-forced)
                              (gone nil)
                              ((member outcome '("identity-mismatch" "identity-uncertain")
                                       :test #'equal)
@@ -2607,27 +2675,111 @@ diagnostic only, the run's result stands"
     (format nil "~A~@[ (pid ~A)~]~@[: ~A~]"
             (ecase failure
               (:owned-cad-survived "The CAD this run created is still running after its termination.")
+              (:owned-cad-forced "The CAD this run created did not exit after its Quit; it was terminated.")
               (:owned-cad-identity-uncertain "The CAD this run created cannot be identified with certainty; it was not terminated.")
               (:owned-cad-cleanup-error "The owned CAD cleanup helper failed.")
               (:owned-cad-cleanup-unreported "The owned CAD cleanup helper wrote no report."))
             pid (and detail (plusp (length detail)) detail))))
 
+(defun end-created-com-cad (workdir &key (helper #'run-owned-cad-helper))
+  "On a failed start: terminate the CAD the COM bridge CREATED, when it had
+captured its identity (owned-cad-process.json, written only for a created
+CAD -- never for one the bridge attached to). The helper revalidates that
+identity and ends that process, with no grace: the start has failed, there is
+nothing to wait for (alfe-cad-lifecycle-rules, rule 3). Returns the helper's
+outcome, or NIL when no CAD was created or captured."
+  (when (and workdir (probe-file (merge-pathnames "owned-cad-process.json" workdir)))
+    (ignore-errors (funcall helper workdir :grace 0 :kill-timeout *cad-kill-wait*))
+    (let* ((cleanup (read-key-value-file (merge-pathnames "owned-cad-cleanup.txt" workdir)))
+           (outcome (key-value cleanup "outcome")))
+      (log-warn "failed start: the CAD the bridge created (pid ~A) ~A"
+                (key-value cleanup "pid")
+                (cond ((null cleanup) "could not be ended: the helper wrote no report")
+                      ((equal (key-value cleanup "disappeared") "1")
+                       (format nil "is gone (~A)" outcome))
+                      (t (format nil "could not be ended (~A)" outcome))))
+      outcome)))
+
+(defun shutdown-cad-session (backend protocol info &key workdir com-p)
+  "The shutdown of a CAD session, the same for every CAD
+(alfe-cad-lifecycle-rules). COM-P: Windows automation, through the retained
+bridge (FINISH-OWNED-COM-SESSION: a created CAD is closed and quit, ended if
+it outlives the grace; an attached one gets only the run's documents closed
+and is released); INFO is then the bridge. Otherwise INFO is the CAD alfe
+launched: it is asked to stop (SHUTDOWN, STOPPED within
+*CAD-STOP-ACK-TIMEOUT*), its script closes the drawing without saving and
+quits, and it has *CAD-NATURAL-EXIT-GRACE* seconds to exit -- or none when
+the stop was not acknowledged -- before it is terminated.
+
+Signals, after INFO is gone, the first problem: the stop not acknowledged,
+the owned close's failure, or a CAD that had to be terminated -- a bad
+shutdown, which the CLI reports only when the script succeeded."
+  (let ((stop-error nil)
+        (outcome nil))
+    (unwind-protect
+         (when protocol
+           (handler-case
+               (if com-p
+                   (finish-owned-com-session protocol workdir :backend backend
+                                                              :bridge-process-info info)
+                   (progn
+                     (alfe.protocol.file:send-control protocol :shutdown)
+                     (unless (alfe.protocol.file:wait-for-status
+                              protocol alfe.protocol.file:+status-stopped+
+                              :timeout *cad-stop-ack-timeout*)
+                       (error 'backend-protocol-error :backend backend :phase :shutdown
+                              :code :shutdown-timeout
+                              :message (format nil "The CAD did not acknowledge the shutdown within ~D s."
+                                               *cad-stop-ack-timeout*)))))
+             (error (condition) (setf stop-error condition))))
+      (setf outcome
+            (kill-engine-process info
+                                 ;; the bridge answers and exits; a CAD that
+                                 ;; acknowledged the stop quits by itself
+                                 :grace (cond (com-p *cad-stop-ack-timeout*)
+                                              (stop-error 0)
+                                              (t *cad-natural-exit-grace*))
+                                 :timeout *cad-kill-wait*)))
+    (when stop-error
+      (error stop-error))
+    (when (and (not com-p) (member outcome '(:terminated :killed :survived)))
+      (error 'backend-protocol-error :backend backend :phase :shutdown
+             :code (if (eq outcome :survived) :cad-survived :cad-terminated)
+             :message (if (eq outcome :survived)
+                          "The CAD alfe started is still running after its termination."
+                          (format nil "The CAD alfe started did not exit within ~D s of its QUIT; it was terminated."
+                                  *cad-natural-exit-grace*))))
+    outcome))
+
 (defun finish-owned-com-session (protocol workdir &key (backend :cad) bridge-process-info
                                                        (close #'close-owned-com-bridge))
   "The Windows COM-automation shutdown, contract 2, in its order:
-1. the live CAD restores the session and acknowledges RESTORED (otherwise
-   this signals, and nothing is closed: an unacknowledged restoration does
-   not authorize the close);
+1. the live CAD restores the session and acknowledges RESTORED within
+   *CAD-STOP-ACK-TIMEOUT*;
 2. the FRONTIER is written, owned-close-frontier.txt;
-3. the bridge closes what it owns, and the CAD this run created is proved
-   gone -- ended by its revalidated handle if it outlives the grace;
+3. the bridge closes what it owns: a CAD this run created is quit and proved
+   gone -- ended by its revalidated handle if it outlives the grace; one it
+   attached to gets only the run's documents closed, and is released;
 4. the cleanup report, ALFE.BACKEND:*CLEANUP-REPORT-FILE-NAME*, is written,
-   and only then a failed cleanup signals.
-A non-zero exit or a forced end past the frontier is logged, not signalled:
-it does not replace the run's result. Returns CLOSE's plist."
-  (alfe.protocol.file::prepare-cad-shutdown protocol)
-  (let* ((frontier (owned-close-frontier-pairs backend workdir
+   and only then the first problem signals: the restoration not
+   acknowledged, or the close's failure -- a forced end included.
+The close happens even when the restoration was not acknowledged: alfe ends
+a CAD it started whatever happens (alfe-cad-lifecycle-rules, rule 2). These
+are bad shutdowns, which the CLI reports only when the script succeeded. The
+CAD's own exit code is logged, never signalled. Returns CLOSE's plist."
+  (let* ((restore-error (handler-case
+                            (progn (alfe.protocol.file::prepare-cad-shutdown
+                                    protocol :timeout *cad-stop-ack-timeout*)
+                                   nil)
+                          (error (condition) condition)))
+         (frontier (owned-close-frontier-pairs backend workdir
                                                alfe.backend:*recorded-outcome*)))
+    (when restore-error
+      (setf frontier (mapcar (lambda (pair)
+                               (if (equal (car pair) "restored")
+                                   (cons "restored" "not-acknowledged")
+                                   pair))
+                             frontier)))
     (when workdir
       (write-key-value-file (merge-pathnames "owned-close-frontier.txt" workdir) frontier))
     (let ((result (funcall close workdir :bridge-process-info bridge-process-info)))
@@ -2635,6 +2787,8 @@ it does not replace the run's result. Returns CLOSE's plist."
         (write-key-value-file (merge-pathnames alfe.backend:*cleanup-report-file-name* workdir)
                               (owned-cleanup-report-pairs frontier result)))
       (%log-owned-cleanup backend result)
+      (when restore-error
+        (error restore-error))
       (let ((failure (getf result :failure)))
         (when failure
           (error 'backend-protocol-error :backend backend :phase :shutdown :code failure
