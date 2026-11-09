@@ -176,15 +176,31 @@ to load; measured 174 s on BricsCAD V25). Pass --timeout to choose another."
 ;;; --- the launcher script ---------------------------------------------
 
 (defun profile-activation-lines (profile)
-  "VBScript: try to make PROFILE the active profile. A failure is written
-to the errors file and the run goes on with the current profile."
-  (list "On Error Resume Next"
+  "VBScript: try to make PROFILE the active profile, remembering the one it
+replaces (PROFILE-RESTORATION-LINES puts it back before the bridge closes or
+releases the CAD). A failure is written to the errors file and the run goes
+on with the current profile."
+  (list "Dim epurePreviousProfile"
+        "On Error Resume Next"
+        "epurePreviousProfile = app.Preferences.Profiles.ActiveProfile"
+        "Err.Clear"
         (format nil "app.Preferences.Profiles.ActiveProfile = \"~A\"" (vbs-escape profile))
         "If Err.Number <> 0 Then"
         (format nil "  AppendLine errFile, \"WARN COM bridge: cannot activate the CAD profile '~A' (\" & Err.Description & \"); using the current profile.\""
                 (vbs-escape profile))
         "  Err.Clear"
         "End If"
+        "On Error GoTo 0"))
+
+(defun profile-restoration-lines ()
+  "VBScript, run before the bridge closes a CAD it created or releases one it
+attached to: make the profile active before EPURE's the active one again, so
+neither the user's CAD nor the next start keeps EPURE's (alfe-cad-lifecycle-
+rules: the run leaves the CAD's settings as it found them)."
+  (list "On Error Resume Next"
+        "If Not IsEmpty(epurePreviousProfile) Then app.Preferences.Profiles.ActiveProfile = epurePreviousProfile"
+        "If Err.Number <> 0 Then AppendLine errFile, \"WARN COM bridge: cannot restore the CAD profile '\" & epurePreviousProfile & \"' (\" & Err.Description & \")\""
+        "Err.Clear"
         "On Error GoTo 0"))
 
 (define-plugin-hook "epure" :run-common-prelude (ctx value &key variant)
@@ -225,4 +241,5 @@ to the errors file and the run goes on with the current profile."
       (:vbs (case slot
               ;; Select the target document before profile activation: a caller
               ;; can install its native UI guard in that exact namespace first.
-              (:after-document (profile-activation-lines (plugin-option :profile))))))))
+              (:after-document (profile-activation-lines (plugin-option :profile)))
+              (:before-close (profile-restoration-lines)))))))

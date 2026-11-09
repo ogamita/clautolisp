@@ -1028,3 +1028,10 @@ Apres fin du script et restauration acquittees, conserver le resultat quel que
 soit le code natif ; forcer si necessaire, confirmer disparition et nettoyage.
 Implementation a faire ; pas de qualification retroactive. Bilan et arret des
 recherches de crash tiers : [[file:../documentation/cad-termination-observations-20261106.org]].
+
+* IN-PROGRESS alfe-cad-lifecycle-rules (P1)
+[[file:alfe-cad-lifecycle-rules.issue][Decision pjb 2026-11-09 : meme cycle de vie pour tous les CAD]] : l'arret ne
+sauve jamais, ne quitte/tue que le CAD lance par alfe, statut du script
+prioritaire, demarrage protege, Ctrl-C par le protocole, delais coherents.
+MR-A (2.3.121) fait ; MR-B a MR-E a suivre.
+

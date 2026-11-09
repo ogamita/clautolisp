@@ -1094,6 +1094,7 @@ none — so a run with no plug-in emits the template byte for byte."
   (let ((out template))
     (loop for (placeholder slot) in '(("${PLUGIN_AFTER_APP}"   :after-app)
                                       ("${PLUGIN_AFTER_DOCUMENT}" :after-document)
+                                      ("${PLUGIN_BEFORE_CLOSE}" :before-close)
                                       ("${PLUGIN_BEFORE_LOAD}" :before-load))
           do (let ((lines (launcher-lines slot :vbs variant)))
                ;; A string replaces the placeholder; NIL removes it, and with
@@ -2194,9 +2195,55 @@ Write-Atomic $ReportFile $lines
 if($r.disappeared -eq '1'){exit 0}
 exit 1
 ")
+(defparameter *owned-com-snapshot-vbs*
+  "Dim lifeSnapshot, lifeClosed, lifeIndex
+' The documents open before the run: an ATTACHED CAD keeps them; only what
+' the run opened is closed, without saving (alfe-cad-lifecycle-rules).
+Function DocumentKey(d)
+  On Error Resume Next
+  DocumentKey = LCase(d.FullName)
+  If Err.Number <> 0 Or DocumentKey = \"\" Then
+    Err.Clear
+    DocumentKey = LCase(d.Name)
+  End If
+  On Error GoTo 0
+End Function
+Function CloseRunDocuments()
+  ' Close, WITHOUT saving, every document not in the snapshot; return the
+  ' count closed, or -1 when a Close failed (the caller retries).
+  Dim i, d
+  CloseRunDocuments = 0
+  On Error Resume Next
+  For i = app.Documents.Count - 1 To 0 Step -1
+    Err.Clear
+    Set d = app.Documents.Item(i)
+    If Err.Number = 0 Then
+      If InStr(lifeSnapshot, \"|\" & DocumentKey(d) & \"|\") = 0 Then
+        d.Close False
+        If Err.Number <> 0 Then
+          AppendLine errFile, \"ATTACHED-CLOSE error=\" & Err.Number & \" description=\" & Err.Description
+          CloseRunDocuments = -1
+          Exit For
+        End If
+        CloseRunDocuments = CloseRunDocuments + 1
+      End If
+    End If
+  Next
+  Set d = Nothing
+  Err.Clear
+  On Error GoTo 0
+End Function
+lifeSnapshot = \"|\"
+On Error Resume Next
+For lifeIndex = 0 To app.Documents.Count - 1
+  lifeSnapshot = lifeSnapshot & DocumentKey(app.Documents.Item(lifeIndex)) & \"|\"
+Next
+Err.Clear
+On Error GoTo 0
+")
 (defparameter *owned-com-capture-vbs*
   "' Keep this exact COM reference; never rediscover an arbitrary ROT instance.
-Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription
+Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeStream, lifeAttempt, lifeError, lifeDescription
 Set lifeShell = CreateObject(\"WScript.Shell\")
 lifeRoot = fso.GetParentFolderName(runFile)
 lifeHelper = fso.BuildPath(lifeRoot, \"owned-cad-process.ps1\")
@@ -2213,6 +2260,7 @@ End If
   "Do
   If fso.FileExists(lifeRequest) Then
     lifeCode = 0
+${PLUGIN_BEFORE_CLOSE}
     If created Then
       ' The native command can still be unwinding after RESTORED.
       ' Bound retries on this exact application; never rediscover or kill one.
@@ -2240,6 +2288,22 @@ End If
       Set app = Nothing
       ' A disconnected COM call can mean Quit succeeded. alfe, not this
       ' bridge, then proves the created process gone (or ends it).
+    Else
+      ' ATTACHED: close what the run opened, put the window back as it was,
+      ' and disconnect. Never Quit a CAD alfe did not start.
+      For lifeAttempt = 1 To 40
+        lifeClosed = CloseRunDocuments()
+        If lifeClosed >= 0 Then Exit For
+        WScript.Sleep 250
+      Next
+      If lifeClosed < 0 Then lifeCode = 1
+      On Error Resume Next
+      If Not IsEmpty(lifeWasVisible) Then app.Visible = lifeWasVisible
+      Err.Clear
+      On Error GoTo 0
+      Set lifeDoc = Nothing
+      Set doc = Nothing
+      Set app = Nothing
     End If
     Set lifeStream = fso.CreateTextFile(lifeResult & \".tmp\", True)
     lifeStream.WriteLine \"contract=2\"
@@ -2247,6 +2311,7 @@ End If
       lifeStream.WriteLine \"owned=created\"
     Else
       lifeStream.WriteLine \"owned=attached\"
+      lifeStream.WriteLine \"closed-documents=\" & CStr(lifeClosed)
     End If
     lifeStream.WriteLine \"quit-error=\" & CStr(lifeCode)
     lifeStream.WriteLine \"end=1\"
@@ -2259,9 +2324,15 @@ End If
     lifeCode = Trim(lifeStream.ReadAll)
     lifeStream.Close
     If lifeCode = \"STOPPED\" And Not created Then
+      lifeClosed = CloseRunDocuments()
+      On Error Resume Next
+      If Not IsEmpty(lifeWasVisible) Then app.Visible = lifeWasVisible
+      Err.Clear
+      On Error GoTo 0
       Set lifeStream = fso.CreateTextFile(lifeResult & \".tmp\", True)
       lifeStream.WriteLine \"contract=2\"
       lifeStream.WriteLine \"owned=attached\"
+      lifeStream.WriteLine \"closed-documents=\" & CStr(lifeClosed)
       lifeStream.WriteLine \"quit-error=0\"
       lifeStream.WriteLine \"end=1\"
       lifeStream.Close
@@ -2330,7 +2401,8 @@ End If
   (let* ((document-start (or (search "Dim docReady, docAttempt" text)
                              (error "Cannot locate COM drawing open boundary.")))
          (text (concatenate 'string (subseq text 0 document-start)
-                            *owned-com-ready-vbs* *owned-com-capture-vbs*
+                            *owned-com-ready-vbs* *owned-com-snapshot-vbs*
+                            *owned-com-capture-vbs*
                             (subseq text document-start)))
          (marker "${PLUGIN_BEFORE_LOAD}")
          (before (search marker text))

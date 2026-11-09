@@ -2149,6 +2149,7 @@ slot; the handler returns its lines when the slot is one it cares about.
 | =:scr=  | =run.scr= (BricsCAD batch), the accoreconsole SCR | =:before-load= | immediately before the =(load run-common.lsp)= line |
 |         |                                     | =:after-load=   | after it, before the final =_QUIT= (the load only returns when the session ends) |
 | =:vbs=  | =bridge-bricscad.vbs=, =bridge-autocad.vbs= | =:after-app= | once the COM application object exists, before waiting for it and before the document is used |
+|        | | =:before-close= | before the bridge closes a CAD it created or releases one it attached to |
 |        | | =:after-document= | target document selected; before profile-triggered application initialization and runtime trust setup |
 |         |                                     | =:before-load=  | once the document is active, immediately before the =(load run-common.lsp)= is sent |
 
@@ -2319,7 +2320,7 @@ The shell launches the engine with a minimal script of the form:
 #+begin_example
 ._COMMANDLINE
 (load "/.../run-common.lsp")
-._QUIT _Y
+._QUIT _N
 #+end_example
 
 The role of =run.scr= is deliberately minimal:
@@ -2473,7 +2474,7 @@ thus distinguishes a live-but-idle runtime from a stuck one.
 9. on =SHUTDOWN= or =(quit)=, publish =STOPPING= then exit, then
    =STOPPED=;
 10. =run-common.lsp= returns control; =run.scr= resumes and runs
-    =._QUIT _Y=.
+    =._QUIT _N=.
 
 Reference implementation: =autolisp-protocol-server-loop= in
 =runtime/autolisp-remote-io.lsp:232–292=.
@@ -2952,7 +2953,19 @@ After RESTORED, alfe writes the frontier, =owned-close-frontier.txt=: the
 outcome, the result files, the restoration acknowledged, the invocation. It then
 publishes close-owned.request. The retained startup bridge uses its exact
 application reference: a created instance has its documents closed without
-saving and Quit called; an attached one is only released. The bridge answers
+saving and Quit called; an attached one is never quit: the bridge took a
+snapshot of its open documents before opening the job drawing, and now closes,
+without saving, only the documents not in that snapshot, restores the window's
+visibility, runs the =:before-close= plug-in lines (EPURE restores the profile)
+and releases it (=closed-documents=N= in the answer).
+
+Two rules govern every shutdown, on every platform and in every mode
+(alfe-cad-lifecycle-rules, 2026-11-09): alfe's shutdown SHALL NOT save a
+drawing -- drawings are closed without saving and QUIT is answered No
+(=._QUIT _N=); a script saves its drawing itself if it wants it saved -- and
+alfe SHALL quit or terminate only a CAD it started: batch always launches and
+quits (terminating a survivor); automation quits or terminates the CAD it
+created, and only disconnects from one it attached to. The bridge answers
 =close-owned.result= -- =contract=, =owned= (=created= or =attached=),
 =quit-error= -- and does not wait for the process.
 

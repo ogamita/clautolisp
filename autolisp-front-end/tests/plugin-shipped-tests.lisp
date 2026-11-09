@@ -467,7 +467,10 @@ templates: the slot lines are removed, nothing else changes."
               ;; still contribute no lines when none are enabled.
               (let ((base (alfe.backend.cad-common::instrument-owned-com-bridge
                            template (merge-pathnames "x.vbs" dir) :trust-runtime-p t)))
-                (is (= (- (length (%lines base)) 3) (length (%lines text))))))))))))
+                ;; Four slot lines: the template's three, and :before-close
+                ;; in the retained bridge's close loop.
+                (is (search "${PLUGIN_BEFORE_CLOSE}" base))
+                (is (= (- (length (%lines base)) 4) (length (%lines text))))))))))))
 
 (test epure-shows-in-dry-run-and-run-off-windows
   "The scenario every CI host can run: --epure with --bricscad, dry run."
@@ -656,3 +659,19 @@ places the run is refused with the places tried."
                    (is (and control startup bootstrap (< control startup bootstrap)))
                    (is (search "(load \"on_start.lsp\") (s::startup)" runtime)))
               (uiop:delete-directory-tree workdir :validate t :if-does-not-exist :ignore))))))))
+
+(test epure-restores-the-active-profile-before-the-close
+  "EPURE remembers the profile active before it switches to its own, and its
+:before-close lines put it back -- before a created CAD is quit or an attached
+one released -- so neither keeps EPURE's profile (alfe-cad-lifecycle-rules)."
+  (with-shipped-plugins
+    ;; The plug-in's package exists only once it is loaded: look its
+    ;; functions up at run time.
+    (let* ((on (funcall (find-symbol "PROFILE-ACTIVATION-LINES" "ALFE.PLUGIN.EPURE") "Epure"))
+           (off (funcall (find-symbol "PROFILE-RESTORATION-LINES" "ALFE.PLUGIN.EPURE")))
+           (save (position "epurePreviousProfile = app.Preferences.Profiles.ActiveProfile"
+                           on :test #'string=))
+           (switch (position-if (lambda (l) (search "ActiveProfile = \"Epure\"" l)) on)))
+      (is (and save switch (< save switch)))
+      (is (some (lambda (l) (search "ActiveProfile = epurePreviousProfile" l)) off)))))
+

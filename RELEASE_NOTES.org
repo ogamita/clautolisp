@@ -1956,6 +1956,13 @@ separate binary for tool integrators.
   the timeout runs out (alfe 2.3.105: also when AutoCAD's registered command
   has an unquoted path, as AutoCAD 2022's does; 2.3.106: with -Embedding, as
   COM adds it, so AutoCAD does not stop at its startup dialog).
+- CAD shutdown (alfe 2.3.121), every CAD and platform: alfe's shutdown never
+  saves a drawing -- AutoCAD batch no longer runs ~QSAVE~; drawings are closed
+  without saving and QUIT is answered No (~._QUIT _N~); a script saves its
+  drawing itself. alfe quits only a CAD it started: from a CAD it attached to it
+  closes only the documents the run opened, restores the window visibility and
+  the EPURE profile, and disconnects. BricsCAD batch puts ~SECURELOAD~ back.
+  See the user manual, /Closing drawings after an automated run/.
 - macOS ~--autocad~ (alfe 2.3.119): an installed AutoCAD's AcCoreConsole is
   found and used for batch runs, but only once a short probe has seen it run
   AutoLISP. An install that cannot run (no licence, bootstrap failure) is
