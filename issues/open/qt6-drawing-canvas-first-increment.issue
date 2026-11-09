@@ -592,3 +592,88 @@ breadth) toward their low ends; the floors that remain — phase-5 kernel +
 real-CAD validation, phase-2 embedding stability, phase-4 ABI design — set the
 spread.  Supersedes the M1-M5 milestone table for sequencing; the per-option
 person-year figures remain a human-equivalent scope upper bound only.
+
+* Subgoal — an Action Layer so an AI can drive AND introspect everything
+
+** The requirement
+
+Scripting, Lisp and the =-command= CLI already make the engine AI-driveable.
+This subgoal extends that to the WHOLE application: every user-facing
+interaction -- menus, ribbon, dialogs, palettes, grips, osnap, canvas picks,
+mouse modes, sysvar changes -- must be invokable AND introspectable through one
+API, at the fidelity a human has.  The GUI must be a THIN presentation over a
+named, typed, documented action layer; *nothing may reach application state
+except through it.*  The point is that the layer a test harness drives and the
+layer an agent drives are the SAME layer -- so making the app testable and
+making it AI-operable are one piece of work, not two.
+
+** Design: one Action Layer, four surfaces
+
+1. *Central action registry.*  Every action -- a command, a menu item, a ribbon
+   button, a dialog control, a grip operation, a canvas interaction mode, a
+   sysvar set -- is registered ONCE as a named, typed, documented entity: a
+   stable id, parameters with types, a docstring, a category, an
+   enabled/disabled predicate, a keybinding / menu path.  Generalises cador's
+   =*cador-commands*= table and the DCL tile protocol into one surface.
+2. *Uniform dispatch.*  ONE entry point -- =(invoke-action ID typed-args...)= --
+   that the GUI, the =-command= CLI, the script/AutoLISP layer and the AI-driver
+   API all call identically.  The GUI is just one caller; it holds no logic a
+   caller cannot reach, and no widget path mutates state by any other route.
+3. *Introspection API.*  Query the registry and the LIVE state as structured
+   data (s-expr / JSON): =list-actions=, =describe-action= (params / types /
+   doc / enabled), and =get-state= (the active command and the PENDING PROMPT
+   with its expected input type, the selection set, sysvars, open dialogs and
+   their fields/values, the current view/layers).  Modelled on Emacs
+   =describe-*= and CL reflection: the AI discovers what is possible and the
+   current state WITHOUT screen-scraping.
+4. *Structured interaction protocol.*  When a command needs input the app EMITS
+   a typed request ("need a POINT", "need an ENTITY matching X", "dialog FIELD
+   expects Y", "pick one of KEYWORDS ...") and the driver answers with a typed
+   value; the app streams structured EVENTS of what it did (action invoked,
+   state changed, dialog opened/closed, entity created).  Generalises cador's
+   prompt-api seam and the alfe file-protocol / DCL s-expr wire to dialogs,
+   canvas picks and menus.  An AI never guesses where to click: the app
+   DECLARES its needs, the driver supplies named/typed values.
+
+** The feature that ENSURES it (the driveability guard)
+
+A CI check -- the same discipline as the change-gating completeness guard
+(scripts/ci-classify-changes.py) -- FAILS the build unless EVERY action is:
+(a) registered with a stable id, typed params and a docstring; (b) reachable by
+=invoke-action= with NO GUI back-door -- verified by enumerating every GUI
+signal binding and asserting each dispatches a registered action rather than
+mutating state directly; and (c) covered by at least one HEADLESS test that
+drives it through the API (offscreen).  A new ribbon button with no action-id,
+an action with no doc/types, or a widget that touches the model directly -> red.
+This turns "the whole app is AI-driveable and introspectable" from a hope into
+a CHECKED INVARIANT, exactly as the CI classifier does for change-gating.
+
+** Record / replay
+
+Every session records as a transcript of =(invoke-action + supplied inputs)=,
+replayable deterministically offscreen.  That transcript IS the test fixture
+(the =-command= / screenshot-diff goals), the AI's feedback loop ("show me what
+you did / redo it from here"), and the bug repro -- one artefact serving tests,
+agents and users.
+
+** Where it sits, and what it reuses
+
+Cross-cutting, NOT a late add-on: the registry + dispatch + introspection are
+established WITH the GUI/action layer in Phase 2, and the driveability guard is
+switched on then, so every later phase registers its actions through the same
+layer and driveability never regresses.  Phase 4's CRX C/C++ SDK registers its
+commands / custom entities through the SAME registry, so native extensions are
+AI-driveable too.  It reuses what exists rather than inventing: the
+=*cador-commands*= registry (level 3), the prompt-api input seam, the DCL
+s-expr wire and the alfe protocol are the seeds -- this subgoal unifies them
+into one named, typed, documented, GUARDED Action Layer that also covers GUI
+interaction.
+
+** Why it matters
+
+It is the single precondition for BOTH halves of the thesis at once: an AI
+BUILDING the software (deterministic, introspectable tests) and an AI OPERATING
+it as a user.  They are the same mechanism.  A CAD whose every interaction is a
+named, typed, documented, testable action is uniquely suited to an agent-built,
+agent-operated product -- and the guard is what keeps it that way as the surface
+grows to AutoCAD/BricsCAD size.
