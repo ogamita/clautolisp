@@ -517,3 +517,78 @@ that proved stale.
 
 Trigger: when web/doc access is available AND before 3D (M4) is scoped —
 whichever is later.  Not now.
+
+* Canonical plan — committed phase order (pjb, 2026-11-09), maximal-agent estimate
+
+The chosen direction realises *Alternative 2* (ECL embed + CRX).  CL-centric:
+keep MOST of the application in Common Lisp (engine, document, commands); use
+C++/Qt6 only for the GUI shell and the per-frame paint loop.
+
+** Phase order
+
+1. *Port to ECL* (pure CL, no Qt): ~157 k LOC green + perf-acceptable on ECL.
+   Keep SBCL/CCL as parallel dev/CI lanes (fast loop + existing alfe/CAD
+   tooling); ECL is the embed target.  Keep hot numeric/geometry paths fast
+   (type decls now, drop to C later if needed).
+2. *Qt6 GUI around it*: embed ECL in the Qt app; thin C++ shell; the world-space
+   canvas renders a CL-PRODUCED DISPLAY LIST (CL owns model + regen, C++ owns the
+   per-frame paint + pan/zoom + event capture — cross the ECL boundary only on
+   regen/events, NEVER per frame); the input bridge feeds the prompt-api so
+   getpoint/entsel/ssget + CL commands work from the mouse.
+3. *Full 2D user compatibility*: all draw/modify commands wired to interactive
+   input (the =%cmd-*= parking work, D1 §13.5), grips, all osnap + tracking,
+   dynamic input, selection modes, palettes (layers/properties/…), text
+   (SHX + TTF), hatch, linetypes/lineweights, the associative dimensioning
+   engine, tables, fields, dynamic blocks + block editor, xrefs, constraints +
+   solver, DWG 2D round-trip, layouts + plotting (PDF).
+4. *API compatibility (CRX)*: a versioned C/C++ ABI (entity / command /
+   selection / prompt / transaction / reactor / custom-object) + the loader
+   (dll/dylib/so) + the C-ABI ↔ cador marshalling + the CL extension API
+   (AutoLISP + vlax, extended) + samples/docs.  REALITY: binary drop-in of real
+   ARX/BRX is impossible (their ABI is bound to their internal C++); CRX is an
+   ARX-LIKE own ABI, so *source* portability (recompile against CRX headers) is
+   the realistic target.  This phase delivers the 2D object-model API; 3D entity
+   APIs extend it in 5-6, so design the ABI versioned + extensible from the start.
+5. *3D file support*: integrate OpenCASCADE (represent/tessellate solids),
+   read/write the ACIS SAT/SAB stream, the ACIS ↔ OCCT B-rep translation, 3D DWG
+   round-trip, 3D display (tessellated, basic visual styles).  The long pole.
+6. *3D GUI (BricsCAD-like)*: direct-modelling commands (=DM*=-style) +
+   manipulator + quad-like HUD + orbit/navigation + subobject editing + visual
+   styles; optional parametric 3D constraints (matching BricsCAD is a large add).
+   Demand-gated.
+
+** Design constraints baked into the order (not blockers)
+
+- Per-frame paint stays in C++ over a CL display list; the 60 fps loop never
+  crosses the ECL boundary.
+- ECL < SBCL on compute: keep hot geometry/regen/spatial-index fast (decls or
+  C++); OCCT (C++) for 3D.  "Most app in CL" = commands/logic, not inner loops.
+- The scheduler ↔ Qt event-loop marriage (phase 2) and the CRX C-ABI design
+  (phase 4) are the expertise-bound bits — where a human expert most repays even
+  in a maximal-agent plan.
+- ARX/BRX = source-compatible-ish via CRX, not binary drop-in.
+
+** Maximal-agent estimate (agent-throughput basis; floors called out)
+
+| phase                         | agent calendar | floor (what gates it)                                  |
+|-------------------------------+----------------+--------------------------------------------------------|
+| 1 ECL port                    | ~2-6 weeks     | ECL-specific debugging; the test suite is the oracle   |
+| 2 Qt6 embed + canvas          | ~3-8 weeks     | ECL/Qt threading + GC stability                        |
+| 3 full 2D                     | ~2-6 months    | DWG 2D round-trip validation; dims + dynamic blocks    |
+| 4 CRX API                     | ~1-3 months    | the C-ABI design (get it right once)                   |
+| 5 3D file (OCCT + ACIS)       | ~3-9 months    | ACIS round-trip + OCCT robustness on real models (pole)|
+| 6 3D GUI                      | ~2-6 months    | UX feel loop + (optional) 3D constraint solver         |
+
+With realistic phase overlap and maximal agent parallelism:
+- *2D-complete + CRX API (phases 1-4):* ~*4-10 months* — a shippable, extensible
+  2D CAD on the ECL/Qt/CRX architecture.
+- *Full 6-phase near-parity incl. 3D (phases 1-6):* ~*9-20 months (~1-1.5 yr)* —
+  variance dominated by phase 5 (ACIS/OCCT round-trip validation), not code.
+- Intermediate: *minimal interactive 2D canvas on embedded ECL (end of phase 2):*
+  ~*1-3 months*.
+
+"As much agent work as possible" pushes the throughput-bound phases (2/3/4/6
+breadth) toward their low ends; the floors that remain — phase-5 kernel +
+real-CAD validation, phase-2 embedding stability, phase-4 ABI design — set the
+spread.  Supersedes the M1-M5 milestone table for sequencing; the per-option
+person-year figures remain a human-equivalent scope upper bound only.
