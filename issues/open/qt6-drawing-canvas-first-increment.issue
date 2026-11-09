@@ -461,3 +461,59 @@ computed from agent throughput + real latency floors, not from a human-team
 analogy.  The person-year numbers in the earlier sections should be read as
 "human-equivalent scope", i.e. the upper bound, and this table as the expected
 calendar.
+
+* 3D module — separable, demand-gated
+
+3D (OpenCASCADE kernel + solid-modelling UI + ACIS round-trip) is designed as a
+SEPARATE module behind a clean boundary, built later or sooner per customer
+demand; the 2D product (M1-M3) ships without it.  The split is clean because
+*DWG 3D interop is kernel-level, not UI-level*: 3D solids are ACIS streams in
+the DWG whatever UI drew them, so file compatibility is the ACIS/OCCT
+round-trip, decoupled from the 3D UX.  And AutoCAD vs BricsCAD *diverge* in 3D
+UX, which is latitude, not a constraint — pick ONE coherent UX rather than
+cloning either.  Recommendation when 3D is scoped: direct-modelling COMMANDS (a
+la BricsCAD =DM*=, the most scriptable/testable, fitting the =-command= goal) +
+a manipulator + an optional quad-like context HUD.
+
+Training-knowledge summary of the divergence (UNVERIFIED — see the task below):
+- *AutoCAD:* ribbon 3D workspaces, subobject gizmos, =PRESSPULL=, ViewCube;
+  direct (NON-parametric) 3D; ShapeManager (an ACIS fork).
+- *BricsCAD:* the Quad (context HUD at the cursor), the Manipulator, the =DM*=
+  direct-modelling command family, AND 3D geometric/dimensional constraints +
+  design-intent recognition (parametric 3D, which AutoCAD lacks); LookFrom;
+  BIM / Sheet-Metal / Mechanical verticals on the same ACIS core.
+- Both rest on ACIS, so solids interoperate at the file level.
+
+** TODO Verify current-version 3D UX specifics against vendor docs  [3d] [deferred]
+
+The divergence summary above is from model TRAINING knowledge; product UIs drift
+across versions and it was NOT checked against live docs.  Before the 3D module
+is scoped (M4), confirm or correct it against current OFFICIAL documentation.
+DEFERRED — needs web/doc access; do not attempt from a sandbox without it.
+
+Sources (official only), recording the exact version + access date:
+- AutoCAD: =help.autodesk.com= — the current AutoCAD command reference + the "3D
+  modelling" user guide + release notes.
+- BricsCAD: =help.bricsys.com= + the Bricsys command reference / release notes
+  for the current BricsCAD (e.g. V25/V26).
+
+Verify (tick each; then correct this 3D section and the Alt-2 text if stale):
+- [ ] BricsCAD Quad, Manipulator, and the =DM*= command family still exist;
+      current command names.
+- [ ] BricsCAD 3D geometric/dimensional constraints + design-intent (parametric
+      3D) still present; current feature/command names.
+- [ ] BricsCAD navigation widget (LookFrom vs ViewCube-like) and the
+      BIM/Sheet-Metal/Mechanical verticals on the shared 3D core.
+- [ ] AutoCAD ribbon 3D workspaces, subobject gizmos, =PRESSPULL=, ViewCube; and
+      that AutoCAD 3D is still NON-parametric (parametric constraints 2D-only).
+- [ ] Kernel facts: BricsCAD on ACIS, AutoCAD on ShapeManager (ACIS fork), 3D
+      solids interoperate via the ACIS stream in DWG.
+- [ ] Anything changed since training that affects the "pick one coherent UX"
+      recommendation or the M4 scope.
+
+Output: edit this issue's 3D section with confirmed/corrected specifics, cite
+the doc pages + versions + verification date, and flag any training-era claim
+that proved stale.
+
+Trigger: when web/doc access is available AND before 3D (M4) is scoped —
+whichever is later.  Not now.
