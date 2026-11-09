@@ -1469,6 +1469,25 @@ delay is unusable here — too short and the keystrokes go to the
 terminal, too long and every run pays for it. Override with
 $ALFE_BRICSCAD_STARTUP_DELAY.")
 
+(defun %applescript-record-pid (file)
+  "AppleScript: write cadPid and that process's start time (`ps -o lstart=')
+to FILE, one per line. alfe watches that process during the run and, when it
+LAUNCHED it, ends it at the shutdown -- the AppleScript launcher has exited by
+then (alfe-cad-lifecycle-rules)."
+  (format nil "~%do shell script \"{ echo \" & cadPid & \"; ps -o lstart= -p \" & cadPid & \"; } > \" & quoted form of \"~A\""
+          (applescript-escape (uiop:native-namestring file))))
+
+(defun %macos-cad-process (workdir name)
+  "The (PID START-TIME) the AppleScript launcher recorded in WORKDIR's NAME
+\(launched-cad-pid.txt or attached-cad-pid.txt), or NIL."
+  (let ((lines (ignore-errors (uiop:read-file-lines (merge-pathnames name workdir)))))
+    (and (>= (length lines) 2)
+         (let ((pid (ignore-errors (parse-integer (first lines)))))
+           (and pid (list pid (string-trim '(#\Space #\Tab #\Return) (second lines))))))))
+
+(defun %macos-automation-p (session)
+  (and (macos-p) (eq (bricscad-session-variant session) :automation)))
+
 (defun emit-launcher-applescript (path &key runtime-load-path executable-path
                                             template-path (policy :launch) pid)
   "Write the macOS AppleScript launcher to PATH. EXECUTABLE-PATH is the
@@ -1490,9 +1509,18 @@ or :attach) and PID choose the instance: see %APPLESCRIPT-LAUNCH-COMMAND."
                                        (if template-path (namestring template-path) "")))
                   ("EXEPATH"       . ,(applescript-escape
                                        (if executable-path (namestring executable-path) "")))
-                  ("LAUNCHCOMMAND" . ,(%applescript-launch-command
-                                       executable-path template-path
-                                       :policy policy :pid pid))
+                  ("LAUNCHCOMMAND" . ,(concatenate
+                                       'string
+                                       (%applescript-launch-command
+                                        executable-path template-path
+                                        :policy policy :pid pid)
+                                       (%applescript-record-pid
+                                        (merge-pathnames
+                                         (if (eq policy :attach)
+                                             "attached-cad-pid.txt"
+                                             "launched-cad-pid.txt")
+                                         (uiop:pathname-directory-pathname
+                                          runtime-load-path)))))
                   ("STARTUPWAIT"   . ,(or (uiop:getenv "ALFE_BRICSCAD_STARTUP_DELAY")
                                           +bricscad-applescript-startup-wait+))
                   ("FOCUSLOG"      . ,(applescript-escape
@@ -1894,6 +1922,13 @@ own."
                 :bootstrap-phase bootstrap-phase
                 :use-remote-protocol-p t
                 :quit-on-finish-p (not interactive-p)
+                ;; macOS AppleScript automation: no run.scr will quit the CAD
+                ;; alfe launched; it quits itself after the session
+                :quit-after-session-p (and (macos-p)
+                                           (eq (choose-effective-mode
+                                                backend mode (%attach-requested-p cli-options))
+                                               :automation)
+                                           (not (%attach-requested-p cli-options)))
                 :debug-p (and cli-options
                               (eq :debug
                                   (alfe.cli:cli-options-verbosity cli-options)))
@@ -2125,7 +2160,11 @@ own."
                     (when (and (windows-p)
                                (eq (bricscad-session-variant session) :automation))
                       (alfe.backend.cad-common::end-created-com-cad
-                       (session-workdir session))))))))))
+                       (session-workdir session)))
+                    (when (%macos-automation-p session)
+                      (alfe.backend.cad-common::end-launched-pid
+                       (%macos-cad-process (session-workdir session) "launched-cad-pid.txt")
+                       :grace 0)))))))))
     (alfe.error:backend-error (probe)
       (error probe))
     (error (probe)
@@ -2152,7 +2191,16 @@ own."
                   :defer-shutdown-p (and (windows-p)
                                          (eq (bricscad-session-variant session)
                                              :automation))
-                  :process-info (bricscad-session-process-info session))))
+                  :process-info (bricscad-session-process-info session)
+                  ;; macOS AppleScript: the launcher has exited; watch the CAD
+                  :alive-fn (when (%macos-automation-p session)
+                              (let ((cad (or (%macos-cad-process (session-workdir session)
+                                                                 "launched-cad-pid.txt")
+                                             (%macos-cad-process (session-workdir session)
+                                                                 "attached-cad-pid.txt"))))
+                                (when cad
+                                  (lambda ()
+                                    (alfe.backend.cad-common::launched-pid-alive-p cad))))))))
     (session-state-set session
                        (ecase (alfe.backend:eval-result-status result)
                          (:success :done)
@@ -2198,7 +2246,10 @@ own."
             :bricscad protocol info
             :workdir (session-workdir session)
             :com-p (and (windows-p)
-                        (eq (bricscad-session-variant session) :automation)))
+                        (eq (bricscad-session-variant session) :automation))
+            :launched-pid (when (%macos-automation-p session)
+                            (%macos-cad-process (session-workdir session)
+                                                "launched-cad-pid.txt")))
         ;; Stopped whatever the shutdown signals: a second SHUTDOWN must
         ;; find nothing to do.
         (session-state-set session :stopped))))

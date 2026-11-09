@@ -5067,3 +5067,72 @@ attached CAD is captured for the watch only, in a file never used to end it."
             (is (search "If Not ProcessAlive(lifeCadPid) Then" text))
             (is (search "WScript.Quit 6" text))))))))
 
+;;; --- alfe-cad-lifecycle-rules (MR-D): macOS AppleScript automation ------
+
+(test launched-pid-is-ended-only-while-it-is-the-same-process
+  "A CAD known only by its PID (macOS AppleScript automation) is ended only
+while that PID still names the process alfe launched -- same start time --;
+a PID that names another process now is left alone."
+  (if (uiop:os-windows-p)
+      (fiveam:skip "uses ps and a POSIX sh child")
+      (let* ((info (uiop:launch-program (list "sh" "-c" "sleep 30")
+                                        :output nil :error-output nil))
+             (pid (uiop:process-info-pid info))
+             (launched (list pid (alfe.backend.cad-common::%pid-start-time pid))))
+        (unwind-protect
+             (progn
+               (is (second launched) "ps gives the start time")
+               (is (alfe.backend.cad-common::launched-pid-alive-p launched))
+               ;; a recorded start time that no longer matches: not ours
+               (is (eq :exited (alfe.backend.cad-common::end-launched-pid
+                                (list pid "Thu Jan  1 00:00:00 1970") :grace 0)))
+               (is (uiop:process-alive-p info) "another process is left alone")
+               (is (member (alfe.backend.cad-common::end-launched-pid launched :grace 0)
+                           '(:terminated :killed)))
+               (sleep 0.2)
+               (is (not (alfe.backend.cad-common::launched-pid-alive-p launched))))
+          (alfe.backend.cad-common:kill-engine-process info)))))
+
+(test macos-applescript-launcher-records-the-cad-pid
+  "The AppleScript launcher writes the PID and start time of the BricsCAD it
+launched (launched-cad-pid.txt) or attached to (attached-cad-pid.txt): only
+the former is ever ended by alfe."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+      (loop for (policy file) in '((:launch "launched-cad-pid.txt")
+                                   (:attach "attached-cad-pid.txt"))
+            do (let ((path (merge-pathnames "launcher.applescript" dir)))
+                 (alfe.backend.bricscad:emit-launcher-applescript
+                  path :runtime-load-path (merge-pathnames "run-common.lsp" dir)
+                       :executable-path "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad"
+                       :policy policy)
+                 (let ((text (uiop:read-file-string path)))
+                   (is (search "ps -o lstart= -p" text))
+                   (is (search file text) "~A writes ~A" policy file))))
+      (with-open-file (out (merge-pathnames "launched-cad-pid.txt" dir) :direction :output
+                                                                        :if-exists :supersede)
+        (format out "4242~%Mon Nov  9 10:11:12 2026~%"))
+      (is (equal '(4242 "Mon Nov  9 10:11:12 2026")
+                 (alfe.backend.bricscad::%macos-cad-process dir "launched-cad-pid.txt")))
+      (is (null (alfe.backend.bricscad::%macos-cad-process dir "attached-cad-pid.txt"))))))
+
+(test run-common-quits-after-the-session-only-when-asked
+  "A CAD launched with no script to quit it (macOS AppleScript automation)
+quits itself after its session, without saving; otherwise run-common leaves
+the CAD alone after the loop."
+  (with-cad-test-directories
+    (dolist (quit '(t nil))
+      ;; with the runtime staged, as in a real run: the quit follows the
+      ;; server loop
+      (let* ((protocol (alfe.protocol.file:init-session
+                        (%fresh-test-directory)
+                        :runtime-lsp-source (alfe.backend.cad-common:discover-runtime-lsp)))
+             (path (progn (alfe.protocol.file:stage-runtime-lsp protocol)
+                          (alfe.protocol.file:emit-run-common-lsp
+                           protocol :quit-after-session-p quit)))
+             (text (uiop:read-file-string path)))
+        (is (search "(if *AUTOLISP_QUIT_AFTER_SESSION* (autolisp-host-quit))" text))
+        (is (search (if quit "(setq *AUTOLISP_QUIT_AFTER_SESSION* T)"
+                        "(setq *AUTOLISP_QUIT_AFTER_SESSION* nil)")
+                    text))))))
+

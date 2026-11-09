@@ -1170,6 +1170,7 @@ single place that knows the product behind a name (`autocad',
                                  (bootstrap-phase :full)
                                  (use-remote-protocol-p t)
                                  (quit-on-finish-p t)
+                                 (quit-after-session-p nil)
                                  (debug-p nil)
                                  (invocation-dir (uiop:getcwd))
                                  (log-name "autolisp-session.log")
@@ -1315,6 +1316,12 @@ Returns the path of the emitted file."
               (emit-var "*AUTOLISP-QUIT-ON-FINISH*"
                         "*AUTOLISP_QUIT_ON_FINISH*"
                         (bool->autolisp quit-on-finish-p))
+              ;; A CAD alfe launched with no script to quit it (macOS
+              ;; AppleScript automation) quits itself once the session ends,
+              ;; without saving (alfe-cad-lifecycle-rules, rules 1-2).
+              (emit-var "*AUTOLISP-QUIT-AFTER-SESSION*"
+                        "*AUTOLISP_QUIT_AFTER_SESSION*"
+                        (bool->autolisp quit-after-session-p))
               (emit-var "*AUTOLISP-BOOTSTRAP-PHASE*"
                         "*AUTOLISP_BOOTSTRAP_PHASE*"
                         (format nil "~S" (string-downcase
@@ -1798,7 +1805,8 @@ Returns the path of the emitted file."
 (setq princ (car *ALFE-NATIVE-OUTPUT*)~%  ~
       print (cadr *ALFE-NATIVE-OUTPUT*)~%  ~
       prin1 (caddr *ALFE-NATIVE-OUTPUT*))~%~
-(princ)~%"))
+(princ)~%~
+(if *AUTOLISP_QUIT_AFTER_SESSION* (autolisp-host-quit))~%"))
               (t
                (format out
                        "~%(alfe-debug-log \"WARNING: runtime LSP was not staged; no server loop will run\")~%"))))))
