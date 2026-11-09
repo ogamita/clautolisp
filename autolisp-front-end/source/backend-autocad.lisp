@@ -184,23 +184,172 @@ AutoCAD (alfe-cad-console-encoding.issue / DWG-TrueView discovery)."
       (when (eq os :windows)
         (first-existing (windows-acad-candidates)))))
 
-(defun discover-accoreconsole-binary (&key
-                                        (os (host-os)))
+(defparameter *macos-accoreconsole-glob*
+  "/Applications/Autodesk/AutoCAD */*.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole"
+  "Where AcCoreConsole lives inside the macOS AutoCAD bundles, e.g.
+/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole
+(confirmed by --list-cad-programs on a macOS runner). A parameter so the tests
+can point it at a fake install.")
+
+(defun macos-accoreconsole-candidates ()
+  "The AcCoreConsole binaries of the macOS AutoCAD installs, newest first.
+AutoCAD proper (the GUI) is Windows-only; this batch engine ships in the
+macOS bundle."
+  (sort (mapcar #'namestring (directory *macos-accoreconsole-glob*))
+        #'string>))
+
+;;; --- is an installed AcCoreConsole runnable? ------------------------
+;;;
+;;; Installed is not runnable. On macOS an AutoCAD can be installed and yet
+;;; not run: no licence (an unlicensed install runs only for a trial period),
+;;; or Autodesk's Qt bootstrap bug, which cancels every LISP load
+;;; (accoreconsole-macos-headless-qt-blocker). So an AcCoreConsole that alfe
+;;; FOUND on macOS is used only once a probe has seen it run AutoLISP; one
+;;; that cannot is reported unavailable, with the reason -- a corpus then
+;;; skips the AutoCAD scenarios instead of failing them. The verdict is cached
+;;; per binary (path, size, write date) for *ACCORECONSOLE-PROBE-TTL* seconds,
+;;; so a run or a corpus does not pay the probe each time, and an expired
+;;; licence or an updated install is noticed within that time. An
+;;; AcCoreConsole named explicitly ($AUTOCAD_ACCORECONSOLE, which --cad
+;;; accoreconsole sets) is not probed: the user asked for it, and it runs and
+;;; fails with its own diagnostics.
+
+(defparameter *accoreconsole-probe-timeout* 120
+  "Seconds the runnability probe waits for AcCoreConsole to run its script.")
+
+(defparameter *accoreconsole-probe-ttl* (* 24 3600)
+  "Seconds a cached runnability verdict stays valid.")
+
+(defvar *accoreconsole-probe-cache-directory* nil
+  "Where the verdicts are cached; NIL means $XDG_CACHE_HOME/alfe/cad-probe/.")
+
+(defvar *accoreconsole-probe-verdicts* (make-hash-table :test #'equal)
+  "This process's verdicts, by cache key.")
+
+(defun %accoreconsole-probe-key (binary)
+  "BINARY's identity for the cache: true name, size and write date."
+  (let ((file (probe-file binary)))
+    (and file
+         (format nil "~A|~D|~D" (namestring file)
+                 (or (ignore-errors
+                      (with-open-file (in file :element-type '(unsigned-byte 8))
+                        (file-length in)))
+                     0)
+                 (or (ignore-errors (file-write-date file)) 0)))))
+
+(defun %accoreconsole-probe-cache-file (key)
+  (merge-pathnames
+   (format nil "accoreconsole-~36R.txt" (sxhash key))
+   (or *accoreconsole-probe-cache-directory*
+       (uiop:ensure-directory-pathname
+        (uiop:xdg-cache-home "alfe" "cad-probe")))))
+
+(defun probe-accoreconsole (binary &key (timeout *accoreconsole-probe-timeout*)
+                                        (launcher #'uiop:launch-program))
+  "Run BINARY once, on a fresh empty drawing, with a script whose only work is
+to have AutoLISP write a marker file, then quit. Returns (values RUNNABLE-P
+REASON): T when the marker was written, else NIL and why -- the exit code, or
+the TIMEOUT that ran out (the process is then terminated). The scratch
+directory is removed. LAUNCHER is UIOP:LAUNCH-PROGRAM's stand-in for tests."
+  (let* ((dir (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-accoreconsole-probe-~36R/"
+                                        (random (expt 36 8) (make-random-state t)))
+                                (uiop:temporary-directory))))
+         (marker (merge-pathnames "probe.txt" dir))
+         (scr (merge-pathnames "probe.scr" dir)))
+    (ensure-directories-exist dir)
+    (unwind-protect
+         (let ((dwg (alfe.drawing:fresh-empty-dwg dir)))
+           (with-open-file (out scr :direction :output :if-exists :supersede
+                                    :external-format :utf-8)
+             (format out "(progn (setq f (open ~S \"w\")) (write-line \"ALFE-PROBE-OK\" f) (close f))~%"
+                     (uiop:native-namestring marker))
+             (format out "._QUIT _Y~%"))
+           (let ((info (funcall launcher
+                                (list binary "/i" (uiop:native-namestring dwg)
+                                      "/s" (uiop:native-namestring scr))
+                                :output nil :error-output nil :input nil))
+                 (start (get-internal-real-time)))
+             (loop while (and (ignore-errors (uiop:process-alive-p info))
+                              (< (/ (- (get-internal-real-time) start)
+                                    internal-time-units-per-second)
+                                 timeout))
+                   do (sleep 0.2))
+             (let ((timed-out (ignore-errors (uiop:process-alive-p info)))
+                   (code (alfe.backend.cad-common:launcher-exit-code info)))
+               (kill-engine-process info)
+               (cond ((and (probe-file marker)
+                           (search "ALFE-PROBE-OK"
+                                   (ignore-errors (uiop:read-file-string marker))))
+                      (values t nil))
+                     (timed-out
+                      (values nil (format nil "it did not run AutoLISP within ~D s" timeout)))
+                     (t
+                      (values nil (format nil "it exited~@[ with code ~D~] without running AutoLISP"
+                                          code)))))))
+      (ignore-errors (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))))
+
+(defun accoreconsole-runnable-p (binary &key (probe #'probe-accoreconsole))
+  "The cached verdict of PROBE on BINARY: (values RUNNABLE-P REASON). Probed
+again once the verdict is older than *ACCORECONSOLE-PROBE-TTL*, or when
+BINARY's size or write date changed."
+  (let ((key (%accoreconsole-probe-key binary)))
+    (unless key
+      (return-from accoreconsole-runnable-p (values nil "it is not on disk")))
+    (let ((now (get-universal-time))
+          (memo (gethash key *accoreconsole-probe-verdicts*)))
+      (flet ((fresh-p (verdict)
+               (and verdict (< (- now (first verdict)) *accoreconsole-probe-ttl*))))
+        (unless (fresh-p memo)
+          (let* ((file (%accoreconsole-probe-cache-file key))
+                 (pairs (alfe.backend:read-key-value-file file))
+                 (stored (and (equal (alfe.backend:key-value pairs "key") key)
+                              (list (or (ignore-errors
+                                         (parse-integer (alfe.backend:key-value pairs "probed")))
+                                        0)
+                                    (equal (alfe.backend:key-value pairs "runnable") "1")
+                                    (alfe.backend:key-value pairs "reason")))))
+            (setf memo
+                  (if (fresh-p stored)
+                      stored
+                      (multiple-value-bind (ok reason) (funcall probe binary)
+                        (let ((verdict (list now ok reason)))
+                          (ignore-errors
+                           (ensure-directories-exist file)
+                           (alfe.backend:write-key-value-file
+                            file `(("key" . ,key) ("probed" . ,now)
+                                   ("runnable" . ,(if ok 1 0)) ("reason" . ,reason))))
+                          verdict))))
+            (setf (gethash key *accoreconsole-probe-verdicts*) memo)))
+        (values (second memo) (third memo))))))
+
+(defvar *accoreconsole-unavailable-reason* nil
+  "Why DISCOVER-ACCORECONSOLE-BINARY set aside an installed AcCoreConsole,
+for DETECT's message; NIL when it did not.")
+
+(defun discover-accoreconsole-binary (&key (os (host-os)))
   "Locate the AcCoreConsole batch engine.
 
-On Windows it is auto-discovered from the install. AcCoreConsole ALSO ships
-inside the macOS AutoCAD bundle and can be driven by alfe — but it is NOT
-auto-discovered here: on macOS it is opt-in via $AUTOCAD_ACCORECONSOLE, which
-`--cad accoreconsole' sets to the bundle path (cli.lisp). Auto-globbing the
-bundle would make plain `--autocad' — and thus the conformance corpus, through
-BACKEND-AVAILABLE-P -> DETECT — treat macOS as a working AutoCAD host and RUN the
-AutoCAD scenarios, but the macOS batch engine still aborts at bootstrap
-(accoreconsole-macos-headless-qt-blocker), so they fail with exit 4 instead of
-skipping. Env-gating keeps the corpus deterministic (Windows-only for real
-AutoCAD) while letting `--cad accoreconsole' drive it on macOS for debugging."
+$AUTOCAD_ACCORECONSOLE first (which --cad accoreconsole sets): named
+explicitly, it is used as is. On Windows the install is auto-discovered. On
+macOS the AutoCAD bundles are searched too, but an AcCoreConsole found there
+is returned only when ACCORECONSOLE-RUNNABLE-P has seen it run AutoLISP: an
+install without a licence, or hit by Autodesk's Qt bootstrap bug
+(accoreconsole-macos-headless-qt-blocker), is set aside and the reason kept in
+*ACCORECONSOLE-UNAVAILABLE-REASON*, so --autocad reports AutoCAD unavailable
+and the conformance corpus skips its AutoCAD scenarios instead of failing
+them."
+  (setf *accoreconsole-unavailable-reason* nil)
   (or (env-binary "AUTOCAD_ACCORECONSOLE")
-      (when (eq os :windows)
-        (first-existing (windows-accoreconsole-candidates)))))
+      (case os
+        (:windows (first-existing (windows-accoreconsole-candidates)))
+        (:macos
+         (loop for candidate in (macos-accoreconsole-candidates)
+               do (multiple-value-bind (ok reason) (accoreconsole-runnable-p candidate)
+                    (when ok (return candidate))
+                    (setf *accoreconsole-unavailable-reason*
+                          (format nil "AutoCAD's AcCoreConsole is installed (~A) but cannot run here: ~A"
+                                  candidate reason))))))))
 
 (defun candidate-autocad-template-paths (backend)
   "Return likely DWG/DWT templates that ship alongside the discovered
@@ -263,8 +412,13 @@ machine has no template I can find\", and now alfe brings one."
     (when (and (not (windows-p)) (not acc))
       (error 'backend-not-available
              :backend :autocad
-             :code :unsupported-os
-             :message (unsupported-os-message)
+             :code (if *accoreconsole-unavailable-reason* :not-runnable :unsupported-os)
+             :message (if *accoreconsole-unavailable-reason*
+                          (format nil "~A. Reported unavailable; checked again after ~D h or ~
+when the install changes. --cad accoreconsole runs it anyway."
+                                  *accoreconsole-unavailable-reason*
+                                  (round *accoreconsole-probe-ttl* 3600))
+                          (unsupported-os-message))
              :details (list :os (host-os))))
     (unless (or acad acc)
       (error 'backend-not-available
