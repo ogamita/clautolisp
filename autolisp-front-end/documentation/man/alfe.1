@@ -812,13 +812,22 @@ it attached to, and exits with 130. Under
 Control-C follows
 .BR \-\-on-interrupt .
 .SH CAD CLEANUP
-Windows COM runs restore the CAD log and search path before ending the runtime
-protocol. The retained startup bridge quits only an application it created,
-without saving its documents, and verifies that its PID and creation-time
-identity disappears. A missing final protocol message is normal after that
-exit; failed restoration or a cleanup timeout fails the invocation.
-Attached interactive applications are restored and left open.
-
+The same rules for every CAD, on every platform. The shutdown never saves a
+drawing: drawings are closed without saving and QUIT is answered No
+.RB ( "._QUIT _N" );
+a script that wants its drawing saved saves it itself. alfe quits or
+terminates only a CAD it started: in batch mode, always; in automation, the
+CAD it launched (after 20 s, by its captured process identity, never by
+name). From a CAD it attached to
+.RB ( "\-\-backend attach" ", " \-\-attach-pid ),
+it closes only the documents the run opened, restores the window's
+visibility, and disconnects. A failed start ends the CAD alfe launched. The
+script's exit status comes first; a bad shutdown (the CAD had to be
+terminated, could not be identified, did not restore its settings) sets the
+status only after a successful script, following the line
+.IR "alfe: the script succeeded (exit status 0); the CAD shutdown did not."
+.BR \-\-cleanup-report " FILE"
+records how the CAD ended.
 .SH WINDOWS COM DRAWINGS
 With an explicit \-\-dwg, AutoCAD and BricsCAD open and activate that file
 before plug-in startup and runtime loading. Opening failure is an error;

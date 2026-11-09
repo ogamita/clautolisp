@@ -284,7 +284,7 @@ the old names.
 | =full=   | Normal behaviour: CAD log, capture of Lisp outputs, batch REPL if =-i=, remote protocol if =*AUTOLISP-USE-REMOTE-PROTOCOL*= = =1=. |
 
 The =--interactive= mode forces =full=; any other combination exits
-with code =2=.
+with code =64= (=EX_USAGE=).
 
 ** Emitted =run-common.lsp= template
 
@@ -643,7 +643,7 @@ The algorithm searches, in order:
 
 1. =$BRICSCAD_EXE= if the variable points at an existing file;
 2. the first match of =/Applications/BricsCAD*.app=;
-3. failing that, exit =3=.
+3. failing that, alfe exits with =69= (=EX_UNAVAILABLE=).
 
 The actual executable is =$app/Contents/MacOS/bricscad=.
 
@@ -813,10 +813,12 @@ Known restrictions:
 
 *** Cleanup and signals
 
-Trap =EXIT=: =rm -rf $WORKDIR= unless =CLEANUP_WORKDIR=1=.
-Trap =INT TERM=: sets =CLEANUP_WORKDIR=1=, keeps the workdir, kills
-the BricsCAD batch processes and the COM bridges, and completes the
-handshake in flight. Reference: =autolisp:1614–1637=.
+The same as every CAD (see /Ordered Windows COM teardown/ and the timeouts in
+/Workdir and timeout/): =SHUTDOWN=, =STOPPED=, the script's =._QUIT _N=, 20 s,
+then the process is terminated. Control-C: the first is forwarded as
+=INTERRUPT=, a second one kills the CAD alfe launched; exit status 130. The
+workdir is removed at the end unless =--keep-workdir= is given or the shutdown
+failed.
 
 ** Linux
 
@@ -879,180 +881,51 @@ not alfe's.
 The =--mode= option overrides =BRICSCAD_COM_MODE= (and its
 =AUTOCAD_COM_MODE= equivalent) globally.
 
-Verbatim VBScript (=bridge-bricscad.vbs=):
+*The COM bridge's contract (both CADs, alfe 2.3.121-2.3.124).* The bridge
+script is generated, not maintained by hand: the backend's template
+(=*bridge-bricscad-vbs-template*=, =*bridge-autocad-vbs-template*=) is
+instrumented by =instrument-owned-com-bridge= (backend-cad-common.lisp) with the
+owned-COM lifecycle, then its placeholders and plug-in slots are filled. The
+emitted =bridge-*.vbs= in a kept workdir is the authority; its contract is:
 
-#+begin_src vbnet
-  Option Explicit
-  Dim fso, shell, mode, exePath, runLsp, statusFile, outFile, errFile
-  Dim app, doc, cmd, created, attached, rc
-  Set fso = CreateObject("Scripting.FileSystemObject")
-  Set shell = CreateObject("WScript.Shell")
-  mode = "<MODE>"
-  exePath = "<WIN_BRICSCAD_EXE>"
-  runLsp = "<WIN_RUNLSP>"
-  statusFile = "<WIN_STATUSFILE>"
-  outFile = "<WIN_OUTFILE>"
-  errFile = "<WIN_ERRFILE>"
-  created = False
-  attached = False
-  rc = 0
+1. obtain the application -- =GetObject= (attach) or a NEW instance
+   (=CreateObject=, or for AutoCAD its own launch of the =LocalServer32=
+   command) -- and record =ATTACHED=/=CREATED=;
+2. capture the process identity -- PID, creation ticks, name, session, owner
+   SID: =owned-cad-process.json= for a created CAD (the only identity ever
+   used to end a process), =attached-cad-process.json= for an attached one
+   (watched, never ended) -- and alfe's PID;
+3. wait for the application to be quiescent, then snapshot the documents
+   already open, open or select the job drawing, add the workdir to
+   =TRUSTEDPATHS= (=SECURELOAD= untouched), run the plug-in slots
+   (=:after-app=, =:after-document=), and =SendCommand= the runtime's load;
+   every wait ends 10 s before alfe's READY timeout (=${READY_SECS}=);
+4. stay alive, holding the application reference, polling =control-owned=
+   files: on =close-owned.request= it restores =TRUSTEDPATHS=, runs the
+   =:before-close= slot, then -- created: closes every document without saving
+   and calls Quit (40 attempts, 250 ms apart); attached: closes only the
+   documents not in the snapshot, without saving, restores the window's
+   visibility -- releases its references, and answers =close-owned.result=
+   (=contract=, =owned=, =quit-error=, =closed-documents=, =end=1=);
+5. every 2 s: alfe gone -> it raises its own close request; the CAD gone -> it
+   exits with 6.
 
-  Sub AppendLine(path, text)
-    Dim f
-    Set f = fso.OpenTextFile(path, 8, True)
-    f.WriteLine text
-    f.Close
-  End Sub
-
-  Function TryGetApp()
-    On Error Resume Next
-    Set TryGetApp = GetObject(, "BricscadApp.AcadApplication")
-    If Err.Number <> 0 Then
-      Err.Clear
-      Set TryGetApp = Nothing
-    End If
-    On Error GoTo 0
-  End Function
-
-  Function TryCreateApp()
-    On Error Resume Next
-    If exePath <> "" Then
-      shell.Environment("PROCESS")("BRICSCAD_LOCATION") = exePath
-    End If
-    Set TryCreateApp = CreateObject("BricscadApp.AcadApplication")
-    If Err.Number <> 0 Then
-      Err.Clear
-      Set TryCreateApp = Nothing
-    End If
-    On Error GoTo 0
-  End Function
-
-  Set app = Nothing
-  If mode = "attach" Or mode = "auto" Then
-    Set app = TryGetApp()
-    If Not app Is Nothing Then attached = True
-  End If
-
-  If app Is Nothing Then
-    If mode = "attach" Then
-      AppendLine errFile, "ERROR COM attach: no running BricsCAD instance found."
-      rc = 2
-      WScript.Echo "ATTACHED=0"
-      WScript.Echo "CREATED=0"
-      WScript.Quit rc
-    End If
-    If mode = "launch" Or mode = "auto" Then
-      Set app = TryCreateApp()
-      If app Is Nothing Then
-        AppendLine errFile, "ERROR COM launch: unable to create BricsCAD COM application."
-        rc = 3
-        WScript.Echo "ATTACHED=0"
-        WScript.Echo "CREATED=0"
-        WScript.Quit rc
-      End If
-      created = True
-    End If
-  End If
-
-  If app Is Nothing Then
-    AppendLine errFile, "ERROR COM bridge: unsupported mode or COM unavailable."
-    rc = 4
-    WScript.Echo "ATTACHED=0"
-    WScript.Echo "CREATED=0"
-    WScript.Quit rc
-  End If
-
-  On Error Resume Next
-  app.Visible = True
-  If Err.Number <> 0 Then Err.Clear
-  Set doc = app.ActiveDocument
-  If Err.Number <> 0 Then
-    Err.Clear
-    Set doc = Nothing
-  End If
-  If doc Is Nothing Then
-    Set doc = app.Documents.Add
-    If Err.Number <> 0 Then
-      AppendLine errFile, "ERROR COM bridge: unable to get or create ActiveDocument."
-      Err.Clear
-      rc = 5
-      If attached Then
-        WScript.Echo "ATTACHED=1"
-      Else
-        WScript.Echo "ATTACHED=0"
-      End If
-      If created Then
-        WScript.Echo "CREATED=1"
-      Else
-        WScript.Echo "CREATED=0"
-      End If
-      WScript.Quit rc
-    End If
-  End If
-  cmd = "(load """ & Replace(runLsp, "\", "/") & """)" & vbCr
-  Err.Clear
-  Call doc.SendCommand(cmd)
-  If Err.Number <> 0 Then
-    AppendLine errFile, "ERROR COM bridge: SendCommand failed: " & Err.Description
-    Err.Clear
-    rc = 6
-  Else
-    rc = 0
-  End If
-  On Error GoTo 0
-  If attached Then
-    WScript.Echo "ATTACHED=1"
-  Else
-    WScript.Echo "ATTACHED=0"
-  End If
-  If created Then
-    WScript.Echo "CREATED=1"
-  Else
-    WScript.Echo "CREATED=0"
-  End If
-  WScript.Quit rc
-#+end_src
-
-Notable differences from the AutoCAD bridge:
-
-- ProgID =BricscadApp.AcadApplication= (vs =AutoCAD.Application=).
-- Environment variable passed to the engine:
-  =BRICSCAD_LOCATION= (vs =AUTOCAD_LOCATION=).
-- No =WaitQuiescent= loop: =SendCommand= is considered synchronous
-  on the BricsCAD side; the bridge exits immediately and the
-  wrapper then polls =STATUSFILE=.
-- No EPURE handling of its own: the =epure= plug-in (see [[#epure]])
-  contributes to the bridge through the =:launcher-lines= hook, and
-  under BricsCAD =--epure= defaults to =batch=.
-- No debug file and no =VBSDebug= sub.
-
-Bridge exit codes:
-
-| Code | Cause                                                       |
-|------+-------------------------------------------------------------|
-|  =0= | Success.                                                    |
-|  =2= | =mode=attach= and no instance found.                        |
-|  =3= | =CreateObject= failed.                                      |
-|  =4= | COM mode unsupported or unavailable.                        |
-|  =5= | Unable to get or create =ActiveDocument=.                   |
-|  =6= | =SendCommand= raised an error.                              |
-
-The bridge writes two lines on =stdout=, =ATTACHED=0|1= and
-=CREATED=0|1=, which the wrapper parses to decide cleanup.
+Bridge exit codes: 0 after its answer; 4 a COM failure before =READY= (no
+instance to attach to, the application or its document unusable,
+=SendCommand= refused; the reason is in the error file); 5 the created CAD's
+identity could not be captured; 6 the CAD process disappeared during the run.
 
 *** =batch= mode
 
-Selected by =--mode batch= or =BRICSCAD_COM_MODE=off=. Launches
-=bricscad.exe= with =-B <run.scr>=, equivalent to the macOS batch
-mode. The emitted =run.scr= is minimal:
-
-#+begin_example
-(load "<RUNLSPFILE>")
-#+end_example
-
-The =._FILEDIA 0= / =._QUIT _N= safeguards are emitted only on
-macOS, because Windows =bricscad.exe= honours the runtime's own final
-=_QUIT= (=autolisp-host-quit=: no save, =_N= when DBMOD is set).
+Selected by =--mode batch= or =BRICSCAD_COM_MODE=off=. Launches a NEW
+=bricscad.exe /Automation <drawing> [/p PROFILE] /b <run.scr>= (the
+=/Automation= switch hides the main frame; it is not COM). =run.scr=, the same
+on every platform: marks its start, saves and zeroes =SECURELOAD=, runs the
+plug-in =:before-load= lines, =(load run-common.lsp)= (which returns when the
+session ends), restores =SECURELOAD=, runs the =:after-load= lines, then
+=._FILEDIA 0=, closes the active document without saving
+(=vla-close ... :vlax-false=) and =._QUIT _N=. alfe gives the process 20 s to
+exit after =STOPPED=, then terminates it.
 
 * Backend autocad
 :PROPERTIES:
@@ -1061,8 +934,10 @@ macOS, because Windows =bricscad.exe= honours the runtime's own final
 
 ** macOS and Linux
 
-AutoCAD is not distributed for these systems. =--autocad= there
-exits cleanly with code =3= and an error message.
+AutoCAD is not distributed for Linux: =--autocad= there is unavailable (69).
+On macOS the AutoCAD bundle ships =AcCoreConsole= (batch only), used once a
+probe has seen it run AutoLISP (see the support matrix, note 2); otherwise
+=--autocad= is unavailable (69).
 
 ** MS-Windows
 
@@ -1164,319 +1039,8 @@ A failed activation records, in the bridge's error file,
 bootstrap error reports them. =batch= mode uses =accoreconsole= and
 involves no COM registration.
 
-Verbatim VBScript (=bridge-autocad.vbs=):
-
-#+begin_src vbnet
-  Option Explicit
-  Dim fso, shell, mode, exePath, runLsp, errFile, statusFile, debugFile, debugFlag, invocationDir
-  Dim app, doc, cmd, progid, created, attached, rc
-  Dim waitSecs, waited, statusText
-  Set fso = CreateObject("Scripting.FileSystemObject")
-  Set shell = CreateObject("WScript.Shell")
-  mode = "<AUTOCAD_COM_MODE>"
-  exePath = "<WIN_AUTOCAD_EXE>"
-  runLsp = "<WIN_RUNLSP>"
-  errFile = "<WIN_ERRFILE>"
-  statusFile = "<WIN_STATUSFILE>"
-  debugFile = "<WIN_DEBUGFILE>"
-  debugFlag = "<AUTOLISP_DEBUG>"
-  invocationDir = "<WIN_INVOCATION_DIR>"
-
-  Sub VBSDebug(msg)
-    Dim f
-    If debugFlag <> "1" Then Exit Sub
-    On Error Resume Next
-    Set f = fso.OpenTextFile(debugFile, 8, True)
-    If Err.Number = 0 Then
-      f.WriteLine "[VBS] " & msg
-      f.Close
-    End If
-    Err.Clear
-    On Error GoTo 0
-  End Sub
-
-  VBSDebug "bridge start mode=" & mode & " exePath=" & exePath
-
-  ' Align the VBScript process cwd to the one from which the user
-  ' invoked alfe, BEFORE CreateObject. On Windows, an acad.exe
-  ' out-of-process COM server launched via activation can inherit
-  ' the activator's cwd in some contexts; even though that is not
-  ' guaranteed, it helps with relative paths that appear in
-  ' (load ...), findfile, etc.
-  If invocationDir <> "" Then
-    On Error Resume Next
-    If fso.FolderExists(invocationDir) Then
-      shell.CurrentDirectory = invocationDir
-    End If
-    Err.Clear
-    On Error GoTo 0
-  End If
-  waitSecs = CLng("<AUTOLISP_WAIT_SECS>")
-  If waitSecs < 5 Then waitSecs = 5
-  progid = "AutoCAD.Application"
-  created = False
-  attached = False
-  rc = 0
-
-  Sub AppendLine(path, text)
-    Dim f
-    Set f = fso.OpenTextFile(path, 8, True)
-    f.WriteLine text
-    f.Close
-  End Sub
-
-  Sub EmitFlags(att, cre)
-    Dim a, c
-    If att Then a = "1" Else a = "0"
-    If cre Then c = "1" Else c = "0"
-    WScript.StdOut.WriteLine "ATTACHED=" & a
-    WScript.StdOut.WriteLine "CREATED=" & c
-  End Sub
-
-  Function ReadStatusText(path)
-    Dim f, s
-    ReadStatusText = ""
-    If Not fso.FileExists(path) Then Exit Function
-    On Error Resume Next
-    Set f = fso.OpenTextFile(path, 1, False)
-    If Err.Number <> 0 Then
-      Err.Clear
-      Exit Function
-    End If
-    If Not f.AtEndOfStream Then
-      s = f.ReadAll
-    Else
-      s = ""
-    End If
-    f.Close
-    On Error GoTo 0
-    ReadStatusText = Trim(s)
-  End Function
-
-  Function StatusReady(path)
-    Dim s
-    s = ReadStatusText(path)
-    If s = "" Then
-      StatusReady = False
-    ElseIf s = "__PENDING__" Then
-      StatusReady = False
-    ElseIf s = "99" Then
-      StatusReady = False
-    Else
-      StatusReady = True
-    End If
-  End Function
-
-  Sub WaitQuiescent(a, secs)
-    Dim deadline, state, quiescent, supported
-    deadline = Timer + secs
-    supported = True
-    ' Very short initial sleep: let any splash/profile pass before
-    ' the first IsQuiescent query.
-    WScript.Sleep 200
-    Do
-      quiescent = False
-      On Error Resume Next
-      Set state = a.GetAcadState
-      If Err.Number <> 0 Then
-        Err.Clear
-        supported = False
-        Exit Do
-      End If
-      quiescent = state.IsQuiescent
-      If Err.Number <> 0 Then
-        Err.Clear
-        supported = False
-        Exit Do
-      End If
-      On Error GoTo 0
-      If quiescent Then Exit Sub
-      WScript.Sleep 500
-    Loop While Timer < deadline
-    On Error GoTo 0
-    ' If IsQuiescent is not usable, fall back to a short passive wait.
-    If Not supported Then WScript.Sleep 500
-  End Sub
-
-  Sub WaitStatus(path, secs)
-    Dim deadline, lastStatus, currentStatus
-    deadline = Timer + secs
-    lastStatus = ""
-    VBSDebug "WaitStatus begin secs=" & secs
-    Do
-      currentStatus = ReadStatusText(path)
-      If currentStatus <> lastStatus Then
-        VBSDebug "WaitStatus status='" & currentStatus & "'"
-        lastStatus = currentStatus
-      End If
-      If StatusReady(path) Then
-        VBSDebug "WaitStatus ready"
-        Exit Sub
-      End If
-      WScript.Sleep 500
-    Loop While Timer < deadline
-    VBSDebug "WaitStatus timeout"
-  End Sub
-
-  Function AttachApp()
-    On Error Resume Next
-    Set AttachApp = GetObject(, progid)
-    If Err.Number <> 0 Then
-      Err.Clear
-      Set AttachApp = Nothing
-    End If
-    On Error GoTo 0
-  End Function
-
-  Function CreateApp()
-    On Error Resume Next
-    If exePath <> "" Then
-      shell.Environment("PROCESS")("AUTOCAD_LOCATION") = exePath
-    End If
-    Set CreateApp = CreateObject(progid)
-    If Err.Number <> 0 Then
-      Err.Clear
-      Set CreateApp = Nothing
-    End If
-    On Error GoTo 0
-  End Function
-
-  ' Explicitly initialise app/doc: otherwise these variants stay
-  ' Empty when mode = "launch" (the attach/auto block does not Set
-  ' them), and "If app Is Nothing" raises "Object required" because
-  ' Empty is not an object.
-  Set app = Nothing
-  Set doc = Nothing
-
-  If mode = "attach" Or mode = "auto" Then
-    VBSDebug "trying GetObject AttachApp"
-    Set app = AttachApp()
-    If Not app Is Nothing Then
-      attached = True
-      VBSDebug "attached to existing instance"
-    End If
-  End If
-
-  If app Is Nothing Then
-    If mode = "attach" Then
-      AppendLine errFile, "ERROR COM attach: no running AutoCAD instance found."
-      VBSDebug "attach failed: no running instance"
-      EmitFlags False, False
-      WScript.Quit 2
-    End If
-    If mode = "launch" Or mode = "auto" Then
-      VBSDebug "calling CreateObject (this can take 10-30s)"
-      Set app = CreateApp()
-      If app Is Nothing Then
-        AppendLine errFile, "ERROR COM launch: unable to create AutoCAD COM application."
-        VBSDebug "CreateObject failed"
-        EmitFlags False, False
-        WScript.Quit 3
-      End If
-      created = True
-      VBSDebug "CreateObject ok, acad.exe should be running"
-    End If
-  End If
-
-  If app Is Nothing Then
-    AppendLine errFile, "ERROR COM bridge: unsupported AutoCAD COM mode."
-    EmitFlags False, False
-    WScript.Quit 4
-  End If
-
-  On Error Resume Next
-  app.Visible = True
-  If Err.Number <> 0 Then Err.Clear
-  On Error GoTo 0
-
-  ' ${PLUGIN_AFTER_APP}: plug-in lines (hook :launcher-lines, slot :after-app)
-
-  WaitQuiescent app, waitSecs
-
-  On Error Resume Next
-  Set doc = app.ActiveDocument
-  If Err.Number <> 0 Then
-    Err.Clear
-    Set doc = Nothing
-  End If
-  If doc Is Nothing Then
-    Set doc = app.Documents.Add
-    If Err.Number <> 0 Then
-      AppendLine errFile, "ERROR COM bridge: unable to get or create AutoCAD ActiveDocument: " & Err.Description
-      Err.Clear
-      If created Then
-        app.Quit
-      End If
-      EmitFlags attached, created
-      WScript.Quit 5
-    End If
-  End If
-  On Error GoTo 0
-
-  ' ${PLUGIN_BEFORE_LOAD}: plug-in lines (hook :launcher-lines, slot :before-load)
-
-  cmd = "(load """ & Replace(runLsp, "\", "/") & """)" & vbCr
-  VBSDebug "SendCommand " & cmd
-  On Error Resume Next
-  Call doc.SendCommand(cmd)
-  If Err.Number <> 0 Then
-    AppendLine errFile, "ERROR COM bridge: AutoCAD SendCommand failed: " & Err.Description
-    VBSDebug "SendCommand failed: " & Err.Description
-    Err.Clear
-    rc = 6
-  End If
-  On Error GoTo 0
-
-  ' SendCommand is asynchronous: wait until the LISP runtime has
-  ' written STATUSFILE before considering app.Quit (otherwise we
-  ' would kill acad.exe while it is still loading). We distinguish
-  ' success (final status written) from timeout (status remains at
-  ' __PENDING__/99): on timeout we do NOT call app.Quit, otherwise
-  ' we would interrupt the LISP runtime still in flight. The bash
-  ' wrapper detects this case and kills acad.exe via
-  ' kill_autocad_com_process.
-  Dim statusReadyFlag
-  statusReadyFlag = False
-  If rc = 0 Then
-    WaitStatus statusFile, waitSecs
-    statusReadyFlag = StatusReady(statusFile)
-  End If
-
-  If created And statusReadyFlag Then
-    VBSDebug "calling app.Quit (created=True, status ready)"
-    On Error Resume Next
-    app.Quit
-    If Err.Number <> 0 Then Err.Clear
-    On Error GoTo 0
-  End If
-
-  VBSDebug "bridge exit rc=" & rc & " attached=" & attached & " created=" & created
-  EmitFlags attached, created
-  WScript.Quit rc
-#+end_src
-
-Robustness applied by the bridge before user execution:
-
-- wait on =app.GetAcadState.IsQuiescent= before the first
-  =SendCommand=, capped at =AUTOLISP_WAIT_SECS= (default =180= s);
-- explicit opening of a new document via =Documents.Add= when
-  =ActiveDocument= is absent (=vlisp-compile= requires a document);
-- wait on =STATUSFILE= before =app.Quit=, since =SendCommand= is
-  asynchronous on the AutoCAD side;
-- =app.Quit= conditioned on =created = True And statusReadyFlag= so
-  that we neither close an attached instance owned by the user nor
-  interrupt a still-running runtime.
-
-Bridge exit codes:
-
-| Code | Cause                                                       |
-|------+-------------------------------------------------------------|
-|  =0= | Success.                                                    |
-|  =2= | =mode=attach= and no instance found.                        |
-|  =3= | =CreateObject= failed.                                      |
-|  =4= | COM mode unsupported.                                       |
-|  =5= | Unable to get or create =ActiveDocument=.                   |
-|  =6= | =SendCommand= raised an error.                              |
+The bridge follows the same contract as BricsCAD's (see its =automation=
+mode above).
 
 *** =batch= mode (=accoreconsole=)
 
@@ -1674,9 +1238,9 @@ same file and drawing side effects.
 4. *Same outcome.* Both report a runtime error, a termination and an
    unexpected error in the engine's words (shared =autolisp-cli=
    reporters), and both exit with the engine's status: =N= for =(exit N)=
-   / =(quit N)= / =autolisp-set-status=, 1 for a runtime error, 2 for a
-   =-l= file that cannot be opened, 1 with =--dwg: cannot open the drawing
-   ...= for an unreadable drawing.
+   / =(quit N)= / =autolisp-set-status=, 1 for a runtime error, 66 for a
+   =-l= file that cannot be opened, 65 or 66 with =--dwg: cannot open the
+   drawing ...= for an unreadable drawing (=<sysexits.h>=, alfe 2.2.159).
 5. *The program's runs.* What the =clautolisp= /program/ adds around the
    engine -- its REPL (interactors, comma commands, the aldo debugger,
    the Control-C policy), its recorder (=--dribble=), its =ncurses= and
@@ -2657,7 +2221,7 @@ when one exists.
 | =AUTOLISP_READY_WAIT_SECS=                 | seconds    | =--ready-timeout= | READY handshake bound (default 60 batch, 300 automation, 420 EPURE). |
 | =AUTOLISP_TIMEOUT=                         | seconds    |             | Old name, still accepted as a fallback.                           |
 | =AUTOLISP_BRICSCAD_BATCH_STARTUP_TIMEOUT=  | seconds    |             | macOS BricsCAD batch startup timeout (default =15=).              |
-| =AUTOLISP_BRICSCAD_BATCH_EXIT_TIMEOUT=     | seconds    |             | Exit timeout after the final status (default =10=).               |
+| =AUTOLISP_BRICSCAD_BATCH_EXIT_TIMEOUT=     | seconds    |             | Superseded: a CAD has 20 s to exit after =STOPPED= (every CAD). |
 | =TMPDIR=                                   | path       |             | Alternative workdir root for macOS BricsCAD batch and REPL.       |
 
 *Request-timeout semantics.* On the CAD backends the per-request wait
@@ -2733,7 +2297,6 @@ created discards its output.
 | Variable                  | Values                                          | CLI                          | Effect                                                            |
 |---------------------------+-------------------------------------------------+------------------------------+-------------------------------------------------------------------|
 | =AUTOLISP_MODE=           | =auto= \vert =automation= \vert =batch=         | =--mode=                     | CAD mode; maps to =AUTOCAD_COM_MODE= / =BRICSCAD_COM_MODE=.       |
-| =AUTOLISP_BACKEND=        | =attach= \vert =launch=                         | =--backend=                  | =automation= mode backend (default =launch=).                     |
 | =AUTOLISP_OS=             | =Darwin= \vert =Linux= \vert =MINGW64_NT-*=     |                              | Overrides OS detection (=uname -s= by default).                   |
 | =AUTOLISP_BOOTSTRAP_PHASE=| =marker= \vert =core= \vert =log= \vert =full=  | =--bootstrap-phase=          | Bootstrap phase.                                                  |
 | =AUTOLISP_REMOTE_IO_MODE= | =auto= \vert =on= \vert =off=                   |                              | Enables/disables the remote REPL protocol (=auto=: if =-i=).      |

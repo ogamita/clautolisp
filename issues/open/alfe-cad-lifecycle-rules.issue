@@ -71,6 +71,21 @@ only when the script succeeded, alongside a log line giving the script's result.
   and END-LAUNCHED-PID terminates it past the grace, on a failed start or a
   forced shutdown -- only while the PID keeps its start time; an attached one
   is never signalled.
-- [ ] MR-E: one "Engine lifecycle" chapter in the user manual; the
-  specification and the man page aligned (stale exit codes, verbatim
-  bridges, status vocabulary, timeout table, Control-C).
+- [X] MR-E (docs): the user manual's "Engine lifecycle: launch,
+  communication, termination" chapter -- an overview table per backend and
+  mode, then launching or attaching, timeouts, a failed start, Control-C,
+  closing drawings, the owned-COM cleanup, the exit status, a killed alfe --
+  gathering the sections that were under "Selecting a specific CAD install"
+  and after "See also"; the EPURE COM subsections under the EPURE plug-in;
+  stale statements fixed (exit code 2 -> 64, "silently ignored", the 30 s
+  default, the EPURE qualification verdict). Specification: one COM bridge
+  contract replaces both verbatim bridges and their stale notes; BricsCAD
+  Windows batch, AutoCAD macOS/Linux, the bash "Cleanup and signals", exit
+  codes 2/3, AUTOLISP_BACKEND's second meaning, a dangling link. Man page:
+  CAD CLEANUP.
+
+* Remaining before closing
+- Native validation on the CAD runners of MR-A to MR-D: verify:autocad-activex
+  (AutoCAD, and BricsCAD with ACTIVEX_CAD=bricscad), a batch run of each CAD,
+  verify:bricscad-automation:macos for MR-D, and a manual Control-C check.
+- The SCHME CI consumers (from alfe-owned-cad-termination-after-recorded-results).

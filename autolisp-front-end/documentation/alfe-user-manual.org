@@ -247,252 +247,6 @@ under its own name, =dwgtrueview-YYYY=, and =accoreconsole= / =autocad=
 never select it, even when it is newer than the installed AutoCAD.
 Name it explicitly (=--cad dwgtrueview=) to run it anyway.
 
-*** Which AutoCAD automation actually talks to
-
-Choosing =acad.exe= does not by itself choose the AutoCAD that answers.
-=--mode automation= runs a COM bridge (=cscript=), and Windows resolves
-the *ProgID* it asks for through the registry — to whatever release that
-registration names. The unversioned =AutoCAD.Application= belongs to
-whichever AutoCAD registered it last, which need not be the one you
-selected, and on a damaged installation it may resolve to a CLSID that
-cannot start anything at all.
-
-So an explicitly selected release asks for *its own* ProgID:
-
-| Selection                          | COM server asked for                          |
-|------------------------------------+-----------------------------------------------|
-| =--cad autocad-2022 --mode automation= | =AutoCAD.Application.24.1= (AutoCAD 2022's)   |
-| =--cad autocad= / =--autocad=      | the discovered install's versioned ProgID when it is registered, else =AutoCAD.Application= |
-| =$AUTOCAD_PROGID= set              | exactly that, unchanged                       |
-| =--mode batch=                     | none: =accoreconsole= needs no COM at all     |
-
-Only =--cad autocad-2022= (or =acad-2022=) *names* a release. =--cad
-autocad= asks for the latest one, so the release is alfe's own choice
-and never a reason to refuse the run.
-
-*=--mode automation= needs a live interactive desktop.* COM automation
-drives a GUI application, so it requires the Windows session to be
-*connected and unlocked*. When the session is disconnected — locked,
-after a "switch user", the console handed back to the login window, or
-an RDP client that closed without logging off — a =--mode automation=
-run FAILS or hangs partway, while =--mode batch= (headless
-=accoreconsole= on AutoCAD) is unaffected. =alfe --probe-gui= reports
-whether a desktop is available right now (on Windows: the WTS connect
-state and whether the lock/login screen is up), and exits; and under
-=--verbose= (or =--debug=) alfe prints a conspicuous heads-up at launch
-whenever it selects automation but no desktop is available. If an
-automated runner cannot keep its session connected, prefer =--mode
-batch= where the vendor offers a headless engine.
-
-alfe confirms the registration before using it (a CLSID *and* a readable
-=LocalServer32=). When you named the release and its COM server is not
-registered, alfe stops and says so — it will not quietly fall back to the
-generic ProgID and drive a different AutoCAD. See /Troubleshooting/.
-
-When alfe cannot read the registry *at all* — no =reg.exe=, a locked-down
-host — it says so and uses the named release's own ProgID unverified,
-rather than refusing: no answer is not the same as a negative answer.
-
-The same ProgID is used to attach, to create, and to quit at the end of
-the run, so alfe never closes an instance of another release.
-
-*** Timeouts
-
-Every wait of a CAD run is bounded, and the bounds fit together
-(alfe 2.3.122):
-
-| Phase                                   | Default                                  | Set by |
-|-----------------------------------------+------------------------------------------+--------|
-| Start: the CAD publishes =READY=        | 60 s in batch mode, 300 s in automation, 420 s under =--epure=; never less than =--timeout= | =--ready-timeout SECS=, =$AUTOLISP_READY_WAIT_SECS= |
-| The COM bridge's own start-up waits      | end 10 s before the start's timeout      | (follows the start's) |
-| A request: the CAD acknowledges it (=RUNNING=) | 30 s; once acknowledged, as long as the CAD lives | =--timeout SECS= (then a hard cap), =$AUTOLISP_WAIT_SECS= |
-| Stop: the CAD acknowledges =SHUTDOWN= or =PREPARE-SHUTDOWN= | 15 s                       | |
-| The bridge's answer to the close request | 30 s                                     | |
-| A CAD alfe started exits after its QUIT  | 20 s, then it is terminated              | |
-| A terminated process is gone             | 10 s                                     | |
-
-The start is longest in automation: =CreateObject= alone may take the 120 s
-Windows (DCOM) allows it, and the bridge then waits for the application, opens
-the drawing and loads the runtime. The bridge gives up 10 s before alfe does,
-says why, and ends a CAD it created: alfe never kills a bridge in the middle of
-a wait. A bootstrap that reports =FAILED= ends the start at once.
-
-*** How the run's exit status is decided
-
-The script's status comes first (alfe 2.3.122):
-
-- *The script failed* (an AutoLISP error, an assertion, a timeout...): its
-  status is the run's, whatever the shutdown did; a shutdown problem is only a
-  warning.
-- *The script succeeded* and the shutdown went well: 0.
-- *The script succeeded* but the shutdown did not -- the CAD alfe started had
-  to be terminated after its QUIT, could not be identified with certainty, or
-  did not acknowledge the restoration of its settings: alfe first writes
-  =alfe: the script succeeded (exit status 0); the CAD shutdown did not.=,
-  then exits with the shutdown's status (76). A CI job that only needs the
-  test's result can look for that line and ignore the bad shutdown.
-
-*** Interrupting a CAD run: Control-C
-
-Control-C during a CAD run (alfe 2.3.123):
-
-1. *The first one* is forwarded to the CAD through the protocol. The CAD
-   acknowledges it between two requests: it puts its settings back and ends
-   its session; alfe sends nothing more, shuts the CAD down as usual (quitting
-   one it launched, releasing one it attached to), and exits with 130. A CAD
-   busy with a long request acknowledges it only once that request is done;
-   alfe says so: =alfe: interrupt: asking the CAD to stop (press Control-C
-   again to force it)=.
-2. *A second one* -- or the first while the CAD is still starting -- forces
-   the end: a CAD alfe launched is killed at once, alfe disconnects from one it
-   attached to, the workdir is cleaned up, and alfe exits with 130.
-
-Under =--clautolisp=, Control-C follows =--on-interrupt= instead (see /The
-debugger/).
-
-The COM bridge also watches alfe and the CAD: if alfe is killed, the bridge
-closes the CAD as alfe would have (a created one is quit, an attached one keeps
-its own documents and is released); if the CAD dies, the bridge stops, and alfe
-reports the request as aborted at once instead of waiting.
-
-*** A start that fails
-
-If the CAD does not start -- no =READY= in time, a bootstrap =FAILED=, the
-launcher dying -- alfe ends the CAD it launched: the batch process, or the CAD
-the COM bridge created (by its captured identity). A CAD alfe attached to is
-never touched. The workdir is cleaned up as after any run (kept with
-=--keep-workdir=).
-
-*** Closing drawings after an automated run
-
-Two rules hold for every CAD, on every platform (alfe 2.3.121):
-
-1. *alfe's shutdown never saves a drawing.* It closes drawings without
-   saving (=SaveChanges=False=) and, when it quits, answers QUIT's "save
-   changes?" with No (=._QUIT _N=). A script that wants its drawing saved
-   saves it itself (=QSAVE=, =SAVEAS=, =vla-SaveAs=...) before it ends.
-2. *alfe quits or kills only a CAD it started.*
-   - =--mode batch= always launches a new CAD: at the end its script closes
-     the drawing without saving and quits it (=._QUIT _N=); one that is still
-     running after the grace period is terminated.
-   - =--mode automation= either launches a CAD (=--backend launch=, the
-     default) -- then every document is closed without saving and the CAD is
-     quit, or terminated if it does not exit -- or connects to a running one
-     (=--backend attach=, =--attach-pid=). A CAD alfe connected to is *never*
-     quit: before the job drawing is opened, alfe notes the documents already
-     open; at the end it closes, without saving, only those the run opened
-     (the job drawing included), puts the window's visibility and the EPURE
-     profile back as they were, and disconnects.
-
-The closes are retried while the CAD rejects a COM call as busy (up to 40
-times, a quarter of a second apart), and a document that cannot be closed is
-never followed by a Quit that would open a save dialog. Under EPURE, BricsCAD
-batch can still show a save dialog on QUIT; alfe then terminates it after the
-grace period, and a warning says so.
-
-The protocol restores the native output functions after its server loop
-and final logging have finished, so subsequent CAD startup and menu
-callbacks can use the native zero-argument =princ= again.
-
-*** alfe's workdir in AutoCAD's TRUSTEDPATHS
-
-An AutoCAD with =SECURELOAD= set to 2 loads executable files *only* from
-the folders listed in =TRUSTEDPATHS=. alfe's first act on the CAD is to
-load =run-common.lsp= from its fresh temporary workdir, and every =-x=
-form travels through =protocol\alfe-eval.lsp= in the same workdir. Such an
-AutoCAD would refuse all of it, and the run would never reach READY.
-
-So, on MS-Windows and for a real launch only (not =--print-command=),
-alfe adds one entry, =<workdir>\...=, to =TRUSTEDPATHS= *before*
-starting AutoCAD. The trailing =\...= trusts the subfolders too. It
-removes that entry again when the run ends. Setting it from AutoLISP would
-be too late, because the first load is already the refused one.
-
-- *Where.* In *every* AutoCAD profile of the current user:
-  =HKCU\Software\Autodesk\AutoCAD\<release>\<product>\Profiles\<profile>\Variables=,
-  value =TRUSTEDPATHS=. Every profile, because "the current profile" is not
-  one answer. On the project's runner, the =Profiles= key named one profile
-  as the default while =CPROFILE= named another, and AutoCAD and
-  accoreconsole choose between them on their own terms.
-- *What is removed.* Exactly alfe's entry, from whatever the value is *at
-  the end*. Anything you, or another alfe run, added meanwhile stays. The
-  value's type (=REG_SZ= or =REG_EXPAND_SZ=) is kept, and so is every
-  character: alfe reads and writes through PowerShell's registry API, not
-  through =reg.exe='s console codepage. That matters because the workdir
-  lives under =%TEMP%=, and so under your user name. alfe runs
-  =powershell -NoProfile -NonInteractive -EncodedCommand <base64>=: the
-  script travels base64-encoded and strings travel as character codes, so
-  no quoting or codepage can alter them. A site whose policy forbids
-  PowerShell for the user gets no trust entry: alfe then finds no profile
-  (visible with =--debug=) and runs as it did before this existed.
-- *When.* After the AutoCAD alfe created has quit. AutoCAD saves its
-  profile, =TRUSTEDPATHS= included, when it exits, so an entry removed
-  while it still ran would be written back.
-- *A killed run* cannot remove its entry. Two records let the next run do
-  it for you:
-  - =<temp>/alfe-trustedpaths.txt= names each entry with the process id of
-    the alfe that added it.
-  - Any entry naming an alfe workdir (=alfe-autocad-<pid>-<tag>=) whose
-    alfe is no longer running is removed as well.
-
-  A process whose state cannot be determined counts as running. alfe never
-  takes away another run's trust on a guess.
-
-Nothing is changed when no AutoCAD profile exists. If a write is refused,
-alfe warns that a =SECURELOAD=2= AutoCAD will refuse its runtime, and
-carries on. With =SECURELOAD= at 0 or 1, the defaults, the entry is
-harmless and unnecessary.
-
-BricsCAD keeps neither =TRUSTEDPATHS= nor =SECURELOAD= in the registry
-(both are "not saved" there, and the registry of the project's runner has
-neither). alfe's BricsCAD launch script sets =SECURELOAD= to 0 for the
-session instead.
-
-*** When alfe is killed before it can quit AutoCAD
-
-alfe quits the AutoCAD it created — but only if it reaches the end of
-the run. Killed, or its CI job cancelled, it never gets there, and the
-=acad.exe= that COM started belongs to the COM service rather than to
-alfe, so killing alfe's process tree does not reach it either.
-
-So each run writes down what it creates, in
-=<temp>/alfe-created-cad.txt=: the process id and its creation time, one
-line per instance. The file is outside the workdir on purpose — the
-workdir goes away with the run, and the run this serves is the one that
-cleaned nothing up.
-
-=scripts/sweep-orphaned-cad.ps1= reads that file and ends those
-instances, and only those: both the process id *and* the creation time
-must still match, because Windows reuses process ids. It never touches
-an AutoCAD alfe did not start. On the project's Windows CI it runs
-*before* every CAD job, which is the only moment that covers a hard
-cancel (nothing runs after one) and the only moment that cannot catch an
-AutoCAD the current job is using.
-
-A *process id that still answers is not a running process.* Windows keeps
-a process-table entry until the last handle to it is closed, and the COM
-service holds one — so a dead =acad.exe= can linger for days: it has no
-threads left, =Stop-Process= cannot touch it, and =taskkill= replies
-"there is no running instance of the task". The sweep classifies each
-recorded id before acting (gone / exited-and-waiting-to-be-reaped /
-running) and drops the first two from the file. It *fails the job it
-precedes* only when an instance is really *running* and could not be
-ended — such an AutoCAD owns the =AutoCAD.Application= COM registration
-and answers =RPC_E_CALL_REJECTED= to every call, which would look like an
-alfe defect in the log.
-
-Two variables relax that, and they are not interchangeable:
-
-- =CAD_SWEEP_NONBLOCKING=1= — *this job cannot be affected*: it drives BricsCAD
-  only, and a wedged AutoCAD owns a registration BricsCAD neither asks for nor
-  shares. The sweep still runs and still reports; it simply does not fail the
-  job. The project's BricsCAD-only Windows jobs carry it through their CI gate
-  (=.gate-windows-bricscad-*=), and ~make check-cad-sweep-gating~ keeps each job
-  on the gate its vendor calls for. Note that =accoreconsole= *is* AutoCAD, so
-  those jobs stay blocking.
-- =CAD_SWEEP_IGNORE_SURVIVORS=1= — *I know, run anyway*: the emergency override
-  for a machine nobody can reach at the moment.
-
 The release → version table alfe knows covers AutoCAD 2019–2026 (2022 is
 24.1, 2025 is 25.0); the relation is not arithmetic, so a release outside
 it is resolved by asking the registry what is installed, and
@@ -739,7 +493,7 @@ Two consequences worth knowing before you use a truncated phase: under
 =marker= a run that "succeeds" has not run your script at all, and under
 =core= a script that prints its results looks silent because the capture
 is not installed. =--interactive= requires =full= — combined with any
-other phase, alfe exits with code =2=.
+other phase, alfe exits with code =64= (=EX_USAGE=).
 
 ** The CAD's log: =--cad-log=
 :PROPERTIES:
@@ -780,13 +534,387 @@ ships with alfe, defines it ([[#plugin-epure][The EPURE plug-in]]). Before the p
 alfe accepted =--epure= and did nothing with it. It now launches
 BricsCAD or AutoCAD under the =Epure= profile and runs EPURE's control
 script before alfe's run-time is loaded. It works on MS-Windows only;
-elsewhere, and under =--clautolisp=, it is silently ignored. Its
+elsewhere, and under =--clautolisp=, it is ignored with a warning. Its
 companions =--epure-profile= and =--epure-script= are described with the
 plug-in.
 
 The environment variables =$AUTOLISP_WORKDIR=, =$AUTOLISP_BOOTSTRAP_PHASE=
 and, for the plug-in option =--epure=, =$AUTOLISP_EPURE= supply the
 defaults; an explicit option always wins.
+
+* Engine lifecycle: launch, communication, termination
+:PROPERTIES:
+:CUSTOM_ID: engine-lifecycle
+:END:
+
+How alfe brings a CAD up, talks to it, and ends it -- the same rules for every
+CAD, on every platform (alfe-cad-lifecycle-rules, alfe 2.3.121-2.3.124):
+
+| Backend and mode                         | Start                                                  | Talk                                  | End |
+|------------------------------------------+--------------------------------------------------------+---------------------------------------+-----|
+| =--clautolisp= (direct)                  | the engine runs inside alfe                            | in-process calls                      | nothing to stop |
+| =--clautolisp= (subprocess)              | a =clautolisp-sbcl= child                              | its command line; output captured    | it exits at the end of its plan; killed if alfe unwinds |
+| =--bricscad= / =--autocad=, =--mode batch= | always a NEW CAD process (=bricscad /b run.scr=, =accoreconsole /i ... /s run.scr=) | the file protocol (=WORKDIR/protocol/=) | =SHUTDOWN=; the script closes the drawing without saving and quits (=._QUIT _N=); terminated if still running after 20 s |
+| Windows =--mode automation=, launch (default) | a COM bridge (=cscript=) creates a NEW CAD              | the file protocol                     | the bridge closes every document without saving and quits it; terminated by its captured identity if still running after 20 s |
+| Windows =--mode automation=, attach (=--backend attach=, =--attach-pid=) | the bridge connects to the running CAD | the file protocol                 | only the documents the run opened are closed (without saving); visibility and EPURE profile restored; disconnected -- never quit |
+| macOS BricsCAD =--mode automation= (opt-in) | AppleScript launches a NEW BricsCAD, or attaches       | the file protocol                     | a launched one quits itself after the session, terminated after 20 s; an attached one is left running |
+
+The rules behind the table:
+
+1. *The shutdown never saves a drawing.* A script that wants its drawing
+   saved saves it itself.
+2. *alfe quits or kills only a CAD it started.* One it attached to is only
+   disconnected from, after the documents the run opened are closed.
+3. *A failed start ends what alfe launched* -- see /A start that fails/.
+4. *Control-C is forwarded through the protocol*; a second one forces the end
+   -- see /Interrupting a CAD run/.
+5. *Every exit runs the cleanup*: the start, the plan and the shutdown are all
+   protected, and the script's status comes first -- see /How the run's exit
+   status is decided/.
+
+** Talking to the CAD
+
+During the run alfe and the CAD exchange files in =WORKDIR/protocol/=: alfe
+writes a form to =stdin.txt=, the CAD acknowledges it (=RUNNING N=), evaluates
+it and answers =DONE N OK= or =DONE N FAIL=; output and errors travel in
+=stdout.txt= and =stderr.txt=, out-of-band commands (=SHUTDOWN=,
+=PREPARE-SHUTDOWN=, =INTERRUPT=) in =control.txt=. See [[#how-a-form-reaches-a-cad][How a form reaches a
+CAD]] and /Interactive REPL on CAD backends/ for what this means for output.
+
+** Which AutoCAD automation actually talks to
+
+Choosing =acad.exe= does not by itself choose the AutoCAD that answers.
+=--mode automation= runs a COM bridge (=cscript=), and Windows resolves
+the *ProgID* it asks for through the registry — to whatever release that
+registration names. The unversioned =AutoCAD.Application= belongs to
+whichever AutoCAD registered it last, which need not be the one you
+selected, and on a damaged installation it may resolve to a CLSID that
+cannot start anything at all.
+
+So an explicitly selected release asks for *its own* ProgID:
+
+| Selection                          | COM server asked for                          |
+|------------------------------------+-----------------------------------------------|
+| =--cad autocad-2022 --mode automation= | =AutoCAD.Application.24.1= (AutoCAD 2022's)   |
+| =--cad autocad= / =--autocad=      | the discovered install's versioned ProgID when it is registered, else =AutoCAD.Application= |
+| =$AUTOCAD_PROGID= set              | exactly that, unchanged                       |
+| =--mode batch=                     | none: =accoreconsole= needs no COM at all     |
+
+Only =--cad autocad-2022= (or =acad-2022=) *names* a release. =--cad
+autocad= asks for the latest one, so the release is alfe's own choice
+and never a reason to refuse the run.
+
+*=--mode automation= needs a live interactive desktop.* COM automation
+drives a GUI application, so it requires the Windows session to be
+*connected and unlocked*. When the session is disconnected — locked,
+after a "switch user", the console handed back to the login window, or
+an RDP client that closed without logging off — a =--mode automation=
+run FAILS or hangs partway, while =--mode batch= (headless
+=accoreconsole= on AutoCAD) is unaffected. =alfe --probe-gui= reports
+whether a desktop is available right now (on Windows: the WTS connect
+state and whether the lock/login screen is up), and exits; and under
+=--verbose= (or =--debug=) alfe prints a conspicuous heads-up at launch
+whenever it selects automation but no desktop is available. If an
+automated runner cannot keep its session connected, prefer =--mode
+batch= where the vendor offers a headless engine.
+
+alfe confirms the registration before using it (a CLSID *and* a readable
+=LocalServer32=). When you named the release and its COM server is not
+registered, alfe stops and says so — it will not quietly fall back to the
+generic ProgID and drive a different AutoCAD. See /Troubleshooting/.
+
+When alfe cannot read the registry *at all* — no =reg.exe=, a locked-down
+host — it says so and uses the named release's own ProgID unverified,
+rather than refusing: no answer is not the same as a negative answer.
+
+The same ProgID is used to attach, to create, and to quit at the end of
+the run, so alfe never closes an instance of another release.
+
+** alfe's workdir in AutoCAD's TRUSTEDPATHS
+
+An AutoCAD with =SECURELOAD= set to 2 loads executable files *only* from
+the folders listed in =TRUSTEDPATHS=. alfe's first act on the CAD is to
+load =run-common.lsp= from its fresh temporary workdir, and every =-x=
+form travels through =protocol\alfe-eval.lsp= in the same workdir. Such an
+AutoCAD would refuse all of it, and the run would never reach READY.
+
+So, on MS-Windows and for a real launch only (not =--print-command=),
+alfe adds one entry, =<workdir>\...=, to =TRUSTEDPATHS= *before*
+starting AutoCAD. The trailing =\...= trusts the subfolders too. It
+removes that entry again when the run ends. Setting it from AutoLISP would
+be too late, because the first load is already the refused one.
+
+- *Where.* In *every* AutoCAD profile of the current user:
+  =HKCU\Software\Autodesk\AutoCAD\<release>\<product>\Profiles\<profile>\Variables=,
+  value =TRUSTEDPATHS=. Every profile, because "the current profile" is not
+  one answer. On the project's runner, the =Profiles= key named one profile
+  as the default while =CPROFILE= named another, and AutoCAD and
+  accoreconsole choose between them on their own terms.
+- *What is removed.* Exactly alfe's entry, from whatever the value is *at
+  the end*. Anything you, or another alfe run, added meanwhile stays. The
+  value's type (=REG_SZ= or =REG_EXPAND_SZ=) is kept, and so is every
+  character: alfe reads and writes through PowerShell's registry API, not
+  through =reg.exe='s console codepage. That matters because the workdir
+  lives under =%TEMP%=, and so under your user name. alfe runs
+  =powershell -NoProfile -NonInteractive -EncodedCommand <base64>=: the
+  script travels base64-encoded and strings travel as character codes, so
+  no quoting or codepage can alter them. A site whose policy forbids
+  PowerShell for the user gets no trust entry: alfe then finds no profile
+  (visible with =--debug=) and runs as it did before this existed.
+- *When.* After the AutoCAD alfe created has quit. AutoCAD saves its
+  profile, =TRUSTEDPATHS= included, when it exits, so an entry removed
+  while it still ran would be written back.
+- *A killed run* cannot remove its entry. Two records let the next run do
+  it for you:
+  - =<temp>/alfe-trustedpaths.txt= names each entry with the process id of
+    the alfe that added it.
+  - Any entry naming an alfe workdir (=alfe-autocad-<pid>-<tag>=) whose
+    alfe is no longer running is removed as well.
+
+  A process whose state cannot be determined counts as running. alfe never
+  takes away another run's trust on a guess.
+
+Nothing is changed when no AutoCAD profile exists. If a write is refused,
+alfe warns that a =SECURELOAD=2= AutoCAD will refuse its runtime, and
+carries on. With =SECURELOAD= at 0 or 1, the defaults, the entry is
+harmless and unnecessary.
+
+BricsCAD keeps neither =TRUSTEDPATHS= nor =SECURELOAD= in the registry
+(both are "not saved" there, and the registry of the project's runner has
+neither). alfe's BricsCAD launch script sets =SECURELOAD= to 0 for the
+session instead.
+
+** Timeouts
+
+Every wait of a CAD run is bounded, and the bounds fit together
+(alfe 2.3.122):
+
+| Phase                                   | Default                                  | Set by |
+|-----------------------------------------+------------------------------------------+--------|
+| Start: the CAD publishes =READY=        | 60 s in batch mode, 300 s in automation, 420 s under =--epure=; never less than =--timeout= | =--ready-timeout SECS=, =$AUTOLISP_READY_WAIT_SECS= |
+| The COM bridge's own start-up waits      | end 10 s before the start's timeout      | (follows the start's) |
+| A request: the CAD acknowledges it (=RUNNING=) | 30 s; once acknowledged, as long as the CAD lives | =--timeout SECS= (then a hard cap), =$AUTOLISP_WAIT_SECS= |
+| Stop: the CAD acknowledges =SHUTDOWN= or =PREPARE-SHUTDOWN= | 15 s                       | |
+| The bridge's answer to the close request | 30 s                                     | |
+| A CAD alfe started exits after its QUIT  | 20 s, then it is terminated              | |
+| A terminated process is gone             | 10 s                                     | |
+
+The start is longest in automation: =CreateObject= alone may take the 120 s
+Windows (DCOM) allows it, and the bridge then waits for the application, opens
+the drawing and loads the runtime. The bridge gives up 10 s before alfe does,
+says why, and ends a CAD it created: alfe never kills a bridge in the middle of
+a wait. A bootstrap that reports =FAILED= ends the start at once.
+
+** A start that fails
+
+If the CAD does not start -- no =READY= in time, a bootstrap =FAILED=, the
+launcher dying -- alfe ends the CAD it launched: the batch process, or the CAD
+the COM bridge created (by its captured identity). A CAD alfe attached to is
+never touched. The workdir is cleaned up as after any run (kept with
+=--keep-workdir=).
+
+** Interrupting a CAD run: Control-C
+
+Control-C during a CAD run (alfe 2.3.123):
+
+1. *The first one* is forwarded to the CAD through the protocol. The CAD
+   acknowledges it between two requests: it puts its settings back and ends
+   its session; alfe sends nothing more, shuts the CAD down as usual (quitting
+   one it launched, releasing one it attached to), and exits with 130. A CAD
+   busy with a long request acknowledges it only once that request is done;
+   alfe says so: =alfe: interrupt: asking the CAD to stop (press Control-C
+   again to force it)=.
+2. *A second one* -- or the first while the CAD is still starting -- forces
+   the end: a CAD alfe launched is killed at once, alfe disconnects from one it
+   attached to, the workdir is cleaned up, and alfe exits with 130.
+
+Under =--clautolisp=, Control-C follows =--on-interrupt= instead (see /The
+debugger/).
+
+The COM bridge also watches alfe and the CAD: if alfe is killed, the bridge
+closes the CAD as alfe would have (a created one is quit, an attached one keeps
+its own documents and is released); if the CAD dies, the bridge stops, and alfe
+reports the request as aborted at once instead of waiting.
+
+** Closing drawings after an automated run
+
+Two rules hold for every CAD, on every platform (alfe 2.3.121):
+
+1. *alfe's shutdown never saves a drawing.* It closes drawings without
+   saving (=SaveChanges=False=) and, when it quits, answers QUIT's "save
+   changes?" with No (=._QUIT _N=). A script that wants its drawing saved
+   saves it itself (=QSAVE=, =SAVEAS=, =vla-SaveAs=...) before it ends.
+2. *alfe quits or kills only a CAD it started.*
+   - =--mode batch= always launches a new CAD: at the end its script closes
+     the drawing without saving and quits it (=._QUIT _N=); one that is still
+     running after the grace period is terminated.
+   - =--mode automation= either launches a CAD (=--backend launch=, the
+     default) -- then every document is closed without saving and the CAD is
+     quit, or terminated if it does not exit -- or connects to a running one
+     (=--backend attach=, =--attach-pid=). A CAD alfe connected to is *never*
+     quit: before the job drawing is opened, alfe notes the documents already
+     open; at the end it closes, without saving, only those the run opened
+     (the job drawing included), puts the window's visibility and the EPURE
+     profile back as they were, and disconnects.
+
+The closes are retried while the CAD rejects a COM call as busy (up to 40
+times, a quarter of a second apart), and a document that cannot be closed is
+never followed by a Quit that would open a save dialog. Under EPURE, BricsCAD
+batch can still show a save dialog on QUIT; alfe then terminates it after the
+grace period, and a warning says so.
+
+The protocol restores the native output functions after its server loop
+and final logging have finished, so subsequent CAD startup and menu
+callbacks can use the native zero-argument =princ= again.
+
+** CAD session cleanup and owned COM instances
+:PROPERTIES:
+:CUSTOM_ID: owned-cad-cleanup
+:END:
+
+On Windows, AutoCAD and BricsCAD automation retain the exact COM application
+reference returned at startup. Before opening an explicit drawing, both bridges
+require GetAcadState().IsQuiescent within 30 seconds. They capture the created
+application's process identity before file open; failure never substitutes a
+blank drawing or a different instance. After the evaluation, alfe closes the
+session in this order (contract 2, since alfe 2.3.107):
+
+1. *Results.* alfe decides the run's outcome -- its exit status -- and checks
+   each =--result-file FILE= the run had to write: missing, empty, still
+   growing, or an XML file whose root element is not closed, it fails a run
+   that would otherwise succeed (exit 66). A run whose script failed keeps its
+   own status. alfe imposes no such file: the option is for the scripts that
+   write one, a JUnit report for instance.
+2. *Restoration.* The live runtime restores LOGFILEMODE, LOGFILEPATH and
+   SRCHPATH, closing the current command log first, and acknowledges
+   =RESTORED= only after leaving its protocol loop. Without that
+   acknowledgement the run fails, and the CAD is not asked to close.
+3. *Frontier.* alfe writes =owned-close-frontier.txt= in the work directory:
+   the outcome, the result files checked, the restoration acknowledged, the
+   invocation. From here on, how the CAD ends is a diagnostic, not the result.
+4. *Close.* For an application created by this invocation, the retained bridge
+   closes its documents without saving and calls Quit on that same application;
+   it does not look up a potentially different instance through GetObject.
+   Transient COM rejections are retried at most 40 times, 250 milliseconds
+   apart, with their exact error preserved; the bridge then releases its
+   automation references. An attached application is only released, never
+   closed.
+5. *Disappearance.* The created process must be gone. alfe's helper reopens it
+   by its captured identity -- PID, UTC creation ticks, image name, session and
+   owner SID, all revalidated -- waits up to 20 seconds, and, past that grace,
+   terminates that handle and waits up to 10 more seconds. A Quit that blocks
+   (a dialog) does not block alfe: after 30 seconds without the bridge's answer,
+   the bridge is stopped and the helper runs with no grace. A process is never
+   ended by its name, by its engine, or because it started at about the same
+   time; a PID that names another process now, or an identity that does not
+   match, is left alone.
+
+Past the frontier, a normal exit, an exit code such as =0xBABE=, a crash code
+such as =0xC0000005= or =0xC0000374=, or a forced termination does not change
+the run's exit status: an assertion that failed still fails, a run that
+succeeded still succeeds. It is logged -- a warning when the CAD was terminated
+or its code is an NTSTATUS error -- and kept in the cleanup report. A process
+still running after its termination, an identity the helper cannot confirm (it
+is then not terminated), or a helper that reports nothing fails the run (exit
+76), keeps the work directory, and names the process in the error.
+
+=--cleanup-report FILE= copies the cleanup report to FILE. It is KEY=VALUE
+lines ending with =end=1=, written to a temporary file and renamed:
+
+| Key                         | Meaning                                                                    |
+|-----------------------------+----------------------------------------------------------------------------|
+| =contract=                  | =2=                                                                        |
+| =frontier=                  | =recorded=, or =absent= when the run ended before deciding its outcome      |
+| =script-status=, =script-exit-code= | the outcome recorded at the frontier                               |
+| =results=                   | =ok=, =incomplete=, =unchecked= (no =--result-file=) or =unknown=          |
+| =result-file-N=             | its status, size and path                                                  |
+| =owned=                     | =created=, =attached=, or =none= (no CAD of the run's own to close)        |
+| =quit-error=                | the bridge's error number for Close/Quit, or =no-answer=                    |
+| =cleanup-outcome=           | =exited=, =forced=, =already-gone=, =pid-reused=, =survived=, =identity-mismatch=, =identity-uncertain= or =error= |
+| =cleanup-forced=            | =1= when the process was terminated                                        |
+| =cleanup-exit-code=, =cleanup-exit-code-hex= | the raw exit code, unsigned decimal and hexadecimal        |
+| =cleanup-pid=, =cleanup-start-ticks=, =cleanup-name=, =cleanup-session=, =cleanup-sid= | the identity       |
+| =cleanup-waited-ms=, =cleanup-kill-waited-ms= | the time spent waiting for the exit, before and after the termination |
+| =cleanup=                   | =ok=, =released= (attached), =none=, or the failure's code                 |
+
+A CI job reads its verdict from the run's exit status, and the cleanup report
+for the diagnostics: it should not require a zero native exit code, nor read
+=close-owned.result=, whose format belongs to the bridge.
+
+The work directory contains =owned-cad-process.ps1=, the captured
+=owned-cad-process.json= identity, the =close-owned.request/result= handshake,
+=owned-close-frontier.txt=, the helper's =owned-cad-cleanup.txt= and the
+=owned-cad-cleanup-report.txt=. These files are private to one invocation and
+must not be reused by another.
+
+The generated PowerShell helper is invoked with a process-scoped execution
+policy; this does not change the machine or user execution-policy settings.
+Domain policy still takes precedence.
+
+For interactive attachment, restoration ends the runtime loop and releases the
+bridge reference, but never closes the pre-existing application or documents.
+CI runners use fresh instances; clearing residual CAD processes of the dedicated
+runner account before a job is a separate runner preflight policy.
+
+** How the run's exit status is decided
+
+The script's status comes first (alfe 2.3.122):
+
+- *The script failed* (an AutoLISP error, an assertion, a timeout...): its
+  status is the run's, whatever the shutdown did; a shutdown problem is only a
+  warning.
+- *The script succeeded* and the shutdown went well: 0.
+- *The script succeeded* but the shutdown did not -- the CAD alfe started had
+  to be terminated after its QUIT, could not be identified with certainty, or
+  did not acknowledge the restoration of its settings: alfe first writes
+  =alfe: the script succeeded (exit status 0); the CAD shutdown did not.=,
+  then exits with the shutdown's status (76). A CI job that only needs the
+  test's result can look for that line and ignore the bad shutdown.
+
+** When alfe is killed before it can quit AutoCAD
+
+alfe quits the AutoCAD it created — but only if it reaches the end of
+the run. Killed, or its CI job cancelled, it never gets there, and the
+=acad.exe= that COM started belongs to the COM service rather than to
+alfe, so killing alfe's process tree does not reach it either.
+
+So each run writes down what it creates, in
+=<temp>/alfe-created-cad.txt=: the process id and its creation time, one
+line per instance. The file is outside the workdir on purpose — the
+workdir goes away with the run, and the run this serves is the one that
+cleaned nothing up.
+
+=scripts/sweep-orphaned-cad.ps1= reads that file and ends those
+instances, and only those: both the process id *and* the creation time
+must still match, because Windows reuses process ids. It never touches
+an AutoCAD alfe did not start. On the project's Windows CI it runs
+*before* every CAD job, which is the only moment that covers a hard
+cancel (nothing runs after one) and the only moment that cannot catch an
+AutoCAD the current job is using.
+
+A *process id that still answers is not a running process.* Windows keeps
+a process-table entry until the last handle to it is closed, and the COM
+service holds one — so a dead =acad.exe= can linger for days: it has no
+threads left, =Stop-Process= cannot touch it, and =taskkill= replies
+"there is no running instance of the task". The sweep classifies each
+recorded id before acting (gone / exited-and-waiting-to-be-reaped /
+running) and drops the first two from the file. It *fails the job it
+precedes* only when an instance is really *running* and could not be
+ended — such an AutoCAD owns the =AutoCAD.Application= COM registration
+and answers =RPC_E_CALL_REJECTED= to every call, which would look like an
+alfe defect in the log.
+
+Two variables relax that, and they are not interchangeable:
+
+- =CAD_SWEEP_NONBLOCKING=1= — *this job cannot be affected*: it drives BricsCAD
+  only, and a wedged AutoCAD owns a registration BricsCAD neither asks for nor
+  shares. The sweep still runs and still reports; it simply does not fail the
+  job. The project's BricsCAD-only Windows jobs carry it through their CI gate
+  (=.gate-windows-bricscad-*=), and ~make check-cad-sweep-gating~ keeps each job
+  on the gate its vendor calls for. Note that =accoreconsole= *is* AutoCAD, so
+  those jobs stay blocking.
+- =CAD_SWEEP_IGNORE_SURVIVORS=1= — *I know, run anyway*: the emergency override
+  for a machine nobody can reach at the moment.
 
 * The debugger (aldo)
 
@@ -925,6 +1053,9 @@ alfe -l ~/.autolisp -x "(ep (quote (list 1 2 3)))"
 #+end_src
 
 ** How a form reaches a CAD
+:PROPERTIES:
+:CUSTOM_ID: how-a-form-reaches-a-cad
+:END:
 
 On the =--bricscad= and =--autocad= backends alfe does not hand an =-l=
 file to the CAD's own =LOAD=: its CAD-side loader reads the file one
@@ -1685,7 +1816,8 @@ job document. BricsCAD batch retains the sequential =LOAD= lines above.
 
 Loading EPURE's =.des= / =.vlx= and the vertical application's menus
 takes minutes: 174 s to READY on the project's Windows runner (BricsCAD
-V25, 2026-09-25), against a 30 s backend default. So when =--epure= is
+V25, 2026-09-25), against a default start timeout of 60 s (batch) or 300 s
+(automation). So when =--epure= is
 active and you named no =--timeout=, alfe waits *420 s* instead, and
 says so under =--verbose=. An explicit =--timeout= is yours and is left
 alone.
@@ -1762,6 +1894,46 @@ checks the captured native process, exit status and crash evidence.
 The 2026-11-02 qualification identified missing BricsCAD COM APIs and
 abnormal AutoCAD exits; these are tracked independently of whether
 ALFE itself returns success.
+
+*** EPURE profile and document ordering
+In Windows COM automation, EPURE activates its explicit profile in
+=:after-document=, not =:after-app=. A shared CI guard can therefore be
+installed in the requested drawing before profile activation triggers menus
+or application startup. The native control script still precedes the runtime.
+The caller must verify the guard's native acknowledgement; defining it only
+after READY cannot prevent an earlier startup dialogue.
+
+*** EPURE document startup in COM mode
+After opening the job drawing and activating the EPURE profile, the common
+runtime loads the control script synchronously, then runs the installed
+=on_start.lsp= (BricsCAD) or =AcadDoc.lsp= (AutoCAD) and =s::startup= when
+=com_startup_exe= is nil. Profile activation alone does not initialize the
+already open document. Batch launchers retain their existing startup path.
+
+Native lifecycle qualification also modifies the private test drawing and
+checks its SHA256 remains unchanged after shutdown. Its verdict follows
+contract 2: alfe's exit status and the created CAD proved gone. A nonzero
+native exit (BABE included), a crash or a forced termination after the
+frontier is recorded in the receipt, not a qualification failure.
+
+*** Native Windows profile environment
+Before launching CAD on Windows, alfe resolves a missing =USERPROFILE= with
+=SHGetKnownFolderPath(FOLDERID_Profile)=. It supplies that value for the child
+launch and restores the parent environment afterwards. Existing values and
+explicit launch environment overrides take precedence. It does not infer a
+Windows profile from MSYS =HOME= or write registry settings. If Windows cannot
+resolve the profile, bootstrap fails before spawning CAD. This avoids passing
+an absent profile to native EPURE helpers that do not validate that input.
+A GUI COM server still needs a working interactive Windows session.
+
+*** Required EPURE lifecycle qualification
+An MR labelled =qualification::epure-lifecycle= uses the =native:qualification=
+bridge with =strategy: mirror= and =allow_failure: false=. Its parent waits for
+the blocking native lifecycle job and reflects its failure. The regular native
+bridge retains its optional behavior for other pipelines. Native nonzero exit
+codes, correlated crashes and forced termination after alfe's frontier are
+recorded in the receipt (contract 2); alfe's failure, a CAD still running after
+alfe returned, or a missing cleanup report fails qualification.
 
 ** The EPUREE plug-in
 :PROPERTIES:
@@ -2542,8 +2714,8 @@ give =--verbose=; recompile it with =--compile-plugin=.
 
 The =epure= plug-in acts only on MS-Windows and only with =--bricscad=
 or =--autocad=. On any other system, and under =--clautolisp= — the
-default when nothing names a backend — alfe ignores =--epure= silently.
-Run with =--verbose= to see the message saying so, and name the backend.
+default when nothing names a backend — alfe ignores =--epure=, with a
+warning saying so (suggesting =--epuree=); name the backend.
 
 ** A run under EPURE or EPUREE stops before the script starts
 
@@ -2577,130 +2749,3 @@ Synchronisation section), changes to the code, the alfe
 specifications, this user-manual, or the man page must be
 propagated to every track.
 
-
-* CAD session cleanup and owned COM instances
-:PROPERTIES:
-:CUSTOM_ID: owned-cad-cleanup
-:END:
-
-On Windows, AutoCAD and BricsCAD automation retain the exact COM application
-reference returned at startup. Before opening an explicit drawing, both bridges
-require GetAcadState().IsQuiescent within 30 seconds. They capture the created
-application's process identity before file open; failure never substitutes a
-blank drawing or a different instance. After the evaluation, alfe closes the
-session in this order (contract 2, since alfe 2.3.107):
-
-1. *Results.* alfe decides the run's outcome -- its exit status -- and checks
-   each =--result-file FILE= the run had to write: missing, empty, still
-   growing, or an XML file whose root element is not closed, it fails a run
-   that would otherwise succeed (exit 66). A run whose script failed keeps its
-   own status. alfe imposes no such file: the option is for the scripts that
-   write one, a JUnit report for instance.
-2. *Restoration.* The live runtime restores LOGFILEMODE, LOGFILEPATH and
-   SRCHPATH, closing the current command log first, and acknowledges
-   =RESTORED= only after leaving its protocol loop. Without that
-   acknowledgement the run fails, and the CAD is not asked to close.
-3. *Frontier.* alfe writes =owned-close-frontier.txt= in the work directory:
-   the outcome, the result files checked, the restoration acknowledged, the
-   invocation. From here on, how the CAD ends is a diagnostic, not the result.
-4. *Close.* For an application created by this invocation, the retained bridge
-   closes its documents without saving and calls Quit on that same application;
-   it does not look up a potentially different instance through GetObject.
-   Transient COM rejections are retried at most 40 times, 250 milliseconds
-   apart, with their exact error preserved; the bridge then releases its
-   automation references. An attached application is only released, never
-   closed.
-5. *Disappearance.* The created process must be gone. alfe's helper reopens it
-   by its captured identity -- PID, UTC creation ticks, image name, session and
-   owner SID, all revalidated -- waits up to 20 seconds, and, past that grace,
-   terminates that handle and waits up to 10 more seconds. A Quit that blocks
-   (a dialog) does not block alfe: after 30 seconds without the bridge's answer,
-   the bridge is stopped and the helper runs with no grace. A process is never
-   ended by its name, by its engine, or because it started at about the same
-   time; a PID that names another process now, or an identity that does not
-   match, is left alone.
-
-Past the frontier, a normal exit, an exit code such as =0xBABE=, a crash code
-such as =0xC0000005= or =0xC0000374=, or a forced termination does not change
-the run's exit status: an assertion that failed still fails, a run that
-succeeded still succeeds. It is logged -- a warning when the CAD was terminated
-or its code is an NTSTATUS error -- and kept in the cleanup report. A process
-still running after its termination, an identity the helper cannot confirm (it
-is then not terminated), or a helper that reports nothing fails the run (exit
-76), keeps the work directory, and names the process in the error.
-
-=--cleanup-report FILE= copies the cleanup report to FILE. It is KEY=VALUE
-lines ending with =end=1=, written to a temporary file and renamed:
-
-| Key                         | Meaning                                                                    |
-|-----------------------------+----------------------------------------------------------------------------|
-| =contract=                  | =2=                                                                        |
-| =frontier=                  | =recorded=, or =absent= when the run ended before deciding its outcome      |
-| =script-status=, =script-exit-code= | the outcome recorded at the frontier                               |
-| =results=                   | =ok=, =incomplete=, =unchecked= (no =--result-file=) or =unknown=          |
-| =result-file-N=             | its status, size and path                                                  |
-| =owned=                     | =created=, =attached=, or =none= (no CAD of the run's own to close)        |
-| =quit-error=                | the bridge's error number for Close/Quit, or =no-answer=                    |
-| =cleanup-outcome=           | =exited=, =forced=, =already-gone=, =pid-reused=, =survived=, =identity-mismatch=, =identity-uncertain= or =error= |
-| =cleanup-forced=            | =1= when the process was terminated                                        |
-| =cleanup-exit-code=, =cleanup-exit-code-hex= | the raw exit code, unsigned decimal and hexadecimal        |
-| =cleanup-pid=, =cleanup-start-ticks=, =cleanup-name=, =cleanup-session=, =cleanup-sid= | the identity       |
-| =cleanup-waited-ms=, =cleanup-kill-waited-ms= | the time spent waiting for the exit, before and after the termination |
-| =cleanup=                   | =ok=, =released= (attached), =none=, or the failure's code                 |
-
-A CI job reads its verdict from the run's exit status, and the cleanup report
-for the diagnostics: it should not require a zero native exit code, nor read
-=close-owned.result=, whose format belongs to the bridge.
-
-The work directory contains =owned-cad-process.ps1=, the captured
-=owned-cad-process.json= identity, the =close-owned.request/result= handshake,
-=owned-close-frontier.txt=, the helper's =owned-cad-cleanup.txt= and the
-=owned-cad-cleanup-report.txt=. These files are private to one invocation and
-must not be reused by another.
-
-The generated PowerShell helper is invoked with a process-scoped execution
-policy; this does not change the machine or user execution-policy settings.
-Domain policy still takes precedence.
-
-For interactive attachment, restoration ends the runtime loop and releases the
-bridge reference, but never closes the pre-existing application or documents.
-CI runners use fresh instances; clearing residual CAD processes of the dedicated
-runner account before a job is a separate runner preflight policy.
-
-** EPURE profile and document ordering
-In Windows COM automation, EPURE activates its explicit profile in
-=:after-document=, not =:after-app=. A shared CI guard can therefore be
-installed in the requested drawing before profile activation triggers menus
-or application startup. The native control script still precedes the runtime.
-The caller must verify the guard's native acknowledgement; defining it only
-after READY cannot prevent an earlier startup dialogue.
-
-** EPURE document startup in COM mode
-After opening the job drawing and activating the EPURE profile, the common
-runtime loads the control script synchronously, then runs the installed
-=on_start.lsp= (BricsCAD) or =AcadDoc.lsp= (AutoCAD) and =s::startup= when
-=com_startup_exe= is nil. Profile activation alone does not initialize the
-already open document. Batch launchers retain their existing startup path.
-
-Native lifecycle qualification also modifies the private test drawing and
-checks its SHA256 remains unchanged after shutdown. Its verdict follows
-contract 2: alfe's exit status and the created CAD proved gone. A nonzero
-native exit (BABE included), a crash or a forced termination after the
-frontier is recorded in the receipt, not a qualification failure.
-
-** Native Windows profile environment
-Before launching CAD on Windows, alfe resolves a missing =USERPROFILE= with
-=SHGetKnownFolderPath(FOLDERID_Profile)=. It supplies that value for the child
-launch and restores the parent environment afterwards. Existing values and
-explicit launch environment overrides take precedence. It does not infer a
-Windows profile from MSYS =HOME= or write registry settings. If Windows cannot
-resolve the profile, bootstrap fails before spawning CAD. This avoids passing
-an absent profile to native EPURE helpers that do not validate that input.
-A GUI COM server still needs a working interactive Windows session.
-
-** Required EPURE lifecycle qualification
-An MR labelled =qualification::epure-lifecycle= uses the =native:qualification=
-bridge with =strategy: mirror= and =allow_failure: false=. Its parent waits for
-the blocking native lifecycle job and reflects its failure. The regular native
-bridge retains its optional behavior for other pipelines. Native nonzero exit
-codes, correlated crashes and forced cleanup remain qualification failures.
