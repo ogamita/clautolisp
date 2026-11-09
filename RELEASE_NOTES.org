@@ -11,8 +11,8 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 2.3.0 / alfe 2.3.0 /
-read-autolisp 1.10.0). alfe tracks clautolisp's version: because
+master at the top of the file (clautolisp 2.4.0 / alfe 2.4.0 /
+read-autolisp 2.4.0). alfe tracks clautolisp's version: because
 =alfe --clautolisp= embeds essentially the whole clautolisp engine, a
 change to clautolisp's sources bumps alfe too — and alfe's own changes
 (the AutoCAD start-engine PROBE fix, =--on-error=) bump it independently.
@@ -25,6 +25,15 @@ shared by alfe, per-instance ncurses interactor windows, cadtui's fr_FR
 option keywords, and a LibreDWG that reports its own version (0.14).
 read-autolisp moves to 1.10.0: its reader library changed since 1.9.0
 (the sysexits exit statuses, refused undecodable sources on every host).
+The 2.4 series makes alfe's CAD lifecycle one set of rules for every CAD,
+platform and mode: the shutdown never saves a drawing and quits only a CAD
+alfe started (an attached one is only disconnected from, after the run's
+documents are closed); the script's status comes first; the start is
+protected and a failed start ends what alfe launched; Control-C is forwarded
+through the protocol; one table of timeouts (=--ready-timeout=). It also
+brings =--result-file= and =--cleanup-report=, the AcCoreConsole probe on
+macOS, and READ / PRIN1 as AutoCAD and BricsCAD measure them. read-autolisp,
+on clautolisp's numbering since 2.3, takes 2.4.0: its reader changed.
 For the chronology and the issue-by-issue
 history, see ~git log~ on master and the issues under ~issues/closed/~.
 
