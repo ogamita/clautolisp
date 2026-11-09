@@ -111,6 +111,123 @@ stages:
   if: '$CI_PIPELINE_SOURCE == "schedule"'
   when: never
 
+# --- change-gating: skip code tests on docs-only, skip docs on issues-only ---
+# These two path lists + the two rules anchors below let a push/MR that touches
+# only documentation skip the code test matrix, and one that touches only the
+# tracker (issues/**, prose, scaffolding) skip even the doc build.
+# &changes-code MIRRORS native:pipeline's changes: list (the single source of
+# truth for "is this code"); &changes-doc MIRRORS scripts/ci-classify-changes.py's
+# DOC list. scripts/ci-classify-changes.py --check-yaml FAILS the pipeline if
+# either anchor drifts OR any tracked path is neither code, doc nor meta -- so a
+# real code change can never be silently mis-filed as docs and skip its tests.
+# SHORT-form changes: only (the `changes: paths:' form silently skipped a bridge
+# once -- see native:pipeline). Tags and master always run; only MRs are gated.
+.changes-code: &changes-code
+  - "**/*.lisp"
+  - "**/*.asd"
+  - "**/*.lsp"
+  - "**/*.el"
+  - "**/*.sexp"
+  - "**/*.c"
+  - "**/*.h"
+  - "**/*.cpp"
+  - "**/*.hpp"
+  - "**/CMakeLists.txt"
+  - "**/Makefile"
+  - "**/*.mk"
+  - "**/*.sh"
+  - "**/*.ps1"
+  - "**/*.cmd"
+  - "**/*.bat"
+  - "**/*.vbs"
+  - "**/*.py"
+  - "**/*.scr"
+  - "**/*.yml"
+  - "**/*.yaml"
+  - "**/*.json"
+  - "**/*.cfg"
+  - "**/*.conf"
+  - "**/*.txt"
+  - "**/*.csv"
+  - "**/*.dcl"
+  - "**/*.dwg"
+  - "**/*.dwt"
+  - "**/*.dxf"
+  - "**/Dockerfile"
+  - "**/tools/**"
+  - ".gitmodules"
+  - "clautolisp/third-party/**"
+.changes-doc: &changes-doc
+  - "documentation/**"
+  - "autolisp-spec/**/*.org"
+  - "autolisp-spec/**/*.md"
+  - "autolisp-spec/**/*.texi"
+  - "autolisp-benchmark/**/*.org"
+  - "autolisp-benchmark/**/*.md"
+  - "clautolisp/**/*.org"
+  - "clautolisp/**/*.md"
+  - "autolisp-front-end/**/*.org"
+  - "autolisp-front-end/**/*.md"
+  - "autolisp-test/**/*.org"
+  - "autolisp-test/**/*.md"
+  - "probes/**/*.org"
+  - "probes/**/*.md"
+  - "scripts/**/*.org"
+  - "scripts/**/*.md"
+  - ".github/**/*.md"
+  - "README.md"
+  - "README.org"
+  - "INSTALL.org"
+  - "RELEASE_NOTES.org"
+  - "SPEC.md"
+  - "AGENTS.md"
+  - "**/*.texi"
+  - "**/*.info"
+  - "**/*.man"
+  - "**/*.1"
+  - "**/*.3"
+  - "**/*.tex"
+  - "**/*.sty"
+  - "**/texmf.cnf"
+  - "**/*.graffle"
+  - "**/*.mmd"
+  - "**/*.puml"
+  - "**/*.dot"
+  - "**/*.html"
+  - "**/*.png"
+  - "**/*.jpg"
+  - "**/*.jpeg"
+  - "**/*.svg"
+  - "**/*.gif"
+  - "**/*.pdf"
+  - "**/*.eps"
+# Heavy CODE lanes: tags + master always; an MR only when a CODE path changed.
+.rules-code-change: &rules-code-change
+  - *not-on-schedule
+  - if: '$CI_COMMIT_TAG'
+    when: on_success
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    when: on_success
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    changes: *changes-code
+    when: on_success
+  - when: never
+# Documentation lane: master always; an MR when a CODE or DOC path changed, so
+# an issues-only (META) MR rebuilds nothing. Tags -> release:documentation.
+.rules-doc-change: &rules-doc-change
+  - *not-on-schedule
+  - if: '$CI_COMMIT_TAG'
+    when: never
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    when: on_success
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    changes: *changes-code
+    when: on_success
+  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    changes: *changes-doc
+    when: on_success
+  - when: never
+
 .on-release-mandatory: &on-release-mandatory
   if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
   when: on_success
@@ -369,11 +486,35 @@ verify:packaged-dwg:linux:
     - bash scripts/verify-packaged-dwg.sh
     - sh scripts/ci-build-cache.sh save libredwg
 
-test:clautolisp:sbcl:
-  extends: .fasl-cache
+# The change-gating integrity guards, run UNCONDITIONALLY on every tag / master
+# / MR (no changes: gate). The heavy lanes above are change-gated, and the
+# documentation lane that used to host these guards is now gated too -- so these
+# cheap, python-only classifier guards get their OWN always-on lane. Without it,
+# an MR adding a NEW unclassified file type would match no gate, skip every
+# lane, and merge in silence (caught only later, reddening master). Fail-fast in
+# .pre so a classification/drift error stops the pipeline before the matrix.
+ci:sanity:
+  stage: .pre
+  image: $CLAUTOLISP_CI_LATEST
+  tags: [linux, amd64, docker]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
   rules:
     - *not-on-schedule
-    - when: on_success
+    - if: '$CI_COMMIT_TAG'
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    - when: never
+  script:
+    - make check-ci-classify-changes
+    - make check-native-pipeline-changes
+
+test:clautolisp:sbcl:
+  extends: .fasl-cache
+  rules: *rules-code-change
   stage: test
   script:
     - *pre-warm-quicklisp-sbcl
@@ -382,9 +523,7 @@ test:clautolisp:sbcl:
 
 test:clautolisp:ccl:
   extends: .fasl-cache
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   stage: test
   script:
     - *pre-warm-quicklisp-ccl
@@ -393,9 +532,7 @@ test:clautolisp:ccl:
 
 test:clautolisp:compiler:sbcl:
   extends: .fasl-cache
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   stage: test
   script:
     - *pre-warm-quicklisp-sbcl
@@ -418,9 +555,7 @@ test:clautolisp:compiler:sbcl:
 
 test:clautolisp:compiler:ccl:
   extends: .fasl-cache
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   stage: test
   script:
     - *pre-warm-quicklisp-ccl
@@ -431,9 +566,7 @@ test:clautolisp:compiler:ccl:
     - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:file-compat:sbcl:
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   stage: test
   script:
     - mkdir -p clautolisp/.artifacts
@@ -445,9 +578,7 @@ test:clautolisp:file-compat:sbcl:
       - clautolisp/.artifacts/file-compat-sbcl.json
 
 test:clautolisp:file-compat:ccl:
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   stage: test
   script:
     - mkdir -p clautolisp/.artifacts
@@ -469,9 +600,7 @@ test:clautolisp:file-compat:ccl:
 
 test:autolisp-test:sbcl:
   extends: .fasl-cache
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   stage: test
   script:
     - make -C autolisp-test test
@@ -479,9 +608,7 @@ test:autolisp-test:sbcl:
 
 test:alfe:sbcl:
   extends: .fasl-cache
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   stage: test
   variables:
     ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
@@ -496,9 +623,7 @@ test:alfe:sbcl:
 
 test:alfe:ccl:
   extends: .fasl-cache
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   stage: test
   variables:
     ALFE_TEST_REQUIRE_CLAUTOLISP: "1"
@@ -515,9 +640,7 @@ test:alfe:ccl:
 
 test:alfe:conformance:
   extends: .fasl-cache
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   stage: test
   script:
     - make -C autolisp-front-end conformance
@@ -525,9 +648,7 @@ test:alfe:conformance:
 
 test:alfe:spec-coverage:
   extends: .fasl-cache
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   stage: test
   script:
     - make -C autolisp-front-end check-spec-coverage
@@ -604,9 +725,7 @@ test:cad:schms:linux:
 # the (princ) value.
 build:alfe:sbcl:
   extends: .fasl-cache
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   # A build: job belongs in the build stage (issues/open/release-ci.issue) so
   # it runs before the test lanes that `needs:` its artifact.
   stage: build
@@ -650,9 +769,7 @@ build:alfe:sbcl:
 # is defending against — 7 of the 10 specified artefacts were missing, and
 # reading the recipe had not revealed it.
 check:release:
-  rules:
-    - *not-on-schedule
-    - when: on_success
+  rules: *rules-code-change
   stage: test
   tags: [linux, amd64, docker]        # poseidon (always-on)
   image: $CLAUTOLISP_CI_LATEST
@@ -681,15 +798,7 @@ documentation:
   image: $CLAUTOLISP_CI_LATEST
   variables:
     GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
-  rules:
-    - *not-on-schedule
-    - if: '$CI_COMMIT_TAG'            # tags: release:documentation handles it
-      when: never
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      when: on_success
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      when: on_success
-    - when: never
+  rules: *rules-doc-change
   # Reuse the slow paged-split cache (mirrors .release-common): keyed on the
   # spec org + the split driver; build/ also now holds the rendered PDFs.
   cache:
@@ -748,11 +857,9 @@ documentation:
     # this repository meets, and one it has already met. Seconds, in a lane
     # that always runs (test-file-without-in-suite-runs-nothing).
     - make check-test-suite-membership
-    # The native child's merge-request gate is "run when these paths changed",
-    # so a missing pattern SKIPS the Windows/macOS lanes in silence. No tracked
-    # path may be unclassified -- in the gate, or declared irrelevant on purpose
-    # (ci-job-activity-cap-refuses-master-pipelines).
-    - make check-native-pipeline-changes
+    # NB: check-native-pipeline-changes and check-ci-classify-changes moved to
+    # the unconditional ci:sanity lane (this documentation lane is now change-
+    # gated, and those classifier guards must run on EVERY pipeline).
     # The probe jobs run automatically only when their FAMILY changed, so a
     # probe file in no family would never be re-measured, in silence
     # (scripts/ci-detect-probe-changes.py).
