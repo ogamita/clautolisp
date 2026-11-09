@@ -1,0 +1,53 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-cad-lifecycle-rules -- one launch/quit behaviour for every CAD, platform and mode
+#+STATUS: IN-PROGRESS
+#+PRIORITY: P1
+#+TYPE: enhancement
+#+DEPENDS: alfe-owned-cad-termination-after-recorded-results
+#+BRANCH: cad-shutdown-never-saves (MR-A), then MR-B..MR-E
+#+DATE: 2026-11-09
+
+* Decision (pjb, 2026-11-09)
+After the launch/quit review of 2026-11-09, the same behaviour with every CAD
+on every platform:
+
+1. The shutdown code never saves a drawing (a script may save it itself):
+   drawings are closed without saving, and QUIT is answered No (=_QUIT _N=).
+2. The shutdown quits and/or kills a CAD process only if alfe started it.
+   Batch always launches, then quits/kills. Automation either launches, then
+   quits/kills, or connects, then disconnects -- after closing the documents
+   the script opened (snapshot of the documents at the start).
+   A script that ends with an error status: that status is reported. A
+   script that succeeds: that shows in the logs, and a bad shutdown status
+   (e.g. a kill because quit failed) may be reported only then; a CI job can
+   read the test result from the log and ignore the bad shutdown.
+3. A failed start: a CAD alfe launched is killed.
+4. Control-C is forwarded through the protocol; when the script is busy and
+   does not acknowledge it and quit, a second Control-C forces the shutdown
+   (disconnect from, or kill, the launched CAD).
+5. Startup is protected too: cleanup happens in every case.
+6. The timeouts stay logical (follow-up message, same day): a startup
+   timeout that covers the bridge's own waits, distinct from the per-request
+   timeout; one shutdown sequence for every CAD.
+
+This revises the 2026-11-06 contract on one point: a forced end after a
+successful script was a diagnostic; it is now a bad shutdown status, reported
+only when the script succeeded, alongside a log line giving the script's result.
+
+* Plan
+- [X] MR-A (2.3.121): rule 1, and rule 2's quit/disconnect -- AutoCAD batch
+  no longer QSAVEs; =._QUIT _N= in every script; COM bridges close only the
+  run's documents of an attached CAD (snapshot), restore its visibility and
+  the EPURE profile (new =:before-close= slot), and disconnect; BricsCAD batch
+  restores SECURELOAD; the dead AutoCAD quit path (quit-created-autocad,
+  quit-autocad.vbs, TASKKILL by PID, com-flags reader) removed.
+- [ ] MR-B: rule 2's status precedence, rules 3 and 5, logical timeouts;
+  FAILED ends the READY wait; the unimported backend-protocol-error.
+- [ ] MR-C: rule 4 (Control-C through the protocol, second one forces);
+  bridge watchdogs (CAD and alfe processes); the clautolisp subprocess
+  honours --timeout.
+- [ ] MR-D: macOS BricsCAD automation tracks, quits and kills the CAD it
+  launched; its liveness check.
+- [ ] MR-E: one "Engine lifecycle" chapter in the user manual; the
+  specification and the man page aligned (stale exit codes, verbatim
+  bridges, status vocabulary, timeout table, Control-C).

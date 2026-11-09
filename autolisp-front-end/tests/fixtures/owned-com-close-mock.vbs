@@ -1,6 +1,6 @@
 Option Explicit
 Dim fso, app, doc, created, runFile, statusFile, errFile, scenario
-Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeIndex, lifeStream, lifeAttempt, lifeError, lifeDescription
+Dim lifeShell, lifeRoot, lifeHelper, lifeIdentity, lifeRequest, lifeResult, lifeCode, lifeDoc, lifeStream, lifeAttempt, lifeError, lifeDescription, lifeWasVisible
 Dim attempts, closed, quitCalled
 Set fso=CreateObject("Scripting.FileSystemObject")
 scenario=WScript.Arguments(1)

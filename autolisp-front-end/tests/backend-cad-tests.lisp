@@ -76,168 +76,6 @@ next run collided with."
            :validate (lambda (d)
                        (search "alfe-cad-test-" (namestring d)))))))))
 
-(defun %quit-test-workdir (&key attached created)
-  "A fresh workdir holding a bridge flags file, or none when both are NIL.
-Call inside WITH-CAD-TEST-DIRECTORIES, which removes it afterwards."
-  (let ((dir (%fresh-test-directory)))
-    (when (or attached created)
-      (with-open-file (out (merge-pathnames "com-flags.txt" dir)
-                           :direction :output :if-exists :supersede
-                           :if-does-not-exist :create)
-        (format out "ATTACHED=~D~%CREATED=~D~%"
-                (if attached 1 0) (if created 1 0))))
-    dir))
-
-(test autocad-com-flags-are-read-from-the-workdir
-  "The bridge reported CREATED / ATTACHED on stdout and NOTHING read
-them, which is why the decision could not be made. They are written to
-a file in the workdir now, and this is the reader."
-  (with-cad-test-directories
-    (multiple-value-bind (att cre)
-        (alfe.backend.autocad::read-com-flags
-         (%quit-test-workdir :created t))
-      (is (null att))
-      (is (eq t cre)))
-    (multiple-value-bind (att cre)
-        (alfe.backend.autocad::read-com-flags
-         (%quit-test-workdir :attached t))
-      (is (eq t att))
-      (is (null cre)))
-    ;; No flags file at all — a bridge that died before reporting. Both
-    ;; NIL, which is what makes the safe default safe.
-    (multiple-value-bind (att cre)
-        (alfe.backend.autocad::read-com-flags (%quit-test-workdir))
-      (is (null att))
-      (is (null cre)))))
-
-(defun %quit-launches (workdir)
-  "Run QUIT-CREATED-AUTOCAD on a session in WORKDIR with a recording
-launcher. Returns (values RESULT LAUNCHED-ARGVS)."
-  (let* ((launched '())
-         (session (alfe.backend.autocad::%make-autocad-session
-                   :workdir workdir
-                   :variant :automation))
-         (result (alfe.backend.autocad::quit-created-autocad
-                  session
-                  :launcher (lambda (argv &rest ignored)
-                              (declare (ignore ignored))
-                              (push argv launched)
-                              nil))))
-    (values result launched)))
-
-(test autocad-quit-runs-only-for-an-instance-we-created
-  "pjb, 2026-09-16: alfe should only quit a CAD it created itself. An
-AutoCAD the bridge ATTACHED to was already running — on this runner it
-may be a person's own session — so alfe must leave it alone. The
-launcher is injected: the test asserts whether the quit bridge would
-have been launched AT ALL, which is the whole decision."
-  (with-cad-test-directories
-    ;; created -> the quit bridge is launched, with cscript and the script
-    (multiple-value-bind (result launched)
-        (%quit-launches (%quit-test-workdir :created t))
-      (is (eq t result))
-      (is (= 1 (length launched)))
-      (let ((argv (first launched)))
-        (is (equal "cscript" (first argv)))
-        (is (search "quit-autocad.vbs" (format nil "~{~A ~}" argv)))))
-    ;; attached -> nothing is launched. This is the case that protects a
-    ;; human's AutoCAD, so it is asserted on the LAUNCHER, not the result.
-    (multiple-value-bind (result launched)
-        (%quit-launches (%quit-test-workdir :attached t))
-      (is (null result))
-      (is (null launched) "alfe tried to quit an AutoCAD it only attached to"))
-    ;; no flags at all -> nothing is launched either
-    (multiple-value-bind (result launched)
-        (%quit-launches (%quit-test-workdir))
-      (is (null result))
-      (is (null launched)))))
-
-;;; alfe-cad-launch-new-by-default: alfe launches a new AutoCAD even when one
-;;; is running, so the quit must not ask COM for "the" AutoCAD then.
-
-(defun %quit-pid-workdir (&rest pids)
-  "A workdir whose flags say CREATED=1 with these CREATEDPID= lines."
-  (let ((dir (%fresh-test-directory)))
-    (with-open-file (out (merge-pathnames "com-flags.txt" dir)
-                         :direction :output :if-exists :supersede
-                         :if-does-not-exist :create)
-      (format out "~{CREATEDPID=~D~%~}ATTACHED=0~%CREATED=1~%" pids))
-    dir))
-
-(defun %fake-windows (running)
-  "A RUNNER playing tasklist / taskkill over the list of PIDs in the cons
-RUNNING: taskkill removes its PID. Returns (values RUNNER CALLS-CELL)."
-  (let ((calls (list '())))
-    (values
-     (lambda (argv &rest keys)
-       (declare (ignore keys))
-       (push argv (car calls))
-       (cond ((equal "tasklist" (first argv))
-              (format nil "~{\"acad.exe\",\"~D\",\"Console\",\"1\",\"900 000 Ko\"~%~}"
-                      (car running)))
-             ((equal "taskkill" (first argv))
-              (let* ((filter (find-if (lambda (a) (search "PID eq " a)) argv))
-                     (pid (parse-integer filter :start 7)))
-                (setf (car running) (remove pid (car running)))
-                ""))))
-     calls)))
-
-(test autocad-com-flags-carry-the-created-pids
-  "The bridge writes CREATEDPID= for each acad.exe its CreateObject started;
-READ-COM-FLAGS returns them as a third value."
-  (with-cad-test-directories
-    (multiple-value-bind (att cre pids)
-        (alfe.backend.autocad::read-com-flags (%quit-pid-workdir 4242 77))
-      (is (null att))
-      (is (eq t cre))
-      (is (equal '(4242 77) pids)))))
-
-(test autocad-quit-by-pid-when-another-autocad-runs
-  "With another acad.exe running, the quit bridge (GetObject) is NOT launched:
-this run's own acad.exe is ended by its PID, and the other one is left alone.
-With only ours running, the quit bridge is used as before."
-  (with-cad-test-directories
-    (let ((running (list (list 4242 1000))))
-      (multiple-value-bind (runner calls) (%fake-windows running)
-        (let* ((launched '())
-               (session (alfe.backend.autocad::%make-autocad-session
-                         :workdir (%quit-pid-workdir 4242)
-                         :variant :automation))
-               (result (alfe.backend.autocad::quit-created-autocad
-                        session
-                        :timeout 1
-                        :runner runner
-                        :launcher (lambda (argv &rest ignored)
-                                    (declare (ignore ignored))
-                                    (push argv launched)
-                                    nil))))
-          (is (eq t result))
-          (is (null launched) "the quit bridge would ask COM for the other AutoCAD")
-          (is (equal '(1000) (car running)) "ours ended, the other one untouched")
-          (is (some (lambda (argv) (and (equal "taskkill" (first argv))
-                                        (member "PID eq 4242" argv :test #'equal)))
-                    (car calls)))
-          (is (notany (lambda (argv) (member "PID eq 1000" argv :test #'equal))
-                      (car calls))))))
-    ;; only ours: the quit bridge, as before
-    (let ((running (list (list 4242))))
-      (multiple-value-bind (runner calls) (%fake-windows running)
-        (declare (ignore calls))
-        (let* ((launched '())
-               (session (alfe.backend.autocad::%make-autocad-session
-                         :workdir (%quit-pid-workdir 4242)
-                         :variant :automation)))
-          (alfe.backend.autocad::quit-created-autocad
-           session
-           :timeout 1
-           :runner runner
-           :launcher (lambda (argv &rest ignored)
-                       (declare (ignore ignored))
-                       (push argv launched)
-                       nil))
-          (is (= 1 (length launched)))
-          (is (equal "cscript" (first (first launched)))))))))
-
 (test com-attach-pid-only-reaches-the-registered-instance
   "Probe cad-instances (BricsCAD V25, 2026-10-23): COM hands out only the
 instance registered first. --attach-pid passes when it names that one, and is
@@ -276,28 +114,6 @@ CreateObject (AcadPidList), and reports the new ones as CREATEDPID=."
     (is (search "CREATEDPID=" text))
     (is (< (search "pidsBefore = AcadPidList()" text)
            (search "Set app = CreateObject(progId)" text)))))
-
-(test autocad-quit-bridge-closes-documents-without-saving
-  "The document the bridge adds is UNNAMED (Dessin1/Drawing1), so
-app.Quit alone would raise the Save-changes dialog — a modal dialog on
-an unattended runner being the very hang this is meant to end. Each
-document is closed with SaveChanges = False first, downwards because
-closing shortens the collection."
-  (let ((text alfe.backend.autocad::*quit-autocad-vbs-template*))
-    ;; The server is the resolved ProgID now, not a hardcoded generic one
-    ;; (alfe-autocad-cad-selection-ignores-com-progid).
-    (is (search "GetObject(, progId)" text))
-    (is (search "${PROGID}" text))
-    (is (search "doc.Close False" text))
-    (let ((released (search "Set doc = Nothing" text)))
-      (is (not (null released)))
-      (is (< released (search "If Not WaitIdle()" text :start2 released)
-             (search "  app.Quit" text))))
-    (is (search "app.Quit" text))
-    (is (search "Step -1" text)
-        "the close loop must run downwards")
-    ;; It must never CREATE one while trying to quit.
-    (is (not (search "CreateObject(" text)))))
 
 (test autocad-bridge-writes-its-flags-to-a-file
   "The flags reach alfe through a file in the workdir: cscript is
@@ -450,7 +266,10 @@ creates it. Backs the pre-launch quarantine of a corrupt per-user default.cui."
   "EMIT-RUN-SCR writes a SCR that:
    - loads run-common.lsp,
    - disables FILEDIA,
-   - closes without saving before _QUIT when QUIT-ON-FINISH-P is on."
+   - closes without saving, then quits without saving (._QUIT _N), when
+     QUIT-ON-FINISH-P is on: alfe's shutdown never saves a drawing;
+   - saves SECURELOAD before setting it to 0 for the load, and puts it
+     back once the session has ended."
   (let* ((workdir (uiop:ensure-directory-pathname
                    (merge-pathnames
                     (format nil "alfe-test-bcad-scr-~D/" (random 999999))
@@ -471,7 +290,13 @@ creates it. Backs the pre-launch quarantine of a corrupt per-user default.cui."
             (is (search "run-common.lsp" content))
             (is (search "_FILEDIA 0" content))
             (is (search "(vla-close (vla-get-ActiveDocument (vlax-get-acad-object)) :vlax-false)" content))
-            (is (< (search "(vla-close" content) (search "._QUIT" content)))))
+            (is (< (search "(vla-close" content) (search "._QUIT _N" content)))
+            (is (not (search "QSAVE" content)))
+            (let ((save (search "(setq alfe--old-secureload (getvar \"SECURELOAD\"))" content))
+                  (zero (search "'(\"SECURELOAD\" 0)" content))
+                  (load (search "run-common.lsp" content))
+                  (restore (search "(list \"SECURELOAD\" alfe--old-secureload)" content)))
+              (is (and save zero load restore (< save zero load restore))))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
@@ -866,8 +691,11 @@ another AutoCAD runs, since GetObject could then return that one."
                    (content (read-back scr)))
               (is (probe-file scr))
               (is (search "(load" content))
-              (is (search "_QSAVE" content))
-              (is (search "_QUIT _Y" content)))))
+              ;; alfe's shutdown never saves the drawing: no QSAVE, and
+              ;; QUIT's "save changes?" answered No.
+              (is (not (search "QSAVE" content)))
+              (is (search "._QUIT _N" content))
+              (is (not (search "_QUIT _Y" content))))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
@@ -3203,13 +3031,13 @@ registry or no registry, so an unknown release stays usable."
       (setf (uiop:getenv "AUTOCAD_PROGID") (or saved "")))))
 
 (test autocad-bridges-use-the-resolved-progid
-  "Both bridges ask COM for the SAME resolved ProgID: the attach/create
-bridge and the quit bridge. A quit bridge on the generic ProgID could
-quit another release."
+  "The bridge asks COM for the resolved ProgID, never the generic one: a
+bridge on the generic ProgID could attach to, or create, another release.
+The bridge also closes and quits through that same retained object
+(contract 2); there is no separate quit bridge any more."
   (with-cad-test-directories
     (let* ((dir (%fresh-test-directory))
            (vbs (merge-pathnames "bridge-autocad.vbs" dir))
-           (quit (merge-pathnames "quit-autocad.vbs" dir))
            (progid "AutoCAD.Application.24.1"))
       (alfe.backend.autocad:emit-bridge-vbs
        vbs
@@ -3217,8 +3045,7 @@ quit another release."
        :status-path (merge-pathnames "status.txt" dir)
        :error-path (merge-pathnames "err.txt" dir)
        :progid progid)
-      (alfe.backend.autocad::emit-quit-vbs quit :progid progid)
-      (dolist (path (list vbs quit))
+      (dolist (path (list vbs))
         (let ((text (read-back path)))
           (is (search progid text) "~A does not name the resolved ProgID" path)
           ;; no bare generic ProgID left in a COM call
@@ -4801,6 +4628,7 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
                          "autolisp-front-end" "tests/fixtures/owned-com-close-mock.vbs"))))
           (with-open-file (out path :direction :output :if-exists :supersede)
             (write-string prefix out)
+            (write-string alfe.backend.cad-common::*owned-com-snapshot-vbs* out)
             (write-string alfe.backend.cad-common::*owned-com-wait-vbs* out))
           ;; Contract 2: the bridge always answers (exit 0) with the last
           ;; Close/Quit error; the retries are counted in its error file.
@@ -4964,3 +4792,37 @@ WScript.Echo \"PASS \" & scenario
                         (string-trim '(#\Return #\Newline #\Space) out)))
              (is (zerop (length (or (uiop:getenv "USERPROFILE") ""))))))
       (setf (uiop:getenv "USERPROFILE") (or previous "")))))
+
+;;; --- alfe-cad-lifecycle-rules: never save; quit only what alfe started ----
+
+(test owned-com-bridge-closes-a-created-cad-but-only-the-run-s-documents-of-an-attached-one
+  "Both COM bridges: a CAD alfe CREATED has every document closed without
+saving and is quit; a CAD alfe ATTACHED to keeps the documents it had before
+the run (snapshot taken before the job drawing is opened), loses only those
+the run opened -- closed without saving --, gets its window visibility back,
+and is never quit."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+      (dolist (emitter (list #'alfe.backend.autocad:emit-bridge-vbs
+                             #'alfe.backend.bricscad::emit-bridge-vbs))
+        (let ((path (merge-pathnames "lifecycle.vbs" dir)))
+          (funcall emitter path :runtime-load-path #p"/w/run-common.lsp"
+                               :drawing-path "C:/job/dessin.dwg"
+                               :status-path #p"/w/s" :error-path #p"/w/e")
+          (let* ((text (uiop:read-file-string path))
+                 (snapshot (search "lifeSnapshot = lifeSnapshot & DocumentKey(" text))
+                 (open (search "app.Documents.Open(" text))
+                 (attached (search "' ATTACHED: close what the run opened" text))
+                 (attached-end (and attached (search "    End If" text :start2 attached))))
+            (is (and snapshot open (< snapshot open))
+                "the snapshot is taken before the job drawing is opened")
+            (is (search "d.Close False" text) "run documents are closed without saving")
+            (is (not (search "Close True" text)))
+            (is (and attached attached-end))
+            (when (and attached attached-end)
+              (let ((branch (subseq text attached attached-end)))
+                (is (search "CloseRunDocuments()" branch))
+                (is (search "app.Visible = lifeWasVisible" branch))
+                (is (not (search ".Quit" branch)) "an attached CAD is never quit")))
+            (is (search "lifeWasVisible = " text)
+                "the window visibility is remembered before it is forced")))))))

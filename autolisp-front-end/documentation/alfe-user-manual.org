@@ -298,19 +298,30 @@ the run, so alfe never closes an instance of another release.
 
 *** Closing drawings after an automated run
 
-For an AutoCAD instance created by the run, the quit bridge closes each
-open document with =SaveChanges=False= before quitting. It waits for the
-application to become idle before closing documents and again before Quit;
-it releases closed document references and retries transient COM rejections. If a
-document cannot be closed, the bridge stops instead of calling Quit and
-opening a save dialog. Attached instances remain under their owner's
-control.
+Two rules hold for every CAD, on every platform (alfe 2.3.121):
 
-BricsCAD batch scripts close their active document with
-=SaveChanges=False= before QUIT. Sending QUIT and an SCR or AutoLISP
-discard answer can still display a save dialog under EPURE. After the protocol has
-stopped, alfe allows ten seconds for BricsCAD to exit naturally before
-its bounded termination fallback; a warning identifies that fallback.
+1. *alfe's shutdown never saves a drawing.* It closes drawings without
+   saving (=SaveChanges=False=) and, when it quits, answers QUIT's "save
+   changes?" with No (=._QUIT _N=). A script that wants its drawing saved
+   saves it itself (=QSAVE=, =SAVEAS=, =vla-SaveAs=...) before it ends.
+2. *alfe quits or kills only a CAD it started.*
+   - =--mode batch= always launches a new CAD: at the end its script closes
+     the drawing without saving and quits it (=._QUIT _N=); one that is still
+     running after the grace period is terminated.
+   - =--mode automation= either launches a CAD (=--backend launch=, the
+     default) -- then every document is closed without saving and the CAD is
+     quit, or terminated if it does not exit -- or connects to a running one
+     (=--backend attach=, =--attach-pid=). A CAD alfe connected to is *never*
+     quit: before the job drawing is opened, alfe notes the documents already
+     open; at the end it closes, without saving, only those the run opened
+     (the job drawing included), puts the window's visibility and the EPURE
+     profile back as they were, and disconnects.
+
+The closes are retried while the CAD rejects a COM call as busy (up to 40
+times, a quarter of a second apart), and a document that cannot be closed is
+never followed by a Quit that would open a save dialog. Under EPURE, BricsCAD
+batch can still show a save dialog on QUIT; alfe then terminates it after the
+grace period, and a warning says so.
 
 The protocol restores the native output functions after its server loop
 and final logging have finished, so subsequent CAD startup and menu
@@ -1935,6 +1946,7 @@ detail; return its lines when the slot is one you care about.
 | =:scr= | =run.scr= (BricsCAD batch), the accoreconsole SCR | =:before-load= | immediately before the =(load run-common.lsp)= line                                           |
 |        |                                                   | =:after-load=  | after it, before the final =_QUIT= (the load only returns when the session ends)              |
 | =:vbs= | =bridge-bricscad.vbs=, =bridge-autocad.vbs=       | =:after-app=   | once the COM application object exists, before waiting for it and before the document is used |
+|        | | =:before-close= | before the bridge closes a CAD it created or releases one it attached to (EPURE puts the previous profile back) |
 |        | | =:after-document= | target document selected; before profile-triggered application initialization and runtime trust setup |
 |        |                                                   | =:before-load= | once the document is active, immediately before the =(load run-common.lsp)= is sent           |
 

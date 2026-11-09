@@ -384,8 +384,11 @@ unnamed \"<<Profil sans nom>>\") rather than trust the default."
   "Write WORKDIR/run.scr — the SCR script BricsCAD runs in batch
 (-B) mode. The script loads run-common.lsp (which itself loads the
 autolisp-remote-io runtime) and, when QUIT-ON-FINISH-P is true,
-closes the active document without saving and issues _QUIT so the engine doesn't hang
-on a save-changes dialog.
+closes the active document without saving and quits without saving
+(._QUIT _N): alfe's shutdown never saves a drawing; a script that wants its
+drawing saved saves it itself (alfe-cad-lifecycle-rules, pjb 2026-11-09).
+SECURELOAD, set to 0 for the runtime's load, is put back once the session
+ends, while BricsCAD still runs.
 
 Returns the path of the emitted file."
   (let* ((path (merge-pathnames "run.scr" workdir))
@@ -404,13 +407,16 @@ Returns the path of the emitted file."
                  ;; dialog. SECURELOAD is a system variable (not a LISP atom),
                  ;; so probe it via getvar; vl-catch-all-apply keeps a host
                  ;; that rejects the sysvar from aborting the script.
-                 (format out "(if (getvar \"SECURELOAD\") (vl-catch-all-apply 'setvar '(\"SECURELOAD\" 0)))~%")
+                 (format out "(setq alfe--old-secureload (getvar \"SECURELOAD\"))~%")
+                 (format out "(if alfe--old-secureload (vl-catch-all-apply 'setvar '(\"SECURELOAD\" 0)))~%")
                  ;; Plug-in lines (hook :launcher-lines): EPURE runs its
                  ;; control script here, before alfe's runtime is loaded.
                  (dolist (line (launcher-lines :before-load :scr :batch))
                    (write-line line out))
                  (format out "(load ~S)~%"
                          (namestring (truename runtime-load-path)))
+                 ;; The session has ended: put SECURELOAD back as it was.
+                 (format out "(if alfe--old-secureload (vl-catch-all-apply 'setvar (list \"SECURELOAD\" alfe--old-secureload)))~%")
                  ;; The load only returns when the session ends, so these
                  ;; run after it, before the final _QUIT.
                  (dolist (line (launcher-lines :after-load :scr :batch))
@@ -422,7 +428,7 @@ Returns the path of the emitted file."
                    (format out "._FILEDIA 0~%")
                    ;; QUIT can open a GUI save dialog even with a Lisp answer.
                    ;; Close the owned batch document explicitly first.
-                   (format out "(vl-load-com)~%(vla-close (vla-get-ActiveDocument (vlax-get-acad-object)) :vlax-false)~%._QUIT~%"))))
+                   (format out "(vl-load-com)~%(vla-close (vla-get-ActiveDocument (vlax-get-acad-object)) :vlax-false)~%._QUIT _N~%"))))
          (text (alfe.plugin:run-hook :launcher-script raw
                                      :kind :scr :variant :batch :path path)))
     (with-open-file (out path :direction :output
@@ -444,6 +450,7 @@ Returns the path of the emitted file."
 ' ${COMMODE}, ${DEBUGFILE} are substituted by EMIT-BRIDGE-VBS.
 
 Option Explicit
+Dim lifeWasVisible
 Dim fso, app, doc, runFile, statusFile, errFile, commode, debugFile
 Dim attached, created, rc
 
@@ -517,6 +524,10 @@ If app Is Nothing Then
   VBSDebug \"CreateObject ok\"
 End If
 
+On Error Resume Next
+lifeWasVisible = app.Visible
+Err.Clear
+On Error GoTo 0
 app.Visible = True
 EmitFlags attached, created
 
