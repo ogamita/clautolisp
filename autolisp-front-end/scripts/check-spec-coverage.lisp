@@ -62,6 +62,8 @@
     "-P"   ; BricsCAD's profile flag passed through to the engine.
     "/i"   ; accoreconsole.exe input flag (Windows).
     "/s"   ; accoreconsole.exe script flag (Windows).
+    "-Embedding" ; what COM appends to AutoCAD's LocalServer32 command line,
+                 ; which alfe's own launch now appends too (alfe 2.3.106).
     ;; clautolisp's options on the subprocess engine's command line (alfe
     ;; passes them), not alfe's own.
     "--front-end-bindings"

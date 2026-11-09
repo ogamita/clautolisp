@@ -270,6 +270,20 @@ Only =--cad autocad-2022= (or =acad-2022=) *names* a release. =--cad
 autocad= asks for the latest one, so the release is alfe's own choice
 and never a reason to refuse the run.
 
+*=--mode automation= needs a live interactive desktop.* COM automation
+drives a GUI application, so it requires the Windows session to be
+*connected and unlocked*. When the session is disconnected — locked,
+after a "switch user", the console handed back to the login window, or
+an RDP client that closed without logging off — a =--mode automation=
+run FAILS or hangs partway, while =--mode batch= (headless
+=accoreconsole= on AutoCAD) is unaffected. =alfe --probe-gui= reports
+whether a desktop is available right now (on Windows: the WTS connect
+state and whether the lock/login screen is up), and exits; and under
+=--verbose= (or =--debug=) alfe prints a conspicuous heads-up at launch
+whenever it selects automation but no desktop is available. If an
+automated runner cannot keep its session connected, prefer =--mode
+batch= where the vendor offers a headless engine.
+
 alfe confirms the registration before using it (a CLSID *and* a readable
 =LocalServer32=). When you named the release and its COM server is not
 registered, alfe stops and says so — it will not quietly fall back to the
@@ -2264,14 +2278,20 @@ exited before it did.
 
 /Changed in alfe 2.3.101./ When no AutoCAD is running, the COM bridge starts
 AutoCAD itself -- the command registered for its ProgID (=LocalServer32=,
-normally =acad.exe /Automation=) -- and waits for it to register, for as long
-as alfe's ready timeout (=--timeout=, or =$AUTOLISP_WAIT_SECS=). Before, it
+normally =acad.exe /Automation=), with =-Embedding= as COM itself adds it, so
+that AutoCAD skips its startup dialog -- and waits for it to register, for
+alfe's ready timeout (=--timeout=, or =$AUTOLISP_WAIT_SECS=) less 15 seconds,
+so that alfe can still end an AutoCAD that did not make it. Before, it
 used =CreateObject=, which lets Windows (DCOM) start AutoCAD and wait for it
 for a fixed 120 seconds: an AutoCAD that took longer failed with COM error
 =429= after about two minutes, whatever =--timeout= said, and Windows logged
 DCOM event 10010 ("did not register with DCOM within the required timeout").
 If the launched =acad.exe= exits before it registers, alfe says so at once
-(stage =launch-exited=) instead of waiting out the timeout.
+(stage =launch-exited=) instead of waiting out the timeout; if it is still
+starting when the timeout runs out, alfe ends that =acad.exe= (stage
+=launch-timeout=), so no invisible AutoCAD is left behind. /Changed in alfe
+2.3.104:/ in 2.3.101 to 2.3.103 such an AutoCAD was left running and could
+hold alfe's output open, so the command did not return.
 
 When another AutoCAD is already running, the bridge still uses
 =CreateObject=, so that it cannot pick up that other instance: in that case

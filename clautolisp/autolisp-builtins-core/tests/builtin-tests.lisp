@@ -2,6 +2,17 @@
 
 (in-suite autolisp-builtins-core-suite)
 
+;;; Temporary directory names. SBCL starts every image with the same default
+;;; *RANDOM-STATE*, so a bare (RANDOM N) gives the same "unique" name to every
+;;; test process of a job -- the interpreted and the compiled run of this suite
+;;; included -- and a leftover or a sibling process then collides with it
+;;; (BUILTIN-VL-DIRECTORY-FILES-DOT-ENTRIES-FOLLOW-PATTERN-AND-SELECTOR: "a.lsp
+;;; already exists", pipeline 3037003449). Seeded once per process instead.
+(defvar *temp-name-random-state* (make-random-state t))
+
+(defun temp-name-token ()
+  (random 1000000000 *temp-name-random-state*))
+
 (test builtin-registry-returns-subrs
   (let ((builtin (find-core-builtin "TYPE")))
     (is (typep builtin 'autolisp-subr))
@@ -1233,7 +1244,7 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
          (write-char-fn (autolisp-symbol-function (find-autolisp-symbol "WRITE-CHAR")))
          (findfile-fn (autolisp-symbol-function (find-autolisp-symbol "FINDFILE")))
          (findtrustedfile-fn (autolisp-symbol-function (find-autolisp-symbol "FINDTRUSTEDFILE")))
-         (directory (format nil "/tmp/clautolisp-builtins-core-~D/" (random 1000000000)))
+         (directory (format nil "/tmp/clautolisp-builtins-core-~D/" (temp-name-token)))
          (relative-name "sample.txt")
          (encoded-name "encoded.txt")
          (trusted-name "trusted.txt")
@@ -1359,7 +1370,7 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
          (directory (namestring
                      (uiop:ensure-directory-pathname
                       (merge-pathnames
-                       (format nil "clautolisp-builtins-core-dir-~D/" (random 1000000000))
+                       (format nil "clautolisp-builtins-core-dir-~D/" (temp-name-token))
                        (uiop:temporary-directory)))))
          (subdirectory (concatenate 'string directory "subdir/"))
          (file-path (concatenate 'string directory "alpha.lsp"))
@@ -1468,7 +1479,7 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
          (directory (namestring
                      (uiop:ensure-directory-pathname
                       (merge-pathnames
-                       (format nil "clautolisp-dirsel-~D/" (random 1000000000))
+                       (format nil "clautolisp-dirsel-~D/" (temp-name-token))
                        (uiop:temporary-directory)))))
          (subdirectory (concatenate 'string directory "bornage/"))
          (dir-no-sep (subseq directory 0 (1- (length directory))))
@@ -1508,12 +1519,13 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
          (directory (namestring
                      (uiop:ensure-directory-pathname
                       (merge-pathnames
-                       (format nil "clautolisp-dotent-~D/" (random 1000000000))
+                       (format nil "clautolisp-dotent-~D/" (temp-name-token))
                        (uiop:temporary-directory))))))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))
     (ensure-directories-exist (concatenate 'string directory "sub/"))
     (with-open-file (stream (concatenate 'string directory "a.lsp")
-                            :direction :output :if-does-not-exist :create)
+                            :direction :output :if-exists :supersede
+                            :if-does-not-exist :create)
       (write-line "a" stream))
     (unwind-protect
          (flet ((names (pattern &optional (selector nil selector-p))
@@ -1545,7 +1557,7 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
            (autolisp-symbol-function (find-autolisp-symbol "VL-FILE-SIZE")))
          (mkdir-fn
            (autolisp-symbol-function (find-autolisp-symbol "VL-MKDIR")))
-         (directory (format nil "/tmp/clautolisp-builtins-core-file-~D/" (random 1000000000)))
+         (directory (format nil "/tmp/clautolisp-builtins-core-file-~D/" (temp-name-token)))
          (subdirectory (concatenate 'string directory "created/"))
          (old-path (concatenate 'string directory "before.txt"))
          (new-path (concatenate 'string directory "after.txt")))
@@ -1636,7 +1648,7 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
            (autolisp-symbol-function (find-autolisp-symbol "VL-FILE-SYSTIME")))
          (mktemp-fn
            (autolisp-symbol-function (find-autolisp-symbol "VL-FILENAME-MKTEMP")))
-         (directory (format nil "/tmp/clautolisp-builtins-core-copy-~D/" (random 1000000000)))
+         (directory (format nil "/tmp/clautolisp-builtins-core-copy-~D/" (temp-name-token)))
          (source-path (concatenate 'string directory "source.bin"))
          (destination-path (concatenate 'string directory "destination.bin"))
          (append-path (concatenate 'string directory "append.bin")))
@@ -1736,7 +1748,7 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
          (hello (make-autolisp-string "Hello"))
          (quoted (make-autolisp-string "a\\\"b"))
          (list-value (list 1 hello (intern-autolisp-symbol "T")))
-         (directory (format nil "/tmp/clautolisp-builtins-core-print-~D/" (random 1000000000)))
+         (directory (format nil "/tmp/clautolisp-builtins-core-print-~D/" (temp-name-token)))
          (path (concatenate 'string directory "output.txt"))
          (printed nil))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))
@@ -1821,7 +1833,7 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
                ;; active dialect; return (values terpri-return-value
                ;; file-contents warning-output).
                (let* ((directory (format nil "/tmp/clautolisp-terpri-~D/"
-                                         (random 1000000000)))
+                                         (temp-name-token)))
                       (path (concatenate 'string directory "out.txt"))
                       (warn (make-string-output-stream))
                       (ret :none))
@@ -1877,7 +1889,7 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
   (let* ((print-fn (autolisp-symbol-function (find-autolisp-symbol "PRINT")))
          (open-fn (autolisp-symbol-function (find-autolisp-symbol "OPEN")))
          (close-fn (autolisp-symbol-function (find-autolisp-symbol "CLOSE")))
-         (directory (format nil "/tmp/clautolisp-print-frame-~D/" (random 1000000000)))
+         (directory (format nil "/tmp/clautolisp-print-frame-~D/" (temp-name-token)))
          (path (concatenate 'string directory "print.txt"))
          (hello (make-autolisp-string "hello"))
          contents)
@@ -5276,7 +5288,7 @@ silently — the CL impls deliver SIGINT to the REPL natively)."
 returns nil if the path is missing."
   (reset-autolisp-symbol-table)
   (let* ((unique (format nil "/tmp/clautolisp-vl-rmdir-~A-~A/"
-                         (get-universal-time) (random 100000000)))
+                         (get-universal-time) (temp-name-token)))
          (tmp    (uiop:ensure-directory-pathname unique)))
     (ensure-directories-exist tmp)
     (unwind-protect

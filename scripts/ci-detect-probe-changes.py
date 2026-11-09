@@ -140,6 +140,8 @@ UNCLAIMED = {
         "probe:com-registration:autocad:windows is manual-only",
     "scripts/probe-cad-session-state.ps1":
         "probe:cad-session-state:windows is manual-only",
+    "scripts/probe-cad-heavy-automation.ps1":
+        "probe:cad-heavy-automation:windows is manual-only",
     "scripts/probe-trustedpaths-registry.ps1":
         "probe:trustedpaths-registry:windows is manual-only",
 }
