@@ -183,6 +183,14 @@ Pick a specific installed CAD by its canonical denotation
 Scan the host for installed CADs, print each with its canonical
 denotation, and exit.
 .TP
+.B \-\-probe-gui
+Report whether an interactive desktop is available for COM/GUI
+automation (on MS-Windows: a session connected and unlocked), and exit.
+.B \-\-mode automation
+needs one;
+.B \-\-mode batch
+does not.
+.TP
 .B \-\-print-command
 Stage the workdir for real, print the CAD command line that would be
 launched, and launch nothing. CAD backends only.
