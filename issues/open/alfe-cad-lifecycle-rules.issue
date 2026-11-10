@@ -84,8 +84,25 @@ only when the script succeeded, alongside a log line giving the script's result.
   codes 2/3, AUTOLISP_BACKEND's second meaning, a dangling link. Man page:
   CAD CLEANUP.
 
+* Native validation (2026-11-10, master d22a9b45 / fdbc54fe)
+- [X] verify:autocad-activex:windows with ACTIVEX_CAD=bricscad (job
+  17888673770): READY 24 s, QUIT; the created BricsCAD (pid 19820) exited by
+  itself, code 0, forced=0, cleanup contract 2 =cleanup=ok=.
+- [X] verify:autocad-activex:windows, AutoCAD (job 17888674178): READY 32 s,
+  QUIT; the created AutoCAD (pid 2672) exited by itself in 1.7 s, forced=0,
+  exit code 0x010BBABE (AutoCAD's own; recorded, not a failure), =cleanup=ok=.
+- [X] verify:autocad-x-output:windows (job 17888674556): RESULT=PASS.
+- [X] verify:bricscad-hidden-ui:windows (job 17888674846): batch cycle with
+  /Automation, marker echoed, exit 0.
+- [X] macOS BricsCAD batch (getcname:probe:bricscad:macos, job 17878571053):
+  launched, ran, quit, like the pre-change baseline (job 17871073271). A first
+  verify:bricscad-automation:macos run (job 17878571044) had its batch part
+  stuck at BOOTING for 240 s; not reproduced, a runner hiccup.
+
 * Remaining before closing
-- Native validation on the CAD runners of MR-A to MR-D: verify:autocad-activex
-  (AutoCAD, and BricsCAD with ACTIVEX_CAD=bricscad), a batch run of each CAD,
-  verify:bricscad-automation:macos for MR-D, and a manual Control-C check.
+- verify:bricscad-automation:macos cannot validate the automation path on
+  thalassa: the job does not set ALFE_ENABLE_MACOS_AUTOMATION and the runner
+  has no Accessibility grant ("UI elements enabled -> false"), so alfe
+  refuses with exit 69 as designed. Needs a session with the grant.
+- A manual Control-C check (interactive; CI cannot send it).
 - The SCHME CI consumers (from alfe-owned-cad-termination-after-recorded-results).
