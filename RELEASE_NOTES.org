@@ -11,8 +11,8 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 2.4.0 / alfe 2.4.0 /
-read-autolisp 2.4.0). alfe tracks clautolisp's version: because
+master at the top of the file (clautolisp 2.4.2 / alfe 2.4.2 /
+read-autolisp 2.4.1). alfe tracks clautolisp's version: because
 =alfe --clautolisp= embeds essentially the whole clautolisp engine, a
 change to clautolisp's sources bumps alfe too — and alfe's own changes
 (the AutoCAD start-engine PROBE fix, =--on-error=) bump it independently.
@@ -34,6 +34,10 @@ through the protocol; one table of timeouts (=--ready-timeout=). It also
 brings =--result-file= and =--cleanup-report=, the AcCoreConsole probe on
 macOS, and READ / PRIN1 as AutoCAD and BricsCAD measure them. read-autolisp,
 on clautolisp's numbering since 2.3, takes 2.4.0: its reader changed.
+2.4.2 is a maintenance release with no user-visible change: alfe's test
+suite passes on a Mac with a licensed, runnable AutoCAD, where 2.4.0 failed
+three of its checks (the programs behave as in 2.4.0; read-autolisp's 2.4.1
+is a stamp only).
 For the chronology and the issue-by-issue
 history, see ~git log~ on master and the issues under ~issues/closed/~.
 
