@@ -1,0 +1,50 @@
+#+TITLE: alfe suite fails on a Mac with a licensed, runnable AutoCAD
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: test
+#+DEPENDS:
+#+BRANCH: fix-alfe-tests-on-macos-with-autocad
+#+DATE: 2026-11-13
+
+* Symptom
+=make -C autolisp-front-end test-sbcl= on release-2.4.0, on thalassa (macOS,
+AutoCAD 2027 installed and licensed): 3 failures out of 2700 checks.
+
+- =ACCORECONSOLE-MACOS-IS-OPT-IN-NOT-AUTO-DISCOVERED=:
+  =(discover-accoreconsole-binary :os :macos)= returned the real
+  =/Applications/Autodesk/AutoCAD 2027/.../AcCoreConsole= instead of NIL.
+- =CONFORMANCE-CORPUS-PASSES=: =autocad-unsupported-os: stderr missing
+  substring "not distributed"=.
+- =AUTOCAD-DETECT-ON-MACOS-REQUIRES-A-RUNNABLE-ACCORECONSOLE=: the discovered
+  path was =/private/var/folders/...=, the expected one =/var/folders/...=.
+
+* Cause
+All three come from alfe 2.3.118 (2026-11-09), "macOS AutoCAD available only
+once its AcCoreConsole runs": an AcCoreConsole found in a macOS AutoCAD bundle
+is now discovered once a probe has seen it run AutoLISP. The CI macOS runners
+have no runnable AutoCAD, so nothing showed there; this Mac has one.
+
+1. The opt-in guard (alfe 1.7.13, 2026-08-02) asserted the superseded rule
+   "never auto-discovered" and read the host's real =/Applications=.
+2. The conformance runner built its AutoCAD-absent baseline by unsetting
+   =$AUTOCAD_ACCORECONSOLE= only; with bundle discovery, the real install was
+   found, so =--autocad= was available and =autocad-unsupported-os= failed. Its
+   first run also paid the real 120 s runnability probe.
+3. =%fake-accoreconsole= returned the path under =(uiop:temporary-directory)=
+   (=/var/folders=, a symlink on macOS), while =DIRECTORY= returns truenames
+   (=/private/var/folders=). The =(search exe message)= assertion in the same
+   test only passed because one is a substring of the other.
+
+* Resolved (clautolisp 2.4.2 / alfe 2.4.2)
+- =alfe.conformance::call-without-installed-autocad=: =RUN-SCENARIO= points the
+  macOS bundle search at an empty place under the scenario's workdir, except
+  for =:autocad-only= scenarios, which mean to drive the real AutoCAD.
+  Scenario description and the sandbox comment updated.
+- Guard rewritten and renamed =ACCORECONSOLE-MACOS-DISCOVERED-ONLY-WHEN-RUNNABLE=,
+  on a fake =/Applications=: no bundle -> NIL; unrunnable bundle -> NIL;
+  =$AUTOCAD_ACCORECONSOLE= taken as given, unprobed.
+- New =CONFORMANCE-RUNS-AGAINST-AN-AUTOCAD-ABSENT-BASELINE=: runs
+  =autocad-unsupported-os= with a fake runnable install bound; fails without
+  the runner change (reproduces the 2.4.0 failure), passes with it, on every
+  POSIX host.
+- =%fake-accoreconsole= returns the truename.

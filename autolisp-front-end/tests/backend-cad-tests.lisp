@@ -4461,7 +4461,9 @@ return its path. BEHAVIOUR: :RUNS writes the marker the probe script names
         (:fails (format out "exit 3~%"))
         (:hangs (format out "sleep 30~%"))))
     (uiop:run-program (list "chmod" "+x" (namestring exe)))
-    (namestring exe)))
+    ;; The truename, as DIRECTORY returns it to the discovery: on macOS the
+    ;; temp dir is /var/folders/..., a symlink to /private/var/folders/...
+    (namestring (truename exe))))
 
 (defmacro with-fake-macos-autocad ((dir) &body body)
   "BODY on a simulated macOS whose /Applications is under DIR, with no

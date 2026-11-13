@@ -1040,3 +1040,6 @@ MR-A (2.3.121) fait ; MR-B a MR-E a suivre.
 l'appliquent (attente illimitee du fils) ; reporte de alfe-cad-lifecycle-rules
 MR-C car le contrat de parite des deux variantes exige la meme borne par action.
 
+
+** DONE alfe suite fails on a Mac with a runnable AutoCAD (P3)
+[[file:../closed/alfe-tests-fail-on-macos-with-runnable-autocad.issue]] — 2.4.0 test regression from probe-gated macOS discovery (2.3.118); corpus now hides the macOS bundles; fixed in 2.4.2.
