@@ -1,0 +1,146 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cli-option-environment-defaults — an environment variable for the default of every option that sets run state
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: -
+#+BRANCH: feat-cli-option-environment-defaults
+#+DATE: 2026-11-13
+
+* Context
+
+The question that started this (pjb, 2026-11-13): /what is the default of
+=--host=, and why can't it be set from the environment?/
+
+- =--host= defaults to =cador= (the headless CAD core). The slot in the
+  shared =cli-options= struct is =:mock= (deprecated alias of cador;
+  =clautolisp/autolisp-cli/source/options.lisp=), which clautolisp maps to
+  cador (=main.lisp=, the HAL-backend constructor). That stale default is
+  filed separately: =cli-options-host-default-is-deprecated-mock=.
+- No environment variable sets it, in either program.
+
+Coverage today is lopsided:
+
+- *alfe* has a table, =+env-defaults+= in
+  =autolisp-front-end/source/cli.lisp=, applied by =apply-env-defaults=
+  before argv is parsed (so the command line wins):
+  =AUTOLISP_MODE=, =AUTOLISP_BACKEND=, =ALFE_BACKEND_OVERRIDE=,
+  =AUTOLISP_DWG=, =AUTOLISP_TEMPLATE=, =AUTOLISP_WORKDIR=,
+  =AUTOLISP_KEEP_WORKDIR=, =AUTOLISP_WRITE_WORKDIR_PATH=,
+  =AUTOLISP_BOOTSTRAP_PHASE=, =AUTOLISP_WAIT_SECS=,
+  =AUTOLISP_READY_WAIT_SECS=. Outside the table: =ALFE_PLUGINS=,
+  =ALFE_PLUGIN_PATH=, =ALFE_NO_PLUGINS=, and =AUTOCAD_COM_MODE= /
+  =BRICSCAD_COM_MODE= for the =--backend= variant of the CAD backends.
+- *clautolisp* has three: =--gui= ← =$CLAUTOLISP_GUI=; =--no-init= ←
+  =$AUTOLISP_NO_INIT= / =$CLAUTOLISP_NO_INIT= (=no-init-requested-p=);
+  =--no-color= ← =$NO_COLOR=.
+
+So a CI job, a daemon, or a wrapper that cannot (or should not) edit every
+command line has no way to choose the dialect, the host, the verbosity, the
+encodings or the debugger policy.
+
+* Problem
+
+1. Most state-setting options have no environment default (table below).
+2. =+env-defaults+= declares six variables that nothing reads:
+   =AUTOLISP_OS=, =AUTOLISP_REMOTE_IO_MODE=, =AUTOCAD_INSTALL=,
+   =AUTOCAD_VERSION=, =BRICSCAD_INSTALL=, =BRICSCAD_VERSION=
+   (=env-default= is only called for the ten keys in =apply-env-defaults=
+   plus =:override=). Its docstring claims the table "is exhaustive"; it is
+   a list of names, not a list of behaviours.
+3. =AUTOLISP_DWG= is honoured by alfe only, although =--dwg= is a common
+   option of both programs: the same variable means something to one and
+   nothing to the other.
+
+* Proposal
+
+** Naming and precedence
+
+The rule =--no-init= already follows, generalised:
+
+- =AUTOLISP_<OPTION>= for an option *common* to both programs — one
+  vocabulary, read the same way by both.
+- =CLAUTOLISP_<OPTION>= / =ALFE_<OPTION>= for an option of one program
+  only, *and* as a per-program override of a common one.
+- Precedence: *command line > =CLAUTOLISP_X= / =ALFE_X= > =AUTOLISP_X= >
+  built-in default.*
+- Empty value = unset (as =env-default= already does). An invalid value is a
+  usage error (=cli-usage-error=) naming the variable, exactly as
+  =AUTOLISP_MODE= is handled today — never silently ignored.
+- Boolean variables take =1=, =y=, =yes=, =true=, =on= (the plug-in
+  activation vocabulary, =AUTOLISP_EPURE=).
+
+** Variables to add
+
+| Option                                                          | Program    | Variable                                                                                                       | Values                                         | Note                                                                                       |
+|-----------------------------------------------------------------+------------+----------------------------------------------------------------------------------------------------------------+------------------------------------------------+--------------------------------------------------------------------------------------------|
+| =--host=                                                        | both       | =AUTOLISP_HOST=                                                                                                | =cador=, =cadtui=, =nihil=                     | default =cador=                                                                            |
+| =--dialect= (+ =--strict= / =--autocad= / =--bricscad= / =--clautolisp= / =--lax=) | both | =AUTOLISP_DIALECT=                                                                                    | any =--list-dialects= name                     | alfe: honoured only for the clautolisp backend (a CAD backend imposes its dialect)         |
+| =-q= / =-v= / =-d=                                              | both       | =AUTOLISP_VERBOSITY=                                                                                           | =quiet=, =info=, =verbose=, =debug=            |                                                                                            |
+| =-E= / =--encoding=                                             | both       | =AUTOLISP_ENCODING=                                                                                            | encoding name                                  | every situation, like the bare =-E=                                                        |
+| =-E<situation>[-<dir>]=                                         | both       | =AUTOLISP_<SITUATION>[_<DIR>]_ENCODING=                                                                        | encoding name                                  | generated from =*encoding-situations*= (13 names: =AUTOLISP_SOURCE_ENCODING=, =AUTOLISP_FILE_WRITE_ENCODING=, =AUTOLISP_TERMINAL_OUT_ENCODING=, …) |
+| =-Ereplacement= family                                          | both       | =AUTOLISP_ENCODING_REPLACEMENT=, =AUTOLISP_FILE_WRITE_ENCODING_REPLACEMENT=, =AUTOLISP_TERMINAL_OUT_ENCODING_REPLACEMENT= | one character, =error=, =low-byte=, =best-fit=, =escape= | decide the order against the sysvar seed =$CLAUTOLISPENCODINGREPLACEMENT=          |
+| =--dwg=                                                         | clautolisp | the existing =AUTOLISP_DWG=                                                                                    | path                                           | already read by alfe; make clautolisp read it too                                          |
+| =--dribble=                                                     | both       | =AUTOLISP_DRIBBLE=                                                                                             | boolean, or FILE                               |                                                                                            |
+| =--dribble-interactors=                                         | both       | =AUTOLISP_DRIBBLE_INTERACTORS=                                                                                 | =all= or name list                             |                                                                                            |
+| =--dcl=                                                         | clautolisp | =CLAUTOLISP_DCL=                                                                                               | =tui=, =gui=, =auto=                           | sits beside =CLAUTOLISP_GUI=                                                               |
+| =--on-error=                                                    | clautolisp | =CLAUTOLISP_ON_ERROR=                                                                                          | =quit=, =debug=, =ignore=                      |                                                                                            |
+| =--on-interrupt=                                                | clautolisp | =CLAUTOLISP_ON_INTERRUPT=                                                                                      | =debug=, =ignore=, =quit=                      |                                                                                            |
+| =--on-quit=                                                     | clautolisp | =CLAUTOLISP_ON_QUIT=                                                                                           | =debug=, =quit=                                |                                                                                            |
+| =--debugger-ui=                                                 | clautolisp | =CLAUTOLISP_DEBUGGER_UI=                                                                                       | =dumb=, =ncurses=, =aldb=                      |                                                                                            |
+| =--aldb-listen=                                                 | clautolisp | =CLAUTOLISP_ALDB_LISTEN=                                                                                       | =[HOST:]PORT=                                  | opens a socket: a stray export is a risk — pjb to decide whether to include                |
+| =--trace=                                                       | clautolisp | =CLAUTOLISP_TRACE=                                                                                             | boolean                                        |                                                                                            |
+| =-O= / =--optimize=                                             | clautolisp | =CLAUTOLISP_OPTIMIZE=                                                                                          | =QUALITY=N,…=                                  |                                                                                            |
+| =--cad=                                                         | alfe       | =ALFE_CAD=                                                                                                     | CAD denotation                                 | replaces the dead =AUTOCAD_VERSION= / =BRICSCAD_VERSION= entries                           |
+| =--backend= (variant)                                           | alfe       | =ALFE_BACKEND_VARIANT=                                                                                         | =attach=, =launch=, =direct=, =subprocess=     | ranks above =AUTOCAD_COM_MODE= / =BRICSCAD_COM_MODE=; not =AUTOLISP_BACKEND=, which is the backend *kind* |
+
+** Deliberately without a variable
+
+Actions, one-shot queries, per-run inputs/outputs, and the internal
+alfe ↔ clautolisp protocol — a stray export of any of them would change what a
+run *does*, not how:
+
+=--help=, =--version=, =--list-*=, =--probe-gui=, =--dry-run=,
+=--print-command=, =-l=, =-x=, =-i=, =--quit=, =--main=, positional FILEs,
+=--attach-pid=, =--compile-plugin=, =--mock-input=, =--result-file=,
+=--cad-log=, =--cleanup-report=, =--front-end-bindings=,
+=--front-end-action-boundaries=, =--aldb-stdio=.
+
+** Implementation shape
+
+- One table, in =autolisp-cli= (beside =*common-option-specs*=), naming each
+  option's variable(s) — ideally a slot on =option-spec= itself, so a new
+  option is born with (or explicitly without) its variable, and
+  =check-user-visible-documentation= iterates that table instead of a
+  hand-kept list. alfe's =+env-defaults+= folds into it; the six dead
+  entries are removed (or wired, if pjb wants =AUTOLISP_OS= back).
+- Applied before argv parsing, in both programs, through the option's own
+  value parser (so the env path and the argv path cannot accept different
+  spellings).
+
+** alfe → clautolisp child
+
+The clautolisp that alfe spawns (=--backend subprocess=, =--host cadtui=,
+=-i=, …) inherits alfe's environment. =AUTOLISP_X= is read identically by
+both, but a =CLAUTOLISP_X= set for the user's own clautolisp runs would
+override what alfe resolved. So alfe must pass every resolved value of a
+transmitted option on the child's argv (argv beats env), and the
+=*clautolisp-option-contract*= / parity table gets a row per variable. The
+conformance sandbox, which already clears =AUTOLISP_NO_INIT= /
+=ALFE_NO_INIT= / =CLAUTOLISP_NO_INIT=, clears the new ones too.
+
+* Acceptance criteria
+
+- Each variable in the table: a test that it sets the default, a test that
+  the command-line option beats it, a test that an invalid value is a usage
+  error naming the variable; for the common ones, a test that
+  =CLAUTOLISP_X= / =ALFE_X= beats =AUTOLISP_X=.
+- alfe direct/subprocess parity rows for the transmitted options with a
+  conflicting =CLAUTOLISP_X= in the environment.
+- The six unread =+env-defaults+= entries are gone or wired.
+- Documentation (AGENTS.md user-visible rule): the /Environment variables/
+  chapter of =clautolisp-user-manual.org= and =alfe-user-manual.org=
+  (alfe's /Option defaults/ table), both man pages' ENVIRONMENT sections,
+  the =--help= texts that name a variable; =make
+  check-user-visible-documentation= green; =RELEASE_NOTES.org= entries;
+  clautolisp + alfe version bumped together.

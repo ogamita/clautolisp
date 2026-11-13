@@ -1,0 +1,47 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cli-options-host-default-is-deprecated-mock — the --host default is stored as the deprecated alias :mock
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-cli-options-host-default
+#+DATE: 2026-11-13
+
+* Context
+
+Found while answering "what is the default of --host?" (see
+=cli-option-environment-defaults=). The documented default is =cador=
+(=clautolisp --help=: "cador (default)"; =*host-descriptions*=).
+
+* Problem
+
+The shared =cli-options= struct initialises the slot to the deprecated alias:
+
+: (host :mock)   ; AC  :mock / :null (default :mock)
+  — =clautolisp/autolisp-cli/source/options.lisp=
+
+- clautolisp copes: its HAL-backend constructor maps NIL and =:mock= to cador.
+- alfe does not know =:mock=: =+alfe-hosts+= is =cador= / =cadtui= / =nihil=
+  only, and =%parse-alfe-host= rejects =mock=. Yet with no =--host=, alfe
+  carries =:mock= through — =alfe --dry-run= prints =host: MOCK=, and the
+  =--debug= trace logs =host :MOCK= — a value alfe would refuse on its own
+  command line.
+- The slot comment is stale (=:mock= / =:null=; the hosts are now
+  cador/cadtui/nihil).
+- Related: clautolisp's =parse-host= yields =:nihil= for =nihil= but =:null=
+  for the aliases =null= / =none=, two keywords for one host; check every
+  consumer treats them alike, or fold the aliases onto =:nihil=.
+
+* Proposal
+
+Default the slot to =:cador=, update its comment, and fold the =null= /
+=none= aliases onto =:nihil= (or prove both keywords are handled
+everywhere).
+
+* Acceptance criteria
+
+- =alfe --dry-run= with no =--host= prints =host: CADOR=; a test asserts it.
+- A clautolisp test asserts the default host is a cador instance (unchanged
+  behaviour).
+- =--host null= and =--host nihil= produce the same host in clautolisp.
+- RELEASE_NOTES entry (the dry-run output changes); version bump.
