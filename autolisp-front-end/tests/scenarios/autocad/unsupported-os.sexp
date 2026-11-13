@@ -5,9 +5,10 @@ Windows: there AutoCAD *is* the supported platform, so DETECT
 structurally succeeds and the backend fails down a different path
 (a bootstrap failure, not the unsupported-os detection) — the
 unsupported-os premise simply does not hold, so asserting it there is wrong, not merely unobservable. The
-corpus unsets AUTOCAD_ACCORECONSOLE per-scenario so this runs
+corpus unsets AUTOCAD_ACCORECONSOLE per-scenario and hides the macOS
+AutoCAD bundles (call-without-installed-autocad) so this runs
 against a clean AutoCAD-absent baseline on macOS/Linux regardless of
-the runner's vendor env."
+the runner's vendor env or a licensed AutoCAD installed on the Mac."
  :classification :portable
  :skip-on-os (:windows)
  :argv ("--autocad" "-x" "(+ 1 2)")

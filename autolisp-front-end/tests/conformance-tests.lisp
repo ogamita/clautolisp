@@ -136,31 +136,54 @@ and 1 when any is :fail. Drives the CLI runner's exit-code logic."
     (let ((*standard-output* (make-string-output-stream)))
       (is (= 1 (alfe.conformance:summarise-results mixed))))))
 
-(test accoreconsole-macos-is-opt-in-not-auto-discovered
-  "Regression guard for the corpus break caused by the macOS --cad fix:
-macOS AcCoreConsole must NOT be auto-discovered from the AutoCAD bundle.
-Auto-discovery made plain --autocad — and thus this file's
-CONFORMANCE-CORPUS-PASSES via BACKEND-AVAILABLE-P -> DETECT — treat
-macOS-with-AutoCAD as a working AutoCAD host and RUN the AutoCAD scenarios,
-which then fail with exit 4 (accoreconsole-macos-headless-qt-blocker)
-instead of skipping. It is opt-in via $AUTOCAD_ACCORECONSOLE, which
---cad accoreconsole sets (cli.lisp). Host-independent: passes :os :macos
-explicitly. (Placed here, not in backend-cad-tests.lisp, whose autocad-detect
-band is in the dead-suite zone — see backend-cad-tests-dead-suite-zone.)"
-  (let ((saved (uiop:getenv "AUTOCAD_ACCORECONSOLE"))
-        (fake (namestring (merge-pathnames
-                           (format nil "alfe-fake-acc-~D.txt" (random 999999))
-                           (uiop:temporary-directory)))))
-    (unwind-protect
-         (progn
-           (setf (uiop:getenv "AUTOCAD_ACCORECONSOLE") "")
-           (is (null (alfe.backend.autocad:discover-accoreconsole-binary
-                      :os :macos)))
-           (with-open-file (s fake :direction :output :if-exists :supersede
-                                   :if-does-not-exist :create)
-             (write-line "stub" s))
-           (setf (uiop:getenv "AUTOCAD_ACCORECONSOLE") fake)
-           (is (equal fake (alfe.backend.autocad:discover-accoreconsole-binary
-                            :os :macos))))
-      (setf (uiop:getenv "AUTOCAD_ACCORECONSOLE") (or saved ""))
-      (ignore-errors (delete-file fake)))))
+(test accoreconsole-macos-discovered-only-when-runnable
+  "Regression guard for the corpus break caused by the macOS --cad fix, as
+the rule stands since alfe 2.3.118: an AcCoreConsole in a macOS AutoCAD bundle
+is discovered only once it has been seen to run AutoLISP. An install that
+cannot (no licence, accoreconsole-macos-headless-qt-blocker) is NOT
+discovered, so plain --autocad -- and CONFORMANCE-CORPUS-PASSES via
+BACKEND-AVAILABLE-P -> DETECT -- skips the AutoCAD scenarios instead of running
+and failing them. $AUTOCAD_ACCORECONSOLE, which --cad accoreconsole sets, is
+taken as given, unprobed. (Until 2.3.118 this test asserted no bundle
+discovery at all; on a Mac with a licensed AutoCAD that stale assertion read
+the real /Applications and failed.) Never looks at the real install: the
+bundles are a fake /Applications (WITH-FAKE-MACOS-AUTOCAD)."
+  (with-cad-test-directories
+    (let ((dir (%fresh-test-directory)))
+      (with-fake-macos-autocad (dir)
+        (is (null (alfe.backend.autocad:discover-accoreconsole-binary :os :macos))
+            "no AutoCAD bundle: nothing discovered")
+        (unless (uiop:os-windows-p)     ; fake AcCoreConsoles are POSIX shell scripts
+          (%fake-accoreconsole dir :fails)
+          (is (null (alfe.backend.autocad:discover-accoreconsole-binary :os :macos))
+              "an AcCoreConsole that cannot run AutoLISP is not discovered"))
+        ;; A stub that could never pass the probe: returned only if unprobed.
+        (let ((named (namestring (merge-pathnames "named-accoreconsole.txt" dir))))
+          (with-open-file (s named :direction :output :if-exists :supersede)
+            (write-line "stub, not runnable" s))
+          (setf (uiop:getenv "AUTOCAD_ACCORECONSOLE") named)
+          (is (equal named (alfe.backend.autocad:discover-accoreconsole-binary :os :macos))
+              "$AUTOCAD_ACCORECONSOLE is taken as given, unprobed"))))))
+
+(test conformance-runs-against-an-autocad-absent-baseline
+  "The corpus's AutoCAD-absent baseline holds on a Mac with a runnable AutoCAD
+installed: autocad-unsupported-os passes, because RUN-SCENARIO hides the macOS
+bundles (CALL-WITHOUT-INSTALLED-AUTOCAD) as it unsets $AUTOCAD_ACCORECONSOLE.
+Release 2.4.0 failed it on a Mac with AutoCAD 2027. Simulated with a fake,
+runnable install, so it guards on every POSIX host."
+  (if (uiop:os-windows-p)
+      (fiveam:skip "the scenario is :skip-on-os (:windows); fake AcCoreConsoles are POSIX shell scripts")
+      (with-cad-test-directories
+        (let ((dir (%fresh-test-directory)))
+          (with-fake-macos-autocad (dir)
+            (%fake-accoreconsole dir :runs)
+            (is (alfe.backend.autocad:discover-accoreconsole-binary :os :macos)
+                "precondition: the fake install is discovered outside the corpus")
+            (let ((result (alfe.conformance:run-scenario
+                           (alfe.conformance:read-scenario
+                            (merge-pathnames "autocad/unsupported-os.sexp"
+                                             (alfe.conformance:scenarios-directory))))))
+              (is (eq :pass (alfe.conformance:scenario-result-status result))
+                  "autocad-unsupported-os: ~S~%stderr: ~A"
+                  (alfe.conformance:scenario-result-failures result)
+                  (alfe.conformance:scenario-result-stderr result))))))))

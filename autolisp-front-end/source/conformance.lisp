@@ -261,6 +261,30 @@ or :linux (the catch-all for every other POSIX)."
         ((uiop:os-macosx-p)  :macos)
         (t                   :linux)))
 
+(defun call-without-installed-autocad (scenario workdir thunk)
+  "Call THUNK with the macOS AutoCAD bundle search pointed at an empty place
+under WORKDIR, unless SCENARIO is :autocad-only.
+
+Since alfe 2.3.118 an AcCoreConsole found in /Applications/Autodesk makes
+--autocad available on macOS once it has been seen to run AutoLISP. Unsetting
+$AUTOCAD_ACCORECONSOLE therefore no longer gives the corpus its AutoCAD-absent
+baseline on a Mac with a licensed AutoCAD: autocad-unsupported-os then found
+AutoCAD and failed (and the first run paid the real runnability probe). An
+:autocad-only scenario is the one that means to drive the real AutoCAD
+(BACKEND-AVAILABLE-P has already detected it), so it keeps the real search.
+The variable is reached through FIND-SYMBOL, as in SETUP-DEFAULT-BACKENDS."
+  (let ((glob (and (not (eq (scenario-classification scenario) :autocad-only))
+                   (find-package '#:alfe.backend.autocad)
+                   (find-symbol "*MACOS-ACCORECONSOLE-GLOB*" '#:alfe.backend.autocad))))
+    (if glob
+        (progv (list glob)
+            (list (namestring
+                   (merge-pathnames
+                    "no-autocad-installed/AutoCAD */*.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole"
+                    workdir)))
+          (funcall thunk))
+        (funcall thunk))))
+
 (defun run-scenario (scenario)
   "Execute SCENARIO against alfe.cli:run with captured streams. Returns
 a SCENARIO-RESULT; the caller is responsible for surfacing failures.
@@ -311,19 +335,24 @@ autocad) at the start of every scenario."
                     ;; unset too: a real runner (macOS/Windows) may point
                     ;; it at an installed accoreconsole, which would flip
                     ;; --autocad's DETECT and change exit codes the corpus
-                    ;; asserts against an AutoCAD-absent baseline.
+                    ;; asserts against an AutoCAD-absent baseline. The
+                    ;; macOS AutoCAD bundles are hidden for the same
+                    ;; reason (CALL-WITHOUT-INSTALLED-AUTOCAD).
                     (exit-code
                       (with-sandboxed-init-env
                           (workdir
                            "HOME" "AUTOLISP_NO_INIT"
                            "ALFE_NO_INIT" "CLAUTOLISP_NO_INIT"
                            "AUTOLISP_KEEP_WORKDIR" "AUTOCAD_ACCORECONSOLE")
-                        (uiop:with-current-directory (workdir)
-                          (let ((*standard-output* stdout-stream)
-                                (*error-output*    stderr-stream)
-                                (*standard-input*  stdin-stream))
-                            (run (scenario-argv scenario)
-                                 :version (scenario-version-arg scenario)))))))
+                        (call-without-installed-autocad
+                         scenario workdir
+                         (lambda ()
+                           (uiop:with-current-directory (workdir)
+                             (let ((*standard-output* stdout-stream)
+                                   (*error-output*    stderr-stream)
+                                   (*standard-input*  stdin-stream))
+                               (run (scenario-argv scenario)
+                                    :version (scenario-version-arg scenario)))))))))
                (setf (scenario-result-exit-code result) exit-code
                      (scenario-result-stdout result)
                        (get-output-stream-string stdout-stream)
