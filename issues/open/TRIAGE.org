@@ -1052,6 +1052,7 @@ none (clautolisp honours only =CLAUTOLISP_GUI=, the =*_NO_INIT= pair and
 =NO_COLOR=). Proposed =AUTOLISP_X= (common) / =CLAUTOLISP_X= / =ALFE_X=,
 argv > program > AUTOLISP > default ; six dead =+env-defaults+= entries in alfe ;
 alfe must pass resolved values on the child's argv.
-** TODO cli-options-host-default-is-deprecated-mock (P3)
-[[file:cli-options-host-default-is-deprecated-mock.issue][--host default stored as :mock]] : alfe =--dry-run= prints =host: MOCK=, a value
-alfe rejects on its own command line ; default should be =:cador=.
+** DONE cli-options-host-default-is-deprecated-mock (P3)
+[[file:../closed/cli-options-host-default-is-deprecated-mock.issue][--host default stored as :mock]] : FERME 2026-11-14 (2.4.8) : clautolisp
+=*AUTOLISP-HOST*= lisait =MOCK= sans =--host= et =NULL= pour =--host null/none= ;
+desormais =CADOR= / =NIHIL=. (alfe n etait pas touche : il demarre a =:cador=.)

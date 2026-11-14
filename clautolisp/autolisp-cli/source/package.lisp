@@ -31,7 +31,7 @@
    #:cli-options-actions         ; AC — ordered action list ((:file . PATH)/(:expression . TEXT))
    #:cli-options-interactive-p   ; AC
    #:cli-options-quit-p          ; A
-   #:cli-options-host            ; AC — :mock / :null
+   #:cli-options-host            ; AC — :cador / :cadtui / :nihil
    #:cli-options-dialect         ; AC — :strict / :autocad-2026 / :bricscad-v26 / :clautolisp
    #:cli-options-load-encoding   ; AC — the `source' situation (-Esource)
    #:cli-options-io-encoding     ; AC — the `terminal' situation (-Eterminal)

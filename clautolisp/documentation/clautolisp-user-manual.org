@@ -2543,8 +2543,12 @@ the alfe-side counterpart.
                                    inspector's form reads, which
                                    consult the variable at each
                                    read.
-- ~*AUTOLISP-HOST*~             :: The HAL backend's name as a symbol
-                                   — ~MOCK-HOST~, ~NULL-HOST~, or nil.
+- ~*AUTOLISP-HOST*~             :: The selected host as a symbol:
+                                   ~CADOR~ (the default), ~CADTUI~ or
+                                   ~NIHIL~. A deprecated spelling names
+                                   the host it stands for: ~--host mock~
+                                   gives ~CADOR~, ~--host null~ /
+                                   ~--host none~ give ~NIHIL~.
 - ~*AUTOLISP-MOCK-INPUT*~       :: Pathname (string) passed to
                                    ~--mock-input~, or nil.
 - ~*AUTOLISP-GUI-COMMAND*~      :: Subprocess renderer command

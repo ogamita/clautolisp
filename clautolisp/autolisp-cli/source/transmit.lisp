@@ -27,7 +27,7 @@
 
 (defun host-name-symbol-keyword (host-keyword)
   "Render the host keyword as the AutoLISP symbol shown in
-*AUTOLISP-HOST*: MOCK, NULL, or nil."
+*AUTOLISP-HOST*: CADOR, CADTUI, NIHIL, or nil."
   (and host-keyword
        (intern-autolisp-symbol (symbol-name host-keyword))))
 
