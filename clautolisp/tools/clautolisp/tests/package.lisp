@@ -13,8 +13,14 @@
   :description "The clautolisp tool: the dribble tee/echo streams and
 start/stop/toggle logic, and the debugger (aldo) CLI options.")
 
+;;; The temporary file and directory names these tests make with (RANDOM N)
+;;; must differ between processes: SBCL starts every image with the same
+;;; default *RANDOM-STATE*, so each run -- of every user -- drew the same
+;;; "random" names, and a directory one user's run had left in the sticky
+;;; /tmp was then unwritable to the next user's (Permission denied). Each
+;;; suite run gets a state seeded from the system instead.
 (defun run-all-tests ()
-  (let ((results (run 'clautolisp-tool-suite)))
+  (let ((results (let ((*random-state* (make-random-state t))) (run 'clautolisp-tool-suite))))
     (explain! results)
     (unless (results-status results)
       (error "clautolisp.tools.clautolisp tests failed."))))
