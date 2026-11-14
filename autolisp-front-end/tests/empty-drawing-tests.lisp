@@ -13,10 +13,13 @@
 (in-suite autolisp-front-end-suite)
 
 (defun %temp-dir (tag)
-  (let ((path (merge-pathnames (format nil "alfe-dwg-test-~A-~D/" tag (random 100000))
-                               (uiop:temporary-directory))))
-    (ensure-directories-exist path)
-    path))
+  "A directory this call CREATED: one that already exists -- a leftover, or
+another user's in the sticky /tmp, unwritable here -- is never reused."
+  (loop
+    (let ((path (merge-pathnames (format nil "alfe-dwg-test-~A-~D/" tag (random 100000))
+                                 (uiop:temporary-directory))))
+      (when (nth-value 1 (ensure-directories-exist path))
+        (return path)))))
 
 (test the-empty-drawing-is-carried-in-the-image
   "The bytes are read at COMPILE time and live in the image, so alfe
