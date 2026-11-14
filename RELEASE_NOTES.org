@@ -1555,6 +1555,9 @@ separate binary for tool integrators.
   ~*AUTOLISP-VERSION*~, ~*AUTOLISP-LOAD-PATHNAME*~,
   ~*AUTOLISP-EXPRESSION*~, ~*AUTOLISP-INTERACTIVE*~, etc.
   See § /Image-introspection variables (*AUTOLISP-…*)/.
+- ~*AUTOLISP-HOST*~ names the host, never the spelling: ~CADOR~ when no
+  ~--host~ is given (it read ~MOCK~), ~NIHIL~ for the deprecated ~--host
+  null~ / ~--host none~ (they gave ~NULL~). clautolisp 2.4.8.
 
 ** Surface coverage of the AutoLISP / Visual LISP spec
 

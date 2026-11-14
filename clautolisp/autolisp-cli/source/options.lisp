@@ -22,7 +22,7 @@
   (attach-pid       nil)              ; A   --attach-pid PID: attach to that running CAD
   ;; Dialect + host
   (dialect          :strict)          ; AC  :strict / :autocad-2026 / :bricscad-v26 / :clautolisp
-  (host             :mock)            ; AC  :mock / :null (default :mock)
+  (host             :cador)           ; AC  :cador / :cadtui / :nihil (default :cador)
   ;; Encoding
   (load-encoding    nil)              ; AC  = the `source' situation (-Esource); mirrored for downstream
   (io-encoding      nil)              ; AC  = the `terminal' situation (-Eterminal); mirrored for downstream
@@ -166,12 +166,15 @@
   ;;          drawings, cad-view, DCL dialogs mirrored into the tree); cador is
   ;;          its degenerate /application/console configuration.
   ;; nihil  = the trivial backend; null/none are deprecated aliases of nihil.
+  ;; An alias yields the keyword of the host it stands for, so
+  ;; *AUTOLISP-HOST* names the host, never the spelling
+  ;; (cli-options-host-default-is-deprecated-mock).
   (cond ((string-equal value "cador") :cador)
         ((string-equal value "mock") :cador)
         ((string-equal value "cadtui") :cadtui)
         ((string-equal value "nihil") :nihil)
-        ((string-equal value "null") :null)
-        ((string-equal value "none") :null)
+        ((string-equal value "null") :nihil)
+        ((string-equal value "none") :nihil)
         (t (error 'cli-usage-error
                   :option option
                   :message

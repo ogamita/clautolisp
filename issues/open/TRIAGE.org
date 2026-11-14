@@ -1043,3 +1043,16 @@ MR-C car le contrat de parite des deux variantes exige la meme borne par action.
 
 ** DONE alfe suite fails on a Mac with a runnable AutoCAD (P3)
 [[file:../closed/alfe-tests-fail-on-macos-with-runnable-autocad.issue]] — 2.4.0 test regression from probe-gated macOS discovery (2.3.118); corpus now hides the macOS bundles; fixed in 2.4.2.
+
+* 2026-11-13 Option defaults from the environment
+** TODO cli-option-environment-defaults (P3)
+[[file:cli-option-environment-defaults.issue][An environment variable for every state-setting option]] : =--host=, =--dialect=,
+verbosity, the =-E= encodings, the debugger policies, =--dcl=, =--cad=, ... have
+none (clautolisp honours only =CLAUTOLISP_GUI=, the =*_NO_INIT= pair and
+=NO_COLOR=). Proposed =AUTOLISP_X= (common) / =CLAUTOLISP_X= / =ALFE_X=,
+argv > program > AUTOLISP > default ; six dead =+env-defaults+= entries in alfe ;
+alfe must pass resolved values on the child's argv.
+** DONE cli-options-host-default-is-deprecated-mock (P3)
+[[file:../closed/cli-options-host-default-is-deprecated-mock.issue][--host default stored as :mock]] : FERME 2026-11-14 (2.4.8) : clautolisp
+=*AUTOLISP-HOST*= lisait =MOCK= sans =--host= et =NULL= pour =--host null/none= ;
+desormais =CADOR= / =NIHIL=. (alfe n etait pas touche : il demarre a =:cador=.)

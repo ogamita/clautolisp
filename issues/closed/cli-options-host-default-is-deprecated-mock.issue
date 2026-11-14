@@ -1,0 +1,61 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cli-options-host-default-is-deprecated-mock — the --host default is stored as the deprecated alias :mock
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-cli-options-host-default
+#+DATE: 2026-11-13
+
+* Context
+
+Found while answering "what is the default of --host?" (see
+=cli-option-environment-defaults=). The documented default is =cador=
+(=clautolisp --help=: "cador (default)"; =*host-descriptions*=).
+
+* Problem
+
+The shared =cli-options= struct initialises the slot to the deprecated alias:
+
+: (host :mock)   ; AC  :mock / :null (default :mock)
+  — =clautolisp/autolisp-cli/source/options.lisp=
+
+- clautolisp maps =:mock= to cador when it builds the host, so the run is
+  right, but =*AUTOLISP-HOST*= is rendered from the keyword: with no
+  =--host= it reads =MOCK=, a name no =--host= spelling produces
+  (=--host mock= gives =CADOR=). Observed on the installed clautolisp 1.8.59;
+  the 2.4.3 source has the same code.
+- The aliases =null= / =none= yield =:null= where =nihil= yields =:nihil=:
+  =*AUTOLISP-HOST*= reads =NULL= for one spelling of the host and =NIHIL= for
+  the other.
+- The slot comment is stale (=:mock= / =:null=).
+- Correction (2026-11-14): the first version of this ticket said alfe shows
+  =host: MOCK= under =--dry-run=. It does not: alfe builds its options with
+  =(make-cli-options :host :cador)= and rejects the retired spellings, so
+  =alfe --dry-run= prints =host: CADOR=. Only clautolisp is affected.
+
+* Proposal
+
+Default the slot to =:cador=, update its comment, and fold the =null= /
+=none= aliases onto =:nihil=.
+
+* Acceptance criteria
+
+- A test asserts the default host keyword is =:cador= and renders as
+  =CADOR=.
+- =--host null=, =--host none= and =--host nihil= all render as =NIHIL=.
+- RELEASE_NOTES entry (the dry-run output changes); version bump.
+
+* Resolved (clautolisp / alfe 2.4.8, 2026-11-14)
+
+- =cli-options= host slot defaults to =:cador=; =parse-host= folds =null= /
+  =none= onto =:nihil= (=clautolisp/autolisp-cli/source/options.lisp=).
+  clautolisp's host constructor still accepts =:mock= / =:null= (a caller
+  may build options by hand), so nothing that ran changes: only the name
+  =*AUTOLISP-HOST*= shows.
+- Tests (=autolisp-cli/tests/cli-launch-tests.lisp=):
+  =default-host-is-cador=, =host-aliases-name-the-host-they-stand-for=, and
+  =parse-host-accepts-cador-cadtui-nihil-and-aliases= now expects =:nihil=
+  for the aliases. All three failed before the fix.
+- clautolisp user manual (=*AUTOLISP-HOST*= entry, which still said
+  =MOCK-HOST= / =NULL-HOST=) and RELEASE_NOTES updated.

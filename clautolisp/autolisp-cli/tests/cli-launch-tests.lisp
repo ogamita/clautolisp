@@ -104,8 +104,25 @@ sexp file (UNIX backend), so registry reads/writes stay hermetic."
   (is (eql :nihil (parse-host "nihil" "--host")))
   ;; deprecated aliases: mock->cador, null/none->nihil
   (is (eql :cador (parse-host "mock" "--host")))
-  (is (eql :null (parse-host "null" "--host")))
-  (is (eql :null (parse-host "none" "--host"))))
+  (is (eql :nihil (parse-host "null" "--host")))
+  (is (eql :nihil (parse-host "none" "--host"))))
+
+;;; cli-options-host-default-is-deprecated-mock: with no --host the slot was
+;;; the deprecated alias :MOCK, so *AUTOLISP-HOST* read MOCK -- a name no
+;;; --host spelling produces (--host mock gives CADOR) -- and the aliases
+;;; null / none gave NULL where nihil gives NIHIL.
+(test default-host-is-cador
+  (is (eql :cador (clautolisp.autolisp-cli:cli-options-host (clautolisp.autolisp-cli:make-cli-options))))
+  (is (eq (clautolisp.autolisp-runtime:intern-autolisp-symbol "CADOR")
+          (clautolisp.autolisp-cli::host-name-symbol-keyword
+           (clautolisp.autolisp-cli:cli-options-host (clautolisp.autolisp-cli:make-cli-options))))))
+
+(test host-aliases-name-the-host-they-stand-for
+  (dolist (spelling '("null" "none" "nihil"))
+    (is (eq (clautolisp.autolisp-runtime:intern-autolisp-symbol "NIHIL")
+            (clautolisp.autolisp-cli::host-name-symbol-keyword
+             (parse-host spelling "--host")))
+        "--host ~A" spelling)))
 
 (test parse-host-rejects-unknown
   (signals cli-usage-error (parse-host "bogus" "--host")))
