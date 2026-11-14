@@ -30,6 +30,18 @@
                                       ;     built by the -E<situation>[-<dir>] / --<situation>-encoding family
   (encoding-replacements nil)         ; AC  alist (KEY . policy-name): KEY = "all" | "file/write" | "terminal/out"
                                       ;     built by -Ereplacement / -Efile-write-replacement / -Eterminal-out-replacement
+  ;; The same two tables filled from the ENVIRONMENT (AUTOLISP_ENCODING,
+  ;; AUTOLISP_SOURCE_ENCODING, ...; environment.lisp): a layer BELOW the
+  ;; command line, so a bare -E on the command line still beats
+  ;; AUTOLISP_SOURCE_ENCODING (cli-option-environment-defaults).
+  (environment-situation-encodings nil)   ; AC  alist, keys as situation-encodings
+  (environment-encoding-replacements nil) ; AC  alist, keys as encoding-replacements
+  ;; Environment bookkeeping (environment.lisp). GIVEN-ENVIRONMENT-GROUPS:
+  ;; the option groups the command line set (an environment default does
+  ;; not apply to them); ENVIRONMENT-SOURCES: (GROUP . VARIABLE) for each
+  ;; group an environment variable did set, so a diagnostic can name it.
+  (given-environment-groups nil)      ; AC
+  (environment-sources nil)           ; AC
   ;; Drawing
   (dwg              nil)              ; AC  --dwg FILE: the first drawing
   (template         nil)              ; A   --template NAME|PATH: a copy of a CAD template (alfe)
@@ -158,6 +170,18 @@
                   :message
                   (format nil "Unknown --backend variant ~S (expected attach/launch/direct/subprocess)"
                           value)))))
+
+(defun parse-verbosity (value option)
+  "AUTOLISP_VERBOSITY: one level, by the name of its flag (quiet, verbose,
+debug) or of the level itself (warn, info)."
+  (cond ((or (string-equal value "quiet") (string-equal value "warn")) :warn)
+        ((string-equal value "info")    :info)
+        ((string-equal value "verbose") :verbose)
+        ((string-equal value "debug")   :debug)
+        (t (error 'cli-usage-error
+                  :option option
+                  :message (format nil "Unknown verbosity ~S (expected quiet, info, verbose or debug)"
+                                   value)))))
 
 (defun parse-host (value option)
   ;; cador  = the headless CAD core (was named "mock"); "mock" is a deprecated

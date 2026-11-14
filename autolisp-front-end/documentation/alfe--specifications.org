@@ -2297,10 +2297,10 @@ created discards its output.
 | Variable                  | Values                                          | CLI                          | Effect                                                            |
 |---------------------------+-------------------------------------------------+------------------------------+-------------------------------------------------------------------|
 | =AUTOLISP_MODE=           | =auto= \vert =automation= \vert =batch=         | =--mode=                     | CAD mode; maps to =AUTOCAD_COM_MODE= / =BRICSCAD_COM_MODE=.       |
-| =AUTOLISP_OS=             | =Darwin= \vert =Linux= \vert =MINGW64_NT-*=     |                              | Overrides OS detection (=uname -s= by default).                   |
+| =AUTOLISP_OS=             | =Darwin= \vert =Linux= \vert =MINGW64_NT-*=     |                              | NOT IMPLEMENTED: proposed to override OS detection; never read (alfe 2.4.9 dropped it from its option table). |
 | =AUTOLISP_BOOTSTRAP_PHASE=| =marker= \vert =core= \vert =log= \vert =full=  | =--bootstrap-phase=          | Bootstrap phase.                                                  |
-| =AUTOLISP_REMOTE_IO_MODE= | =auto= \vert =on= \vert =off=                   |                              | Enables/disables the remote REPL protocol (=auto=: if =-i=).      |
-| =AUTOLISP_DWG=            | path                                            | =--dwg=                      | Default DWG for =accoreconsole=.                                  |
+| =AUTOLISP_REMOTE_IO_MODE= | =auto= \vert =on= \vert =off=                   |                              | NOT IMPLEMENTED: proposed to toggle the remote REPL protocol; never read (dropped in 2.4.9). |
+| =AUTOLISP_DWG=            | path                                            | =--dwg=                      | Default of =--dwg=; =ALFE_DWG= overrides it (shared option defaults, below). |
 | =ALFE_PLUGIN_PATH=        | path list (=:=; =;= on Windows)                 | =--plugin-path=              | Extra plug-in roots, searched after =--plugin-path=.              |
 | =ALFE_PLUGINS=            | comma-separated plug-in names                   | =--plugin=                   | Plug-ins activated for every run.                                 |
 | =ALFE_NO_PLUGINS=         | true value (=1=, =yes=, …)                      | =--no-plugins=               | Loads no plug-in.                                                 |
@@ -2310,6 +2310,18 @@ created discards its output.
 | =AUTOLISP_EPUREE=         | true value                                      | =--epuree=                   | Activates the =epuree= plug-in ([[#epuree]]).                       |
 | =EPUREE_PATH=             | path list                                       | =--epuree-path=              | Directories registered with ALPM as holding =epuree.alpm=.        |
 | =ALPM_LSP=                | path                                            | =--epuree-alpm=              | The =alpm.lsp= the =epuree= plug-in loads.                        |
+
+** Shared option defaults
+
+Every option alfe shares with clautolisp, plus =--cad= and =--backend=,
+takes its default from =ALFE_<X>=, then =AUTOLISP_<X>=; the command line
+wins, and any option of a group keeps the group's variable out. The groups
+and suffixes are the table =*OPTION-ENVIRONMENT-GROUPS*=
+(=clautolisp/autolisp-cli/source/environment.lisp=); the user manual
+(/Environment variables/ › /Option defaults/) lists every name. Under
+=--clautolisp= alfe resolves them and passes the result to its engine on the
+engine's command line; a driven clautolisp (=--front-end-bindings=) reads none
+of them (cli-option-environment-defaults).
 
 ** Backend-specific
 

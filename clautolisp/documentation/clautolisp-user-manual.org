@@ -2394,6 +2394,92 @@ change what clautolisp does, and *probes* clautolisp reads to find out
 where it is running. Setting a probe is legitimate — it is how you
 correct a wrong guess — but it is not its purpose.
 
+** Option defaults
+:PROPERTIES:
+:CUSTOM_ID: environment-option-defaults
+:END:
+An option that sets how a run behaves can take its default from the
+environment, for the callers that cannot -- or should not -- edit every
+command line: a CI job, a daemon, a wrapper script. The command line always
+wins:
+
+#+begin_example
+command line  >  $CLAUTOLISP_<X>  >  $AUTOLISP_<X>  >  built-in default
+#+end_example
+
+- ~$AUTOLISP_<X>~ is read by both programs, clautolisp and alfe, alike: one
+  setting for "the AutoLISP tools".
+- ~$CLAUTOLISP_<X>~ overrides it for clautolisp only (alfe has its own
+  ~$ALFE_<X>~).
+- An option group counts as one: ~--strict~ on the command line keeps
+  ~$AUTOLISP_DIALECT~ out as surely as ~--dialect~ does, and ~-q~ keeps
+  ~$AUTOLISP_VERBOSITY~ out (the flags compose among themselves, the
+  variable only sets the level when no flag is given).
+- The encoding variables sit *below the whole command line*, situation by
+  situation: a bare ~-E utf-8~ still beats ~$AUTOLISP_SOURCE_ENCODING~, and a
+  variable that names a situation (~$AUTOLISP_CONSOLE_ENCODING~) reaches it
+  where a bare ~-E~ would not. The replacement variables follow the same rule.
+- ~$CLAUTOLISP_OPTIMIZE~ (~QUALITY=N,...~, as ~-O~) is applied *before* the
+  command line's ~-O~: a quality the command line names wins, the others keep
+  the variable's level.
+- An empty variable is an unset one. An invalid value is a usage error that
+  names the variable, exit status 64:
+  =clautolisp: AUTOLISP_HOST: Unknown --host "bogus" ...=
+- A boolean variable (~$CLAUTOLISP_TRACE~, ~$AUTOLISP_DRIBBLE~) takes ~1~,
+  ~y~, ~yes~, ~true~, ~on~ or ~0~, ~n~, ~no~, ~false~, ~off~; ~$AUTOLISP_DRIBBLE~
+  also takes a file name, as ~--dribble=FILE~.
+- *Under alfe* (~alfe --clautolisp~ running this program as its engine,
+  which passes ~--front-end-bindings~), clautolisp reads *none* of these
+  variables: alfe resolved them from its own environment -- ~$ALFE_<X>~ and
+  ~$AUTOLISP_<X>~ -- and put the result on clautolisp's command line. A
+  ~$CLAUTOLISP_<X>~ you set for your own clautolisp runs therefore never
+  contradicts alfe.
+
+| Option | Variable | Override for clautolisp | Value |
+|-|-|-|-|
+| =--host= | =$AUTOLISP_HOST= | =$CLAUTOLISP_HOST= | cador, cadtui, nihil |
+| =--dialect, --strict, --autocad, --bricscad, --clautolisp, --lax= | =$AUTOLISP_DIALECT= | =$CLAUTOLISP_DIALECT= | a --list-dialects name |
+| =-q, -v, -d= | =$AUTOLISP_VERBOSITY= | =$CLAUTOLISP_VERBOSITY= | quiet, info, verbose, debug |
+| =--dwg= | =$AUTOLISP_DWG= | =$CLAUTOLISP_DWG= | a drawing file |
+| =--dcl= | =$AUTOLISP_DCL= | =$CLAUTOLISP_DCL= | tui, gui, auto |
+| =--dribble= | =$AUTOLISP_DRIBBLE= | =$CLAUTOLISP_DRIBBLE= | a boolean (the default file), or FILE |
+| =--dribble-interactors= | =$AUTOLISP_DRIBBLE_INTERACTORS= | =$CLAUTOLISP_DRIBBLE_INTERACTORS= | as the option |
+| =--on-error= | =$AUTOLISP_ON_ERROR= | =$CLAUTOLISP_ON_ERROR= | quit, debug, ignore |
+| =--on-interrupt= | =$AUTOLISP_ON_INTERRUPT= | =$CLAUTOLISP_ON_INTERRUPT= | debug, ignore, quit |
+| =--on-quit= | =$AUTOLISP_ON_QUIT= | =$CLAUTOLISP_ON_QUIT= | debug, quit |
+| =--debugger-ui= | =$AUTOLISP_DEBUGGER_UI= | =$CLAUTOLISP_DEBUGGER_UI= | dumb, ncurses, aldb |
+| =--aldb-listen= | =$AUTOLISP_ALDB_LISTEN= | =$CLAUTOLISP_ALDB_LISTEN= | [HOST:]PORT |
+| =-E / --encoding= | =$AUTOLISP_ENCODING= | =$CLAUTOLISP_ENCODING= | an encoding (every situation) |
+| =-Esource= | =$AUTOLISP_SOURCE_ENCODING= | =$CLAUTOLISP_SOURCE_ENCODING= | an encoding |
+| =-Efile= | =$AUTOLISP_FILE_ENCODING= | =$CLAUTOLISP_FILE_ENCODING= | an encoding |
+| =-Efile-read= | =$AUTOLISP_FILE_READ_ENCODING= | =$CLAUTOLISP_FILE_READ_ENCODING= | an encoding |
+| =-Efile-write= | =$AUTOLISP_FILE_WRITE_ENCODING= | =$CLAUTOLISP_FILE_WRITE_ENCODING= | an encoding |
+| =-Econsole= | =$AUTOLISP_CONSOLE_ENCODING= | =$CLAUTOLISP_CONSOLE_ENCODING= | an encoding |
+| =-Econsole-in= | =$AUTOLISP_CONSOLE_IN_ENCODING= | =$CLAUTOLISP_CONSOLE_IN_ENCODING= | an encoding |
+| =-Econsole-out= | =$AUTOLISP_CONSOLE_OUT_ENCODING= | =$CLAUTOLISP_CONSOLE_OUT_ENCODING= | an encoding |
+| =-Ecadstdio= | =$AUTOLISP_CADSTDIO_ENCODING= | =$CLAUTOLISP_CADSTDIO_ENCODING= | an encoding |
+| =-Ecadstdio-in= | =$AUTOLISP_CADSTDIO_IN_ENCODING= | =$CLAUTOLISP_CADSTDIO_IN_ENCODING= | an encoding |
+| =-Ecadstdio-out= | =$AUTOLISP_CADSTDIO_OUT_ENCODING= | =$CLAUTOLISP_CADSTDIO_OUT_ENCODING= | an encoding |
+| =-Elog= | =$AUTOLISP_LOG_ENCODING= | =$CLAUTOLISP_LOG_ENCODING= | an encoding |
+| =-Eterminal= | =$AUTOLISP_TERMINAL_ENCODING= | =$CLAUTOLISP_TERMINAL_ENCODING= | an encoding |
+| =-Eterminal-in= | =$AUTOLISP_TERMINAL_IN_ENCODING= | =$CLAUTOLISP_TERMINAL_IN_ENCODING= | an encoding |
+| =-Eterminal-out= | =$AUTOLISP_TERMINAL_OUT_ENCODING= | =$CLAUTOLISP_TERMINAL_OUT_ENCODING= | an encoding |
+| =-Ereplacement= | =$AUTOLISP_ENCODING_REPLACEMENT= | =$CLAUTOLISP_ENCODING_REPLACEMENT= | one character, error, low-byte, best-fit, escape |
+| =-Efile-write-replacement= | =$AUTOLISP_FILE_WRITE_ENCODING_REPLACEMENT= | =$CLAUTOLISP_FILE_WRITE_ENCODING_REPLACEMENT= | as the option |
+| =-Eterminal-out-replacement= | =$AUTOLISP_TERMINAL_OUT_ENCODING_REPLACEMENT= | =$CLAUTOLISP_TERMINAL_OUT_ENCODING_REPLACEMENT= | as the option |
+
+clautolisp's own options:
+
+| Option | Variable | Value |
+|-|-|-|
+| =--trace= | =$CLAUTOLISP_TRACE= | a boolean |
+| =-O= / =--optimize= | =$CLAUTOLISP_OPTIMIZE= | =QUALITY=N,...= |
+
+Options that are actions, one-shot queries or per-run files (=-l=, =-x=,
+=-i=, =--help=, =--version=, the =--list-...= queries, =--mock-input=,
+=--front-end-...=, =--aldb-stdio=) have no variable on purpose: a stray
+export of one would change what a run *does*.
+
 ** Knobs
 - ~$CLAUTOLISP_GUI~ :: DCL GUI driver command, used when ~--gui~ is
   omitted. See /DCL dialogs/ above.

@@ -62,6 +62,11 @@ test-only knobs); the default is a fresh struct."
           (cond
             ;; Try a spec match (long or short, by exact head).
             ((let ((spec (%find-spec head specs)))
+               (when (and spec (option-spec-environment spec))
+                 ;; The command line set this option group: no environment
+                 ;; default applies to it (APPLY-ENVIRONMENT-DEFAULTS).
+                 (pushnew (option-spec-environment spec)
+                          (cli-options-given-environment-groups options)))
                (cond
                  ((null spec) nil)
                  ((option-spec-takes-arg-p spec)

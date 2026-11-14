@@ -2428,7 +2428,6 @@ always wins.
 |------------------------------+---------------------|
 | =$AUTOLISP_BACKEND=, =$ALFE_BACKEND_OVERRIDE= | backend selection |
 | =$AUTOLISP_MODE=             | =--mode=            |
-| =$AUTOLISP_DWG=              | =--dwg=             |
 | =$AUTOLISP_TEMPLATE=         | =--template=        |
 | =$AUTOLISP_EPURE=            | =--epure=           |
 | =$AUTOLISP_EPURE_PROFILE=    | =--epure-profile=   |
@@ -2449,6 +2448,98 @@ The =--epure…= and =--epuree…= options are defined by plug-ins
 =$AUTOLISP_EPUREE=, set to a true value (=1=, =y=, =yes=, =true= or =on=),
 activate their plug-in; the other four variables are read once the
 plug-in is active.
+
+*** The options alfe shares with clautolisp
+:PROPERTIES:
+:CUSTOM_ID: environment-shared-option-defaults
+:END:
+For every option alfe shares with the clautolisp program, and for two of
+its own, the default comes from a pair of variables, the command line still
+winning:
+
+#+begin_example
+command line  >  $ALFE_<X>  >  $AUTOLISP_<X>  >  built-in default
+#+end_example
+
+=$AUTOLISP_<X>= is one setting for both programs; =$ALFE_<X>= overrides it
+for alfe only. The rules, briefly (the clautolisp user manual, /Environment
+variables/ › /Option defaults/, gives them in full):
+
+- any option of a group keeps the group's variable out: =--strict= as much as
+  =--dialect= keeps =$AUTOLISP_DIALECT= out, =-q= keeps
+  =$AUTOLISP_VERBOSITY= out;
+- the encoding and replacement variables sit below the whole command line,
+  situation by situation (a bare =-E utf-8= beats
+  =$AUTOLISP_SOURCE_ENCODING=);
+- an empty variable is unset; an invalid one is a usage error that names the
+  variable (exit status 64); a boolean takes =1=, =y=, =yes=, =true=, =on= or
+  =0=, =n=, =no=, =false=, =off=.
+
+What alfe does with them:
+
+- *Under a CAD backend* the dialect is the CAD's own: =$AUTOLISP_DIALECT= is
+  ignored there exactly as =--dialect= is.
+- *Under =--clautolisp=*, alfe resolves these variables and hands the
+  RESULT to its engine. The in-process engine (=--backend direct=) uses it
+  directly; the clautolisp executable it starts (=--backend subprocess=)
+  receives it on its command line, with =--front-end-bindings=, and then
+  reads *none* of the variables itself -- so a =$CLAUTOLISP_<X>= meant for
+  your own clautolisp runs cannot contradict alfe, and both variants run the
+  same configuration.
+- A variable can make the run the clautolisp *program's*, as its option
+  would: =$AUTOLISP_HOST=cadtui=, =$AUTOLISP_DRIBBLE=, =$AUTOLISP_DCL=gui=
+  (or =ncurses=) switch alfe to the subprocess variant (see /cadtui/ in the
+  hosts chapter). With =--backend direct= that is a usage error, and it names
+  the variable:
+  =AUTOLISP_HOST: the cadtui host (AUTOLISP_HOST=cadtui) runs in the
+  clautolisp executable ...=
+- =$AUTOLISP_DWG= keeps its meaning (the default of =--dwg=), now with the
+  =$ALFE_DWG= override.
+
+| Option | Variable | Override for alfe | Value |
+|-|-|-|-|
+| =--host= | =$AUTOLISP_HOST= | =$ALFE_HOST= | cador, cadtui, nihil |
+| =--dialect, --strict, --autocad, --bricscad, --clautolisp, --lax= | =$AUTOLISP_DIALECT= | =$ALFE_DIALECT= | a --list-dialects name |
+| =-q, -v, -d= | =$AUTOLISP_VERBOSITY= | =$ALFE_VERBOSITY= | quiet, info, verbose, debug |
+| =--dwg= | =$AUTOLISP_DWG= | =$ALFE_DWG= | a drawing file |
+| =--dcl= | =$AUTOLISP_DCL= | =$ALFE_DCL= | tui, gui, auto |
+| =--dribble= | =$AUTOLISP_DRIBBLE= | =$ALFE_DRIBBLE= | a boolean (the default file), or FILE |
+| =--dribble-interactors= | =$AUTOLISP_DRIBBLE_INTERACTORS= | =$ALFE_DRIBBLE_INTERACTORS= | as the option |
+| =--on-error= | =$AUTOLISP_ON_ERROR= | =$ALFE_ON_ERROR= | quit, debug, ignore |
+| =--on-interrupt= | =$AUTOLISP_ON_INTERRUPT= | =$ALFE_ON_INTERRUPT= | debug, ignore, quit |
+| =--on-quit= | =$AUTOLISP_ON_QUIT= | =$ALFE_ON_QUIT= | debug, quit |
+| =--debugger-ui= | =$AUTOLISP_DEBUGGER_UI= | =$ALFE_DEBUGGER_UI= | dumb, ncurses, aldb |
+| =--aldb-listen= | =$AUTOLISP_ALDB_LISTEN= | =$ALFE_ALDB_LISTEN= | [HOST:]PORT |
+| =-E / --encoding= | =$AUTOLISP_ENCODING= | =$ALFE_ENCODING= | an encoding (every situation) |
+| =-Esource= | =$AUTOLISP_SOURCE_ENCODING= | =$ALFE_SOURCE_ENCODING= | an encoding |
+| =-Efile= | =$AUTOLISP_FILE_ENCODING= | =$ALFE_FILE_ENCODING= | an encoding |
+| =-Efile-read= | =$AUTOLISP_FILE_READ_ENCODING= | =$ALFE_FILE_READ_ENCODING= | an encoding |
+| =-Efile-write= | =$AUTOLISP_FILE_WRITE_ENCODING= | =$ALFE_FILE_WRITE_ENCODING= | an encoding |
+| =-Econsole= | =$AUTOLISP_CONSOLE_ENCODING= | =$ALFE_CONSOLE_ENCODING= | an encoding |
+| =-Econsole-in= | =$AUTOLISP_CONSOLE_IN_ENCODING= | =$ALFE_CONSOLE_IN_ENCODING= | an encoding |
+| =-Econsole-out= | =$AUTOLISP_CONSOLE_OUT_ENCODING= | =$ALFE_CONSOLE_OUT_ENCODING= | an encoding |
+| =-Ecadstdio= | =$AUTOLISP_CADSTDIO_ENCODING= | =$ALFE_CADSTDIO_ENCODING= | an encoding |
+| =-Ecadstdio-in= | =$AUTOLISP_CADSTDIO_IN_ENCODING= | =$ALFE_CADSTDIO_IN_ENCODING= | an encoding |
+| =-Ecadstdio-out= | =$AUTOLISP_CADSTDIO_OUT_ENCODING= | =$ALFE_CADSTDIO_OUT_ENCODING= | an encoding |
+| =-Elog= | =$AUTOLISP_LOG_ENCODING= | =$ALFE_LOG_ENCODING= | an encoding |
+| =-Eterminal= | =$AUTOLISP_TERMINAL_ENCODING= | =$ALFE_TERMINAL_ENCODING= | an encoding |
+| =-Eterminal-in= | =$AUTOLISP_TERMINAL_IN_ENCODING= | =$ALFE_TERMINAL_IN_ENCODING= | an encoding |
+| =-Eterminal-out= | =$AUTOLISP_TERMINAL_OUT_ENCODING= | =$ALFE_TERMINAL_OUT_ENCODING= | an encoding |
+| =-Ereplacement= | =$AUTOLISP_ENCODING_REPLACEMENT= | =$ALFE_ENCODING_REPLACEMENT= | one character, error, low-byte, best-fit, escape |
+| =-Efile-write-replacement= | =$AUTOLISP_FILE_WRITE_ENCODING_REPLACEMENT= | =$ALFE_FILE_WRITE_ENCODING_REPLACEMENT= | as the option |
+| =-Eterminal-out-replacement= | =$AUTOLISP_TERMINAL_OUT_ENCODING_REPLACEMENT= | =$ALFE_TERMINAL_OUT_ENCODING_REPLACEMENT= | as the option |
+
+alfe's own:
+
+| Option | Variable | Value |
+|-|-|-|
+| =--cad= | =$ALFE_CAD= | a CAD denotation (=--list-cad-programs=). Stays out when the command line selects a backend (=--autocad=, =--bricscad=, =--clautolisp=) |
+| =--backend= | =$ALFE_BACKEND_VARIANT= | =attach=, =launch=, =direct=, =subprocess=. Stays out when =--attach-pid= is given; outranks =$AUTOCAD_COM_MODE= / =$BRICSCAD_COM_MODE= |
+
+Before alfe 2.4.9 the option-defaults table listed six variables alfe never
+read: =$AUTOLISP_OS=, =$AUTOLISP_REMOTE_IO_MODE=, =$AUTOCAD_INSTALL=,
+=$AUTOCAD_VERSION=, =$BRICSCAD_INSTALL=, =$BRICSCAD_VERSION=. They are gone;
+=$ALFE_CAD= is the way to pick an installed CAD.
 
 ** Engine location and launch
 - =$ALFE_CLAUTOLISP_BIN= :: the =clautolisp= executable the clautolisp

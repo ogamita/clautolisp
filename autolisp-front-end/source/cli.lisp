@@ -265,22 +265,21 @@ a rebuild. Bound per RUN; set by RUN from the parsed option.")
     (:ready-timeout    . "AUTOLISP_READY_WAIT_SECS")
     (:mode             . "AUTOLISP_MODE")
     (:backend          . "AUTOLISP_BACKEND")
-    (:os               . "AUTOLISP_OS")
     (:bootstrap-phase  . "AUTOLISP_BOOTSTRAP_PHASE")
-    (:remote-io-mode   . "AUTOLISP_REMOTE_IO_MODE")
-    (:dwg              . "AUTOLISP_DWG")
     (:template         . "AUTOLISP_TEMPLATE")
-    (:autocad-install  . "AUTOCAD_INSTALL")
-    (:autocad-version  . "AUTOCAD_VERSION")
-    (:bricscad-install . "BRICSCAD_INSTALL")
-    (:bricscad-version . "BRICSCAD_VERSION")
     (:keep-workdir     . "AUTOLISP_KEEP_WORKDIR")
     (:write-workdir-path . "AUTOLISP_WRITE_WORKDIR_PATH")
     (:override         . "ALFE_BACKEND_OVERRIDE"))
-  "Mapping from logical option key to the environment variable name
-documented in the spec. The CLI consults this table before consuming
-argv so that any option not set on the command line falls back to its
-env default. The test suite asserts the table is exhaustive.")
+  "Mapping from logical option key to the environment variable name of
+alfe's own options. APPLY-ENV-DEFAULTS consults this table before consuming
+argv so that any option not set on the command line falls back to its env
+default. Every entry is READ by alfe: AUTOLISP_OS, AUTOLISP_REMOTE_IO_MODE,
+AUTOCAD_INSTALL, AUTOCAD_VERSION, BRICSCAD_INSTALL and BRICSCAD_VERSION were
+listed here for years and read by nothing (cli-option-environment-defaults).
+The options shared with clautolisp -- and AUTOLISP_DWG with them -- take
+their defaults from the shared table instead
+(CLAUTOLISP.AUTOLISP-CLI:*OPTION-ENVIRONMENT-GROUPS*, APPLY-ENVIRONMENT-
+DEFAULTS in PARSE-ARGUMENTS), with an ALFE_<X> override of AUTOLISP_<X>.")
 
 (defun env-default (key)
   "Return the current process-environment value for the env var bound
@@ -525,7 +524,6 @@ argument parsing so explicit CLI options always win."
         (env-mode    (env-default :mode))
         (env-backend (env-default :backend))
         (env-bootstrap (env-default :bootstrap-phase))
-        (env-dwg     (env-default :dwg))
         (env-template (env-default :template))
         (env-keep-workdir (env-default :keep-workdir))
         (env-write-workdir-path (env-default :write-workdir-path)))
@@ -555,8 +553,6 @@ argument parsing so explicit CLI options always win."
     (when env-bootstrap
       (setf (cli-options-bootstrap-phase options)
             (parse-bootstrap-phase env-bootstrap "AUTOLISP_BOOTSTRAP_PHASE")))
-    (when env-dwg
-      (setf (cli-options-dwg options) env-dwg))
     (when env-template
       (setf (cli-options-template options) env-template))
     (when env-keep-workdir
@@ -618,16 +614,19 @@ error rather than silently last-winning."
    ;; the CAD's own dialect and ignore --dialect.
    (make-option-spec
     :longs '("--clautolisp") :takes-arg-p nil
+    :environment :cad
     :handler (lambda (opts value name)
                (declare (ignore value))
                (%set-backend-checked opts :clautolisp name)))
    (make-option-spec
     :longs '("--autocad") :takes-arg-p nil
+    :environment :cad
     :handler (lambda (opts value name)
                (declare (ignore value))
                (%set-backend-checked opts :autocad name)))
    (make-option-spec
     :longs '("--bricscad") :takes-arg-p nil
+    :environment :cad
     :handler (lambda (opts value name)
                (declare (ignore value))
                (%set-backend-checked opts :bricscad name)))
@@ -637,6 +636,7 @@ error rather than silently last-winning."
                (setf (cli-options-mode opts) (parse-mode value name))))
    (make-option-spec
     :longs '("--backend") :takes-arg-p t
+    :environment :backend-variant
     :handler (lambda (opts value name)
                (setf (cli-options-backend-variant opts)
                      (parse-backend-variant value name))))
@@ -664,6 +664,7 @@ error rather than silently last-winning."
    ;; once --mode is known (autocad → acad/accoreconsole depends on it).
    (make-option-spec
     :longs '("--cad") :takes-arg-p t
+    :environment :cad
     :handler (lambda (opts value name)
                (declare (ignore name))
                (setf (cli-options-cad opts) value)))
@@ -673,6 +674,7 @@ error rather than silently last-winning."
    ;; POLICY's, once every option is parsed, so the order does not matter.
    (make-option-spec
     :longs '("--attach-pid") :takes-arg-p t
+    :environment :backend-variant
     :handler (lambda (opts value name)
                (let ((pid (ignore-errors (parse-integer value))))
                  (unless (and pid (plusp pid))
@@ -703,10 +705,12 @@ error rather than silently last-winning."
    ;; same hosts for the clautolisp executable's sake; alfe does not.
    (make-option-spec
     :longs '("--host") :takes-arg-p t
+    :environment :host
     :handler (lambda (opts value name)
                (setf (cli-options-host opts) (%parse-alfe-host value name))))
    (make-option-spec
     :longs '("--dwg") :takes-arg-p t
+    :environment :dwg
     :handler (lambda (opts value name)
                (declare (ignore name))
                (setf (cli-options-dwg opts) value)))
@@ -827,12 +831,14 @@ error rather than silently last-winning."
    ;; timestamped file, --dribble=FILE into FILE (appended).
    (make-option-spec
     :longs '("--dribble") :shorts nil :takes-arg-p t :optional-arg-p t
+    :environment :dribble
     :handler (lambda (opts value name)
                (declare (ignore name))
                (setf (clautolisp.autolisp-cli:cli-options-dribble opts)
                      (or value t))))
    (make-option-spec
     :longs '("--dribble-interactors") :shorts nil :takes-arg-p t
+    :environment :dribble-interactors
     :handler (lambda (opts value name)
                (setf (clautolisp.autolisp-cli:cli-options-dribble-interactors opts)
                      (clautolisp.autolisp-cli:parse-dribble-interactors
@@ -871,12 +877,14 @@ action objects so the rest of alfe (PLAN-FROM-OPTIONS, EVAL-PLAN,
 etc.) sees the legacy shape. The transmit-options installer reads
 through CLI-OPTIONS->TRANSMIT-BINDINGS-FOR-ALFE which translates
 the action objects back to conses on the fly."
-  (let* ((options (make-cli-options :host :cador)))
+  (let* ((options (make-cli-options :host :cador))
+         (specs (append *alfe-option-specs* (plugin-option-specs) *common-option-specs*)))
     (apply-env-defaults options)
-    (parse-arguments-with-spec
-     (append *alfe-option-specs* (plugin-option-specs) *common-option-specs*)
-     argv
-     :initial-options options)
+    (parse-arguments-with-spec specs argv :initial-options options)
+    ;; The options shared with clautolisp, and ALFE_CAD /
+    ;; ALFE_BACKEND_VARIANT: ALFE_<X>, then AUTOLISP_<X>, for every option
+    ;; group the command line left alone (cli-option-environment-defaults).
+    (clautolisp.autolisp-cli:apply-environment-defaults options specs :alfe)
     (setf (cli-options-actions options)
           (mapcar (lambda (a)
                     (%translate-action-cons
@@ -954,19 +962,33 @@ in alfe's image (alfe-clautolisp-backend-semantic-parity.issue):
 Rather than a second, poorer copy of each in alfe, such a run IS the program's:
 the clautolisp backend runs it as the subprocess variant, so the default and
 --backend subprocess behave identically by construction."
-  (cond ((eq (cli-options-host options) :cadtui)
-         (values "--host" "the cadtui host (--host cadtui)"))
-        ((some (lambda (action) (eq (action-kind action) :interactive))
-               (plan-from-options options))
-         (values "--interactive"
-                 "an interactive session (-i, or no -l / -x / --main / FILE)"))
-        ((clautolisp.autolisp-cli:cli-options-dribble options)
-         (values "--dribble" "a recording (--dribble)"))
-        ((member (clautolisp.autolisp-cli:cli-options-dcl options) '(:gui :ncurses))
-         (values "--dcl"
-                 (format nil "the ~(~A~) DCL renderer (--dcl ~:*~(~A~))"
-                         (clautolisp.autolisp-cli:cli-options-dcl options))))
-        (t nil)))
+  (flet ((source (group option)
+           ;; The option, or the environment variable that stood for it:
+           ;; the user must be told what THEY wrote.
+           (or (clautolisp.autolisp-cli:option-environment-source options group)
+               option)))
+    (cond ((eq (cli-options-host options) :cadtui)
+           (let ((by (source :host "--host")))
+             (values by (if (string= by "--host")
+                            "the cadtui host (--host cadtui)"
+                            (format nil "the cadtui host (~A=cadtui)" by)))))
+          ((some (lambda (action) (eq (action-kind action) :interactive))
+                 (plan-from-options options))
+           (values "--interactive"
+                   "an interactive session (-i, or no -l / -x / --main / FILE)"))
+          ((clautolisp.autolisp-cli:cli-options-dribble options)
+           (let ((by (source :dribble "--dribble")))
+             (values by (if (string= by "--dribble")
+                            "a recording (--dribble)"
+                            (format nil "a recording (~A)" by)))))
+          ((member (clautolisp.autolisp-cli:cli-options-dcl options) '(:gui :ncurses))
+           (let ((by (source :dcl "--dcl"))
+                 (mode (clautolisp.autolisp-cli:cli-options-dcl options)))
+             (values by
+                     (if (string= by "--dcl")
+                         (format nil "the ~(~A~) DCL renderer (--dcl ~:*~(~A~))" mode)
+                         (format nil "the ~(~A~) DCL renderer (~A=~:*~:*~(~A~))" mode by)))))
+          (t nil))))
 
 (defun %clautolisp-variant (options)
   "The clautolisp engine variant OPTIONS ask for: the --backend one, except

@@ -339,6 +339,7 @@ front-end."
                               value)))
             (clautolisp.autolisp-cli:make-option-spec
              :longs '("--trace") :shorts nil :takes-arg-p nil
+             :environment :trace
              :handler (lambda (opts value name)
                         (declare (ignore value name))
                         (setf (clautolisp.autolisp-cli:cli-options-trace-p opts) t)))
@@ -359,7 +360,18 @@ front-end."
              :handler (lambda (opts value name)
                         (setf (clautolisp.autolisp-cli:cli-options-optimization opts)
                               (append (clautolisp.autolisp-cli:cli-options-optimization opts)
-                                      (clautolisp.autolisp-cli:parse-optimize value name)))))
+                                      (clautolisp.autolisp-cli:parse-optimize value name))))
+             ;; CLAUTOLISP_OPTIMIZE: the same QUALITY=N,... request, put
+             ;; BEFORE the command line's pairs -- the pairs apply in order,
+             ;; so a quality the command line names wins and the others keep
+             ;; the variable's level (cli-option-environment-defaults).
+             :environment :optimize
+             :environment-layer-p t
+             :environment-handler
+             (lambda (opts value variable)
+               (setf (clautolisp.autolisp-cli:cli-options-optimization opts)
+                     (append (clautolisp.autolisp-cli:parse-optimize value variable)
+                             (clautolisp.autolisp-cli:cli-options-optimization opts)))))
             ;; The debugger (aldo) options -- --on-error, --on-interrupt,
             ;; --on-quit, --debugger-ui, --aldb-listen, --aldb-stdio -- are in
             ;; *COMMON-OPTION-SPECS*: alfe accepts them too (debugger-public-
@@ -370,12 +382,14 @@ front-end."
             ;; `--dribble=FILE' records into FILE.
             (clautolisp.autolisp-cli:make-option-spec
              :longs '("--dribble") :shorts nil :takes-arg-p t :optional-arg-p t
+             :environment :dribble
              :handler (lambda (opts value name)
                         (declare (ignore name))
                         (setf (clautolisp.autolisp-cli:cli-options-dribble opts)
                               (or value t))))
             (clautolisp.autolisp-cli:make-option-spec
              :longs '("--dribble-interactors") :shorts nil :takes-arg-p t
+             :environment :dribble-interactors
              :handler (lambda (opts value name)
                         (setf (clautolisp.autolisp-cli:cli-options-dribble-interactors opts)
                               (clautolisp.autolisp-cli:parse-dribble-interactors
@@ -399,6 +413,13 @@ front-end."
                                     (append (clautolisp.autolisp-cli:cli-options-optimization opts)
                                             (list (cons :speed level)))))))))))
     (let ((options (clautolisp.autolisp-cli:parse-arguments-with-spec specs arguments)))
+      ;; Option defaults from the environment (CLAUTOLISP_<X> / AUTOLISP_<X>;
+      ;; cli-option-environment-defaults) -- except under a driving front
+      ;; end: alfe resolved them from its own environment and put the result
+      ;; on this command line, and a CLAUTOLISP_<X> meant for the user's own
+      ;; runs must not contradict it.
+      (unless (clautolisp.autolisp-cli:cli-options-front-end-bindings options)
+        (clautolisp.autolisp-cli:apply-environment-defaults options specs :clautolisp))
       (validate-debugger-options options)
       options)))
 

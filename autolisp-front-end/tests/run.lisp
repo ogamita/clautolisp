@@ -10,7 +10,12 @@
   "Run the entire alfe FiveAM suite. Signals an error if any test
 failed, so the Makefile's `make test` target exits non-zero on
 regression."
-  (let ((result (let ((*random-state* (make-random-state t))) (fiveam:run 'autolisp-front-end-suite))))
+  ;; The suite also parses command lines in-process: the developer's own
+  ;; AUTOLISP_* / ALFE_* option variables must not change the results. A
+  ;; test about them binds *ENVIRONMENT-GETENV* to a table.
+  (let ((result (let ((*random-state* (make-random-state t))
+                      (clautolisp.autolisp-cli:*environment-getenv* (constantly nil)))
+                  (fiveam:run 'autolisp-front-end-suite))))
     (explain! result)
     (unless (results-status result)
       (error "autolisp-front-end tests failed."))

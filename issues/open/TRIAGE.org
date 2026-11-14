@@ -1045,13 +1045,18 @@ MR-C car le contrat de parite des deux variantes exige la meme borne par action.
 [[file:../closed/alfe-tests-fail-on-macos-with-runnable-autocad.issue]] — 2.4.0 test regression from probe-gated macOS discovery (2.3.118); corpus now hides the macOS bundles; fixed in 2.4.2.
 
 * 2026-11-13 Option defaults from the environment
-** TODO cli-option-environment-defaults (P3)
-[[file:cli-option-environment-defaults.issue][An environment variable for every state-setting option]] : =--host=, =--dialect=,
-verbosity, the =-E= encodings, the debugger policies, =--dcl=, =--cad=, ... have
-none (clautolisp honours only =CLAUTOLISP_GUI=, the =*_NO_INIT= pair and
-=NO_COLOR=). Proposed =AUTOLISP_X= (common) / =CLAUTOLISP_X= / =ALFE_X=,
-argv > program > AUTOLISP > default ; six dead =+env-defaults+= entries in alfe ;
-alfe must pass resolved values on the child's argv.
+** DONE cli-option-environment-defaults (P3)
+[[file:../closed/cli-option-environment-defaults.issue][An environment variable for every state-setting option]] : FERME 2026-11-14
+(2.4.9) : table partagee =*OPTION-ENVIRONMENT-GROUPS*= (94 noms) ; ligne de
+commande > =CLAUTOLISP_X= / =ALFE_X= > =AUTOLISP_X= > defaut ; groupes
+(--strict ecarte AUTOLISP_DIALECT), encodages et -O en couche sous la ligne de
+commande ; un clautolisp pilote par alfe (--front-end-bindings) n en lit
+aucune ; six entrees mortes d alfe retirees ; AUTOLISP_ALDB_LISTEN inclus.
+** TODO deferred-alfe-autolisp-backend-yields-to-selector (P3)
+[[file:deferred-alfe-autolisp-backend-yields-to-selector.issue][$AUTOLISP_BACKEND conflicts with --autocad]] : NOUVEAU 2026-11-14 :
+=AUTOLISP_BACKEND=bricscad alfe --autocad= -> "Conflicting backend selectors"
+au lieu de laisser gagner le selecteur explicite (documente). Pre-remplissage
+avant argv.
 ** DONE cli-options-host-default-is-deprecated-mock (P3)
 [[file:../closed/cli-options-host-default-is-deprecated-mock.issue][--host default stored as :mock]] : FERME 2026-11-14 (2.4.8) : clautolisp
 =*AUTOLISP-HOST*= lisait =MOCK= sans =--host= et =NULL= pour =--host null/none= ;

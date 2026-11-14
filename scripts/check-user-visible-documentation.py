@@ -104,6 +104,41 @@ def environment_variables(source_paths):
     return [(name, [name]) for name in sorted(names)]
 
 
+OPTION_ENVIRONMENT_GROUP = re.compile(
+    r'^\s*\(:[a-z0-9-]+\s+"([A-Z0-9_]+)"\s+:(shared|clautolisp|alfe)\)',
+    re.MULTILINE)
+
+
+def option_environment_variables(program):
+    """The option-default variables PROGRAM reads, from the literal table
+    *OPTION-ENVIRONMENT-GROUPS* (autolisp-cli/source/environment.lisp).
+
+    cli-option-environment-defaults: those names are built from a suffix at
+    run time, so the getenv-literal scan above cannot see them; without this
+    the check would pass whatever the manuals say.  A :shared group gives
+    AUTOLISP_<S> and the program's own override (CLAUTOLISP_<S> or
+    ALFE_<S>); a group of one program gives only that program's."""
+    prefix = {"clautolisp": "CLAUTOLISP_", "alfe": "ALFE_"}[program]
+    text = read("clautolisp", "autolisp-cli", "source", "environment.lisp")
+    names = []
+    for suffix, scope in OPTION_ENVIRONMENT_GROUP.findall(text):
+        if scope == "shared":
+            names += ["AUTOLISP_" + suffix, prefix + suffix]
+        elif scope == program:
+            names.append(prefix + suffix)
+    if not names:
+        raise SystemExit("check-user-visible-documentation: no entry read "
+                         "from *OPTION-ENVIRONMENT-GROUPS* -- its shape changed")
+    return names
+
+
+def with_option_environment_variables(surfaces, program):
+    known = {name for name, _ in surfaces}
+    extra = [(name, [name]) for name in option_environment_variables(program)
+             if name not in known]
+    return sorted(surfaces + extra)
+
+
 def lisp_sources(*parts):
     """Every non-test .lisp under the given directory.
 
@@ -321,11 +356,15 @@ def build_checks():
                                  "source", "api.lisp")),
               [("clautolisp user manual", clautolisp_manual)]),
         Check("clautolisp environment variables",
-              environment_variables(lisp_sources("clautolisp")),
+              with_option_environment_variables(
+                  environment_variables(lisp_sources("clautolisp")),
+                  "clautolisp"),
               [("clautolisp documentation",
                 clautolisp_manual + clautolisp_man)]),
         Check("alfe environment variables",
-              environment_variables(lisp_sources("autolisp-front-end")),
+              with_option_environment_variables(
+                  environment_variables(lisp_sources("autolisp-front-end")),
+                  "alfe"),
               [("alfe documentation", alfe_manual + alfe_man)]),
         Check("options alfe transmits to an engine",
               engine_argv_tokens(backend_sources()),
