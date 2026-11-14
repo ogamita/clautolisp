@@ -28,7 +28,7 @@
 AutoLISP-side saver, and return the file's contents."
   (clautolisp.autolisp-runtime:reset-default-evaluation-context)
   (clautolisp.debug.ui:write-config-variable config)
-  (let ((path (merge-pathnames "aldo-conf-test.conf" (uiop:temporary-directory))))
+  (let ((path (uiop:tmpize-pathname (merge-pathnames "aldo-conf-test.conf" (uiop:temporary-directory)))))
     (unwind-protect
          (progn
            (%with-documented-aldo-writer
@@ -77,7 +77,7 @@ still produce a file that reads back — the bare form is a fallback, not a
 failure."
   (clautolisp.autolisp-runtime:reset-default-evaluation-context)
   (clautolisp.debug.ui:write-config-variable '((:pager-height . 42)))
-  (let ((path (merge-pathnames "aldo-conf-bare.conf" (uiop:temporary-directory)))
+  (let ((path (uiop:tmpize-pathname (merge-pathnames "aldo-conf-bare.conf" (uiop:temporary-directory))))
         (clautolisp.autolisp-builtins-core::*aldo-configuration-writer* nil))
     (unwind-protect
          (progn

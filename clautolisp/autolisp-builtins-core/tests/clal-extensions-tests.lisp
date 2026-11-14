@@ -345,7 +345,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
 
 (test aldo-config-save-load-roundtrip
   (setup-cador-context)
-  (let ((path (merge-pathnames "aldo-core-roundtrip.conf" (uiop:temporary-directory)))
+  (let ((path (uiop:tmpize-pathname (merge-pathnames "aldo-core-roundtrip.conf" (uiop:temporary-directory))))
         (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
     (unwind-protect
          (progn
@@ -377,7 +377,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
   ;; (prin1 semantics). The bug: the save used princ semantics, writing
   ;; (selection ascii [ ]) — not readable back as strings.
   (setup-cador-context)
-  (let ((path (merge-pathnames "aldo-core-strings.conf" (uiop:temporary-directory)))
+  (let ((path (uiop:tmpize-pathname (merge-pathnames "aldo-core-strings.conf" (uiop:temporary-directory))))
         (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
     (unwind-protect
          (progn
@@ -394,7 +394,7 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
 
 (test aldo-config-file-is-ascii-friendly
   (setup-cador-context)
-  (let ((path (merge-pathnames "aldo-core-ascii.conf" (uiop:temporary-directory)))
+  (let ((path (uiop:tmpize-pathname (merge-pathnames "aldo-core-ascii.conf" (uiop:temporary-directory))))
         (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
     (unwind-protect
          (progn

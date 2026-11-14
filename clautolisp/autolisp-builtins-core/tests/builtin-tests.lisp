@@ -13,6 +13,18 @@
 (defun temp-name-token ()
   (random 1000000000 *temp-name-random-state*))
 
+;;; The file the OPEN encoding fixtures create (%OPEN-FIXTURE-FORM). A fixed
+;;; /tmp/openenc.txt was left behind by one user's run and then refused to
+;;; every other user (the sticky /tmp: "Permission denied"), so it is per
+;;; process, in the temporary directory, with forward slashes (it goes inside
+;;; an AutoLISP string literal, where a Windows backslash would be an escape),
+;;; and %CAPTURE-ENC-DIAGNOSTICS deletes it after each run.
+(defvar *open-fixture-path*
+  (substitute #\/ #\\
+              (namestring (merge-pathnames (format nil "clautolisp-openenc-~D.txt"
+                                                   (temp-name-token))
+                                           (uiop:temporary-directory)))))
+
 (test builtin-registry-returns-subrs
   (let ((builtin (find-core-builtin "TYPE")))
     (is (typep builtin 'autolisp-subr))
@@ -6682,10 +6694,12 @@ sysvars."
           (or (clautolisp.autolisp-reader:find-autolisp-dialect dialect)
               (error "Unknown dialect keyword ~S" dialect))))
     (let* ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* sink)
-           (result (run-autolisp-string
-                    form-source
-                    :dialect dialect-struct
-                    :setup-fn #'%install-cador-and-core)))
+           (result (unwind-protect
+                        (run-autolisp-string
+                         form-source
+                         :dialect dialect-struct
+                         :setup-fn #'%install-cador-and-core)
+                     (uiop:delete-file-if-exists *open-fixture-path*))))
       (values result (get-output-stream-string sink)))))
 
 (test load-encoding-diagnostic-silent-under-clautolisp
@@ -6890,7 +6904,7 @@ sysvars."
 
 (defun %open-fixture-form (mode-or-encoding-clause)
   "Build a small OPEN-then-conditionally-close form that opens
-/tmp/openenc.txt under the given mode-and-encoding-clause text.
+*OPEN-FIXTURE-PATH* under the given mode-and-encoding-clause text.
 Used to drive the diagnostic-capture harness; the file is
 created/overwritten on disk, which we don't care about for the
 diagnostic check. OPEN may return nil when the requested encoding
@@ -6898,8 +6912,8 @@ isn't supported by the running CL impl (e.g. MBCS on SBCL); the
 guarded close keeps the harness from crashing on that path —
 the diagnostic of interest has already been emitted before OPEN
 attempts the I/O."
-  (format nil "(progn (setq f (open \"/tmp/openenc.txt\" ~A)) (if f (close f)) 0)"
-          mode-or-encoding-clause))
+  (format nil "(progn (setq f (open ~S ~A)) (if f (close f)) 0)"
+          *open-fixture-path* mode-or-encoding-clause))
 
 (test open-positional-autocad-silent-under-autocad
   (multiple-value-bind (result diagnostics)

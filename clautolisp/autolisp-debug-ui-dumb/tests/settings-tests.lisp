@@ -78,7 +78,7 @@ global store."
   (is (every #'stringp (clautolisp.debug.ui:xdg-config-dirs))))
 
 (test settings-save-load-roundtrip
-  (let ((path (merge-pathnames "aldo-roundtrip-test.conf" (uiop:temporary-directory))))
+  (let ((path (uiop:tmpize-pathname (merge-pathnames "aldo-roundtrip-test.conf" (uiop:temporary-directory)))))
     (unwind-protect
          (with-fresh-config
            (clautolisp.debug.ui:set-aldo-setting "navigator" "line")
@@ -125,7 +125,7 @@ global store."
 (test settings-conf-file-is-ascii-friendly
   ;; with code-point glyphs (the default), the saved file is pure ASCII and
   ;; uses bare lower-case symbols (no keywords, no raw Unicode)
-  (let ((path (merge-pathnames "aldo-ascii-test.conf" (uiop:temporary-directory))))
+  (let ((path (uiop:tmpize-pathname (merge-pathnames "aldo-ascii-test.conf" (uiop:temporary-directory)))))
     (unwind-protect
          (with-fresh-config
            (clautolisp.debug.ui:save-aldo-configuration path)
