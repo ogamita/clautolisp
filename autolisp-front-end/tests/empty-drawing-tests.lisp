@@ -21,6 +21,20 @@ another user's in the sticky /tmp, unwritable here -- is never reused."
       (when (nth-value 1 (ensure-directories-exist path))
         (return path)))))
 
+(defmacro %with-temp-dirs (bindings &body body)
+  "Bind each (VAR TAG) of BINDINGS to a fresh %TEMP-DIR, run BODY, then
+remove the directories: they used to stay in the temporary directory, a
+few more after every run."
+  `(let ,(loop for (var) in bindings collect `(,var nil))
+     (unwind-protect
+          (progn
+            ,@(loop for (var tag) in bindings collect `(setf ,var (%temp-dir ,tag)))
+            ,@body)
+       (dolist (dir (list ,@(mapcar #'first bindings)))
+         (when dir
+           (ignore-errors
+            (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))))))
+
 (test the-empty-drawing-is-carried-in-the-image
   "The bytes are read at COMPILE time and live in the image, so alfe
 needs nothing beside it on disk. A zero-length resource would mean the
@@ -37,34 +51,36 @@ an empty file."
 (test each-invocation-gets-its-own-drawing
   "The point of the whole exercise. Two runs must not be handed the same
 file: one CAD holding the lock is what makes the next one show a modal."
-  (let* ((a (alfe.drawing:fresh-empty-dwg (%temp-dir "a")))
-         (b (alfe.drawing:fresh-empty-dwg (%temp-dir "b"))))
-    (is (not (null a)))
-    (is (not (null b)))
-    (is (not (equal (namestring a) (namestring b))))
-    (is (probe-file a))
-    (is (probe-file b))))
+  (%with-temp-dirs ((dir-a "a") (dir-b "b"))
+    (let* ((a (alfe.drawing:fresh-empty-dwg dir-a))
+           (b (alfe.drawing:fresh-empty-dwg dir-b)))
+      (is (not (null a)))
+      (is (not (null b)))
+      (is (not (equal (namestring a) (namestring b))))
+      (is (probe-file a))
+      (is (probe-file b)))))
 
 (test a-fresh-drawing-is-a-faithful-copy
   "It has to be the SAME drawing every time, or a run's behaviour would
 depend on which copy it got."
-  (let ((path (alfe.drawing:fresh-empty-dwg (%temp-dir "copy"))))
-    (with-open-file (in path :element-type '(unsigned-byte 8))
-      (let ((bytes (make-array (file-length in) :element-type '(unsigned-byte 8))))
-        (read-sequence bytes in)
-        (is (equalp bytes alfe.drawing:*empty-dwg-contents*))))))
+  (%with-temp-dirs ((dir "copy"))
+    (let ((path (alfe.drawing:fresh-empty-dwg dir)))
+      (with-open-file (in path :element-type '(unsigned-byte 8))
+        (let ((bytes (make-array (file-length in) :element-type '(unsigned-byte 8))))
+          (read-sequence bytes in)
+          (is (equalp bytes alfe.drawing:*empty-dwg-contents*)))))))
 
 (test a-fresh-drawing-replaces-whatever-was-there
   "A workdir is fresh per run, but the name inside it is fixed, so
 writing must not depend on the file being absent -- and must not append
 to a partial file left by a crash."
-  (let* ((dir (%temp-dir "clobber"))
-         (path (merge-pathnames "empty.dwg" dir)))
-    (with-open-file (out path :direction :output :if-exists :supersede)
-      (write-string "not a drawing" out))
-    (alfe.drawing:fresh-empty-dwg dir)
-    (with-open-file (in path :element-type '(unsigned-byte 8))
-      (is (= (file-length in) (alfe.drawing:empty-dwg-size))))))
+  (%with-temp-dirs ((dir "clobber"))
+    (let ((path (merge-pathnames "empty.dwg" dir)))
+      (with-open-file (out path :direction :output :if-exists :supersede)
+        (write-string "not a drawing" out))
+      (alfe.drawing:fresh-empty-dwg dir)
+      (with-open-file (in path :element-type '(unsigned-byte 8))
+        (is (= (file-length in) (alfe.drawing:empty-dwg-size)))))))
 
 (test an-unwritable-directory-declines-rather-than-fails-the-run
   "FRESH-EMPTY-DWG is a courtesy: a backend that cannot get a drawing
