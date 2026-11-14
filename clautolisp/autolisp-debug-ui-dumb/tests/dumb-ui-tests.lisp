@@ -1180,8 +1180,13 @@
   (is (not (clautolisp.ui.dumb::nav-lsp-file-p #p"/x/foo.txt"))))
 
 (test nav-directory-entries-and-initial-index
+  ;; A per-process name: a fixed one, left by another user's run, would be
+  ;; unwritable here (the sticky /tmp). The state is seeded per process --
+  ;; every SBCL image starts with the same default *RANDOM-STATE*.
   (let ((base (uiop:ensure-directory-pathname
-               (merge-pathnames "clal-navdir-test" (uiop:temporary-directory)))))
+               (merge-pathnames (format nil "clal-navdir-test-~36R"
+                                        (random (expt 36 8) (make-random-state t)))
+                                (uiop:temporary-directory)))))
     (unwind-protect
          (progn
            (ensure-directories-exist (merge-pathnames "sub/keep" base))
@@ -1206,7 +1211,7 @@
       (ignore-errors (uiop:delete-directory-tree base :validate t)))))
 
 (test nav-file-form-index-for-line
-  (let ((path (merge-pathnames "clal-navfile-test.lsp" (uiop:temporary-directory))))
+  (let ((path (uiop:tmpize-pathname (merge-pathnames "clal-navfile-test.lsp" (uiop:temporary-directory)))))
     (unwind-protect
          (progn
            (with-open-file (s path :direction :output :if-exists :supersede
@@ -1245,7 +1250,7 @@
     (is (null (k "z")))))
 
 (test nav-make-file-loc-is-a-file-location-selecting-line
-  (let ((path (merge-pathnames "clal-navfileloc-test.lsp" (uiop:temporary-directory))))
+  (let ((path (uiop:tmpize-pathname (merge-pathnames "clal-navfileloc-test.lsp" (uiop:temporary-directory)))))
     (unwind-protect
          (progn
            (with-open-file (s path :direction :output :if-exists :supersede
@@ -1258,7 +1263,7 @@
       (ignore-errors (delete-file path)))))
 
 (test nav-make-file-loc-empty-file-selects-nil
-  (let ((path (merge-pathnames "clal-navempty-test.lsp" (uiop:temporary-directory))))
+  (let ((path (uiop:tmpize-pathname (merge-pathnames "clal-navempty-test.lsp" (uiop:temporary-directory)))))
     (unwind-protect
          (progn
            (with-open-file (s path :direction :output :if-exists :supersede
@@ -1311,7 +1316,7 @@
   ;; breakpoint is recorded (no metadata exists). `lb' lists it. Loading the
   ;; file and instrumenting the function arms it as a real breakpoint on the
   ;; session's thread-debug-info, at the recorded form.
-  (let ((path (merge-pathnames "clal-vb-test.lsp" (uiop:temporary-directory))))
+  (let ((path (uiop:tmpize-pathname (merge-pathnames "clal-vb-test.lsp" (uiop:temporary-directory)))))
     (unwind-protect
          (progn
            (with-open-file (s path :direction :output :if-exists :supersede
