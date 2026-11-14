@@ -65,6 +65,15 @@ is exercised, not just a leaf one."
       (format s "deep~%"))
     (namestring root)))
 
+(defmacro %with-case-tree ((dir) &body body)
+  "Run BODY with DIR bound to a fresh %CASE-TREE, removed afterwards: the
+trees used to stay in the temporary directory, hundreds of them, one of
+which a later run (another user's, in the sticky /tmp) could not write."
+  `(let ((,dir (%case-tree)))
+     (unwind-protect (progn ,@body)
+       (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname ,dir)
+                                                  :validate t)))))
+
 (defun %case-sensitive-filesystem-p (directory)
   "Ask DIRECTORY's filesystem whether it distinguishes case, by probing a
 file that exists under a known spelling through a different one. This is
@@ -131,13 +140,13 @@ would prove nothing here")))
 (test case-insensitive-paths-off-leaves-a-miscased-path-unfound
   ;; The feature must not change what happens when it is off: this is the
   ;; failure the request describes, and at 0 it stays exactly that.
-  (let ((dir (%case-tree)))
+  (%with-case-tree (dir)
     (%case-host 0)
     (%when-case-sensitive (dir)
       (is (null (%findfile (concatenate 'string dir "dial/sigfic.lsp")))))))
 
 (test case-insensitive-paths-on-finds-a-miscased-path
-  (let ((dir (%case-tree)))
+  (%with-case-tree (dir)
     (%case-host 1)
     (%when-case-sensitive (dir)
       (is (%findfile (concatenate 'string dir "dial/sigfic.lsp"))))))
@@ -146,7 +155,7 @@ would prove nothing here")))
   ;; The request is explicit that normalising matters as much as
   ;; resolving: what findfile returns gets stored and reused, so handing
   ;; back the name as written would work once and fail on the next round.
-  (let ((dir (%case-tree)))
+  (%with-case-tree (dir)
     (%case-host 1)
     (%when-case-sensitive (dir)
       (let ((found (%findfile (concatenate 'string dir "dial/sigfic.lsp"))))
@@ -159,7 +168,7 @@ would prove nothing here")))
 (test case-insensitive-paths-fold-every-component-not-just-the-leaf
   ;; a/B/c against A/b/C: each component is wrong in a different way, so
   ;; a resolver that folded only the last one would fail here.
-  (let ((dir (%case-tree)))
+  (%with-case-tree (dir)
     (%case-host 1)
     (%when-case-sensitive (dir)
       (let ((found (%findfile (concatenate 'string dir "a/B/c/DEEP.TXT"))))
@@ -170,7 +179,7 @@ would prove nothing here")))
   ;; Rule 1 of the request: an exact match wins, and it must not even
   ;; list the directory. Observable through the warning: an exact hit
   ;; folds nothing, so it says nothing.
-  (let ((dir (%case-tree)))
+  (%with-case-tree (dir)
     (%case-host 1)
     (let ((*error-output* (make-string-output-stream)))
       (is (%findfile (concatenate 'string dir "DIAL/SIGFIC.LSP")))
@@ -180,7 +189,7 @@ would prove nothing here")))
   ;; The warning is what keeps this from being a carpet to sweep under:
   ;; the run proceeds AND the developer learns the path would fail on a
   ;; strict filesystem, and under which name it really lives.
-  (let ((dir (%case-tree)))
+  (%with-case-tree (dir)
     (%case-host 1)
     (%when-case-sensitive (dir)
       (let ((*error-output* (make-string-output-stream)))
@@ -196,7 +205,7 @@ would prove nothing here")))
   ;; Two entries differing only by case can coexist on a case-sensitive
   ;; filesystem. Choosing one silently would be worse than the failure
   ;; this feature removes -- the program would read a file nobody named.
-  (let ((dir (%case-tree)))
+  (%with-case-tree (dir)
     (%case-host 1)
     (%when-case-sensitive (dir)
       (with-open-file (s (merge-pathnames "twin.txt" dir)
@@ -221,7 +230,7 @@ would prove nothing here")))
   ;; The delicate half of the request. (open "Rapport.txt" "w") must
   ;; create Rapport.txt and must NOT land on a pre-existing RAPPORT.TXT,
   ;; which would overwrite a file the author never named.
-  (let ((dir (%case-tree)))
+  (%with-case-tree (dir)
     (%case-host 1)
     (%when-case-sensitive (dir)
       (with-open-file (s (merge-pathnames "RAPPORT.TXT" dir)
@@ -245,7 +254,7 @@ would prove nothing here")))
   ;; Creation takes the LEAF as written; the directories leading to it
   ;; are still resolved, which is what makes writing into DIAL/ work when
   ;; the program spelled it dial/.
-  (let ((dir (%case-tree)))
+  (%with-case-tree (dir)
     (%case-host 1)
     (%when-case-sensitive (dir)
       (let ((stream (clautolisp.autolisp-builtins-core::builtin-open
@@ -264,7 +273,7 @@ would prove nothing here")))
   ;; directory. It must not turn into a way of missing a file the same
   ;; run has just created, so a miss re-reads the directory once before
   ;; concluding.
-  (let ((dir (%case-tree)))
+  (%with-case-tree (dir)
     (%case-host 1)
     (%when-case-sensitive (dir)
       ;; populate the cache for DIR by resolving something else in it
@@ -346,7 +355,7 @@ be OUR invention rather than fidelity to the emulated engine."
   "The behaviour, not just the cell: the resolver reads the sysvar off the
 host, so a bricscad-dialect session with it set must fold the case -- the
 thing the issue reported as not happening."
-  (let ((dir (%case-tree)))
+  (%with-case-tree (dir)
     (clautolisp.autolisp-runtime:reset-default-evaluation-context)
     (let* ((session (clautolisp.autolisp-runtime:evaluation-context-session
                      (clautolisp.autolisp-runtime:current-evaluation-context)))
