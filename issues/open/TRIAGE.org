@@ -1052,6 +1052,11 @@ commande > =CLAUTOLISP_X= / =ALFE_X= > =AUTOLISP_X= > defaut ; groupes
 (--strict ecarte AUTOLISP_DIALECT), encodages et -O en couche sous la ligne de
 commande ; un clautolisp pilote par alfe (--front-end-bindings) n en lit
 aucune ; six entrees mortes d alfe retirees ; AUTOLISP_ALDB_LISTEN inclus.
+** DONE windows-ssh-build-lacks-appdata (P3)
+[[file:../closed/windows-ssh-build-lacks-appdata.issue][make over ssh on Windows: Invalid pathname #P"config/"]] : FERME 2026-11-15 (2.4.11) :
+une session ssh Windows n a ni USERPROFILE ni LOCALAPPDATA ni APPDATA, UIOP
+calcule #P"config/" relatif et SBCL meurt en chargeant Quicklisp ;
+scripts/windows-environment.mk (inclus par les 5 Makefiles a Lisp) les fournit.
 ** DONE deferred-alfe-autolisp-backend-yields-to-selector (P3)
 [[file:../closed/deferred-alfe-autolisp-backend-yields-to-selector.issue][$AUTOLISP_BACKEND conflicts with --autocad]] : FERME 2026-11-15 (2.4.10) :
 $AUTOLISP_BACKEND lu apres argv, seulement sans selecteur, --cad/ALFE_CAD ni

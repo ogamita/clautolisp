@@ -101,6 +101,11 @@ refactors with no user-visible effect do not require an entry.
   ~--lax~. Line numbers after a multi-line string literal are right again.
   See the user manual, /Line breaks inside a string literal/.
 
+- Building on Windows from an ssh session works: the Makefiles supply the
+  missing =USERPROFILE= / =LOCALAPPDATA= / =APPDATA=, without which SBCL died
+  loading Quicklisp (/Invalid pathname #P"config/"/). 2.4.11. See
+  =INSTALL.org=, /Windows \/ MSYS2/.
+
 - Windows releases bundle recursive non-system DLL dependencies and their
   license notices, so startup and DWG saves work without MSYS2 on PATH.
   See the user manual, /Windows release installation/.

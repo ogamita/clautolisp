@@ -13,6 +13,9 @@ DOCUMENTATION_BIN ?= $(shell sh ../scripts/resolve-documentation-bin.sh)
 ifneq ($(DOCUMENTATION_BIN),)
 export PATH := $(DOCUMENTATION_BIN):$(PATH)
 endif
+# Over ssh, Windows gives no LOCALAPPDATA/APPDATA and UIOP cannot start:
+# supply them (scripts/windows-environment.mk).
+include ../scripts/windows-environment.mk
 SBCL   ?= sbcl
 CCL    ?= ccl
 

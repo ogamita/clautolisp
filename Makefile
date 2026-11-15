@@ -1,3 +1,6 @@
+# Over ssh, Windows gives no LOCALAPPDATA/APPDATA and UIOP cannot start:
+# supply them (scripts/windows-environment.mk).
+include scripts/windows-environment.mk
 SUBPROJECTS := autolisp-spec clautolisp autolisp-test autolisp-front-end autolisp-benchmark
 CLAUTOLISP_CI_IMAGE ?= registry.gitlab.com/ogamita/clautolisp/clautolisp-ci:latest
 CLAUTOLISP_CI_DOCKERFILE ?= clautolisp/docker/Dockerfile
@@ -401,7 +404,11 @@ check-libredwg-stable-release:  ## Ask GitHub whether LibreDWG has a newer STABL
 check-windows-runtime-dlls:  ## Test recursive Windows runtime DLL staging and missing-import failures.
 	bash scripts/tests/test-bundle-windows-dlls.sh
 
-check-release: check-windows-runtime-dlls check-embedded-engine-version check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep check-libredwg-release  ## Every release-packaging check.
+.PHONY: check-windows-make-environment
+check-windows-make-environment:  ## Test that the Makefiles supply LOCALAPPDATA/APPDATA on a Windows shell that lacks them (ssh).
+	bash scripts/tests/test-windows-environment-mk.sh
+
+check-release: check-windows-runtime-dlls check-windows-make-environment check-embedded-engine-version check-release-artefact-set check-release-collect-needs check-ci-dotenv-rules check-release-lane-integrity check-nightly-sweep-isolation check-cad-sweep-gating check-stale-pipeline-sweep check-libredwg-release  ## Every release-packaging check.
 
 # avec-bash.ps1 drives the Windows release lane and cannot run on this host
 # (no PowerShell, pjb 2026-08-16: do not install it). A container gives the
