@@ -182,11 +182,15 @@ REG (the table), JOURNAL (its path) and KEY (the subkey)."
                (progn
                  (is (= (length subkeys) (length token)))
                  (dolist (s subkeys)
-                   (is (member entry
-                               (alfe.backend.autocad::split-trustedpaths
-                                (alfe.backend.autocad::%hkcu-read-value s "TRUSTEDPATHS"))
-                               :test #'string=)
-                       "~A holds ~A" s entry)))
+                   ;; The value read back is part of the message: a pfenny run
+                   ;; once failed here for one profile only and could not be
+                   ;; reproduced, and "holds ENTRY" alone said nothing of why.
+                   (let ((read-back (multiple-value-list
+                                     (alfe.backend.autocad::%hkcu-read-value s "TRUSTEDPATHS"))))
+                     (is (member entry
+                                 (alfe.backend.autocad::split-trustedpaths (first read-back))
+                                 :test #'string=)
+                         "~A holds ~A~%read back: ~S" s entry read-back))))
             (alfe.backend.autocad::untrust-workdir token))
           (loop for s in subkeys
                 for (data) in before
