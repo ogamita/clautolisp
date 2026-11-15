@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: cli-option-environment-defaults — an environment variable for the default of every option that sets run state
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: feature
 #+DEPENDS: -
@@ -144,3 +144,78 @@ conformance sandbox, which already clears =AUTOLISP_NO_INIT= /
   the =--help= texts that name a variable; =make
   check-user-visible-documentation= green; =RELEASE_NOTES.org= entries;
   clautolisp + alfe version bumped together.
+
+* Decisions taken before implementing (pjb, 2026-11-14)
+
+The table above contradicted its own naming rule, and left one row open.
+Asked and answered:
+
+1. *Prefix of the shared options alfe forwards* (=--dcl=, =--on-error=,
+   =--on-interrupt=, =--on-quit=, =--debugger-ui=, =--dribble[-interactors]=):
+   =AUTOLISP_*=, not the =CLAUTOLISP_*= the table showed. They are common
+   options; =CLAUTOLISP_*= alone stays for clautolisp's own (=--trace=, =-O=).
+2. *Per-program override layer*: KEPT, as filed --
+   command line > =CLAUTOLISP_<X>= / =ALFE_<X>= > =AUTOLISP_<X>= > default.
+3. *=--aldb-listen=*: gets =AUTOLISP_ALDB_LISTEN=.
+
+* Resolved (clautolisp / alfe 2.4.9, 2026-11-14)
+
+What shipped:
+
+- =clautolisp/autolisp-cli/source/environment.lisp=: the literal table
+  =*OPTION-ENVIRONMENT-GROUPS*= (30 shared groups, =TRACE= / =OPTIMIZE= for
+  clautolisp, =CAD= / =BACKEND_VARIANT= for alfe: 94 variable names) and
+  =APPLY-ENVIRONMENT-DEFAULTS=. Each =option-spec= names its GROUP
+  (new slots =environment=, =environment-handler=, =environment-layer-p=);
+  the parser records the groups the command line set
+  (=cli-options-given-environment-groups=), and the defaults fill only the
+  others -- so =--strict= keeps =AUTOLISP_DIALECT= out, =-q= keeps
+  =AUTOLISP_VERBOSITY= out (the variable SETS a level; it does not go through
+  the additive flag rule), and alfe's =--autocad= keeps =ALFE_CAD= out without
+  tripping the backend-conflict check.
+- Layered groups: the -E encodings and replacements get their own
+  environment tables (=cli-options-environment-situation-encodings= /
+  =-encoding-replacements=), consulted after the whole command line, so a bare
+  =-E utf-8= beats =AUTOLISP_SOURCE_ENCODING=; =CLAUTOLISP_OPTIMIZE='s pairs
+  go before the command line's.
+- Variables are read through =*ENVIRONMENT-GETENV*= (tests bind a table; the
+  three in-process suites bind an empty one so a developer's own exports do
+  not change their results). Empty = unset; an invalid value is a usage error
+  naming the variable (exit 64).
+- *alfe → clautolisp child*: a clautolisp given =--front-end-bindings=
+  (which alfe passes on every real =--backend subprocess= run) reads none of
+  the variables. alfe resolves them and forwards the result on the child's
+  argv; =ENCODING-REPLACEMENT-OPTION-ARGUMENTS= now forwards the RESOLVED
+  policies. No change to alfe's own process environment was needed.
+- alfe: =AUTOLISP_DWG= moved from alfe's own table to the shared one (gains
+  =ALFE_DWG=); the six never-read entries (=AUTOLISP_OS=,
+  =AUTOLISP_REMOTE_IO_MODE=, =AUTOCAD_INSTALL=, =AUTOCAD_VERSION=,
+  =BRICSCAD_INSTALL=, =BRICSCAD_VERSION=) are gone (the alfe specification
+  marks the two it had proposed as not implemented). alfe's other own
+  variables (=AUTOLISP_MODE=, =AUTOLISP_WORKDIR=, ...) keep their existing
+  mechanism. When a variable makes the run the clautolisp program's
+  (=AUTOLISP_HOST=cadtui=, =AUTOLISP_DRIBBLE=, =AUTOLISP_DCL=gui=), the
+  =--backend direct= usage error names the variable.
+- The conformance sandbox clears every option variable, the list taken from
+  the table (=OPTION-ENVIRONMENT-VARIABLE-NAMES=).
+- =scripts/check-user-visible-documentation.py= reads the table (the
+  getenv-literal scan cannot see composed names); it failed with 119 missing
+  names before the manuals were written, and passes after.
+- Documentation: clautolisp user manual /Environment variables/ › /Option
+  defaults/, alfe user manual /Option defaults/ › /The options alfe shares
+  with clautolisp/, both man pages' ENVIRONMENT, the alfe specification,
+  RELEASE_NOTES.
+
+Tests: =autolisp-cli/tests/environment-tests.lisp= (table/spec agreement,
+precedence, groups, verbosity, encoding layers, replacements, booleans,
+optional values, error naming), =tools/clautolisp/tests/environment-option-
+tests.lisp= (=CLAUTOLISP_TRACE=, =CLAUTOLISP_OPTIMIZE= layering, dribble,
+override, the driven program ignoring the variables), alfe =cli-tests.lisp=
+(=ALFE_<X>= over =AUTOLISP_<X>=, =ALFE_CAD= vs a selector,
+=ALFE_BACKEND_VARIANT= vs =--attach-pid=, =AUTOLISP_DWG= / =ALFE_DWG=, the
+error naming =AUTOLISP_HOST=cadtui=). Checked end to end on the built
+clautolisp-sbcl 2.4.9.
+
+Not done here (out of this issue's scope): alfe's pre-seeded =AUTOLISP_BACKEND=
+still conflicts with an explicit =--autocad= / =--bricscad= rather than
+yielding to it -- see =deferred-alfe-autolisp-backend-yields-to-selector=.

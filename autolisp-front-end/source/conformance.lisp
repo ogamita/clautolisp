@@ -251,7 +251,9 @@ ENV-VAR-NAMES are evaluated once at expansion time as a literal
 list of strings, matching the way the caller in RUN-SCENARIO
 spells the names inline."
   `(call-with-sandboxed-init-env
-    ,workdir (list ,@env-var-names)
+    ,workdir (loop for name in (list ,@env-var-names)
+                   ;; a NAME may also be a list of names (computed)
+                   if (listp name) append name else collect name)
     (lambda () ,@body)))
 
 (defun current-os-keyword ()
@@ -338,12 +340,18 @@ autocad) at the start of every scenario."
                     ;; asserts against an AutoCAD-absent baseline. The
                     ;; macOS AutoCAD bundles are hidden for the same
                     ;; reason (CALL-WITHOUT-INSTALLED-AUTOCAD).
+                    ;; The option-default variables (AUTOLISP_DIALECT,
+                    ;; ALFE_HOST, ...) are cleared for the same reason: a
+                    ;; scenario's argv is its whole configuration. The list
+                    ;; comes from the shared table, so a new variable is
+                    ;; cleared without anyone remembering to add it here.
                     (exit-code
                       (with-sandboxed-init-env
                           (workdir
                            "HOME" "AUTOLISP_NO_INIT"
                            "ALFE_NO_INIT" "CLAUTOLISP_NO_INIT"
-                           "AUTOLISP_KEEP_WORKDIR" "AUTOCAD_ACCORECONSOLE")
+                           "AUTOLISP_KEEP_WORKDIR" "AUTOCAD_ACCORECONSOLE"
+                           (clautolisp.autolisp-cli:option-environment-variable-names))
                         (call-without-installed-autocad
                          scenario workdir
                          (lambda ()

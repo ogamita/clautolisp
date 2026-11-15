@@ -530,8 +530,55 @@ Backend selector defaults; explicit
 .BR \-\-clautolisp " / " \-\-bricscad " / " \-\-autocad
 overrides.
 .TP
-.B AUTOLISP_BOOTSTRAP_PHASE\fR, \fBAUTOLISP_DWG\fR, \fBAUTOLISP_TEMPLATE
+.B AUTOLISP_BOOTSTRAP_PHASE\fR, \fBAUTOLISP_TEMPLATE
 CAD-side defaults.
+.TP
+\fBAUTOLISP_\fIX\fR, \fBALFE_\fIX\fR
+The default of an option alfe shares with clautolisp, when the command line
+does not give it: command line, then
+.BI ALFE_ X\fR,
+then
+.BI AUTOLISP_ X
+(read by clautolisp too), then the built-in default.
+.I X
+is
+.BR HOST ,
+.BR DIALECT ,
+.BR VERBOSITY ,
+.BR DWG ,
+.BR DCL ,
+.BR DRIBBLE ,
+.BR DRIBBLE_INTERACTORS ,
+.BR ON_ERROR ,
+.BR ON_INTERRUPT ,
+.BR ON_QUIT ,
+.BR DEBUGGER_UI ,
+.BR ALDB_LISTEN ,
+.BR ENCODING ,
+the per-situation
+.BI SITUATION [_ DIR ]_ENCODING
+and the three
+.B *ENCODING_REPLACEMENT
+variables.
+.B ALFE_CAD
+and
+.B ALFE_BACKEND_VARIANT
+stand for
+.B \-\-cad
+and
+.BR \-\-backend .
+Any option of a group keeps its variable out; an invalid value is a usage
+error naming the variable. Under
+.B \-\-clautolisp
+alfe resolves them and passes the result to its engine on the engine's
+command line; the clautolisp it starts reads none of them. A variable that
+makes the run the clautolisp program's
+.RB ( AUTOLISP_HOST=cadtui ,
+.BR AUTOLISP_DRIBBLE ,
+.BR AUTOLISP_DCL=gui )
+selects the subprocess variant, as its option does. Full table: the user
+manual,
+.IR "Environment variables / Option defaults" .
 .TP
 .B ALFE_CLAUTOLISP_BIN
 The

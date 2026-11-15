@@ -131,6 +131,24 @@
    #:option-spec-takes-arg-p
    #:option-spec-optional-arg-p
    #:option-spec-handler
+   #:option-spec-environment
+   #:option-spec-environment-handler
+   #:option-spec-environment-layer-p
+   ;; option defaults from the environment (environment.lisp)
+   #:*option-environment-groups*
+   #:*environment-getenv*
+   #:option-environment-variables
+   #:option-environment-variable-names
+   #:apply-environment-defaults
+   #:option-environment-source
+   #:environment-boolean
+   #:parse-verbosity
+   #:encoding-environment-group
+   #:encoding-replacement-environment-group
+   #:cli-options-environment-situation-encodings
+   #:cli-options-environment-encoding-replacements
+   #:cli-options-given-environment-groups
+   #:cli-options-environment-sources
    #:*common-option-specs*
    #:parse-arguments-with-spec
 

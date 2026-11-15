@@ -20,7 +20,12 @@ start/stop/toggle logic, and the debugger (aldo) CLI options.")
 ;;; /tmp was then unwritable to the next user's (Permission denied). Each
 ;;; suite run gets a state seeded from the system instead.
 (defun run-all-tests ()
-  (let ((results (let ((*random-state* (make-random-state t))) (run 'clautolisp-tool-suite))))
+  ;; The suite also parses command lines in-process: the developer's own
+  ;; AUTOLISP_* / CLAUTOLISP_* option variables must not change the results.
+  ;; A test that is about them binds *ENVIRONMENT-GETENV* to a table.
+  (let ((results (let ((*random-state* (make-random-state t))
+                       (clautolisp.autolisp-cli:*environment-getenv* (constantly nil)))
+                   (run 'clautolisp-tool-suite))))
     (explain! results)
     (unless (results-status results)
       (error "clautolisp.tools.clautolisp tests failed."))))

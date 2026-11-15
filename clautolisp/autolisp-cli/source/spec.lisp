@@ -28,7 +28,20 @@
   ;; `--opt` does not consume the following argv element and the
   ;; handler receives VALUE = nil (e.g. `--dribble` / `--dribble=FILE`).
   (optional-arg-p nil :type boolean)
-  (handler nil :type (or null function)))
+  (handler nil :type (or null function))
+  ;; The option GROUP this spec belongs to for environment defaults
+  ;; (*OPTION-ENVIRONMENT-GROUPS*, environment.lisp), or NIL: an option with
+  ;; no environment variable. Every spec of a group marks the group as given
+  ;; on the command line (--strict as much as --dialect suppresses
+  ;; AUTOLISP_DIALECT).
+  (environment nil :type symbol)
+  ;; How the group's environment value is applied, when the default rule
+  ;; (the spec's own HANDLER) will not do: (lambda (opts value variable)).
+  (environment-handler nil :type (or null function))
+  ;; True when that handler writes a layer BELOW the command line (the
+  ;; encodings, -O): it then applies even when the command line set the
+  ;; group, the command line still winning.
+  (environment-layer-p nil :type boolean))
 
 (defparameter *verbosity-rank*
   '((:debug   . 0)
@@ -174,28 +187,74 @@ CLI-SITUATION-ENCODING, so the bare -E reaches them too, a specific option
 winning over it whatever the order (it used to set neither: -E UTF-8 left the
 source encoding alone)."
   (push (cons key canon) (cli-options-situation-encodings opts))
-  (setf (cli-options-load-encoding opts) (cli-situation-encoding opts "source")
-        (cli-options-io-encoding opts) (cli-situation-encoding opts "terminal")))
+  (%refresh-legacy-encoding-slots opts))
+
+(defun %situation-table-lookup (tbl situation direction all-p)
+  "SITUATION's encoding in one table: <name>/<dir>, then <name>, then (when
+ALL-P) the bare \"all\"."
+  (or (and direction
+           (cdr (assoc (format nil "~A/~A" situation direction) tbl :test #'string=)))
+      (cdr (assoc situation tbl :test #'string=))
+      (and all-p (cdr (assoc "all" tbl :test #'string=)))))
 
 (defun cli-situation-encoding (opts situation &optional direction)
   "The user-requested encoding for SITUATION (and optional DIRECTION), by
 precedence: the specific <name>/<dir> override, then <name> (both
-directions), then the bare \"all\"; NIL when nothing was set (the caller
+directions), then the bare \"all\" -- first among the command-line options,
+then the same three among the environment variables (AUTOLISP_..._ENCODING,
+a layer below the whole command line); NIL when nothing was set (the caller
 then falls through to the variable/fixed default for that boundary)."
-  (let ((tbl (cli-options-situation-encodings opts)))
-    (or (and direction
-             (cdr (assoc (format nil "~A/~A" situation direction) tbl :test #'string=)))
-        (cdr (assoc situation tbl :test #'string=))
-        (cdr (assoc "all" tbl :test #'string=)))))
+  (or (%situation-table-lookup (cli-options-situation-encodings opts)
+                               situation direction t)
+      (%situation-table-lookup (cli-options-environment-situation-encodings opts)
+                               situation direction t)))
 
 (defun cli-situation-encoding-explicit (opts situation &optional direction)
-  "Like CLI-SITUATION-ENCODING without the bare -E fallback: only an option
-that names SITUATION. For the boundaries a bare -E must not reach -- a
-product-fixed device, where a blanket choice would silently override it."
-  (let ((tbl (cli-options-situation-encodings opts)))
-    (or (and direction
-             (cdr (assoc (format nil "~A/~A" situation direction) tbl :test #'string=)))
-        (cdr (assoc situation tbl :test #'string=)))))
+  "Like CLI-SITUATION-ENCODING without the bare -E fallback (nor the bare
+AUTOLISP_ENCODING): only an option or variable that names SITUATION. For the
+boundaries a bare -E must not reach -- a product-fixed device, where a
+blanket choice would silently override it."
+  (or (%situation-table-lookup (cli-options-situation-encodings opts)
+                               situation direction nil)
+      (%situation-table-lookup (cli-options-environment-situation-encodings opts)
+                               situation direction nil)))
+
+;;; --- environment groups of the encoding options ----------------------
+;;;
+;;; The -E family is generated, so its environment groups are too: the
+;;; group of key "all" is :ENCODING, of "source" :SOURCE-ENCODING, of
+;;; "file/write" :FILE-WRITE-ENCODING. *OPTION-ENVIRONMENT-GROUPS*
+;;; (environment.lisp) lists each one literally with its variable name, and
+;;; a test checks the two agree.
+
+(defun encoding-environment-group (key)
+  "The environment group of the encoding option for KEY (\"all\",
+\"<situation>\" or \"<situation>/<dir>\")."
+  (if (string= key "all")
+      :encoding
+      (intern (format nil "~:@(~A~)-ENCODING" (substitute #\- #\/ key)) :keyword)))
+
+(defun encoding-replacement-environment-group (key)
+  "The environment group of the replacement option for KEY (\"all\",
+\"file/write\", \"terminal/out\")."
+  (if (string= key "all")
+      :encoding-replacement
+      (intern (format nil "~:@(~A~)-ENCODING-REPLACEMENT" (substitute #\- #\/ key))
+              :keyword)))
+
+(defun %refresh-legacy-encoding-slots (opts)
+  "Recompute the two legacy slots the downstream reads -- load-encoding
+(source) and io-encoding (terminal) -- from both layers."
+  (setf (cli-options-load-encoding opts) (cli-situation-encoding opts "source")
+        (cli-options-io-encoding opts) (cli-situation-encoding opts "terminal")))
+
+(defun %encoding-environment-handler (key)
+  "The environment handler of the encoding option for KEY: records the
+variable's encoding in the environment layer, under KEY."
+  (lambda (opts value variable)
+    (push (cons key (canonical-encoding-name value variable))
+          (cli-options-environment-situation-encodings opts))
+    (%refresh-legacy-encoding-slots opts)))
 
 (defun %encoding-option-specs ()
   "Generate the -E<situation>[-<dir>] / --<situation>[-<longdir>]-encoding
@@ -206,7 +265,10 @@ family + the bare -E/--encoding (sets every situation)."
                  :handler (lambda (opts value name)
                             (%encoding-store
                              opts "all"
-                             (canonical-encoding-name value (or name "-E"))))))))
+                             (canonical-encoding-name value (or name "-E"))))
+                 :environment (encoding-environment-group "all")
+                 :environment-handler (%encoding-environment-handler "all")
+                 :environment-layer-p t))))
     (dolist (sit *encoding-situations* (nreverse specs))
       (destructuring-bind (name . dirs) sit
         (push (make-option-spec
@@ -216,7 +278,10 @@ family + the bare -E/--encoding (sets every situation)."
                           (lambda (opts value nm)
                             (%encoding-store
                              opts k (canonical-encoding-name
-                                     value (or nm (format nil "-E~A" k)))))))
+                                     value (or nm (format nil "-E~A" k))))))
+               :environment (encoding-environment-group name)
+               :environment-handler (%encoding-environment-handler name)
+               :environment-layer-p t)
               specs)
         (dolist (dir dirs)
           (push (make-option-spec
@@ -225,7 +290,12 @@ family + the bare -E/--encoding (sets every situation)."
                  :handler (let ((k (format nil "~A/~A" name dir)))
                             (lambda (opts value nm)
                               (%encoding-store
-                               opts k (canonical-encoding-name value (or nm k))))))
+                               opts k (canonical-encoding-name value (or nm k)))))
+                 :environment (encoding-environment-group
+                               (format nil "~A/~A" name dir))
+                 :environment-handler (%encoding-environment-handler
+                                       (format nil "~A/~A" name dir))
+                 :environment-layer-p t)
                 specs))))))
 
 (defparameter *encoding-replacement-options*
@@ -236,37 +306,64 @@ family + the bare -E/--encoding (sets every situation)."
 KEY in the cli-options table, long name, short name. The bare one reaches
 every output situation, a specific one wins over it whatever the order.")
 
-(defun %encoding-replacement-store (opts key value option)
+(defun %encoding-replacement-store (opts key value option &key environment)
   "Record the replacement policy VALUE (validated, canonical spelling) under
-KEY, or signal a usage error naming OPTION."
+KEY, or signal a usage error naming OPTION. ENVIRONMENT true records it in the
+environment layer (an AUTOLISP_..._ENCODING_REPLACEMENT variable), below the
+command line."
   (let ((policy (clautolisp.autolisp-runtime:parse-encoding-replacement (or value ""))))
     (when (or (null policy) (eq policy :invalid))
       (error 'cli-usage-error
              :option option
              :message (format nil "~A expects one character, or error, low-byte, ~
 best-fit or escape; got ~S" option value)))
-    (push (cons key (clautolisp.autolisp-runtime:encoding-replacement-policy-name policy))
-          (cli-options-encoding-replacements opts))))
+    (let ((entry (cons key (clautolisp.autolisp-runtime:encoding-replacement-policy-name
+                            policy))))
+      (if environment
+          (push entry (cli-options-environment-encoding-replacements opts))
+          (push entry (cli-options-encoding-replacements opts))))))
+
+(defun %replacement-table-lookup (tbl situation all-p)
+  (or (and situation (cdr (assoc situation tbl :test #'string=)))
+      (and all-p (cdr (assoc "all" tbl :test #'string=)))))
 
 (defun cli-encoding-replacement (opts &optional situation)
   "The replacement policy name requested for SITUATION (\"file/write\" or
 \"terminal/out\"), or for every situation when SITUATION is NIL: the specific
-option, else the bare -Ereplacement; NIL when none was given (the dialect
-default then applies)."
-  (let ((tbl (cli-options-encoding-replacements opts)))
-    (or (and situation (cdr (assoc situation tbl :test #'string=)))
-        (cdr (assoc "all" tbl :test #'string=)))))
+option, else the bare -Ereplacement, then the same two among the environment
+variables; NIL when none was given (the dialect default then applies)."
+  (or (%replacement-table-lookup (cli-options-encoding-replacements opts) situation t)
+      (%replacement-table-lookup (cli-options-environment-encoding-replacements opts)
+                                 situation t)))
 
 (defun cli-encoding-replacement-explicit (opts situation)
-  "Only the option naming SITUATION (\"all\" for the bare one), or NIL."
-  (cdr (assoc situation (cli-options-encoding-replacements opts) :test #'string=)))
+  "Only the option naming SITUATION (\"all\" for the bare one), or NIL --
+then the variable naming it, unless the command line gave the bare
+-Ereplacement: the consumer falls back from a specific policy to the bare
+one, and the bare option must keep beating a specific variable."
+  (let ((command-line (cli-options-encoding-replacements opts)))
+    (cond ((assoc situation command-line :test #'string=)
+           (cdr (assoc situation command-line :test #'string=)))
+          ((and (string/= situation "all")
+                (assoc "all" command-line :test #'string=))
+           nil)
+          (t
+           (cdr (assoc situation (cli-options-environment-encoding-replacements opts)
+                       :test #'string=))))))
 
 (defun encoding-replacement-option-arguments (opts)
   "The argv fragment that gives a child clautolisp the replacement options of
-OPTS, short spellings, in the table's order: (\"-Ereplacement\" \"?\" ...)."
-  (loop for (key nil short) in *encoding-replacement-options*
-        for value = (cli-encoding-replacement-explicit opts key)
-        when value append (list short value)))
+OPTS, short spellings, in the table's order: (\"-Ereplacement\" \"?\" ...).
+It carries the RESOLVED policies -- command line over environment -- since a
+driven child ignores the environment: the bare one, then each specific one
+that differs from what the child would infer from the bare one."
+  (let ((all (cli-encoding-replacement opts nil)))
+    (loop for (key nil short) in *encoding-replacement-options*
+          for value = (if (string= key "all")
+                          all
+                          (let ((resolved (cli-encoding-replacement opts key)))
+                            (and resolved (not (equal resolved all)) resolved)))
+          when value append (list short value))))
 
 (defun %encoding-replacement-option-specs ()
   (loop for (key long short) in *encoding-replacement-options*
@@ -275,7 +372,13 @@ OPTS, short spellings, in the table's order: (\"-Ereplacement\" \"?\" ...)."
                  :handler (let ((k key) (default-name short))
                             (lambda (opts value name)
                               (%encoding-replacement-store
-                               opts k value (or name default-name)))))))
+                               opts k value (or name default-name))))
+                 :environment (encoding-replacement-environment-group key)
+                 :environment-handler (let ((k key))
+                                        (lambda (opts value variable)
+                                          (%encoding-replacement-store
+                                           opts k value variable :environment t)))
+                 :environment-layer-p t)))
 
 (defun %make-common-option-specs ()
   "Build the common-option-specs list once at load time. Returned as
@@ -337,16 +440,26 @@ specs without mutating the shared template."
    ;; user explicitly asked for.
    (make-option-spec
     :longs '("--quiet") :shorts '("-q") :takes-arg-p nil
+    :environment :verbosity
+    ;; AUTOLISP_VERBOSITY names a level and SETS it: the additive rule
+    ;; below is for flags on one command line, and an environment default
+    ;; must not outrank a -q the user typed (it applies only when no
+    ;; verbosity flag was given at all).
+    :environment-handler (lambda (opts value variable)
+                           (setf (cli-options-verbosity opts)
+                                 (parse-verbosity value variable)))
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (raise-verbosity opts :warn)))
    (make-option-spec
     :longs '("--verbose") :shorts '("-v") :takes-arg-p nil
+    :environment :verbosity
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (raise-verbosity opts :verbose)))
    (make-option-spec
     :longs '("--debug") :shorts '("-d") :takes-arg-p nil
+    :environment :verbosity
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (raise-verbosity opts :debug)))
@@ -354,34 +467,40 @@ specs without mutating the shared template."
    ;; --- dialect ---------------------------------------------------
    (make-option-spec
     :longs '("--dialect") :shorts nil :takes-arg-p t
+    :environment :dialect
     :handler (lambda (opts value name)
                (setf (cli-options-dialect opts)
                      (parse-dialect value name))))
    (make-option-spec
     :longs '("--strict") :shorts nil :takes-arg-p nil
+    :environment :dialect
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-dialect opts) :strict)))
    (make-option-spec
     :longs '("--autocad") :shorts nil :takes-arg-p nil
+    :environment :dialect
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-dialect opts) :autocad-2026
                      (cli-options-backend opts) :autocad)))
    (make-option-spec
     :longs '("--bricscad") :shorts nil :takes-arg-p nil
+    :environment :dialect
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-dialect opts) :bricscad-v26
                      (cli-options-backend opts) :bricscad)))
    (make-option-spec
     :longs '("--clautolisp") :shorts nil :takes-arg-p nil
+    :environment :dialect
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-dialect opts) :clautolisp
                      (cli-options-backend opts) :clautolisp)))
    (make-option-spec
     :longs '("--lax") :shorts nil :takes-arg-p nil
+    :environment :dialect
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-dialect opts) :lax)))
@@ -389,6 +508,7 @@ specs without mutating the shared template."
    ;; --- host ------------------------------------------------------
    (make-option-spec
     :longs '("--host") :shorts nil :takes-arg-p t
+    :environment :host
     :handler (lambda (opts value name)
                (setf (cli-options-host opts) (parse-host value name))))
 
@@ -400,6 +520,7 @@ specs without mutating the shared template."
    ;; stdout is a TTY, otherwise the TUI.
    (make-option-spec
     :longs '("--dcl") :shorts nil :takes-arg-p t
+    :environment :dcl
     :handler (lambda (opts value name)
                (setf (cli-options-dcl opts) (parse-dcl-mode value name))))
 
@@ -409,6 +530,7 @@ specs without mutating the shared template."
    ;; alfe has its own --dwg spec ahead of this one.
    (make-option-spec
     :longs '("--dwg") :shorts nil :takes-arg-p t
+    :environment :dwg
     :handler (lambda (opts value name)
                (declare (ignore name))
                (setf (cli-options-dwg opts) value)))
@@ -466,23 +588,28 @@ specs without mutating the shared template."
    ;; given: each program applies the context-dependent defaults itself.
    (make-option-spec
     :longs '("--on-error") :shorts nil :takes-arg-p t
+    :environment :on-error
     :handler (lambda (opts value name)
                (setf (cli-options-on-error opts) (parse-on-error value name))))
    (make-option-spec
     :longs '("--on-interrupt") :shorts nil :takes-arg-p t
+    :environment :on-interrupt
     :handler (lambda (opts value name)
                (setf (cli-options-on-interrupt opts) (parse-on-interrupt value name))))
    (make-option-spec
     :longs '("--on-quit") :shorts nil :takes-arg-p t
+    :environment :on-quit
     :handler (lambda (opts value name)
                (setf (cli-options-on-quit opts) (parse-on-quit value name))))
    (make-option-spec
     :longs '("--debugger-ui") :shorts nil :takes-arg-p t
+    :environment :debugger-ui
     :handler (lambda (opts value name)
                (setf (cli-options-user-interface opts)
                      (parse-user-interface value name))))
    (make-option-spec
     :longs '("--aldb-listen") :shorts nil :takes-arg-p t
+    :environment :aldb-listen
     :handler (lambda (opts value name)
                (multiple-value-bind (host port) (parse-aldb-listen value name)
                  (setf (cli-options-aldb-address opts) host

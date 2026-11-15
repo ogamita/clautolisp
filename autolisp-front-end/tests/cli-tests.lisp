@@ -664,11 +664,8 @@ change."
 (test cli-env-default-table-is-complete
   "Every documented env-var key resolves through ENV-DEFAULT without
 error (the actual value may be NIL if the env-var is unset)."
-  (dolist (key '(:workdir :timeout :mode :backend :os :bootstrap-phase
-                 :remote-io-mode :dwg
-                 :autocad-install :autocad-version
-                 :bricscad-install :bricscad-version
-                 :keep-workdir :override))
+  (dolist (key '(:workdir :timeout :ready-timeout :mode :backend :bootstrap-phase
+                 :template :keep-workdir :write-workdir-path :override))
     ;; Just checking ENV-DEFAULT does not signal.
     (is (or (null (env-default key))
             (stringp (env-default key)))
@@ -917,3 +914,77 @@ loudly rather than yield an empty string."
         (alfe.cli::run-plan options (alfe.backend:find-backend :capture)
                             :version-text "test"))
       (is (not (null *capture-cleanup-kept*))))))
+
+;;; --- option defaults from the environment ----------------------------
+;;;
+;;; cli-option-environment-defaults: alfe reads ALFE_<X>, then AUTOLISP_<X>,
+;;; for the options it shares with clautolisp, and ALFE_CAD /
+;;; ALFE_BACKEND_VARIANT for two of its own. The mechanism has its own tests
+;;; in the autolisp-cli suite; these are about alfe's use of it.
+
+(defun %parse-in-environment (environment &rest argv)
+  "PARSE-ARGUMENTS of ARGV with ENVIRONMENT (an alist variable -> value) as
+the process environment."
+  (let ((clautolisp.autolisp-cli:*environment-getenv*
+          (lambda (name)
+            (let ((value (cdr (assoc name environment :test #'string=))))
+              (and value (plusp (length value)) value)))))
+    (parse-arguments argv)))
+
+(test cli-alfe-variable-beats-autolisp-variable
+  (is (eq :nihil (cli-options-host (%parse-in-environment '(("AUTOLISP_HOST" . "nihil"))))))
+  (is (eq :cador (cli-options-host (%parse-in-environment '(("AUTOLISP_HOST" . "nihil")
+                                                            ("ALFE_HOST" . "cador"))))))
+  ;; CLAUTOLISP_HOST is the clautolisp program's, not alfe's.
+  (is (eq :cador (cli-options-host (%parse-in-environment '(("CLAUTOLISP_HOST" . "nihil"))))))
+  (is (eq :cadtui (cli-options-host (%parse-in-environment '(("ALFE_HOST" . "nihil"))
+                                                           "--host" "cadtui")))))
+
+(test cli-alfe-host-variable-refuses-the-retired-spellings
+  "alfe's own --host spec shadows the shared one, for the variable too."
+  (signals cli-usage-error (%parse-in-environment '(("AUTOLISP_HOST" . "mock")))))
+
+(test cli-dwg-variable-moved-to-the-shared-table
+  (is (equal "a.dwg" (cli-options-dwg (%parse-in-environment '(("AUTOLISP_DWG" . "a.dwg"))))))
+  (is (equal "b.dwg" (cli-options-dwg (%parse-in-environment '(("AUTOLISP_DWG" . "a.dwg")
+                                                               ("ALFE_DWG" . "b.dwg"))))))
+  (is (equal "c.dwg" (cli-options-dwg (%parse-in-environment '(("ALFE_DWG" . "b.dwg"))
+                                                             "--dwg" "c.dwg")))))
+
+(test cli-alfe-cad-yields-to-a-backend-selector
+  "ALFE_CAD stands for --cad, and a backend selector on the command line is
+the same choice: the variable then stays out, rather than conflicting."
+  (is (equal "acad-2026"
+             (clautolisp.autolisp-cli:cli-options-cad
+              (%parse-in-environment '(("ALFE_CAD" . "acad-2026"))))))
+  (let ((opts (%parse-in-environment '(("ALFE_CAD" . "acad-2026")) "--bricscad")))
+    (is (null (clautolisp.autolisp-cli:cli-options-cad opts)))
+    (is (eq :bricscad (clautolisp.autolisp-cli:cli-options-backend opts)))))
+
+(test cli-alfe-backend-variant-variable
+  (is (eq :subprocess
+          (clautolisp.autolisp-cli:cli-options-backend-variant
+           (%parse-in-environment '(("ALFE_BACKEND_VARIANT" . "subprocess"))))))
+  ;; --attach-pid is a choice of variant (attach): the variable stays out.
+  (is (null (clautolisp.autolisp-cli:cli-options-backend-variant
+             (%parse-in-environment '(("ALFE_BACKEND_VARIANT" . "launch"))
+                                    "--attach-pid" "42")))))
+
+(test cli-a-program-run-from-a-variable-names-the-variable
+  "AUTOLISP_HOST=cadtui makes the run the clautolisp program's, like --host
+cadtui; combined with --backend direct, the usage error names what the user
+wrote -- the variable, not an option they never typed."
+  (let ((env '(("AUTOLISP_HOST" . "cadtui"))))
+    (is (eq :subprocess
+            (alfe.backend.clautolisp:clautolisp-backend-variant
+             (alfe.cli:resolve-backend (%parse-in-environment env "--clautolisp")
+                                       :detect-p nil))))
+    (handler-case
+        (progn (alfe.cli:resolve-backend
+                (%parse-in-environment env "--clautolisp" "--backend" "direct")
+                :detect-p nil)
+               (fail "AUTOLISP_HOST=cadtui with --backend direct was accepted"))
+      (cli-usage-error (condition)
+        (let ((message (alfe.error:cli-usage-error-message condition)))
+          (is (search "AUTOLISP_HOST=cadtui" message) "~A" message)
+          (is (search "--backend direct" message) "~A" message))))))

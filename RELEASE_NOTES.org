@@ -805,6 +805,14 @@ separate binary for tool integrators.
 
 ** Standalone CLI (clautolisp-sbcl / clautolisp-ccl)
 
+- Option defaults from the environment: ~--host~, ~--dialect~, the
+  verbosity, ~--dwg~, ~--dcl~, ~--dribble~, the debugger options, every
+  ~-E~ encoding and replacement default to ~$CLAUTOLISP_<X>~, then
+  ~$AUTOLISP_<X>~ (shared with alfe), when the command line leaves them out;
+  plus ~$CLAUTOLISP_TRACE~ and ~$CLAUTOLISP_OPTIMIZE~. Invalid values are
+  usage errors naming the variable; a clautolisp driven by alfe reads none of
+  them. clautolisp 2.4.9; user manual /Environment variables/ › /Option
+  defaults/ (=cli-option-environment-defaults=).
 - Drawing writers honour the requested version. The DXF writer emits the
   requested ~$ACADVER~ (e.g. AC1027 for 2013, AC1032 for 2018) for both
   ASCII and Binary DXF, and the DWG writer carries the version through
@@ -2706,6 +2714,17 @@ file or COM), and forwards the workload.
   that waits at each action boundary; the run ends where it would end
   without the plug-in, and the ~:post-action~ result carries that action's
   output, value and recorded status in both variants.
+
+** Option defaults from the environment (alfe-user-manual § /Environment variables/)
+
+- The options alfe shares with clautolisp default to ~$ALFE_<X>~, then
+  ~$AUTOLISP_<X>~ (~$AUTOLISP_HOST~, ~$AUTOLISP_DIALECT~,
+  ~$AUTOLISP_VERBOSITY~, the encodings, ...), plus ~$ALFE_CAD~ and
+  ~$ALFE_BACKEND_VARIANT~; ~$AUTOLISP_DWG~ gains ~$ALFE_DWG~. alfe hands the
+  resolved values to its clautolisp engine, so both variants agree, and a
+  usage error caused by a variable names it. The six variables the old table
+  listed but never read (~$AUTOLISP_OS~, ~$AUTOCAD_VERSION~, ...) are gone.
+  alfe 2.4.9.
 
 ** Hosts: cador, cadtui, nihil (alfe-user-manual § /Host selection/)
 

@@ -1,0 +1,45 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: deferred-alfe-autolisp-backend-yields-to-selector — $AUTOLISP_BACKEND conflicts with an explicit --autocad / --bricscad instead of yielding
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-alfe-autolisp-backend-yields-to-selector
+#+DATE: 2026-11-14
+
+* Context
+
+Found while implementing =cli-option-environment-defaults= (alfe 2.4.9),
+which deliberately left alfe's own pre-seeded variables alone.
+
+* Problem
+
+=RESOLVE-BACKEND='s docstring (=autolisp-front-end/source/cli.lisp=) states
+the order: "1. Explicit --bricscad / --autocad / --clautolisp wins. ... 3.
+Otherwise, $AUTOLISP_BACKEND supplies the legacy default." But
+=APPLY-ENV-DEFAULTS= copies =$AUTOLISP_BACKEND= into the backend slot BEFORE
+argv is parsed, and the selectors' handler (=%SET-BACKEND-CHECKED=) treats an
+already-set slot as a second selector:
+
+#+begin_example
+$ AUTOLISP_BACKEND=bricscad alfe --no-init --autocad --dry-run -x 1
+alfe: --autocad: Conflicting backend selectors (:BRICSCAD vs :AUTOCAD)
+#+end_example
+
+(observed with the installed alfe 2.4.2; the 2.4.9 code is unchanged here.)
+The explicit selector should win, as documented.
+
+* Proposal
+
+Stop pre-seeding the backend slot: tag the three selectors with an
+environment group (as 2.4.9 did for =ALFE_CAD=, group =:cad=) or let
+=RESOLVE-BACKEND= consult =$AUTOLISP_BACKEND= only when the slot is still
+NIL -- which its step 3 already describes. Keep a real conflict
+(=--autocad --bricscad= on one command line) an error.
+
+* Acceptance criteria
+
+- =AUTOLISP_BACKEND=bricscad alfe --autocad= selects AutoCAD; a test asserts
+  it.
+- =AUTOLISP_BACKEND=bricscad alfe= alone still selects BricsCAD.
+- =alfe --autocad --bricscad= is still a usage error.

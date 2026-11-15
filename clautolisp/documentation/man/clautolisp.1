@@ -334,6 +334,55 @@ Disable ANSI colour output (https://no-color.org).
 Equivalent to
 .BR \-norc .
 .TP
+\fBAUTOLISP_\fIX\fR, \fBCLAUTOLISP_\fIX\fR
+The default of an option the command line does not give:
+command line, then
+.BI CLAUTOLISP_ X\fR,
+then
+.BI AUTOLISP_ X
+(read by alfe too), then the built-in default.
+.I X
+is
+.BR HOST ,
+.BR DIALECT ,
+.BR VERBOSITY ,
+.BR DWG ,
+.BR DCL ,
+.BR DRIBBLE ,
+.BR DRIBBLE_INTERACTORS ,
+.BR ON_ERROR ,
+.BR ON_INTERRUPT ,
+.BR ON_QUIT ,
+.BR DEBUGGER_UI ,
+.BR ALDB_LISTEN ,
+.B ENCODING
+and the per-situation
+.BI SITUATION [_ DIR ]_ENCODING
+.RB ( SOURCE_ENCODING ,
+.BR FILE_WRITE_ENCODING ,
+.BR TERMINAL_OUT_ENCODING ,
+\&...), and the three
+.B *ENCODING_REPLACEMENT
+variables.
+.B CLAUTOLISP_TRACE
+and
+.B CLAUTOLISP_OPTIMIZE
+stand for
+.B \-\-trace
+and
+.BR \-O .
+Any option of a group keeps its variable out
+.RB ( \-\-strict
+keeps
+.B AUTOLISP_DIALECT
+out); the encodings and
+.B \-O
+sit below the whole command line. An empty variable is unset; an invalid
+value is a usage error naming the variable. Not read under
+.B \-\-front\-end\-bindings
+(alfe has resolved them already). Full table: the user manual,
+.IR "Environment variables / Option defaults" .
+.TP
 .B CLAUTOLISP_GUI
 DCL GUI driver command, used when
 .B \-\-gui
