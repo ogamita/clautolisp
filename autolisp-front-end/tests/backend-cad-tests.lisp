@@ -4637,11 +4637,19 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
                (prefix (uiop:read-file-string
                         (asdf:system-relative-pathname
                          "autolisp-front-end" "tests/fixtures/owned-com-close-mock.vbs"))))
+          ;; The bridge templates carry plug-in slot lines (${PLUGIN_BEFORE_CLOSE}
+          ;; ...) that the emitter expands; written raw, cscript stops at the `$'
+          ;; with "invalid character" and the bridge never answers.
           (with-open-file (out path :direction :output :if-exists :supersede)
             (write-string prefix out)
-            (write-string alfe.backend.cad-common::*owned-com-watch-vbs* out)
-            (write-string alfe.backend.cad-common::*owned-com-snapshot-vbs* out)
-            (write-string alfe.backend.cad-common::*owned-com-wait-vbs* out))
+            (dolist (template (list alfe.backend.cad-common::*owned-com-watch-vbs*
+                                    alfe.backend.cad-common::*owned-com-snapshot-vbs*
+                                    alfe.backend.cad-common::*owned-com-wait-vbs*))
+              (write-string (alfe.backend.cad-common::expand-plugin-slots
+                             template :automation)
+                            out)))
+          (is (not (search "${" (uiop:read-file-string path)))
+              "no unexpanded placeholder reaches cscript")
           ;; Contract 2: the bridge always answers (exit 0) with the last
           ;; Close/Quit error; the retries are counted in its error file.
           (loop for (case owned quit-error failed-attempts)
