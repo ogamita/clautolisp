@@ -1,0 +1,61 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-windows-cscript-tests-decode-utf8 — the native cscript tests crash on a French Windows (UTF-8 decoding error, octet 138) and feed cscript unexpanded plug-in slots
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-windows-ssh-appdata-defaults
+#+DATE: 2026-11-15
+
+* Symptom
+
+=make test= on pfenny (French Windows, over ssh), once the build got past
+=windows-ssh-build-lacks-appdata=:
+
+#+begin_example
+OWNED-COM-CLOSE-WINDOWS-MOCKED-LIFECYCLE in AUTOLISP-FRONT-END-SUITE
+  Unexpected Error: #<SB-INT:STREAM-DECODING-ERROR>
+  :UTF-8 stream decoding error on #<SB-SYS:FD-STREAM for "file C:\\msys64\\tmp\\tmpRF3QLDNC.tmp">:
+  the octet sequence #(138) cannot be decoded.
+#+end_example
+
+* Cause
+
+The three Windows-only tests that run =cscript= capture its output with
+=uiop:run-program ... :output :string= and the default external format,
+UTF-8. cscript writes in the console codepage -- cp850 on this machine, where
+octet 138 (0x8A) is =è= -- so any accented message (a French error text)
+makes UIOP signal while reading the capture, and the test dies without
+showing what cscript said. The production code already decodes console
+output as Latin-1 for exactly this reason (=%run-capturing-text=,
+alfe-autocad-progid-registry-probe-fails); the tests did not.
+
+* Fix
+
+=owned-com-close-windows-mocked-lifecycle=,
+=owned-com-ready-windows-mocked-handshake= and the USERPROFILE cscript test
+pass =:external-format :latin-1=, a total decoder, and now print cscript's
+stdout/stderr when its exit code is not 0, so whatever cscript complained
+about is visible.
+
+* What cscript then said (2.4.14)
+
+With its output readable, the next pfenny run showed the real failure:
+
+#+begin_example
+close-fixture.vbs(134, 1) Erreur de compilation Microsoft VBScript: Caractère incorrect
+#+end_example
+
+Line 134 is =${PLUGIN_BEFORE_CLOSE}=. Since the plug-in system (alfe 2.2.76)
+the bridge templates carry plug-in slot lines that the emitter expands with
+=expand-plugin-slots=; the test wrote the raw templates, so cscript stopped
+at the =$= and the bridge never answered. The test now expands the slots
+(no plug-in active: the lines are removed, as in a real run) and asserts no
+=${= placeholder reaches cscript. Verified on pfenny: 16/16 and 6/6 checks
+for the two cscript tests.
+
+* Resolved
+
+clautolisp / alfe 2.4.12 and 2.4.14 (2026-11-15). The decoding crash is gone by
+construction; whether cscript itself succeeds over ssh on pfenny is shown by
+the next run there (the failure message now carries its output).

@@ -1,3 +1,6 @@
+# Over ssh, Windows gives no LOCALAPPDATA/APPDATA and UIOP cannot start:
+# supply them (scripts/windows-environment.mk).
+include ../scripts/windows-environment.mk
 CCL  ?= ccl
 SBCL ?= sbcl
 LISP ?= $(SBCL)

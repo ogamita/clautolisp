@@ -191,6 +191,20 @@ pacman -S --needed \
 The documentation Makefiles locate the UCRT64 tools automatically from
 plain MSYS and Emacs shells.
 
+Building from an ssh session works too. OpenSSH for Windows gives the
+MSYS2 shell no =USERPROFILE=, =LOCALAPPDATA=, =APPDATA=, =TEMP= or =TMP=,
+and without them UIOP cannot locate its configuration (/Invalid pathname #P"config/":
+Expected an absolute pathname/ while loading Quicklisp). Every Makefile that
+starts a Lisp includes =scripts/windows-environment.mk=, which sets the
+missing ones to =C:/Users/<user>= and its =AppData/Local= /
+=AppData/Roaming=, taking as =<user>= the first of =USERNAME=, =USER=,
+=LOGNAME= and the last component of =HOME= whose profile folder exists,
+and =TEMP= / =TMP= to =$LOCALAPPDATA/Temp= (without =TEMP=, UIOP's temporary
+directory is NIL and every temporary file the tests make lands, relative,
+in the current directory). Values already present are left
+untouched; export them yourself if your profile lives elsewhere. Scripts
+run outside =make= can source =scripts/environnement-windows.sh= instead.
+
 * Common Lisp implementations
 
 SBCL is available as a system package on both Fedora/Red Hat

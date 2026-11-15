@@ -1,0 +1,86 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: windows-ssh-build-lacks-appdata — make over ssh on Windows dies loading Quicklisp: Invalid pathname #P"config/"
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-windows-ssh-appdata-defaults
+#+DATE: 2026-11-15
+
+* Symptom
+
+=ssh pfenny ./update-clautolisp= (a =git pull= then =make=) fails at the
+first Lisp the build starts, =build-read-autolisp-sbcl=, while loading
+=quicklisp/setup.lisp=:
+
+#+begin_example
+Unhandled SIMPLE-ERROR ...
+  Invalid pathname #P"config/": Expected an absolute pathname
+4: (UIOP/PATHNAME:ENSURE-PATHNAME #P"config/" ... :WANT-ABSOLUTE T ...)
+5: (UIOP/CONFIGURATION:RESOLVE-ABSOLUTE-LOCATION (#P"config/" ((#P"common-lisp/source-registry.conf"))) ...)
+6: (UIOP/CONFIGURATION:XDG-CONFIG-PATHNAMES #P"common-lisp/source-registry.conf")
+#+end_example
+
+The same update on poseidon and thalassa succeeds.
+
+* Cause
+
+Not the code being built: the environment. An OpenSSH-for-Windows session
+into MSYS2 carries none of =USERPROFILE=, =LOCALAPPDATA=, =APPDATA= (they come
+from the interactive logon profile). On Windows UIOP computes
+
+#+begin_src lisp
+(xdg-config-home) = (or $XDG_CONFIG_HOME (xdg-data-home "config/"))
+(xdg-data-home)   = (or $XDG_DATA_HOME (get-folder-path :local-appdata))
+;; :local-appdata = (or $LOCALAPPDATA (subpathname $APPDATA "Local"))
+#+end_src
+
+so with all of them unset the base is NIL and the result is the relative
+=#P"config/"=, which =resolve-absolute-location= rejects (uiop 3.3.6,
+=configuration.lisp= =xdg-config-home=). Every SBCL started from that shell
+fails the same way.
+
+The CI Windows lanes never hit it: they source
+=scripts/environnement-windows.sh=, which sets the three when absent. The
+Makefiles did not.
+
+* Fix
+
+=scripts/windows-environment.mk=, included by every Makefile that starts a
+Lisp (root, =clautolisp=, =autolisp-front-end=, =autolisp-test=,
+=autolisp-benchmark=). On Windows (=OS=Windows_NT=, or =uname -s= MINGW* /
+MSYS* / CYGWIN*) it exports, only when missing, =USERPROFILE= =
+=C:/Users/<user>=, =LOCALAPPDATA= = =$USERPROFILE/AppData/Local=,
+=APPDATA= = =$USERPROFILE/AppData/Roaming= -- the values the interactive
+session has, so UIOP finds the same configuration. The user name is not
+trusted from one variable, since over ssh =USERNAME= is usually absent and
+=USER= may be the login form (=domain+user=): the candidates =USERNAME=,
+=USER=, =LOGNAME= and the last component of =HOME= are tried, and the first
+whose =C:/Users/<name>= folder exists wins (else the first candidate). Existing values are never
+overridden and no mixed-case twin is created.
+
+Regression test: =scripts/tests/test-windows-environment-mk.sh=
+(=make check-windows-make-environment=, part of =make check-release=): the
+fragment's behaviour on a simulated Windows / Unix shell, and the include in
+each of the five Makefiles.
+
+* Second gap: TEMP and TMP (2.4.13)
+
+The same ssh session has no =TEMP= / =TMP= either, and UIOP's
+=default-temporary-directory= on Windows is =$TEMP= alone (uiop 3.3.6,
+=stream.lisp=): unset, =uiop:temporary-directory= is NIL, so
+=(uiop:subpathname (uiop:temporary-directory) "alfe-cad-test-...")= is a
+RELATIVE path. The alfe suite then created its test directories under
+=autolisp-front-end/=, many CAD tests failed, and one died on
+=couldn't rename alfe-cad-test-X/close-owned.result.tmp to
+alfe-cad-test-X/alfe-cad-test-X/close-owned.result= (a relative path merged
+twice). The fragment now also sets =TEMP= and =TMP=, when missing, to
+=$LOCALAPPDATA/Temp=, Windows' own default.
+
+* Resolved
+
+clautolisp / alfe 2.4.11 and 2.4.13 (2026-11-15). Verified by the regression test on
+macOS with simulated Windows environments (domain-style =USER=, =HOME= only,
+existing values, no user). The MR is merged only after the build has been
+re-run over ssh on pfenny, whose sshd stopped answering the banner during
+the investigation.

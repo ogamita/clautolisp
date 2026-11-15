@@ -1052,6 +1052,20 @@ commande > =CLAUTOLISP_X= / =ALFE_X= > =AUTOLISP_X= > defaut ; groupes
 (--strict ecarte AUTOLISP_DIALECT), encodages et -O en couche sous la ligne de
 commande ; un clautolisp pilote par alfe (--front-end-bindings) n en lit
 aucune ; six entrees mortes d alfe retirees ; AUTOLISP_ALDB_LISTEN inclus.
+** TODO alfe-trustedpaths-real-registry-flaky (P3)
+[[file:alfe-trustedpaths-real-registry-flaky.issue][real-registry TRUSTEDPATHS round trip failed once]] : NOUVEAU 2026-11-15 :
+un make test complet sur pfenny a echoue pour le seul profil Epure ; non
+reproduit (10/10 seul, suite complete verte). 2.4.15 affiche la valeur relue.
+** DONE alfe-windows-cscript-tests-decode-utf8 (P3)
+[[file:../closed/alfe-windows-cscript-tests-decode-utf8.issue][cscript tests: UTF-8 decoding error, octet 138]] : FERME 2026-11-15 (2.4.12) :
+les 3 tests Windows qui lancent cscript lisaient sa sortie (codepage console,
+cp850) en UTF-8 et mouraient ; latin-1 comme le code de production, et la
+sortie de cscript est affichee quand il echoue.
+** DONE windows-ssh-build-lacks-appdata (P3)
+[[file:../closed/windows-ssh-build-lacks-appdata.issue][make over ssh on Windows: Invalid pathname #P"config/"]] : FERME 2026-11-15 (2.4.11) :
+une session ssh Windows n a ni USERPROFILE ni LOCALAPPDATA ni APPDATA, UIOP
+calcule #P"config/" relatif et SBCL meurt en chargeant Quicklisp ;
+scripts/windows-environment.mk (inclus par les 5 Makefiles a Lisp) les fournit.
 ** DONE deferred-alfe-autolisp-backend-yields-to-selector (P3)
 [[file:../closed/deferred-alfe-autolisp-backend-yields-to-selector.issue][$AUTOLISP_BACKEND conflicts with --autocad]] : FERME 2026-11-15 (2.4.10) :
 $AUTOLISP_BACKEND lu apres argv, seulement sans selecteur, --cad/ALFE_CAD ni
