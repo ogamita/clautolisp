@@ -4649,12 +4649,17 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
                        ("persistent" "created" "-2147418111" 40)
                        ("attached" "attached" "0" 0))
                 do (multiple-value-bind (stdout stderr code)
+                       ;; LATIN-1: cscript writes in the console codepage (cp850
+                       ;; on a French Windows), and UIOP's default UTF-8 decoder
+                       ;; SIGNALS on its accents -- the test died on octet 138
+                       ;; instead of reporting what cscript said.
                        (uiop:run-program (list "cscript.exe" "//nologo" (namestring path)
                                                (namestring dir) case)
                                          :output :string :error-output :string
+                                         :external-format :latin-1
                                          :ignore-error-status t)
-                     (declare (ignore stdout stderr))
-                     (is (= 0 code) "~A: the bridge exits 0 once it has answered" case))
+                     (is (= 0 code) "~A: the bridge exits 0 once it has answered~
+                                     ~%stdout: ~A~%stderr: ~A" case stdout stderr))
                    (let ((answer (alfe.backend:read-key-value-file
                                   (merge-pathnames (concatenate 'string case ".result") dir)))
                          (errors (merge-pathnames (concatenate 'string case ".errors") dir)))
@@ -4712,9 +4717,10 @@ WScript.Echo \"PASS \" & scenario
           (dolist (case '("ready" "busy" "rejected"))
             (multiple-value-bind (stdout stderr code)
                 (uiop:run-program (list "cscript.exe" "//nologo" (namestring path) case)
-                                  :output :string :error-output :string :ignore-error-status t)
-              (declare (ignore stderr))
-              (is (= 0 code))
+                                  :output :string :error-output :string
+                                  :external-format :latin-1 ; console codepage
+                                  :ignore-error-status t)
+              (is (= 0 code) "~A: cscript exits 0~%stdout: ~A~%stderr: ~A" case stdout stderr)
               (is (search (concatenate 'string "PASS " case) stdout))))))))
 (test cad-batch-shutdown-allows-native-quit-after-stopped
   "STOPPED acknowledges the loop, not completion of the CAD's final QUIT."
@@ -4798,9 +4804,9 @@ WScript.Echo \"PASS \" & scenario
                (alfe.backend.cad-common:call-launcher
                 #'uiop:run-program (list "cscript" "//nologo" (uiop:native-namestring path))
                 nil :output :string :error-output :string
+                :external-format :latin-1 ; console codepage; out is ASCII hex
                 :ignore-error-status t)
-             (declare (ignore err))
-             (is (= 0 code))
+             (is (= 0 code) "cscript exits 0~%stderr: ~A" err)
              (is (equal (format nil "~{~2,'0X~}"
                                 (coerce (babel:string-to-octets expected :encoding :utf-16be) 'list))
                         (string-trim '(#\Return #\Newline #\Space) out)))

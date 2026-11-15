@@ -1,0 +1,45 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe-windows-cscript-tests-decode-utf8 — the native cscript tests crash on a French Windows: UTF-8 decoding error, octet 138
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-windows-ssh-appdata-defaults
+#+DATE: 2026-11-15
+
+* Symptom
+
+=make test= on pfenny (French Windows, over ssh), once the build got past
+=windows-ssh-build-lacks-appdata=:
+
+#+begin_example
+OWNED-COM-CLOSE-WINDOWS-MOCKED-LIFECYCLE in AUTOLISP-FRONT-END-SUITE
+  Unexpected Error: #<SB-INT:STREAM-DECODING-ERROR>
+  :UTF-8 stream decoding error on #<SB-SYS:FD-STREAM for "file C:\\msys64\\tmp\\tmpRF3QLDNC.tmp">:
+  the octet sequence #(138) cannot be decoded.
+#+end_example
+
+* Cause
+
+The three Windows-only tests that run =cscript= capture its output with
+=uiop:run-program ... :output :string= and the default external format,
+UTF-8. cscript writes in the console codepage -- cp850 on this machine, where
+octet 138 (0x8A) is =è= -- so any accented message (a French error text)
+makes UIOP signal while reading the capture, and the test dies without
+showing what cscript said. The production code already decodes console
+output as Latin-1 for exactly this reason (=%run-capturing-text=,
+alfe-autocad-progid-registry-probe-fails); the tests did not.
+
+* Fix
+
+=owned-com-close-windows-mocked-lifecycle=,
+=owned-com-ready-windows-mocked-handshake= and the USERPROFILE cscript test
+pass =:external-format :latin-1=, a total decoder, and now print cscript's
+stdout/stderr when its exit code is not 0, so whatever cscript complained
+about is visible.
+
+* Resolved
+
+clautolisp / alfe 2.4.12 (2026-11-15). The decoding crash is gone by
+construction; whether cscript itself succeeds over ssh on pfenny is shown by
+the next run there (the failure message now carries its output).
