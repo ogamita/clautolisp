@@ -64,9 +64,22 @@ Regression test: =scripts/tests/test-windows-environment-mk.sh=
 fragment's behaviour on a simulated Windows / Unix shell, and the include in
 each of the five Makefiles.
 
+* Second gap: TEMP and TMP (2.4.13)
+
+The same ssh session has no =TEMP= / =TMP= either, and UIOP's
+=default-temporary-directory= on Windows is =$TEMP= alone (uiop 3.3.6,
+=stream.lisp=): unset, =uiop:temporary-directory= is NIL, so
+=(uiop:subpathname (uiop:temporary-directory) "alfe-cad-test-...")= is a
+RELATIVE path. The alfe suite then created its test directories under
+=autolisp-front-end/=, many CAD tests failed, and one died on
+=couldn't rename alfe-cad-test-X/close-owned.result.tmp to
+alfe-cad-test-X/alfe-cad-test-X/close-owned.result= (a relative path merged
+twice). The fragment now also sets =TEMP= and =TMP=, when missing, to
+=$LOCALAPPDATA/Temp=, Windows' own default.
+
 * Resolved
 
-clautolisp / alfe 2.4.11 (2026-11-15). Verified by the regression test on
+clautolisp / alfe 2.4.11 and 2.4.13 (2026-11-15). Verified by the regression test on
 macOS with simulated Windows environments (domain-style =USER=, =HOME= only,
 existing values, no user). The MR is merged only after the build has been
 re-run over ssh on pfenny, whose sshd stopped answering the banner during

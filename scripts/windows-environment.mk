@@ -8,8 +8,8 @@
 # On Windows, UIOP finds the user's configuration under %LOCALAPPDATA%
 # (falling back to %APPDATA%\Local) unless XDG_CONFIG_HOME is set. A shell
 # opened over ssh -- OpenSSH for Windows into MSYS2 -- has none of
-# USERPROFILE, LOCALAPPDATA, APPDATA, so UIOP builds the RELATIVE #P"config/"
-# and loading quicklisp/setup.lisp dies with
+# USERPROFILE, LOCALAPPDATA, APPDATA, TEMP, TMP, so UIOP builds the RELATIVE
+# #P"config/" and loading quicklisp/setup.lisp dies with
 #
 #     Invalid pathname #P"config/": Expected an absolute pathname
 #
@@ -55,6 +55,17 @@ export LOCALAPPDATA := $(USERPROFILE)/AppData/Local
 endif
 ifeq ($(strip $(APPDATA)),)
 export APPDATA := $(USERPROFILE)/AppData/Roaming
+endif
+endif
+# UIOP's temporary-directory on Windows is $TEMP and nothing else: unset, it
+# is NIL and every temp file the tests make becomes RELATIVE to the current
+# directory. Windows' own default is %LOCALAPPDATA%\Temp.
+ifneq ($(strip $(LOCALAPPDATA)),)
+ifeq ($(strip $(TEMP)),)
+export TEMP := $(LOCALAPPDATA)/Temp
+endif
+ifeq ($(strip $(TMP)),)
+export TMP := $(LOCALAPPDATA)/Temp
 endif
 endif
 endif
