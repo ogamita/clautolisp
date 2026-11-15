@@ -111,6 +111,12 @@ else:
     backend = clautolisp     ; default on every system
 #+end_example
 
+=--cad= (or =$ALFE_CAD=) selects a backend too, so it counts as an explicit
+selector here. The variables are defaults: a selector on the command line
+always overrides them -- =AUTOLISP_BACKEND=bricscad alfe --autocad= runs
+AutoCAD (before alfe 2.4.10 it failed with /Conflicting backend selectors/).
+Two selectors on one command line (=--autocad --bricscad=) remain an error.
+
 ** One engine, two transports
 :PROPERTIES:
 :CUSTOM_ID: one-engine-two-transports

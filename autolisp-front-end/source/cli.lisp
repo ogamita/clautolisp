@@ -522,7 +522,6 @@ argument parsing so explicit CLI options always win."
         (env-timeout (env-default :timeout))
         (env-ready-timeout (env-default :ready-timeout))
         (env-mode    (env-default :mode))
-        (env-backend (env-default :backend))
         (env-bootstrap (env-default :bootstrap-phase))
         (env-template (env-default :template))
         (env-keep-workdir (env-default :keep-workdir))
@@ -547,9 +546,6 @@ argument parsing so explicit CLI options always win."
                                env-ready-timeout)))))
     (when env-mode
       (setf (cli-options-mode options) (parse-mode env-mode "AUTOLISP_MODE")))
-    (when env-backend
-      (setf (cli-options-backend options)
-            (parse-backend-symbol env-backend "AUTOLISP_BACKEND")))
     (when env-bootstrap
       (setf (cli-options-bootstrap-phase options)
             (parse-bootstrap-phase env-bootstrap "AUTOLISP_BOOTSTRAP_PHASE")))
@@ -559,6 +555,30 @@ argument parsing so explicit CLI options always win."
       (setf (cli-options-keep-workdir-p options) t))
     (when env-write-workdir-path
       (setf (cli-options-write-workdir-path options) env-write-workdir-path)))
+  options)
+
+(defun apply-autolisp-backend-default (options)
+  "Fill the backend slot of OPTIONS from $AUTOLISP_BACKEND, AFTER argv was
+parsed, when nothing else chose a backend: no --clautolisp / --autocad /
+--bricscad, no --cad (nor the ALFE_CAD that stands for it), and no
+$ALFE_BACKEND_OVERRIDE, which RESOLVE-BACKEND consults first.
+
+It used to be copied in by APPLY-ENV-DEFAULTS, BEFORE argv: the selectors
+then found the slot set and reported \"Conflicting backend selectors\"
+instead of overriding it, and the variable outranked
+$ALFE_BACKEND_OVERRIDE (deferred-alfe-autolisp-backend-yields-to-selector).
+It still lands in the slot rather than being read by RESOLVE-BACKEND alone,
+because the rest of alfe (the dialect a CAD imposes, the CAD instance policy,
+the terminal) reads the slot before the backend is resolved."
+  (unless (or (cli-options-backend options)
+              (cli-options-cad options)
+              (env-default :override))
+    (let ((value (env-default :backend)))
+      (when value
+        (setf (cli-options-backend options)
+              (parse-backend-symbol value "AUTOLISP_BACKEND"))
+        (push (cons :backend "AUTOLISP_BACKEND")
+              (clautolisp.autolisp-cli:cli-options-environment-sources options)))))
   options)
 
 ;; PARSE-MODE, PARSE-BACKEND-SYMBOL, PARSE-BACKEND-VARIANT,
@@ -885,6 +905,8 @@ the action objects back to conses on the fly."
     ;; ALFE_BACKEND_VARIANT: ALFE_<X>, then AUTOLISP_<X>, for every option
     ;; group the command line left alone (cli-option-environment-defaults).
     (clautolisp.autolisp-cli:apply-environment-defaults options specs :alfe)
+    ;; $AUTOLISP_BACKEND last: below every selector, ALFE_CAD included.
+    (apply-autolisp-backend-default options)
     (setf (cli-options-actions options)
           (mapcar (lambda (a)
                     (%translate-action-cons
@@ -1015,7 +1037,10 @@ Algorithm (matches spec section \"Algorithme par défaut\"):
   1. Explicit --bricscad / --autocad / --clautolisp wins.
   2. Otherwise, $ALFE_BACKEND_OVERRIDE supplies a default for early
      adopters.
-  3. Otherwise, $AUTOLISP_BACKEND supplies the legacy default.
+  3. Otherwise, $AUTOLISP_BACKEND supplies the legacy default. It is
+     already in the slot by then (APPLY-AUTOLISP-BACKEND-DEFAULT, after
+     argv, only when neither a selector nor $ALFE_BACKEND_OVERRIDE is
+     set), so it reads as step 1 below.
   4. Otherwise, the default is :clautolisp — the in-process engine
      that ships with alfe and is available on every system. CAD
      backends are NEVER auto-selected: they require explicit
@@ -1053,7 +1078,10 @@ conformance scenarios under tests/scenarios/{bricscad,cli}/."
                          :clautolisp))))
     (log-debug "resolve-backend: selected ~S (source: ~A)"
                selected
-               (cond ((cli-options-backend options) "explicit flag")
+               (cond ((and (cli-options-backend options)
+                           (assoc :backend (clautolisp.autolisp-cli:cli-options-environment-sources options)))
+                      "$AUTOLISP_BACKEND")
+                     ((cli-options-backend options) "explicit flag")
                      ((env-default :override)        "$ALFE_BACKEND_OVERRIDE")
                      (t                               "default :clautolisp")))
     (when selected

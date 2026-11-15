@@ -549,7 +549,10 @@ CAD backends (=autocad= / =bricscad=) are NEVER auto-selected. The
 default is always the in-process =clautolisp= engine, which ships
 with alfe and is available on every system. Selecting a CAD
 backend requires an explicit =--autocad= / =--bricscad= flag or
-the equivalent environment override.
+the equivalent environment override. =--cad= (and =$ALFE_CAD=) counts as an
+explicit selector. The two variables never conflict with a selector: they are
+consulted only when none was given (=AUTOLISP_BACKEND=bricscad alfe --autocad=
+selects AutoCAD), while two selectors on one command line are a usage error.
 
 This is a deliberate behaviour change from the historical
 auto-detection. A host with both BricsCAD and AutoCAD installed
