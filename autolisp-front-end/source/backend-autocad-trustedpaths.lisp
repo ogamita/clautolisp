@@ -39,6 +39,22 @@
 ;;;;        without a journal line -- the case of a killed AutoCAD that
 ;;;;        saved its profile after our removal.
 ;;;;
+;;;;    WHY COMPARE-AND-SET. Every change is a read-modify-write of one
+;;;;    value, and two processes of the same user share that value: on the
+;;;;    Windows runner the GitLab runner and a `make test' over ssh both run
+;;;;    as the same account, and on 2026-11-15 each of two concurrent test
+;;;;    runs wrote back the value it had read plus its own entry, erasing
+;;;;    the other's (alfe-trustedpaths-real-registry-flaky). So a write
+;;;;    names the value it was computed from, and lands only if the value is
+;;;;    still that one -- checked and written inside one PowerShell script,
+;;;;    under the named mutex Global\alfe-trustedpaths -- else the change is
+;;;;    recomputed from the new value. AutoCAD's own profile save on exit
+;;;;    takes no part in this; that is why removal waits for its exit.
+;;;;
+;;;;    A READ THAT FAILED IS NOT AN ABSENT VALUE. Taken for one, adding the
+;;;;    entry would replace the user's whole value by alfe's lone entry, and
+;;;;    removing it would report success while the entry stayed.
+;;;;
 ;;;;    WHY POWERSHELL, NOT reg.exe. reg.exe prints in the console codepage,
 ;;;;    which the ProgID lookup decodes as Latin-1 -- fine for ASCII
 ;;;;    ProgIDs, but TRUSTEDPATHS holds paths, and the workdir itself lives
@@ -117,10 +133,18 @@ nothing is trusted, and the run proceeds as before).")
 (defparameter *trustedpaths-value-name* "TRUSTEDPATHS")
 
 (defvar *registry-read-function* '%hkcu-read-value
-  "Function (SUBKEY NAME) -> (values DATA KIND), or NIL when absent.")
+  "Function (SUBKEY NAME) -> (VALUES DATA KIND) when the value exists,
+(VALUES NIL :ABSENT) when it does not, and NIL when it could not be read.")
 
 (defvar *registry-write-function* '%hkcu-write-value
-  "Function (SUBKEY NAME DATA KIND) -> true on success.")
+  "Function (SUBKEY NAME EXPECTED DATA KIND): set SUBKEY\\NAME to DATA of
+KIND only if it still holds EXPECTED (NIL: only if it is absent). Returns
+:OK when written, :CHANGED when the value was no longer EXPECTED, and NIL
+when the write failed.")
+
+(defparameter *registry-update-attempts* 8
+  "How many times a change is recomputed when the value keeps changing
+under it, or cannot be read, before giving up with a warning.")
 
 (defvar *process-alive-function* '%windows-pid-alive-p
   "Function (PID) -> true while that process exists.")
@@ -182,31 +206,60 @@ holds -- no quoting, no codepage."
                (uiop:split-string (string-trim '(#\Space #\Tab #\Return #\Newline) text)
                                   :separator " "))))
 
+(defun %output-lines (output)
+  (mapcar (lambda (line) (string-trim '(#\Return #\Space) line))
+          (uiop:split-string (or output "") :separator '(#\Newline))))
+
 (defun %hkcu-read-value (subkey name)
+  "See *REGISTRY-READ-FUNCTION*. $ErrorActionPreference='Stop' and the
+catch make a failure print ERROR rather than fall through to the next
+statement, so only a complete answer is taken for one."
   (let ((output (%run-powershell
-                 (format nil "$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(~A);~
+                 (format nil "$ErrorActionPreference='Stop';try{~
+$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(~A);~
 if($k -eq $null -or ($k.GetValueNames() -notcontains ~A)){'ABSENT'}else{~
 $v=[string]$k.GetValue(~A,'',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames);~
-'KIND '+$k.GetValueKind(~A);'DATA '+(([int[]][char[]]$v) -join ' ')}"
-                         (ps-string subkey) (ps-string name) (ps-string name) (ps-string name)))))
-    (when output
-      (let ((kind nil) (data nil))
-        (dolist (line (uiop:split-string output :separator '(#\Newline)))
-          (let ((line (string-trim '(#\Return #\Space) line)))
-            (cond ((uiop:string-prefix-p "KIND " line) (setf kind (subseq line 5)))
-                  ((string= line "DATA") (setf data ""))
-                  ((uiop:string-prefix-p "DATA " line)
-                   (setf data (parse-code-numbers (subseq line 5)))))))
-        (when (and kind data)
-          (values data kind))))))
+'KIND '+$k.GetValueKind(~A);'DATA '+(([int[]][char[]]$v) -join ' ')}}catch{'ERROR'}"
+                         (ps-string subkey) (ps-string name) (ps-string name) (ps-string name))))
+        (kind nil) (data nil))
+    (dolist (line (%output-lines output))
+      (cond ((string= line "ABSENT") (return-from %hkcu-read-value (values nil :absent)))
+            ((uiop:string-prefix-p "KIND " line) (setf kind (subseq line 5)))
+            ((string= line "DATA") (setf data ""))
+            ((uiop:string-prefix-p "DATA " line)
+             (setf data (ignore-errors (parse-code-numbers (subseq line 5)))))))
+    (if (and kind data)
+        (values data kind)
+        nil)))
 
-(defun %hkcu-write-value (subkey name data kind)
-  (let ((output (%run-powershell
-                 (format nil "$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(~A,$true);~
-if($k -eq $null){'NOKEY'}else{$k.SetValue(~A,~A,[Microsoft.Win32.RegistryValueKind]::~A);'OK'}"
-                         (ps-string subkey) (ps-string name) (ps-string data)
-                         (if (string-equal kind "ExpandString") "ExpandString" "String")))))
-    (and output (search "OK" output) t)))
+(defun %hkcu-write-value (subkey name expected data kind)
+  "See *REGISTRY-WRITE-FUNCTION*. The comparison and the write happen in
+one script, under the per-machine mutex Global\\alfe-trustedpaths, which
+every alfe of every session of this user takes for the same purpose. A
+mutex left by a killed process is taken over (AbandonedMutexException); one
+not obtained within 30 s answers :CHANGED, i.e. try again."
+  (let* ((check (if expected
+                    (format nil "($has -and ([string]$k.GetValue(~A,'',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)) -ceq ~A)"
+                            (ps-string name) (ps-string expected))
+                    "(-not $has)"))
+         (output (%run-powershell
+                  (format nil "$ErrorActionPreference='Stop';try{~
+$m=New-Object System.Threading.Mutex($false,'Global\\alfe-trustedpaths');$got=$false;~
+try{$got=$m.WaitOne(30000)}catch [System.Threading.AbandonedMutexException]{$got=$true}~
+if(-not $got){'BUSY'}else{try{~
+$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(~A,$true);~
+if($k -eq $null){'NOKEY'}else{$has=($k.GetValueNames() -contains ~A);~
+if(~A){$k.SetValue(~A,~A,[Microsoft.Win32.RegistryValueKind]::~A);'WRITTEN'}else{'CHANGED'}}~
+}finally{$m.ReleaseMutex()}}}catch{'ERROR'}"
+                          (ps-string subkey) (ps-string name) check
+                          (ps-string name) (ps-string data)
+                          (if (string-equal kind "ExpandString") "ExpandString" "String"))))
+         (lines (%output-lines output)))
+    (cond ((member "WRITTEN" lines :test #'string=) :ok)
+          ((or (member "CHANGED" lines :test #'string=)
+               (member "BUSY" lines :test #'string=))
+           :changed)
+          (t nil))))
 
 (defun %windows-pid-alive-p (pid)
   (let ((output (%run-powershell
@@ -264,21 +317,42 @@ if($r.OpenSubKey($s)){'KEY '+(([int[]][char[]]$s) -join ' ')}}}}}}}"))))
 
 ;;; --- the operations -------------------------------------------------------
 
+(defun %update-registry-value (subkey name change)
+  "Apply CHANGE to SUBKEY\\NAME as a compare-and-set, recomputing it from
+the value found whenever another process changed that value first.
+CHANGE: (DATA) -> (VALUES NEW-DATA CHANGEDP), DATA being NIL for an absent
+value. Returns :WRITTEN, :UNCHANGED (CHANGE had nothing to do), or NIL when
+the value could not be read or written within *REGISTRY-UPDATE-ATTEMPTS*."
+  (loop repeat *registry-update-attempts*
+        do (multiple-value-bind (data kind) (funcall *registry-read-function* subkey name)
+             (when (or data (eq kind :absent))
+               (multiple-value-bind (new changedp) (funcall change data)
+                 (unless changedp
+                   (return :unchanged))
+                 (case (funcall *registry-write-function* subkey name data new
+                                (if (stringp kind) kind "String"))
+                   (:ok (return :written))
+                   (:changed nil)
+                   (t (return nil))))))
+        finally (return nil)))
+
 (defun %remove-from-registry (subkey name predicate why)
   "Remove the entries satisfying PREDICATE from SUBKEY\\NAME. True when
-the value no longer holds any of them."
-  (multiple-value-bind (data kind) (funcall *registry-read-function* subkey name)
-    (if (null data)
-        t
-        (multiple-value-bind (new removed) (remove-trusted-entries data predicate)
-          (cond ((not removed) t)
-                ((funcall *registry-write-function* subkey name new kind)
-                 (log-verbose "backend AUTOCAD: TRUSTEDPATHS: removed ~A from ~A" why subkey)
-                 t)
-                (t
-                 (log-warn "backend AUTOCAD: TRUSTEDPATHS: could not remove ~A ~
+the value is known to hold none of them any more."
+  (case (%update-registry-value
+         subkey name
+         (lambda (data)
+           (if (null data)
+               (values nil nil)
+               (remove-trusted-entries data predicate))))
+    (:written
+     (log-verbose "backend AUTOCAD: TRUSTEDPATHS: removed ~A from ~A" why subkey)
+     t)
+    (:unchanged t)
+    (t
+     (log-warn "backend AUTOCAD: TRUSTEDPATHS: could not remove ~A ~
 from HKCU\\~A\\~A -- remove it by hand" why subkey name)
-                 nil))))))
+     nil)))
 
 (defun %getpid () (alfe.workdir::current-pid))
 
@@ -324,19 +398,31 @@ below 2."
       (t
        (ignore-errors (sweep-stale-trusted-entries subkeys))
        (dolist (subkey subkeys)
-         (multiple-value-bind (data kind) (funcall *registry-read-function* subkey name)
-           (let ((new (add-trusted-entry (or data "") entry)))
-             (unless (and data (string= new (join-trustedpaths (split-trustedpaths data))))
-               ;; JOURNAL FIRST: dying between the two leaves a line whose
-               ;; entry may be absent, which the sweep removes harmlessly;
-               ;; the other order could leave a trust nobody knows about.
-               (%write-journal (append (%read-journal)
-                                       (list (list (%getpid) subkey name entry))))
-               (if (funcall *registry-write-function* subkey name new (or kind "String"))
-                   (push (list subkey name entry) token)
-                   (log-warn "backend AUTOCAD: TRUSTEDPATHS: could not add ~A to ~
+         ;; JOURNAL FIRST: dying between the two leaves a line whose entry
+         ;; may be absent, which the sweep removes harmlessly; the other
+         ;; order could leave a trust nobody knows about.
+         (let ((line (list (%getpid) subkey name entry)))
+           (%write-journal (append (%read-journal) (list line)))
+           (case (%update-registry-value
+                  subkey name
+                  (lambda (data)
+                    (let ((new (add-trusted-entry (or data "") entry)))
+                      (values new
+                              (not (and data
+                                        (string= new (join-trustedpaths
+                                                      (split-trustedpaths data)))))))))
+             (:written (push (list subkey name entry) token))
+             (:unchanged
+              ;; already trusted (by the user, or an earlier run's leftover
+              ;; the sweep could not judge): not ours to remove
+              (%write-journal (remove line (%read-journal) :test #'equal)))
+             (t
+              ;; the line stays: a write whose answer was lost may still
+              ;; have landed, and the sweep drops a line whose entry is not
+              ;; there
+              (log-warn "backend AUTOCAD: TRUSTEDPATHS: could not add ~A to ~
 HKCU\\~A\\~A; a CAD with SECURELOAD=2 using that profile will refuse alfe's runtime"
-                             entry subkey name))))))
+                        entry subkey name)))))
        (when token
          (log-verbose "backend AUTOCAD: TRUSTEDPATHS: trusting ~A for this run (~D profile~:P)"
                       entry (length token)))

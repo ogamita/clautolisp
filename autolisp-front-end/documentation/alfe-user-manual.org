@@ -670,6 +670,15 @@ be too late, because the first load is already the refused one.
 - *When.* After the AutoCAD alfe created has quit. AutoCAD saves its
   profile, =TRUSTEDPATHS= included, when it exits, so an entry removed
   while it still ran would be written back.
+- *Concurrent runs.* Several alfe runs of the same user may change the
+  same values at once: on a build machine, the CI runner and a developer's
+  session often run as one account. Each change is computed from the value
+  read and written only if the value has not changed since, checked and
+  written by one script holding the Windows mutex
+  =Global\alfe-trustedpaths=. If another run changed the value first, alfe
+  recomputes its change from the new value, so no run erases another's
+  entry. A value that cannot be read is left alone: alfe warns rather than
+  write over what it could not see.
 - *A killed run* cannot remove its entry. Two records let the next run do
   it for you:
   - =<temp>/alfe-trustedpaths.txt= names each entry with the process id of

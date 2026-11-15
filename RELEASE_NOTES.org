@@ -1972,6 +1972,11 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
+- Fixed (alfe 2.4.16): two alfe runs of the same Windows user that trust
+  their workdir in AutoCAD's =TRUSTEDPATHS= at the same time no longer erase
+  each other's entry, and a registry read that fails no longer replaces the
+  profile's whole =TRUSTEDPATHS= with alfe's entry. See the user manual,
+  /alfe's workdir in AutoCAD's TRUSTEDPATHS/.
 - ~-Ereplacement~ and its per-situation forms (alfe 2.3.89) are passed to the
   clautolisp engine, in-process and as a subprocess; under ~--autocad~ /
   ~--bricscad~ they are ignored with a warning. See the user manual,
