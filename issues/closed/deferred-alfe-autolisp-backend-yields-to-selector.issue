@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: deferred-alfe-autolisp-backend-yields-to-selector — $AUTOLISP_BACKEND conflicts with an explicit --autocad / --bricscad instead of yielding
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
@@ -43,3 +43,28 @@ NIL -- which its step 3 already describes. Keep a real conflict
   it.
 - =AUTOLISP_BACKEND=bricscad alfe= alone still selects BricsCAD.
 - =alfe --autocad --bricscad= is still a usage error.
+
+* Resolved (alfe / clautolisp 2.4.10, 2026-11-15)
+
+=APPLY-ENV-DEFAULTS= no longer copies =$AUTOLISP_BACKEND= into the backend
+slot before argv. The new =APPLY-AUTOLISP-BACKEND-DEFAULT= runs at the end of
+=PARSE-ARGUMENTS=, after the shared environment defaults, and fills the slot
+only when nothing else chose a backend: no =--clautolisp= / =--autocad= /
+=--bricscad=, no =--cad= (nor =$ALFE_CAD=), and no =$ALFE_BACKEND_OVERRIDE=.
+The value still goes into the slot (and is recorded in
+=CLI-OPTIONS-ENVIRONMENT-SOURCES=) because the CAD-imposed dialect, the CAD
+instance policy and the terminal read the slot before the backend is
+resolved.
+
+A second inversion of =RESOLVE-BACKEND='s documented order went with it:
+because the variable pre-filled the slot, it outranked
+=$ALFE_BACKEND_OVERRIDE=, which =RESOLVE-BACKEND= consults only on an empty
+slot. The override now wins, as documented, and the debug log names
+=$AUTOLISP_BACKEND= as the source instead of "explicit flag".
+
+Tests (=autolisp-front-end/tests/cli-tests.lisp=): the explicit selector wins
+over the variable; the variable alone still selects; =--autocad --bricscad=
+is still a usage error (with or without the variable); an invalid value is
+still a usage error; the override beats the variable; =$ALFE_CAD= keeps the
+variable out. Documentation: alfe user manual (Backends > Algorithm),
+specification, man page, RELEASE_NOTES.

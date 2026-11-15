@@ -988,3 +988,66 @@ wrote -- the variable, not an option they never typed."
         (let ((message (alfe.error:cli-usage-error-message condition)))
           (is (search "AUTOLISP_HOST=cadtui" message) "~A" message)
           (is (search "--backend direct" message) "~A" message))))))
+
+;;; --- $AUTOLISP_BACKEND yields to an explicit selector ----------------
+;;;
+;;; deferred-alfe-autolisp-backend-yields-to-selector: the variable used to
+;;; be copied into the backend slot BEFORE argv was parsed, so --autocad
+;;; under AUTOLISP_BACKEND=bricscad read as a second selector and failed.
+;;; These variables are read with UIOP:GETENV (alfe's own table, not the
+;;; shared *ENVIRONMENT-GETENV*), so the tests set the real environment.
+
+(defun %call-with-process-environment (bindings thunk)
+  "Call THUNK with each (VARIABLE . VALUE) of BINDINGS set in the process
+environment (\"\" is unset for alfe), then restore the previous values."
+  (let ((saved (mapcar (lambda (b) (cons (car b) (or (uiop:getenv (car b)) "")))
+                       bindings)))
+    (unwind-protect
+         (progn (dolist (b bindings) (setf (uiop:getenv (car b)) (cdr b)))
+                (funcall thunk))
+      (dolist (s saved) (setf (uiop:getenv (car s)) (cdr s))))))
+
+(defun %parse-with-backend-variables (autolisp-backend override &rest argv)
+  (%call-with-process-environment
+   (list (cons "AUTOLISP_BACKEND" (or autolisp-backend ""))
+         (cons "ALFE_BACKEND_OVERRIDE" (or override "")))
+   (lambda () (parse-arguments argv))))
+
+(test cli-autolisp-backend-yields-to-an-explicit-selector
+  (is (eq :autocad (cli-options-backend
+                    (%parse-with-backend-variables "bricscad" nil "--autocad"))))
+  (is (eq :clautolisp (cli-options-backend
+                       (%parse-with-backend-variables "bricscad" nil "--clautolisp")))))
+
+(test cli-autolisp-backend-alone-still-selects
+  (is (eq :bricscad (cli-options-backend
+                     (%parse-with-backend-variables "bricscad" nil)))))
+
+(test cli-two-selectors-still-conflict
+  (signals cli-usage-error
+    (%parse-with-backend-variables nil nil "--autocad" "--bricscad"))
+  (signals cli-usage-error
+    (%parse-with-backend-variables "bricscad" nil "--autocad" "--bricscad")))
+
+(test cli-autolisp-backend-is-still-checked
+  (signals cli-usage-error (%parse-with-backend-variables "nosuchcad" nil)))
+
+(test cli-backend-override-beats-autolisp-backend
+  "resolve-backend's documented order: $ALFE_BACKEND_OVERRIDE, then
+$AUTOLISP_BACKEND."
+  (%call-with-process-environment
+   '(("AUTOLISP_BACKEND" . "bricscad") ("ALFE_BACKEND_OVERRIDE" . "autocad"))
+   (lambda ()
+     (let ((opts (parse-arguments '())))
+       (is (null (cli-options-backend opts)))
+       (is (eq :autocad (alfe.backend:backend-name
+                         (alfe.cli:resolve-backend opts :detect-p nil))))))))
+
+(test cli-autolisp-backend-yields-to-alfe-cad
+  "ALFE_CAD stands for --cad, which selects a backend of its own."
+  (%call-with-process-environment
+   '(("AUTOLISP_BACKEND" . "bricscad") ("ALFE_BACKEND_OVERRIDE" . ""))
+   (lambda ()
+     (let ((opts (%parse-in-environment '(("ALFE_CAD" . "acad-2026")))))
+       (is (null (cli-options-backend opts)))
+       (is (equal "acad-2026" (clautolisp.autolisp-cli:cli-options-cad opts)))))))

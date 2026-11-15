@@ -2725,6 +2725,11 @@ file or COM), and forwards the workload.
   usage error caused by a variable names it. The six variables the old table
   listed but never read (~$AUTOLISP_OS~, ~$AUTOCAD_VERSION~, ...) are gone.
   alfe 2.4.9.
+- ~$AUTOLISP_BACKEND~ yields to an explicit selector, as documented: with
+  ~AUTOLISP_BACKEND=bricscad~, ~alfe --autocad~ selects AutoCAD instead of
+  failing with /Conflicting backend selectors/. It also yields to ~--cad~ /
+  ~$ALFE_CAD~ and to ~$ALFE_BACKEND_OVERRIDE~, which it used to outrank;
+  ~--autocad --bricscad~ on one command line is still an error. alfe 2.4.10.
 
 ** Hosts: cador, cadtui, nihil (alfe-user-manual § /Host selection/)
 
