@@ -1052,10 +1052,12 @@ commande > =CLAUTOLISP_X= / =ALFE_X= > =AUTOLISP_X= > defaut ; groupes
 (--strict ecarte AUTOLISP_DIALECT), encodages et -O en couche sous la ligne de
 commande ; un clautolisp pilote par alfe (--front-end-bindings) n en lit
 aucune ; six entrees mortes d alfe retirees ; AUTOLISP_ALDB_LISTEN inclus.
-** TODO alfe-trustedpaths-real-registry-flaky (P3)
-[[file:alfe-trustedpaths-real-registry-flaky.issue][real-registry TRUSTEDPATHS round trip failed once]] : NOUVEAU 2026-11-15 :
-un make test complet sur pfenny a echoue pour le seul profil Epure ; non
-reproduit (10/10 seul, suite complete verte). 2.4.15 affiche la valeur relue.
+** DONE alfe-trustedpaths-real-registry-flaky (P3)
+[[file:../closed/alfe-trustedpaths-real-registry-flaky.issue][real-registry TRUSTEDPATHS round trip failed once]] : FERME 2026-11-15 (2.4.16) :
+course entre deux processus du meme compte (runner GitLab et make test par
+ssh) : chacun reecrivait la valeur lue plus son entree. Ecriture en
+compare-and-set sous le mutex Global\alfe-trustedpaths, relance si la valeur
+a change ; une lecture echouee n est plus prise pour une valeur absente.
 ** DONE alfe-windows-cscript-tests-decode-utf8 (P3)
 [[file:../closed/alfe-windows-cscript-tests-decode-utf8.issue][cscript tests: UTF-8 decoding error, octet 138]] : FERME 2026-11-15 (2.4.12) :
 les 3 tests Windows qui lancent cscript lisaient sa sortie (codepage console,

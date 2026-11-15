@@ -10,7 +10,9 @@
                                   &body body)
   "Run BODY against a fake registry whose TRUSTEDPATHS starts as VALUE
 (NIL: absent) and a fake process table where only ALIVE pids live. Binds
-REG (the table), JOURNAL (its path) and KEY (the subkey)."
+REG (the table), JOURNAL (its path) and KEY (the subkey). The registry
+hooks have the real ones' contract: a read answers (VALUES NIL :ABSENT)
+for a missing value, a write is a compare-and-set."
   `(let* ((reg (make-hash-table :test 'equal))
           (key "Software\\Autodesk\\AutoCAD\\R24.1\\ACAD-5101:409\\Profiles\\<<Unnamed Profile>>\\Variables")
           (journal (merge-pathnames
@@ -21,11 +23,16 @@ REG (the table), JOURNAL (its path) and KEY (the subkey)."
           (alfe.backend.autocad::*registry-read-function*
             (lambda (subkey name)
               (let ((cell (gethash (cons subkey name) reg)))
-                (when cell (values (car cell) (cdr cell))))))
+                (if cell
+                    (values (car cell) (cdr cell))
+                    (values nil :absent)))))
           (alfe.backend.autocad::*registry-write-function*
-            (lambda (subkey name data kind)
-              (setf (gethash (cons subkey name) reg) (cons data kind))
-              t))
+            (lambda (subkey name expected data kind)
+              ;; compare-and-set, as %HKCU-WRITE-VALUE does under its mutex
+              (if (equal expected (car (gethash (cons subkey name) reg)))
+                  (progn (setf (gethash (cons subkey name) reg) (cons data kind))
+                         :ok)
+                  :changed)))
           (alfe.backend.autocad::*process-alive-function*
             (lambda (pid) (or (member pid ',alive)
                               (eql pid (alfe.workdir::current-pid)))))
@@ -136,6 +143,79 @@ REG (the table), JOURNAL (its path) and KEY (the subkey)."
                  (%trustedpaths-now reg key)))
     (is (null (probe-file journal)))))
 
+;;; Two processes of the same user -- the GitLab runner and a `make test'
+;;; over ssh, both as COMMUN\PPBN02261 on pfenny, 2026-11-15 -- read the
+;;; same TRUSTEDPATHS, each appended its own entry and wrote back what it
+;;; had read plus that entry: the second write erased the first's entry
+;;; (alfe-trustedpaths-real-registry-flaky). A write is therefore a
+;;; compare-and-set against the value read, retried on a change.
+
+(defun %concurrent-writer (reg key entry)
+  "A write hook that, on its FIRST call only, lets another process append
+ENTRY to the value just before our write lands -- then behaves as the
+fake compare-and-set registry."
+  (let ((raced nil))
+    (lambda (subkey name expected data kind)
+      (unless raced
+        (setf raced t)
+        (let ((cell (gethash (cons key "TRUSTEDPATHS") reg)))
+          (setf (gethash (cons key "TRUSTEDPATHS") reg)
+                (cons (alfe.backend.autocad::add-trusted-entry (car cell) entry)
+                      (or (cdr cell) "String")))))
+      (if (equal expected (car (gethash (cons subkey name) reg)))
+          (progn (setf (gethash (cons subkey name) reg) (cons data kind))
+                 :ok)
+          :changed))))
+
+(test trustedpaths-trust-keeps-an-entry-written-concurrently
+  (with-fake-trustedpaths (:value "C:\\Tools")
+    (let ((alfe.backend.autocad::*registry-write-function*
+            (%concurrent-writer reg key "E:\\Other\\...")))
+      (let ((token (alfe.backend.autocad::trust-workdir-for-run #p"/tmp/alfe-autocad-77-zz11aa/")))
+        (is (= 1 (length token)))
+        (is (string= (format nil "C:\\Tools;E:\\Other\\...;~A"
+                             (alfe.backend.autocad::workdir-trusted-entry
+                              #p"/tmp/alfe-autocad-77-zz11aa/"))
+                     (%trustedpaths-now reg key)))))))
+
+(test trustedpaths-untrust-keeps-an-entry-written-concurrently
+  (with-fake-trustedpaths (:value "C:\\Tools")
+    (let ((token (alfe.backend.autocad::trust-workdir-for-run #p"/tmp/alfe-autocad-77-zz11aa/")))
+      (let ((alfe.backend.autocad::*registry-write-function*
+              (%concurrent-writer reg key "E:\\Other\\...")))
+        (alfe.backend.autocad::untrust-workdir token))
+      (is (string= "C:\\Tools;E:\\Other\\..." (%trustedpaths-now reg key)))
+      (is (null (probe-file journal))))))
+
+(test trustedpaths-a-value-that-keeps-changing-is-given-up
+  ;; bounded: a value rewritten on every attempt ends in a warning, never a hang
+  (with-fake-trustedpaths (:value "C:\\Tools")
+    (let ((alfe.backend.autocad::*registry-write-function* (constantly :changed)))
+      (is (null (alfe.backend.autocad::trust-workdir-for-run #p"/tmp/alfe-autocad-77-zz11aa/"))))))
+
+;;; A read that FAILED (PowerShell did not answer) is not an absent value.
+;;; Taken for one, trust would replace the user's whole TRUSTEDPATHS with
+;;; alfe's lone entry, and untrust would report the entry gone and drop its
+;;; journal line while the entry stayed in the profile.
+
+(test trustedpaths-an-unreadable-value-is-never-written
+  (with-fake-trustedpaths (:value "C:\\Tools")
+    (let ((alfe.backend.autocad::*registry-read-function* (constantly nil))
+          (writes 0))
+      (let ((alfe.backend.autocad::*registry-write-function*
+              (lambda (&rest args) (declare (ignore args)) (incf writes) :ok)))
+        (is (null (alfe.backend.autocad::trust-workdir-for-run #p"/tmp/alfe-autocad-77-zz11aa/")))
+        (is (zerop writes)))
+      (is (string= "C:\\Tools" (%trustedpaths-now reg key))))))
+
+(test trustedpaths-an-unreadable-value-keeps-the-journal-line
+  (with-fake-trustedpaths (:value "C:\\Tools")
+    (let ((token (alfe.backend.autocad::trust-workdir-for-run #p"/tmp/alfe-autocad-77-zz11aa/")))
+      (let ((alfe.backend.autocad::*registry-read-function* (constantly nil)))
+        (alfe.backend.autocad::untrust-workdir token))
+      (is (not (null (probe-file journal)))
+          "the entry may still be there: the journal keeps it for the next sweep"))))
+
 (test trustedpaths-a-failed-write-is-not-a-token
   (with-fake-trustedpaths (:value "C:\\Tools")
     (let ((alfe.backend.autocad::*registry-write-function* (constantly nil)))
@@ -160,12 +240,26 @@ REG (the table), JOURNAL (its path) and KEY (the subkey)."
     (is (search "(eq launcher #'uiop:launch-program))" text))
     (is (search "(trust-workdir-for-run workdir)" text))))
 
+(defun %foreign-trusted-entry-p (entry)
+  "An entry another run may add or remove while a real-registry test runs:
+an alfe workdir, or another test's own entry. Such entries are not part of
+what a test must find restored."
+  (or (alfe.backend.autocad::trusted-entry-workdir-pid entry)
+      (search "alfe-trust-test-" entry)))
+
+(defun %own-entries (value)
+  (remove-if #'%foreign-trusted-entry-p
+             (alfe.backend.autocad::split-trustedpaths value)))
+
 (test trustedpaths-real-registry-round-trip-on-windows
-  ;; The only test of the PowerShell transport itself, so it runs against the
-  ;; REAL registry of a Windows host that has AutoCAD profiles -- the native
-  ;; Windows alfe lane. A workdir name with a non-ASCII character is the
-  ;; point: reg.exe's codepage would have mangled it. The entry lives for the
-  ;; duration of the test and every profile must end byte-identical.
+  ;; The test of the PowerShell transport on real profiles, so it runs
+  ;; against the REAL registry of a Windows host that has AutoCAD profiles
+  ;; -- the native Windows alfe lane. A path with a non-ASCII character is
+  ;; the point: reg.exe's codepage would have mangled it. The workdir is
+  ;; named as alfe names its own, so a killed test leaves an entry the next
+  ;; run's sweep removes. Another run of this suite may share the profiles
+  ;; (the runner and a developer use the same account on the Windows box):
+  ;; its entries come and go, so what must be restored is the rest.
   (when (alfe.backend.cad-common:windows-p)
     (let ((subkeys (funcall alfe.backend.autocad::*trustedpaths-location-function*)))
       (when subkeys
@@ -174,17 +268,17 @@ REG (the table), JOURNAL (its path) and KEY (the subkey)."
                                   (alfe.backend.autocad::%hkcu-read-value s "TRUSTEDPATHS")))
                                subkeys))
                (workdir (merge-pathnames
-                         (format nil "alfe-trust-test-é-~D/" (random 1000000))
+                         (format nil "alfe-trust-test-é/alfe-trusttest-~D-~(~36,6,'0R~)/"
+                                 (alfe.workdir::current-pid) (random (expt 36 6)))
                          (uiop:temporary-directory)))
                (entry (alfe.backend.autocad::workdir-trusted-entry workdir))
                (token (alfe.backend.autocad::trust-workdir-for-run workdir)))
+          (is (alfe.backend.autocad::trusted-entry-workdir-pid entry)
+              "~A is named like an alfe workdir" entry)
           (unwind-protect
                (progn
                  (is (= (length subkeys) (length token)))
                  (dolist (s subkeys)
-                   ;; The value read back is part of the message: a pfenny run
-                   ;; once failed here for one profile only and could not be
-                   ;; reproduced, and "holds ENTRY" alone said nothing of why.
                    (let ((read-back (multiple-value-list
                                      (alfe.backend.autocad::%hkcu-read-value s "TRUSTEDPATHS"))))
                      (is (member entry
@@ -194,8 +288,79 @@ REG (the table), JOURNAL (its path) and KEY (the subkey)."
             (alfe.backend.autocad::untrust-workdir token))
           (loop for s in subkeys
                 for (data) in before
-                ;; an ABSENT value comes back empty: the same meaning ("none"),
-                ;; and AutoCAD writes the value on its next profile save anyway
-                do (is (string= (or data "")
-                                (or (alfe.backend.autocad::%hkcu-read-value s "TRUSTEDPATHS") ""))
-                       "~A restored" s)))))))
+                for after = (multiple-value-list
+                             (alfe.backend.autocad::%hkcu-read-value s "TRUSTEDPATHS"))
+                do (is (not (member entry
+                                    (alfe.backend.autocad::split-trustedpaths (first after))
+                                    :test #'string=))
+                       "~A no longer holds ~A~%read back: ~S" s entry after)
+                   ;; an ABSENT value comes back empty: the same meaning ("none")
+                   (is (equal (%own-entries data) (%own-entries (first after)))
+                       "~A restored~%before: ~S~%after:  ~S" s data after)))))))
+
+(defun %powershell-or-fail (script)
+  (let ((output (alfe.backend.autocad::%run-powershell script)))
+    (is (search "DONE" (or output "")) "PowerShell ran: ~S" output)
+    output))
+
+(test trustedpaths-concurrent-updates-of-a-real-value-all-land
+  ;; The compare-and-set and its mutex against the real registry, on any
+  ;; Windows host (no AutoCAD needed): four threads each add their own entry
+  ;; to ONE scratch value at the same time, then each removes it. A plain
+  ;; read-modify-write loses entries here, because every PowerShell start
+  ;; leaves a wide window between a read and the write after it.
+  (when (alfe.backend.cad-common:windows-p)
+    (let* ((subkey (format nil "Software\\clautolisp-tests\\trustedpaths-~D"
+                           (alfe.workdir::current-pid)))
+           (name "TRUSTEDPATHS")
+           (entries (loop for i from 1 to 4
+                          collect (format nil "C:\\alfe-trust-test-é-~D\\..." i)))
+           (lock (bordeaux-threads:make-lock "results"))
+           (results '()))
+      (%powershell-or-fail
+       (format nil "[void][Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(~A);'DONE'"
+               (alfe.backend.autocad::ps-string subkey)))
+      (flet ((in-parallel (function)
+               (setf results '())
+               (mapc #'bordeaux-threads:join-thread
+                     (mapcar (lambda (entry)
+                               (bordeaux-threads:make-thread
+                                (lambda ()
+                                  (let ((result (ignore-errors (funcall function entry))))
+                                    (bordeaux-threads:with-lock-held (lock)
+                                      (push result results))))))
+                             entries))
+               results)
+             (now ()
+               (alfe.backend.autocad::split-trustedpaths
+                (alfe.backend.autocad::%hkcu-read-value subkey name))))
+        (unwind-protect
+             (progn
+               (is (every (lambda (r) (eq r :written))
+                          (in-parallel
+                           (lambda (entry)
+                             (alfe.backend.autocad::%update-registry-value
+                              subkey name
+                              (lambda (data)
+                                (values (alfe.backend.autocad::add-trusted-entry (or data "") entry)
+                                        t))))))
+                   "every add was written: ~S" results)
+               (is (equal (sort (copy-list entries) #'string<) (sort (now) #'string<))
+                   "all four entries are there")
+               (is (every (lambda (r) (eq r :written))
+                          (in-parallel
+                           (lambda (entry)
+                             (alfe.backend.autocad::%update-registry-value
+                              subkey name
+                              (lambda (data)
+                                (alfe.backend.autocad::remove-trusted-entries
+                                 (or data "")
+                                 (lambda (e) (string= e entry))))))))
+                   "every removal was written: ~S" results)
+               (is (null (now)) "all four entries are gone"))
+          (%powershell-or-fail
+           ;; and the parent, once no concurrent run of this test uses it
+           (format nil "$r=[Microsoft.Win32.Registry]::CurrentUser;$r.DeleteSubKeyTree(~A,$false);~
+$p=$r.OpenSubKey('Software\\clautolisp-tests');~
+if($p -and $p.SubKeyCount -eq 0 -and $p.ValueCount -eq 0){$p.Close();$r.DeleteSubKey('Software\\clautolisp-tests',$false)};'DONE'"
+                   (alfe.backend.autocad::ps-string subkey))))))))
