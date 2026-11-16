@@ -862,3 +862,39 @@ Still to spike (deeper, incremental):
   =getpoint=/=entsel=/=ssget= drive from the canvas (the increment-1 scope).
 - The cador COOPERATIVE SCHEDULER for the multi-document case (several drawings,
   thread-parked), vs the single modal nested loop here.
+
+** The GUI is the fourth HOST: =cadgui= (pjb, 2026-11-16)
+
+Architecture decision: phase-2's Qt6 GUI is not a bolted-on viewer, it is a
+fourth clautolisp HOST, a peer of the existing three:
+- =nihil=  : trivial backend, no CAD host (=autolisp-host/nihil.lisp=).
+- =cador=  : the headless CAD core / HAL backend (=cador/model.lisp=).
+- =cadtui= : the full TEXTUAL UI-tree host layered on the cador core (ui-tree,
+  menus, cad-view, DCL mirrored into an inspectable tree); runs ON cador.
+- =cadgui= : the GRAPHICAL UI-tree host -- the Qt6 peer of cadtui on the same
+  cador core. Invoked as =clautolisp --host cadgui=. ("cadgui" is the working
+  name; a marketing name comes later.)
+
+cadgui *inherits / reuses the cador and cadtui classes* (pjb): it is the same
+cador document core and the same cadtui UI tree, RENDERED graphically by the
+embedded-ECL Qt6 canvas (the spikes above) instead of textually. So the GUI is
+the cadtui tree's graphical view + the interactive canvas, not a separate stack.
+The Action Layer (one named/typed/guarded surface, four hosts) now has its
+fourth surface here.
+
+Established in the CLI plumbing (2.4.21): =--host cadgui= is a recognised host
+(parse-host -> =:cadgui=; listed by =--list-hosts=; =keyword->host= maps it to
+the cador HAL backend like cadtui). =maybe-install-cadtui-host= was generalised
+to install the cadtui tree for =:cadtui= OR =:cadgui= and set the banner label
+accordingly. Until the Qt6 renderer is wired, =--host cadgui= gives the cadtui
+tree under the cadgui label -- the honest WIP state (the graphical renderer is
+the phase-2 work, plugging into this seam + the embedded-ECL canvas).
+
+Phase-2 work, restated in host terms:
+1. A =clautolisp/cadgui= module (reusing cadtui's ui-tree) whose renderer is the
+   embedded-ECL Qt6 canvas; =maybe-install-cadtui-host='s =:cadgui= branch grows
+   to start it.
+2. The canvas renders the cador model (display list), pans/zooms, and feeds
+   pointer/selection back through the nested-event-loop input bridge into
+   cador's =read-prompt-line= (so getpoint/entsel/ssget drive from the GUI).
+3. Detachable/offscreen for screenshots (validated by the spikes).

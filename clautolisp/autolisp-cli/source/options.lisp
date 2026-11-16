@@ -22,7 +22,7 @@
   (attach-pid       nil)              ; A   --attach-pid PID: attach to that running CAD
   ;; Dialect + host
   (dialect          :strict)          ; AC  :strict / :autocad-2026 / :bricscad-v26 / :clautolisp
-  (host             :cador)           ; AC  :cador / :cadtui / :nihil (default :cador)
+  (host             :cador)           ; AC  :cador / :cadtui / :cadgui / :nihil (default :cador)
   ;; Encoding
   (load-encoding    nil)              ; AC  = the `source' situation (-Esource); mirrored for downstream
   (io-encoding      nil)              ; AC  = the `terminal' situation (-Eterminal); mirrored for downstream
@@ -189,6 +189,12 @@ debug) or of the level itself (warn, info)."
   ;; cadtui = the full textual UI-tree host layered on the cador core (menus,
   ;;          drawings, cad-view, DCL dialogs mirrored into the tree); cador is
   ;;          its degenerate /application/console configuration.
+  ;; cadgui = the GRAPHICAL UI-tree host: the fourth host, the Qt6 peer of
+  ;;          cadtui on the same cador core (release-3.0 CAD epic). It reuses the
+  ;;          cadtui UI tree and renders it with an embedded-ECL Qt6 canvas; the
+  ;;          graphical renderer is being built (phase 2), so today --host cadgui
+  ;;          installs the cadtui tree under the cadgui label. ("cadgui" is the
+  ;;          working name; a marketing name comes later.)
   ;; nihil  = the trivial backend; null/none are deprecated aliases of nihil.
   ;; An alias yields the keyword of the host it stands for, so
   ;; *AUTOLISP-HOST* names the host, never the spelling
@@ -196,18 +202,21 @@ debug) or of the level itself (warn, info)."
   (cond ((string-equal value "cador") :cador)
         ((string-equal value "mock") :cador)
         ((string-equal value "cadtui") :cadtui)
+        ((string-equal value "cadgui") :cadgui)
         ((string-equal value "nihil") :nihil)
         ((string-equal value "null") :nihil)
         ((string-equal value "none") :nihil)
         (t (error 'cli-usage-error
                   :option option
                   :message
-                  (format nil "Unknown --host ~S (expected cador/cadtui/nihil; mock=alias of cador, null/none=aliases of nihil; see --list-hosts)" value)))))
+                  (format nil "Unknown --host ~S (expected cador/cadtui/cadgui/nihil; mock=alias of cador, null/none=aliases of nihil; see --list-hosts)" value)))))
 
 (defparameter *host-descriptions*
   '(("cador"  . "Headless CAD core: the /application/console tree (default).")
     ("cadtui" . "Full textual UI-tree host on the cador core: menus, drawings,")
     (""       . "          CAD view, and DCL dialogs mirrored into an inspectable tree.")
+    ("cadgui" . "Graphical UI-tree host: the Qt6 peer of cadtui on the cador core")
+    (""       . "          (embedded-ECL canvas; renderer WIP -- installs the cadtui tree).")
     ("nihil"  . "Trivial backend: no CAD host at all.")
     (";aliases" . "mock = cador; null, none = nihil."))
   "Host name -> one-line summary, for --list-hosts (spec: cador is a degenerate

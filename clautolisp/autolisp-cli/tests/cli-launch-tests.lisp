@@ -98,9 +98,10 @@ sexp file (UNIX backend), so registry reads/writes stay hermetic."
 
 ;;; --- Option value parsers ---------------------------------------
 
-(test parse-host-accepts-cador-cadtui-nihil-and-aliases
+(test parse-host-accepts-cador-cadtui-cadgui-nihil-and-aliases
   (is (eql :cador (parse-host "cador" "--host")))
   (is (eql :cadtui (parse-host "cadtui" "--host")))
+  (is (eql :cadgui (parse-host "cadgui" "--host")))  ; the fourth host (release-3.0)
   (is (eql :nihil (parse-host "nihil" "--host")))
   ;; deprecated aliases: mock->cador, null/none->nihil
   (is (eql :cador (parse-host "mock" "--host")))
@@ -132,6 +133,7 @@ sexp file (UNIX backend), so registry reads/writes stay hermetic."
                 (clautolisp.autolisp-cli:print-hosts :stream s))))
     (is (search "cador" text))
     (is (search "cadtui" text))
+    (is (search "cadgui" text))
     (is (search "nihil" text))
     ;; the deprecated aliases are noted, not silently dropped.
     (is (search "mock" text))))

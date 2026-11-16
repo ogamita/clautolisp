@@ -203,11 +203,12 @@ so adding a dialect only touches dialect.lisp."
 (defun keyword->host (host-keyword)
   "Map a --host keyword to a HAL backend instance. Defaults to cador (the
 headless CAD core) when HOST-KEYWORD is nil (clautolisp omits --host). :mock is
-the deprecated alias of :cador. :cadtui runs on the SAME cador CAD core — it is
-a UI-tree presentation layer over it (installed separately at startup, see
-MAYBE-INSTALL-CADTUI-HOST), so it maps to the cador backend here too."
+the deprecated alias of :cador. :cadtui and :cadgui both run on the SAME cador
+CAD core — they are UI-tree presentation layers over it (textual and graphical
+respectively, installed separately at startup, see MAYBE-INSTALL-CADTUI-HOST),
+so they map to the cador backend here too."
   (case host-keyword
-    ((nil :cador :mock :cadtui)  (make-cador))
+    ((nil :cador :mock :cadtui :cadgui)  (make-cador))
     ((:nihil :null)      *nihil*)))
 
 (defvar *active-host-label* nil
@@ -224,13 +225,19 @@ HOST-NAME would say \"cador\". NIL means use the backend's own HOST-NAME.")
     (evaluation-context-session (clautolisp.autolisp-runtime:current-evaluation-context)))))
 
 (defun maybe-install-cadtui-host (host-keyword)
-  "When --host cadtui is selected, build the full cadtui application tree and
-install the cadtui DCL renderer over it, so DCL dialogs (and CAD objects) are
-mirrored into an inspectable UI tree during the session — the cadtui host layer
-over the shared cador core. Records the tree and the \"cadtui\" banner label so
-the session reports the selected host, not the underlying backend. A no-op for
-every other host. Returns the tree or NIL."
-  (when (eq host-keyword :cadtui)
+  "When --host cadtui OR --host cadgui is selected, build the full cadtui
+application tree and install the cadtui DCL renderer over it, so DCL dialogs
+(and CAD objects) are mirrored into an inspectable UI tree during the session —
+the UI-tree host layer over the shared cador core. Records the tree and the
+selected host's banner label (\"cadtui\"/\"cadgui\") so the session reports the
+selected host, not the underlying backend. A no-op for every other host.
+
+cadgui (the release-3.0 fourth host) is the GRAPHICAL peer of cadtui: it reuses
+this same cadtui tree and will render it with an embedded-ECL Qt6 canvas. That
+graphical renderer is phase-2 WIP; until it lands, --host cadgui installs the
+cadtui tree exactly as --host cadtui does, under the cadgui label. Returns the
+tree or NIL."
+  (when (member host-keyword '(:cadtui :cadgui))
     (let ((root (clautolisp.cadtui:make-application-tree)))
       (clautolisp.cadtui:install-cadtui-dcl-renderer root)
       ;; NEW / OPEN / MENULOAD / CUILOAD run in the cador core; mirror them
@@ -256,7 +263,7 @@ every other host. Returns the tree or NIL."
               (let ((host (%session-host)))
                 (when host (clautolisp.cador:cador-close-document host key)))))
       (setf *cadtui-root* root
-            *active-host-label* "cadtui")
+            *active-host-label* (string-downcase (symbol-name host-keyword)))
       root)))
 
 (defun pop-required-argument (option arguments)
