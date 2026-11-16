@@ -697,14 +697,29 @@ on a dedicated long-lived branch rather than in short MRs:
   (Linux CI/host) and *macOS* (dev/CI), and on the Linux build sandbox used to
   start the port.  SBCL + CCL stay as parallel dev/CI lanes (fast loop + the
   existing alfe/CAD tooling); ECL is the embed target for the Qt app.
-- *Baseline datapoint (2026-11-16):* under ECL 24.5.10 (ASDF upgraded to
-  3.3.7.3 via quicklisp), the leaf system =clautolisp/autolisp-reader=
-  (deps babel, trivial-gray-streams, uiop) COMPILES AND LOADS CLEAN, no
-  ECL-specific errors.  Next baselines: the umbrella =clautolisp= system and the
-  FFI/thread-bearing subsystems (=drawing-dwg= via cffi, the cooperative
-  scheduler / bordeaux-threads, =clautolisp-tool= / usocket), where the first
-  real ECL quirks (FFI, thread model, external-format, compiled-closure
-  behaviour) are expected.  The test suite is the oracle for "ported".
+- *Full-umbrella baseline (2026-11-16): GREEN on ECL 24.5.10* (ASDF 3.3.7.3
+  via quicklisp).  =asdf:load-system "clautolisp"= COMPILES AND LOADS CLEAN:
+  20/20 umbrella subsystems (reader, source-map, runtime, drawing,
+  autolisp-host, *cador*, cadtui, builtins-core, cli, dcl, file-compat,
+  init-files, debug, inspect, sedit, interactor, debug-ui, debug-ui-dumb,
+  tui-core, debug-ui-ncurses) plus all 8 external deps (uiop babel
+  trivial-gray-streams cffi bordeaux-threads usocket fiveam cl-charms,
+  including the ncurses FFI).  Only ONE source blocker was found and fixed:
+  - =autolisp-file-compat/source/api.lisp= used the character literal
+    =#\Formfeed= (non-standard name; SBCL/CCL accept, ECL rejects at read:
+    "FORMFEED" is an illegal character name) -> =#\Page= (ANSI semi-standard,
+    same code 12; behaviour-identical, verified on SBCL).  clautolisp 2.4.18
+    (+ alfe 2.4.18 in step).
+  This is load/compile only; the next gate is the TEST SUITE green on ECL
+  (the oracle for "ported"), where the real runtime quirks (FFI marshalling,
+  thread model, external-format, compiled-closure behaviour) will show.
+- *Build-ECL caveat (finding):* quicklisp's in-image ASDF self-upgrade is
+  stack-fragile on ECL -- it overflows the binding/C stack NONDETERMINISTICALLY
+  against a populated fasl cache (seen as "BINDING-STACK overflow at 10240" /
+  "C-STACK overflow at 1048576" during init).  A clean compile (empty cache)
+  with raised =ext:set-limit= stacks is reliable.  The =build-ecl= lane must
+  therefore NOT rely on an incremental fasl cache + in-image upgrade; prefer a
+  saved ECL image built once with ASDF pre-upgraded and all systems loaded.
 - *Deliverable of phase 1:* an =ecl= build lane (Makefile =build-ecl=, an
   ECL image) alongside =build-sbcl= / =build-ccl=, with the test corpus green
   on ECL.
