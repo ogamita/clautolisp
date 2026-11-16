@@ -539,3 +539,57 @@ B10-B13 remain.
 | =(vl-vbaload "clautolisp-no-such-project.dvb")= | ((ERROR "type d'argument incorrect: VLA-OBJECT nil") 0) | (NIL 0) | (NIL 0) |
 | =(vl-vbarun "ClautolispNoSuchMacro")= | (T 0) | (NIL 101) | (NIL 0) |
 | =(vl-vbarun "")= | (T 0) | (NIL 0) | (NIL 0) |
+
+* B8 (host functions) captured -- 2026-11-16
+
+Captured by !552's probe:suite jobs: AutoCAD 2022 Windows (job 18080911442,
+probe-results/autocad/ms-windows/20261116T193243Z), BricsCAD Windows
+(18080911446, .../bricscad/ms-windows/20261116T193939Z), BricsCAD macOS
+(18080911443, .../bricscad/macos/20261116T193311Z). (RESULT ERRNO) per cell.
+
+Findings: CVUNIT's offset units (celsius -> fahrenheit 212.0, -> kelvin
+273.15) work on AutoCAD only (BricsCAD nil); BricsCAD Windows even answers
+nil for inch -> mm and returns a point unconverted, BricsCAD macOS converts
+both. SETCFG into an unknown section: AutoCAD nil, BricsCAD stores it. GETENV
+after (setenv "ClautolispProbeB8" "x") finds the value only under the
+UPPER-CASE name, on all three. TABLET 0 with no digitiser: AutoCAD nil +
+ERRNO 68, BricsCAD Windows a zero calibration, macOS nil. STARTAPP of a
+missing program: AutoCAD nil, BricsCAD a number (0 on Windows, a pid on
+macOS). SNVALID agrees on all three (EXTNAMES 0 refuses space / dot / bar,
+1 accepts space and dot); AutoCAD alone sets ERRNO 1 for "a|b" under flag 0.
+
+| case | AutoCAD 2022 | BricsCAD Win | BricsCAD mac |
+|-+-+-+-|
+| =(cad-probe--hf-snvalid-under 0 '("ABC" "A B" "a-b" "a$b" "a_b" "a.b" "a\vert{}b" "a<b" "a*b" "a?b" "a,b" "a;b" "a'b" ""))= | ((("ABC" T) ("A B" nil) ("a-b" T) ("a$b" T) ("a_b" T) ("a.b" nil) ("a\vert{}b" nil) ("a<b" nil) ("a*b" nil) ("a?b" nil) ("a,b" nil) ("a;b" nil) ("a'b" nil) ("" nil)) 1) | ((("ABC" T) ("A B" NIL) ("a-b" T) ("a$b" T) ("a_b" T) ("a.b" NIL) ("a\vert{}b" NIL) ("a<b" NIL) ("a*b" NIL) ("a?b" NIL) ("a,b" NIL) ("a;b" NIL) ("a'b" NIL) ("" NIL)) 0) | ((("ABC" T) ("A B" NIL) ("a-b" T) ("a$b" T) ("a_b" T) ("a.b" NIL) ("a\vert{}b" NIL) ("a<b" NIL) ("a*b" NIL) ("a?b" NIL) ("a,b" NIL) ("a;b" NIL) ("a'b" NIL) ("" NIL)) 0) |
+| =(cad-probe--hf-snvalid-under 1 '("ABC" "A B" "a-b" "a$b" "a_b" "a.b" "a\vert{}b" "a<b" "a*b" "a?b" "a,b" "a;b" "a'b" ""))= | ((("ABC" T) ("A B" T) ("a-b" T) ("a$b" T) ("a_b" T) ("a.b" T) ("a\vert{}b" nil) ("a<b" nil) ("a*b" nil) ("a?b" nil) ("a,b" nil) ("a;b" nil) ("a'b" T) ("" nil)) 1) | ((("ABC" T) ("A B" T) ("a-b" T) ("a$b" T) ("a_b" T) ("a.b" T) ("a\vert{}b" NIL) ("a<b" NIL) ("a*b" NIL) ("a?b" NIL) ("a,b" NIL) ("a;b" NIL) ("a'b" T) ("" NIL)) 0) | ((("ABC" T) ("A B" T) ("a-b" T) ("a$b" T) ("a_b" T) ("a.b" T) ("a\vert{}b" NIL) ("a<b" NIL) ("a*b" NIL) ("a?b" NIL) ("a,b" NIL) ("a;b" NIL) ("a'b" T) ("" NIL)) 0) |
+| =(snvalid (strcat (chr 201) "T" (chr 201)))= | (T 0) | (T 0) | (T 0) |
+| =(snvalid "a\vert{}b" 0)= | (nil 1) | (NIL 0) | (NIL 0) |
+| =(snvalid "a\vert{}b" 1)= | (T 0) | (T 0) | (T 0) |
+| =(snvalid (strcat "A" (chr 160) "B"))= | (T 0) | (T 0) | (T 0) |
+| =(cvunit 100.0 "celsius" "fahrenheit")= | (212.0 0) | (NIL 0) | (NIL 0) |
+| =(cvunit 0.0 "celsius" "kelvin")= | (273.15 0) | (NIL 0) | (NIL 0) |
+| =(cvunit 1.0 "inch" "mm")= | (25.4 0) | (NIL 0) | (25.4 0) |
+| =(cvunit 1.0 "inch" "kilogram")= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(cvunit 1.0 "clautolispnosuchunit" "mm")= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(cvunit '(1.0 2.0) "inch" "mm")= | ((25.4 50.8) 0) | ((1.0 2.0) 0) | ((25.4 50.8) 0) |
+| =(getenv "ClautolispProbeB8Undefined")= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(setenv "ClautolispProbeB8" "x")= | ("x" 0) | ("x" 0) | ("x" 0) |
+| =(getenv "ClautolispProbeB8")= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(getenv "CLAUTOLISPPROBEB8")= | ("x" 0) | ("x" 0) | ("x" 0) |
+| =(setenv "ClautolispProbeB8" "")= | ("" 0) | ("" 0) | ("" 0) |
+| =(setenv "ClautolispProbeB8" nil)= | ((ERROR "type d'argument incorrect: stringp nil") 0) | ((ERROR "bad argument type <NIL> ; expected <STRING> at [setenv]") 0) | ((ERROR "bad argument type <NIL> ; expected <STRING> at [setenv]") 0) |
+| =(getcfg "NoSuchSection/ClautolispProbeB8")= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(setcfg "NoSuchSection/ClautolispProbeB8" "x")= | (nil 0) | ("x" 0) | ("x" 0) |
+| =(setcfg "AppData/ClautolispProbeB8/Short" "v")= | ("v" 0) | ("v" 0) | ("v" 0) |
+| =(getcfg "AppData/ClautolispProbeB8/Short")= | ("v" 0) | ("v" 0) | ("v" 0) |
+| =(getcfg "appdata/ClautolispProbeB8/Short")= | ("v" 0) | ("v" 0) | ("v" 0) |
+| =(cad-probe--hf-cfg-long)= | ((600 600) 0) | ((600 600) 0) | ((600 600) 0) |
+| =(menucmd "M=$(getvar,ACADVER)")= | ("24.1" 0) | ("25.0 BricsCAD" 0) | ("26.0 BricsCAD" 0) |
+| =(menucmd "T1=*")= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(menucmd "I=*")= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(menucmd "Q=nosuch")= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(menugroup "CLAUTOLISPNOSUCHGROUP")= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(menugroup "ACAD")= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(tablet 0)= | (nil 68) | (((0.0 0.0 0.0) (0.0 0.0 0.0) (0.0 0.0 0.0) (0.0 0.0 0.0)) 0) | (NIL 0) |
+| =(startapp "clautolisp-no-such-program-b8.exe")= | (nil 0) | (0 0) | (67526 0) |
+| =(startapp "clautolisp-no-such-program-b8.exe" "arg")= | (nil 0) | (0 0) | (67529 0) |
