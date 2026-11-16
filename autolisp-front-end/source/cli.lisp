@@ -1744,10 +1744,22 @@ takes effect regardless of option order."
 that template in WORKDIR (alfe-template-option) -- looked up in the folders
 of the backend's CAD, or of the dialect's product under clautolisp --
 else --dwg. An unknown template fails the run with the templates found
-listed (EX_NOINPUT)."
+listed (EX_NOINPUT), and so does a --dwg naming no file under the BricsCAD
+backend, which would otherwise start on the cached template or a new
+drawing, silently (alfe-bricscad-ignores-dwg-option; that issue keeps
+AutoCAD's and clautolisp's drawing selection unchanged -- the clautolisp
+engine refuses a missing drawing itself, with the same status)."
   (let ((template (cli-options-template options)))
     (if (null template)
-        (cli-options-dwg options)
+        (let ((dwg (cli-options-dwg options)))
+          (when (and dwg
+                     (eq (alfe.backend:backend-name backend) :bricscad)
+                     (not (probe-file dwg)))
+            (error 'clautolisp.autolisp-cli:cli-error
+                   :option "--dwg"
+                   :status clautolisp.sysexits:+ex-noinput+
+                   :message (format nil "no drawing ~A" dwg)))
+          dwg)
         (let* ((name (alfe.backend:backend-name backend))
                (product (if (member name '(:autocad :bricscad))
                             name
