@@ -724,6 +724,43 @@ on a dedicated long-lived branch rather than in short MRs:
   ECL image) alongside =build-sbcl= / =build-ccl=, with the test corpus green
   on ECL.
 
+** Test-suite baseline on ECL (2026-11-16) — ~99.75% green, failures bucketed
+
+Ran the full corpus per-subsystem on ECL 24.5.10 (each =.../tests= system
+loaded + run independently so one failure can't mask the rest; mirrors
+=make test-sbcl= = =asdf:test-system=, which instead aborts at the first
+failing subsystem).  Result: *~13,056 fiveam checks, 32 failing* across 4 of
+23 subsystems, + 1 subsystem that fails to COMPILE.  18/23 subsystems fully
+green (reader, interactor, repl, source-map, runtime [1027], drawing [606],
+host, cadtui [472], dcl, compiler [454], file-compat, init-files, debug,
+inspect, sedit, dumb-ui [544], ncurses [331], emacs).
+
+Failures cluster into clear, expected ECL-porting buckets:
+1. *Encoding / external-format layer (the big bucket).* ECL's codec set and
+   =external-format-available-p= differ: =(external-format-available-p :cp950)=
+   is T on ECL; cross-dialect / cp1252 / mac-roman roundtrips and the
+   BricsCAD/AutoCAD command-log encoding tests fail.  Hits CADOR (3 tests /
+   8 checks: COMMAND-LOG-*), BUILTINS-CORE (most of its 20), and CLI (2:
+   encoding-name resolution).  Needs an ECL external-format story in
+   =autolisp-reader= (cf. the cp1252 host-independent codec already there).
+2. *clal-compile .lap artefacts.* The AutoLISP->native compiler tests
+   (CLAL-COMPILE-*, AN-ARTEFACT-KEEPS-*, A-LOADED-ARTEFACT-*) assume the
+   SBCL/CCL compiled-file + debug-info shape; ECL's fasl/.lap model differs.
+   ~9 checks in BUILTINS-CORE.
+3. *Impl-specific primitives.* =(getpid)= returns 0 on ECL (needs an #+ecl
+   branch); PRINC on one path raises "Not a valid property list (LF)".
+4. *Pathname/config.* CONFIG-PATHS-ARE-NAME-PARAMETERISED: =config-relative-path=
+   renders differently on ECL (2 checks).
+5. *Compile blocker:* =clautolisp/clautolisp-tool/tests= won't compile on ECL --
+   "(...::MESSAGE) is an illegal SETF form" in interrupt-tests.lisp (a
+   macroexpansion ECL rejects).  Isolated; blocks only that one subsystem.
+
+Two test-harness/portability fixes already landed on this branch: the
+=#\Formfeed=->=#\Page= compile fix (2.4.18) and the =with-env-unset= #+ecl
+branch (2.4.19, init-files 42/42).  The remaining buckets above are the body
+of phase-1 and will be worked largest-first (encoding), each with the suite
+as the oracle.
+
 ** Qt API selection (gates phase 2) — OPEN, to evaluate
 
 Before the Qt6 embed (phase 2) we must choose HOW Common Lisp talks to Qt6.
