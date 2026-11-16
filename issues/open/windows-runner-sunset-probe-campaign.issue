@@ -486,3 +486,56 @@ variables with a documented default divergence read differently on AutoCAD
 and BricsCAD on the fresh drawing. The range table is in
 setvar-validation-as-measured.
 
+* B7 (arx / vba) and B9 (entity access) captured -- 2026-11-16
+
+Captured 2026-11-16 by !551's probe:suite jobs: AutoCAD 2022 Windows (job
+18080296904, probe-results/autocad/ms-windows/20261116T191007Z), BricsCAD
+Windows (18080296908, .../bricscad/ms-windows/20261116T191739Z), BricsCAD
+macOS (18080296905, .../bricscad/macos/20261116T190931Z). Each cell is
+(RESULT ERRNO-AFTER).
+
+The clautolisp divergences found are filed as
+entity-access-arx-vba-vendor-divergences. B8 (host functions) is added the
+same day (probe-host-fns.lsp). B6 (load / encoding byte inspection) and
+B10-B13 remain.
+
+| case | AutoCAD 2022 | BricsCAD Win | BricsCAD mac |
+|-+-+-+-|
+| =(cad-probe--ea-codes (entmakex '((0 . "LINE") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0))))= | ((-1 0 330 5 100 67 410 8 100 10 11 210) 0) | ((-1 0 5 330 100 67 410 8 100 10 11 210) 0) | ((-1 0 5 330 100 67 410 8 100 10 11 210) 0) |
+| =(cad-probe--ea-codes (entmakex '((0 . "CIRCLE") (10 0.0 0.0 0.0) (40 . 1.0))))= | ((-1 0 330 5 100 67 410 8 100 10 40 210) 0) | ((-1 0 5 330 100 67 410 8 100 10 40 210) 0) | ((-1 0 5 330 100 67 410 8 100 10 40 210) 0) |
+| =(cad-probe--ea-codes (entmakex '((0 . "TEXT") (10 0.0 0.0 0.0) (40 . 1.0) (1 . "b9"))))= | ((-1 0 330 5 100 67 410 8 100 10 40 1 50 41 51 7 71 72 11 210 100 73) 0) | ((-1 0 5 330 100 67 410 8 100 10 40 1 50 41 51 7 71 72 11 210 100 73) 0) | ((-1 0 5 330 100 67 410 8 100 10 40 1 50 41 51 7 71 72 11 210 100 73) 0) |
+| =(cad-probe--ea-codes (entmakex '((0 . "POINT") (10 0.0 0.0 0.0))))= | ((-1 0 330 5 100 67 410 8 100 10 210 50) 0) | ((-1 0 5 330 100 67 410 8 100 10 210 50) 0) | ((-1 0 5 330 100 67 410 8 100 10 210 50) 0) |
+| =(cad-probe--ea-last-type-after-xrec)= | (("XRECORD" "LWPOLYLINE" T) 0) | (("XRECORD" "LWPOLYLINE" T) 0) | (("XRECORD" "LWPOLYLINE" T) 0) |
+| =(cad-probe--ea-walk-types)= | ((179 ("3DFACE" "ARC" "ATTDEF" "ATTRIB" "CIRCLE" "ELLIPSE" "HATCH" "HELIX" "INSERT" "LINE" "LWPOLYLINE" "MLINE" "MTEXT" "POINT" "POLYLINE" "RAY" "REGION" "SEQEND" "SHAPE" "SOLID" "SPLINE" "TEXT" "TRACE" "VERTEX" "VIEWPORT" "XLINE")) 8) | ((209 ("3DFACE" "ARC" "ATTDEF" "ATTRIB" "CIRCLE" "ELLIPSE" "HATCH" "HELIX" "INSERT" "LINE" "LWPOLYLINE" "MLINE" "MTEXT" "POINT" "POLYLINE" "RAY" "REGION" "SEQEND" "SHAPE" "SOLID" "SPLINE" "TEXT" "TRACE" "VERTEX" "VIEWPORT" "XLINE")) 0) | ((209 ("3DFACE" "ARC" "ATTDEF" "ATTRIB" "CIRCLE" "ELLIPSE" "HATCH" "HELIX" "INSERT" "LINE" "LWPOLYLINE" "MLINE" "MTEXT" "POINT" "POLYLINE" "RAY" "REGION" "SEQEND" "SHAPE" "SOLID" "SPLINE" "TEXT" "TRACE" "VERTEX" "VIEWPORT" "XLINE")) 0) |
+| =(cad-probe--ea-xrec-entmod)= | ((T "b9-probe") 0) | ((T "b9-modified") 0) | ((T "b9-modified") 0) |
+| =(cad-probe--ea-sslen (ssget "X" '((-4 . "<AND") (0 . "LINE"))))= | (nil 56) | (NIL 0) | (NIL 0) |
+| =(cad-probe--ea-sslen (ssget "X" '((-4 . "<OR"))))= | (nil 56) | (NIL 0) | (NIL 0) |
+| =(cad-probe--ea-sslen (ssget "X" '((-4 . "AND>"))))= | (nil 59) | (NIL 0) | (NIL 0) |
+| =(cad-probe--ea-sslen (ssget "X" '((-4 . "<NOSUCHOP") (0 . "LINE") (-4 . "NOSUCHOP>"))))= | (nil 58) | (NIL 0) | (NIL 0) |
+| =(cad-probe--ea-sslen (ssget "X" '((-4 . "<NOT") (0 . "LINE") (0 . "CIRCLE") (-4 . "NOT>"))))= | (nil 61) | (NIL 0) | (NIL 0) |
+| =(entmake '((0 . "NOSUCHTYPE")))= | (nil 36) | (NIL 0) | (NIL 0) |
+| =(entmake '((0 . "LINE")))= | (nil 47) | (NIL 0) | (NIL 0) |
+| =(entmake '((10 0.0 0.0 0.0)))= | (nil 30) | (NIL 0) | (NIL 0) |
+| =(entmake nil)= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(entmod '((0 . "LINE") (10 0.0 0.0 0.0)))= | (nil 47) | (NIL 0) | (NIL 0) |
+| =(entmod nil)= | (nil 0) | (NIL 0) | (NIL 0) |
+| =(cad-probe--ea-past-end)= | ((nil DELETED) 8) | ((NIL DELETED) 0) | ((NIL DELETED) 0) |
+| =(cad-probe--ea-entdel-twice)= | ((T T) 0) | ((T T) 0) | ((T T) 0) |
+| =(entget nil)= | ((ERROR "type d'argument incorrect: lentityp nil") 0) | ((ERROR "bad argument type <NIL> ; expected ENTITYNAME at [entget]") 0) | ((ERROR "bad argument type <NIL> ; expected ENTITYNAME at [entget]") 0) |
+| =(entupd nil)= | ((ERROR "type d'argument incorrect: lentityp nil") 0) | ((ERROR "bad argument type <NIL> ; expected ENTITYNAME at [entupd]") 0) | ((ERROR "bad argument type <NIL> ; expected ENTITYNAME at [entupd]") 0) |
+| =(list (type arx) (type arxload) (type arxunload) (type autoarxload))= | ((SUBR SUBR SUBR SUBR) 0) | ((SUBR SUBR SUBR SUBR) 0) | ((SUBR SUBR SUBR SUBR) 0) |
+| =(list (type vl-vbaload) (type vl-vbarun) (type vla-get-vbe))= | ((SUBR SUBR SUBR) 0) | ((SUBR SUBR SUBR) 0) | ((SUBR SUBR NIL) 0) |
+| =(arx)= | (("acapp.crx" "acarray.crx" "accoremgd.dll" "acdim.crx" "acgeomentobj.dbx" "acismobj24.dbx" "acismui.crx" "acsceneoe.dbx" "acsceneui.crx" "actrace.crx" "acvmtools.crx" "geom3d.crx" "rectang.crx" "units.crx" "vl_u.crx") 0) | (("odspatialreference_25.9_16.tx" "odgeodata_25.9_16.tx" "acgeolocationobj_25.9_16.tx" "oddbgeomappe_25.9_16.tx" "plotstyleservices_25.9_16.tx" "acdbpointcloudobj_25.9_16.tx" "pointcloud_db.tx" "pointcloud_qtui.tx" "pointcloud_ui.tx" "lgsconstraints_25.9_16.tx" "odbrepmodeler_25.9_16.dll" "spamodeler_25.9_16.tx" "tdx_spa.tx" "acmodeldocobj_25.9_16.tx" "td_dbjoinentitype_25.9_16.tx" "exfieldevaluator_25.9_16.tx" "td_tf_25.9_16.tx" "dbcryptmodule_25.9_16.tx" "bdm_db.tx" "mx.tx" "mx_ui.tx" "mx_qtui.tx" "mx_cmd.tx" "bdm_module.tx" "bmdb.tx" "drawing_view_db.tx" "bmxhdw.tx" "bm_core.tx" "bm_qtui.tx" "bmui.tx" "sm_proc.tx" "sm_ui.tx" "sm_osm.tx" "bmext.tx" "bmcomm.tx" "civil_db.tx" "civil_qtui.tx" "civil_ui.tx" "bgc_ui.dll" "bsyslib_db.tx" "td_sm_25.9_16.tx" "lispex.dll" "recomputedimblock_25.9_16.tx" "td_ave_25.9_16.tx") 0) | (("OdSpatialReference.tx" "OdGeoData.tx" "AcGeolocationObj.tx" "OdDbGeoMapPE.tx" "AcDbPointCloudObj.tx" "pointcloud_db.tx" "pointcloud_qtui.tx" "pointcloud_ui.tx" "LGSConstraints.tx" "libOdBrepModeler.dylib" "SpaModeler.tx" "tdx_spa.tx" "AcModelDocObj.tx" "TD_DbJoinEntityPE.tx" "ExFieldEvaluator.tx" "TD_Tf.tx" "bdm_db.tx" "bmdb.tx" "mx.tx" "mx_ui.tx" "mx_qtui.tx" "mx_cmd.tx" "bdm_module.tx" "drawing_view_db.tx" "bmxhdw.tx" "bm_core.tx" "bm_qtui.tx" "bmui.tx" "sm_proc.tx" "sm_ui.tx" "bmcomm.tx" "bsyslib_db.tx" "TD_Sm.tx" "liblispex.dylib" "RecomputeDimBlock.tx" "TD_Ave.tx" "TD_FtFontEngine.tx") 0) |
+| =(length (arx))= | (15 0) | (44 0) | (37 0) |
+| =(arxload "clautolisp-no-such-module.arx")= | ((ERROR "ARXLOAD a échoué") 93) | ((ERROR "ARXLOAD failed") 0) | ((ERROR "ARXLOAD failed") 0) |
+| =(arxload "clautolisp-no-such-module.arx" 'cad-probe-av-failed)= | (CAD-PROBE-AV-FAILED 93) | ((ERROR "ARXLOAD failed") 0) | ((ERROR "ARXLOAD failed") 0) |
+| =(arxload "clautolisp-no-such-module.arx" "failed")= | ("failed" 93) | ((ERROR "ARXLOAD failed") 0) | ((ERROR "ARXLOAD failed") 0) |
+| =(arxload "")= | ((ERROR "ARXLOAD a échoué") 93) | ((ERROR "ARXLOAD failed") 0) | ((ERROR "ARXLOAD failed") 0) |
+| =(if (cad-probe--av-first-module) (arxload (cad-probe--av-first-module)) 'no-module)= | ("acapp.crx" 0) | ("odspatialreference_25.9_16.tx" 0) | ("OdSpatialReference.tx" 0) |
+| =(if (cad-probe--av-first-module) (arxload (cad-probe--av-first-module) 'cad-probe-av-failed) 'no-module)= | ("acapp.crx" 0) | ("odspatialreference_25.9_16.tx" 0) | ("OdSpatialReference.tx" 0) |
+| =(arxunload "clautolisp-no-such-module.arx")= | ((ERROR "Echec de ARXUNLOAD: \"clautolisp-no-such-module.arx\"") 94) | ((ERROR "ARXUNLOAD failed") 0) | ((ERROR "ARXUNLOAD failed") 0) |
+| =(arxunload "clautolisp-no-such-module.arx" 'cad-probe-av-failed)= | (CAD-PROBE-AV-FAILED 94) | ((ERROR "ARXUNLOAD failed") 0) | ((ERROR "ARXUNLOAD failed") 0) |
+| =(cad-probe--av-unload-reload (cad-probe--av-first-module))= | (("acapp.crx" RELOADED) 0) | (("odspatialreference_25.9_16.tx" RELOADED) 0) | (("OdSpatialReference.tx" RELOADED) 0) |
+| =(vl-vbaload "clautolisp-no-such-project.dvb")= | ((ERROR "type d'argument incorrect: VLA-OBJECT nil") 0) | (NIL 0) | (NIL 0) |
+| =(vl-vbarun "ClautolispNoSuchMacro")= | (T 0) | (NIL 101) | (NIL 0) |
+| =(vl-vbarun "")= | (T 0) | (NIL 0) | (NIL 0) |
