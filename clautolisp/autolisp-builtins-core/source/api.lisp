@@ -5772,6 +5772,46 @@ BricsCAD 0 for all. A dialect without a product follows AutoCAD."
 
 ;;; --- Phase 11: selection-set builtins -----------------------------
 
+(defun %ssget-filter-errno (filter)
+  "The ERRNO AutoCAD leaves for a malformed -4 grouping in the SSGET FILTER,
+or NIL when it is well formed -- measured by the sunset campaign's B9
+(probe-entity-access.lsp, 2026-11-16): a group left open 56, an unknown
+operator 58, a closer without its opener 59, a NOT without exactly one
+operand 61. Relational -4 operators (\"<\", \"<=\", \"=\" ...) take the next
+pair as their operand; only \"<NAME\" / \"NAME>\" with a NAME of letters
+group."
+  (let ((stack '()))                    ; (OPERATOR . OPERAND-COUNT) frames
+    (flet ((operand () (when stack (incf (cdr (first stack)))))
+           (word-p (s) (and (plusp (length s)) (every #'alpha-char-p s))))
+      (loop with pairs = filter
+            while pairs
+            do (let* ((pair (pop pairs))
+                      (value (and (consp pair) (eql (car pair) -4)
+                                  (typep (cdr pair) 'autolisp-string)
+                                  (string-upcase (autolisp-string-value (cdr pair))))))
+                 (cond
+                   ((null value) (operand))
+                   ((and (> (length value) 1) (char= #\< (char value 0))
+                         (word-p (subseq value 1)))
+                    (let ((op (subseq value 1)))
+                      (unless (member op '("AND" "OR" "XOR" "NOT") :test #'string=)
+                        (return-from %ssget-filter-errno 58))
+                      (push (cons op 0) stack)))
+                   ((and (> (length value) 1) (char= #\> (char value (1- (length value))))
+                         (word-p (subseq value 0 (1- (length value)))))
+                    (let ((op (subseq value 0 (1- (length value)))))
+                      (unless (member op '("AND" "OR" "XOR" "NOT") :test #'string=)
+                        (return-from %ssget-filter-errno 58))
+                      (unless (and stack (string= op (car (first stack))))
+                        (return-from %ssget-filter-errno 59))
+                      (when (and (string= op "NOT") (/= 1 (cdr (first stack))))
+                        (return-from %ssget-filter-errno 61))
+                      (pop stack)
+                      (operand)))
+                   ;; a relational operator: the next pair is its operand
+                   (t (pop pairs) (operand)))))
+      (and stack 56))))
+
 (defun builtin-ssget (&rest arguments)
   ;; (ssget)                   -> interactive (host-not-supported)
   ;; (ssget MODE)              -> mode without filter
@@ -5810,6 +5850,12 @@ BricsCAD 0 for all. A dialect without a product follows AutoCAD."
       (t
        (setf mode (first arguments)
              filter (second arguments))))
+    ;; A malformed -4 grouping selects nothing on either product: nil,
+    ;; with AutoCAD's ERRNO (56-61), BricsCAD's 0 (sunset campaign B9).
+    (let ((bad (and (consp filter) (%ssget-filter-errno filter))))
+      (when bad
+        (return-from builtin-ssget
+          (errno-and-return (if (%bricscad-product-p) 0 bad) nil))))
     (let ((result (if points
                       (host-ssget host filter :mode mode :points points)
                       (host-ssget host filter :mode mode))))

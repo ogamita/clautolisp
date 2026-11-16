@@ -101,10 +101,14 @@ SSGET "X" filters return nil.
   (-1 . ename) returns nil with 47 instead of signalling, (entmod nil) nil
   with 0; ENTNEXT past the end 8; a bad ename (ENTGET / ENTUPD of nil)
   leaves 0. And VL-CATCH-ALL-APPLY no longer resets ERRNO after a successful
-  call -- AutoCAD's codes survive it. Still open in 2: SSGET "X" with a
-  malformed -4 list (56-61).
-- [ ] 3. ENTGET order per product.
-- [ ] 4. ENTMOD of a dictionary XRECORD per product.
+  call -- AutoCAD's codes survive it. And SSGET with a malformed -4
+  grouping: nil on both, AutoCAD ERRNO 56 (left open) / 58 (unknown
+  operator) / 59 (closer without opener) / 61 (NOT without one operand),
+  BricsCAD 0 (2.4.23, %SSGET-FILTER-ERRNO).
+- [X] 3. ENTGET order per product: already modelled (%VENDOR-HEADER-ORDER,
+  from entget-pointers section 10); B9 confirms it on all three.
+- [X] 4. ENTMOD of a dictionary XRECORD: the AutoCAD no-op (D3) now returns
+  the data, as AutoCAD answered non-nil; BricsCAD applies, as before (2.4.23).
 - [ ] 5. ARXLOAD / ARXUNLOAD ONFAILURE.
 - [ ] 6. VL-VBALOAD / VL-VBARUN.
 

@@ -205,6 +205,16 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
     (is (string= "v1" (%d3-readback d))
         "entmod on xrecord should be a no-op under ~S" d)))
 
+(test dd-d3-normative-noop-still-returns-the-data
+  "AutoCAD 2022 answered non-nil for the ENTMOD it ignored (sunset campaign
+B9, entity-access-arx-vba-vendor-divergences point 4): the no-op returns the
+data, as a successful ENTMOD does."
+  (let ((form "(setq nod (namedobjdict))
+   (setq xr (entmakex (list (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\") (cons 1 \"v1\"))))
+   (dictadd nod \"K\" xr)
+   (if (entmod (list (cons -1 xr) (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\") (cons 1 \"v2\"))) 1 0)"))
+    (is (eql 1 (%d1-run form :autocad-2026)))))
+
 (test dd-d3-deviant-dialects-apply-entmod-on-xrecord
   (dolist (d '(:bricscad-v26 :lax))
     (is (string= "v2" (%d3-readback d))
