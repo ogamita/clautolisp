@@ -1380,6 +1380,7 @@ synthesised) under the deviant/lenient dialects (bricscad, lax). strict
 and bricscad additionally warn."
   (when (member operator-name '(entmake entmakex))
     (%vet-pointer-groups data operator-name))
+  (setf clautolisp.autolisp-runtime:*entmake-failure-reason* nil)
   (let* ((pure (%normalise-entmade-arc-angles
                 (al-data->pure data operator-name host) operator-name))
          (drawing (cador-active-drawing host))
@@ -1405,9 +1406,10 @@ and bricscad additionally warn."
                                                   missing-markers))
         (when (eq action :normative)
           (return-from %host-add-entity (values nil nil)))))
-    (multiple-value-bind (normalised reason)
+    (multiple-value-bind (normalised reason failure)
         (clautolisp.drawing:validate-entity-dxf pure)
       (declare (ignore reason))
+      (setf clautolisp.autolisp-runtime:*entmake-failure-reason* failure)
       (when (and normalised (eq (%current-product) :bricscad))
         (setf normalised (%bricscad-xrecord-drop-explicit-280 pure normalised)))
       (if (null normalised)

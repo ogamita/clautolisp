@@ -277,6 +277,7 @@
    #:autolisp-runtime-error-errno
    #:signal-autolisp-runtime-error
    #:signal-autolisp-runtime-error-errno
+   #:*entmake-failure-reason*
    #:*resolve-unbound-function-hook*
    #:*vlax-collection-items-hook*
    #:*com-point-wrap-hook*

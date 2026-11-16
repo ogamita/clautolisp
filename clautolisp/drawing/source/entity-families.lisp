@@ -78,6 +78,47 @@ ENTITY-FAMILY descriptor.")
 or NIL when the type is not in the registry."
   (and (stringp name) (gethash (string-upcase name) *entity-families*)))
 
+(defparameter *known-dxf-types*
+  '(;; ENTITIES section (AutoCAD DXF reference)
+    "3DFACE" "3DSOLID" "ACAD_PROXY_ENTITY" "ACAD_TABLE" "ARC" "ARC_DIMENSION"
+    "ARCALIGNEDTEXT" "ATTDEF" "ATTRIB" "BODY" "CAMERA" "CIRCLE" "COORDINATIONMODEL"
+    "DGNUNDERLAY" "DIMENSION" "DWFUNDERLAY" "ELLIPSE" "EXTRUDEDSURFACE"
+    "GEOPOSITIONMARKER" "HATCH" "HELIX" "IMAGE" "INSERT" "LARGE_RADIAL_DIMENSION"
+    "LEADER" "LIGHT" "LINE" "LOFTEDSURFACE" "LWPOLYLINE" "MESH" "MLINE"
+    "MPOLYGON" "MTEXT" "MULTILEADER" "NURBSURFACE" "OLE2FRAME" "OLEFRAME"
+    "PDFUNDERLAY" "PLANESURFACE" "POINT" "POINTCLOUD" "POLYLINE" "RAY" "REGION"
+    "REVOLVEDSURFACE" "RTEXT" "SECTION" "SEQEND" "SHAPE" "SOLID" "SPLINE" "SUN"
+    "SURFACE" "SWEPTSURFACE" "TABLE" "TEXT" "TOLERANCE" "TRACE" "UNDERLAY"
+    "VERTEX" "VIEWPORT" "WIPEOUT" "XLINE"
+    ;; OBJECTS section
+    "ACAD_PROXY_OBJECT" "ACDBDICTIONARYWDFLT" "ACDBPLACEHOLDER" "CELLSTYLEMAP"
+    "DATATABLE" "DETAILVIEWSTYLE" "DGNDEFINITION" "DICTIONARY" "DICTIONARYVAR"
+    "DIMASSOC" "DWFDEFINITION" "FIELD" "GEODATA" "GROUP" "IDBUFFER" "IMAGEDEF"
+    "IMAGEDEF_REACTOR" "LAYER_FILTER" "LAYER_INDEX" "LAYOUT" "LIGHTLIST"
+    "MATERIAL" "MLEADERSTYLE" "MLINESTYLE" "OBJECT_PTR" "PDFDEFINITION"
+    "PLOTSETTINGS" "POINTCLOUDDEF" "POINTCLOUDDEFEX" "POINTCLOUDDEF_REACTOR"
+    "RASTERVARIABLES" "RENDERENTRY" "RENDERENVIRONMENT" "RENDERGLOBAL" "SCALE"
+    "SECTIONMANAGER" "SECTIONSETTINGS" "SECTIONVIEWSTYLE" "SORTENTSTABLE"
+    "SPATIAL_FILTER" "SPATIAL_INDEX" "SUNSTUDY" "TABLECONTENT" "TABLEGEOMETRY"
+    "TABLESTYLE" "UNDERLAYDEFINITION" "VBA_PROJECT" "VISUALSTYLE"
+    "WIPEOUTVARIABLES" "XRECORD"
+    ;; tables, table records, block definitions
+    "APPID" "BLOCK" "BLOCK_RECORD" "DIMSTYLE" "ENDBLK" "LAYER" "LTYPE" "STYLE"
+    "TABLE" "UCS" "VIEW" "VPORT")
+  "The group-0 type names the products know (the AutoCAD DXF reference's
+ENTITIES and OBJECTS sections, the tables and their records). ENTMAKE refuses
+a type that is neither here nor in the family registry, as AutoCAD 2022 and
+BricsCAD V25 / V26 refuse (entmake '((0 . \"NOSUCHTYPE\"))) -- nil; pjb's
+decision, 2026-11-16 (entity-access-arx-vba-vendor-divergences, point 1).
+A type here without a family is accepted unchanged, as before.")
+
+(defun known-dxf-type-p (name)
+  "True when NAME (a group-0 type string) is a type the products know."
+  (and (stringp name)
+       (or (find-entity-family name)
+           (member name *known-dxf-types* :test #'string-equal))
+       t))
+
 (defun entity-family-names ()
   "A sorted list of the registered group-0 type strings."
   (sort (loop for k being the hash-key of *entity-families* collect k)
@@ -354,21 +395,29 @@ An UNREGISTERED group-0 type is accepted and passed through unchanged
 vendor knows, so it is permissive about types it has no descriptor for
 rather than rejecting a valid client entity. See the *** clautolisp
 note on ENTMAKE in the spec."
+  ;; A third value names the failure for the ERRNO the product leaves:
+  ;; :NO-TYPE (AutoCAD 30), :UNKNOWN-TYPE (36), :MISSING-GROUP (47) --
+  ;; measured by the sunset campaign's B9 probe (probe-entity-access.lsp).
   (unless (listp data)
-    (return-from validate-entity-dxf (values nil "entity data is not a list")))
+    (return-from validate-entity-dxf (values nil "entity data is not a list" :no-type)))
   (let ((type (%group-0-type data)))
     (unless type
       (return-from validate-entity-dxf
-        (values nil "missing (0 . \"TYPE\") entity-type marker")))
+        (values nil "missing (0 . \"TYPE\") entity-type marker" :no-type)))
     (let ((family (find-entity-family type)))
       (unless family
-        ;; Unknown-but-plausible type: accept as-is (permissive).
-        (return-from validate-entity-dxf (values data nil)))
+        ;; A type the products know but clautolisp has no family for: accept
+        ;; it as-is; a type nobody knows: refuse it, as the products do.
+        (return-from validate-entity-dxf
+          (if (known-dxf-type-p type)
+              (values data nil)
+              (values nil (format nil "unknown entity type ~A" type) :unknown-type))))
       (let ((missing (%missing-required family data)))
         (when missing
           (return-from validate-entity-dxf
             (values nil (format nil "~A requires group code ~A"
-                                (entity-family-name family) missing))))
+                                (entity-family-name family) missing)
+                    :missing-group)))
         ;; Success: fill defaults. For graphical entities default the
         ;; layer to "0" and stamp the subclass markers the vendor adds.
         (let* ((with-layer

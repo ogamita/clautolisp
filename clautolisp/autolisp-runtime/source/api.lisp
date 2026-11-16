@@ -252,6 +252,12 @@ and refused or failed -- the remote CAD said no, a DWG failed to parse."))
          :details arguments
          :call-stack (current-autolisp-call-stack)))
 
+(defvar *entmake-failure-reason* nil
+  "Why the host's last ENTMAKE / ENTMAKEX refused its data -- :NO-TYPE,
+:UNKNOWN-TYPE, :MISSING-GROUP, or NIL for another reason -- so the builtin
+leaves the product's ERRNO (AutoCAD 30 / 36 / 47, BricsCAD 0; sunset campaign
+B9). Set by the host before it returns NIL.")
+
 (defun signal-autolisp-runtime-error-errno (errno code control-string &rest arguments)
   "SIGNAL-AUTOLISP-RUNTIME-ERROR, the error leaving ERRNO (an integer) rather
 than the one its CODE maps to."
