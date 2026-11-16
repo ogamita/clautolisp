@@ -802,22 +802,44 @@ branch (2.4.19, init-files 42/42).  The remaining buckets above are the body
 of phase-1 and will be worked largest-first (encoding), each with the suite
 as the oracle.
 
-** Qt API selection (gates phase 2) — OPEN, to evaluate
+** Qt API selection (gates phase 2) — DECIDED 2026-11-16: embed ECL in our own Qt6 Widgets shell
 
-Before the Qt6 embed (phase 2) we must choose HOW Common Lisp talks to Qt6.
-Options to evaluate (criteria: ECL-native embedding, Qt6 support, offscreen
-rendering for headless screenshots, maintenance health, licence, our control
-over the surface):
+Criteria: ECL-native embedding, Qt6, offscreen rendering for headless
+screenshots, maintenance/licence, control over the surface, and REUSE of what we
+already have.
 
-- *lqml* (https://github.com/lisp-mirror/lqml) — Lisp Qt Meta Language; the ECL
-  successor to EQL5.  Already ECL-based (our exact target) and Qt-Quick/QML
-  oriented.  Primary candidate to assess first.
-- *Own CFFI-direct Qt binding* — bind the Qt C++ API (or a C shim over it) via
-  CFFI.  Maximum control + exactly the surface we need (display-list paint, pan/
-  zoom, event capture), at the cost of writing/maintaining the binding and a C++
-  shim (Qt's API is C++, so a C wrapper layer is required).
-- *EQL5 / CommonQt (Qtools)* — predecessors / SBCL-oriented bindings; Qt5-era,
-  listed for comparison (Qt6 + ECL-embed fit to be checked).
+Decisive existing asset: =clautolisp/tools/clautolisp-gui-qt/= is ALREADY a
+~1100-line *Qt6 Widgets* app (=find_package(Qt6 ... Core Widgets)=) that renders
+DCL over the sexp-wire protocol, including a =QPainter= image-paint channel --
+the exact canvas analog. We own a Qt6 Widgets codebase and a CL<->C++ protocol.
 
-Decision to be recorded here once the evaluation (small spikes: a Qt6 window
-painting a trivial display list from embedded ECL, offscreen capture) is done.
+Options weighed:
+- *lqml* (https://github.com/lisp-mirror/lqml) — ECL-based (our target), Qt5/Qt6,
+  *QML-only* (Qt Quick, not Widgets), BSD-0, maintained. Strong binding, but the
+  QML paradigm would REPLACE our Widgets investment and puts CL in the per-frame
+  path, against phase-2's "cross the ECL boundary only on regen, never per
+  frame". Kept as the fallback / comparison spike.
+- *Own CFFI-direct Qt binding* — Qt's API is C++ (moc, signals/slots), so CFFI
+  needs a hand-written/maintained C shim; large surface, reuses nothing. No.
+- *CommonQt/Qtools, EQL5* — smoke-based / Qt5-era, SBCL-oriented or superseded by
+  lqml; no Qt6 + ECL-embed fit. Out.
+- *DECISION — embed ECL in our own thin Qt6 Widgets C++ shell.* The shell is the
+  host; it boots ECL (=cl_boot=), CL owns the model and hands C++ a display list,
+  C++ paints it with =QPainter=, crossing the boundary only on regen. Reuses the
+  existing Qt6 Widgets code, keeps full control, needs no third-party binding,
+  renders offscreen trivially, and its C boundary is the natural seed of the CRX
+  C ABI (phase 4).
+
+*Spike (2026-11-16, VALIDATED)* — =clautolisp/tools/clautolisp-gui-qt/spike-ecl-embed/=
+(~120 lines). A Qt6 Widgets app boots ECL 24.5.10, Common Lisp COMPUTES the
+geometry (a 5-pointed star) and returns it as a display list of (x1 y1 x2 y2)
+segments, C++ marshals it across the boundary once and paints it, and the whole
+thing runs under the *offscreen* QPA (no windowing environment) and saves a PNG.
+Built with =pkg-config Qt6Widgets= + =ecl-config=; "Lisp produced 10 segments"
+-> a clean star PNG. End-to-end proof of: ECL embed in Qt6, CL-owns-geometry /
+C++-paints-display-list, and the headless-screenshot path.
+
+Still to spike before committing deep (the expertise-bound bits the issue flags):
+the ECL<->Qt EVENT LOOP + GC/thread marriage on a LIVE interactive window (the
+spike's =grab()= does not run the event loop), pointer/selection input back into
+the prompt-api, and the cooperative scheduler integration.

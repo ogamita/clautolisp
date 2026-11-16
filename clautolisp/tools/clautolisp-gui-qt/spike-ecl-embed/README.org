@@ -1,0 +1,29 @@
+#+TITLE: spike-ecl-embed — phase-2 ECL-in-Qt6 architecture spike
+
+Validates the committed phase-2 architecture (release-3.0 CAD epic,
+issues/open/qt6-drawing-canvas-first-increment.issue): *embed ECL in our own
+thin Qt6 Widgets C++ shell*, let Common Lisp own the model and produce a display
+list, have C++ paint it, and render offscreen for headless screenshots.
+
+What it does (=main.cpp=, ~120 lines):
+1. =cl_boot= — boots embedded ECL.
+2. Common Lisp COMPUTES the geometry (a 5-pointed star) and returns it as a
+   display list of =(x1 y1 x2 y2)= segments.
+3. C++ marshals that list across the ECL boundary ONCE (regen, not per frame)
+   into a =std::vector<Seg>=.
+4. A =QWidget::paintEvent= paints the segments with =QPainter=.
+5. Under the *offscreen* QPA platform (no windowing environment) it grabs the
+   widget to a =QPixmap= and saves a PNG.
+
+Run:
+#+begin_src sh
+  bash build.sh          # needs: g++, Qt6 (pkg-config Qt6Widgets), libecl-dev (ecl-config)
+  ./spike out.png        # prints "Lisp produced 10 segments"; writes out.png (a star)
+#+end_src
+
+This is a throwaway spike kept as evidence for the Qt-API decision; it is NOT
+part of the build. The built =spike= binary and =*.png= outputs are gitignored.
+
+Not yet spiked (the expertise-bound bits): the ECL<->Qt event-loop + GC/thread
+marriage on a LIVE interactive window, pointer/selection input into the
+prompt-api, and the cooperative scheduler integration.
