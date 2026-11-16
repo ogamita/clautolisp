@@ -261,6 +261,7 @@ fixture doesn't bleed into a gating assertion."
         (progn
           #+sbcl (dolist (n names) (ignore-errors (sb-posix:unsetenv n)))
           #+ccl  (dolist (n names) (ignore-errors (ccl::unsetenv n)))
+          #+ecl  (dolist (n names) (ignore-errors (ext:setenv n nil)))
           (funcall thunk))
       (dolist (entry saved)
         (when (cdr entry)
