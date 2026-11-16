@@ -7515,8 +7515,10 @@ the low half."
   (is (eql t (clautolisp.autolisp-reader:external-format-available-p :windows-1252)))
   ;; ...and the fallback is not a blanket yes: an encoding neither the
   ;; host nor babel provides must still report unavailable, so
-  ;; ENC-UNSUPPORTED-TARGET keeps firing where it should.
-  (is (null (clautolisp.autolisp-reader:external-format-available-p :cp950))))
+  ;; ENC-UNSUPPORTED-TARGET keeps firing where it should. (cp950 is a poor
+  ;; control here: SBCL/CCL lack it but ECL ships it natively, so use a name
+  ;; no host or babel knows — the same host-no + babel-no code path.)
+  (is (null (clautolisp.autolisp-reader:external-format-available-p :no-such-codec-xyzzy))))
 
 (test cp1252-open-writes-vendor-bytes
   ;; € is the discriminating character: CP-1252 puts it at 0x80, a slot

@@ -755,8 +755,20 @@ TRUSTEDPATHS to trust it."
       ;; .fas are other vendors' artefacts, which clautolisp genuinely
       ;; cannot read, while .lap is its own.
       ((clautolisp.autolisp-runtime:lap-pathname-p resolved)
-       (handler-case (progn (load resolved) (set-autolisp-errno 0)
-                            (autolisp-true))
+       (handler-case (progn
+                       ;; SBCL/CCL's LOAD detects a FASL by its header and
+                       ;; loads the .lap regardless of extension. ECL's LOAD
+                       ;; dispatches purely by extension and would read the
+                       ;; .lap (a renamed .fas) as SOURCE -- "invalid character
+                       ;; Rubout" on the binary. Load it through a temp copy
+                       ;; carrying ECL's own FASL extension (verified: an ECL
+                       ;; .fas loads fine under a different .fas name).
+                       #+ecl (uiop:with-temporary-file (:pathname %fas :type "fas")
+                               (uiop:copy-file resolved %fas)
+                               (load %fas))
+                       #-ecl (load resolved)
+                       (set-autolisp-errno 0)
+                       (autolisp-true))
          (error (condition)
            (set-autolisp-errno 73)
            (if onfailure-supplied-p
@@ -3656,7 +3668,13 @@ time it is called."
 
 (defun %external-format-carries-replacement-p (external-format)
   (and (consp external-format)
-       (not (null (getf (rest external-format) :replacement)))))
+       (let ((tail (rest external-format)))
+         ;; Our convention is a plist tail (BASE :replacement X ...). ECL's
+         ;; STREAM-EXTERNAL-FORMAT instead hands back (ENCODING EOL), e.g.
+         ;; (:UTF-8 :LF) -- an odd-length tail GETF errors on under ECL. Only
+         ;; read :replacement from a well-formed (even-length) plist tail.
+         (and (evenp (length tail))
+              (not (null (getf tail :replacement)))))))
 
 (defun %host-stream-external-format (stream)
   "The external format of the host character stream STREAM, normalised to a
@@ -9506,7 +9524,8 @@ defvar so the value survives multiple test-image reloads.")
   (or (ignore-errors
         #+sbcl (sb-posix:getpid)
         #+ccl  (ccl::getpid)
-        #-(or sbcl ccl) 0)
+        #+ecl  (si:getpid)
+        #-(or sbcl ccl ecl) 0)
       0))
 
 (defun builtin-sleep (milliseconds)

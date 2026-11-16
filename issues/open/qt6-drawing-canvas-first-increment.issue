@@ -1,11 +1,13 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: qt6-drawing-canvas-first-increment — a Qt6 interactive canvas on top of the cador engine (increment 1)
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P3
-#+TYPE: feature-proposal
+#+TYPE: epic
 #+DEPENDS: -
-#+BRANCH: qt6-canvas-first-increment
+#+TARGET: release 3.0
+#+BRANCH: ecl-qt6-cad
 #+DATE: 2026-11-09
+#+UPDATED: 2026-11-16 (pjb committed this as the release-3.0 epic; work branch ecl-qt6-cad; PHASE 1 ECL PORT COMPLETE -- full suite green on ECL 24.5.10, 23/23 subsystems, 13758 checks, clautolisp 2.4.20; phase 2 = Qt API selection)
 
 * Context — why this is a small increment, not a rewrite
 
@@ -677,3 +679,145 @@ it as a user.  They are the same mechanism.  A CAD whose every interaction is a
 named, typed, documented, testable action is uniquely suited to an agent-built,
 agent-operated product -- and the guard is what keeps it that way as the surface
 grows to AutoCAD/BricsCAD size.
+
+* Execution — release 3.0 (pjb decision 2026-11-16)
+
+pjb committed this as a real, long-running effort toward *release 3.0*, worked
+on a dedicated long-lived branch rather than in short MRs:
+
+- *Branch:* =ecl-qt6-cad= (off master; this epic lives here until 3.0).  The
+  older =qt6-canvas-first-increment= branch was the increment-1 planning branch
+  and is already merged + gone; it is NOT this work branch.
+- *Phase order unchanged* (see "Canonical plan" above): 1 ECL port -> 2 Qt6
+  embed + canvas -> 3 full 2D -> 4 CRX API -> 5 3D file -> 6 3D GUI.
+
+** ECL target (phase 1)
+
+- *Pinned implementation:* *ECL 24.5.10*, confirmed identical on *poseidon*
+  (Linux CI/host) and *macOS* (dev/CI), and on the Linux build sandbox used to
+  start the port.  SBCL + CCL stay as parallel dev/CI lanes (fast loop + the
+  existing alfe/CAD tooling); ECL is the embed target for the Qt app.
+- *Full-umbrella baseline (2026-11-16): GREEN on ECL 24.5.10* (ASDF 3.3.7.3
+  via quicklisp).  =asdf:load-system "clautolisp"= COMPILES AND LOADS CLEAN:
+  20/20 umbrella subsystems (reader, source-map, runtime, drawing,
+  autolisp-host, *cador*, cadtui, builtins-core, cli, dcl, file-compat,
+  init-files, debug, inspect, sedit, interactor, debug-ui, debug-ui-dumb,
+  tui-core, debug-ui-ncurses) plus all 8 external deps (uiop babel
+  trivial-gray-streams cffi bordeaux-threads usocket fiveam cl-charms,
+  including the ncurses FFI).  Only ONE source blocker was found and fixed:
+  - =autolisp-file-compat/source/api.lisp= used the character literal
+    =#\Formfeed= (non-standard name; SBCL/CCL accept, ECL rejects at read:
+    "FORMFEED" is an illegal character name) -> =#\Page= (ANSI semi-standard,
+    same code 12; behaviour-identical, verified on SBCL).  clautolisp 2.4.18
+    (+ alfe 2.4.18 in step).
+  This is load/compile only; the next gate is the TEST SUITE green on ECL
+  (the oracle for "ported"), where the real runtime quirks (FFI marshalling,
+  thread model, external-format, compiled-closure behaviour) will show.
+- *Build-ECL caveat (finding):* quicklisp's in-image ASDF self-upgrade is
+  stack-fragile on ECL -- it overflows the binding/C stack NONDETERMINISTICALLY
+  against a populated fasl cache (seen as "BINDING-STACK overflow at 10240" /
+  "C-STACK overflow at 1048576" during init).  A clean compile (empty cache)
+  with raised =ext:set-limit= stacks is reliable.  The =build-ecl= lane must
+  therefore NOT rely on an incremental fasl cache + in-image upgrade; prefer a
+  saved ECL image built once with ASDF pre-upgraded and all systems loaded.
+- *Deliverable of phase 1:* an =ecl= build lane (Makefile =build-ecl=, an
+  ECL image) alongside =build-sbcl= / =build-ccl=, with the test corpus green
+  on ECL.
+
+** Phase 1 COMPLETE (2026-11-16) — full test suite green on ECL 24.5.10
+
+=clautolisp= 2.4.20 (+ alfe 2.4.20). The whole test corpus runs green on ECL
+24.5.10: *23/23 subsystems, 13758 fiveam checks, 0 failures*, with the SBCL/CCL
+lanes unchanged. All source fixes are =#+ecl=-guarded and behaviour-identical on
+the other hosts. The failures found in the baseline below were resolved:
+- *encoding/external-format* (cador, builtins-core, cli): gave
+  =host-external-format-supported-p= a real =#+ecl= probe over
+  =(ext:all-encodings)= so encodings ECL lacks route to the babel single-octet
+  fallback; made =external-format-newline= and
+  =%external-format-carries-replacement-p= tolerate ECL's =(ENCODING EOL)=
+  stream external-format shape (odd-length tail = GETF error = the PRINC "Not a
+  valid property list (LF)").
+- *Mac Roman*: shipped a built-in single-octet table (babel has none, ECL has
+  no codec), so =:mac-roman= is available on every host.
+- *clal-compile .lap artefacts*: ECL's LOAD dispatches by extension and read a
+  renamed-FASL =.lap= as source; load it via a temp =.fas= copy (ECL FASLs load
+  fine under another =.fas= name).
+- *impl primitives / pathname / compile*: =(getpid)= via =si:getpid=; the
+  =clautolisp-tool= =#\Formfeed=/=setf= compile blocker; config-path and cp950
+  test assumptions made host-robust.
+Makefile =test-ecl= lane DONE (2026-11-16): =make test-ecl= / =make -C
+clautolisp test-ecl= runs the whole corpus under ECL via =asdf:test-system=
+(13758 checks green), with the ECL build-caveat handled in the recipe --
+it clears the =ecl-*= asdf fasl subdir for a from-scratch compile (the warm
+cache overflows ECL's planner), sets a FINITE large stack (=ulimit -s 262144=;
+=unlimited= makes ECL fall back to a 1 MB C-stack), and quits with an explicit
+status. ECL is detected (=HAVE_ECL=) but kept OUT of =AVAILABLE_IMPLEMENTATIONS=
+(a TEST target only; no build/release image lane).
+
+Still open (phase-2 infra, not blocking the master merge):
+- A =build-ecl= image/executable lane. ECL builds via =asdf:make-build= /
+  =c:build-program= (not save-lisp-and-die), which is the same ECL
+  build/link machinery phase 2 needs to embed ECL in the Qt app -- so it is
+  folded into phase 2.
+- A CI =test:clautolisp:ecl= job. Needs ECL in the CI image. The image is
+  Debian bookworm (apt =ecl= is 21.2.1), but dev/poseidon/macOS are pinned to
+  *24.5.10*; a CI job on 21.2.1 would give a misleading signal, so the image
+  should source-build 24.5.10 (as it already source-builds CCL) before the job
+  is added. Deferred to the phase-2 toolchain setup.
+
+** Test-suite baseline on ECL (2026-11-16) — ~99.75% green, failures bucketed
+
+Ran the full corpus per-subsystem on ECL 24.5.10 (each =.../tests= system
+loaded + run independently so one failure can't mask the rest; mirrors
+=make test-sbcl= = =asdf:test-system=, which instead aborts at the first
+failing subsystem).  Result: *~13,056 fiveam checks, 32 failing* across 4 of
+23 subsystems, + 1 subsystem that fails to COMPILE.  18/23 subsystems fully
+green (reader, interactor, repl, source-map, runtime [1027], drawing [606],
+host, cadtui [472], dcl, compiler [454], file-compat, init-files, debug,
+inspect, sedit, dumb-ui [544], ncurses [331], emacs).
+
+Failures cluster into clear, expected ECL-porting buckets:
+1. *Encoding / external-format layer (the big bucket).* ECL's codec set and
+   =external-format-available-p= differ: =(external-format-available-p :cp950)=
+   is T on ECL; cross-dialect / cp1252 / mac-roman roundtrips and the
+   BricsCAD/AutoCAD command-log encoding tests fail.  Hits CADOR (3 tests /
+   8 checks: COMMAND-LOG-*), BUILTINS-CORE (most of its 20), and CLI (2:
+   encoding-name resolution).  Needs an ECL external-format story in
+   =autolisp-reader= (cf. the cp1252 host-independent codec already there).
+2. *clal-compile .lap artefacts.* The AutoLISP->native compiler tests
+   (CLAL-COMPILE-*, AN-ARTEFACT-KEEPS-*, A-LOADED-ARTEFACT-*) assume the
+   SBCL/CCL compiled-file + debug-info shape; ECL's fasl/.lap model differs.
+   ~9 checks in BUILTINS-CORE.
+3. *Impl-specific primitives.* =(getpid)= returns 0 on ECL (needs an #+ecl
+   branch); PRINC on one path raises "Not a valid property list (LF)".
+4. *Pathname/config.* CONFIG-PATHS-ARE-NAME-PARAMETERISED: =config-relative-path=
+   renders differently on ECL (2 checks).
+5. *Compile blocker:* =clautolisp/clautolisp-tool/tests= won't compile on ECL --
+   "(...::MESSAGE) is an illegal SETF form" in interrupt-tests.lisp (a
+   macroexpansion ECL rejects).  Isolated; blocks only that one subsystem.
+
+Two test-harness/portability fixes already landed on this branch: the
+=#\Formfeed=->=#\Page= compile fix (2.4.18) and the =with-env-unset= #+ecl
+branch (2.4.19, init-files 42/42).  The remaining buckets above are the body
+of phase-1 and will be worked largest-first (encoding), each with the suite
+as the oracle.
+
+** Qt API selection (gates phase 2) — OPEN, to evaluate
+
+Before the Qt6 embed (phase 2) we must choose HOW Common Lisp talks to Qt6.
+Options to evaluate (criteria: ECL-native embedding, Qt6 support, offscreen
+rendering for headless screenshots, maintenance health, licence, our control
+over the surface):
+
+- *lqml* (https://github.com/lisp-mirror/lqml) — Lisp Qt Meta Language; the ECL
+  successor to EQL5.  Already ECL-based (our exact target) and Qt-Quick/QML
+  oriented.  Primary candidate to assess first.
+- *Own CFFI-direct Qt binding* — bind the Qt C++ API (or a C shim over it) via
+  CFFI.  Maximum control + exactly the surface we need (display-list paint, pan/
+  zoom, event capture), at the cost of writing/maintaining the binding and a C++
+  shim (Qt's API is C++, so a C wrapper layer is required).
+- *EQL5 / CommonQt (Qtools)* — predecessors / SBCL-oriented bindings; Qt5-era,
+  listed for comparison (Qt6 + ECL-embed fit to be checked).
+
+Decision to be recorded here once the evaluation (small spikes: a Qt6 window
+painting a trivial display list from embedded ECL, offscreen capture) is done.

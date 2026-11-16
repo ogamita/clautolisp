@@ -57,6 +57,7 @@ this computation (no host break loop, no exit)."
                (lambda (message)
                  (setf thread-seen #+sbcl sb-thread:*current-thread*
                                    #+ccl ccl:*current-process*
+                                   #+ecl nil ; SIGINT unsupported on ECL; body never runs, must still compile
                        seen message))))
         (%set-live-interrupt-policy "DEBUG")
         (let ((installed (clautolisp.tools.clautolisp:install-interrupt-handler)))

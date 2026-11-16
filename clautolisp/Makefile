@@ -30,7 +30,7 @@ XDG_CACHE_HOME ?= $(ROOT_DIR)/.cache
 # of LISPSYS persists, and CLAUTOLISP_REGISTRY_FILE makes the host use this
 # sexp store instead, on every platform (lispsys persistence, 2026-10-04).
 TEST_REGISTRY_FILE ?= $(XDG_CACHE_HOME)/test-registry.sexp
-test test-sbcl test-ccl test-compiler-equivalence test-lexical-locals test-debug-compiled check-docstrings test-shipped-compiler test-shipped-compiler-ccl test-shipped-debug-flag test-shipped-debug-flag-ccl test-shipped-interrupt test-shipped-interrupt-ccl: export CLAUTOLISP_REGISTRY_FILE = $(TEST_REGISTRY_FILE)
+test test-sbcl test-ccl test-ecl test-compiler-equivalence test-lexical-locals test-debug-compiled check-docstrings test-shipped-compiler test-shipped-compiler-ccl test-shipped-debug-flag test-shipped-debug-flag-ccl test-shipped-interrupt test-shipped-interrupt-ccl: export CLAUTOLISP_REGISTRY_FILE = $(TEST_REGISTRY_FILE)
 
 # Install destination. Override on the command line:
 #   make install PREFIX=/usr/local DESTDIR=/staging
@@ -53,8 +53,10 @@ SUBPROJECT_NAME := clautolisp
 # binary into HAVE_<IMPL>, append a token to
 # AVAILABLE_IMPLEMENTATIONS, define a build-<impl> alias, and add
 # the matching file-target rules.
+ECL  ?= ecl
 HAVE_SBCL := $(shell command -v "$(SBCL)" >/dev/null 2>&1 && echo yes)
 HAVE_CCL  := $(shell command -v "$(CCL)"  >/dev/null 2>&1 && echo yes)
+HAVE_ECL  := $(shell command -v "$(ECL)"  >/dev/null 2>&1 && echo yes)
 AVAILABLE_IMPLEMENTATIONS :=
 ifeq ($(HAVE_SBCL),yes)
   AVAILABLE_IMPLEMENTATIONS += sbcl
@@ -62,6 +64,10 @@ endif
 ifeq ($(HAVE_CCL),yes)
   AVAILABLE_IMPLEMENTATIONS += ccl
 endif
+# ECL is a TEST target (the phase-1 ECL port / release-3.0 CAD epic), not yet a
+# release/build target -- there is no build-ecl image lane, so ECL is kept OUT
+# of AVAILABLE_IMPLEMENTATIONS (which drives build/install) and exposed only via
+# the test-ecl lane below.
 
 # Qt6 GUI availability.  Checked at parse time so `make all' skips
 # the subprocess build when the toolchain is not installed.
@@ -151,7 +157,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
 .PHONY: text-metrics
-.PHONY: all test test-sbcl test-ccl test-compiler-equivalence \
+.PHONY: all test test-sbcl test-ccl test-ecl test-compiler-equivalence \
         test-debug-compiled test-shipped-compiler test-shipped-compiler-ccl \
         test-shipped-interrupt test-shipped-interrupt-ccl \
         check-docstrings spec-symbols operator-availability check-operator-availability \
@@ -313,6 +319,33 @@ test-ccl:
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))' \
 		--eval '(ccl:quit (handler-case (progn (asdf:test-system "$(TEST_SYSTEM)" :verbose t) 0) (error (e) (format *error-output* "~&~A~%" e) 1)))'
+
+# ECL test lane -- the phase-1 ECL port / release-3.0 CAD epic oracle
+# (issues/open/qt6-drawing-canvas-first-increment.issue). ECL-specific points:
+#   - CLEAN ECL asdf fasl cache: on a POPULATED cache ECL's in-image ASDF
+#     self-upgrade (quicklisp's) recurses past the C-stack during planning
+#     (ASDF/PLAN::STAMP overflow, unbounded -- raising the stack does not help);
+#     a from-scratch compile avoids it. ECL does NOT honour XDG_CACHE_HOME for
+#     this, so clear the `ecl-*' subdir under both the XDG cache and ~/.cache,
+#     leaving the sbcl-*/ccl-* caches (the other lanes) untouched.
+#   - A large FINITE stack (ulimit): `ulimit -s unlimited' makes ECL fall back
+#     to a tiny 1 MB C-stack, so set a finite 256/128/64 MB instead.
+#   - Lisp stacks raised before anything is loaded, for the from-scratch compile.
+#   - *debugger-hook* forces a non-zero exit, and the run QUITS with an explicit
+#     status -- ECL, like CCL, does not exit non-zero on an --eval error by
+#     itself, so a signalled test failure would otherwise look green.
+# ECL is a TEST target only here; there is no build-ecl image lane yet (that is
+# part of the phase-2 ECL embedding).
+test-ecl:
+	{ ulimit -s 262144 2>/dev/null || ulimit -s 131072 2>/dev/null || ulimit -s 65536 2>/dev/null || true; }; \
+	rm -rf "$${XDG_CACHE_HOME:-$$HOME/.cache}/common-lisp/ecl-"* "$$HOME/.cache/common-lisp/ecl-"* 2>/dev/null || true; \
+	"$(ECL)" --norc -q \
+		--eval '(progn (ext:set-limit (quote ext:binding-stack) (* 1024 1024 64)) (ext:set-limit (quote ext:frame-stack) (* 1024 1024)) (ext:set-limit (quote ext:lisp-stack) (* 1024 1024 64)) (setf *debugger-hook* (lambda (c h) (declare (ignore h)) (format *error-output* "~&~A~%" c) (ext:quit 1))))' \
+		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
+		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
+		--eval '(require :asdf)' \
+		--eval '(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))' \
+		--eval '(ext:quit (handler-case (progn (asdf:test-system "$(TEST_SYSTEM)" :verbose t) 0) (error (e) (format *error-output* "~&~A~%" e) 1)))'
 
 build-read-autolisp-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
