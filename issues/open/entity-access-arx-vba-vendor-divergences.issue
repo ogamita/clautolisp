@@ -19,7 +19,12 @@ the baseline the points below compare against.
 * Divergences to model
 
 1. =(entmake '((0 . "NOSUCHTYPE")))= returns its data list in clautolisp;
-   nil on all three products (AutoCAD ERRNO 36, BricsCAD 0). A plain bug.
+   nil on all three products (AutoCAD ERRNO 36, BricsCAD 0). NOT a plain bug:
+   VALIDATE-ENTITY-DXF (drawing/entity-families.lisp) accepts an
+   unregistered type on purpose -- clautolisp cannot enumerate every DXF
+   entity the vendor knows, and a valid client entity it has no descriptor
+   for must not be refused. Rejecting unknown types as the products do needs
+   pjb's decision (and probably the vendors' full entity-type list).
 2. ERRNO of failing entity calls: AutoCAD sets it -- ENTMAKE of an unknown
    type 36, of a LINE without points 47, without a type 30; ENTMOD without
    (-1 . ename) 47; ENTNEXT past the end 8; SSGET "X" with a malformed -4

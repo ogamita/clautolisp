@@ -1,5 +1,5 @@
 #+TITLE: Cador rejects ssget crossing mode _C required by SCHMS occupancy tests
-#+STATUS: IN-PROGRESS
+#+STATUS: DONE
 #+PRIORITY: P1
 #+TYPE: compatibility
 #+DEPENDS: -
@@ -24,7 +24,7 @@ Run the adjacent =ssget-crossing-selection-unsupported-repro.lsp= with:
 
 #+begin_src sh
 clautolisp --no-init --host cador --dialect bricscad-v26 \
-  -l issues/open/ssget-crossing-selection-unsupported-repro.lsp
+  -l issues/closed/ssget-crossing-selection-unsupported-repro.lsp
 #+end_src
 
 Observed error:
@@ -78,3 +78,31 @@ same geometry on AutoCAD and BricsCAD (this MR's probe:suite jobs). Close
 once the three agree, or model what they show. Then enable the three SCHMS
 encombrement scenarios in its cador lane.
 
+* Native comparison -- 2026-11-16 (closed)
+
+probe-ssget-window-crossing.lsp, captured by !553's probe:suite jobs:
+AutoCAD 2022 Windows (job 18081159079, probe-results/autocad/ms-windows/
+20261116T194606Z), BricsCAD Windows (18081159083, .../bricscad/ms-windows/
+20261116T195029Z), BricsCAD macOS (18081159080, .../bricscad/macos/
+20261116T194308Z).
+
+BricsCAD on Windows AGREES WITH CADOR ON EVERY CASE -- window, crossing,
+swapped corners, the LINE filter, the empty rectangle -- including the line
+through the rectangle with no endpoint inside (selected) and the enclosing
+circle and square polyline (not). The headless sessions are no witness:
+AutoCAD's accoreconsole has no view and returns EVERY entity for every
+window / crossing (the rectangle ignored, even with the LINE filter or an
+empty rectangle); BricsCAD's macOS batch returns nil for all. The SCHMS
+scenarios run under the bricscad-v26 dialect, whose product is the one that
+agrees. Remaining outside this repository: enable the three encombrement
+scenarios in SCHMS's cador lane.
+
+| case | AutoCAD 2022 | BricsCAD Win | BricsCAD mac |
+|-+-+-+-|
+| =(length (vl-remove nil cad-probe--wc-made))= | 8 | 8 | 8 |
+| =(cad-probe--wc-names (ssget "_W" '(0.0 0.0) '(10.0 10.0)))= | ("ARC-PARTLY" "CIRCLE-AROUND" "CIRCLE-CROSSING" "CIRCLE-INSIDE" "LINE-INSIDE" "LINE-OUTSIDE" "LINE-THROUGH" "SQUARE-AROUND") | ("CIRCLE-INSIDE" "LINE-INSIDE") | nil |
+| =(cad-probe--wc-names (ssget "_C" '(0.0 0.0) '(10.0 10.0)))= | ("ARC-PARTLY" "CIRCLE-AROUND" "CIRCLE-CROSSING" "CIRCLE-INSIDE" "LINE-INSIDE" "LINE-OUTSIDE" "LINE-THROUGH" "SQUARE-AROUND") | ("ARC-PARTLY" "CIRCLE-CROSSING" "CIRCLE-INSIDE" "LINE-INSIDE" "LINE-THROUGH") | nil |
+| =(cad-probe--wc-names (ssget "_C" '(10.0 10.0) '(0.0 0.0)))= | ("ARC-PARTLY" "CIRCLE-AROUND" "CIRCLE-CROSSING" "CIRCLE-INSIDE" "LINE-INSIDE" "LINE-OUTSIDE" "LINE-THROUGH" "SQUARE-AROUND") | ("ARC-PARTLY" "CIRCLE-CROSSING" "CIRCLE-INSIDE" "LINE-INSIDE" "LINE-THROUGH") | nil |
+| =(cad-probe--wc-names (ssget "_C" '(0.0 0.0) '(10.0 10.0) '((0 . "LINE"))))= | ("LINE-INSIDE" "LINE-OUTSIDE" "LINE-THROUGH") | ("LINE-INSIDE" "LINE-THROUGH") | nil |
+| =(cad-probe--wc-names (ssget "_C" '(100.0 100.0) '(101.0 101.0)))= | ("ARC-PARTLY" "CIRCLE-AROUND" "CIRCLE-CROSSING" "CIRCLE-INSIDE" "LINE-INSIDE" "LINE-OUTSIDE" "LINE-THROUGH" "SQUARE-AROUND") | nil | nil |
+| =(cad-probe--wc-names (ssget "_W" '(0.0 0.0 0.0) '(10.0 10.0 0.0)))= | ("ARC-PARTLY" "CIRCLE-AROUND" "CIRCLE-CROSSING" "CIRCLE-INSIDE" "LINE-INSIDE" "LINE-OUTSIDE" "LINE-THROUGH" "SQUARE-AROUND") | ("CIRCLE-INSIDE" "LINE-INSIDE") | nil |
