@@ -53,6 +53,7 @@ probe-reader-printer.lsp      cad-probe-run-reader-printer-probes
 probe-setvar-edges.lsp        cad-probe-run-setvar-edges-probes
 probe-sysvar-flags.lsp        cad-probe-run-sysvar-flags-probes
 probe-entity-access.lsp       cad-probe-run-entity-access-probes
+probe-host-fns.lsp            cad-probe-run-host-fns-probes
 # ARXUNLOAD of a loaded module is tried (ONFAILURE only, reloaded at once):
 # after every suite that needs the session's modules, before the end.
 probe-arx-vba.lsp             cad-probe-run-arx-vba-probes
