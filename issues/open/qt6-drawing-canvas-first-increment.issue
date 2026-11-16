@@ -839,7 +839,26 @@ Built with =pkg-config Qt6Widgets= + =ecl-config=; "Lisp produced 10 segments"
 -> a clean star PNG. End-to-end proof of: ECL embed in Qt6, CL-owns-geometry /
 C++-paints-display-list, and the headless-screenshot path.
 
-Still to spike before committing deep (the expertise-bound bits the issue flags):
-the ECL<->Qt EVENT LOOP + GC/thread marriage on a LIVE interactive window (the
-spike's =grab()= does not run the event loop), pointer/selection input back into
-the prompt-api, and the cooperative scheduler integration.
+*Spike #2 (2026-11-16, VALIDATED) — the live interactive window / event-loop
+marriage* (=spike-ecl-embed/interactive.cpp=). The expertise-bound bit the issue
+flags ("the scheduler <-> Qt event-loop marriage"). Design validated: *ONE
+thread, a NESTED QEventLoop*. Common Lisp owns the command loop; a CL command
+calls =(spike-get-point)= (a C function registered into ECL via
+=ecl_def_c_function=), which enters a nested =QEventLoop= that runs until an
+event supplies the point -- a real =QWidget::mousePressEvent=, or, headless, a
+scripted click on the SAME =supplyPoint()= path -- then returns it to CL; CL
+pushes a segment onto its model and calls =(spike-request-repaint)=, and the
+canvas pulls the fresh display list and paints. So Qt keeps processing events
+while CL "blocks" in getpoint, with NO second thread and therefore no GC/thread
+marriage across the ECL boundary. A 4-point run draws the polyline; a *GC-stress
+run* (2000 points, ~8M conses interleaved with 2000 nested event loops) finished
+clean in ~0.5 s -- ECL's conservative GC is stable while a Qt event loop is on
+the C stack. This is the single-document MODAL input case.
+
+Still to spike (deeper, incremental):
+- Real OS pointer input on a VISIBLE window (needs a display; the nested-loop
+  path is identical -- =mousePressEvent= already calls =supplyPoint()=).
+- Wiring the nested loop into cador's real =read-prompt-line= chokepoint, so
+  =getpoint=/=entsel=/=ssget= drive from the canvas (the increment-1 scope).
+- The cador COOPERATIVE SCHEDULER for the multi-document case (several drawings,
+  thread-parked), vs the single modal nested loop here.

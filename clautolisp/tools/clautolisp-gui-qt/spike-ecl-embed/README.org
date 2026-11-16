@@ -15,10 +15,20 @@ What it does (=main.cpp=, ~120 lines):
 5. Under the *offscreen* QPA platform (no windowing environment) it grabs the
    widget to a =QPixmap= and saves a PNG.
 
+=interactive.cpp= (spike #2) validates the LIVE interactive window: CL owns the
+command loop and blocks in =(spike-get-point)= (a C function registered into ECL
+via =ecl_def_c_function=), which enters a NESTED QEventLoop until an event
+supplies the point (a real =mousePressEvent=, or a scripted click here); CL then
+updates its model and calls =(spike-request-repaint)=. One thread, no GC/thread
+marriage. A GC-stress run (=./spike2 /dev/null 2000=) cons-storms while the
+nested loops interleave, proving GC stability with a Qt event loop on the stack.
+
 Run:
 #+begin_src sh
   bash build.sh          # needs: g++, Qt6 (pkg-config Qt6Widgets), libecl-dev (ecl-config)
-  ./spike out.png        # prints "Lisp produced 10 segments"; writes out.png (a star)
+  ./spike  out.png       # "Lisp produced 10 segments"; a star
+  ./spike2 out2.png 4    # "CL command built 4 segments from interactive input"; a polyline
+  ./spike2 /dev/null 2000  # GC-stress: 2000 points / nested loops, must stay clean
 #+end_src
 
 This is a throwaway spike kept as evidence for the Qt-API decision; it is NOT
