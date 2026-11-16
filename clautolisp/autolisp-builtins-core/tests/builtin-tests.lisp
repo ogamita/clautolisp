@@ -9251,3 +9251,46 @@ error; its message is nil under the default dialect, as on AutoCAD 2022
                (let ((v (%real-print "(mapcar (function (lambda (c) (= (chr c) (read (vl-prin1-to-string (chr c)))))) '(7 9 27))"
                                      :autocad-2022)))
                  (mapcar (lambda (x) (and x t)) v))))))
+
+;;; --- Entity calls: ERRNO and results as the products measure them -------
+;;; (entity-access-arx-vba-vendor-divergences; sunset campaign B9,
+;;; probe-entity-access.lsp, 2026-11-16)
+
+(defun %ee (form dialect)
+  (run-autolisp-string form
+                       :dialect (clautolisp.autolisp-reader:find-autolisp-dialect dialect)
+                       :setup-fn #'%install-cador-and-core))
+
+(test entmake-refuses-an-unknown-type-like-the-products
+  ;; pjb, 2026-11-16: do as the products -- nil, AutoCAD ERRNO 36.
+  (is (null (%ee "(entmake '((0 . \"NOSUCHTYPE\")))" :autocad-2022)))
+  (is (null (%ee "(entmakex '((0 . \"NOSUCHTYPE\")))" :bricscad-v26)))
+  ;; a type the products know, without a clautolisp family, is still taken
+  (is (not (null (%ee "(entmake '((0 . \"WIPEOUT\") (8 . \"0\") (90 . 5)))" :autocad-2022)))))
+
+(test entmake-failures-leave-the-products-errno
+  (is (eql 36 (%ee "(progn (entmake '((0 . \"NOSUCHTYPE\"))) (getvar \"ERRNO\"))" :autocad-2022)))
+  (is (eql 47 (%ee "(progn (entmake '((0 . \"LINE\"))) (getvar \"ERRNO\"))" :autocad-2022)))
+  (is (eql 30 (%ee "(progn (entmake '((10 0.0 0.0 0.0))) (getvar \"ERRNO\"))" :autocad-2022)))
+  (dolist (form '("(progn (entmake '((0 . \"NOSUCHTYPE\"))) (getvar \"ERRNO\"))"
+                  "(progn (entmake '((0 . \"LINE\"))) (getvar \"ERRNO\"))"
+                  "(progn (entmake '((10 0.0 0.0 0.0))) (getvar \"ERRNO\"))"))
+    (is (eql 0 (%ee form :bricscad-v26)) "~A under bricscad-v26" form)))
+
+(test entmod-without-its-ename-returns-nil
+  (is (equal '(nil 47) (%ee "(list (entmod '((0 . \"LINE\") (10 0.0 0.0 0.0))) (getvar \"ERRNO\"))" :autocad-2022)))
+  (is (equal '(nil 0) (%ee "(list (entmod '((0 . \"LINE\") (10 0.0 0.0 0.0))) (getvar \"ERRNO\"))" :bricscad-v26)))
+  (is (equal '(nil 0) (%ee "(list (entmod nil) (getvar \"ERRNO\"))" :autocad-2022))))
+
+(test entnext-past-the-end-leaves-the-products-errno
+  (is (eql 8 (%ee "(progn (setq e (entmakex '((0 . \"POINT\") (10 0.0 0.0 0.0)))) (entnext e) (getvar \"ERRNO\"))" :autocad-2022)))
+  (is (eql 0 (%ee "(progn (setq e (entmakex '((0 . \"POINT\") (10 0.0 0.0 0.0)))) (entnext e) (getvar \"ERRNO\"))" :bricscad-v26))))
+
+(test a-bad-ename-leaves-errno-0
+  (is (eql 0 (%ee "(progn (vl-catch-all-apply 'entget '(nil)) (getvar \"ERRNO\"))" :autocad-2022)))
+  (is (eql 0 (%ee "(progn (vl-catch-all-apply 'entupd '(nil)) (getvar \"ERRNO\"))" :autocad-2022))))
+
+(test vl-catch-all-apply-keeps-the-called-functions-errno
+  ;; AutoCAD's 36 survived the VL-CATCH-ALL-APPLY around a failed ENTMAKE.
+  (is (eql 36 (%ee "(progn (vl-catch-all-apply 'entmake (list '((0 . \"NOSUCHTYPE\")))) (getvar \"ERRNO\"))"
+                   :autocad-2022))))

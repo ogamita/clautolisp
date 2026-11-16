@@ -87,3 +87,24 @@ SSGET "X" filters return nil.
 | =(vl-vbaload "clautolisp-no-such-project.dvb")= | ((ERROR "type d'argument incorrect: VLA-OBJECT nil") 0) | (NIL 0) | (NIL 0) |
 | =(vl-vbarun "ClautolispNoSuchMacro")= | (T 0) | (NIL 101) | (NIL 0) |
 | =(vl-vbarun "")= | (T 0) | (NIL 0) | (NIL 0) |
+
+* Progress -- 2026-11-16 (clautolisp 2.4.22)
+
+- [X] 1. ENTMAKE / ENTMAKEX refuse a type nobody knows (pjb: do like the
+  products): VALIDATE-ENTITY-DXF refuses a type that is neither a family nor
+  in *KNOWN-DXF-TYPES* (the DXF reference's ENTITIES / OBJECTS sections,
+  tables, records, BLOCK / ENDBLK); a known type without a family (WIPEOUT)
+  is still taken unchanged.
+- [X] 2. ERRNO of failing entity calls, per product (AutoCAD; BricsCAD 0):
+  ENTMAKE without a type 30, unknown type 36, missing group 47 (the host
+  reports the reason in *ENTMAKE-FAILURE-REASON*); ENTMOD without
+  (-1 . ename) returns nil with 47 instead of signalling, (entmod nil) nil
+  with 0; ENTNEXT past the end 8; a bad ename (ENTGET / ENTUPD of nil)
+  leaves 0. And VL-CATCH-ALL-APPLY no longer resets ERRNO after a successful
+  call -- AutoCAD's codes survive it. Still open in 2: SSGET "X" with a
+  malformed -4 list (56-61).
+- [ ] 3. ENTGET order per product.
+- [ ] 4. ENTMOD of a dictionary XRECORD per product.
+- [ ] 5. ARXLOAD / ARXUNLOAD ONFAILURE.
+- [ ] 6. VL-VBALOAD / VL-VBARUN.
+

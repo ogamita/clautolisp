@@ -916,9 +916,11 @@ explicitly.~%"))
                   :function function :arguments arg-list)
                  clautolisp.autolisp-runtime:*autolisp-catch-stack*)))
   (handler-case
-      (let ((result (apply #'call-autolisp-function function arg-list)))
-        (set-autolisp-errno 0)
-        result)
+      ;; A successful call leaves ERRNO as the called function left it: on
+      ;; AutoCAD the 36 / 47 / 8 a failed ENTMAKE / ENTNEXT sets survive the
+      ;; VL-CATCH-ALL-APPLY around it (sunset campaign B9, 2026-11-16). This
+      ;; used to reset it to 0.
+      (apply #'call-autolisp-function function arg-list)
     (autolisp-termination (condition)
       ;; (exit) and (quit) are catchable by VL-CATCH-ALL-APPLY on
       ;; AutoCAD and BricsCAD: the vendor implementations signal a
@@ -5626,12 +5628,16 @@ most recent first."
 ;;; reaches the methods in cador/source/entity-api.lisp.
 
 (defun require-ename (object operator-name)
+  ;; A bad argument on both products, leaving ERRNO 0 -- (entget nil),
+  ;; (entupd nil) measured by the sunset campaign's B9 -- not the 4 the
+  ;; :INVALID-* codes map to.
   (unless (typep object 'autolisp-ename)
-    (signal-builtin-argument-error
-     :invalid-ename
-     operator-name
-     "~A expects an ENAME, got ~S."
-     operator-name object))
+    (error (clautolisp.autolisp-runtime:autolisp-runtime-error-class-for-code :invalid-ename)
+           :code :invalid-ename
+           :errno 0
+           :message (format nil "~A expects an ENAME, got ~S." operator-name object)
+           :details (list :builtin operator-name operator-name object)
+           :call-stack (current-autolisp-call-stack)))
   object)
 
 (defun builtin-entget (ename &optional applist)
@@ -5655,11 +5661,41 @@ most recent first."
   ;; Documented to set ERRNO on failure. Code 31 = "Attempt to
   ;; modify deleted entity" / 2 for unknown ename. We use 2 as
   ;; the conservative shared code when the host returns nil.
+  ;;
+  ;; Data without its (-1 . ename) entry -- or nil -- is not an error on the
+  ;; products: ENTMOD returns nil, leaving ERRNO 47 on AutoCAD and 0 on
+  ;; BricsCAD, and 0 on both for nil (sunset campaign B9).
   (require-proper-list data "ENTMOD")
-  (let ((result (host-entmod (current-evaluation-host) data)))
-    (if result
-        (errno-and-return 0 result)
-        (errno-and-return 2 nil))))
+  (cond
+    ((null data) (errno-and-return 0 nil))
+    ((not (find-if (lambda (pair)
+                     (and (consp pair) (eql (car pair) -1)
+                          (typep (cdr pair) 'autolisp-ename)))
+                   data))
+     (errno-and-return (if (%bricscad-product-p) 0 47) nil))
+    (t
+     (let ((result (host-entmod (current-evaluation-host) data)))
+       (if result
+           (errno-and-return 0 result)
+           (errno-and-return 2 nil))))))
+
+(defun %bricscad-product-p ()
+  "True when the current dialect's product is BricsCAD."
+  (eq :bricscad (ignore-errors
+                 (clautolisp.autolisp-reader:autolisp-dialect-product
+                  (clautolisp.autolisp-runtime:current-evaluation-dialect)))))
+
+(defun %entmake-failure-errno ()
+  "The ERRNO a refused ENTMAKE / ENTMAKEX leaves, as measured (sunset campaign
+B9, probe-entity-access.lsp): AutoCAD 30 for data without a type, 36 for an
+unknown type, 47 for a missing required group (a LINE without its points);
+BricsCAD 0 for all. A dialect without a product follows AutoCAD."
+  (if (%bricscad-product-p)
+      0
+      (case clautolisp.autolisp-runtime:*entmake-failure-reason*
+        (:no-type 30)
+        (:missing-group 47)
+        (t 36))))
 
 (defun builtin-entmake (data)
   ;; Documented to set ERRNO on failure. Code 36 = "Bad entity type".
@@ -5677,7 +5713,7 @@ most recent first."
     (cond
       ((typep result 'autolisp-string) (errno-and-return 0 result))
       (result (errno-and-return 0 data))
-      (t (errno-and-return 36 nil)))))
+      (t (errno-and-return (%entmake-failure-errno) nil)))))
 
 (defun builtin-entmakex (data)
   ;; Same ERRNO contract as ENTMAKE, but the return value is the new
@@ -5687,7 +5723,7 @@ most recent first."
   (let ((result (host-entmakex (current-evaluation-host) data)))
     (if result
         (errno-and-return 0 result)
-        (errno-and-return 36 nil))))
+        (errno-and-return (%entmake-failure-errno) nil))))
 
 (defun builtin-entdel (ename)
   ;; Not in the canonical ERRNO :coupled list; reset on success only.
@@ -5707,10 +5743,14 @@ most recent first."
   (host-entlast (current-evaluation-host)))
 
 (defun builtin-entnext (&optional ename)
-  ;; (entnext) returning nil at end-of-list is not an error; do
-  ;; not touch ERRNO.
-  (host-entnext (current-evaluation-host)
-                (and ename (require-ename ename "ENTNEXT"))))
+  ;; (entnext ENAME) past the last entity is nil on both products, and
+  ;; leaves ERRNO 8 on AutoCAD, 0 on BricsCAD (sunset campaign B9). (entnext)
+  ;; with no entity at all is not an error: ERRNO untouched.
+  (let ((result (host-entnext (current-evaluation-host)
+                              (and ename (require-ename ename "ENTNEXT")))))
+    (if (and ename (null result))
+        (errno-and-return (if (%bricscad-product-p) 0 8) nil)
+        result)))
 
 (defun builtin-handent (handle-string)
   ;; Documented failure code 13 = "Invalid handle".
