@@ -3911,8 +3911,63 @@ says -- or an AutoLISP error when the policy is to signal."
 (defun builtin-atoi (string)
   (parse-autolisp-integer (autolisp-string-value (require-string string "ATOI"))))
 
+(defun %atof-hex-float (text)
+  "The value of TEXT's leading C99 hexadecimal-floating constant, as C strtod
+reads it -- optional white space, optional sign, 0x / 0X, hex digits with an
+optional point, an optional binary exponent p[sign]digits -- or NIL when TEXT
+does not start with one. ATOF is strtod on both AutoCAD and BricsCAD:
+(atof \"0x1p4\") is 16.0 on both (probe numeric-edges, sunset campaign B1,
+2026-10-24). Only ATOF takes this syntax, never the reader."
+  (let* ((length (length text))
+         ;; C isspace: space, and tab through carriage return (9-13).
+         (i (or (position-if-not (lambda (c) (let ((code (char-code c)))
+                                               (or (= code 32) (<= 9 code 13))))
+                                 text)
+                length))
+         (sign 1))
+    (when (and (< i length) (member (char text i) '(#\+ #\-)))
+      (when (char= (char text i) #\-) (setf sign -1))
+      (incf i))
+    (unless (and (< (1+ i) length)
+                 (char= (char text i) #\0)
+                 (char-equal (char text (1+ i)) #\x))
+      (return-from %atof-hex-float nil))
+    (incf i 2)
+    (let ((mantissa 0) (digits 0) (fraction-digits 0) (seen-point nil))
+      (loop while (< i length)
+            do (let* ((c (char text i))
+                      (d (digit-char-p c 16)))
+                 (cond (d (setf mantissa (+ (* 16 mantissa) d))
+                          (incf digits)
+                          (when seen-point (incf fraction-digits)))
+                       ((and (char= c #\.) (not seen-point)) (setf seen-point t))
+                       (t (loop-finish))))
+               (incf i))
+      ;; "0x" with no hex digit is not a hex constant: strtod reads the "0".
+      (when (zerop digits)
+        (return-from %atof-hex-float nil))
+      (let ((exponent 0))
+        (when (and (< i length) (char-equal (char text i) #\p))
+          (let ((j (1+ i)) (exponent-sign 1) (value 0) (exponent-digits 0))
+            (when (and (< j length) (member (char text j) '(#\+ #\-)))
+              (when (char= (char text j) #\-) (setf exponent-sign -1))
+              (incf j))
+            (loop while (and (< j length) (digit-char-p (char text j)))
+                  do (setf value (+ (* 10 value) (digit-char-p (char text j))))
+                     (incf exponent-digits)
+                     (incf j))
+            ;; A "p" without digits is not an exponent: strtod stops before it.
+            (when (plusp exponent-digits)
+              (setf exponent (* exponent-sign value)))))
+        (let ((value (* sign mantissa (expt 2 (- exponent (* 4 fraction-digits))))))
+          (handler-case (float value 1d0)
+            (floating-point-overflow () nil)
+            (error () nil)))))))
+
 (defun builtin-atof (string)
-  (parse-autolisp-real (autolisp-string-value (require-string string "ATOF"))))
+  (let ((text (autolisp-string-value (require-string string "ATOF"))))
+    (or (%atof-hex-float text)
+        (parse-autolisp-real text))))
 ;; --- end atoi / atof -------------------------------------------------
 
 (defun escape-prin1-string (string)

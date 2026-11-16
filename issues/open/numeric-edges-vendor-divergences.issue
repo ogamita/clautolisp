@@ -59,7 +59,13 @@ wants a small dedicated parser, not a one-liner.
 
 * Status
 
-TODO. Divergence 2 (atof hex-float) and Divergence 1 (integer overflow) are both
+Divergence 2 (atof hex-float) DONE 2026-11-16 (clautolisp 2.4.18): ATOF reads
+a leading C99 hexadecimal-floating constant as strtod does (=0x1p4= -> 16.0,
+also =0x1a=, =0x1.8p0=, =0x1p-2=, sign, case, leading space, trailing junk),
+then falls back to the decimal path; the reader does not accept hex-float
+(test builtin-atof-hex-float-is-not-a-reader-literal). Divergence 1 (integer
+overflow) remains TODO, specified above with its measured table.
+Original note: Divergence 2 (atof hex-float) and Divergence 1 (integer overflow) are both
 specified above with measured tables. Neither is in the "quick adopt" set of the
 B2 vle fixes; both want their own focused change (atof: a strtod-style parser;
 overflow: dialect-resolved arithmetic). Fold the measured values into the spec's

@@ -2017,12 +2017,12 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     (is (= 0   (call-autolisp-function atoi-fn (make-autolisp-string "xyz"))))))
 
 (test builtin-atof-strtod-style
-  ;; AutoLISP `atof` follows a strtod-style lex model. Confirmed
-  ;; against BricsCAD V26 by the Phase-5 product test on 2026-04-26.
-  ;; This implementation deliberately omits C99 hex-float syntax
-  ;; (BricsCAD V26 accepts `(atof "0x1p4") -> 16.0`, but the
-  ;; clautolisp model is conservative). Decimal-comma is rejected
-  ;; (no locale sensitivity).
+  ;; AutoLISP `atof` is C strtod. Confirmed against BricsCAD V26 by the
+  ;; Phase-5 product test on 2026-04-26, and on AutoCAD 2022 + BricsCAD V26
+  ;; by the sunset campaign's B1 probe (numeric-edges, 2026-10-24):
+  ;; (atof "0x1p4") is 16.0 on BOTH, so C99 hex-float is accepted here too
+  ;; (numeric-edges-vendor-divergences, divergence 2). Decimal-comma is
+  ;; rejected (no locale sensitivity).
   (reset-autolisp-symbol-table)
   (install-core-builtins)
   (let ((atof-fn (autolisp-symbol-function (find-autolisp-symbol "ATOF"))))
@@ -2034,8 +2034,27 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     (is (= 3.0d0    (call-autolisp-function atof-fn (make-autolisp-string "3,5"))))
     (is (= 3.5d0    (call-autolisp-function atof-fn (make-autolisp-string " 3.5"))))
     (is (= 0.0d0    (call-autolisp-function atof-fn (make-autolisp-string "xyz"))))
-    ;; Conservative-clautolisp choice: hex-float is NOT accepted.
-    (is (= 0.0d0    (call-autolisp-function atof-fn (make-autolisp-string "0x1p4"))))))
+    ;; C99 hex-float, as both products read it.
+    (is (= 16.0d0   (call-autolisp-function atof-fn (make-autolisp-string "0x1p4"))))
+    ;; The rest of strtod's hex syntax: no exponent, a hex point, a
+    ;; negative exponent, a sign, upper case, leading space, trailing junk.
+    (is (= 26.0d0   (call-autolisp-function atof-fn (make-autolisp-string "0x1a"))))
+    (is (= 1.5d0    (call-autolisp-function atof-fn (make-autolisp-string "0x1.8p0"))))
+    (is (= 0.25d0   (call-autolisp-function atof-fn (make-autolisp-string "0x1p-2"))))
+    (is (= -16.0d0  (call-autolisp-function atof-fn (make-autolisp-string "-0X1P4"))))
+    (is (= 16.0d0   (call-autolisp-function atof-fn (make-autolisp-string "  0x1p4xyz"))))
+    ;; A "p" with no digits is not an exponent: strtod stops before it.
+    (is (= 1.0d0    (call-autolisp-function atof-fn (make-autolisp-string "0x1p"))))
+    ;; "0x" with no hex digit is the decimal "0".
+    (is (= 0.0d0    (call-autolisp-function atof-fn (make-autolisp-string "0x"))))))
+
+(test builtin-atof-hex-float-is-not-a-reader-literal
+  ;; Only ATOF takes the hex-float syntax: the reader must not start reading
+  ;; 0x1p4 as a number (numeric-edges-vendor-divergences, divergence 2).
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (is (not (realp (first (clautolisp.autolisp-runtime:read-runtime-from-string
+                          "0x1p4" :source-name "hex"))))))
 
 (test builtin-apply-eval-eq-equal
   ;; Core ch.5 functions: APPLY spreads a list, EVAL re-enters the

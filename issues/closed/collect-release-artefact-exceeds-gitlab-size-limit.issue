@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: collect-release-artefact-exceeds-gitlab-size-limit -- collect:release cannot upload a ~1.07 GB set (413)
-#+STATUS: NEXT
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: ci-infra
 #+DEPENDS: -
@@ -96,3 +96,14 @@ In the repository:
 Remaining: the first release tag after the merge exercises collect:release's
 mirror for real (and deploy:documentation with the new key) -- close then.
 Prerequisite: DEPLOY_SSH_PRIVATE_KEY replaced with the new CI key (pjb).
+
+* Closed -- 2026-11-16
+
+The remaining check is done: release-2.4.16's collect:release (job
+18057837166, pipeline 3072669357) assembled the set and mirrored it to
+poseidon itself, and make-gitlab-release.py verified all 15 poseidon links
+before publishing. (release-2.4.0's first collect failed only because
+DEPLOY_SSH_PRIVATE_KEY / DEPLOY_KNOWN_HOSTS were scoped to the
+poseidon/autolisp-spec environment; pjb widened them to *, and the retry,
+job 17960240430, mirrored and went green.) The pre-mirror releases 2.3.23 and
+1.9.0 were moved to poseidon by hand and their GitLab artefacts deleted.

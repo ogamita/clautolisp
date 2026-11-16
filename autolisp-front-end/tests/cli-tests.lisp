@@ -808,6 +808,46 @@ had already parsed them."
           (is (string= "template.dwg" (file-namestring dwg)))
           (is (not (equal (uiop:native-namestring template) dwg))))))))
 
+(test a-missing-dwg-fails-under-the-bricscad-backend
+  "--dwg naming no file must fail the run (EX_NOINPUT) under the BricsCAD
+backend, which used to start on the cached template or a new drawing
+instead, silently (alfe-bricscad-ignores-dwg-option). AutoCAD's drawing
+selection is left as it was, per that issue. An existing --dwg -- spaces
+in its name included -- is handed over as given."
+  (let* ((missing (namestring (merge-pathnames
+                               (format nil "alfe-no-such-drawing-~D.dwg" (random 999999))
+                               (uiop:temporary-directory))))
+         (options (alfe.cli:make-cli-options :dwg missing))
+         (condition (handler-case
+                        (progn (alfe.cli::%session-dwg
+                                options
+                                (alfe.backend.bricscad:make-bricscad-backend
+                                 :executable-path "/usr/bin/true" :variant :batch)
+                                nil)
+                               nil)
+                      (clautolisp.autolisp-cli:cli-error (c) c))))
+    (is (typep condition 'clautolisp.autolisp-cli:cli-error)
+        "a missing --dwg must signal a CLI-ERROR under BricsCAD")
+    (when condition
+      (is (= clautolisp.sysexits:+ex-noinput+
+             (clautolisp.autolisp-cli:cli-error-status condition)))
+      (is (string= "--dwg" (clautolisp.autolisp-cli:cli-error-option condition))))
+    ;; AutoCAD: unchanged -- the path is handed over as given.
+    (is (equal missing
+               (alfe.cli::%session-dwg
+                options
+                (alfe.backend.autocad:make-autocad-backend :executable-path "/usr/bin/true")
+                nil))))
+  ;; An existing drawing, with spaces in its name, passes through.
+  (uiop:with-temporary-file (:pathname existing :prefix "alfe dwg test" :type "dwg" :keep nil)
+    (let ((options (alfe.cli:make-cli-options :dwg (namestring existing))))
+      (is (equal (namestring existing)
+                 (alfe.cli::%session-dwg
+                  options
+                  (alfe.backend.bricscad:make-bricscad-backend
+                   :executable-path "/usr/bin/true" :variant :batch)
+                  nil))))))
+
 (test template-lookup-searches-only-the-product-folders
   (let* ((root (uiop:ensure-directory-pathname
                 (merge-pathnames (format nil "alfe-template-test-~D/" (random 999999))

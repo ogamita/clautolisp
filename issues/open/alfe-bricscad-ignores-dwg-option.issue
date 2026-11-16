@@ -76,3 +76,17 @@ fixture then became visible; that is a different bootstrap issue.
 - Verify on BricsCAD that =DWGNAME= and =DWGPREFIX= identify the requested
   file, both with and without the EPURE plugin where available.
 - Do not change AutoCAD or clautolisp drawing selection incidentally.
+
+* Progress -- 2026-11-16 (alfe 2.4.18)
+
+- [X] The drawing reaches BricsCAD: start-engine sets the backend's template
+  path from --dwg / --template's copy (5de3a74e, 2026-10-26), ahead of the
+  cached/default/vendor template.
+- [X] An explicitly missing --dwg fails the run with EX_NOINPUT (66) under the
+  BricsCAD backend instead of falling back silently (%session-dwg; test
+  a-missing-dwg-fails-under-the-bricscad-backend, which also checks a path
+  with spaces passes through and AutoCAD is unchanged).
+- [ ] A backend regression on the actual launch argv with a pre-populated
+  template cache (precedence of --dwg over AUTOLISP_BRICSCAD_TEMPLATE).
+- [ ] Native check on BricsCAD: DWGNAME / DWGPREFIX name the requested file,
+  with and without the EPURE plug-in.
