@@ -464,3 +464,25 @@ The same day, the pending-divergences suite (prepared 2026-10-29) was
 captured on all three products: results under probe-results/*/20261116T17*,
 folded into type-of-defun-subr-or-usubr, autocad-symbol-case-preserved and
 entmake-subclass-group-order.
+
+* B5 captured -- 2026-11-16
+Sunset campaign B5 (probes/sources/probe-sysvar-flags.lsp, 546 cases),
+captured 2026-11-16 by MR !548's probe:suite jobs: AutoCAD 2022 Windows (job
+18078448045, probe-results/autocad/ms-windows/20261116T180525Z), BricsCAD
+Windows (18078448049, .../bricscad/ms-windows/20261116T181223Z) and BricsCAD
+macOS (18078448046, .../bricscad/macos/20261116T181026Z). Each range case is
+(setvar NAME VALUE) just below, at and above a documented bound, restored
+after; "ok" = stored as given, "stored N" = stored something else,
+"refused ERRNO n" = an error.
+
+Read-only, settled: BACKZ and FRONTZ are read-only on all three (ERRNO 20).
+SECURELOAD, TRUSTEDPATHS and LEGACYCODESEARCH are WRITABLE on AutoCAD and
+read-only on BricsCAD -- which accepts the SETVAR without an error but keeps
+the value and leaves ERRNO 20 -- so the spec's SECURELOAD Divergence row
+("AutoCAD False, BricsCAD True") is right and its "read-only yes" entry is
+wrong. LENSLENGTH: writable on AutoCAD, read-only on BricsCAD. PUCSBASE ""
+refused by AutoCAD (ERRNO 22), accepted by BricsCAD. Defaults: 67 of the 171
+variables with a documented default divergence read differently on AutoCAD
+and BricsCAD on the fresh drawing. The range table is in
+setvar-validation-as-measured.
+

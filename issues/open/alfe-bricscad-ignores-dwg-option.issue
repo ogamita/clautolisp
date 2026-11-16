@@ -88,5 +88,13 @@ fixture then became visible; that is a different bootstrap issue.
   with spaces passes through and AutoCAD is unchanged).
 - [ ] A backend regression on the actual launch argv with a pre-populated
   template cache (precedence of --dwg over AUTOLISP_BRICSCAD_TEMPLATE).
-- [ ] Native check on BricsCAD: DWGNAME / DWGPREFIX name the requested file,
-  with and without the EPURE plug-in.
+- [X] Native check on BricsCAD V25 fr_FR, Windows (pfenny, alfe 2.4.17,
+  2026-11-16): =alfe --no-init --bricscad --dwg "probe drawing.dwg"= run from
+  "~/alfe dwg check" printed DWGNAME "probe drawing.dwg" and DWGPREFIX
+  "C:\msys64\home\PPBN02261\alfe dwg check\" -- the requested file, spaces
+  in the name and the directory, exit 0. Without the EPURE plug-in.
+- [ ] The same with the EPURE plug-in.
+- Seen on the way: without --no-init the account's ~/.autolisp failed under
+  BricsCAD (line 183, "no function definition <ROOT>") -- the account's file,
+  not alfe; and one run warned its workdir could not be removed because
+  BricsCAD still held engine-console-stderr.txt (a cleanup race to watch).

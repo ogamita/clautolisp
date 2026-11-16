@@ -28,3 +28,210 @@ Behaviour". clautolisp:
 6. SNAPBASE '(1 2 3) on a 2D variable: stored 3D; AutoCAD refuses, BricsCAD
    keeps (1.0 2.0).
 Product-specific points (2, 5, 6, the wrap) behind the dialect's product.
+
+* B5 captured -- the ranges point 1 waited on (2026-11-16)
+
+Sunset campaign B5 (probes/sources/probe-sysvar-flags.lsp, 546 cases),
+captured 2026-11-16 by MR !548's probe:suite jobs: AutoCAD 2022 Windows (job
+18078448045, probe-results/autocad/ms-windows/20261116T180525Z), BricsCAD
+Windows (18078448049, .../bricscad/ms-windows/20261116T181223Z) and BricsCAD
+macOS (18078448046, .../bricscad/macos/20261116T181026Z). Each range case is
+(setvar NAME VALUE) just below, at and above a documented bound, restored
+after; "ok" = stored as given, "stored N" = stored something else,
+"refused ERRNO n" = an error.
+
+Reading for point 1: for nearly every documented bound BOTH products refuse
+the out-of-range value -- AutoCAD with ERRNO 22, BricsCAD with ERRNO 0 (the
+same split as B4) -- so most rows below differ in the ERRNO only. Of
+AutoCAD's 167 listed answers, 142 are refusals; the departures are the
+"stored N" / "ok" rows, where a product coerces or accepts a value the
+catalogue's :range excludes (e.g. DIMADEC -1 stored 2 on all three, BVMODE
+-1 / 2 stored 1 on AutoCAD only): those variables need their measured range
+in the catalogue. Rows where all three agree in full are not listed.
+Point 1 can now be modelled: refuse outside the catalogue range with the
+product's ERRNO, and the coercions above per product.
+
+*** Read-only (set to its own value)
+| variable | AutoCAD | BricsCAD Win | BricsCAD mac |
+|-+-+-+-|
+| BACKZ | refused ERRNO 20 | refused ERRNO 20 | refused ERRNO 20 |
+| FRONTZ | refused ERRNO 20 | refused ERRNO 20 | refused ERRNO 20 |
+| LEGACYCODESEARCH | ok (ERRNO 0) | ok (ERRNO 20) | ok (ERRNO 20) |
+| LENSLENGTH | ok (ERRNO 0) | refused ERRNO 20 | refused ERRNO 20 |
+| PUCSBASE | refused ERRNO 22 | ok (ERRNO 0) | ok (ERRNO 0) |
+| SECURELOAD | ok (ERRNO 0) | ok (ERRNO 20) | ok (ERRNO 20) |
+| TRUSTEDPATHS | ok (ERRNO 0) | ok (ERRNO 20) | ok (ERRNO 20) |
+
+*** Ranges: rows where a product departs from the documented range
+| variable | value | AutoCAD | BricsCAD Win | BricsCAD mac |
+|-+-+-+-+-|
+| AFLAGS | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| AFLAGS | 64 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| BVMODE | -1 | stored 1 | refused ERRNO 0 | refused ERRNO 0 |
+| BVMODE | 2 | stored 1 | refused ERRNO 0 | refused ERRNO 0 |
+| CELWEIGHT | -4 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| CELWEIGHT | 212 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| CHAMMODE | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| CHAMMODE | 2 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DGNFRAME | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DGNFRAME | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMADEC | -2 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMADEC | -1 | stored 2 | stored 2 | stored 2 |
+| DIMADEC | 9 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMALTD | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMALTD | 9 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMALTTD | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMALTTD | 9 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMALTU | 0 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMALTU | 9 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMALTZ | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMARCSYM | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMARCSYM | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMASSOC | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMASSOC | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMATFIT | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMATFIT | 4 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMAUNIT | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMAUNIT | 4 | ok | refused ERRNO 0 | refused ERRNO 0 |
+| DIMAZIN | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMAZIN | 4 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMCLRD | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMCLRD | 257 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMCLRE | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMCLRE | 257 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMCLRT | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMCLRT | 257 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMDEC | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMDEC | 9 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMFRAC | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMFRAC | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMJUST | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMJUST | 5 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMLUNIT | 0 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMLUNIT | 7 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMLWD | -4 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMLWD | 212 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMLWE | -4 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMLWE | 212 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTAD | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTAD | 5 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTDEC | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTDEC | 9 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTFILL | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTFILL | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTFILLCLR | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTFILLCLR | 257 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTMOVE | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTMOVE | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTOLJ | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTOLJ | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTZIN | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMTZIN | 16 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMZIN | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DIMZIN | 16 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DRAWORDERCTL | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DRAWORDERCTL | 4 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DWFFRAME | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DWFFRAME | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DXEVAL | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| DXEVAL | 511 | refused ERRNO 22 | ok | ok |
+| DXEVAL | 512 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| EXPERT | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| EXPERT | 6 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| FACETRATIO | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| FACETRATIO | 2 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| FIELDEVAL | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| FIELDEVAL | 32 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| GRIDDISPLAY | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| GRIDDISPLAY | 16 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| GRIDMAJOR | 0 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| GRIDMAJOR | 101 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| HALOGAP | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| HALOGAP | 101 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| HIDETEXT | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| HIDETEXT | 2 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| HPBOUND | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| HPBOUND | 2 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| HPBOUNDRETAIN | -1 | stored 1 | refused ERRNO 0 | refused ERRNO 0 |
+| HPBOUNDRETAIN | 2 | stored 1 | refused ERRNO 0 | refused ERRNO 0 |
+| HPDRAWORDER | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| HPDRAWORDER | 5 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| HPISLANDDETECTION | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| HPISLANDDETECTION | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| INDEXCTL | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| INDEXCTL | 4 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| INSUNITS | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| INSUNITS | 25 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| INTERSECTIONCOLOR | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| INTERSECTIONCOLOR | 258 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| ISOLINES | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| ISOLINES | 2048 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| LIGHTINGUNITS | -1 | stored 255 | refused ERRNO 0 | refused ERRNO 0 |
+| LIGHTINGUNITS | 0 | ok | refused ERRNO 0 | refused ERRNO 0 |
+| LIGHTINGUNITS | 3 | ok | refused ERRNO 0 | refused ERRNO 0 |
+| LOFTNORMALS | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| LOFTNORMALS | 7 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| LOFTPARAM | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| LOFTPARAM | 16 | ok | refused ERRNO 0 | refused ERRNO 0 |
+| LUNITS | 0 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| LUNITS | 6 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| LUPREC | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| LUPREC | 9 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| MEASUREMENT | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| MEASUREMENT | 2 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| MENUECHO | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| MENUECHO | 16 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| MSLTSCALE | -1 | stored 0 | refused ERRNO 0 | refused ERRNO 0 |
+| MSLTSCALE | 2 | stored 0 | refused ERRNO 0 | refused ERRNO 0 |
+| NAVVCUBEDISPLAY | -1 | ok | refused ERRNO 0 | refused ERRNO 0 |
+| NAVVCUBEDISPLAY | 4 | ok | refused ERRNO 0 | refused ERRNO 0 |
+| OBSCUREDCOLOR | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| OBSCUREDCOLOR | 258 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| OBSCUREDLTYPE | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| OBSCUREDLTYPE | 12 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| OLEFRAME | -1 | stored 255 | refused ERRNO 0 | refused ERRNO 0 |
+| OLEFRAME | 3 | ok | refused ERRNO 0 | refused ERRNO 0 |
+| PDFFRAME | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| PDFFRAME | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| PDMODE | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| PDMODE | 101 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| PREVIEWTYPE | -1 | stored 0 | refused ERRNO 0 | refused ERRNO 0 |
+| PREVIEWTYPE | 2 | stored 0 | refused ERRNO 0 | refused ERRNO 0 |
+| PSLTSCALE | -1 | stored 0 | refused ERRNO 0 | refused ERRNO 0 |
+| PSLTSCALE | 2 | stored 0 | refused ERRNO 0 | refused ERRNO 0 |
+| SHADEDGE | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| SHADEDGE | 4 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| SHADEDIF | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| SHADEDIF | 101 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| SKYSTATUS | -1 | stored 0 | refused ERRNO 0 | refused ERRNO 0 |
+| SKYSTATUS | 2 | stored 0 | ok | ok |
+| SKYSTATUS | 3 | stored 0 | refused ERRNO 0 | refused ERRNO 0 |
+| SNAPISOPAIR | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| SNAPISOPAIR | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| SNAPSTYL | -1 | stored 1 | refused ERRNO 0 | refused ERRNO 0 |
+| SNAPSTYL | 2 | stored 1 | refused ERRNO 0 | refused ERRNO 0 |
+| SORTENTS | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| SORTENTS | 128 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| SPLINESEGS | -32769 | refused ERRNO 22 | stored 32767 | stored 32767 |
+| SPLINESEGS | 32768 | refused ERRNO 22 | stored -32768 | stored -32768 |
+| SURFTYPE | 4 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| SURFTYPE | 9 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| TEXTQLTY | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| TEXTQLTY | 101 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| TIMEZONE | -12001 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| TIMEZONE | 13001 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| TSTACKALIGN | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| TSTACKALIGN | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| TSTACKSIZE | 24 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| TSTACKSIZE | 126 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| UCSICON | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| UCSICON | 4 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| VISRETAIN | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| VISRETAIN | 2 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| WORLDVIEW | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| WORLDVIEW | 2 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| XCLIPFRAME | -1 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+| XCLIPFRAME | 3 | refused ERRNO 22 | refused ERRNO 0 | refused ERRNO 0 |
+(167 rows)
+
+*** Defaults that differ between the products: 67 of 171
