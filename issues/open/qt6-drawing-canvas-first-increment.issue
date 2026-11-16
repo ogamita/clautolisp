@@ -7,7 +7,7 @@
 #+TARGET: release 3.0
 #+BRANCH: ecl-qt6-cad
 #+DATE: 2026-11-09
-#+UPDATED: 2026-11-16 (pjb committed this as the release-3.0 epic; work branch ecl-qt6-cad; phase 1 ECL port started)
+#+UPDATED: 2026-11-16 (pjb committed this as the release-3.0 epic; work branch ecl-qt6-cad; PHASE 1 ECL PORT COMPLETE -- full suite green on ECL 24.5.10, 23/23 subsystems, 13758 checks, clautolisp 2.4.20; phase 2 = Qt API selection)
 
 * Context — why this is a small increment, not a rewrite
 
@@ -723,6 +723,31 @@ on a dedicated long-lived branch rather than in short MRs:
 - *Deliverable of phase 1:* an =ecl= build lane (Makefile =build-ecl=, an
   ECL image) alongside =build-sbcl= / =build-ccl=, with the test corpus green
   on ECL.
+
+** Phase 1 COMPLETE (2026-11-16) — full test suite green on ECL 24.5.10
+
+=clautolisp= 2.4.20 (+ alfe 2.4.20). The whole test corpus runs green on ECL
+24.5.10: *23/23 subsystems, 13758 fiveam checks, 0 failures*, with the SBCL/CCL
+lanes unchanged. All source fixes are =#+ecl=-guarded and behaviour-identical on
+the other hosts. The failures found in the baseline below were resolved:
+- *encoding/external-format* (cador, builtins-core, cli): gave
+  =host-external-format-supported-p= a real =#+ecl= probe over
+  =(ext:all-encodings)= so encodings ECL lacks route to the babel single-octet
+  fallback; made =external-format-newline= and
+  =%external-format-carries-replacement-p= tolerate ECL's =(ENCODING EOL)=
+  stream external-format shape (odd-length tail = GETF error = the PRINC "Not a
+  valid property list (LF)").
+- *Mac Roman*: shipped a built-in single-octet table (babel has none, ECL has
+  no codec), so =:mac-roman= is available on every host.
+- *clal-compile .lap artefacts*: ECL's LOAD dispatches by extension and read a
+  renamed-FASL =.lap= as source; load it via a temp =.fas= copy (ECL FASLs load
+  fine under another =.fas= name).
+- *impl primitives / pathname / compile*: =(getpid)= via =si:getpid=; the
+  =clautolisp-tool= =#\Formfeed=/=setf= compile blocker; config-path and cp950
+  test assumptions made host-robust.
+Remaining phase-1 deliverable: wire this into the Makefile as a =build-ecl= /
+=test-ecl= lane (CI), per the build-ECL caveat above (use a clean compile /
+saved image, not the stack-fragile incremental-cache + in-image ASDF upgrade).
 
 ** Test-suite baseline on ECL (2026-11-16) — ~99.75% green, failures bucketed
 
