@@ -9296,3 +9296,19 @@ error; its message is nil under the default dialect, as on AutoCAD 2022
   ;; AutoCAD's 36 survived the VL-CATCH-ALL-APPLY around a failed ENTMAKE.
   (is (eql 36 (%ee "(progn (vl-catch-all-apply 'entmake (list '((0 . \"NOSUCHTYPE\")))) (getvar \"ERRNO\"))"
                    :autocad-2022))))
+
+(test ssget-malformed-grouping-is-nil-with-the-products-errno
+  ;; sunset campaign B9: nil on both products, AutoCAD's ERRNO 56-61.
+  (let ((line "(entmakex '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0)))"))
+    (flet ((sel (filter dialect)
+             (%ee (format nil "(progn ~A (list (ssget \"X\" '~A) (getvar \"ERRNO\")))" line filter)
+                  dialect)))
+      (is (equal '(nil 56) (sel "((-4 . \"<AND\") (0 . \"LINE\"))" :autocad-2022)))
+      (is (equal '(nil 56) (sel "((-4 . \"<OR\"))" :autocad-2022)))
+      (is (equal '(nil 59) (sel "((-4 . \"AND>\"))" :autocad-2022)))
+      (is (equal '(nil 58) (sel "((-4 . \"<NOSUCHOP\") (0 . \"LINE\") (-4 . \"NOSUCHOP>\"))" :autocad-2022)))
+      (is (equal '(nil 61) (sel "((-4 . \"<NOT\") (0 . \"LINE\") (0 . \"CIRCLE\") (-4 . \"NOT>\"))" :autocad-2022)))
+      (is (equal '(nil 0) (sel "((-4 . \"<AND\") (0 . \"LINE\"))" :bricscad-v26)))
+      ;; well formed: selects, and a relational -4 operator is not a group
+      (is (car (sel "((-4 . \"<OR\") (0 . \"LINE\") (0 . \"CIRCLE\") (-4 . \"OR>\"))" :autocad-2022)))
+      (is (car (sel "((-4 . \"<OR\") (0 . \"LINE\") (-4 . \">=\") (40 . 0.5) (-4 . \"OR>\"))" :autocad-2022))))))

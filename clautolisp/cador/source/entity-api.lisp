@@ -1746,8 +1746,11 @@ NORMALISED without that 280 when SUPPLIED (the pure create data) had one."
         (when warn-p
           (emit-entmod-object-divergence-warning
            (or (%data-type-string pure) "the object")))
+        ;; The no-op still RETURNS the data, as a successful ENTMOD does:
+        ;; AutoCAD 2022 answered non-nil for an XRECORD in the named-object
+        ;; dictionary and left it unchanged (sunset campaign B9, 2026-11-16).
         (when (eq action :normative)
-          (return-from host-entmod nil))))         ; no-op
+          (return-from host-entmod data))))       ; no-op
     (let ((entity (handler-case (clautolisp.drawing:modify-entity drawing handle pure)
                     (clautolisp.drawing:drawing-error () nil))))
       (when entity
