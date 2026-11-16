@@ -6081,7 +6081,6 @@ descendents, delete, and persistence across a fresh store load."
                   "(vl-list-loaded-vlx)"
                   "(vl-vlx-loaded-p \"foo.vlx\")"
                   "(vl-cmdf \"FOO\")"
-                  "(vl-vbaload \"x.vba\")"
                   "(vl-get-resource \"foo\")"
                   "(vl-annotative-supported 'foo)"
                   "(vl-annotative-get 'foo)"
@@ -6117,7 +6116,6 @@ representative call (complete-unit-tests.issue coverage backfill)."
                   "(vl-list-exported-functions)"
                   "(vl-list-exported-functions \"APP\")"
                   "(vl-unload-vlx \"foo.vlx\")"
-                  "(vl-vbarun \"Macro\")"
                   "(vl-local-undo-pop)"
                   "(vl-local-undo-push)"
                   "(vl-local-undo-reset)"
@@ -9312,3 +9310,37 @@ error; its message is nil under the default dialect, as on AutoCAD 2022
       ;; well formed: selects, and a relational -4 operator is not a group
       (is (car (sel "((-4 . \"<OR\") (0 . \"LINE\") (0 . \"CIRCLE\") (-4 . \"OR>\"))" :autocad-2022)))
       (is (car (sel "((-4 . \"<OR\") (0 . \"LINE\") (-4 . \">=\") (40 . 0.5) (-4 . \"OR>\"))" :autocad-2022))))))
+
+;;; --- ARX / VBA / CVUNIT / SETCFG as the products answer
+;;; (entity-access-arx-vba-vendor-divergences 5-6; sunset campaign B7, B8)
+
+(test arxload-honours-onfailure-on-autocad-only
+  (is (eql 1 (%ee "(if (vl-catch-all-error-p (vl-catch-all-apply 'arxload '(\"x.arx\"))) 1 0)" :autocad-2022)))
+  (is (equal '("failed" 93)
+             (let ((r (%ee "(list (arxload \"x.arx\" \"failed\") (getvar \"ERRNO\"))" :autocad-2022)))
+               (list (autolisp-string-value (first r)) (second r)))))
+  (is (eql 94 (%ee "(progn (arxunload \"x.arx\" 'no) (getvar \"ERRNO\"))" :autocad-2022)))
+  ;; BricsCAD ignores ONFAILURE: an error either way
+  (is (eql 1 (%ee "(if (vl-catch-all-error-p (vl-catch-all-apply 'arxload '(\"x.arx\" \"failed\"))) 1 0)" :bricscad-v26))))
+
+(test vba-answers-per-product
+  (is (eql 1 (%ee "(if (vl-catch-all-error-p (vl-catch-all-apply 'vl-vbaload '(\"x.dvb\"))) 1 0)" :autocad-2022)))
+  (is (null (%ee "(vl-vbaload \"x.dvb\")" :bricscad-v26)))
+  (is (%ee "(vl-vbarun \"NoSuchMacro\")" :autocad-2022))
+  (is (null (%ee "(vl-vbarun \"NoSuchMacro\")" :bricscad-v26))))
+
+(test cvunit-converts-as-measured
+  (is (= 212d0 (%ee "(cvunit 100.0 \"celsius\" \"fahrenheit\")" :autocad-2022)))
+  (is (< (abs (- 273.15d0 (%ee "(cvunit 0.0 \"celsius\" \"kelvin\")" :autocad-2022))) 1d-9))
+  (is (< (abs (- 25.4d0 (%ee "(cvunit 1.0 \"inch\" \"mm\")" :autocad-2022))) 1d-9))
+  (let ((p (%ee "(cvunit '(1.0 2.0) \"inch\" \"mm\")" :autocad-2022)))
+    (is (and (< (abs (- 25.4d0 (first p))) 1d-9) (< (abs (- 50.8d0 (second p))) 1d-9))))
+  (is (null (%ee "(cvunit 1.0 \"inch\" \"kilogram\")" :autocad-2022)))
+  (is (null (%ee "(cvunit 1.0 \"clautolispnosuchunit\" \"mm\")" :autocad-2022)))
+  ;; BricsCAD: no temperature units
+  (is (null (%ee "(cvunit 100.0 \"celsius\" \"fahrenheit\")" :bricscad-v26))))
+
+(test setcfg-outside-appdata-per-product
+  (is (null (%ee "(setcfg \"NoSuchSection/ClautolispTest\" \"x\")" :autocad-2022)))
+  (is (%ee "(setcfg \"NoSuchSection/ClautolispTest\" \"x\")" :bricscad-v26))
+  (is (%ee "(setcfg \"AppData/ClautolispTest/Short\" \"v\")" :autocad-2022)))
