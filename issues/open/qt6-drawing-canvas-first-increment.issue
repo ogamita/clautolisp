@@ -1,11 +1,13 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: qt6-drawing-canvas-first-increment — a Qt6 interactive canvas on top of the cador engine (increment 1)
-#+STATUS: TODO
+#+STATUS: NEXT
 #+PRIORITY: P3
-#+TYPE: feature-proposal
+#+TYPE: epic
 #+DEPENDS: -
-#+BRANCH: qt6-canvas-first-increment
+#+TARGET: release 3.0
+#+BRANCH: ecl-qt6-cad
 #+DATE: 2026-11-09
+#+UPDATED: 2026-11-16 (pjb committed this as the release-3.0 epic; work branch ecl-qt6-cad; phase 1 ECL port started)
 
 * Context — why this is a small increment, not a rewrite
 
@@ -677,3 +679,52 @@ it as a user.  They are the same mechanism.  A CAD whose every interaction is a
 named, typed, documented, testable action is uniquely suited to an agent-built,
 agent-operated product -- and the guard is what keeps it that way as the surface
 grows to AutoCAD/BricsCAD size.
+
+* Execution — release 3.0 (pjb decision 2026-11-16)
+
+pjb committed this as a real, long-running effort toward *release 3.0*, worked
+on a dedicated long-lived branch rather than in short MRs:
+
+- *Branch:* =ecl-qt6-cad= (off master; this epic lives here until 3.0).  The
+  older =qt6-canvas-first-increment= branch was the increment-1 planning branch
+  and is already merged + gone; it is NOT this work branch.
+- *Phase order unchanged* (see "Canonical plan" above): 1 ECL port -> 2 Qt6
+  embed + canvas -> 3 full 2D -> 4 CRX API -> 5 3D file -> 6 3D GUI.
+
+** ECL target (phase 1)
+
+- *Pinned implementation:* *ECL 24.5.10*, confirmed identical on *poseidon*
+  (Linux CI/host) and *macOS* (dev/CI), and on the Linux build sandbox used to
+  start the port.  SBCL + CCL stay as parallel dev/CI lanes (fast loop + the
+  existing alfe/CAD tooling); ECL is the embed target for the Qt app.
+- *Baseline datapoint (2026-11-16):* under ECL 24.5.10 (ASDF upgraded to
+  3.3.7.3 via quicklisp), the leaf system =clautolisp/autolisp-reader=
+  (deps babel, trivial-gray-streams, uiop) COMPILES AND LOADS CLEAN, no
+  ECL-specific errors.  Next baselines: the umbrella =clautolisp= system and the
+  FFI/thread-bearing subsystems (=drawing-dwg= via cffi, the cooperative
+  scheduler / bordeaux-threads, =clautolisp-tool= / usocket), where the first
+  real ECL quirks (FFI, thread model, external-format, compiled-closure
+  behaviour) are expected.  The test suite is the oracle for "ported".
+- *Deliverable of phase 1:* an =ecl= build lane (Makefile =build-ecl=, an
+  ECL image) alongside =build-sbcl= / =build-ccl=, with the test corpus green
+  on ECL.
+
+** Qt API selection (gates phase 2) — OPEN, to evaluate
+
+Before the Qt6 embed (phase 2) we must choose HOW Common Lisp talks to Qt6.
+Options to evaluate (criteria: ECL-native embedding, Qt6 support, offscreen
+rendering for headless screenshots, maintenance health, licence, our control
+over the surface):
+
+- *lqml* (https://github.com/lisp-mirror/lqml) — Lisp Qt Meta Language; the ECL
+  successor to EQL5.  Already ECL-based (our exact target) and Qt-Quick/QML
+  oriented.  Primary candidate to assess first.
+- *Own CFFI-direct Qt binding* — bind the Qt C++ API (or a C shim over it) via
+  CFFI.  Maximum control + exactly the surface we need (display-list paint, pan/
+  zoom, event capture), at the cost of writing/maintaining the binding and a C++
+  shim (Qt's API is C++, so a C wrapper layer is required).
+- *EQL5 / CommonQt (Qtools)* — predecessors / SBCL-oriented bindings; Qt5-era,
+  listed for comparison (Qt6 + ECL-embed fit to be checked).
+
+Decision to be recorded here once the evaluation (small spikes: a Qt6 window
+painting a trivial display list from embedded ECL, offscreen capture) is done.
