@@ -11550,11 +11550,113 @@ under it. A list of strings, nil when the key is absent or empty."
 
 (defun builtin-setcfg (path value)
   ;; (setcfg path value) — write a value into AppData. Returns
-  ;; the new value on success.
+  ;; the new value on success. AutoCAD only writes under its AppData section:
+  ;; (setcfg "NoSuchSection/x" "v") is nil there, while BricsCAD stores it
+  ;; (sunset campaign B8, probe-host-fns.lsp, 2026-11-16).
   (let* ((k (autolisp-string-value (require-string path "SETCFG")))
          (v (require-string value "SETCFG")))
-    (setf (gethash k *acad-cfg*) v)
-    v))
+    (if (and (not (%bricscad-product-p))
+             (not (and (>= (length k) 8) (string-equal "AppData/" k :end2 8))))
+        nil
+        (progn (setf (gethash k *acad-cfg*) v)
+               v))))
+
+;;; --- ARXLOAD / ARXUNLOAD, VL-VBALOAD / VL-VBARUN --------------------------
+;;;
+;;; clautolisp loads no ARX module and has no VBA, so every load fails; what
+;;; matters is HOW, as the products answered a missing module / project /
+;;; macro (sunset campaign B7, probe-arx-vba.lsp, 2026-11-16):
+;;;
+;;;                           AutoCAD 2022                 BricsCAD
+;;;   ARXLOAD missing         error, ERRNO 93; with        error, ONFAILURE
+;;;                           ONFAILURE: that, ERRNO 93    ignored
+;;;   ARXUNLOAD not loaded    likewise, ERRNO 94           likewise
+;;;   VL-VBALOAD missing      error (no VBA in batch)      nil
+;;;   VL-VBARUN missing       T                            nil
+
+(defun %arx-failure (operator errno file onfailure onfailure-p)
+  (cond ((%bricscad-product-p)
+         (clautolisp.autolisp-runtime:signal-autolisp-runtime-error-errno 0 :builtin-error "~A failed" operator))
+        (onfailure-p (errno-and-return errno onfailure))
+        (t (clautolisp.autolisp-runtime:signal-autolisp-runtime-error-errno errno :builtin-error
+                                                "~A failed: ~S" operator file))))
+
+(defun builtin-arxload (file &optional (onfailure nil onfailure-p))
+  (%arx-failure "ARXLOAD" 93 (autolisp-string-value (require-string file "ARXLOAD"))
+                onfailure onfailure-p))
+
+(defun builtin-arxunload (file &optional (onfailure nil onfailure-p))
+  (%arx-failure "ARXUNLOAD" 94 (autolisp-string-value (require-string file "ARXUNLOAD"))
+                onfailure onfailure-p))
+
+(defun builtin-vl-vbaload (file)
+  (require-string file "VL-VBALOAD")
+  (if (%bricscad-product-p)
+      nil
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error-errno 0 :builtin-error
+                                           "VL-VBALOAD: no VBA is available")))
+
+(defun builtin-vl-vbarun (macro)
+  (require-string macro "VL-VBARUN")
+  (if (%bricscad-product-p) nil (autolisp-true)))
+
+;;; --- CVUNIT --------------------------------------------------------------
+;;;
+;;; (cvunit VALUE FROM TO): VALUE (a number or a 2D / 3D point) from unit FROM
+;;; to unit TO, or nil when a unit is unknown or the two are not of one kind.
+;;; AutoCAD reads acad.unt; clautolisp carries the common units of that file
+;;; here -- length, angle, temperature, mass, time. Measured (sunset campaign
+;;; B8, probe-host-fns.lsp, 2026-11-16): AutoCAD 100 celsius -> fahrenheit
+;;; 212.0, 0 celsius -> kelvin 273.15, 1 inch -> mm 25.4, a point converted
+;;; element by element, inch -> kilogram and an unknown unit nil. BricsCAD
+;;; answers nil for the temperature (offset) units; its macOS build converts
+;;; lengths (its Windows build answered nil even for inch -> mm, which is not
+;;; followed).
+
+(defparameter *cvunit-units*
+  ;; (NAMES KIND FACTOR &optional OFFSET): base = value * FACTOR + OFFSET
+  `((("mm" "millimeter" "millimeters" "millimetre" "millimetres") :length 1/1000)
+    (("cm" "centimeter" "centimeters" "centimetre" "centimetres") :length 1/100)
+    (("m" "meter" "meters" "metre" "metres") :length 1d0)
+    (("km" "kilometer" "kilometers" "kilometre" "kilometres") :length 1000d0)
+    (("micron" "microns") :length 1d-6)
+    (("in" "inch" "inches") :length 254/10000)
+    (("ft" "foot" "feet") :length 3048/10000)
+    (("yd" "yard" "yards") :length 9144/10000)
+    (("mi" "mile" "miles") :length 1609344/1000)
+    (("radian" "radians" "rad") :angle 1d0)
+    (("degree" "degrees" "deg") :angle ,(/ pi 180d0))
+    (("grad" "grads" "gradian" "gradians") :angle ,(/ pi 200d0))
+    (("circle" "circles" "revolution" "revolutions") :angle ,(* 2 pi))
+    (("kelvin") :temperature 1)
+    (("celsius" "centigrade") :temperature 1 27315/100)
+    (("fahrenheit") :temperature 5/9 ,(- 27315/100 (* 32 5/9)))
+    (("rankine") :temperature 5/9)
+    (("gram" "grams" "g") :mass 0.001d0)
+    (("kilogram" "kilograms" "kg") :mass 1d0)
+    (("pound" "pounds" "lb") :mass 0.45359237d0)
+    (("second" "seconds" "sec") :time 1d0)
+    (("minute" "minutes" "min") :time 60d0)
+    (("hour" "hours" "hr") :time 3600d0)
+    (("day" "days") :time 86400d0)))
+
+(defun %cvunit-unit (name)
+  (find-if (lambda (unit) (member name (first unit) :test #'string-equal)) *cvunit-units*))
+
+(defun builtin-cvunit (value from to)
+  (let ((a (%cvunit-unit (autolisp-string-value (require-string from "CVUNIT"))))
+        (b (%cvunit-unit (autolisp-string-value (require-string to "CVUNIT")))))
+    (when (and a b (eq (second a) (second b))
+               (not (and (eq (second a) :temperature) (%bricscad-product-p))))
+      ;; In exact rationals, floated at the end: AutoCAD's 100 celsius ->
+      ;; fahrenheit is exactly 212.0.
+      (flet ((convert (x)
+               (let ((base (+ (* (rational x) (rational (third a))) (rational (or (fourth a) 0)))))
+                 (coerce (/ (- base (rational (or (fourth b) 0))) (rational (third b)))
+                         'double-float))))
+        (cond ((realp value) (convert value))
+              ((and (consp value) (every #'realp value)) (mapcar #'convert value))
+              (t nil))))))
 
 ;;; ---- Stubs (CAD/COM/UI-coupled, no host) ----
 ;;;
@@ -11601,8 +11703,6 @@ under it. A list of strings, nil when the key is absent or empty."
 (defun builtin-vl-vlx-loaded-p (name)  (declare (ignore name)) nil)
 (defun builtin-vl-unload-vlx (name)    (declare (ignore name)) nil)
 (defun builtin-vl-list-exported-functions (&optional name) (declare (ignore name)) nil)
-(defun builtin-vl-vbaload  (file) (declare (ignore file)) nil)
-(defun builtin-vl-vbarun   (proc) (declare (ignore proc)) nil)
 (defun builtin-command-function (&rest arguments)
   ;; The FUNCTION binding of COMMAND / COMMAND-S. A direct call
   ;; (command ...) is still the special form (EVAL-COMMAND-FORM), but on
@@ -11898,7 +11998,9 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     "VL-LAYERSTATES-RESTORE" "VL-LAYERSTATES-SAVE"
     "VL-LAYERSTATES-SETDESCRIPTION" "VL-LAYERSTATES-SETPROPERTYMASK"
     ;; ARX* (5)
-    "ARX" "ARXLOAD" "ARXUNLOAD" "AUTOARXLOAD" "VL-ARX-IMPORT"
+    ;; ARXLOAD / ARXUNLOAD are real (they fail, as the products do for a
+    ;; missing module: BUILTIN-ARXLOAD).
+    "ARX" "AUTOARXLOAD" "VL-ARX-IMPORT"
     ;; ACAD* (6) — ACAD_STRLSORT is a real builtin (pure string-list
     ;; sort, see BUILTIN-ACAD-STRLSORT), so it is NOT in this list.
     "ACAD-POP-DBMOD" "ACAD-PUSH-DBMOD" "ACAD_COLORDLG"
@@ -12596,6 +12698,9 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "VL-REGISTRY-DESCENDENTS" #'builtin-vl-registry-descendents)
    (make-core-builtin-subr "GETCFG"                  #'builtin-getcfg)
    (make-core-builtin-subr "SETCFG"                  #'builtin-setcfg)
+   (make-core-builtin-subr "ARXLOAD"                 #'builtin-arxload)
+   (make-core-builtin-subr "ARXUNLOAD"               #'builtin-arxunload)
+   (make-core-builtin-subr "CVUNIT"                  #'builtin-cvunit)
    ;; misc stubs
    (make-core-builtin-subr "ADS"                     #'builtin-ads)
    (make-core-builtin-subr "INITDIA"                 #'builtin-initdia)

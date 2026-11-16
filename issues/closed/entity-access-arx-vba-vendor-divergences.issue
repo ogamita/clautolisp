@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: entity-access-arx-vba-vendor-divergences -- ENTMAKE / ENTMOD / SSGET ERRNO, ENTGET order, ARX ONFAILURE and VBA, as AutoCAD / BricsCAD do
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: divergence
 #+DEPENDS: windows-runner-sunset-probe-campaign
@@ -109,6 +109,17 @@ SSGET "X" filters return nil.
   from entget-pointers section 10); B9 confirms it on all three.
 - [X] 4. ENTMOD of a dictionary XRECORD: the AutoCAD no-op (D3) now returns
   the data, as AutoCAD answered non-nil; BricsCAD applies, as before (2.4.23).
-- [ ] 5. ARXLOAD / ARXUNLOAD ONFAILURE.
-- [ ] 6. VL-VBALOAD / VL-VBARUN.
+- [X] 5. ARXLOAD / ARXUNLOAD (2.4.24): real functions, failing as the
+  products do for a module clautolisp cannot load -- AutoCAD an error with
+  ERRNO 93 / 94, or ONFAILURE when given; BricsCAD an error, ONFAILURE
+  ignored.
+- [X] 6. VL-VBALOAD / VL-VBARUN (2.4.24): a missing project is an error on
+  AutoCAD (no VBA in batch), nil on BricsCAD; a missing macro T on AutoCAD,
+  nil on BricsCAD.
+- [X] From B8 (probe-host-fns.lsp), same MR: CVUNIT implemented (it was
+  deferred) with the common length / angle / temperature / mass / time units
+  in exact rationals -- 100 celsius -> 212.0 fahrenheit, 0 -> 273.15 kelvin,
+  1 inch -> 25.4 mm, points element by element, nil across kinds or for an
+  unknown unit, no temperature units under BricsCAD; SETCFG outside
+  AppData/ nil on AutoCAD, stored on BricsCAD.
 
