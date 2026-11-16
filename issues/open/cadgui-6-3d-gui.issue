@@ -1,0 +1,55 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cadgui-6-3d-gui — 3D GUI (BricsCAD-like)
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: cadgui-5-3d-file
+#+TARGET: release 3.0
+#+BRANCH: qt6-gui
+#+DATE: 2026-11-16
+#+PARENT: cadgui-release-3.0-epic
+
+* Context
+
+Phase 6 of [[cadgui-release-3.0-epic]], the last: the interactive 3D modelling
+UI, BricsCAD-like. Demand-gated; begins only after 3D file support
+([[cadgui-5-3d-file]]) lands and on customer need.
+
+* Pre-work
+
+Depends on the 3D-UX verification carried in [[cadgui-5-3d-file]] (how
+AutoCAD/BricsCAD actually do 3D modelling UI, confirmed against vendor docs):
+that decides whether to match BricsCAD's direct-modelling model, AutoCAD's, or
+pick one coherent UX. Settle before scoping the commands here.
+
+* Deliverables
+
+- Direct-modelling commands (=DM*=-style: push/pull, move/rotate faces, fillet).
+- The 3D manipulator / gizmo + a quad-like context HUD.
+- Orbit / navigation (viewcube-style), camera + view management.
+- Subobject (face/edge/vertex) selection + editing.
+- Visual styles (wireframe / hidden / shaded / realistic).
+- Optional: parametric 3D constraints (matching BricsCAD here is a large add;
+  gate separately).
+
+* Dependencies / sequencing
+
+After [[cadgui-5-3d-file]]. The GPU display path (OpenGL/Qt3D vs the 2D QPainter
+canvas) is decided here, reusing phase-2's display-list boundary extended to 3D.
+UX "feel" (the manipulator, orbit) is the human-judgement limiter, as the 2D
+canvas feel was in phase 2.
+
+* Test & doc approach
+
+- Direct-modelling ops: headless Action-Layer tests (invoke push/pull, assert the
+  resulting B-rep) + offscreen renders of the result.
+- Navigation/manipulator: scripted-interaction tests via the Action Layer.
+- Doc: a 3D-GUI section of the cadgui spec + user-manual.
+
+* Acceptance themes
+
+- [ ] Direct-modelling commands create/edit solids, driven headless + from the UI.
+- [ ] Orbit/navigation + the manipulator work interactively.
+- [ ] Subobject selection + editing.
+- [ ] Visual styles render (offscreen-capable).
+- [ ] Every 3D interaction registered + headless-tested through the Action Layer.

@@ -1,0 +1,53 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cadgui-1-ecl-port — port clautolisp to ECL (the embed target) [DONE]
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: -
+#+TARGET: release 3.0
+#+BRANCH: ecl-qt6-cad (merged)
+#+DATE: 2026-11-16
+#+PARENT: cadgui-release-3.0-epic
+
+* Context
+
+Phase 1 of [[cadgui-release-3.0-epic]]. ECL is the implementation we EMBED in the
+Qt6 shell, so the whole engine must run on it alongside the existing SBCL/CCL
+lanes. ECL 24.5.10 is pinned (identical on poseidon and macOS).
+
+* Outcome — DONE (2026-11-16, merged MR !555, clautolisp/alfe 2.4.20)
+
+Full clautolisp test corpus green on ECL 24.5.10: 23/23 subsystems, 13758 fiveam
+checks, 0 failures; SBCL/CCL unchanged (every fix =#+ecl=-guarded).
+
+Fixes (all on =ecl-qt6-cad=, merged):
+- =autolisp-reader/external-format.lisp=: =#+ecl= =host-external-format-supported-p=
+  probe over =(ext:all-encodings)=; =(ENCODING EOL)= stream-ef tolerance in
+  =external-format-newline= / =%external-format-carries-replacement-p=; a built-in
+  Mac Roman single-octet table (babel/ECL ship none).
+- =autolisp-builtins-core/api.lisp=: =(getpid)= via =si:getpid=; =.lap= artefacts
+  loaded through a temp =.fas= copy (ECL loads FASLs by extension).
+- Test-only: interrupt-tests =#+ecl= compile fix; cp950 control and config-path
+  =equal= made host-robust.
+
+* Deliverable: the test-ecl lane
+
+=make test-ecl= / =make -C clautolisp test-ecl= runs the corpus under ECL
+(clears the =ecl-*= asdf cache for a from-scratch compile, finite large stack,
+explicit exit status). ECL detected via =HAVE_ECL=, kept out of
+=AVAILABLE_IMPLEMENTATIONS= (test target only).
+
+* Acceptance criteria — all met
+
+- [X] =make test-ecl= green: full corpus, 0 failures, on ECL 24.5.10.
+- [X] SBCL + CCL lanes unchanged.
+- [X] Merged to master.
+
+* Still open (not blocking; folded forward)
+
+- A =build-ecl= image/executable lane: ECL builds via =asdf:make-build= /
+  =c:build-program= -- the SAME ECL build/link machinery the Qt embed needs, so
+  it is done WITH phase 2 ([[cadgui-2-qt6-gui-host]]), not here.
+- A CI =test:clautolisp:ecl= job: the CI image (Debian bookworm) only has apt's
+  ECL 21.2.1; it must source-build the pinned 24.5.10 (as it source-builds CCL)
+  before the job is trustworthy. Phase-2 toolchain task.

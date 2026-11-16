@@ -1,0 +1,100 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cadgui-action-layer — one Action Layer so the app is AI-driveable AND testable
+#+STATUS: NEXT
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: cadgui-2-qt6-gui-host
+#+TARGET: release 3.0
+#+BRANCH: qt6-gui
+#+DATE: 2026-11-16
+#+PARENT: cadgui-release-3.0-epic
+
+* Context
+
+Cross-cutting subgoal of [[cadgui-release-3.0-epic]]. Scripting, Lisp and the
+=-command= CLI already make the ENGINE AI-driveable. Extend that to the WHOLE
+application: every user-facing interaction -- menus, ribbon, dialogs, palettes,
+grips, osnap, canvas picks, mouse modes, sysvar changes -- invokable AND
+introspectable through ONE API, at a human's fidelity. The GUI must be a THIN
+presentation over a named, typed, documented action layer; nothing reaches
+application state except through it. The point: the layer a TEST harness drives
+and the layer an AGENT drives are the SAME layer -- so making the app testable
+and making it AI-operable are one piece of work.
+
+This is why it is in the epic: it is the substrate that makes the epic's
+"implement -> test -> document every slice" methodology enforceable.
+
+* Design: one Action Layer, four surfaces
+
+1. *Central action registry.* Every action -- command, menu item, ribbon button,
+   dialog control, grip op, canvas interaction mode, sysvar set -- registered
+   ONCE: stable id, typed params, docstring, category, enabled/disabled predicate,
+   keybinding / menu path. Generalises cador's =*cador-commands*= table and the
+   DCL tile protocol into one surface.
+2. *Uniform dispatch.* ONE entry point -- =(invoke-action ID typed-args...)= --
+   called identically by the GUI, the =-command= CLI, the script/AutoLISP layer
+   and the AI-driver API. The GUI is one caller; no widget path mutates state by
+   any other route.
+3. *Introspection API.* Query the registry and LIVE state as structured data
+   (s-expr / JSON): =list-actions=, =describe-action= (params/types/doc/enabled),
+   =get-state= (active command + PENDING PROMPT and its expected input type,
+   selection set, sysvars, open dialogs + fields/values, view/layers). The AI
+   discovers what is possible and the current state WITHOUT screen-scraping.
+4. *Structured interaction protocol.* When a command needs input the app EMITS a
+   typed request ("need a POINT", "need an ENTITY matching X", "dialog FIELD
+   expects Y", "pick one of KEYWORDS"); the driver answers with a typed value;
+   the app streams structured EVENTS of what it did. Generalises cador's
+   prompt-api seam and the alfe file-protocol / DCL s-expr wire to dialogs,
+   canvas picks and menus.
+
+* The feature that ENSURES it (the driveability guard)
+
+A CI check -- same discipline as the change-gating completeness guard
+(=scripts/ci-classify-changes.py=) -- FAILS the build unless EVERY action is:
+(a) registered with a stable id, typed params and a docstring; (b) reachable by
+=invoke-action= with NO GUI back-door -- verified by enumerating every GUI signal
+binding and asserting each dispatches a registered action, not a direct
+mutation; and (c) covered by at least one HEADLESS test that drives it through
+the API offscreen. A new ribbon button with no action-id, an action with no
+doc/types, or a widget touching the model directly -> red. Turns "the whole app
+is AI-driveable and introspectable" from a hope into a CHECKED INVARIANT.
+
+* Record / replay
+
+Every session records as a transcript of =(invoke-action + supplied inputs)=,
+replayable deterministically offscreen. That transcript IS the test fixture, the
+AI's feedback loop, and the bug repro -- one artefact for tests, agents and users.
+
+* Buildable slices
+
+- *A. Registry + dispatch.* Define the action record + =invoke-action=; register
+  cador's existing commands through it (adapter over =*cador-commands*=). TEST:
+  fiveam -- register, describe, invoke; a known command runs via =invoke-action=.
+- *B. Introspection.* =list-actions= / =describe-action= / =get-state= returning
+  structured data. TEST: snapshot assertions on a scripted session's state.
+- *C. Structured interaction.* The typed request/answer + event stream over the
+  cadgui input bridge (phase 2's nested loop). TEST: a scripted driver answers a
+  POINT request and reads the resulting entity-created event.
+- *D. The driveability guard.* The CI check (a/b/c above), wired like
+  =check-ci-classify-changes=. TEST: the guard itself (a deliberately
+  unregistered action -> red; a registered+tested one -> green).
+- *E. Record/replay.* Transcript capture + headless replay. TEST: replay a
+  recorded transcript, assert identical final state.
+
+* Where it sits, what it reuses
+
+Established WITH phase 2 (not a late add-on), so every later phase registers its
+actions through the same layer. Phase 4's CRX SDK registers its commands /
+custom entities through the SAME registry ([[cadgui-4-crx-api]]). Reuses the
+=*cador-commands*= registry, the prompt-api input seam, the DCL s-expr wire and
+the alfe protocol as seeds.
+
+* Acceptance criteria
+
+- [ ] Every cadgui canvas interaction + command is a registered action.
+- [ ] GUI widgets mutate state ONLY via =invoke-action= (guard enforces).
+- [ ] =list-actions= / =describe-action= / =get-state= return structured data.
+- [ ] A scripted AI-style driver runs a command to completion via the typed
+      request/answer protocol, headless.
+- [ ] The driveability guard is green in CI and fails on a back-door.
+- [ ] A recorded session replays to the identical final state.

@@ -1,0 +1,59 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cadgui-3-2d-parity — full 2D user compatibility
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: cadgui-2-qt6-gui-host
+#+TARGET: release 3.0
+#+BRANCH: qt6-gui
+#+DATE: 2026-11-16
+#+PARENT: cadgui-release-3.0-epic
+
+* Context
+
+Phase 3 of [[cadgui-release-3.0-epic]]. Phase 2 delivers the minimal interactive
+canvas; this phase brings the 2D user experience to AutoCAD/BricsCAD parity. The
+breadth phase: mostly throughput-bound, with a few depth poles (dimensioning,
+dynamic blocks, DWG round-trip). To be sliced in detail when it becomes active;
+this issue scopes the deliverables, dependencies and acceptance themes.
+
+* Deliverables (each a slice: implement + headless/offscreen test + doc)
+
+- *Interactive built-in commands*: wire =%cmd-*= to PARK on canvas input (cador
+  D1 §13.5) so the built-in draw/modify commands read live points -- click-to-draw.
+- *Grips* (hot-grip edit), *osnap* (object snaps) + *object-snap tracking*,
+  *polar/ortho*, *dynamic input*.
+- *Selection*: all modes (window/crossing/fence/wpolygon/previous/last/all), grip
+  and quick-select.
+- *Fidelity*: text (SHX + TTF glyphs), hatch fill, linetypes + lineweights,
+  TrueColor, the associative *dimensioning* engine, tables, fields, multileaders.
+- *Dynamic blocks* + the block editor; *xrefs*; parametric *constraints* + solver.
+- *Layouts + plotting* (paper space, viewports, PDF plot).
+- *Palettes / app shell*: layers, properties, the ribbon/menus (as Action-Layer
+  surfaces), command aliases (PGP).
+- *DWG 2D round-trip*: open + save real-world 2D drawings faithfully (libredwg
+  read + the R2018-write fork).
+
+* Dependencies / sequencing
+
+After [[cadgui-2-qt6-gui-host]] (the canvas + input + regen) and on
+[[cadgui-action-layer]] (every new command/palette registers through it). The
+dimensioning engine and dynamic blocks are the depth poles; DWG round-trip
+validation sets the real calendar, not the command count.
+
+* Test & doc approach
+
+- Each command/interaction: an Action-Layer headless test (the guard requires it)
+  + an offscreen golden image where rendering matters.
+- DWG round-trip: a corpus of fixture drawings, assert re-read equality.
+- Doc: grow =clautolisp-cadgui-spec.org= + the user-manual per command family.
+
+* Acceptance themes
+
+- [ ] Click-to-draw with the built-in commands (grips/osnap/tracking/dynamic
+      input) at a human's fidelity.
+- [ ] Text, hatch, linetypes/lineweights, associative dimensions, dynamic blocks,
+      xrefs, constraints render and edit correctly.
+- [ ] Layouts + PDF plot.
+- [ ] A corpus of real 2D DWGs opens, edits and saves with faithful round-trip.
+- [ ] Every new interaction registered + headless-tested through the Action Layer.

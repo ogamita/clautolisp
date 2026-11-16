@@ -1,0 +1,62 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cadgui-5-3d-file — 3D file support (OpenCASCADE + ACIS round-trip)
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: cadgui-3-2d-parity
+#+TARGET: release 3.0
+#+BRANCH: qt6-gui
+#+DATE: 2026-11-16
+#+PARENT: cadgui-release-3.0-epic
+
+* Context
+
+Phase 5 of [[cadgui-release-3.0-epic]]. The separable, demand-gated 3D module --
+and the LONG POLE of the whole epic. 3D is kept off the 2D critical path: a
+customer can get a shippable 2D CAD (phases 1-4) without any of this.
+
+* Background (why it is the pole)
+
+- *OpenCASCADE (OCCT)*: an open-source B-rep solid-modelling kernel (the geometry
+  engine). cadgui would represent/tessellate solids with it.
+- *ACIS*: the proprietary kernel AutoCAD's solids are built on; DWG stores solids
+  as an embedded ACIS stream (SAT text / SAB binary). "ACIS round-trip" = read a
+  DWG's ACIS solid, translate it to an OCCT B-rep, edit/regenerate, and write a
+  valid ACIS stream back -- the hard, validation-heavy part. Faithful round-trip
+  on real-world solids, not toy boxes, is what sets the calendar.
+
+* Deliverables
+
+- OCCT integration: represent + tessellate solids; the OCCT build/link into the
+  cadgui shell (C++).
+- ACIS SAT/SAB read + write; the ACIS <-> OCCT B-rep translation.
+- 3D DWG round-trip (solids, surfaces, meshes).
+- 3D display: tessellated rendering, basic visual styles (wireframe/shaded).
+
+* Pre-work (carried from the epic, was deferred)
+
+- *Verify current-version 3D UX specifics against vendor docs* (was a deferred
+  TODO): before scoping the 3D UX, confirm against up-to-date AutoCAD/BricsCAD
+  docs how each does 3D modelling UI (direct modelling vs history, visual styles,
+  gizmos), citing doc pages + versions. Feeds [[cadgui-6-3d-gui]]. Needs web/doc
+  access; do it when this phase opens.
+
+* Dependencies / sequencing
+
+After [[cadgui-3-2d-parity]] (2D complete). Demand-gated: start only on customer
+need. OCCT robustness + ACIS round-trip validation on real models dominate the
+variance, not code volume.
+
+* Test & doc approach
+
+- A corpus of real 3D DWGs: read ACIS -> OCCT -> write ACIS, assert geometric
+  equality within tolerance.
+- OCCT operations unit-tested (tessellation, boolean ops) headless.
+- Doc: a 3D-file section of the cadgui spec + the ACIS/OCCT translation notes.
+
+* Acceptance themes
+
+- [ ] Read a DWG's ACIS solids, tessellate + display them (offscreen).
+- [ ] ACIS SAT and SAB read + write.
+- [ ] A corpus of real 3D DWGs round-trips (ACIS<->OCCT) within tolerance.
+- [ ] Basic visual styles (wireframe/shaded) render offscreen.

@@ -1,0 +1,118 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cadgui — a Qt6 GUI CAD host on embedded ECL (release-3.0 epic)
+#+STATUS: NEXT
+#+PRIORITY: P3
+#+TYPE: epic
+#+DEPENDS: -
+#+TARGET: release 3.0
+#+BRANCH: qt6-gui
+#+DATE: 2026-11-09
+#+UPDATED: 2026-11-16 (restructured from qt6-drawing-canvas-first-increment into this epic + per-phase sub-issues)
+
+* Goal
+
+Grow clautolisp into a near-AutoCAD/BricsCAD-parity CAD, built as close to 100%
+by AI agents as possible: Common Lisp backend, Qt6 UI, on Windows/macOS/Linux,
+every interaction scriptable/testable, the GUI detachable/offscreen for
+headless screenshots. The GUI is a fourth clautolisp HOST -- *cadgui* -- the
+graphical peer of cadtui on the cador core. ("cadgui" is the working name; a
+marketing name comes later.)
+
+This is the master/index issue. The work is decomposed into per-phase
+sub-issues (below); detail lives there, decisions and status live here.
+
+* Settled architecture decisions (the load-bearing ones)
+
+- *Embed ECL, in-process* (not a subprocess): the production architecture is
+  clautolisp ported to ECL and embedded in the Qt app. (Supersedes the earlier
+  subprocess + sexp-wire "protocol v2" sketch.) [[cadgui-1-ecl-port]]
+- *Our own thin Qt6 Widgets C++ shell* embedding ECL (not lqml / not a
+  CFFI-direct binding): reuses the existing Qt6 Widgets code
+  (=clautolisp/tools/clautolisp-gui-qt/=), keeps control, and its C boundary is
+  the seed of the CRX ABI. Validated by two spikes
+  (=clautolisp/tools/clautolisp-gui-qt/spike-ecl-embed/=): ECL computes a
+  display list, Qt6 paints it, offscreen -> PNG; and a nested-QEventLoop
+  interactive input loop that survived a 2000-point / ~8M-cons GC-stress run.
+  [[cadgui-2-qt6-gui-host]]
+- *cadgui = the fourth host* (nihil / cador / cadtui / cadgui), a UI-tree host
+  over the cador core, reusing the cadtui ui-tree classes, rendered graphically
+  by the embedded-ECL Qt6 canvas. =clautolisp --host cadgui= established in the
+  CLI in 2.4.21 (renderer WIP). [[cadgui-2-qt6-gui-host]]
+- *One Action Layer, four surfaces* (GUI, -command CLI, script/AutoLISP, AI
+  driver) with a CI driveability guard -- cross-cutting, established WITH the
+  GUI, makes "testable" and "AI-driveable" the SAME work. [[cadgui-action-layer]]
+- *3D is a separable, demand-gated module* (OpenCASCADE + ACIS), not on the
+  2D critical path. [[cadgui-5-3d-file]] [[cadgui-6-3d-gui]]
+- *CRX = an ARX/BRX-LIKE own C ABI* -> SOURCE compatibility (recompile against
+  CRX headers), not binary drop-in of real ARX/BRX. [[cadgui-4-crx-api]]
+
+* Phase order + sub-issues (committed, pjb 2026-11-09)
+
+| # | sub-issue                     | what                                    | status  | depends |
+|---+-------------------------------+-----------------------------------------+---------+---------|
+| 1 | [[cadgui-1-ecl-port]]         | port clautolisp to ECL (embed target)   | DONE    | -       |
+| 2 | [[cadgui-2-qt6-gui-host]]     | the cadgui host: Qt6 canvas on embed ECL| NEXT    | 1       |
+| 3 | [[cadgui-3-2d-parity]]        | full 2D user compatibility              | planned | 2       |
+| 4 | [[cadgui-4-crx-api]]          | CRX: the C/C++ extension ABI            | planned | 2       |
+| 5 | [[cadgui-5-3d-file]]          | 3D file support (OCCT + ACIS)           | planned | 3       |
+| 6 | [[cadgui-6-3d-gui]]           | 3D GUI (BricsCAD-like)                   | planned | 5       |
+| X | [[cadgui-action-layer]]       | Action Layer (cross-cutting)            | planned | 2       |
+
+Sequencing: 2D-complete + CRX (phases 1-4) is a shippable, extensible 2D CAD;
+3D (5-6) is demand-gated. The Action Layer is built WITH phase 2 so every later
+phase registers through it and driveability never regresses.
+
+* Effort — scoping, NOT a schedule
+
+Earlier revisions carried several calendar estimates (person-years, then
+"recalibrated agent-throughput", then a "maximal-agent" month table). *Treat
+them all as relative scoping, not dates.* Measured reality: phase 1 (the ECL
+port) was estimated at ~2-6 weeks and landed, green, in a single working
+session -- a 50-100x miss. Observed agent throughput makes calendar figures
+non-predictive, so this epic tracks by PHASE COMPLETION and per-slice
+acceptance, not by time. Relative difficulty order still holds: phase 5
+(ACIS/OCCT round-trip) is the long pole; phases 2 and 4 are expertise-bound
+(event-loop embedding, ABI design); 1 and the 2D breadth of 3 are throughput-
+bound.
+
+* How we build it: implement -> test -> document, every slice
+
+Each phase decomposes into *buildable slices*, and a slice is not done until all
+three are:
+- *Implement*: the slice lands behind a flag / host where it does not regress
+  the others; CL code in the owning subsystem, C++ in the Qt6 shell.
+- *Test*: CL logic -> fiveam in the subsystem's =/tests= (the project's standard,
+  already green on SBCL/CCL/ECL); the canvas -> OFFSCREEN render tests (golden
+  image / display-list assertions, the spike's =-platform offscreen= path);
+  interaction -> SCRIPTED nested-event-loop tests (spike #2's pattern) run
+  headless in CI. Wherever an interaction is an Action-Layer action, its headless
+  API test is the one the driveability guard REQUIRES.
+- *Document*: each host/module gets a spec + user-manual .org built INCREMENTALLY
+  with the slices (as cador has =clautolisp-cador-spec.org= and cadtui its
+  specification), plus =--list-hosts= / =-h= surfaces and the Action-Layer
+  =describe-action= docstrings. A slice updates its doc in the same change.
+
+The Action Layer ([[cadgui-action-layer]]) is the substrate that makes
+test-and-drive one thing: the layer a headless test drives is the layer the GUI
+and an AI driver drive, and a CI guard fails the build when an interaction is
+not registered, typed, documented and headless-tested.
+
+* Status board
+
+- Phase 1 (ECL port): *DONE* -- suite green on ECL 24.5.10, merged to master
+  (MR !555), clautolisp/alfe 2.4.20. [[cadgui-1-ecl-port]]
+- Phase 2 (cadgui host): *ACTIVE* -- Qt-API decided, two spikes validated, the
+  =--host cadgui= CLI identity established (2.4.21). Next: the cadgui module +
+  canvas. [[cadgui-2-qt6-gui-host]]
+- Phases 3-6 + Action Layer: planned, scoped in their sub-issues.
+
+* Pointers
+
+- Spikes: =clautolisp/tools/clautolisp-gui-qt/spike-ecl-embed/= (main.cpp =
+  ECL-in-Qt6 offscreen render; interactive.cpp = nested-event-loop input).
+- Existing Qt6 Widgets DCL renderer (reused): =clautolisp/tools/clautolisp-gui-qt/=.
+- Host plumbing: =autolisp-cli/source/options.lisp= (parse-host, --list-hosts),
+  =tools/clautolisp/source/main.lisp= (keyword->host, maybe-install-cadtui-host).
+- The full historical rationale (the three alternative estimations, the
+  subprocess protocol-v2 sketch) is preserved in this file's git history under
+  its former name =qt6-drawing-canvas-first-increment.issue=.

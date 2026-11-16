@@ -1,0 +1,60 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cadgui-4-crx-api — CRX: an ARX/BRX-like C/C++ extension ABI
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: cadgui-2-qt6-gui-host cadgui-action-layer
+#+TARGET: release 3.0
+#+BRANCH: qt6-gui
+#+DATE: 2026-11-16
+#+PARENT: cadgui-release-3.0-epic
+
+* Context
+
+Phase 4 of [[cadgui-release-3.0-epic]]. A versioned C/C++ extension ABI so native
+plug-ins (dll/dylib/so) extend cadgui like ObjectARX/BRX extend AutoCAD/BricsCAD.
+
+REALITY (scope-honest): a binary drop-in of real ARX/BRX is impossible -- their
+ABI is bound to their internal C++. *CRX is an ARX-LIKE OWN ABI*, so the target
+is SOURCE portability: recompile a plug-in against CRX headers. This phase
+delivers the 2D object-model API; 3D entity APIs extend it in phases 5-6, so the
+ABI is versioned + extensible from the start.
+
+* Foundation
+
+The in-process C boundary already built in phase 2 (slice F: display-list pull +
+input + repaint, [[cadgui-2-qt6-gui-host]]) is the SEED of CRX. CRX generalises
+it into a full, documented, versioned SDK. Every CRX command / custom entity
+registers through the [[cadgui-action-layer]] registry, so native extensions are
+AI-driveable and guard-checked too.
+
+* Deliverables
+
+- A versioned C/C++ ABI: entity / command / selection / prompt / transaction /
+  reactor / custom-object surfaces.
+- The loader (dll/dylib/so) + lifecycle.
+- The C-ABI <-> cador marshalling layer.
+- The CL extension API (AutoLISP + vlax, extended) as the Lisp-side peer.
+- Headers + samples + SDK documentation; a reference sample plug-in.
+
+* Dependencies / sequencing
+
+After phase 2's C boundary and the Action Layer. Design the ABI ONCE, right
+(versioned, extensible for 3D) -- this is the expertise-bound bit where a human
+C-ABI architect most repays. Independent of the 2D breadth of phase 3.
+
+* Test & doc approach
+
+- A reference sample plug-in compiled against the CRX headers, loaded, and driven
+  headless through the Action Layer (round-trip: register a CRX command -> invoke
+  it -> assert its effect).
+- ABI compatibility tests across a version bump.
+- Doc: the CRX SDK reference (headers + guide + samples).
+
+* Acceptance themes
+
+- [ ] A sample C/C++ plug-in compiles against CRX headers, loads into cadgui, and
+      registers a command + a custom entity.
+- [ ] The CRX command is invokable + introspectable via the Action Layer.
+- [ ] Entity/selection/prompt/transaction/reactor surfaces exercised by samples.
+- [ ] A later ABI version loads the prior sample (versioning holds).

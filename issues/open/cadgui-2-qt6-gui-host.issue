@@ -1,0 +1,129 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cadgui-2-qt6-gui-host — the cadgui host: a Qt6 canvas on embedded ECL
+#+STATUS: NEXT
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: cadgui-1-ecl-port
+#+TARGET: release 3.0
+#+BRANCH: qt6-gui
+#+DATE: 2026-11-16
+#+PARENT: cadgui-release-3.0-epic
+
+* Context
+
+Phase 2 of [[cadgui-release-3.0-epic]]. Build the *cadgui* host: the graphical
+peer of cadtui on the cador core, an interactive Qt6 canvas that renders the
+cador model and feeds pointer/selection input back to =getpoint=/=entsel=/=ssget=
++ LISP =C:= commands, with pan/zoom. The smallest thing that looks like AutoCAD;
+the foundation every later phase builds on.
+
+* Architecture (DECIDED — in-process embedded ECL)
+
+- *Shell*: a thin Qt6 Widgets C++ app is the host process; it =cl_boot='s embedded
+  ECL and loads clautolisp. (Reuses =clautolisp/tools/clautolisp-gui-qt/=, which
+  is already Qt6 Widgets.) Validated by =spike-ecl-embed/main.cpp=.
+- *Boundary*: CL owns the model + regen and hands C++ a DISPLAY LIST; C++ owns the
+  per-frame paint + pan/zoom + event capture; the boundary is crossed only on
+  regen and on input events, NEVER per frame. A small C API (display-list pull +
+  input supply + repaint request), registered into ECL via =ecl_def_c_function=.
+  This in-process boundary REPLACES the former subprocess "protocol v2" sexp-wire
+  sketch, and is the seed of the CRX ABI ([[cadgui-4-crx-api]]).
+- *Input*: ONE thread, a NESTED QEventLoop. CL's =get*= blocks in a C function
+  that runs a nested event loop until a =mousePressEvent= (or scripted click)
+  supplies the value. No second thread => no GC/thread marriage. Validated by
+  =spike-ecl-embed/interactive.cpp= (2000-point GC-stress clean).
+- *Host*: =clautolisp --host cadgui= (established in the CLI, 2.4.21) installs the
+  cadtui ui-tree on cador under the cadgui label; the =maybe-install-cadtui-host=
+  =:cadgui= branch grows to start the Qt6 shell. cadgui REUSES cadtui's ui-tree
+  classes, rendered graphically instead of textually.
+
+* Buildable slices (each implemented + tested + documented before the next)
+
+- *A. cadgui module + host launch.* New =clautolisp/cadgui= system (reusing the
+  cadtui ui-tree). =maybe-install-cadtui-host= =:cadgui= branch boots the Qt6
+  shell with embedded ECL and an empty modelspace.
+  TEST: host-install fiveam (the =:cadgui= branch builds the tree + sets the
+  label, already partly covered); OFFSCREEN smoke -- the shell boots, grabs a PNG
+  (the spike proves the mechanism).
+- *B. Scene exporter (CL, host-agnostic).* Walk the current space (the
+  =host-ssget "X"= loop) and tessellate each =entity-handle= =data= alist to
+  world-space polylines: LINE->segment, LW/POLYLINE->segments, CIRCLE/ARC/ELLIPSE
+  ->polyline (reuse =cador/command-geometry.lisp= / =intersect.lisp=),
+  TEXT/MTEXT->baseline box, INSERT->block bbox; tag handle + layer + ACI. Emit a
+  display list.
+  TEST: fiveam fixture-drawing assertions on the emitted display list. No Qt.
+- *C. Qt6 canvas widget.* Render the display list in ACI colours (reuse =aciToRgb=)
+  over grid + axes + crosshair; pan (middle-drag), zoom (wheel, cursor-anchored),
+  zoom-extents; a command-line =QLineEdit=. World<->device transform in C++.
+  TEST: OFFSCREEN golden-image / pixel-sanity on a fixture display list; the
+  transform math unit-tested.
+- *D. Input bridge.* While a =get*=/=entsel=/=ssget= is pending, put the canvas in
+  the matching mode; convert the =mousePressEvent= (point / pick via =%pick-entity=
+  / window via =%window-selection=) to the value cador's =read-prompt-line=
+  expects, via the nested event loop. Makes bare =(getpoint)= / =(entsel)= /
+  =(ssget)= + LISP =C:= commands work from the mouse unchanged.
+  TEST: SCRIPTED nested-loop tests (spike #2 pattern) headless: a scripted click
+  satisfies =(getpoint)=; a scripted pick returns the ename; a scripted window
+  returns the pickset.
+- *E. Command line + regen-on-change.* =(:command STRING)= evaluates on the
+  =repl-loop= path; after each top-level eval that changes =dbmod=, re-export the
+  scene and repaint. Coarse "regen after every form" first.
+  TEST: end-to-end headless -- a scripted command draws a line that appears in the
+  re-exported display list; golden image of the result.
+- *F. The C boundary, named + typed.* Formalise the display-list + input +
+  repaint C API as the stable in-process surface (the CRX seed): a versioned,
+  documented set of entry points, not ad-hoc =cl_safe_eval= strings.
+  TEST: a C-level round-trip test (display list out, input in) exercised headless.
+
+* Scope — IN (phase 2)
+
+The five slices above: an interactive single-canvas window on the embedded-ECL
+cadgui host, with =getpoint=/=entsel=/=ssget= + LISP commands driving from the
+mouse, pan/zoom, coarse regen, offscreen-capable.
+
+* Scope — OUT (named, so the boundary is honest)
+
+- Live "click-to-draw with the BUILT-IN command" (wire =%cmd-*= to park on canvas
+  input): that is phase-2-increment-2 / [[cadgui-3-2d-parity]]. Phase 2 delivers
+  interactive input via =get*=/=entsel=/=ssget= + LISP commands, enough to prove
+  the loop end to end.
+- Rubber-band / drag preview, grips, osnap, tracking, dynamic input -> phase 3.
+- 3D: ortho top view only, Z ignored; no visual styles/OpenGL -> phases 5-6.
+- Fidelity: no true glyphs (box), no hatch fill (boundary only), no linetypes/
+  lineweights, no dimension rendering -> phase 3.
+- No DWG open/save from the canvas UI (load via CLI/AutoLISP); no app shell
+  (ribbon, palettes, layout tabs) -> phase 3.
+- =nentsel= -- not in cador yet; out.
+
+* Acceptance criteria
+
+- [ ] =clautolisp --host cadgui= opens a Qt6 window (or, headless, renders
+      offscreen): empty modelspace, grid, axes, crosshair; pan/zoom/extents work
+      LOCALLY with no Lisp round-trip.
+- [ ] =(command "LINE" "0,0" "10,10" "")= (REPL or canvas line) draws a line that
+      appears after regen.
+- [ ] =(getpoint)= -> a click returns the world point; =(entsel)= -> clicking a
+      line returns its ename and highlights it; =(ssget)= window/crossing returns
+      the enclosed/crossed pickset.
+- [ ] A sample LISP =C:= command calling =getpoint= + =entsel= runs end to end
+      from the mouse.
+- [ ] A fixture drawing (LINE/CIRCLE/ARC/LWPOLYLINE/TEXT-box/INSERT-bbox) renders
+      correctly in ortho top view.
+- [ ] CI: slices A/B/D/E/F covered by headless Lisp + offscreen tests (no live
+      display); the live-window run is a manual/gui lane, as the DCL Qt tool is.
+- [ ] Every canvas interaction is registered as an Action-Layer action with a
+      headless API test (the driveability guard, [[cadgui-action-layer]]).
+
+* Documentation plan
+
+- =clautolisp/cadgui/documentation/clautolisp-cadgui-spec.org= -- the host spec,
+  grown per slice (boundary, display list, input modes, regen).
+- A cadgui user-manual section (invocation =--host cadgui=, canvas controls).
+- =--list-hosts= already names cadgui; keep its one-liner current.
+
+* Status
+
+- DONE: Qt-API decision; two spikes (ECL-in-Qt6 offscreen render; nested-loop
+  interactive input + GC stress); =--host cadgui= CLI identity (2.4.21).
+- NEXT: slice A (the =clautolisp/cadgui= module + host launch) and the
+  build-ecl / linked-shell build (folded here from [[cadgui-1-ecl-port]]).
