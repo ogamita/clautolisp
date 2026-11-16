@@ -206,9 +206,78 @@ shim itself (=clal_dwg=) does not contain it, so that is the test."
                (and (stringp name) (search "redwg" (string-downcase name)))))
            candidates))
 
-(defun %libredwg-dependency-beside (dir)
-  "The libredwg DLL sitting in DIR, or NIL."
-  (%libredwg-dependency-in (directory (merge-pathnames "*.dll" dir))))
+(defun %pe-imported-dll-names (path)
+  "The names of the DLLs the PE image at PATH imports, in table order, or NIL
+when PATH cannot be read as a PE image. Pure byte arithmetic -- DOS header,
+PE/COFF header, the optional header's import data directory, the section
+table to map RVAs to file offsets, the import descriptors -- so it runs (and
+is tested) on any host. NEVER signals."
+  (ignore-errors
+   (let* ((octets (with-open-file (in path :element-type '(unsigned-byte 8))
+                    (let ((v (make-array (file-length in) :element-type '(unsigned-byte 8))))
+                      (read-sequence v in)
+                      v)))
+          (length (length octets)))
+     (flet ((u16 (at) (logior (aref octets at) (ash (aref octets (+ at 1)) 8)))
+            (u32 (at) (logior (aref octets at) (ash (aref octets (+ at 1)) 8)
+                              (ash (aref octets (+ at 2)) 16) (ash (aref octets (+ at 3)) 24))))
+       (unless (and (> length #x40) (= (u16 0) #x5A4D))       ; "MZ"
+         (return-from %pe-imported-dll-names nil))
+       (let* ((pe (u32 #x3C))
+              (coff (+ pe 4))
+              (optional (+ coff 20)))
+         (unless (and (< (+ optional 2) length) (= (u32 pe) #x00004550)) ; "PE\0\0"
+           (return-from %pe-imported-dll-names nil))
+         (let* ((sections (u16 (+ coff 2)))
+                (optional-size (u16 (+ coff 16)))
+                (magic (u16 optional))
+                (directories (case magic (#x10b (+ optional 96)) (#x20b (+ optional 112))))
+                (count (case magic (#x10b (u32 (+ optional 92))) (#x20b (u32 (+ optional 108)))))
+                (table (+ optional optional-size)))
+           (unless (and directories (> count 1))
+             (return-from %pe-imported-dll-names nil))
+           (labels ((offset (rva)
+                      (loop for i below sections
+                            for s = (+ table (* 40 i))
+                            for va = (u32 (+ s 12))
+                            for span = (max (u32 (+ s 8)) (u32 (+ s 16)))
+                            when (and (<= va rva) (< rva (+ va span)))
+                              return (+ (- rva va) (u32 (+ s 20)))))
+                    (c-string (at)
+                      (let ((end (position 0 octets :start at)))
+                        (map 'string #'code-char (subseq octets at end)))))
+             (let ((at (offset (u32 (+ directories 8)))))  ; data directory 1: imports
+               (when at
+                 ;; 20-byte descriptors, ended by an all-zero one.
+                 (let ((names '()))
+                   (loop for d from at by 20
+                         do (when (> (+ d 20) length) (return))
+                            (let ((name-rva (u32 (+ d 12))))
+                              (when (and (zerop name-rva) (zerop (u32 (+ d 16))))
+                                (return))
+                              (let ((name-at (offset name-rva)))
+                                (when name-at (push (c-string name-at) names)))))
+                   (nreverse names)))))))))))
+
+(defun %libredwg-dependency-beside (dir &optional shim)
+  "The libredwg DLL sitting in DIR, or NIL.
+
+With SHIM, the DLL the shim IMPORTS -- read from its PE import table -- is
+the one: after an upgrade several redwg DLLs can sit together, and the first
+name containing `redwg' (directory order) was an obsolete libredwg.dll the
+installer had kept, so the current msys-redwg.dll the shim imports was never
+loaded and every DWG save failed (windows-upgrade-selects-stale-libredwg,
+2.3.23 -> 2.3.75 on winservadm). The name search remains the fallback when the
+shim cannot be read or names no redwg import."
+  (let* ((present (directory (merge-pathnames "*.dll" dir)))
+         (imported (and shim
+                        (find-if (lambda (name) (search "redwg" (string-downcase name)))
+                                 (%pe-imported-dll-names shim)))))
+    (or (and imported
+             (find-if (lambda (candidate)
+                        (string-equal (file-namestring candidate) imported))
+                      present))
+        (%libredwg-dependency-in present))))
 
 (defun %try-load-shim (path)
   "Try to load the shim at PATH, its MS-Windows dependency first. Returns T
@@ -222,7 +291,7 @@ process the shim's import resolves to it. On ELF/Mach-O the rpath handles
 this, so that part is a no-op there."
   (let ((dir (uiop:pathname-directory-pathname path)))
     (when (uiop:os-windows-p)
-      (let ((dep (%libredwg-dependency-beside dir)))
+      (let ((dep (%libredwg-dependency-beside dir path)))
         (unless dep
           (return-from %try-load-shim
             (values nil (format nil "no libredwg DLL is beside it in ~A (looked ~

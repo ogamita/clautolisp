@@ -72,3 +72,31 @@ an upgrade-prefix selection problem, not a missing DLL in the new ZIP.
   upgrade path; do not rely on a developer workspace fallback.
 - Coordinate package-owned obsolete-file cleanup with run-forest-run;
   do not remove unrelated installed libraries.
+
+* Fixed -- 2026-11-16 (clautolisp 2.4.19)
+
+%PE-IMPORTED-DLL-NAMES reads the shim's PE import table (DOS / PE / COFF
+headers, the optional header's import data directory, the section table) in
+plain Lisp, and %LIBREDWG-DEPENDENCY-BESIDE preloads the redwg DLL the shim
+IMPORTS when it sits beside it; the old first-name-containing-redwg search is
+only the fallback (shim unreadable, or no redwg import). %TRY-LOAD-SHIM passes
+the shim's path.
+
+Checked:
+- on the real MSYS2-built shim of pfenny's 2.4.17 prefix: the reader gives
+  ("msys-redwg.dll" "KERNEL32.dll" "msvcrt.dll"); that prefix holds BOTH
+  libredwg.dll and msys-redwg.dll beside it -- the old code took libredwg.dll
+  (directory order), the new one takes msys-redwg.dll.
+- tests (clautolisp/drawing-dwg/tests, 71 checks green):
+  pe-import-table-names-the-shims-dependencies (a synthetic PE32+ image; a
+  non-PE file gives NIL), a-stale-libredwg-beside-the-shim-is-not-chosen
+  (libredwg.dll + msys-redwg.dll beside a shim importing msys-redwg.dll; the
+  fallbacks without a shim and with an unreadable one).
+- pfenny's prefix saves a DWG with only Windows on PATH even with 2.4.17: its
+  libredwg.dll is not an incompatible build, so the winservadm failure does
+  not reproduce there.
+
+Remaining: the installed-prefix upgrade test on Windows with a genuinely
+incompatible stale libredwg.dll (scripts/test-windows-release.ps1 -Prefix, as
+the issue describes) once 2.4.19 is built; the package-owned obsolete-file
+cleanup with run-forest-run.
