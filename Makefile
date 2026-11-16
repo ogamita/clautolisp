@@ -840,6 +840,12 @@ endef
 # and modes survive and the copy merges into an existing prefix;
 # --no-same-owner so the installed files belong to the installing user
 # (root), not to whoever staged them. $(2) is an optional --exclude.
+# The modes are set before the copy -- directories and owner-executable
+# files 755, every other file 644 -- because tar run as root keeps the
+# staged modes, and those followed the stager's umask: under umask 002
+# every installed file came out group-writable (release-2.4.16 on
+# poseidon, 9340 files). find -exec ... {} + is POSIX: the same on Linux,
+# macOS and MSYS; -type f / -type d leave symlinks alone.
 define copy-stage
 dest="$(DESTDIR)$(PREFIX)" ; \
 if [ -z "$$dest" ]; then \
@@ -851,6 +857,9 @@ if [ ! -d "$(1)" ]; then \
   exit 1 ; \
 fi ; \
 install -d "$$dest" ; \
+find "$(1)" -type d -exec chmod 755 {} + ; \
+find "$(1)" -type f -perm -u+x -exec chmod 755 {} + ; \
+find "$(1)" -type f ! -perm -u+x -exec chmod 644 {} + ; \
 tar -C "$(1)" -cf - $(2) . | tar -C "$$dest" --no-same-owner -xf - ; \
 echo "installed: $(1)/ -> $$dest/"
 endef
