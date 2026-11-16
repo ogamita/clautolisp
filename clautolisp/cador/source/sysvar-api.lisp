@@ -15,6 +15,10 @@
     ((typep name 'clautolisp.autolisp-runtime:autolisp-string)
      (clautolisp.autolisp-runtime:autolisp-string-value name))
     ((stringp name) name)
+    ;; (setvar 'OSMODE 1) works on AutoCAD and BricsCAD alike
+    ;; (setvar-validation-as-measured, point 4).
+    ((typep name 'clautolisp.autolisp-runtime:autolisp-symbol)
+     (clautolisp.autolisp-runtime:autolisp-symbol-name name))
     (t
      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
       :invalid-sysvar-name
@@ -76,6 +80,111 @@
          "Sysvar ~A expects a 2-D or 3-D point list, got ~S."
          cell-name value))))
     (t value)))
+
+;;; --- SETVAR validation, as the products measure it ------------------
+;;;
+;;; setvar-validation-as-measured, from the sunset campaign's B4
+;;; (probe-setvar-edges.lsp) and B5 (probe-sysvar-flags.lsp) captures on
+;;; AutoCAD 2022 and BricsCAD V25 / V26. Both REFUSE (an error) a value
+;;; outside the variable's range and a value of the wrong type, and return the
+;;; value GIVEN when they accept one; they differ in the ERRNO and in what
+;;; they do with an integer outside 16 bits or a fraction:
+;;;
+;;;                              AutoCAD            BricsCAD
+;;;   outside the range          error, ERRNO 22    error, ERRNO 0
+;;;   outside 16 bits            error, ERRNO 22    wrapped to 16 bits, then
+;;;                                                 the range applies
+;;;   a fraction into an integer error, ERRNO 87    truncated
+;;;   a non-number into a number error, ERRNO 87    error, ERRNO 0
+;;;   a non-string into a string error, ERRNO 0     error, ERRNO 0
+;;;   a 3D point into a 2D one   error, ERRNO 0     the 2D part kept
+;;;
+;;; The dialect's product decides; a dialect without one (clautolisp, strict,
+;;; lax) follows AutoCAD. The ranges are *SYSVAR-INTEGER-RANGES*, widened per
+;;; product by *SYSVAR-RANGE-OVERRIDES* (sysvar-validation-data.lisp, generated
+;;; by scripts/generate-sysvar-validation-data.py). The 16-bit rule applies to
+;;; :SHORT variables and to :INTEGER ones whose range fits in 16 bits; an
+;;; :INTEGER without a range takes any integer, as it did (HPMAXLINES is
+;;; 32-bit).
+
+(defvar *sysvar-range-table* nil
+  "NAME -> (LO HI DOCUMENTED-ONLY-P) for the AutoCAD rules and the BricsCAD
+ones, built once from the generated data: a cons (AUTOCAD . BRICSCAD) of
+hash tables.")
+
+(defun %sysvar-range-tables ()
+  (or *sysvar-range-table*
+      (let ((autocad (make-hash-table :test #'equalp))
+            (bricscad (make-hash-table :test #'equalp)))
+        (dolist (entry *sysvar-integer-ranges*)
+          (destructuring-bind (name lo hi) entry
+            (setf (gethash name autocad) (list lo hi)
+                  (gethash name bricscad) (list lo hi))))
+        (dolist (entry *sysvar-range-overrides*)
+          (destructuring-bind (name product lo hi) entry
+            (setf (gethash name (if (eq product :bricscad) bricscad autocad)) (list lo hi))))
+        (setf *sysvar-range-table* (cons autocad bricscad)))))
+
+(defun %sysvar-range (name bricscad-p)
+  "NAME's (LO HI) under the product's rules, or NIL."
+  (let ((tables (%sysvar-range-tables)))
+    (values (gethash name (if bricscad-p (cdr tables) (car tables))))))
+
+(defun %wrap-16 (n)
+  "N as a signed 16-bit integer (BricsCAD's SETVAR: 70000 -> 4464)."
+  (let ((u (mod n 65536)))
+    (if (>= u 32768) (- u 65536) u)))
+
+(defun %setvar-refuse (errno name value)
+  (clautolisp.autolisp-runtime:signal-autolisp-runtime-error-errno
+   errno :invalid-sysvar-value
+   "SETVAR: value not valid for system variable ~A: ~S." name value))
+
+(defun validate-setvar-value (kind value name)
+  "VALUE as SETVAR stores it in the system variable NAME of KIND, or an error
+leaving the product's ERRNO (see the table above)."
+  (let ((bricscad (eq (ignore-errors (%current-product)) :bricscad)))
+    (case kind
+      ((:integer :short)
+       (let* ((n (cond ((integerp value) value)
+                       ((realp value)
+                        (multiple-value-bind (whole fraction) (truncate value)
+                          (cond ((zerop fraction) whole)
+                                (bricscad whole)
+                                (t (%setvar-refuse 87 name value)))))
+                       (t (%setvar-refuse (if bricscad 0 87) name value))))
+              (range (%sysvar-range name bricscad))
+              (sixteen (or (eq kind :short)
+                           (and range
+                                (or (null (first range)) (>= (first range) -32768))
+                                (or (null (second range)) (<= (second range) 32767))))))
+         (when (and sixteen (not (<= -32768 n 32767)))
+           (if bricscad
+               (setf n (%wrap-16 n))
+               (%setvar-refuse 22 name value)))
+         (when (and range
+                    (or (and (first range) (< n (first range)))
+                        (and (second range) (> n (second range)))))
+           (%setvar-refuse (if bricscad 0 22) name value))
+         n))
+      ((:real)
+       (if (realp value)
+           (coerce value 'double-float)
+           (%setvar-refuse (if bricscad 0 87) name value)))
+      ((:string)
+       (or (cador-string-of value) (%setvar-refuse 0 name value)))
+      ((:point)
+       (unless (and (listp value) (every #'realp value)
+                    (<= 2 (length value) 3))
+         (%setvar-refuse 0 name value))
+       (let ((point (mapcar (lambda (x) (coerce x 'double-float)) value)))
+         (if (and (= (length point) 3)
+                  (member name *sysvar-2d-point-names* :test #'string-equal))
+             (if bricscad
+                 (subseq point 0 2)
+                 (%setvar-refuse 0 name value))
+             point)))
+      (t value))))
 
 (defun present-sysvar-value (kind raw)
   "Wrap RAW for AutoLISP consumption; strings get an
@@ -381,9 +490,11 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
          (cell (cador-sysvar host string)))
     (%note-clautolisp-sysvar-access string)
     (cond
+      ;; Unknown and read-only names: an error on both products, leaving
+      ;; ERRNO 0 and 20 respectively (setvar-validation-as-measured, point 2).
       ((null cell)
-       (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
-        :unknown-sysvar
+       (clautolisp.autolisp-runtime:signal-autolisp-runtime-error-errno
+        0 :unknown-sysvar
         "cador has no system variable named ~A."
         string))
       ;; ERRNO is documented read-only by both vendors, and both ACCEPT
@@ -398,13 +509,13 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
          (setf (sysvar-cell-value cell) coerced)
          coerced))
       ((sysvar-cell-read-only-p cell)
-       (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
-        :sysvar-read-only
+       (clautolisp.autolisp-runtime:signal-autolisp-runtime-error-errno
+        20 :sysvar-read-only
         "Sysvar ~A is read-only."
         string))
       (t
        (let* ((coerced (funcall 'command-log-before-setvar host string
-                                (coerce-sysvar-value (sysvar-cell-kind cell) value string)))
+                                (validate-setvar-value (sysvar-cell-kind cell) value string)))
               (document
                (clautolisp.autolisp-runtime:evaluation-context-current-document
                 (clautolisp.autolisp-runtime:current-evaluation-context)))
@@ -422,7 +533,10 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
          (funcall 'command-log-after-setvar host string coerced)
          (clautolisp.autolisp-runtime:signal-document-event
           document :sysvar :vlr-sysvarchanged (list rendered-name))
-         (present-sysvar-value (sysvar-cell-kind cell) coerced))))))
+         ;; The value GIVEN, as both products return it -- (setvar "CMDECHO"
+         ;; 1.0) is 1.0 though 1 is stored (setvar-validation-as-measured,
+         ;; point 3).
+         value)))))
 
 (defmethod host-undefine-sysvar ((host cador) name)
   "Drop NAME from HOST's sysvar table (bricscad dialect overlay). NAME may

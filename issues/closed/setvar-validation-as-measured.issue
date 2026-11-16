@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: setvar-validation-as-measured -- SETVAR range checks, ERRNO codes, return value and symbol names as AutoCAD / BricsCAD do
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P2
 #+TYPE: divergence
 #+DEPENDS: windows-runner-sunset-probe-campaign
@@ -235,3 +235,37 @@ product's ERRNO, and the coercions above per product.
 (167 rows)
 
 *** Defaults that differ between the products: 67 of 171
+
+* Done -- 2026-11-16 (clautolisp 2.4.21)
+
+All six points, per the dialect's product (a dialect without one --
+clautolisp, strict, lax -- follows AutoCAD), in cador's HOST-SETVAR
+(VALIDATE-SETVAR-VALUE, sysvar-api.lisp):
+
+1. Out-of-range integers are refused -- AutoCAD ERRNO 22, BricsCAD 0 --
+   against *SYSVAR-INTEGER-RANGES*: 482 ranges from the inventory plus the
+   measured CMDECHO (0 1), widened per product by the 15 B5 overrides
+   (generated sysvar-validation-data.lisp; scripts/generate-sysvar-
+   validation-data.py, re-run after the inventory or a capture changes).
+   Outside 16 bits: AutoCAD refuses (22), BricsCAD wraps to 16 bits first
+   (OSMODE 70000 -> 4464, USERI1 40000 -> -25536), for :SHORT variables and
+   :INTEGER ones whose range fits in 16 bits; an :INTEGER without a range
+   takes any integer, as before (HPMAXLINES is 32-bit).
+2. ERRNO: read-only 20 and unknown 0 on both; a bad type 87 (AutoCAD) / 0
+   (BricsCAD); a non-string into a string variable 0 on both. The runtime
+   error carries the product's ERRNO (AUTOLISP-RUNTIME-ERROR's new :ERRNO,
+   SIGNAL-AUTOLISP-RUNTIME-ERROR-ERRNO).
+3. SETVAR returns the value GIVEN.
+4. A symbol name is accepted: (setvar 'OSMODE 1).
+5. CMDECHO 0.7: refused by AutoCAD (87), truncated to 0 by BricsCAD.
+6. SNAPBASE '(1 2 3) (a 2D variable): refused by AutoCAD (ERRNO 0), its 2D
+   part kept by BricsCAD.
+
+Tests: cador/tests/setvar-validation-tests.lisp, each case the measured
+(RESULT STORED ERRNO); the whole clautolisp suite stays green.
+
+Caveat: B5 measured 92 of the 482 ranges; the others are the vendors'
+documentation. A documented range narrower than the product's would now
+refuse a value the product takes: a later capture widens it through the
+generator.
+

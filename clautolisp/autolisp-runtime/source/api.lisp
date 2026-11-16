@@ -146,6 +146,14 @@ dependency-inversion pattern of *INSTRUMENT-USUBR-HOOK* / *DEBUG-BREAK-HOOK*.")
     :initarg :details
     :initform nil
     :reader autolisp-runtime-error-details)
+   ;; The ERRNO the error leaves, when it is the product's rather than the
+   ;; code's (SETVAR: AutoCAD 22 / 87 / 20, BricsCAD 0 / 20 --
+   ;; setvar-validation-as-measured). NIL: AUTOLISP-RUNTIME-ERROR-ERRNO
+   ;; derives it from the code.
+   (explicit-errno
+    :initarg :errno
+    :initform nil
+    :reader autolisp-runtime-error-explicit-errno)
    (call-stack
     :initarg :call-stack
     :initform nil
@@ -240,6 +248,16 @@ and refused or failed -- the remote CAD said no, a DWG failed to parse."))
 (defun signal-autolisp-runtime-error (code control-string &rest arguments)
   (error (autolisp-runtime-error-class-for-code code)
          :code code
+         :message (apply #'format nil control-string arguments)
+         :details arguments
+         :call-stack (current-autolisp-call-stack)))
+
+(defun signal-autolisp-runtime-error-errno (errno code control-string &rest arguments)
+  "SIGNAL-AUTOLISP-RUNTIME-ERROR, the error leaving ERRNO (an integer) rather
+than the one its CODE maps to."
+  (error (autolisp-runtime-error-class-for-code code)
+         :code code
+         :errno errno
          :message (apply #'format nil control-string arguments)
          :details arguments
          :call-stack (current-autolisp-call-stack)))
@@ -898,6 +916,7 @@ CONTEXT's session. Returns VALUE."
 (defun autolisp-runtime-error-errno (condition)
   (let ((code (autolisp-runtime-error-code condition)))
     (cond
+      ((autolisp-runtime-error-explicit-errno condition))
       ((eq code :unbound-variable)
        2)
       ((eq code :undefined-function)

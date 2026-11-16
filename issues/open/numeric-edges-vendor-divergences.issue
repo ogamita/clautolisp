@@ -70,3 +70,10 @@ specified above with measured tables. Neither is in the "quick adopt" set of the
 B2 vle fixes; both want their own focused change (atof: a strtod-style parser;
 overflow: dialect-resolved arithmetic). Fold the measured values into the spec's
 atof / number-tower "Tested Behaviour" when implemented.
+
+* Decision -- 2026-11-16 (pjb)
+
+Integer overflow (divergence 1): for now, each dialect keeps its current
+behaviour. No change to the arithmetic; revisit with the measured table above
+when a dialect's behaviour is to move.
+
