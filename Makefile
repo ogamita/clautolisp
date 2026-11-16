@@ -216,6 +216,9 @@ test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpu
 	"$(MAKE)" -C autolisp-front-end test
 	"$(MAKE)" -C autolisp-benchmark test
 
+test-ecl:  ## Run the clautolisp engine test suite under ECL (phase-1 ECL port; needs ecl on PATH). ECL is a TEST target only; no build/release lane yet (phase-2 embedding).
+	"$(MAKE)" -C clautolisp test-ecl
+
 # --- Benchmark (see autolisp-benchmark/README.org) ----------------------
 #
 # `autolisp-benchmark test` above is only a smoke run (proves the harness

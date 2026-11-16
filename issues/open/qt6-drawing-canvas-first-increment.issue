@@ -745,9 +745,25 @@ the other hosts. The failures found in the baseline below were resolved:
 - *impl primitives / pathname / compile*: =(getpid)= via =si:getpid=; the
   =clautolisp-tool= =#\Formfeed=/=setf= compile blocker; config-path and cp950
   test assumptions made host-robust.
-Remaining phase-1 deliverable: wire this into the Makefile as a =build-ecl= /
-=test-ecl= lane (CI), per the build-ECL caveat above (use a clean compile /
-saved image, not the stack-fragile incremental-cache + in-image ASDF upgrade).
+Makefile =test-ecl= lane DONE (2026-11-16): =make test-ecl= / =make -C
+clautolisp test-ecl= runs the whole corpus under ECL via =asdf:test-system=
+(13758 checks green), with the ECL build-caveat handled in the recipe --
+it clears the =ecl-*= asdf fasl subdir for a from-scratch compile (the warm
+cache overflows ECL's planner), sets a FINITE large stack (=ulimit -s 262144=;
+=unlimited= makes ECL fall back to a 1 MB C-stack), and quits with an explicit
+status. ECL is detected (=HAVE_ECL=) but kept OUT of =AVAILABLE_IMPLEMENTATIONS=
+(a TEST target only; no build/release image lane).
+
+Still open (phase-2 infra, not blocking the master merge):
+- A =build-ecl= image/executable lane. ECL builds via =asdf:make-build= /
+  =c:build-program= (not save-lisp-and-die), which is the same ECL
+  build/link machinery phase 2 needs to embed ECL in the Qt app -- so it is
+  folded into phase 2.
+- A CI =test:clautolisp:ecl= job. Needs ECL in the CI image. The image is
+  Debian bookworm (apt =ecl= is 21.2.1), but dev/poseidon/macOS are pinned to
+  *24.5.10*; a CI job on 21.2.1 would give a misleading signal, so the image
+  should source-build 24.5.10 (as it already source-builds CCL) before the job
+  is added. Deferred to the phase-2 toolchain setup.
 
 ** Test-suite baseline on ECL (2026-11-16) — ~99.75% green, failures bucketed
 
