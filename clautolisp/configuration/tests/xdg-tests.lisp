@@ -42,8 +42,13 @@ filesystem root, which is the kind of thing one discovers in production."
   "One rule, applied to a name: clautolisp/NAME.conf under the XDG
 directories. The two declared names must not collide, which is the whole
 reason the parameter exists."
-  (is (equal #P"clautolisp/aldo.conf" (config-relative-path "aldo")))
-  (is (equal #P"clautolisp/lisp.conf" (config-relative-path "lisp")))
+  ;; Compare by namestring: ECL parses the #P literal with :version :NEWEST
+  ;; while make-pathname yields :version NIL, so a raw EQUAL of the pathnames
+  ;; is false on ECL though the paths are the same.
+  (is (equal (namestring #P"clautolisp/aldo.conf")
+             (namestring (config-relative-path "aldo"))))
+  (is (equal (namestring #P"clautolisp/lisp.conf")
+             (namestring (config-relative-path "lisp"))))
   (is (not (equal (config-save-path "aldo") (config-save-path "lisp"))))
   ;; the save path is under XDG_CONFIG_HOME
   (is (search (namestring (uiop:ensure-directory-pathname (xdg-config-home)))

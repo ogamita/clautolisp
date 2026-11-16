@@ -62,7 +62,14 @@ form for the -e UTF-8-dos family, so both shapes reach OPEN."
   "Return the :NEWLINE option of EXTERNAL-FORMAT (:LF / :CR / :CRLF), or
 NIL when it carries none."
   (when (consp external-format)
-    (getf (rest external-format) :newline)))
+    (let ((tail (rest external-format)))
+      ;; Our convention is a plist tail: (BASE :newline X ...). A host may
+      ;; instead hand back a (ENCODING EOL) pair -- ECL's
+      ;; STREAM-EXTERNAL-FORMAT returns e.g. (:UTF-8 :LF) -- whose tail is not
+      ;; a plist; GETF errors on that odd-length list under ECL, so read
+      ;; :newline only from a well-formed (even-length) plist tail.
+      (when (evenp (length tail))
+        (getf tail :newline)))))
 
 (defun host-external-format-supported-p (external-format)
   "True when the running Common Lisp accepts EXTERNAL-FORMAT's base
@@ -80,7 +87,12 @@ take over its codec set on the strength of a probe we have not tested."
            (not (null (ignore-errors (sb-impl::get-external-format base))))
            #+ccl
            (not (null (ignore-errors (ccl:lookup-character-encoding base))))
-           #-(or sbcl ccl)
+           #+ecl
+           ;; ECL exposes its codec registry; names that miss (e.g. clautolisp's
+           ;; :cp1252 vs ECL's :windows-1252) correctly route to the babel
+           ;; single-octet fallback rather than ECL's native codec.
+           (not (null (ignore-errors (member base (ext:all-encodings)))))
+           #-(or sbcl ccl ecl)
            t))))
 
 ;;; --- single-octet tables, built from babel --------------------------
@@ -91,6 +103,58 @@ take over its codec set on the strength of a probe we have not tested."
 by SINGLE-OCTET-TABLES. A race between two threads first-touching the
 same encoding is benign: both compute the same tables from the same
 babel data and the loser's copy is simply dropped.")
+
+(defparameter *builtin-single-octet-maps*
+  '((:mac-roman
+     ;; byte . codepoint for 0x80..0xFF (0x00..0x7F are ASCII == Unicode).
+     ;; babel ships no Mac Roman table and ECL has no Mac Roman codec at all
+     ;; (macroman-encoding-name.issue); shipping it here makes :mac-roman
+     ;; available on every host via the single-octet fallback, the same way
+     ;; babel covers cp1252. Generated from the Mac OS Roman mapping.
+     (#x80 . #x00C4) (#x81 . #x00C5) (#x82 . #x00C7) (#x83 . #x00C9) (#x84 . #x00D1) (#x85 . #x00D6)
+     (#x86 . #x00DC) (#x87 . #x00E1) (#x88 . #x00E0) (#x89 . #x00E2) (#x8A . #x00E4) (#x8B . #x00E3)
+     (#x8C . #x00E5) (#x8D . #x00E7) (#x8E . #x00E9) (#x8F . #x00E8) (#x90 . #x00EA) (#x91 . #x00EB)
+     (#x92 . #x00ED) (#x93 . #x00EC) (#x94 . #x00EE) (#x95 . #x00EF) (#x96 . #x00F1) (#x97 . #x00F3)
+     (#x98 . #x00F2) (#x99 . #x00F4) (#x9A . #x00F6) (#x9B . #x00F5) (#x9C . #x00FA) (#x9D . #x00F9)
+     (#x9E . #x00FB) (#x9F . #x00FC) (#xA0 . #x2020) (#xA1 . #x00B0) (#xA2 . #x00A2) (#xA3 . #x00A3)
+     (#xA4 . #x00A7) (#xA5 . #x2022) (#xA6 . #x00B6) (#xA7 . #x00DF) (#xA8 . #x00AE) (#xA9 . #x00A9)
+     (#xAA . #x2122) (#xAB . #x00B4) (#xAC . #x00A8) (#xAD . #x2260) (#xAE . #x00C6) (#xAF . #x00D8)
+     (#xB0 . #x221E) (#xB1 . #x00B1) (#xB2 . #x2264) (#xB3 . #x2265) (#xB4 . #x00A5) (#xB5 . #x00B5)
+     (#xB6 . #x2202) (#xB7 . #x2211) (#xB8 . #x220F) (#xB9 . #x03C0) (#xBA . #x222B) (#xBB . #x00AA)
+     (#xBC . #x00BA) (#xBD . #x03A9) (#xBE . #x00E6) (#xBF . #x00F8) (#xC0 . #x00BF) (#xC1 . #x00A1)
+     (#xC2 . #x00AC) (#xC3 . #x221A) (#xC4 . #x0192) (#xC5 . #x2248) (#xC6 . #x2206) (#xC7 . #x00AB)
+     (#xC8 . #x00BB) (#xC9 . #x2026) (#xCA . #x00A0) (#xCB . #x00C0) (#xCC . #x00C3) (#xCD . #x00D5)
+     (#xCE . #x0152) (#xCF . #x0153) (#xD0 . #x2013) (#xD1 . #x2014) (#xD2 . #x201C) (#xD3 . #x201D)
+     (#xD4 . #x2018) (#xD5 . #x2019) (#xD6 . #x00F7) (#xD7 . #x25CA) (#xD8 . #x00FF) (#xD9 . #x0178)
+     (#xDA . #x2044) (#xDB . #x20AC) (#xDC . #x2039) (#xDD . #x203A) (#xDE . #xFB01) (#xDF . #xFB02)
+     (#xE0 . #x2021) (#xE1 . #x00B7) (#xE2 . #x201A) (#xE3 . #x201E) (#xE4 . #x2030) (#xE5 . #x00C2)
+     (#xE6 . #x00CA) (#xE7 . #x00C1) (#xE8 . #x00CB) (#xE9 . #x00C8) (#xEA . #x00CD) (#xEB . #x00CE)
+     (#xEC . #x00CF) (#xED . #x00CC) (#xEE . #x00D3) (#xEF . #x00D4) (#xF0 . #xF8FF) (#xF1 . #x00D2)
+     (#xF2 . #x00DA) (#xF3 . #x00DB) (#xF4 . #x00D9) (#xF5 . #x0131) (#xF6 . #x02C6) (#xF7 . #x02DC)
+     (#xF8 . #x00AF) (#xF9 . #x02D8) (#xFA . #x02D9) (#xFB . #x02DA) (#xFC . #x00B8) (#xFD . #x02DD)
+     (#xFE . #x02DB) (#xFF . #x02C7)))
+  "byte->codepoint high halves for single-octet encodings neither the host CL
+nor babel provides. Consulted by SINGLE-OCTET-TABLES when the babel builder
+finds nothing. Keyed by the canonical keyword the alias table resolves to.")
+
+(defun %builtin-single-octet-tables (keyword)
+  "Build (values DECODE ENCODE) from *BUILTIN-SINGLE-OCTET-MAPS*, or
+(values NIL NIL) when KEYWORD has no built-in table. Same shape as
+%BUILD-SINGLE-OCTET-TABLES: DECODE a 256-char vector, ENCODE an EQL hash of
+char-code -> byte."
+  (let ((high (cdr (assoc keyword *builtin-single-octet-maps*))))
+    (if (null high)
+        (values nil nil)
+        (let ((decode (make-array 256 :initial-element nil))
+              (encode (make-hash-table :test #'eql)))
+          (dotimes (byte 128)           ; ASCII is identity on code point
+            (setf (aref decode byte) (code-char byte))
+            (setf (gethash byte encode) byte))
+          (loop for (b . cp) in high do
+            (setf (aref decode b) (code-char cp))
+            (unless (gethash cp encode)
+              (setf (gethash cp encode) b)))
+          (values decode encode)))))
 
 (defun %build-single-octet-tables (keyword)
   "Ask babel for KEYWORD's 256-entry mapping. Returns (values DECODE
@@ -132,7 +196,13 @@ KEYWORD is not a single-octet encoding babel knows. Memoised."
     (unless entry
       (setf entry (multiple-value-bind (decode encode)
                       (%build-single-octet-tables keyword)
-                    (cons decode encode))
+                    (if decode
+                        (cons decode encode)
+                        ;; babel did not know it -- try a built-in table
+                        ;; (e.g. Mac Roman, which no host and no babel ships).
+                        (multiple-value-bind (d e)
+                            (%builtin-single-octet-tables keyword)
+                          (cons d e))))
             (gethash keyword *single-octet-tables*) entry))
     (values (car entry) (cdr entry))))
 
