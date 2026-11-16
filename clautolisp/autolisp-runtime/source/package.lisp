@@ -276,6 +276,7 @@
    #:autolisp-errno
    #:autolisp-runtime-error-errno
    #:signal-autolisp-runtime-error
+   #:signal-autolisp-runtime-error-errno
    #:*resolve-unbound-function-hook*
    #:*vlax-collection-items-hook*
    #:*com-point-wrap-hook*
