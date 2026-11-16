@@ -37,3 +37,28 @@ group entmake-order) captures this on real hardware. Run it via
 probe:suite:{autocad,bricscad}:windows / :macos when the Windows runner is next
 online (one session covers all three data-blocked issues). clautolisp baseline
 validated 2026-10-29.
+
+* Measured -- 2026-11-16 (the batched probe ran)
+
+probe-pending-divergences.lsp, master 4a5a7db2, 2026-11-16: AutoCAD 2022
+(Windows, job 18076193833, probe-results/autocad/ms-windows/20261116T174956Z),
+BricsCAD Windows (job 18076193837, .../bricscad/ms-windows/20261116T175252Z)
+and BricsCAD macOS (job 18076193834, .../bricscad/macos/20261116T174931Z).
+
+| case                                              | AutoCAD           | BricsCAD Win | BricsCAD mac |
+|---------------------------------------------------+-------------------+--------------+--------------|
+| ARC ordered (10 40 / AcDbCircle, 50 51 / AcDbArc)  | created           | created      | created      |
+| ARC all-markers-first, then 10 40 50 51           | created           | rejected 36  | rejected 36  |
+| ARC groups before any marker                      | created           | created      | created      |
+| ARC 50 51 under AcDbCircle, empty AcDbArc last    | created           | created      | created      |
+| ATTDEF ordered                                    | created           | created      | created      |
+| ATTDEF all-markers-first, then 10 40 1 3 2 70     | rejected ERRNO 1048 | rejected 36 | rejected 36  |
+| LWPOLYLINE single subclass                        | created           | created      | created      |
+
+(ERRNO after the failed entmakex.) AutoCAD is lenient for ARC -- groups may
+follow the markers in any arrangement -- and strict for ATTDEF; BricsCAD
+rejects every all-markers-first ordering with ERRNO 36 and accepts groups
+before any marker. Next: model it per product -- reject all-markers-first
+under bricscad (ERRNO 36) and for ATTDEF under autocad (ERRNO 1048, to
+confirm against more families), keep accepting the orderings all three
+accept.

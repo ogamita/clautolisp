@@ -35,3 +35,25 @@ group type-of-fn) captures this on real hardware. Run it via
 probe:suite:{autocad,bricscad}:windows / :macos when the Windows runner is next
 online (one session covers all three data-blocked issues). clautolisp baseline
 validated 2026-10-29.
+
+* Measured -- 2026-11-16 (the batched probe ran)
+
+probe-pending-divergences.lsp, master 4a5a7db2, 2026-11-16: AutoCAD 2022
+(Windows, job 18076193833, probe-results/autocad/ms-windows/20261116T174956Z),
+BricsCAD Windows (job 18076193837, .../bricscad/ms-windows/20261116T175252Z)
+and BricsCAD macOS (job 18076193834, .../bricscad/macos/20261116T174931Z).
+
+| case                                      | AutoCAD | BricsCAD Win | BricsCAD mac |
+|-------------------------------------------+---------+--------------+--------------|
+| (type f), f from (eval (read "(defun ...)")) | SUBR    | SUBR         | SUBR         |
+| (type g), g from a LOAD'd .lsp            | SUBR    | SUBR         | SUBR         |
+| (type (lambda () 1))                      | SUBR    | SUBR         | SUBR         |
+| (type car) -- builtin baseline            | SUBR    | SUBR         | SUBR         |
+| (type (function f))                       | SYM     | SUBR         | SUBR         |
+
+The open question is answered: the load path does NOT decide it -- a user
+function, interpreted or loaded, named or anonymous, is SUBR on all three;
+clautolisp's USUBR matches none. (function f) differs: AutoCAD returns the
+symbol (SYM), BricsCAD the function. Next: TYPE of a user function returns
+SUBR under the autocad / bricscad dialects (USUBR's place, if any, under
+clautolisp / strict is pjb's call); (function f) per product.

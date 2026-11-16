@@ -32,3 +32,20 @@ group symbol-case) captures this on real hardware. Run it via
 probe:suite:{autocad,bricscad}:windows / :macos when the Windows runner is next
 online (one session covers all three data-blocked issues). clautolisp baseline
 validated 2026-10-29.
+
+* Measured -- 2026-11-16 (the batched probe ran)
+
+probe-pending-divergences.lsp, master 4a5a7db2, 2026-11-16: AutoCAD 2022
+(Windows, job 18076193833, probe-results/autocad/ms-windows/20261116T174956Z),
+BricsCAD Windows (job 18076193837, .../bricscad/ms-windows/20261116T175252Z)
+and BricsCAD macOS (job 18076193834, .../bricscad/macos/20261116T174931Z).
+
+ATOMS-FAMILY lists no predefined symbol whose name differs from its
+STRCASE on any of the three: 4015 symbols on AutoCAD, 5944 on BricsCAD
+Windows, 4533 on BricsCAD macOS -- the "names where name /= (strcase name)"
+case is nil everywhere. So the case-preserved names this issue starts from
+(vlax-vbEmpty, variant, safearray) are not visible through atoms-family:
+either they are printed from somewhere else (vl-symbol-name? the printer?) or
+the original observation was of a different path. Next: re-read the
+Symptom's evidence and probe (vl-symbol-name 'variant) / (vl-prin1-to-string
+'vlax-vbEmpty) directly before changing clautolisp's three overrides.
