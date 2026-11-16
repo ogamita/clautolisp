@@ -55,6 +55,7 @@ probe-sysvar-flags.lsp        cad-probe-run-sysvar-flags-probes
 probe-ssget-window-crossing.lsp cad-probe-run-ssget-window-crossing-probes
 probe-entity-access.lsp       cad-probe-run-entity-access-probes
 probe-host-fns.lsp            cad-probe-run-host-fns-probes
+probe-load-encoding.lsp       cad-probe-run-load-encoding-probes
 # ARXUNLOAD of a loaded module is tried (ONFAILURE only, reloaded at once):
 # after every suite that needs the session's modules, before the end.
 probe-arx-vba.lsp             cad-probe-run-arx-vba-probes
