@@ -99,6 +99,8 @@
   (:import-from #:clautolisp.cador
                 #:cador
                 #:make-cador
+                #:cador-scene-display-list
+                #:cador-scene-extents
                 #:entity-handle
                 #:make-entity-handle
                 #:pickset

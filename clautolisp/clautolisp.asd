@@ -17,6 +17,7 @@
                "clautolisp/autolisp-host"
                "clautolisp/cador"
                "clautolisp/cadtui"
+               "clautolisp/cadgui"
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
@@ -249,7 +250,8 @@
    (:file "cador/source/viewports")
    (:file "cador/source/getcname")
    (:file "cador/source/com-progids")
-   (:file "cador/source/vlax-api"))
+   (:file "cador/source/vlax-api")
+   (:file "cador/source/scene-view"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/cador/tests")))
   :perform (asdf:test-op (op system)
@@ -285,6 +287,39 @@ application for headless interactive/scriptable testing (generalises cador)."
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          :success))
+
+(asdf:defsystem "clautolisp/cadgui"
+  :description "The cadgui host (CL side): the Qt6 GUI CAD host on embedded ECL,
+the graphical peer of cadtui on the cador core. This is the protocol the
+embedded-ECL Qt6 shell calls -- the display list to paint, view extents,
+interactive input, command eval. cadgui-2-qt6-gui-host.issue."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/cador" "clautolisp/autolisp-host")
+  :serial t
+  :components
+  ((:file "cadgui/source/package")
+   (:file "cadgui/source/session")
+   (:file "cadgui/source/protocol"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/cadgui/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/cadgui/tests"
+  :description "Tests for the cadgui host CL protocol."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/cadgui" "fiveam")
+  :serial t
+  :components
+  ((:file "cadgui/tests/package")
+   (:file "cadgui/tests/protocol-tests"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.cadgui.tests
+                                           :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-dcl"
   :description "Dialog Control Language (DCL) implementation for clautolisp."
@@ -438,6 +473,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/autolisp-host"
                "clautolisp/cador"
                "clautolisp/cadtui"
+               "clautolisp/cadgui"
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
@@ -616,6 +652,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "cador/tests/document-tests")
    (:file "cador/tests/entity-api-tests")
    (:file "cador/tests/selection-tests")
+   (:file "cador/tests/scene-view-tests")
    (:file "cador/tests/dictionary-api-tests")
    (:file "cador/tests/prompt-tests")
    (:file "cador/tests/command-tests")
@@ -1209,6 +1246,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/autolisp-host/tests"
                "clautolisp/cador/tests"
                "clautolisp/cadtui/tests"
+               "clautolisp/cadgui/tests"
                "clautolisp/autolisp-dcl/tests"
                "clautolisp/autolisp-builtins-core/tests"
                "clautolisp/autolisp-compiler/tests"
@@ -1241,6 +1279,8 @@ identity / TEMPPREFIX stamping, option value parsers)."
                            (uiop:symbol-call :clautolisp.cador.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.cadtui.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.cadgui.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-dcl.tests
                                              :run-all-tests)

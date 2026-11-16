@@ -1,0 +1,73 @@
+#+TITLE: clautolisp cadgui — specification (the Qt6 GUI CAD host on embedded ECL)
+#+AUTHOR: clautolisp
+#+STARTUP: overview
+
+cadgui is the fourth clautolisp HOST: the GRAPHICAL UI-tree host, the Qt6 peer of
+cadtui on the cador core, invoked as =clautolisp --host cadgui=. Tracking issue:
+=issues/open/cadgui-2-qt6-gui-host.issue= (epic: =cadgui-release-3.0-epic.issue=).
+
+This document grows per implemented slice.
+
+* Architecture
+
+The cadgui shell is the host PROCESS: a thin Qt6 Widgets C++ app that boots
+EMBEDDED ECL (=cl_boot=), loads the =clautolisp/cadgui= system (which pulls
+cador), and renders the cador model. The split:
+- *Common Lisp owns the model and regen* and produces a DISPLAY LIST.
+- *C++ owns the window and the per-frame paint*, plus pan/zoom and input capture.
+- The boundary is the cadgui protocol (below), crossed only on REGEN and on
+  INPUT events, never per frame. A single thread; a nested Qt event loop handles
+  the blocked getpoint/entsel/ssget (no GC/thread marriage).
+
+* The display list (slice B — cador scene view)
+
+=clautolisp.cador:cador-scene-display-list= (host) returns the drawable view of
+the current model space, the render peer of =host-ssget "X"=: a list of
+
+: (:POLYLINE HANDLE LAYER ACI CLOSED (X0 Y0 X1 Y1 ...))
+
+in world coordinates, in creation order (back to front). HANDLE is the entity's
+creation-order handle (string, for pick/highlight), LAYER the layer name, ACI
+the colour index (256 = BYLAYER, 0 = BYBLOCK), CLOSED whether the polyline
+closes, and the last element a flat double-float coordinate list. LINE/ARC/
+LWPOLYLINE/POINT use the exact outline; CIRCLE is sampled to a closed polyline;
+TEXT/MTEXT/INSERT/... fall back to a bounding-box rectangle placeholder.
+=cador-scene-extents= returns =(XMIN YMIN XMAX YMAX)= for zoom-extents.
+
+* The protocol (slices C/D/E/F — package clautolisp.cadgui)
+
+The narrow surface the shell calls:
+- =(cadgui-start)= — create a session on a fresh cador document; =cadgui-session=
+  holds the host. One session per shell process (multi-document later).
+- =(cadgui-display-list)= / =(cadgui-extents)= — pull the scene to paint (regen).
+- =(cadgui-add-line X1 Y1 X2 Y2 &key layer color)= / =(cadgui-add-circle CX CY R
+  &key layer color)= — populate the model through the real cador HAL
+  (=host-entmake=); the full AutoLISP command eval is slice E.
+- =(cadgui-supply-point X Y)= / =(cadgui-supply-entity HANDLE)= — the shell
+  supplies a typed input value for a blocked command (slice D).
+- =(cadgui-eval-command STRING)= — the command line (slice E).
+
+* The canvas (slice C — cadgui-shell.cpp)
+
+The Qt6 =QWidget= pulls the display list + extents, applies a fit-to-extents
+world->device transform (Y flipped so world-up is screen-up), draws polylines in
+ACI colours over axes, and renders either to a live window or OFFSCREEN
+(=-platform offscreen=) to a PNG (the headless-screenshot path). Build:
+=clautolisp/cadgui/shell/build.sh= (pkg-config Qt6Widgets + ecl-config); run:
+=run.sh= (embedded ECL loads the real engine and renders an engine-built scene).
+
+* Status (per slice)
+
+- A (module + host launch): the =clautolisp/cadgui= CL module + the C++ shell
+  that boots embedded ECL and loads it. DONE (shell renders offscreen).
+- B (scene exporter): =cador-scene-display-list= / =-extents=. DONE + tested
+  (cador suite).
+- C (canvas): fit-to-extents render of the display list, offscreen PNG. DONE
+  (shell); live pan/zoom/crosshair + a command-line widget: NEXT.
+- D (input bridge): nested event loop validated (spike); supply-* scaffolded;
+  resume through cador =read-prompt-line= so getpoint/entsel/ssget drive from the
+  canvas: NEXT.
+- E (command + regen): =cadgui-eval-command= scaffolded; the repl-loop / AutoLISP
+  eval path + regen-on-dbmod: NEXT.
+- F (the C boundary): the display-list/input/command surface above; formalising
+  it as the versioned CRX-seed API: NEXT (feeds cadgui-4-crx-api).

@@ -262,6 +262,9 @@
    #:cador-open-command-log
    #:cador-close-command-log
    #:*command-log-channel-active*
+   ;; Scene view -- the drawable display list of the model (cadgui, scene-view.lisp)
+   #:cador-scene-display-list
+   #:cador-scene-extents
    ;; Entity-allocation helpers (Phase 10)
    #:cador-creation-order
    #:cador-next-handle-counter
