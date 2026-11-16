@@ -65,8 +65,8 @@ backend share this instance.")
   (signal-host-not-supported host 'handent))
 
 ;; Selection-set API
-(defmethod host-ssget ((host nihil) filter &key mode)
-  (declare (ignore filter mode))
+(defmethod host-ssget ((host nihil) filter &key mode points)
+  (declare (ignore filter mode points))
   (signal-host-not-supported host 'ssget))
 
 (defmethod host-ssadd ((host nihil) pickset ename)

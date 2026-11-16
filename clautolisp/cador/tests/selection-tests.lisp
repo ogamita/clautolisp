@@ -91,6 +91,84 @@ returns nil without an intervening sssetfirst (vendor parity)."
     (is (eql 3 (host-sslength mock (host-ssget mock nil :mode (al-mode "_I")))))
     (is (null (host-ssget mock nil :mode (al-mode "_I"))))))
 
+;;; ssget "_W" / "_C" -- window and crossing over a rectangle
+;;; (ssget-crossing-selection-unsupported)
+
+(defun seed-window-crossing (mock)
+  "Entities around the rectangle (0,0)-(10,10), each named by what it tests:
+returns an alist (NAME . ENAME)."
+  (flet ((make (name data) (cons name (ent-of (host-entmake mock data)))))
+    (list
+     (make :line-inside '((0 . "LINE") (10 1.0d0 1.0d0 0.0d0) (11 2.0d0 2.0d0 0.0d0)))
+     ;; through the rectangle, neither endpoint inside
+     (make :line-through '((0 . "LINE") (10 -5.0d0 5.0d0 0.0d0) (11 15.0d0 5.0d0 0.0d0)))
+     (make :line-outside '((0 . "LINE") (10 20.0d0 20.0d0 0.0d0) (11 30.0d0 30.0d0 0.0d0)))
+     (make :circle-inside '((0 . "CIRCLE") (10 5.0d0 5.0d0 0.0d0) (40 . 1.0d0)))
+     ;; its curve crosses the right edge
+     (make :circle-crossing '((0 . "CIRCLE") (10 10.0d0 5.0d0 0.0d0) (40 . 2.0d0)))
+     ;; encloses the whole rectangle: its CURVE never enters it
+     (make :circle-around '((0 . "CIRCLE") (10 5.0d0 5.0d0 0.0d0) (40 . 50.0d0)))
+     ;; arc of radius 3 about the origin from -45 to +45 degrees: its upper
+     ;; half (2.12, 2.12) is inside, its lower half below y = 0 is not
+     (make :arc-partly '((0 . "ARC") (100 . "AcDbEntity") (100 . "AcDbCircle")
+                         (10 0.0d0 0.0d0 0.0d0) (40 . 3.0d0)
+                         (100 . "AcDbArc") (50 . 5.497787143782138d0) (51 . 0.7853981633974483d0)))
+     ;; a closed square around the rectangle: no vertex, no edge inside
+     (make :square-around '((0 . "LWPOLYLINE") (100 . "AcDbEntity") (100 . "AcDbPolyline")
+                            (90 . 4) (70 . 1)
+                            (10 -1.0d0 -1.0d0) (10 11.0d0 -1.0d0)
+                            (10 11.0d0 11.0d0) (10 -1.0d0 11.0d0))))))
+
+(defun selected-names (mock set seeded)
+  "The NAMEs of SEEDED whose ename is in the pickset SET, sorted."
+  (sort (loop for (name . ename) in seeded
+              when (and set (host-ssmemb mock set ename))
+                collect name)
+        #'string< :key #'symbol-name))
+
+(test ssget-window-selects-entities-entirely-inside
+  (let* ((mock (make-cador))
+         (seeded (seed-window-crossing mock))
+         (set (host-ssget mock nil :mode (al-mode "_W")
+                                   :points '((0.0d0 0.0d0 0.0d0) (10.0d0 10.0d0 0.0d0)))))
+    (is (equal '(:circle-inside :line-inside) (selected-names mock set seeded)))))
+
+(test ssget-crossing-selects-inside-and-crossing-entities
+  "Crossing: inside or crossing the boundary -- a line through the rectangle
+with no endpoint inside included; a circle ENCLOSING the rectangle and a
+square polyline around it excluded (their ink never enters it)."
+  (let* ((mock (make-cador))
+         (seeded (seed-window-crossing mock))
+         (set (host-ssget mock nil :mode (al-mode "_C")
+                                   :points '((0.0d0 0.0d0 0.0d0) (10.0d0 10.0d0 0.0d0)))))
+    (is (equal '(:arc-partly :circle-crossing :circle-inside :line-inside :line-through)
+               (selected-names mock set seeded)))
+    ;; the corners in either order, and the bare "C" spelling
+    (let ((swapped (host-ssget mock nil :mode (al-mode "C")
+                                        :points '((10.0d0 10.0d0 0.0d0) (0.0d0 0.0d0 0.0d0)))))
+      (is (equal (selected-names mock set seeded) (selected-names mock swapped seeded))))))
+
+(test ssget-crossing-applies-the-filter-and-may-select-nothing
+  (let* ((mock (make-cador))
+         (seeded (seed-window-crossing mock)))
+    (is (equal '(:line-inside :line-through)
+               (selected-names mock
+                               (host-ssget mock '((0 . "LINE")) :mode (al-mode "_C")
+                                           :points '((0.0d0 0.0d0) (10.0d0 10.0d0)))
+                               seeded)))
+    ;; nothing in that rectangle: nil, not an empty set
+    (is (null (host-ssget mock nil :mode (al-mode "_C")
+                          :points '((100.0d0 100.0d0) (101.0d0 101.0d0)))))))
+
+(test ssget-window-or-crossing-without-two-points-signals
+  (let ((mock (make-cador)))
+    (seed-window-crossing mock)
+    (is (typep (handler-case
+                   (progn (host-ssget mock nil :mode (al-mode "_C") :points '((0.0d0 0.0d0)))
+                          nil)
+                 (clautolisp.autolisp-runtime:autolisp-runtime-error (c) c))
+               'clautolisp.autolisp-runtime:autolisp-runtime-error))))
+
 (test ssget-x-with-comma-alternation-matches-any
   (let ((mock (make-cador)))
     (seed-three-lines mock)

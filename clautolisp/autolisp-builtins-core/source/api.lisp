@@ -5743,8 +5743,11 @@ most recent first."
   ;; Documented ERRNO codes: 56..67 for filter-shape errors. A
   ;; null return because the host found no matching entities is
   ;; not an error and leaves ERRNO alone.
+  ;; (ssget "_W" P1 P2 [FILTER]) / (ssget "_C" P1 P2 [FILTER]): a window
+  ;; or crossing over the rectangle P1-P2 (ssget-crossing-selection-
+  ;; unsupported); the points travel to the host as :POINTS.
   (let* ((host (current-evaluation-host))
-         mode filter)
+         mode filter points)
     (cond
       ((null arguments) nil)
       ((null (rest arguments))
@@ -5758,10 +5761,18 @@ most recent first."
                "SSGET"
                "SSGET expects (MODE [FILTER]) or (MODE) or (FILTER), got ~S."
                only)))))
+      ((and (typep (first arguments) 'autolisp-string)
+            (member (autolisp-string-value (first arguments)) '("W" "_W" "C" "_C")
+                    :test #'string-equal))
+       (setf mode (first arguments)
+             points (list (second arguments) (third arguments))
+             filter (fourth arguments)))
       (t
        (setf mode (first arguments)
              filter (second arguments))))
-    (let ((result (host-ssget host filter :mode mode)))
+    (let ((result (if points
+                      (host-ssget host filter :mode mode :points points)
+                      (host-ssget host filter :mode mode))))
       (if result
           (errno-and-return 0 result)
           result))))
