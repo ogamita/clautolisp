@@ -1,5 +1,5 @@
 #+TITLE: Cador rejects ssget crossing mode _C required by SCHMS occupancy tests
-#+STATUS: NEXT
+#+STATUS: IN-PROGRESS
 #+PRIORITY: P1
 #+TYPE: compatibility
 #+DEPENDS: -
@@ -54,3 +54,27 @@ CAD launchers, including the optimized DES/VLX qualification. Its existing
 additional cases are outside that backend's current coverage. Once _C is
 implemented, enable the same cases in the Cador lane and keep this minimal
 reproducer in the implementation regression suite.
+
+* Implemented -- 2026-11-16 (clautolisp 2.4.20)
+
+(ssget "_C" P1 P2 [FILTER]) and (ssget "_W" P1 P2 [FILTER]) -- and the bare
+"C" / "W" -- in cador (selection-api.lisp): the corners travel to the host as
+HOST-SSGET's new :POINTS. Crossing = an entity with a point inside the
+rectangle or crossing its boundary; window = entirely inside. Exact for LINE,
+LWPOLYLINE (straight segments; a bulge taken as its chord), CIRCLE (the
+curve: a circle enclosing the rectangle is NOT crossed), ARC (sampled), POINT;
+the other kinds use the conservative bounding box. The rectangle is in the
+WCS XY plane (cador has no view; its UCS is the WCS).
+
+Checked: the adjacent repro prints PASS (clautolisp 2.4.20, --host cador
+--dialect bricscad-v26); cador tests ssget-window-selects-entities-entirely-
+inside, ssget-crossing-selects-inside-and-crossing-entities (a line through
+the rectangle with no endpoint inside selected; an enclosing circle and a
+square polyline around it not), ssget-crossing-applies-the-filter-and-may-
+select-nothing, ssget-window-or-crossing-without-two-points-signals.
+
+Native comparison: probes/sources/probe-ssget-window-crossing.lsp runs the
+same geometry on AutoCAD and BricsCAD (this MR's probe:suite jobs). Close
+once the three agree, or model what they show. Then enable the three SCHMS
+encombrement scenarios in its cador lane.
+

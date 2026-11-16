@@ -293,9 +293,163 @@ than signalling (the builtin layer validates gross filter shape)."
         (declare (ignore rest))
         (every (lambda (node) (funcall node entity)) nodes))))
 
+;;; --- Window / crossing geometry ---------------------------------------
+;;;
+;;; (ssget "_W" P1 P2) selects the entities lying ENTIRELY inside the
+;;; rectangle P1-P2, (ssget "_C" P1 P2) those INSIDE OR CROSSING it -- an
+;;; entity crossing a boundary with no vertex inside included
+;;; (ssget-crossing-selection-unsupported). The rectangle is taken in the XY
+;;; plane of the WCS: cador has no view, and its UCS is the WCS.
+;;; SPEC-UNCERTAIN: the vendors' view-dependent behaviour (an entity off
+;;; screen) and a non-world UCS are not modelled.
+;;;
+;;; Exact for LINE, LWPOLYLINE (straight segments; a bulge is taken as its
+;;; chord), CIRCLE, ARC (sampled), POINT; the other kinds use the entity's
+;;; conservative bounding box (%ENTITY-BOUNDING-BOX), so a crossing may
+;;; over-select one whose box, not its ink, meets the rectangle.
+
+(defun %ss-num (x) (coerce x 'double-float))
+
+(defun %ss-rect (p1 p2)
+  "(XMIN YMIN XMAX YMAX) of the rectangle with corners P1 and P2."
+  (let ((x1 (%ss-num (first p1))) (y1 (%ss-num (second p1)))
+        (x2 (%ss-num (first p2))) (y2 (%ss-num (second p2))))
+    (list (min x1 x2) (min y1 y2) (max x1 x2) (max y1 y2))))
+
+(defun %ss-in-rect-p (x y rect)
+  (destructuring-bind (x0 y0 x1 y1) rect
+    (and (<= x0 x x1) (<= y0 y y1))))
+
+(defun %ss-segment-meets-rect-p (ax ay bx by rect)
+  "True when the segment A-B has a point in RECT (Liang-Barsky clipping)."
+  (destructuring-bind (x0 y0 x1 y1) rect
+    (let ((dx (- bx ax)) (dy (- by ay)) (t0 0d0) (t1 1d0))
+      (flet ((clip (p q)
+               ;; p * t <= q
+               (cond ((zerop p) (>= q 0))
+                     (t (let ((r (/ q p)))
+                          (if (< p 0)
+                              (when (<= r t1) (setf t0 (max t0 r)) t)
+                              (when (>= r t0) (setf t1 (min t1 r)) t)))))))
+        (and (clip (- dx) (- ax x0))
+             (clip dx (- x1 ax))
+             (clip (- dy) (- ay y0))
+             (clip dy (- y1 ay))
+             (<= t0 t1))))))
+
+(defun %ss-polyline-meets-rect-p (points closed rect)
+  (loop for (a b) on (if (and closed (cddr points))
+                         (append points (list (first points)))
+                         points)
+        while b
+        thereis (%ss-segment-meets-rect-p (first a) (second a) (first b) (second b) rect)))
+
+(defun %ss-circle-meets-rect-p (cx cy r rect)
+  "True when the CIRCLE (the curve, not the disk) has a point in RECT: the
+rectangle's nearest point is within R of the centre, and its farthest
+corner is not strictly inside the circle (else the rectangle sits inside
+the circle, touching no part of the curve)."
+  (destructuring-bind (x0 y0 x1 y1) rect
+    (let* ((nx (max x0 (min cx x1))) (ny (max y0 (min cy y1)))
+           (near (sqrt (+ (expt (- nx cx) 2) (expt (- ny cy) 2))))
+           (far (sqrt (+ (expt (max (abs (- x0 cx)) (abs (- x1 cx))) 2)
+                         (expt (max (abs (- y0 cy)) (abs (- y1 cy))) 2)))))
+      (and (<= near r) (>= far r)))))
+
+(defun %ss-arc-points (cx cy r a0 a1 &optional (steps 64))
+  "Points along the counter-clockwise arc from A0 to A1 (radians)."
+  (let ((sweep (let ((s (- a1 a0))) (if (<= s 0) (+ s (* 2 pi)) s))))
+    (loop for i from 0 to steps
+          for a = (+ a0 (* sweep (/ i steps)))
+          collect (list (+ cx (* r (cos a))) (+ cy (* r (sin a)))))))
+
+(defun %ss-xy (point) (list (%ss-num (first point)) (%ss-num (second point))))
+
+(defun %ss-lwpolyline-points (entity)
+  (loop for pair in (entity-handle-data entity)
+        when (and (consp pair) (group-code-equal-p (car pair) 10) (consp (cdr pair)))
+          collect (%ss-xy (cdr pair))))
+
+(defun %ss-entity-outline (entity)
+  "(values POINTS CLOSED) tracing ENTITY's ink as a polyline, or NIL for a
+kind with no exact outline here (the bounding box is used for it)."
+  (case (entity-handle-kind entity)
+    (:line (let ((a (%entity-group-value entity 10)) (b (%entity-group-value entity 11)))
+             (and a b (values (list (%ss-xy a) (%ss-xy b)) nil))))
+    (:lwpolyline (values (%ss-lwpolyline-points entity)
+                         (let ((flags (%entity-group-value entity 70)))
+                           (and (integerp flags) (logtest flags 1)))))
+    (:arc (let ((c (%entity-group-value entity 10)) (r (%entity-group-value entity 40))
+                (a0 (%entity-group-value entity 50)) (a1 (%entity-group-value entity 51)))
+            (and c (realp r) (realp a0) (realp a1)
+                 (values (%ss-arc-points (%ss-num (first c)) (%ss-num (second c)) (%ss-num r)
+                                         (%ss-num a0) (%ss-num a1))
+                         nil))))
+    (:point (let ((p (%entity-group-value entity 10))) (and p (values (list (%ss-xy p)) nil))))
+    (t nil)))
+
+(defun %ss-entity-box (host entity)
+  "ENTITY's (XMIN YMIN XMAX YMAX): exact for a CIRCLE, else from its outline,
+else from %ENTITY-BOUNDING-BOX; NIL when it has no geometry."
+  (if (eq (entity-handle-kind entity) :circle)
+      (let ((c (%entity-group-value entity 10)) (r (%entity-group-value entity 40)))
+        (and c (realp r)
+             (let ((x (%ss-num (first c))) (y (%ss-num (second c))) (r (%ss-num r)))
+               (list (- x r) (- y r) (+ x r) (+ y r)))))
+      (let ((points (%ss-entity-outline entity)))
+        (if points
+            (list (reduce #'min points :key #'first) (reduce #'min points :key #'second)
+                  (reduce #'max points :key #'first) (reduce #'max points :key #'second))
+            (let ((box (ignore-errors (%entity-bounding-box host entity))))
+              (and box (first box) (second box)
+                   (list (%ss-num (first (first box))) (%ss-num (second (first box)))
+                         (%ss-num (first (second box))) (%ss-num (second (second box))))))))))
+
+(defun %ss-entity-inside-rect-p (host entity rect)
+  "Window selection: ENTITY lies entirely inside RECT."
+  (let ((box (%ss-entity-box host entity)))
+    (and box
+         (destructuring-bind (x0 y0 x1 y1) rect
+           (destructuring-bind (bx0 by0 bx1 by1) box
+             (and (<= x0 bx0) (<= bx1 x1) (<= y0 by0) (<= by1 y1)))))))
+
+(defun %ss-entity-meets-rect-p (host entity rect)
+  "Crossing selection: ENTITY has a point inside RECT or crosses its boundary."
+  (if (eq (entity-handle-kind entity) :circle)
+      (let ((c (%entity-group-value entity 10)) (r (%entity-group-value entity 40)))
+        (and c (realp r)
+             (%ss-circle-meets-rect-p (%ss-num (first c)) (%ss-num (second c)) (%ss-num r) rect)))
+      (multiple-value-bind (points closed) (%ss-entity-outline entity)
+        (if points
+            (if (rest points)
+                (%ss-polyline-meets-rect-p points closed rect)
+                (%ss-in-rect-p (first (first points)) (second (first points)) rect))
+            (let ((box (%ss-entity-box host entity)))
+              (and box
+                   (destructuring-bind (x0 y0 x1 y1) rect
+                     (destructuring-bind (bx0 by0 bx1 by1) box
+                       (and (<= bx0 x1) (<= x0 bx1) (<= by0 y1) (<= y0 by1))))))))))
+
+(defun %ss-select-in-rect (host filter rect predicate)
+  "The pickset AP of the graphical main-space entities satisfying PREDICATE
+over RECT and FILTER, in creation order, or NIL when none does."
+  (let ((matches '()))
+    (dolist (handle (reverse (cador-creation-order host)))
+      (let ((entity (gethash handle (cador-entities host))))
+        (when (and entity (not (entity-handle-deleted-p entity))
+                   (main-space-entity-p entity)
+                   (clautolisp.drawing:graphical-entity-p entity)
+                   (or (null filter) (entity-matches-filter-p entity filter))
+                   (funcall predicate host entity rect))
+          (push entity matches))))
+    (and matches
+         (let ((set (make-pickset :members (nreverse matches))))
+           (cador-register-pickset host set)
+           (pickset->ap set)))))
+
 ;;; --- Method definitions ------------------------------------------
 
-(defmethod host-ssget ((host cador) filter &key mode)
+(defmethod host-ssget ((host cador) filter &key mode points)
   ;; Phase-11 supported modes:
   ;;   "X" / "_X"     all entities, optionally filtered.
   ;;   nil            (interactive pick) — needs a pointer: signals
@@ -371,11 +525,23 @@ than signalling (the builtin layer validates gross filter shape)."
                 (and (pickset-members set)
                      (progn (cador-register-pickset host set)
                             (pickset->ap set)))))))))
+      ((member mode-string '("W" "_W" "C" "_C") :test #'string-equal)
+       ;; Window / crossing over the rectangle POINTS (two corners).
+       (unless (and (= (length points) 2)
+                    (every (lambda (p) (and (consp p) (realp (first p)) (realp (second p))))
+                           points))
+         (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+          :invalid-ssget-arguments
+          "SSGET ~S needs two corner points, got ~S." mode-string points))
+       (%ss-select-in-rect host filter (%ss-rect (first points) (second points))
+                           (if (string-equal (string-left-trim "_" mode-string) "W")
+                               #'%ss-entity-inside-rect-p
+                               #'%ss-entity-meets-rect-p)))
       (t
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
         :unsupported-ssget-mode
-        "cador does not yet support ssget mode ~S; accepted modes are ~S, ~S and ~S."
-        mode-string "X" "_X" "_I")))))
+        "cador does not yet support ssget mode ~S; accepted modes are ~S, ~S, ~S, ~S and ~S."
+        mode-string "X" "_X" "_I" "_W" "_C")))))
 
 (defmethod host-ssadd ((host cador) ap ename)
   ;; (ssadd)        — create a new empty pickset (handled via the
