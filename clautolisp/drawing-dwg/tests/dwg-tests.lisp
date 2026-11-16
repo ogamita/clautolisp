@@ -448,6 +448,81 @@ older library"))))
   (is (null (clautolisp.drawing.dwg::%libredwg-dependency-in
              (list (pathname "/lib/clal_dwg.dll") (pathname "/lib/zlib1.dll"))))))
 
+(defun %write-pe-importing (path dll-names)
+  "Write at PATH a minimal PE32+ image whose import table names DLL-NAMES: a
+DOS header, PE/COFF header, optional header with the import data directory,
+one section holding the import descriptors and the names. Enough for
+%PE-IMPORTED-DLL-NAMES, which is all it is for."
+  (let ((v (make-array #x400 :element-type '(unsigned-byte 8) :initial-element 0)))
+    (flet ((u16 (at x) (setf (aref v at) (ldb (byte 8 0) x) (aref v (1+ at)) (ldb (byte 8 8) x)))
+           (u32 (at x) (loop for i below 4 do (setf (aref v (+ at i)) (ldb (byte 8 (* 8 i)) x)))))
+      (u16 0 #x5A4D) (u32 #x3C #x80)                      ; MZ, e_lfanew
+      (u32 #x80 #x00004550)                               ; PE\0\0
+      (u16 #x84 #x8664) (u16 #x86 1) (u16 #x94 #xF0)      ; machine, 1 section, opt size
+      (u16 #x98 #x20B)                                    ; PE32+
+      (u32 (+ #x98 108) 16)                               ; NumberOfRvaAndSizes
+      (u32 (+ #x98 112 8) #x1000) (u32 (+ #x98 112 12) 60) ; import directory
+      (let ((s (+ #x98 #xF0)))                            ; the section header
+        (u32 (+ s 8) #x200) (u32 (+ s 12) #x1000) (u32 (+ s 16) #x200) (u32 (+ s 20) #x200))
+      (loop for name in dll-names
+            for i from 0
+            for d = (+ #x200 (* 20 i))                    ; descriptor (file = rva - #xE00)
+            for name-rva = (+ #x1100 (* 32 i))
+            do (u32 (+ d 12) name-rva)
+               (u32 (+ d 16) (+ #x1180 (* 8 i)))
+               (loop for c across name
+                     for j from 0
+                     do (setf (aref v (+ (- name-rva #xE00) j)) (char-code c)))))
+    (with-open-file (out path :direction :output :element-type '(unsigned-byte 8)
+                              :if-exists :supersede)
+      (write-sequence v out))
+    path))
+
+(test pe-import-table-names-the-shims-dependencies
+  (uiop:with-temporary-file (:pathname shim :type "dll" :keep nil)
+    (%write-pe-importing shim '("KERNEL32.dll" "msys-redwg.dll"))
+    (is (equal '("KERNEL32.dll" "msys-redwg.dll")
+               (clautolisp.drawing.dwg::%pe-imported-dll-names shim))))
+  ;; not a PE image: NIL, never an error
+  (uiop:with-temporary-file (:pathname junk :type "dll" :keep nil)
+    (with-open-file (out junk :direction :output :if-exists :supersede)
+      (write-string "not a library" out))
+    (is (null (clautolisp.drawing.dwg::%pe-imported-dll-names junk)))))
+
+(test a-stale-libredwg-beside-the-shim-is-not-chosen
+  "windows-upgrade-selects-stale-libredwg: after an upgrade the prefix held the
+obsolete libredwg.dll AND the current msys-redwg.dll; the first redwg name in
+directory order -- the stale one -- was preloaded, and every DWG save failed.
+The dependency is the one the shim's import table names."
+  (let ((dir (uiop:ensure-directory-pathname
+              (merge-pathnames (format nil "clal-dwg-upgrade-~36R/"
+                                       (random (expt 36 8) (make-random-state t)))
+                               (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist dir)
+           (%write-pe-importing (merge-pathnames "clal_dwg.dll" dir)
+                                '("KERNEL32.dll" "msys-redwg.dll"))
+           (dolist (stale '("libredwg.dll" "msys-redwg.dll"))
+             (with-open-file (out (merge-pathnames stale dir) :direction :output
+                                                               :if-exists :supersede)
+               (write-string stale out)))
+           (is (equal "msys-redwg.dll"
+                      (file-namestring
+                       (clautolisp.drawing.dwg::%libredwg-dependency-beside
+                        dir (merge-pathnames "clal_dwg.dll" dir)))))
+           ;; without the shim to read: the name search, as before
+           (is (search "redwg" (file-namestring
+                                (clautolisp.drawing.dwg::%libredwg-dependency-beside dir))))
+           ;; a shim that cannot be read falls back to the name search too
+           (with-open-file (out (merge-pathnames "broken.dll" dir) :direction :output
+                                                                   :if-exists :supersede)
+             (write-string "x" out))
+           (is (search "redwg" (file-namestring
+                                (clautolisp.drawing.dwg::%libredwg-dependency-beside
+                                 dir (merge-pathnames "broken.dll" dir))))))
+      (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore))))
+
 (test a-bare-lisp-runtime-is-not-the-program
   "alfe-clautolisp-backend-semantic-parity: a checkout runs in a bare Lisp,
 whose prefix is the Lisp's -- on the macOS runner /opt/local, clautolisp's own
