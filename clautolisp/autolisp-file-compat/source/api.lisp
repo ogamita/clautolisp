@@ -627,7 +627,7 @@
                (#\\ (write-string "\\\\" out))
                (#\" (write-string "\\\"" out))
                (#\Backspace (write-string "\\b" out))
-               (#\Formfeed (write-string "\\f" out))
+               (#\Page (write-string "\\f" out)) ; #\Page = formfeed (code 12); ECL rejects the non-standard name #\Formfeed
                (#\Linefeed (write-string "\\n" out))
                (#\Return (write-string "\\r" out))
                (#\Tab (write-string "\\t" out))
