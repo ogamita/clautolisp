@@ -448,3 +448,19 @@ artefacts. Folded into the spec's READ, PRIN1 and SETVAR "Tested Behaviour".
   read-only name, return the value given, accept a symbol name. clautolisp
   checks no range and uses other ERRNOs:
   issues/open/setvar-validation-as-measured.issue (needs B5's ranges).
+
+* B5 sysvar flags / defaults / ranges -- suite written 2026-11-16
+probes/sources/probe-sysvar-flags.lsp, GENERATED from the sysvar inventory
+(autolisp-spec/documentation/system-variables-inventory.sexp): 546 cases --
+the 7 variables whose read-only flag the vendors document differently (each
+set to its own value; SECURELOAD among them), GETVAR of the 171 with a
+documented default divergence on the fresh drawing, and the 92 integer
+variables with a documented range saved in the drawing or the session
+(never registry / preference ones; CVPORT excluded), tried just below, at
+and above each bound, restored after each. Runs green on clautolisp
+(546/546). The capture lands with the MR that adds it (probe:suite jobs);
+the ranges feed setvar-validation-as-measured point 1.
+The same day, the pending-divergences suite (prepared 2026-10-29) was
+captured on all three products: results under probe-results/*/20261116T17*,
+folded into type-of-defun-subr-or-usubr, autocad-symbol-case-preserved and
+entmake-subclass-group-order.
