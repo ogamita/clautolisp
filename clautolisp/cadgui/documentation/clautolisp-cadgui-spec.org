@@ -16,8 +16,20 @@ cador), and renders the cador model. The split:
 - *Common Lisp owns the model and regen* and produces a DISPLAY LIST.
 - *C++ owns the window and the per-frame paint*, plus pan/zoom and input capture.
 - The boundary is the cadgui protocol (below), crossed only on REGEN and on
-  INPUT events, never per frame. A single thread; a nested Qt event loop handles
-  the blocked getpoint/entsel/ssget (no GC/thread marriage).
+  INPUT events, never per frame.
+
+*Threading.* Qt's event loop and all QWidget work run on the process MAIN
+thread. The cador runtime is multi-threaded (2 threads per document lisp image +
+2 for the application, cooperative scheduler with park-by-threads), so under the
+cadgui host the APPLICATION LISP runs on a NEW thread, not the main thread (Qt
+owns main). The main thread is the GUI driver: a document runner that parks on
+getpoint/entsel is RESUMED across threads by the Qt main thread once it has the
+mouse point; model changes post a regen to the main thread, which repaints a
+thread-safe display-list snapshot. The CURRENT shell is the DEGENERATE
+single-document / no-scheduler case: lisp and Qt share the main thread with a
+nested QEventLoop inside getpoint (no scheduler => synchronous read), which is
+correct for one document. See cadgui-2-qt6-gui-host.issue "Threading
+architecture" for the multi-document target.
 
 * The display list (slice B — cador scene view)
 
@@ -64,12 +76,21 @@ entity picked there via =%pick-entity= (entsel). =*cadgui-pending-input*= is
 
 * The canvas (slice C — cadgui-shell.cpp)
 
-The Qt6 =QWidget= pulls the display list + extents, applies a fit-to-extents
-world->device transform (Y flipped so world-up is screen-up), draws polylines in
-ACI colours over axes, and renders either to a live window or OFFSCREEN
-(=-platform offscreen=) to a PNG (the headless-screenshot path). Build:
-=clautolisp/cadgui/shell/build.sh= (pkg-config Qt6Widgets + ecl-config); run:
-=run.sh= (embedded ECL loads the real engine and renders an engine-built scene).
+The Qt6 app pulls the display list + extents and paints polylines in ACI colours
+over axes through a pan/zoom =View= transform (Y flipped so world-up is
+screen-up). It runs in three modes:
+- LIVE (default): a real interactive window -- left-click drives getpoint/entsel
+  (device->world, with a crosshair while picking), the wheel zooms
+  cursor-anchored, middle-drag pans, =e= zoom-extents, and a command-line widget
+  at the bottom evals AutoLISP (=cadgui-eval-command=) then repaints.
+  =QApplication::exec()=.
+- =--render FILE=: render the current scene offscreen to FILE and exit (CI /
+  screenshots).
+- =--demo FILE=: offscreen, drive SYNTHETIC mouse events through the REAL
+  handlers (device->world->getpoint) + a command eval, then save FILE -- the
+  headless validation of the live input path.
+Build: =clautolisp/cadgui/shell/build.sh= (pkg-config Qt6Widgets + ecl-config);
+run headless: =run.sh= (=--demo=); live: =cadgui-shell= with no args on a display.
 
 * Status (per slice)
 
@@ -77,8 +98,12 @@ ACI colours over axes, and renders either to a live window or OFFSCREEN
   that boots embedded ECL and loads it. DONE (shell renders offscreen).
 - B (scene exporter): =cador-scene-display-list= / =-extents=. DONE + tested
   (cador suite).
-- C (canvas): fit-to-extents render of the display list, offscreen PNG. DONE
-  (shell); live pan/zoom/crosshair + an interactive command-line widget: NEXT.
+- C (canvas): DONE. A LIVE interactive window -- pan/zoom (cursor-anchored
+  wheel, middle-drag), zoom-extents (e), a crosshair while picking, real
+  left-click -> getpoint/entsel (device->world), and a command-line widget that
+  evals AutoLISP and repaints. Plus --render / --demo (offscreen) modes. The
+  live path is validated headless via --demo (synthetic clicks through the real
+  handlers).
 - D (input bridge): DONE + tested. =cadgui-input-stream= backs cador's
   prompt-stream; getpoint/entsel drive from scripted/real canvas clicks through
   =read-prompt-line=. Shell wires the nested-event-loop await.

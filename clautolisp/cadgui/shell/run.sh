@@ -9,4 +9,7 @@ rm -rf "$HOME/.cache/common-lisp/ecl-"* 2>/dev/null || true
 { ulimit -s 262144 2>/dev/null || ulimit -s 131072 2>/dev/null || ulimit -s 65536 2>/dev/null || true; }
 export CADGUI_CLAUTOLISP_DIR="$root"
 cd "$root" || exit 3
-"$here/cadgui-shell" "${1:-$here/cadgui-scene.png}"
+# Headless: drive the LIVE interactive path with synthetic mouse events
+# (device->world->getpoint through the real handlers). On a real display, run
+# "$here/cadgui-shell" with no args for the live window.
+"$here/cadgui-shell" "${1:---demo}" "${2:-$here/cadgui-scene.png}"
