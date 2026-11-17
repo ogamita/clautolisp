@@ -44,3 +44,26 @@ Next: the runner's CAD profiles must not show startup dialogs (SCHMS/EPURE
 "don't show again" or plug-in settings), then rerun
 verify:epure-lifecycle:windows. The issue stays open until a native run
 passes.
+
+* What holds the CAD busy (2026-11-17, alfe 2.4.27, job 18109127968)
+
+busy-windows.txt for bricscad-automation-without-epure-plugin:
+
+: 29856 wxWindowNR enabled=1 mini-command-line-frame
+: 29856 wxWindowNR enabled=0 LookFrom
+: 29856 #32770 enabled=1 Rapport de plantage
+: 29856 BricscadMainWindow enabled=0 BricsCAD Pro - [Dessin1]
+
+BricsCAD's own crash-report dialog, modal (the main window is disabled). A
+forced end of a CAD leaves a crash behind, and the next start shows it: a
+failed run prepares the next one's failure. With EPURE, BricsCAD also faulted
+for real (event 1000, 0xC0000409 in ucrtbase.dll). For the EPURE rows the
+list came too late: verify-epure-lifecycle.ps1 killed the CAD at
+TimeoutSeconds+30 = 390 s, before alfe's 420 s EPURE READY budget, so the
+bridge found the process gone (COM.READY.ERROR=462).
+
+alfe 2.4.28: the bridge lists the windows after one minute of busy
+(busy-windows.txt, the CAD still alive) and again on the failure
+(busy-windows-end.txt); the harness waits for alfe's EPURE budget.
+Runner side: BricsCAD's crash reporting must not prompt on the runner
+profile, and pending crash reports must be cleared.

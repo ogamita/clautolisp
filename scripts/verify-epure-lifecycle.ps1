@@ -57,7 +57,11 @@ foreach($case in $cases){
  try{
   $cli=Start-Process -FilePath $alfe -ArgumentList (($arguments|ForEach-Object {Quote-Argument $_}) -join ' ') -PassThru -RedirectStandardOutput (Join-Path $work 'alfe.stdout') -RedirectStandardError (Join-Path $work 'alfe.stderr')
   $null=$cli.Handle
-  $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds+30)
+  # alfe raises READY to 420 s under --epure (epure.lisp *epure-ready-timeout*):
+  # wait for alfe's own verdict, never kill the CAD before its bridge reports.
+  $budget=$TimeoutSeconds
+  if(-not $case.Control -and $TimeoutSeconds -ge 60){$budget=[Math]::Max($TimeoutSeconds,420)}
+  $deadline=[DateTime]::UtcNow.AddSeconds($budget+30)
   do{
    if(-not $native){
     $identityFile=Join-Path $work 'owned-cad-process.json'
