@@ -1,7 +1,10 @@
 #!/bin/bash
-# Run the clautolisp/cadgui fiveam suite (cold). Clears the ecl-* cache first
-# (this ECL cannot reuse a warm cache; see NOTES-ecl.md). Override ECL=<path> to
-# use a source-built ECL. Exit 0 = pass.
+# Run a clautolisp fiveam suite (cold) -- cadgui by default. Clears the ecl-*
+# cache first (this ECL cannot reuse a warm cache; see NOTES-ecl.md). Overrides:
+#   ECL=<path>             use a source-built ECL
+#   SUITE_SYSTEM=<asd-sys> SUITE_PACKAGE=<pkg>   run another suite, e.g.
+#     SUITE_SYSTEM=clautolisp/cador/tests SUITE_PACKAGE=clautolisp.cador.tests
+# Exit 0 = pass.
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"             # .../clautolisp (holds clautolisp.asd)

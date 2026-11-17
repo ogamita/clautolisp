@@ -17,14 +17,18 @@
 (let ((dir (uiop:ensure-directory-pathname
             (or (ext:getenv "CADGUI_CLAUTOLISP_DIR") "."))))
   (asdf:load-asd (merge-pathnames "clautolisp.asd" dir)))
-(asdf:load-system "clautolisp/cadgui/tests" :verbose nil)
-(handler-case
-    (progn
-      (uiop:symbol-call :clautolisp.cadgui.tests :run-all-tests)
-      (format t "~&CADGUI-TESTS: PASS~%")
-      (finish-output)
-      (ext:quit 0))
-  (error (e)
-    (format *error-output* "~&CADGUI-TESTS: FAIL -- ~A~%" e)
-    (finish-output *error-output*)
-    (ext:quit 2)))
+;; Which suite to run -- defaults to cadgui; override with SUITE_SYSTEM /
+;; SUITE_PACKAGE (e.g. clautolisp/cador/tests + clautolisp.cador.tests).
+(let ((system  (or (ext:getenv "SUITE_SYSTEM")  "clautolisp/cadgui/tests"))
+      (package (or (ext:getenv "SUITE_PACKAGE") "clautolisp.cadgui.tests")))
+  (asdf:load-system system :verbose nil)
+  (handler-case
+      (progn
+        (uiop:symbol-call (string-upcase package) :run-all-tests)
+        (format t "~&SUITE ~A: PASS~%" system)
+        (finish-output)
+        (ext:quit 0))
+    (error (e)
+      (format *error-output* "~&SUITE ~A: FAIL -- ~A~%" system e)
+      (finish-output *error-output*)
+      (ext:quit 2))))
