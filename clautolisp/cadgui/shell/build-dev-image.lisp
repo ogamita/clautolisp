@@ -45,7 +45,7 @@
     (asdf:make-build
      "cadgui-dev"
      :type :image                        ; image-op: ends on (si:top-level t)
-     :move-here root
+     :move-here (merge-pathnames "cadgui/shell/" root)   ; beside the shell (gitignored)
      ;; EC10: image-op ignores the defsystem :epilogue-code -- pass it here;
      ;; register the whole closure immutable so load-system never recompiles it.
      :epilogue-code `(dolist (system ',frozen)

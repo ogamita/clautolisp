@@ -29,11 +29,11 @@ fast path is. Integrates the `ecl` skill (`~/src/public/rules/skills/ecl`).
 
        /usr/bin/ld: cannot find .../ecl-24.5.10/libcmp.a: No such file
 
-   `cadgui-dev.asd` + `build-dev-image.{lisp,sh}` are kept because they are the
-   correct recipe and work where ECL ships static libs (a source-built ECL, the
-   skill's macOS box, poseidon, or the CI image). They are **blocked on this
-   apt ECL** by the missing `libcmp.a`, not by the code — the whole closure
-   (cffi, babel, cador, cadgui, ...) compiles cleanly before the link step.
+   `cadgui-dev.asd` + `build-dev-image.{lisp,sh}` are the correct recipe and
+   work where ECL ships static libs. On this box, blocked on the apt ECL only by
+   the missing `libcmp.a` (the whole closure compiles cleanly before the link);
+   **RESOLVED by building ECL 24.5.10 from source** (see "For Lisp-side
+   iteration" below) — the dev image then builds and boots.
 
 ## The fast path that works here: a monolithic static library
 
@@ -67,9 +67,32 @@ Two init subtleties the shell handles (both ecl skill EC9 / §1):
 Rebuild the library after editing any engine (Lisp) source. The shell falls back
 to the runtime `asdf:load-system` path when built without `CADGUI_USE_LIB`.
 
-## For Lisp-side iteration
+## For Lisp-side iteration: the dev image (EC10) — VALIDATED
 
-Where static libs exist, `build-dev-image.sh` builds `cadgui-dev.image`: an ECL
-REPL with the engine frozen in. Iterate with `(load "edited.lisp")` — bytecodes,
-instant (EC12) — the engine never recompiles. On this apt ECL, use a
-source-built ECL for that, or iterate through the monolithic-library shell.
+`build-dev-image.sh` builds `cadgui-dev.image`: an ECL REPL with the whole
+clautolisp/cadgui closure (25 systems) frozen in. Iterate with
+`(load "edited.lisp")` — bytecodes, instant (EC12); the engine never recompiles.
+
+image-op links `libcmp.a`, which the apt ECL does NOT ship, so build a
+source-built ECL once and point the recipe at it:
+
+    # build ECL 24.5.10 from source with static libs (one-time, ~15 min):
+    #   - Debian orig tarball ecl_24.5.10+ds.orig.tar.xz strips the bundled
+    #     gmp/bdwgc/libffi AND the autotools aux files (install-sh, config.*).
+    #   - supply the aux files in src/gmp/ and src/bdwgc/ (from automake), and
+    #     configure against the SYSTEM libs:
+    #   ./configure --prefix=$HOME/opt/ecl-24.5.10 --enable-threads \
+    #       --enable-boehm=system --with-gmp-prefix=/usr --with-libffi-prefix=/usr
+    #   make && make install            # installs lib/ecl-24.5.10/libcmp.a
+    ECL=$HOME/opt/ecl-24.5.10/bin/ecl bash build-dev-image.sh
+    bash run-dev-image.sh              # boots the ECL REPL, engine frozen in
+
+VALIDATED (2026-11-17): the image boots on the ECL REPL (banner + `>` prompt +
+stdin eval), `clautolisp.cadgui`/`clautolisp.cador` are present, and the frozen
+engine runs from the REPL (made a session, drew a line + circle, exported a
+2-prim display list) with no ASDF and no compile. `run-dev-image.sh` sets the
+finite stack and `LD_LIBRARY_PATH` to the source ECL's `libecl.so`.
+
+(In the dev image you do NOT `asdf:load-system` the frozen engine -- there is no
+`.asd` on the runtime registry; you `(load "file.lisp")` the file under work,
+per EC11. Leave the system(s) you are editing OUT of the image.)
