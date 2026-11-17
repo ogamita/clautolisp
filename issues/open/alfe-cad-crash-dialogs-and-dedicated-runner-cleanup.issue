@@ -68,3 +68,13 @@ scenario to reproduce, not an inferred cause of those two jobs.
    remain untouched. Ownership tests use SID and process creation identity.
 6. Native Windows qualification covers both AutoCAD and BricsCAD. Do not close
    this issue on fixture-only or successful-shutdown-only evidence.
+
+* Observation (2026-11-17, PF5S26BT)
+
+During verify:epure-lifecycle:windows (jobs 18100605195, 18102246438) the
+CAD startups were held by SCHMS "Nouveautes" and EPURE startup dialogs, and
+one BricsCAD crash report was on screen (pjb). BricsCAD batch with EPURE
+crashed with 0xC000041D in the first run and sat at BOOTING until killed in
+the second. Every run still ended within the job budget and the next job
+launched, so the cleanup held; the dialogs themselves are a runner-profile
+problem (see alfe-com-open-before-quiescent).
