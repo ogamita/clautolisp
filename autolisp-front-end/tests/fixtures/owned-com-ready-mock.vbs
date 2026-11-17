@@ -18,6 +18,8 @@ Class MockState
   IsQuiescent=(scenario="ready" And calls>=3)
  End Property
 End Class
+Sub VBSDebug(text)
+End Sub
 Sub AppendLine(path, text)
  WScript.Echo text
 End Sub

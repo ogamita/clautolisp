@@ -2494,7 +2494,8 @@ bridgeTrustChanged = True
 
 (defparameter *owned-com-ready-vbs*
   "Function OwnedComIsReady(a, secs)
-  Dim deadline, state, idle, problem, detail
+  Dim deadline, state, idle, problem, detail, started
+  started = Timer
   deadline = DateAdd(\"s\", secs, Now)
   OwnedComIsReady = False
   Do
@@ -2510,14 +2511,19 @@ bridgeTrustChanged = True
     On Error GoTo 0
     If problem = 0 And idle Then
       OwnedComIsReady = True
+      VBSDebug \"COM application quiescent after \" & Round(Timer - started, 1) & \" s\"
       Exit Function
     End If
     If Now >= deadline Then Exit Do
     WScript.Sleep 250
   Loop
   AppendLine errFile, \"COM.READY.ERROR=\" & problem & \" \" & detail
+  AppendLine errFile, \"COM.READY.WAITED=\" & Round(Timer - started, 1) & \" of \" & secs & \" s\"
 End Function
-If Not OwnedComIsReady(app, BudgetSecs(30)) Then
+' A slow start is still a start: the wait for quiescence gets what is left of
+' the READY timeout (the user's statement of how long a start may take), not
+' a fixed 30 s that PF5S26BT's AutoCAD overran (alfe-com-open-before-quiescent).
+If Not OwnedComIsReady(app, BudgetSecs(86400)) Then
   AppendLine errFile, \"ERROR COM bridge: COM application did not become quiescent before opening the job drawing\"
   If created Then
     On Error Resume Next
