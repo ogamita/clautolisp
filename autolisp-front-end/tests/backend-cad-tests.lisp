@@ -4699,7 +4699,15 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
             ;; be ended on the failed start (alfe-cad-lifecycle-rules, rule 3)
             (is (and ready capture open (< capture ready open)))
             (is (search "Set state = a.GetAcadState" text))
-            (is (search "COM application did not become quiescent before opening the job drawing" text))))))))
+            (is (search "COM application did not become quiescent before opening the job drawing" text))
+            ;; a CAD that never gets quiescent leaves the windows holding it
+            ;; busy beside the run (alfe-com-open-before-quiescent)
+            (let ((windows (search " -Operation Windows -ProcessId " text)))
+              (is (and windows (< ready windows open))))
+            (is (search "busy-windows.txt" text))))))
+    (is (search "'Capture','Finish','Windows'"
+                alfe.backend.cad-common::*owned-cad-process-script*))
+    (is (search "EnumWindows" alfe.backend.cad-common::*owned-cad-process-script*))))
 
 (test owned-com-ready-windows-mocked-handshake
   "Exercise native VBScript object returns and bounded non-ready outcomes."

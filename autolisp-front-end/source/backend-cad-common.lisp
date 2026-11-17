@@ -2182,7 +2182,7 @@ that cannot be read is warned about and skipped."
     (format nil "~4,'0D-~2,'0D-~2,'0DT~2,'0D:~2,'0D:~2,'0DZ" y mo d h mi s)))
 
 (defparameter *owned-cad-process-script*
-  "param([ValidateSet('Capture','Finish')][string]$Operation,[string]$IdentityFile,[Int64]$WindowHandle=0,[int]$ProcessId=0,[string]$Invocation='',[string]$ReportFile='',[int]$GraceSeconds=20,[int]$KillSeconds=10)
+  "param([ValidateSet('Capture','Finish','Windows')][string]$Operation,[string]$IdentityFile,[Int64]$WindowHandle=0,[int]$ProcessId=0,[string]$Invocation='',[string]$ReportFile='',[int]$GraceSeconds=20,[int]$KillSeconds=10)
 $ErrorActionPreference='Stop'
 function Write-Atomic([string]$Path,[string[]]$Lines) {
  $tmp=$Path+'.tmp'
@@ -2197,6 +2197,45 @@ function Get-OwnerSid([int]$Id) {
   if($o.ReturnValue -ne 0){return ''}
   return [string]$o.Sid
  } catch { return '' }
+}
+if($Operation -eq 'Windows') {
+ # Diagnostics for a CAD that never becomes quiescent: the top-level windows of
+ # the process and of its children (a modal dialog, a crash reporter), one per
+ # line -- pid, class, visible, enabled, title -- into ReportFile (UTF-8).
+ Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+public static class BusyCadWindows {
+ public delegate bool EnumProc(IntPtr h,IntPtr l);
+ [DllImport(\"user32.dll\")] public static extern bool EnumWindows(EnumProc f,IntPtr l);
+ [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint pid);
+ [DllImport(\"user32.dll\",CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h,StringBuilder s,int n);
+ [DllImport(\"user32.dll\",CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h,StringBuilder s,int n);
+ [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h);
+ [DllImport(\"user32.dll\")] public static extern bool IsWindowEnabled(IntPtr h);
+ public static List<string> List(HashSet<uint> pids) {
+  var r=new List<string>();
+  EnumWindows(delegate(IntPtr h,IntPtr l){
+   uint pid; GetWindowThreadProcessId(h,out pid);
+   if(pids.Contains(pid) && IsWindowVisible(h)){
+    var t=new StringBuilder(512); GetWindowText(h,t,512);
+    var c=new StringBuilder(256); GetClassName(h,c,256);
+    r.Add(pid+\" \"+c+\" enabled=\"+(IsWindowEnabled(h)?1:0)+\" \"+t);
+   }
+   return true;},IntPtr.Zero);
+  return r;
+ }
+}
+'@
+ $ids=New-Object 'System.Collections.Generic.HashSet[uint32]'
+ [void]$ids.Add([uint32]$ProcessId)
+ try { Get-CimInstance Win32_Process -Filter ('ParentProcessId='+$ProcessId) | ForEach-Object { [void]$ids.Add([uint32]$_.ProcessId) } } catch {}
+ $lines=@([BusyCadWindows]::List($ids))
+ if($lines.Count -eq 0){$lines=@('no visible top-level window for pid '+$ProcessId)}
+ Set-Content -LiteralPath $ReportFile -Value $lines -Encoding UTF8
+ exit 0
 }
 if($Operation -eq 'Capture') {
  [uint32]$cadId=$ProcessId
@@ -2524,6 +2563,13 @@ End Function
 ' the READY timeout (the user's statement of how long a start may take), not
 ' a fixed 30 s that PF5S26BT's AutoCAD overran (alfe-com-open-before-quiescent).
 If Not OwnedComIsReady(app, BudgetSecs(86400)) Then
+  ' What holds it busy -- usually a modal dialog -- goes beside the run.
+  If lifeCadPid > 0 Then
+    On Error Resume Next
+    lifeShell.Run \"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Windows -ProcessId \" & CStr(lifeCadPid) & \" -ReportFile \" & Chr(34) & fso.BuildPath(lifeRoot, \"busy-windows.txt\") & Chr(34), 0, True
+    On Error GoTo 0
+    AppendLine errFile, \"COM.BUSY.WINDOWS=\" & fso.BuildPath(lifeRoot, \"busy-windows.txt\")
+  End If
   AppendLine errFile, \"ERROR COM bridge: COM application did not become quiescent before opening the job drawing\"
   If created Then
     On Error Resume Next
