@@ -22,3 +22,25 @@ to a blank drawing. A failed readiness check remains a startup failure.
 * References
 - https://help.autodesk.com/cloudhelp/2024/KOR/AutoCAD-ActiveX-Reference/files/GUID-820F93B4-7B83-4708-8E21-0D43D7D1C828.htm
 - https://developer.bricsys.com/bricscad/help/en_US/V9/DevRef/source/IDR_VBA_Objects953.htm
+
+* Native qualification (2026-11-17, PF5S26BT, master 3476a558)
+
+The gate works as specified: it refuses to open the job drawing while the
+application is not quiescent, and alfe reports a startup failure (exit 69).
+verify:epure-lifecycle:windows, jobs 18100605195 and 18102246438 (the second
+after pjb dismissed the dialogs by hand): every native automation row --
+AutoCAD and BricsCAD, with and without the EPURE plug-in -- ends with
+
+: ERROR COM bridge: COM application did not become quiescent before opening the job drawing
+
+(bridge exit 4, ATTACHED=0 CREATED=1); the simulated lifecycle cases pass.
+pjb saw what holds the applications busy: the SCHMS "Nouveautes" dialog and
+EPURE startup dialogs (plus one BricsCAD crash report). They come back on
+every start, so dismissing them once does not help. BricsCAD batch with EPURE
+stays at BOOTING until killed at 420 s (forced=True), and crashed with
+0xC000041D in the first run.
+
+Next: the runner's CAD profiles must not show startup dialogs (SCHMS/EPURE
+"don't show again" or plug-in settings), then rerun
+verify:epure-lifecycle:windows. The issue stays open until a native run
+passes.

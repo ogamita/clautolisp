@@ -1,6 +1,6 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: autocad-com-launch-bounded-by-dcom-timeout -- a slow AutoCAD start fails at DCOM's 120 s, whatever --timeout says
-#+STATUS: NEXT
+#+STATUS: DONE (clautolisp/alfe 2.4.25, 2026-11-17; qualified on PF5S26BT)
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: -
@@ -93,3 +93,13 @@ not to show it; the bridge's own launch lacked it. 2.3.106 appends
   bridge.
 - probe:cad-session-state:windows on PF5S26BT: the autocad automation and
   epure rows reach READY again.
+
+* Resolution (2026-11-17, clautolisp/alfe 2.4.25)
+
+Native qualification on PF5S26BT, master 3476a558, console session unlocked:
+probe:cad-session-state:windows (job 18100603940) reports AutoCAD automation
+READY in 53 s and AutoCAD EPURE READY in 31 s; verify:autocad-activex,
+verify:epure and probe:cad-heavy-automation pass. Both acceptance points are
+met. The later lifecycle failures on the same machine (see
+alfe-com-open-before-quiescent) happen after the launch, at the quiescence
+gate, not at CreateObject.
