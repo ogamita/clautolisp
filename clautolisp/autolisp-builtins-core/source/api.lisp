@@ -511,14 +511,20 @@ really is the implementation this file names for it. NIL otherwise."
              (return (pathname located)))))))))
 
 (defun evaluate-load-onfailure (object)
+  ;; A function -- an object, or a symbol naming one -- is called, as the
+  ;; documentation says; a symbol that names NO function is returned as it
+  ;; is: AutoCAD 2022 answered (load "missing" 'sym), SYM undefined, with SYM
+  ;; itself (sunset campaign B6), where this used to fail calling it.
   (cond
     ((null object) nil)
     ((or (typep object 'autolisp-subr)
          (typep object 'clautolisp.autolisp-runtime:autolisp-usubr))
      (call-autolisp-function object))
     ((typep object 'autolisp-symbol)
-     (call-autolisp-function
-      (resolve-autolisp-function-designator object)))
+     (let ((fn (ignore-errors (resolve-autolisp-function-designator object))))
+       (if fn
+           (call-autolisp-function fn)
+           object)))
     (t
      object)))
 
@@ -738,17 +744,23 @@ TRUSTEDPATHS to trust it."
     (when encoding-supplied-p
       (%dispatch-load-encoding-diagnostic encoding-string))
     (cond
+      ;; A missing file, measured (sunset campaign B6, 2026-11-17): an error
+      ;; on all three products, leaving ERRNO 0; AutoCAD returns ONFAILURE
+      ;; instead when one is given (a quoted symbol as the symbol), BricsCAD
+      ;; ignores ONFAILURE and signals anyway.
       ((null resolved)
-       (set-autolisp-errno 73)
-       (if onfailure-supplied-p
-           (evaluate-load-onfailure onfailure)
+       (if (and onfailure-supplied-p (not (%bricscad-product-p)))
+           (progn (set-autolisp-errno 0)
+                  (evaluate-load-onfailure onfailure))
            (call-with-autolisp-error-handler
             (lambda ()
-              (signal-builtin-host-error
-               :load-file-not-found
-               "LOAD"
-               "LOAD could not locate ~A."
-               value)))))
+              (error (clautolisp.autolisp-runtime:autolisp-runtime-error-class-for-code
+                      :load-file-not-found)
+                     :code :load-file-not-found
+                     :errno 0
+                     :message (format nil "LOAD could not locate ~A." value)
+                     :details (list :builtin "LOAD" value)
+                     :call-stack (current-autolisp-call-stack))))))
       ;; A .lap is a host FASL: hand it to the host loader rather than to
       ;; the AutoLISP reader. It must be tried BEFORE the unsupported-type
       ;; branch below, and it is deliberately NOT listed there: .vlx and

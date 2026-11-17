@@ -612,3 +612,36 @@ encoding argument and ",ccs=" suffix when writing (all UTF-8). clautolisp's
 LOAD of a UTF-16LE source fails with the host Lisp's raw decoding error. To
 model once AutoCAD's answer is in.
 
+* B6 (LOAD) -- Windows captured 2026-11-17; modelled (clautolisp 2.4.25)
+
+AutoCAD 2022 Windows (job 18089957879, probe-results/autocad/ms-windows/
+20261117T080520Z), BricsCAD Windows (18089957883, .../bricscad/ms-windows/
+20261117T080751Z); with BricsCAD macOS (above).
+
+- LOAD of a missing file is an error leaving ERRNO 0 on all three. AutoCAD
+  returns ONFAILURE instead when one is given -- a quoted symbol naming no
+  function comes back as the symbol, a string as the string, nil as nil;
+  BricsCAD ignores ONFAILURE and signals anyway. clautolisp now does both
+  per product (a symbol naming a function is still called, as documented),
+  ERRNO 0 instead of 73 / 5.
+- Every product LOADs a source back to (65 233 66) whatever was written:
+  AutoCAD's single-byte default (29 bytes), its "utf8" (30) and "utf8-bom"
+  (33); BricsCAD Windows's ",ccs=UTF-8" with a BOM (33) and ",ccs=UTF-16LE"
+  (60). clautolisp now decodes a source starting with a UTF-16 byte-order
+  mark as UTF-16 (it failed with the host Lisp's decoding error).
+
+| case | AutoCAD 2022 | BricsCAD Win | BricsCAD mac |
+|-+-+-+-|
+| =(getvar "LISPSYS")= | (1 0) | (0 0) | (0 0) |
+| =(load "clautolisp-b6-no-such-file.lsp")= | ((ERROR "La commande CHARGER n'a pas abouti: \"clautolisp-b6-no-such-file.lsp\"") 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"clautolisp-b6-no-such-file.lsp\\\\\"\\\">") 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"clautolisp-b6-no-such-file.lsp\\\\\"\\\">") 0) |
+| =(load "clautolisp-b6-no-such-file")= | ((ERROR "La commande CHARGER n'a pas abouti: \"clautolisp-b6-no-such-file\"") 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"clautolisp-b6-no-such-file\\\\\"\\\">") 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"clautolisp-b6-no-such-file\\\\\"\\\">") 0) |
+| =(load "clautolisp-b6-no-such-file.lsp" 'cad-probe-le-failed)= | (CAD-PROBE-LE-FAILED 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"clautolisp-b6-no-such-file.lsp\\\\\"\\\">") 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"clautolisp-b6-no-such-file.lsp\\\\\"\\\">") 0) |
+| =(load "clautolisp-b6-no-such-file.lsp" "failed")= | ("failed" 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"clautolisp-b6-no-such-file.lsp\\\\\"\\\">") 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"clautolisp-b6-no-such-file.lsp\\\\\"\\\">") 0) |
+| =(load "clautolisp-b6-no-such-file.lsp" nil)= | (nil 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"clautolisp-b6-no-such-file.lsp\\\\\"\\\">") 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"clautolisp-b6-no-such-file.lsp\\\\\"\\\">") 0) |
+| =(load "")= | ((ERROR "La commande CHARGER n'a pas abouti: \"\"") 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"\\\\\"\\\">") 0) | ((ERROR "LOAD failed:  <\\\"\\\\\"\\\\\"\\\">") 0) |
+| =(cad-probe--le-roundtrip "default" '("w"))= | ((29 (65 233 66)) 0) | ((29 (65 233 66)) 0) | ((28 (65 233 66)) 0) |
+| =(cad-probe--le-roundtrip "utf8" '("w" "utf8"))= | ((30 (65 233 66)) 0) | ((29 (65 233 66)) 0) | ((29 (65 233 66)) 0) |
+| =(cad-probe--le-roundtrip "utf8bom" '("w" "utf8-bom"))= | ((33 (65 233 66)) 0) | ((29 (65 233 66)) 0) | ((29 (65 233 66)) 0) |
+| =(cad-probe--le-roundtrip "ccs-utf8" '("w,ccs=UTF-8"))= | ((29 (65 233 66)) 0) | ((33 (65 233 66)) 0) | ((29 (65 233 66)) 0) |
+| =(cad-probe--le-roundtrip "ccs-utf16" '("w,ccs=UTF-16LE"))= | ((29 (65 233 66)) 0) | ((60 (65 233 66)) 0) | ((29 (65 233 66)) 0) |
+
