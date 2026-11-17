@@ -123,7 +123,17 @@ mouse, pan/zoom, coarse regen, offscreen-capable.
 
 * Status
 
-- DONE: Qt-API decision; two spikes (ECL-in-Qt6 offscreen render; nested-loop
-  interactive input + GC stress); =--host cadgui= CLI identity (2.4.21).
-- NEXT: slice A (the =clautolisp/cadgui= module + host launch) and the
-  build-ecl / linked-shell build (folded here from [[cadgui-1-ecl-port]]).
+- DONE: Qt-API decision; two spikes; =--host cadgui= CLI identity (2.4.21).
+- DONE: slices *A/B/C/F* (2.4.22) -- the =clautolisp/cadgui= module + the
+  =cador-scene-display-list= exporter + the embedded-ECL Qt6 shell rendering a
+  real engine-built scene offscreen. cador suite + cadgui suite green.
+- DONE: slices *D/E* (2.4.23) -- the GUI input bridge (=cadgui-input-stream=
+  backs cador's prompt-stream; getpoint/entsel drive from canvas clicks through
+  =read-prompt-line=) and =cadgui-eval-command= (AutoLISP commands draw via the
+  real engine). cadgui suite 28/28; full aggregate 13837/0. The shell demo draws
+  a line between two getpoint'd canvas clicks, end to end.
+- NEXT (this slice set's remainder): a LIVE interactive window (pan/zoom/
+  crosshair + an interactive command-line widget, vs the offscreen demo);
+  regen-on-dbmod (vs re-pull); ssget window/crossing (two-point); world<->device
+  click conversion on the real canvas; registering every canvas interaction
+  through [[cadgui-action-layer]]. Then [[cadgui-3-2d-parity]].
