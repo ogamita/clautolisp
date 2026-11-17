@@ -4702,9 +4702,13 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
             (is (search "COM application did not become quiescent before opening the job drawing" text))
             ;; a CAD that never gets quiescent leaves the windows holding it
             ;; busy beside the run (alfe-com-open-before-quiescent)
-            (let ((windows (search " -Operation Windows -ProcessId " text)))
-              (is (and windows (< ready windows open))))
-            (is (search "busy-windows.txt" text))))))
+            ;; -- after a minute of busy, while the CAD is surely alive, and
+            ;; again on the failure
+            (is (search " -Operation Windows -ProcessId " text))
+            (is (search "If Not listed And Timer - started > 60 Then" text))
+            (is (search "ListBusyWindows \"busy-windows.txt\"" text))
+            (let ((at-end (search "ListBusyWindows \"busy-windows-end.txt\"" text)))
+              (is (and at-end (< ready at-end open))))))))
     (is (search "'Capture','Finish','Windows'"
                 alfe.backend.cad-common::*owned-cad-process-script*))
     (is (search "EnumWindows" alfe.backend.cad-common::*owned-cad-process-script*))))

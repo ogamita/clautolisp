@@ -2532,9 +2532,20 @@ bridgeTrustChanged = True
 ")
 
 (defparameter *owned-com-ready-vbs*
-  "Function OwnedComIsReady(a, secs)
-  Dim deadline, state, idle, problem, detail, started
+  "' What holds a CAD busy -- usually a modal dialog -- goes beside the run, as
+' busy-windows.txt (alfe-com-open-before-quiescent).
+Sub ListBusyWindows(report)
+  If lifeCadPid > 0 Then
+    On Error Resume Next
+    lifeShell.Run \"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Windows -ProcessId \" & CStr(lifeCadPid) & \" -ReportFile \" & Chr(34) & fso.BuildPath(lifeRoot, report) & Chr(34), 0, True
+    On Error GoTo 0
+    AppendLine errFile, \"COM.BUSY.WINDOWS=\" & fso.BuildPath(lifeRoot, report)
+  End If
+End Sub
+Function OwnedComIsReady(a, secs)
+  Dim deadline, state, idle, problem, detail, started, listed
   started = Timer
+  listed = False
   deadline = DateAdd(\"s\", secs, Now)
   OwnedComIsReady = False
   Do
@@ -2554,6 +2565,11 @@ bridgeTrustChanged = True
       Exit Function
     End If
     If Now >= deadline Then Exit Do
+    ' Busy for a minute: look now, while the CAD is surely still there.
+    If Not listed And Timer - started > 60 Then
+      ListBusyWindows \"busy-windows.txt\"
+      listed = True
+    End If
     WScript.Sleep 250
   Loop
   AppendLine errFile, \"COM.READY.ERROR=\" & problem & \" \" & detail
@@ -2563,13 +2579,8 @@ End Function
 ' the READY timeout (the user's statement of how long a start may take), not
 ' a fixed 30 s that PF5S26BT's AutoCAD overran (alfe-com-open-before-quiescent).
 If Not OwnedComIsReady(app, BudgetSecs(86400)) Then
-  ' What holds it busy -- usually a modal dialog -- goes beside the run.
-  If lifeCadPid > 0 Then
-    On Error Resume Next
-    lifeShell.Run \"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \" & Chr(34) & lifeHelper & Chr(34) & \" -Operation Windows -ProcessId \" & CStr(lifeCadPid) & \" -ReportFile \" & Chr(34) & fso.BuildPath(lifeRoot, \"busy-windows.txt\") & Chr(34), 0, True
-    On Error GoTo 0
-    AppendLine errFile, \"COM.BUSY.WINDOWS=\" & fso.BuildPath(lifeRoot, \"busy-windows.txt\")
-  End If
+  ' And at the end, beside the one-minute snapshot (empty if the CAD is gone).
+  ListBusyWindows \"busy-windows-end.txt\"
   AppendLine errFile, \"ERROR COM bridge: COM application did not become quiescent before opening the job drawing\"
   If created Then
     On Error Resume Next
