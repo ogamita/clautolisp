@@ -14,3 +14,4 @@ build_one() {   # $1 = source, $2 = output
 }
 build_one main.cpp spike
 build_one interactive.cpp spike2
+build_one mt-threads.cpp mt-spike

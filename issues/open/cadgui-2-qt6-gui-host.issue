@@ -177,8 +177,25 @@ mouse, pan/zoom, coarse regen, offscreen-capable.
   application lisp on a NEW thread, document runners parked/resumed across threads
   by the Qt-main-thread driver. The current shell is the degenerate single-
   document / no-scheduler case.
-- NEXT: the MULTI-THREADED live window (Qt main + app lisp on a new thread +
-  per-document runner/driver threads + cross-thread park/resume via the cador
-  scheduler) -- shared with the cooperative-scheduler remainder; regen-on-dbmod
-  (vs re-pull); ssget window/crossing (two-point); registering every canvas
-  interaction through [[cadgui-action-layer]]. Then [[cadgui-3-2d-parity]].
+- VALIDATED (spike, 2026-11-17): the MULTI-THREADED FOUNDATION --
+  =spike-ecl-embed/mt-threads.cpp=. =cl_boot= + Qt's event loop on the MAIN
+  thread; the application lisp runs on a NEW ECL thread
+  (=mp:process-run-function=). The runner blocks cross-thread in a C
+  =mt-await-point= on a thread-safe =PointQueue= the main thread fills (the
+  cross-thread getpoint, no nested loop -- the runner just blocks while Qt keeps
+  running on main); it mutates a CL model under =mp:with-lock=, which the main
+  thread reads under the same lock to paint; it requests repaints cross-thread
+  via =QMetaObject::invokeMethod(..., Qt::QueuedConnection)=; and it cons-storms
+  for GC stress throughout. Result: =runner_done=1 segments=5=, the 5 segments
+  drawn between the 6 supplied points render correctly offscreen, no
+  crash/deadlock. This de-risks the whole ECL-threads + Qt-on-main + shared-CL-
+  model marriage -- the core the real multi-threaded host is built on.
+- NEXT: the MULTI-THREADED live window -- carry the validated pattern into the
+  real cadgui shell/host: Qt main + the application lisp (+ its single document)
+  on a NEW ECL thread, cross-thread input into cador's =read-prompt-line=
+  (Qt-main driver resumes the parked runner), a locked thread-safe display-list
+  snapshot for repaint. Then per-document runner/driver threads + cross-thread
+  park/resume via the cador scheduler (shared with the cooperative-scheduler
+  remainder); regen-on-dbmod (vs re-pull); ssget window/crossing (two-point);
+  registering every canvas interaction through [[cadgui-action-layer]]. Then
+  [[cadgui-3-2d-parity]].
