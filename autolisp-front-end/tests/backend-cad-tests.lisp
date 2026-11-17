@@ -4692,7 +4692,7 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
                                :drawing-path "C:/job/dessin.dwg"
                                :status-path #p"/w/s" :error-path #p"/w/e")
           (let* ((text (uiop:read-file-string path))
-                 (ready (search "If Not OwnedComIsReady(app, BudgetSecs(30)) Then" text))
+                 (ready (search "If Not OwnedComIsReady(app, BudgetSecs(" text))
                  (capture (search " -Operation Capture -IdentityFile " text))
                  (open (search "app.Documents.Open(dwgFile)" text)))
             ;; identity first: a created CAD that never gets ready can still
@@ -4714,7 +4714,7 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
                (ready alfe.backend.cad-common::*owned-com-ready-vbs*))
           (with-open-file (out path :direction :output :if-exists :supersede)
             (write-string prefix out)
-            (write-string (subseq ready 0 (search "If Not OwnedComIsReady(app, BudgetSecs(30)) Then" ready)) out)
+            (write-string (subseq ready 0 (search "If Not OwnedComIsReady(app, BudgetSecs(" ready)) out)
             (write-string "result=OwnedComIsReady(app, seconds)
 expected=(scenario=\"ready\")
 If result<>expected Then WScript.Quit 1
