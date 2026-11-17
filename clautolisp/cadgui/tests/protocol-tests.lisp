@@ -58,3 +58,40 @@
     (cadgui-start)
     (cadgui-eval-command "(command \"CIRCLE\" (list 0.0 0.0) 2.0)")
     (is (= 1 (cadgui-entity-count)))))
+
+;;; ssget window / crossing driven by TWO corners read from the canvas through
+;;; the input bridge (cadgui-2 "ssget window/crossing (two-point)"). The command
+;;; reads both corners with (getpoint) -- fed by scripted clicks via
+;;; *cadgui-input-hook* -- then ssget "W"/"C" selects through the real cador
+;;; engine. Observed via an erase of the selected member: the entity count is
+;;; the regen signal cadgui-eval-command returns.
+
+(test cadgui-ssget-window-two-corners-from-the-canvas-selects-enclosed
+  ;; Window over (0,0)-(5,5) selects the fully-enclosed line A and erases it;
+  ;; the outside line B remains.
+  (let ((*cadgui-session* nil))
+    (cadgui-start)
+    (cadgui-add-line 1 1 4 4)                 ; A: fully inside the window
+    (cadgui-add-line 20 20 25 25)            ; B: outside
+    (let* ((clicks (list (cadgui-point-line 0 0) (cadgui-point-line 5 5)))
+           (*cadgui-input-hook* (lambda () (pop clicks))))
+      (cadgui-eval-command
+       "(setq ss (ssget \"W\" (getpoint) (getpoint))) (if ss (entdel (ssname ss 0)))"))
+    (is (= 1 (cadgui-entity-count)))))        ; A erased, B remains
+
+(test cadgui-ssget-window-excludes-a-crossing-line-but-crossing-selects-it
+  ;; A line crossing the window boundary: "W" (fully-enclosed only) selects
+  ;; nothing; "C" (crossing) selects and erases it.
+  (let ((*cadgui-session* nil))
+    (cadgui-start)
+    (cadgui-add-line 3 3 10 10)              ; crosses (0,0)-(5,5)
+    (let* ((wc (list (cadgui-point-line 0 0) (cadgui-point-line 5 5)))
+           (*cadgui-input-hook* (lambda () (pop wc))))
+      (cadgui-eval-command
+       "(setq ss (ssget \"W\" (getpoint) (getpoint))) (if ss (entdel (ssname ss 0)))"))
+    (is (= 1 (cadgui-entity-count)))          ; window excluded the crossing line
+    (let* ((cc (list (cadgui-point-line 0 0) (cadgui-point-line 5 5)))
+           (*cadgui-input-hook* (lambda () (pop cc))))
+      (cadgui-eval-command
+       "(setq ss (ssget \"C\" (getpoint) (getpoint))) (if ss (entdel (ssname ss 0)))"))
+    (is (= 0 (cadgui-entity-count)))))        ; crossing erased it

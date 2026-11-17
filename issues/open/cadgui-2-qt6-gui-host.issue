@@ -221,8 +221,19 @@ mouse, pan/zoom, coarse regen, offscreen-capable.
   MEASURED: frozen startup ~1.76 s vs ~96 s (~55x). =cadgui-dev.asd= +
   =build-dev-image.{lisp,sh}= are the EC10 dev-image recipe for Lisp iteration,
   kept for environments with static libs (source-built ECL / CI image).
+- DONE (2026-11-17, 2.4.24): ssget WINDOW/CROSSING (two-point) through the
+  input bridge. The engine already supports =(ssget "W"/"C" p1 p2)=
+  (selection-api.lisp); the cadgui path reads BOTH corners with =(getpoint)= fed
+  by the canvas, so =(ssget "W" (getpoint) (getpoint))= / "C" select the
+  enclosed / crossed entities. Covered by two cadgui-suite tests
+  (protocol-tests.lisp): a window selects a fully-enclosed line; a line crossing
+  the window boundary is EXCLUDED by "W" but SELECTED by "C" (observed via an
+  erase of the selected member). cadgui suite 31/31. (Bare interactive =(ssget)=
+  with rubber-band auto window/crossing stays phase 3.)
 - NEXT: per-document runner/driver threads + cross-thread park/resume via the
   cador scheduler (shared with the cooperative-scheduler remainder);
-  regen-on-dbmod (vs re-pull); ssget window/crossing (two-point); registering
-  every canvas interaction through [[cadgui-action-layer]]. Then
+  regen-on-dbmod (dbmod is a sticky bitfield, not monotonic -- needs a cheap
+  monotonic regen serial in cador, or compare the exported list); entsel
+  highlight (needs the picked handle surfaced to the shell); registering every
+  canvas interaction through [[cadgui-action-layer]]. Then
   [[cadgui-3-2d-parity]].
