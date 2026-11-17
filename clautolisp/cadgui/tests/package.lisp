@@ -6,9 +6,11 @@
                 #:cadgui-start #:cadgui-session-host #:*cadgui-session*
                 #:cadgui-display-list #:cadgui-extents #:cadgui-entity-count
                 #:cadgui-add-line #:cadgui-add-circle
-                #:cadgui-supply-point #:cadgui-supply-entity
-                #:*cadgui-pending-input* #:cadgui-pending-input
+                #:cadgui-input-stream #:*cadgui-input-hook* #:*cadgui-pending-input*
+                #:cadgui-point-line #:cadgui-install-input
                 #:cadgui-eval-command)
+  (:import-from #:clautolisp.autolisp-host
+                #:host-getpoint #:host-entsel)
   (:export #:run-all-tests #:cadgui-suite))
 
 (in-package #:clautolisp.cadgui.tests)

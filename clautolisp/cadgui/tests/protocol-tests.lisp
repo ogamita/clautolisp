@@ -42,18 +42,19 @@
     (cadgui-add-circle 0 0 3)
     (is (= 3 (cadgui-entity-count)))))
 
-(test cadgui-supply-point-returns-a-typed-value
+(test cadgui-eval-command-runs-autolisp-that-draws-and-reports-regen-count
+  ;; Slice E: an AutoLISP command string evaluated against the active drawing
+  ;; through the real engine draws, and the regen count reflects it.
   (let ((*cadgui-session* nil))
     (cadgui-start)
-    (is (equal '(:point 3d0 4d0) (cadgui-supply-point 3 4)))))
+    (is (zerop (cadgui-entity-count)))
+    (let ((n (cadgui-eval-command
+              "(entmake (list (cons 0 \"LINE\") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 5.0 5.0 0.0))))")))
+      (is (= 1 n))
+      (is (= 1 (cadgui-entity-count))))))
 
-(test cadgui-supply-entity-returns-a-typed-value
+(test cadgui-eval-command-command-builtin-draws-on-the-session-drawing
   (let ((*cadgui-session* nil))
     (cadgui-start)
-    (is (equal '(:entity "2A") (cadgui-supply-entity "2A")))))
-
-(test cadgui-eval-command-reports-the-regen-entity-count
-  (let ((*cadgui-session* nil))
-    (cadgui-start)
-    (cadgui-add-line 0 0 1 1)
-    (is (= 1 (cadgui-eval-command "LINE")))))
+    (cadgui-eval-command "(command \"CIRCLE\" (list 0.0 0.0) 2.0)")
+    (is (= 1 (cadgui-entity-count)))))

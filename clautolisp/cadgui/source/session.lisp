@@ -14,10 +14,12 @@ increment."
 
 (defun cadgui-start ()
   "Create a fresh cadgui session on a new, empty cador document and make it
-active. The embedded-ECL Qt6 shell calls this once at startup. Returns the
-session."
-  (setf *cadgui-session*
-        (make-cadgui-session :host (clautolisp.cador:make-cador))))
+active, with the cador prompt-stream bound to the GUI input bridge (slice D) so
+getpoint/entsel/ssget drive from the canvas. The embedded-ECL Qt6 shell calls
+this once at startup. Returns the session."
+  (let ((host (clautolisp.cador:make-cador)))
+    (cadgui-install-input host)
+    (setf *cadgui-session* (make-cadgui-session :host host))))
 
 (defun cadgui-session-or-start ()
   "The active session, starting one on demand."

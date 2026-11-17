@@ -42,10 +42,25 @@ The narrow surface the shell calls:
 - =(cadgui-display-list)= / =(cadgui-extents)= — pull the scene to paint (regen).
 - =(cadgui-add-line X1 Y1 X2 Y2 &key layer color)= / =(cadgui-add-circle CX CY R
   &key layer color)= — populate the model through the real cador HAL
-  (=host-entmake=); the full AutoLISP command eval is slice E.
-- =(cadgui-supply-point X Y)= / =(cadgui-supply-entity HANDLE)= — the shell
-  supplies a typed input value for a blocked command (slice D).
-- =(cadgui-eval-command STRING)= — the command line (slice E).
+  (=host-entmake=).
+- =(cadgui-eval-command STRING)= (slice E) — evaluate an AutoLISP string against
+  the drawing through the real engine (=run-autolisp-string= + the core builtins,
+  with the session host bound), so a LISP =C:= command or =(command ...)= /
+  =(entmake ...)= runs and DRAWS; returns the new scene entity count (regen
+  signal). Any =getpoint=/=entsel= it performs reads the canvas (slice D).
+
+* Interactive input (slice D — input.lisp)
+
+cador's =host-getpoint=/=entsel=/=ssget= all read a line through the single
+chokepoint =read-prompt-line=, from =(cador-prompt-stream host)= -- the seam
+=--mock-input= uses. =cadgui-start= binds that stream to a =cadgui-input-stream=
+(a gray input stream) whose empty-buffer read BLOCKS via =*cadgui-input-hook*=:
+the shell sets the hook to its C nested-Qt-event-loop await (run the loop until a
+mouse click, format it as the point line "x,y", return it); a test sets it to a
+scripted provider. So bare =(getpoint)= / =(entsel)= drive from the canvas --
+both await a world point, which cador turns into the point (getpoint) or the
+entity picked there via =%pick-entity= (entsel). =*cadgui-pending-input*= is
+=:point= while a read blocks, for the shell's crosshair/pick mode.
 
 * The canvas (slice C — cadgui-shell.cpp)
 
@@ -63,11 +78,14 @@ ACI colours over axes, and renders either to a live window or OFFSCREEN
 - B (scene exporter): =cador-scene-display-list= / =-extents=. DONE + tested
   (cador suite).
 - C (canvas): fit-to-extents render of the display list, offscreen PNG. DONE
-  (shell); live pan/zoom/crosshair + a command-line widget: NEXT.
-- D (input bridge): nested event loop validated (spike); supply-* scaffolded;
-  resume through cador =read-prompt-line= so getpoint/entsel/ssget drive from the
-  canvas: NEXT.
-- E (command + regen): =cadgui-eval-command= scaffolded; the repl-loop / AutoLISP
-  eval path + regen-on-dbmod: NEXT.
-- F (the C boundary): the display-list/input/command surface above; formalising
-  it as the versioned CRX-seed API: NEXT (feeds cadgui-4-crx-api).
+  (shell); live pan/zoom/crosshair + an interactive command-line widget: NEXT.
+- D (input bridge): DONE + tested. =cadgui-input-stream= backs cador's
+  prompt-stream; getpoint/entsel drive from scripted/real canvas clicks through
+  =read-prompt-line=. Shell wires the nested-event-loop await.
+- E (command + regen): DONE + tested. =cadgui-eval-command= runs AutoLISP against
+  the drawing (entmake / (command ...) draw); the shell repaints by re-pulling
+  the display list. A LIVE command-line widget + regen-on-dbmod (vs re-pull):
+  NEXT.
+- F (the C boundary): the display-list + input + command surface above, exercised
+  by the shell. Formalising it as the versioned CRX-seed API: NEXT (feeds
+  cadgui-4-crx-api).

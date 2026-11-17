@@ -20,11 +20,14 @@
 #include <QtGui/QColor>
 #include <QtCore/QString>
 #include <QtCore/QPointF>
+#include <QtCore/QEventLoop>
+#include <QtCore/QTimer>
 
 #include <vector>
 #include <string>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <cmath>
 
 // ---- embedded-ECL helpers ------------------------------------------------
@@ -134,6 +137,39 @@ protected:
     }
 };
 
+// ---- input bridge (slice D): a nested QEventLoop supplies a clicked point ----
+// A command's (getpoint) reads cador's prompt-stream, which under cadgui is the
+// GUI input stream; its hook calls cadgui_shell_await_input, which runs a NESTED
+// Qt event loop until a mouse click (here: scripted) and returns the point line
+// "x,y". Same single-thread nested-loop design as spike-ecl-embed/interactive.cpp.
+class InputBridge : public QObject {
+public:
+    std::vector<QPointF> script;   // headless: scripted world "clicks"
+    size_t idx = 0;
+    QPointF getPoint() {
+        QEventLoop loop; loopPtr = &loop; captured = QPointF();
+        QTimer::singleShot(0, this, [this] {
+            if (idx < script.size()) supply(script[idx++]);
+            else if (loopPtr) loopPtr->quit();   // no more input: unblock
+        });
+        loop.exec();                 // Qt runs while CL "blocks" in getpoint
+        loopPtr = nullptr;
+        return captured;
+    }
+    void supply(QPointF p) { captured = p; if (loopPtr) loopPtr->quit(); }
+private:
+    QPointF captured;
+    QEventLoop *loopPtr = nullptr;
+};
+static InputBridge *g_bridge = nullptr;
+
+static cl_object cadgui_shell_await_input() {   // *cadgui-input-hook* -> "x,y"
+    QPointF p = g_bridge->getPoint();
+    char buf[64];
+    std::snprintf(buf, sizeof buf, "%.10g,%.10g", p.x(), p.y());
+    return ecl_make_simple_base_string(buf, (cl_index)std::strlen(buf));
+}
+
 int main(int argc, char **argv) {
     // 1. Boot embedded ECL.
     cl_boot(argc, argv);
@@ -173,6 +209,21 @@ int main(int argc, char **argv) {
     // 4. Qt must exist before any QWidget: create the application first.
     qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
     QApplication app(argc, argv);
+
+    // 4b. Slice D/E: wire the input bridge so a command's getpoint reads the
+    //     canvas, then run a getpoint-driven command. The two scripted "clicks"
+    //     stand in for mouse picks; the real canvas would supply device clicks
+    //     converted to world coordinates on the same path.
+    InputBridge bridge;
+    bridge.script = { QPointF(8, 8), QPointF(52, 34) };
+    g_bridge = &bridge;
+    ecl_def_c_function(c_string_to_object("CADGUI-SHELL-AWAIT-INPUT"),
+                       (cl_objectfn_fixed)cadgui_shell_await_input, 0);
+    eval_str("(setf clautolisp.cadgui:*cadgui-input-hook*"
+             "      (symbol-function 'cadgui-shell-await-input))");
+    eval_str("(clautolisp.cadgui:cadgui-eval-command"
+             "  \"(entmake (list (cons 0 \\\"LINE\\\") (cons 62 7)"
+             "                   (cons 10 (getpoint)) (cons 11 (getpoint))))\")");
 
     // 5. Pull the display list + extents across the boundary (regen) and paint.
     Canvas c;

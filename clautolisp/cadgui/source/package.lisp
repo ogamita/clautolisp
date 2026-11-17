@@ -22,11 +22,13 @@
    #:cadgui-add-line
    #:cadgui-add-circle
    #:cadgui-entity-count
-   ;; Interactive input (slice D scaffold) -- the shell supplies values here when
-   ;; a command is blocked in getpoint/entsel/ssget
+   ;; Interactive input bridge (slice D) -- a GUI-backed cador prompt stream so
+   ;; getpoint/entsel/ssget drive from the canvas. The shell sets the hook to its
+   ;; nested-event-loop await; it returns the next input line (e.g. a point "x,y").
+   #:cadgui-input-stream
+   #:*cadgui-input-hook*
    #:*cadgui-pending-input*
-   #:cadgui-pending-input
-   #:cadgui-supply-point
-   #:cadgui-supply-entity
-   ;; Command evaluation (slice E scaffold)
+   #:cadgui-point-line
+   #:cadgui-install-input
+   ;; Command evaluation (slice E)
    #:cadgui-eval-command))

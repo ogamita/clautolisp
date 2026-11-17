@@ -295,10 +295,13 @@ embedded-ECL Qt6 shell calls -- the display list to paint, view extents,
 interactive input, command eval. cadgui-2-qt6-gui-host.issue."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/cador" "clautolisp/autolisp-host")
+  :depends-on ("clautolisp/cador" "clautolisp/autolisp-host"
+               "clautolisp/autolisp-runtime" "clautolisp/autolisp-builtins-core"
+               "trivial-gray-streams")
   :serial t
   :components
   ((:file "cadgui/source/package")
+   (:file "cadgui/source/input")
    (:file "cadgui/source/session")
    (:file "cadgui/source/protocol"))
   :in-order-to ((asdf:test-op
@@ -315,6 +318,7 @@ interactive input, command eval. cadgui-2-qt6-gui-host.issue."
   :serial t
   :components
   ((:file "cadgui/tests/package")
+   (:file "cadgui/tests/input-tests")
    (:file "cadgui/tests/protocol-tests"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
