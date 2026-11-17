@@ -459,11 +459,17 @@ int main(int argc, char **argv) {
         // episode -- and wait for the runner to publish the resulting snapshot.
         win.canvas->resize(480, 360);
         win.show();                              // give widgets geometry (offscreen)
+        // 1) draw a LINE between two getpoint'd clicks; 2) (entsel) a third click
+        //    ON that line -> it highlights (the selection overdraw).
         g_cmdQueue.put(Cmd{false,
             "(entmake (list (cons 0 \"LINE\") (cons 62 7)"
             "               (cons 10 (getpoint)) (cons 11 (getpoint))))"});
-        static const QPointF clicks[] = { QPointF(120, 120), QPointF(360, 250) };
-        static const int nClicks = 2;
+        g_cmdQueue.put(Cmd{false, "(entsel)"});
+        // clicks 0,1 are the line's endpoints; click 2 is its device midpoint,
+        // which lies on the drawn segment, so entsel picks it.
+        static const QPointF clicks[] = { QPointF(120, 120), QPointF(360, 250),
+                                          QPointF(240, 185) };
+        static const int nClicks = 3;
         static int clicksSent = 0;
         const size_t expectPrims = 6;            // 4 lines + circle + the new line
 
@@ -487,13 +493,16 @@ int main(int argc, char **argv) {
         QTimer watchdog; int ticks = 0;
         QObject::connect(&watchdog, &QTimer::timeout, &app, [&] {
             Snapshot s = loadSnapshot();
-            if (s.prims.size() >= expectPrims || ++ticks > 600) {   // done or ~6s
+            // Done when the line is drawn AND the entsel highlight is set (or
+            // timeout). The selection overdraw is thus visible in the frame.
+            bool ready = (s.prims.size() >= expectPrims && !s.selected.empty());
+            if (ready || ++ticks > 600) {        // done or ~6s
                 QPixmap pm = win.canvas->grab();
                 bool ok = pm.save(QString::fromStdString(file), "PNG");
-                std::fprintf(stderr, "cadgui-shell: --demo %s = %s; scene has %zu prims\n",
-                             file.c_str(), ok ? "OK" : "FAIL", s.prims.size());
+                std::fprintf(stderr, "cadgui-shell: --demo %s = %s; scene %zu prims, %zu selected\n",
+                             file.c_str(), ok ? "OK" : "FAIL", s.prims.size(), s.selected.size());
                 g_cmdQueue.put(Cmd{true, ""});   // tell the runner to exit
-                app.exit((ok && s.prims.size() >= expectPrims) ? 0 : 1);
+                app.exit((ok && ready) ? 0 : 1);
             }
         });
         watchdog.start(10);
