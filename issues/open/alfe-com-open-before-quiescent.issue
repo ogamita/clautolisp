@@ -67,3 +67,16 @@ alfe 2.4.28: the bridge lists the windows after one minute of busy
 (busy-windows-end.txt); the harness waits for alfe's EPURE budget.
 Runner side: BricsCAD's crash reporting must not prompt on the runner
 profile, and pending crash reports must be cleared.
+
+* AutoCAD with EPURE (2026-11-17, alfe 2.4.28, job 18111021859)
+
+busy-windows.txt, one minute into the wait:
+
+: 11608 #32770 enabled=1 Message AutoCAD
+: 11608 AfxMDIFrame140u enabled=0 Autodesk AutoCAD 2022 - [Dessin1.dwg]
+
+A modal AutoCAD alert. pjb: EPURE is not correctly installed on PF5S26BT and
+shows a dialog; its per-user setup must be rerun for each CAD version.
+BricsCAD with EPURE showed "Rapport de plantage" again in the same run.
+alfe 2.4.29 also writes a dialog's Static and Button texts, so the next
+report says what such an alert asks.

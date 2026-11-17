@@ -2215,6 +2215,21 @@ public static class BusyCadWindows {
  [DllImport(\"user32.dll\",CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h,StringBuilder s,int n);
  [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h);
  [DllImport(\"user32.dll\")] public static extern bool IsWindowEnabled(IntPtr h);
+ [DllImport(\"user32.dll\")] public static extern bool EnumChildWindows(IntPtr p,EnumProc f,IntPtr l);
+ // A dialog's message and buttons (Static, Button children): what it asks.
+ public static string Texts(IntPtr d) {
+  var r=new List<string>();
+  EnumChildWindows(d,delegate(IntPtr h,IntPtr l){
+   var c=new StringBuilder(256); GetClassName(h,c,256);
+   var k=c.ToString();
+   if((k==\"Static\"||k==\"Button\") && IsWindowVisible(h)){
+    var t=new StringBuilder(2048); GetWindowText(h,t,2048);
+    var x=t.ToString().Replace(\"\\r\",\" \").Replace(\"\\n\",\" \").Trim();
+    if(x.Length>0){r.Add(k+\"=\"+x);}
+   }
+   return true;},IntPtr.Zero);
+  return String.Join(\" | \",r.ToArray());
+ }
  public static List<string> List(HashSet<uint> pids) {
   var r=new List<string>();
   EnumWindows(delegate(IntPtr h,IntPtr l){
@@ -2223,6 +2238,7 @@ public static class BusyCadWindows {
     var t=new StringBuilder(512); GetWindowText(h,t,512);
     var c=new StringBuilder(256); GetClassName(h,c,256);
     r.Add(pid+\" \"+c+\" enabled=\"+(IsWindowEnabled(h)?1:0)+\" \"+t);
+    if(c.ToString()==\"#32770\"){r.Add(\"  \"+Texts(h));}
    }
    return true;},IntPtr.Zero);
   return r;
