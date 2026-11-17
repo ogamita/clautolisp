@@ -4711,7 +4711,9 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
               (is (and at-end (< ready at-end open))))))))
     (is (search "'Capture','Finish','Windows'"
                 alfe.backend.cad-common::*owned-cad-process-script*))
-    (is (search "EnumWindows" alfe.backend.cad-common::*owned-cad-process-script*))))
+    (is (search "EnumWindows" alfe.backend.cad-common::*owned-cad-process-script*))
+    ;; a dialog's own text says what it asks, not only its title
+    (is (search "EnumChildWindows" alfe.backend.cad-common::*owned-cad-process-script*))))
 
 (test owned-com-ready-windows-mocked-handshake
   "Exercise native VBScript object returns and bounded non-ready outcomes."
