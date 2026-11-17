@@ -115,9 +115,9 @@ struct Prim {
 };
 // pull_* call into Lisp -- they run ONLY on the runner thread (or on the main
 // thread BEFORE the runner starts, when there is no concurrency).
-static std::vector<Prim> pull_display_list() {
+static std::vector<Prim> pull_prims(const char *form) {
     std::vector<Prim> prims;
-    cl_object dl = eval_str("(clautolisp.cadgui:cadgui-display-list)");
+    cl_object dl = eval_str(form);
     for (cl_object p = dl; p != ECL_NIL; p = ecl_cdr(p)) {
         cl_object prim = ecl_car(p), rest = ecl_cdr(prim);
         Prim out;
@@ -130,6 +130,12 @@ static std::vector<Prim> pull_display_list() {
         prims.push_back(out);
     }
     return prims;
+}
+static std::vector<Prim> pull_display_list() {
+    return pull_prims("(clautolisp.cadgui:cadgui-display-list)");
+}
+static std::vector<Prim> pull_selection() {     // the entsel-highlighted entity
+    return pull_prims("(clautolisp.cadgui:cadgui-selection-geometry)");
 }
 static bool pull_extents(double &x0, double &y0, double &x1, double &y1) {
     cl_object e = eval_str("(clautolisp.cadgui:cadgui-extents)");
@@ -152,6 +158,7 @@ static QColor aci_to_rgb(long aci) {
 // ---- the SNAPSHOT: the runner publishes it, the main thread paints it ------
 struct Snapshot {
     std::vector<Prim> prims;
+    std::vector<Prim> selected;              // entsel-highlighted geometry, overdrawn
     double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
     bool haveExtents = false;
 };
@@ -162,6 +169,7 @@ static Snapshot loadSnapshot()            { std::lock_guard<std::mutex> g(g_snap
 static Snapshot buildSnapshot() {          // calls Lisp -> runner thread only
     Snapshot s;
     s.prims = pull_display_list();
+    s.selected = pull_selection();
     s.haveExtents = pull_extents(s.x0, s.y0, s.x1, s.y1);
     return s;
 }
@@ -283,6 +291,19 @@ protected:
             if (poly.size() >= 2) g.drawPolyline(poly.constData(), poly.size());
             else if (poly.size() == 1) g.drawPoint(poly.first());
         }
+        // The entsel selection, overdrawn highlighted (thick dashed white).
+        if (!s.selected.empty()) {
+            QPen hp(QColor(255, 255, 255)); hp.setWidthF(3.0);
+            hp.setStyle(Qt::DashLine); g.setPen(hp);
+            for (const Prim &pr : s.selected) {
+                QVector<QPointF> poly;
+                for (size_t i = 0; i + 1 < pr.pts.size(); i += 2)
+                    poly.push_back(view.toDev(pr.pts[i], pr.pts[i+1]));
+                if (pr.closed && !poly.isEmpty()) poly.push_back(poly.first());
+                if (poly.size() >= 2) g.drawPolyline(poly.constData(), poly.size());
+                else if (poly.size() == 1) g.drawPoint(poly.first());
+            }
+        }
         if (g_awaiting.load()) {                                 // crosshair while picking
             g.setPen(QPen(QColor(120, 220, 160), 1.0));
             g.drawLine(QPointF(0, cursorDev.y()), QPointF(width(), cursorDev.y()));
@@ -323,17 +344,20 @@ static void install_runner_hooks() {
     // The runner loop (CL-USER so c_string_to_object reads the bare symbols in
     // the CL-USER package): take a command, eval it (may block in getpoint on
     // the point queue), publish a fresh snapshot, repeat until a NIL command.
-    // regen-on-dbmod: publish (re-export + repaint) only when the command
-    // actually changed the drawing, detected via the monotonic regen serial
-    // (clautolisp.drawing:drawing-dbtick). A pure query redraws nothing.
+    // Publish (re-export + repaint) only when the command changed something
+    // visible: the drawing (regen-on-dbmod, via the monotonic drawing-dbtick) OR
+    // the selection (an entsel highlights without modifying the model). A pure
+    // query redraws nothing.
     eval_str("(defun cadgui-shell-runner ()"
              "  (loop"
              "    (let ((cmd (cadgui-shell-next-command)))"
              "      (when (null cmd) (return))"
-             "      (let ((before (clautolisp.cadgui:cadgui-regen-serial)))"
+             "      (let ((serial (clautolisp.cadgui:cadgui-regen-serial))"
+             "            (sel (clautolisp.cadgui:cadgui-selection)))"
              "        (handler-case (clautolisp.cadgui:cadgui-eval-command cmd)"
              "          (error (e) (format *error-output* \"~&cadgui command error: ~a~%\" e)))"
-             "        (when (/= before (clautolisp.cadgui:cadgui-regen-serial))"
+             "        (when (or (/= serial (clautolisp.cadgui:cadgui-regen-serial))"
+             "                  (not (equal sel (clautolisp.cadgui:cadgui-selection))))"
              "          (cadgui-shell-publish))))))");
 }
 static void start_runner() {

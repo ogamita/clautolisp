@@ -50,3 +50,32 @@
 
 (test cadgui-point-line-formats-a-coordinate-pair
   (is (string= "2.5,-3.0" (cadgui-point-line 2.5 -3))))
+
+(test cadgui-entsel-sets-the-selection-for-highlight
+  ;; A canvas entsel records the picked entity as the GUI selection; the shell
+  ;; reads cadgui-selection-geometry to overdraw it highlighted.
+  (let ((*cadgui-session* nil))
+    (cadgui-start)
+    (let ((host (cadgui-session-host *cadgui-session*)))
+      (cadgui-add-line 0 0 10 0)
+      (is (null (cadgui-selection)))                 ; nothing picked yet
+      (let* ((clicks (list (cadgui-point-line 5 0))) ; click on the line
+             (*cadgui-input-hook* (lambda () (pop clicks))))
+        (host-entsel host nil))
+      (is (= 1 (length (cadgui-selection))))         ; one entity selected
+      (let ((geom (cadgui-selection-geometry)))
+        (is (= 1 (length geom)))
+        (destructuring-bind (type handle layer aci closed points) (first geom)
+          (declare (ignore handle layer aci closed))
+          (is (eq :polyline type))
+          (is (equal '(0d0 0d0 10d0 0d0) points))))))) ; the line's outline, to highlight
+
+(test cadgui-entsel-on-empty-space-leaves-no-selection
+  (let ((*cadgui-session* nil))
+    (cadgui-start)
+    (let ((host (cadgui-session-host *cadgui-session*)))
+      (cadgui-add-line 0 0 10 0)
+      (let* ((clicks (list (cadgui-point-line 5 50))) ; far from the line
+             (*cadgui-input-hook* (lambda () (pop clicks))))
+        (host-entsel host nil))
+      (is (null (cadgui-selection))))))

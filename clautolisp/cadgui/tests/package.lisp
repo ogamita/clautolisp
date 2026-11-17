@@ -5,7 +5,7 @@
   (:import-from #:clautolisp.cadgui
                 #:cadgui-start #:cadgui-session-host #:*cadgui-session*
                 #:cadgui-display-list #:cadgui-extents #:cadgui-entity-count
-                #:cadgui-regen-serial
+                #:cadgui-regen-serial #:cadgui-selection #:cadgui-selection-geometry
                 #:cadgui-add-line #:cadgui-add-circle
                 #:cadgui-input-stream #:*cadgui-input-hook* #:*cadgui-pending-input*
                 #:cadgui-point-line #:cadgui-install-input

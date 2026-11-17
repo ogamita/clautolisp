@@ -228,6 +228,9 @@ that is not part of a drawing."))
   (read-only nil)
   (picksets (make-hash-table :test #'eq))
   (pickfirst nil)
+  ;; The entity most recently picked by an interactive HOST-ENTSEL -- the GUI
+  ;; selection highlight reads it. NIL when nothing is picked.
+  (last-pick nil)
   (tblnext-iterators (make-hash-table :test #'eq))
   (dictnext-iterators (make-hash-table :test #'equal))
   (pending-initget nil)
@@ -274,6 +277,7 @@ that is not part of a drawing."))
 
 (%define-document-session-accessor cador-picksets doc-session-picksets)
 (%define-document-session-accessor cador-pickfirst doc-session-pickfirst)
+(%define-document-session-accessor cador-last-pick doc-session-last-pick)
 (%define-document-session-accessor cador-tblnext-iterators doc-session-tblnext-iterators)
 (%define-document-session-accessor cador-dictnext-iterators doc-session-dictnext-iterators)
 (%define-document-session-accessor cador-pending-initget doc-session-pending-initget)

@@ -39,6 +39,20 @@ closed polyline; LINE/ARC/LWPOLYLINE/POINT use the exact outline; anything else
                            t))
                  (values nil nil))))))))
 
+(defun %scene-entity-display-item (host handle entity)
+  "The (:POLYLINE HANDLE LAYER ACI CLOSED POINTS) display item for ENTITY under
+HANDLE (a string), or NIL when ENTITY has no drawable geometry."
+  (multiple-value-bind (points closed) (%scene-entity-points host entity)
+    (when points
+      (list :polyline
+            handle
+            (let ((layer (%entity-group-value entity 8)))
+              (if (stringp layer) layer "0"))
+            (let ((aci (%entity-group-value entity 62)))
+              (if (integerp aci) aci 256))
+            closed
+            points))))
+
 (defun cador-scene-display-list (host)
   "The display list of HOST's current (model) space graphical entities: a list of
   (:POLYLINE HANDLE LAYER ACI CLOSED (X0 Y0 X1 Y1 ...))
@@ -54,18 +68,18 @@ The render peer of HOST-SSGET \"X\"; the whole surface the cadgui canvas needs."
                    (not (entity-handle-deleted-p entity))
                    (main-space-entity-p entity)
                    (clautolisp.drawing:graphical-entity-p entity))
-          (multiple-value-bind (points closed) (%scene-entity-points host entity)
-            (when points
-              (push (list :polyline
-                          (princ-to-string handle)
-                          (let ((layer (%entity-group-value entity 8)))
-                            (if (stringp layer) layer "0"))
-                          (let ((aci (%entity-group-value entity 62)))
-                            (if (integerp aci) aci 256))
-                          closed
-                          points)
-                    prims))))))
+          (let ((item (%scene-entity-display-item host (princ-to-string handle) entity)))
+            (when item (push item prims))))))
     (nreverse prims)))
+
+(defun cador-entity-scene-item (host entity)
+  "The display-list item (:POLYLINE ...) for a single live graphical ENTITY --
+the selection-highlight peer of CADOR-SCENE-DISPLAY-LIST -- or NIL. Same
+tessellation, so the shell overdraws the exact same outline, highlighted."
+  (when (and entity
+             (not (entity-handle-deleted-p entity))
+             (clautolisp.drawing:graphical-entity-p entity))
+    (%scene-entity-display-item host (clautolisp.drawing:entity-handle-string entity) entity)))
 
 (defun cador-scene-extents (host)
   "(XMIN YMIN XMAX YMAX) of HOST's current-space graphical geometry as

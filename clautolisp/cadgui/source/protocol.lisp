@@ -44,6 +44,24 @@ Returns 0 when there is no active drawing."
          (drawing (clautolisp.cador:cador-active-drawing host)))
     (if drawing (clautolisp.drawing:drawing-dbtick drawing) 0)))
 
+(defun cadgui-selection-geometry ()
+  "The display-list item(s) of the current GUI selection -- the entity most
+recently picked by (entsel) from the canvas -- for the shell to overdraw
+HIGHLIGHTED, or NIL. Same (:POLYLINE HANDLE LAYER ACI CLOSED POINTS) format as
+cadgui-display-list, so no handle correlation is needed: the shell draws this
+geometry on top of the scene in the highlight style. A deleted selection yields
+NIL."
+  (let* ((host (cadgui-session-host (cadgui-session-or-start)))
+         (entity (clautolisp.cador:cador-last-pick host)))
+    (when entity
+      (let ((item (clautolisp.cador:cador-entity-scene-item host entity)))
+        (and item (list item))))))
+
+(defun cadgui-selection ()
+  "The handle string(s) of the current GUI selection, or NIL (the HANDLE fields
+of cadgui-selection-geometry)."
+  (mapcar #'second (cadgui-selection-geometry)))
+
 ;;; --- model builders: populate the model via the REAL cador HAL --------
 
 (defun cadgui-add-line (x1 y1 x2 y2 &key (layer "0") color)

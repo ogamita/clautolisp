@@ -225,6 +225,7 @@
    #:cador-command-log
    #:cador-display-log
    #:cador-pickfirst
+   #:cador-last-pick
    ;; Pre-population helpers
    #:populate-default-tables
    #:populate-default-sysvars
@@ -265,6 +266,7 @@
    ;; Scene view -- the drawable display list of the model (cadgui, scene-view.lisp)
    #:cador-scene-display-list
    #:cador-scene-extents
+   #:cador-entity-scene-item
    ;; Entity-allocation helpers (Phase 10)
    #:cador-creation-order
    #:cador-next-handle-counter

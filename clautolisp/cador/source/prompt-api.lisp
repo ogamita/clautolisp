@@ -408,6 +408,7 @@ whole keyword, or its abbreviation -- at least its leading capitals
 typed point. Returns (ENAME POINT) or NIL; RETURN gives NIL."
   (when prompt (host-prompt host prompt))
   (flet ((result (entity point)
+           (setf (cador-last-pick host) entity)   ; GUI selection highlight
            (list (handle->ename host (entity-handle-id entity))
                  (if point
                      (list (%num (first point)) (%num (second point))
