@@ -171,9 +171,28 @@ STREAM-ERROR rather than a FILE-ERROR, so a -l DIRECTORY exited EX_IOERR (74)
 there instead of EX_NOINPUT (66) (exit-status-directory-load-file-is-noinput,
 added by clautolisp 2.2.224)."))
 
+(defun %utf-16-bom-encoding (path)
+  "The UTF-16 encoding PATH's byte-order mark names -- :UTF-16LE for FF FE,
+:UTF-16BE for FE FF -- or NIL."
+  (ignore-errors
+   (with-open-file (in path :element-type '(unsigned-byte 8))
+     (let ((a (read-byte in nil)) (b (read-byte in nil)))
+       (cond ((and (eql a #xFF) (eql b #xFE)) :utf-16le)
+             ((and (eql a #xFE) (eql b #xFF)) :utf-16be))))))
+
 (defun decode-and-normalize-file (path &key external-format source-policy)
   (when (ignore-errors (uiop:directory-exists-p path))
     (error 'clautolisp.autolisp-reader:source-is-a-directory :pathname path))
+  ;; A UTF-16 source with its byte-order mark loads on AutoCAD 2022 and
+  ;; BricsCAD alike, whatever the default encoding (sunset campaign B6,
+  ;; probe-load-encoding.lsp, 2026-11-17: BricsCAD's ",ccs=UTF-16LE" file
+  ;; read back as written); it failed here with the host Lisp's decoding
+  ;; error. The mark decides; the decoded text drops it.
+  (let ((utf-16 (%utf-16-bom-encoding path)))
+    (when utf-16
+      (return-from decode-and-normalize-file
+        (normalize-line-endings
+         (babel:octets-to-string (%read-file-octets path) :start 2 :encoding utf-16)))))
   (when source-policy
     (return-from decode-and-normalize-file
       (normalize-line-endings

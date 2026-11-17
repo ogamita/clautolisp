@@ -92,21 +92,17 @@ Returns the context."
     (is (null result))
     (is (eql 22 (autolisp-errno)))))
 
-;; (LOAD without onfailure) signals an AutoLISP runtime error rather
-;; than returning nil, and the signalling path overwrites ERRNO via
-;; the project's existing condition-to-errno mapping
-;; (:load-file-not-found -> 5). The "set ERRNO to 73 on miss" wiring
-;; is therefore only observable on the onfailure-supplied path; the
-;; signalling path keeps the legacy 5 to avoid breaking pre-Phase-3-
-;; followup conformance tests.
+;; LOAD of a missing file leaves ERRNO 0 on AutoCAD 2022 and BricsCAD,
+;; with or without ONFAILURE (sunset campaign B6, probe-load-encoding.lsp,
+;; 2026-11-17). It used to set 73 here (and 5 on the signalling path).
 
-(test errno-load-with-onfailure-sets-73
+(test errno-load-missing-with-onfailure-leaves-0
   (setup-mock-evaluation-context)
-  (set-autolisp-errno 0)
+  (set-autolisp-errno 99)
   (let ((result (clautolisp.autolisp-builtins-core::builtin-load (make-autolisp-string "/no/such/script")
                               :marker-symbol)))
     (is (eq :marker-symbol result))
-    (is (eql 73 (autolisp-errno)))))
+    (is (eql 0 (autolisp-errno)))))
 
 (test errno-read-line-on-eof-sets-8
   (setup-mock-evaluation-context)

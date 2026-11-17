@@ -9344,3 +9344,31 @@ error; its message is nil under the default dialect, as on AutoCAD 2022
   (is (null (%ee "(setcfg \"NoSuchSection/ClautolispTest\" \"x\")" :autocad-2022)))
   (is (%ee "(setcfg \"NoSuchSection/ClautolispTest\" \"x\")" :bricscad-v26))
   (is (%ee "(setcfg \"AppData/ClautolispTest/Short\" \"v\")" :autocad-2022)))
+
+;;; --- LOAD as the products answer (sunset campaign B6, 2026-11-17) ------
+
+(test load-missing-file-onfailure-per-product
+  ;; AutoCAD returns ONFAILURE as given -- a quoted symbol is NOT called
+  (is (equal "CAD-PROBE-LE-FAILED"
+             (let ((r (%ee "(load \"clautolisp-no-such-file.lsp\" 'cad-probe-le-failed)" :autocad-2022)))
+               (and (typep r 'autolisp-symbol) (autolisp-symbol-name r)))))
+  (is (eql 0 (%ee "(progn (load \"clautolisp-no-such-file.lsp\" \"x\") (getvar \"ERRNO\"))" :autocad-2022)))
+  (is (eql 0 (%ee "(progn (vl-catch-all-apply 'load '(\"clautolisp-no-such-file.lsp\")) (getvar \"ERRNO\"))" :autocad-2022)))
+  ;; BricsCAD ignores ONFAILURE: an error even with one
+  (is (eql 1 (%ee "(if (vl-catch-all-error-p (vl-catch-all-apply 'load '(\"clautolisp-no-such-file.lsp\" \"x\"))) 1 0)" :bricscad-v26))))
+
+(test load-reads-a-utf-16le-source-with-its-bom
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (let ((text (format nil "(setq clautolisp-utf16-v \"A~CB\")~%" (code-char 233))))
+      (with-open-file (out path :direction :output :element-type '(unsigned-byte 8)
+                                :if-exists :supersede)
+        (write-byte #xFF out) (write-byte #xFE out)
+        (loop for c across text
+              do (write-byte (ldb (byte 8 0) (char-code c)) out)
+                 (write-byte (ldb (byte 8 8) (char-code c)) out))))
+    (dolist (dialect '(:autocad-2022 :bricscad-v26 :clautolisp))
+      (is (equal '(65 233 66)
+                 (%ee (format nil "(progn (load ~S) (vl-string->list clautolisp-utf16-v))"
+                              (substitute #\/ #\\ (namestring path)))
+                      dialect))
+          "a UTF-16LE source under ~S" dialect))))
