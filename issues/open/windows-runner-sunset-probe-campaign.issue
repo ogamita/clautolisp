@@ -593,3 +593,22 @@ macOS). SNVALID agrees on all three (EXTNAMES 0 refuses space / dot / bar,
 | =(tablet 0)= | (nil 68) | (((0.0 0.0 0.0) (0.0 0.0 0.0) (0.0 0.0 0.0) (0.0 0.0 0.0)) 0) | (NIL 0) |
 | =(startapp "clautolisp-no-such-program-b8.exe")= | (nil 0) | (0 0) | (67526 0) |
 | =(startapp "clautolisp-no-such-program-b8.exe" "arg")= | (nil 0) | (0 0) | (67529 0) |
+
+* B6 (LOAD) -- BricsCAD macOS captured 2026-11-16; Windows still owed
+
+probe-load-encoding.lsp (MR !560), BricsCAD macOS (job 18084744775,
+probe-results/bricscad/macos/20261116T215753Z). The Windows jobs (AutoCAD
+2022, BricsCAD V25) were cancelled twice by newer master pipelines, then
+failed stuck_pending when PF5S26B went offline (2026-11-16 22:41 UTC):
+play probe:suite:autocad:windows / bricscad:windows on master when it is
+back.
+
+BricsCAD macOS: LOAD of a missing file always signals "LOAD failed" with
+ERRNO 0 -- ONFAILURE ignored, a symbol, a string or nil alike (as it ignores
+ARXLOAD's); clautolisp honours a string ONFAILURE and CALLS a symbol one.
+LOAD decodes both a single-byte source (the default OPEN, 28 bytes) and a
+UTF-8 one (29 bytes) to the same (65 233 66); this build ignored OPEN's
+encoding argument and ",ccs=" suffix when writing (all UTF-8). clautolisp's
+LOAD of a UTF-16LE source fails with the host Lisp's raw decoding error. To
+model once AutoCAD's answer is in.
+
