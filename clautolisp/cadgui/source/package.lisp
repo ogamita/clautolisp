@@ -44,4 +44,17 @@
    #:cadgui-list-actions
    #:cadgui-describe-action
    #:cadgui-unknown-action
-   #:cadgui-unknown-action-id))
+   #:cadgui-unknown-action-id
+   ;; Multi-document workspace (cooperative-scheduler integration slice 1) --
+   ;; N documents interleaving through the single-runner scheduler, each with
+   ;; its own cador host + input channel.
+   #:cadgui-make-workspace
+   #:cadgui-workspace-docs
+   #:cadgui-open-document
+   #:cadgui-doc-key
+   #:cadgui-doc-host
+   #:cadgui-doc-supply
+   #:cadgui-doc-supply-point
+   #:cadgui-workspace-start
+   #:cadgui-workspace-serve
+   #:cadgui-workspace-shutdown))

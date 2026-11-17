@@ -8,6 +8,9 @@
                 #:cadgui-regen-serial #:cadgui-selection #:cadgui-selection-geometry
                 #:cadgui-invoke-action #:cadgui-list-actions #:cadgui-describe-action
                 #:cadgui-unknown-action #:cadgui-register-action
+                #:cadgui-make-workspace #:cadgui-workspace-docs #:cadgui-open-document
+                #:cadgui-doc-supply-point #:cadgui-workspace-start
+                #:cadgui-workspace-serve #:cadgui-workspace-shutdown
                 #:cadgui-add-line #:cadgui-add-circle
                 #:cadgui-input-stream #:*cadgui-input-hook* #:*cadgui-pending-input*
                 #:cadgui-point-line #:cadgui-install-input

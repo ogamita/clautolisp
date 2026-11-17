@@ -29,15 +29,22 @@ both await a point, so one kind covers the common case.")
 (defclass cadgui-input-stream
     (trivial-gray-streams:fundamental-character-input-stream)
   ((buffer :initform "" :accessor %cis-buffer)
-   (pos    :initform 0  :accessor %cis-pos))
+   (pos    :initform 0  :accessor %cis-pos)
+   ;; A per-instance reader (no-arg -> next line / NIL), for a PER-DOCUMENT
+   ;; input channel (the multi-document driver, multidoc.lisp). NIL falls back
+   ;; to the global *cadgui-input-hook*, so the single-document stream is
+   ;; unchanged.
+   (fill-fn :initform nil :initarg :fill-fn :accessor %cis-fill-fn))
   (:documentation "cador's prompt-stream under cadgui: read-prompt-line reads a
-line from here; an empty buffer BLOCKS via *cadgui-input-hook*."))
+line from here; an empty buffer BLOCKS via this stream's FILL-FN (a per-document
+channel) or, failing that, the global *cadgui-input-hook*."))
 
 (defun %cis-fill (s)
   "Block for the next input line and buffer it (with a trailing newline)."
   (setf *cadgui-pending-input* :point)
   (unwind-protect
-       (let ((line (and *cadgui-input-hook* (funcall *cadgui-input-hook*))))
+       (let* ((reader (or (%cis-fill-fn s) *cadgui-input-hook*))
+              (line (and reader (funcall reader))))
          (setf (%cis-buffer s) (if line
                                    (concatenate 'string line (string #\Newline))
                                    "")

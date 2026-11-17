@@ -230,10 +230,24 @@ mouse, pan/zoom, coarse regen, offscreen-capable.
   the window boundary is EXCLUDED by "W" but SELECTED by "C" (observed via an
   erase of the selected member). cadgui suite 31/31. (Bare interactive =(ssget)=
   with rubber-band auto window/crossing stays phase 3.)
-- NEXT: per-document runner/driver threads + cross-thread park/resume via the
-  cador scheduler (shared with the cooperative-scheduler remainder);
-  regen-on-dbmod (dbmod is a sticky bitfield, not monotonic -- needs a cheap
-  monotonic regen serial in cador, or compare the exported list); entsel
-  highlight (needs the picked handle surfaced to the shell); registering every
-  canvas interaction through [[cadgui-action-layer]]. Then
-  [[cadgui-3-2d-parity]].
+- DONE (2026-11-17, 2.4.28): MULTI-DOCUMENT cooperative-scheduler integration,
+  slice 1 (CL foundation) -- =clautolisp/cadgui= =cadgui/source/multidoc.lisp=.
+  A =cadgui-workspace= of open =cadgui-doc=s, each with its OWN cador host and a
+  PER-DOCUMENT input channel (a runtime park-mailbox), evaluating on its own
+  scheduler context thread. getpoint/entsel/ssget in a document park through the
+  existing cador bridge (=%cador-maybe-park-read= -> =scheduler-park=) and are
+  served from THAT document's channel (the input stream grew a per-instance
+  =fill-fn= so a document reads its own channel, not the global hook). The
+  driver (=cadgui-workspace-start= / =-serve=) runs the blocked read on its own
+  thread and resumes the context, so two documents' getpoint-driven evaluations
+  INTERLEAVE under the single-runner invariant with no cross-document input
+  bleed. Test (cadgui-suite): two documents each read two points, interleaved
+  A/B/A/B; each reads only its own points. OUT of slice 1 (NEXT): the Qt
+  multi-window shell (a driver thread + per-document canvas, the active document
+  routing clicks to its channel), ONE shared cador host with N drawings (slice 1
+  gives each document its own host), and document switch/close UI.
+- NEXT: the Qt multi-window shell on the multi-document foundation (a driver
+  thread + a per-document canvas, the active document routing clicks to its
+  channel); one shared cador host with N drawings (vs a host per document);
+  document switch/close UI; the remaining action-layer slices B-E
+  ([[cadgui-action-layer]]). Then [[cadgui-3-2d-parity]].
