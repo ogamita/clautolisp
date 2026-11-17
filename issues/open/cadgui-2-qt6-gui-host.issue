@@ -190,12 +190,39 @@ mouse, pan/zoom, coarse regen, offscreen-capable.
   drawn between the 6 supplied points render correctly offscreen, no
   crash/deadlock. This de-risks the whole ECL-threads + Qt-on-main + shared-CL-
   model marriage -- the core the real multi-threaded host is built on.
-- NEXT: the MULTI-THREADED live window -- carry the validated pattern into the
-  real cadgui shell/host: Qt main + the application lisp (+ its single document)
-  on a NEW ECL thread, cross-thread input into cador's =read-prompt-line=
-  (Qt-main driver resumes the parked runner), a locked thread-safe display-list
-  snapshot for repaint. Then per-document runner/driver threads + cross-thread
-  park/resume via the cador scheduler (shared with the cooperative-scheduler
-  remainder); regen-on-dbmod (vs re-pull); ssget window/crossing (two-point);
-  registering every canvas interaction through [[cadgui-action-layer]]. Then
+- DONE (2026-11-17): the MULTI-THREADED live window, single document. The real
+  =cadgui-shell.cpp= now runs the pattern on the real cador engine: Qt's event
+  loop on the MAIN thread; the application lisp on a NEW ECL thread
+  (=mp:process-run-function "cadgui-app"=); the command line posts AutoLISP
+  strings on a =CommandQueue=; a canvas click posts a world point on a
+  =PointQueue= that the runner's blocked =getpoint=/=entsel= consumes through
+  =*cadgui-input-hook*= / =read-prompt-line=; the runner is the SINGLE actor
+  touching the model (it evals AND exports the display list, so no cross-thread
+  CL race and no cador-wide lock); the main thread paints only a =std::mutex=-
+  guarded C++ snapshot the runner publishes; repaint is requested cross-thread
+  via =QMetaObject::invokeMethod(Queued)=. Validated headless end to end
+  (=--demo=): runner takes the command, getpoint #1 and #2 are each satisfied by
+  a cross-thread canvas click, =entmake= draws through the real engine, the
+  6-prim snapshot is published and rendered, clean quit. (A feeder deadlock --
+  polling a sub-millisecond awaiting edge -- was fixed by counting getpoint
+  REQUESTS and feeding one click per request.)
+- DONE (2026-11-17): ECL workflow to AVOID RELOADING clautolisp each run
+  (integrates =~/src/public/rules/skills/ecl=; see =shell/NOTES-ecl.md=).
+  Measured here: a fresh embedded =cl_boot= + =asdf:load-system= costs ~96 s
+  (cold) EVERY run, because this ECL cannot reuse a WARM fasl cache --
+  =load-system= against a populated cache overflows the C stack in the planner
+  (=ASDF/PLAN::STAMP=), under BOTH Quicklisp's ASDF 3.3.7.3 and ECL's bundled
+  3.1.8.8. And this Debian ECL ships NO static libs (=libcmp.a=/=libecl.a=
+  absent), so image-op/program-op (dev image, standalone exe) cannot LINK here.
+  The approach that works: a monolithic STATIC LIBRARY (=build-cadgui-lib.sh= ->
+  =clautolisp--cadgui--all-systems.a=, just =ar=, no =libcmp.a=) linked into the
+  shell (=CADGUI_USE_LIB=1 bash build.sh=) and initialized from C with
+  =ecl_init_module= -- no runtime ASDF, so no overflow and no recompile.
+  MEASURED: frozen startup ~1.76 s vs ~96 s (~55x). =cadgui-dev.asd= +
+  =build-dev-image.{lisp,sh}= are the EC10 dev-image recipe for Lisp iteration,
+  kept for environments with static libs (source-built ECL / CI image).
+- NEXT: per-document runner/driver threads + cross-thread park/resume via the
+  cador scheduler (shared with the cooperative-scheduler remainder);
+  regen-on-dbmod (vs re-pull); ssget window/crossing (two-point); registering
+  every canvas interaction through [[cadgui-action-layer]]. Then
   [[cadgui-3-2d-parity]].

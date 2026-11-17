@@ -2,3 +2,8 @@ cadgui-shell
 *.png
 *.log
 *.o
+*.a
+*.fas
+*.fasc
+*.image
+cadgui-lib-init.h
