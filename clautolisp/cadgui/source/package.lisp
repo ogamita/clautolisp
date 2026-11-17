@@ -22,6 +22,7 @@
    #:cadgui-add-line
    #:cadgui-add-circle
    #:cadgui-entity-count
+   #:cadgui-regen-serial
    ;; Interactive input bridge (slice D) -- a GUI-backed cador prompt stream so
    ;; getpoint/entsel/ssget drive from the canvas. The shell sets the hook to its
    ;; nested-event-loop await; it returns the next input line (e.g. a point "x,y").

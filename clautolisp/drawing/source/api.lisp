@@ -272,6 +272,7 @@ to check document locking, D1 §10).")
   (when *drawing-modification-hook*
     (funcall *drawing-modification-hook* drawing))
   (setf (drawing-dbmod drawing) (logior (drawing-dbmod drawing) bit))
+  (incf (drawing-dbtick drawing))        ; monotonic: changes on EVERY change
   drawing)
 
 (defun add-entity (drawing dxf &key handle block object-p)

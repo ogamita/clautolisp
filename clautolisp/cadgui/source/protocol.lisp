@@ -33,6 +33,17 @@ Drives zoom-extents."
   "Number of drawable primitives currently in the scene (a coarse regen signal)."
   (length (cadgui-display-list)))
 
+(defun cadgui-regen-serial ()
+  "The active drawing's monotonic modification serial (DRAWING-DBTICK): it
+changes on EVERY database change and never resets. The shell reads it before
+and after a command and regens (re-exports + repaints) only when it changed --
+cheaper and more reliable than re-pulling the whole display list or than DBMOD
+(a sticky bitfield whose value does not change on repeated same-kind edits).
+Returns 0 when there is no active drawing."
+  (let* ((host (cadgui-session-host (cadgui-session-or-start)))
+         (drawing (clautolisp.cador:cador-active-drawing host)))
+    (if drawing (clautolisp.drawing:drawing-dbtick drawing) 0)))
+
 ;;; --- model builders: populate the model via the REAL cador HAL --------
 
 (defun cadgui-add-line (x1 y1 x2 y2 &key (layer "0") color)

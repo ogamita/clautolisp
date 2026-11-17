@@ -323,13 +323,18 @@ static void install_runner_hooks() {
     // The runner loop (CL-USER so c_string_to_object reads the bare symbols in
     // the CL-USER package): take a command, eval it (may block in getpoint on
     // the point queue), publish a fresh snapshot, repeat until a NIL command.
+    // regen-on-dbmod: publish (re-export + repaint) only when the command
+    // actually changed the drawing, detected via the monotonic regen serial
+    // (clautolisp.drawing:drawing-dbtick). A pure query redraws nothing.
     eval_str("(defun cadgui-shell-runner ()"
              "  (loop"
              "    (let ((cmd (cadgui-shell-next-command)))"
              "      (when (null cmd) (return))"
-             "      (handler-case (clautolisp.cadgui:cadgui-eval-command cmd)"
-             "        (error (e) (format *error-output* \"~&cadgui command error: ~a~%\" e)))"
-             "      (cadgui-shell-publish))))");
+             "      (let ((before (clautolisp.cadgui:cadgui-regen-serial)))"
+             "        (handler-case (clautolisp.cadgui:cadgui-eval-command cmd)"
+             "          (error (e) (format *error-output* \"~&cadgui command error: ~a~%\" e)))"
+             "        (when (/= before (clautolisp.cadgui:cadgui-regen-serial))"
+             "          (cadgui-shell-publish))))))");
 }
 static void start_runner() {
     eval_str("(mp:process-run-function \"cadgui-app\" (function cadgui-shell-runner))");

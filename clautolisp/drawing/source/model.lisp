@@ -86,6 +86,14 @@ rather than fixed."
 tables, blocks, objects) changed since the drawing was read, created or
 last written. Set by the mutation functions, cleared by READ-DRAWING /
 WRITE-DRAWING.")
+   (dbtick :initform 0
+           :accessor drawing-dbtick
+           :documentation "A MONOTONIC modification serial, incremented on
+every database change (NOTE-DRAWING-MODIFIED), never cleared. Unlike DBMOD
+-- a sticky bitfield whose value only changes on the first change of each
+kind -- DBTICK changes on EVERY change, so a consumer can detect \"did the
+drawing change since I last looked?\" by comparing the value. Used by the
+cadgui host to regen only when the drawing actually changed.")
    (path :initarg :path
          :initform nil
          :accessor drawing-path

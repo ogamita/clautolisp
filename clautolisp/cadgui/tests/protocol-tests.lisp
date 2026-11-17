@@ -95,3 +95,22 @@
       (cadgui-eval-command
        "(setq ss (ssget \"C\" (getpoint) (getpoint))) (if ss (entdel (ssname ss 0)))"))
     (is (= 0 (cadgui-entity-count)))))        ; crossing erased it
+
+;;; regen-on-dbmod: the monotonic regen serial (drawing-dbtick) advances only
+;;; when the drawing actually changed, so the shell repaints only then.
+
+(test cadgui-regen-serial-advances-only-when-the-drawing-changes
+  (let ((*cadgui-session* nil))
+    (cadgui-start)
+    (let ((s0 (cadgui-regen-serial)))
+      ;; a pure query changes nothing -> the serial is unchanged (no regen)
+      (cadgui-eval-command "(+ 1 2)")
+      (is (= s0 (cadgui-regen-serial)))
+      ;; drawing an entity advances the serial -> the shell would regen
+      (cadgui-eval-command
+       "(entmake (list (cons 0 \"LINE\") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 1.0 0.0))))")
+      (let ((s1 (cadgui-regen-serial)))
+        (is (> s1 s0))
+        ;; another pure query still does not advance it
+        (cadgui-eval-command "(getvar \"DBMOD\")")
+        (is (= s1 (cadgui-regen-serial)))))))
