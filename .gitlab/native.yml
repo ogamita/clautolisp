@@ -2799,7 +2799,10 @@ verify:epure-lifecycle:windows:
   extends: .gate-windows-hard
   tags: [windows, amd64, shell, cad]
   stage: test
-  timeout: 30m
+  # Five native rows, each allowed alfe's whole READY budget (~7 min) to get
+  # quiescent since alfe 2.4.26: 30m timed out before the artefacts -- and the
+  # busy-windows.txt reports -- were uploaded (job 18107450555).
+  timeout: 60m
   rules:
     - if: '$CI_MERGE_REQUEST_LABELS =~ /qualification::epure-lifecycle/'
       when: manual
