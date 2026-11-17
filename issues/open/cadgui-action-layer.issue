@@ -81,6 +81,28 @@ AI's feedback loop, and the bug repro -- one artefact for tests, agents and user
 - *E. Record/replay.* Transcript capture + headless replay. TEST: replay a
   recorded transcript, assert identical final state.
 
+* Status
+
+- DONE (2026-11-17, 2.4.27): slice *A (registry + dispatch)* and most of *B
+  (introspection)* -- =clautolisp/cadgui= module =cadgui/source/actions.lisp=.
+  =*cadgui-actions*= registry (id -> typed-params + doc + category + fn);
+  =cadgui-register-action=; the single dispatch entry point
+  =cadgui-invoke-action= (signals =cadgui-unknown-action= on an unknown id);
+  introspection =cadgui-list-actions= (optional category filter) +
+  =cadgui-describe-action= (a (:id :category :doc :params) plist). The existing
+  cadgui operations are registered as built-in actions (:add-line, :add-circle,
+  :eval-command, :entity-count, :selection). Covered by cadgui-suite tests
+  (actions-tests.lisp): list/describe the built-ins, invoke draws through the
+  single entry point, an unknown action signals, re-registration replaces.
+- NEXT in this issue: =get-state= (active command + pending prompt + selection +
+  sysvars + view) to finish *B*; adapter over cador's =*cador-commands*= so
+  every command is an action; *C* structured interaction (typed request/answer
+  + event stream over the cadgui input bridge); *D* the driveability guard (CI
+  check: every action registered + reachable only via =invoke-action= + headless
+  test); *E* record/replay. The GUI command line already routes AutoLISP through
+  the =:eval-command= action's implementation; wiring widgets exclusively
+  through =invoke-action= lands with *D*.
+
 * Where it sits, what it reuses
 
 Established WITH phase 2 (not a late add-on), so every later phase registers its

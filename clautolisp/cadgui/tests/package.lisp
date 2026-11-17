@@ -1,11 +1,13 @@
 (defpackage #:clautolisp.cadgui.tests
   (:use #:cl)
   (:import-from #:fiveam
-                #:def-suite #:in-suite #:test #:is #:run #:explain! #:results-status)
+                #:def-suite #:in-suite #:test #:is #:signals #:run #:explain! #:results-status)
   (:import-from #:clautolisp.cadgui
                 #:cadgui-start #:cadgui-session-host #:*cadgui-session*
                 #:cadgui-display-list #:cadgui-extents #:cadgui-entity-count
                 #:cadgui-regen-serial #:cadgui-selection #:cadgui-selection-geometry
+                #:cadgui-invoke-action #:cadgui-list-actions #:cadgui-describe-action
+                #:cadgui-unknown-action #:cadgui-register-action
                 #:cadgui-add-line #:cadgui-add-circle
                 #:cadgui-input-stream #:*cadgui-input-hook* #:*cadgui-pending-input*
                 #:cadgui-point-line #:cadgui-install-input

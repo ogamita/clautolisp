@@ -303,7 +303,8 @@ interactive input, command eval. cadgui-2-qt6-gui-host.issue."
   ((:file "cadgui/source/package")
    (:file "cadgui/source/input")
    (:file "cadgui/source/session")
-   (:file "cadgui/source/protocol"))
+   (:file "cadgui/source/protocol")
+   (:file "cadgui/source/actions"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/cadgui/tests")))
   :perform (asdf:test-op (op system)
@@ -319,7 +320,8 @@ interactive input, command eval. cadgui-2-qt6-gui-host.issue."
   :components
   ((:file "cadgui/tests/package")
    (:file "cadgui/tests/input-tests")
-   (:file "cadgui/tests/protocol-tests"))
+   (:file "cadgui/tests/protocol-tests")
+   (:file "cadgui/tests/actions-tests"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (uiop:symbol-call :clautolisp.cadgui.tests

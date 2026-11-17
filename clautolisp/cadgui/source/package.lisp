@@ -34,4 +34,14 @@
    #:cadgui-point-line
    #:cadgui-install-input
    ;; Command evaluation (slice E)
-   #:cadgui-eval-command))
+   #:cadgui-eval-command
+   ;; Action layer (cadgui-action-layer slice 1) -- one registry + dispatch +
+   ;; introspection; the surface the GUI, CLI, scripts and an AI driver share.
+   #:*cadgui-actions*
+   #:cadgui-register-action
+   #:cadgui-register-builtin-actions
+   #:cadgui-invoke-action
+   #:cadgui-list-actions
+   #:cadgui-describe-action
+   #:cadgui-unknown-action
+   #:cadgui-unknown-action-id))
