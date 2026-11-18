@@ -131,3 +131,32 @@
              (is (equal '(0d0 0d0 5d0 5d0) (sixth (first sa))))
              (is (equal '(0d0 0d0 9d0 9d0) (sixth (first sb))))))
       (cadgui-workspace-shutdown ws))))
+
+(test cadgui-document-runs-a-typed-autolisp-command-that-getpoints-and-draws
+  ;; The live interactive loop: a document runs cadgui-document-command-loop; the
+  ;; user TYPES an AutoLISP command, which runs in the document's scheduler
+  ;; context -- its getpoints park and are answered by canvas clicks. Everything
+  ;; is driven through the multiplexing driver (which a window would feed).
+  (let* ((ws (cadgui-make-workspace))
+         (da (cadgui-open-document ws :a #'cadgui-document-command-loop)))
+    (unwind-protect
+         (progn
+           (cadgui-workspace-launch ws da)
+           (is (eq :park (cadgui-workspace-drive-step ws)))    ; reading a command
+           ;; the user types a LINE command
+           (cadgui-doc-feed ws da "(command \"LINE\" (getpoint) (getpoint))")
+           (is (eq :input (cadgui-workspace-drive-step ws)))   ; run it -> getpoint #1
+           (is (eq :park (cadgui-workspace-drive-step ws)))
+           (cadgui-doc-feed-point ws da 0 0)
+           (is (eq :input (cadgui-workspace-drive-step ws)))   ; -> getpoint #2
+           (is (eq :park (cadgui-workspace-drive-step ws)))
+           (cadgui-doc-feed-point ws da 5 5)
+           (is (eq :input (cadgui-workspace-drive-step ws)))   ; LINE draws, loop reads next
+           (is (eq :park (cadgui-workspace-drive-step ws)))    ; parked reading the NEXT command
+           ;; end the document's input
+           (cadgui-doc-feed ws da :eof)
+           (is (eq :input (cadgui-workspace-drive-step ws)))   ; :eof -> loop returns
+           (is (eq :done (cadgui-workspace-drive-step ws)))
+           ;; the typed command drew a line in this document's model
+           (is (= 1 (length (cadgui-doc-display-list da)))))
+      (cadgui-workspace-shutdown ws))))

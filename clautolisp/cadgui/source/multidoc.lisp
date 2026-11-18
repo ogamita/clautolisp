@@ -227,6 +227,41 @@ its driver thread, with the input arriving from canvas clicks instead."
             (when (parkp next) (push next pending))))))
     served))
 
+(defun cadgui-document-run-command (host string)
+  "Evaluate STRING as AutoLISP IN THE CURRENT document context -- so any
+getpoint/entsel/ssget it performs parks to the scheduler driver and resumes from
+THIS document's input channel -- with HOST bound for the get-family and entmake.
+Call it from a document's thunk, running on its own context thread: it is the
+interactive per-document eval the live multi-window shell uses (a document's
+command loop reads a typed command line and runs it through here). Returns the
+value of the last form.
+
+Unlike cadgui-eval-command (which spins a FRESH session with no scheduler, so
+its getpoint would read synchronously), this reuses the CURRENT evaluation
+context -- the one the scheduler installed -- so the whole get-family parks
+cooperatively and the document interleaves with its siblings."
+  (let* ((ctx (clautolisp.autolisp-runtime:current-evaluation-context))
+         (dialect (clautolisp.autolisp-reader:autolisp-dialect-strict))
+         (options (clautolisp.autolisp-runtime:derive-reader-options-for-dialect
+                   dialect :source-name "<cadgui>"))
+         (forms (clautolisp.autolisp-runtime:read-runtime-from-string string :options options)))
+    (clautolisp.autolisp-builtins-core:install-core-builtins)
+    (clautolisp.autolisp-runtime:set-runtime-session-host
+     (clautolisp.autolisp-runtime:evaluation-context-session ctx) host)
+    (clautolisp.autolisp-runtime:autolisp-eval-progn forms ctx)))
+
+(defun cadgui-document-command-loop (host)
+  "A document's interactive command loop (its thunk): read a command line from
+the document's input (parks), run it as AutoLISP through
+CADGUI-DOCUMENT-RUN-COMMAND, repeat until end of input. This is what each live
+document window drives -- the user types a command, it runs, its getpoints read
+the canvas. Blank lines are skipped; :EOF ends the loop."
+  (loop
+    (let ((line (clautolisp.cador:read-prompt-line host)))
+      (when (eq line :eof) (return))
+      (when (and (stringp line) (plusp (length (string-trim '(#\Space #\Tab) line))))
+        (ignore-errors (cadgui-document-run-command host line))))))
+
 (defun cadgui-doc-display-list (doc)
   "The display list of DOC's OWN model -- what DOC's window renders. Same
 (:POLYLINE ...) format as cadgui-display-list, but for this document's host."

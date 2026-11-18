@@ -221,6 +221,7 @@
    #:cador-named-object-dictionary
    #:cador-sysvars
    #:cador-prompt-stream
+   #:read-prompt-line
    #:cador-prompt-output
    #:cador-command-log
    #:cador-display-log

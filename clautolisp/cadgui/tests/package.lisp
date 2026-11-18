@@ -11,7 +11,8 @@
                 #:cadgui-make-workspace #:cadgui-workspace-docs #:cadgui-open-document
                 #:cadgui-doc-supply-point #:cadgui-doc-host #:cadgui-workspace-start
                 #:cadgui-workspace-serve #:cadgui-workspace-run #:cadgui-workspace-shutdown
-                #:cadgui-doc-feed-point #:cadgui-workspace-launch #:cadgui-workspace-drive-step
+                #:cadgui-doc-feed #:cadgui-doc-feed-point #:cadgui-workspace-launch
+                #:cadgui-workspace-drive-step #:cadgui-document-command-loop
                 #:cadgui-doc-display-list #:cadgui-workspace-all-finished-p
                 #:cadgui-add-line #:cadgui-add-circle
                 #:cadgui-input-stream #:*cadgui-input-hook* #:*cadgui-pending-input*

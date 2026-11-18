@@ -62,6 +62,8 @@
    #:cadgui-doc-feed-point
    #:cadgui-workspace-launch
    #:cadgui-workspace-drive-step
+   #:cadgui-document-run-command
+   #:cadgui-document-command-loop
    #:cadgui-doc-display-list
    #:cadgui-doc-extents
    #:cadgui-workspace-all-finished-p
