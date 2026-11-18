@@ -1019,3 +1019,113 @@ entry reaches the xrecord, and none of them counts as an entity."
   (let ((at (search (map '(vector (unsigned-byte 8)) #'char-code from) octets)))
     (assert at)
     (replace (copy-seq octets) (map '(vector (unsigned-byte 8)) #'char-code to) :start1 at)))
+
+;;; --- XData: flat 1001 groups in the file, one (-3 ...) cell in entget ---
+;;;
+;;; dxf-import-xdata-not-folded-into-minus-3-cell: a DXF (and so a DWG,
+;;; which goes through this codec) stores an object's XData as a flat run
+;;; of 1001 / 10xx groups at its end. ENTGET reports it as ONE trailing
+;;; (-3 ("APP" pairs...) ...) cell, and ENTMOD / SSGET (-3 ...) / the
+;;; ENTGET application filter all work on that cell. The reader left the
+;;; groups flat, so an entity loaded from a file had no XData at all as far
+;;; as AutoLISP could see; the writer, given a -3 cell, emitted a group -3.
+
+(defparameter +xdata-dxf+
+  (format nil "~{~A~%~}"
+          '("0" "SECTION" "2" "HEADER"
+            "9" "$ACADVER" "1" "AC1027"
+            "9" "$HANDSEED" "5" "64"
+            "0" "ENDSEC"
+            "0" "SECTION" "2" "TABLES"
+            "0" "TABLE" "2" "APPID" "70" "1"
+            "0" "APPID" "5" "12" "2" "TESTAPP" "70" "0"
+            "0" "ENDTAB"
+            "0" "TABLE" "2" "LAYER" "70" "1"
+            "0" "LAYER" "5" "10" "2" "WALLS" "70" "0" "62" "7"
+            "1001" "ACAD" "1000" "layer-note"
+            "0" "ENDTAB"
+            "0" "ENDSEC"
+            "0" "SECTION" "2" "ENTITIES"
+            "0" "INSERT" "5" "20" "8" "WALLS" "2" "BLK"
+            "10" "1.0" "20" "2.0" "30" "0.0"
+            "50" "90.0"
+            "210" "0.0" "220" "0.0" "230" "1.0"
+            "1001" "TESTAPP"
+            "1000" "/a/b/c"
+            "1070" "2"
+            "1002" "{"
+            "1010" "4.0" "1020" "5.0" "1030" "6.0"
+            "1040" "0.5"
+            "1002" "}"
+            "1001" "ACAD"
+            "1071" "-939524096"
+            "0" "LINE" "5" "21" "8" "WALLS"
+            "10" "0.0" "20" "0.0" "30" "0.0"
+            "11" "1.0" "21" "1.0" "31" "0.0"
+            "0" "ENDSEC"
+            "0" "EOF")))
+
+(defparameter +xdata-dxf-expected-cell+
+  '(-3 ("TESTAPP" (1000 . "/a/b/c") (1070 . 2) (1002 . "{")
+        (1010 4.0d0 5.0d0 6.0d0) (1040 . 0.5d0) (1002 . "}"))
+       ("ACAD" (1071 . -939524096))))
+
+(defun %flat-xdata-codes (data)
+  "The top-level group codes of DATA that are XData codes (1000-1071)."
+  (loop for pair in data
+        when (and (consp pair) (integerp (car pair)) (<= 1000 (car pair) 1071))
+          collect (car pair)))
+
+(test dxf-read-folds-xdata-into-minus-3-cell
+  (let* ((d (with-input-from-string (s +xdata-dxf+)
+              (dxf-read-drawing-from-stream s)))
+         (insert (entity-dxf (find-entity d "20")))
+         (line (entity-dxf (find-entity d "21")))
+         (layer (table-record-dxf (find-table-record d :layer "WALLS"))))
+    ;; No XData group is left at top level...
+    (is (null (%flat-xdata-codes insert)) "flat XData groups left: ~S" insert)
+    ;; ... it is ONE trailing -3 cell, applications in file order, values typed.
+    (is (equalp +xdata-dxf-expected-cell+ (car (last insert))))
+    (is (= 1 (count -3 insert :key #'car)))
+    ;; The ordinary groups before it are untouched (the 50 still converted).
+    (is (equal '(1.0d0 2.0d0 0.0d0) (cdr (assoc 10 insert))))
+    (is (< (abs (- (/ pi 2) (cdr (assoc 50 insert)))) 1d-9))
+    ;; An object without XData gets no -3 cell.
+    (is (null (assoc -3 line)))
+    ;; A symbol-table record's XData is folded too.
+    (is (equalp '(-3 ("ACAD" (1000 . "layer-note"))) (assoc -3 layer)))
+    (is (null (%flat-xdata-codes layer)))))
+
+(test dxf-write-expands-minus-3-cell-and-round-trips
+  (let* ((original (with-input-from-string (s +xdata-dxf+)
+                     (dxf-read-drawing-from-stream s)))
+         (text (with-output-to-string (s)
+                 (dxf-write-drawing-to-stream original s)))
+         (restored (with-input-from-string (s text)
+                     (dxf-read-drawing-from-stream s)))
+         (lines (with-input-from-string (s text)
+                  (loop for line = (read-line s nil nil)
+                        while line
+                        collect (string-trim " " line)))))
+    ;; No group -3 in the file: the cell is written as 1001 + its pairs.
+    (is (null (loop for (code value) on lines by #'cddr
+                    when (string= code "-3") collect value)))
+    (is (search '("1001" "TESTAPP" "1000" "/a/b/c" "1070" "2") lines :test #'string=))
+    (is (equalp +xdata-dxf-expected-cell+
+                (assoc -3 (entity-dxf (find-entity restored "20")))))
+    (is (equalp '(-3 ("ACAD" (1000 . "layer-note")))
+                (assoc -3 (table-record-dxf (find-table-record restored :layer "WALLS")))))))
+
+(test dxf-write-expands-xdata-attached-at-runtime
+  ;; XData ENTMOD attaches lives in the entity as a -3 cell; saving must
+  ;; write it as file groups, not as a (-3 . list) pair.
+  (let ((d (make-drawing :version :ac1027)))
+    (add-entity d '((0 . "LINE") (8 . "0") (10 0.0d0 0.0d0 0.0d0)
+                    (11 1.0d0 1.0d0 0.0d0)
+                    (-3 ("TESTAPP" (1000 . "v") (1070 . 7)))))
+    (let* ((text (with-output-to-string (s) (dxf-write-drawing-to-stream d s)))
+           (restored (with-input-from-string (s text) (dxf-read-drawing-from-stream s)))
+           (data nil))
+      (map-entities (lambda (e) (when (eq :line (entity-kind e)) (setf data (entity-dxf e))))
+                    restored)
+      (is (equalp '(-3 ("TESTAPP" (1000 . "v") (1070 . 7))) (car (last data)))))))
