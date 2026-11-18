@@ -269,17 +269,23 @@ cooperatively and the document interleaves with its siblings."
      (clautolisp.autolisp-runtime:evaluation-context-session ctx) host)
     (clautolisp.autolisp-runtime:autolisp-eval-progn forms ctx)))
 
-(defun cadgui-document-command-loop (host)
+(defun cadgui-document-command-loop (host &optional after-command)
   "A document's interactive command loop (its thunk): read a command line from
 the document's input (parks), run it as AutoLISP through
 CADGUI-DOCUMENT-RUN-COMMAND, repeat until end of input. This is what each live
 document window drives -- the user types a command, it runs, its getpoints read
-the canvas. Blank lines are skipped; :EOF ends the loop."
+the canvas. Blank lines are skipped; :EOF ends the loop.
+
+AFTER-COMMAND, when supplied, is a function of no arguments called ON THE
+DOCUMENT'S THREAD after each command runs -- the live shell sets it to publish
+this document's display-list snapshot and request its window's repaint (done on
+the owning thread, so the paint is race-free)."
   (loop
     (let ((line (clautolisp.cador:read-prompt-line host)))
       (when (eq line :eof) (return))
       (when (and (stringp line) (plusp (length (string-trim '(#\Space #\Tab) line))))
-        (ignore-errors (cadgui-document-run-command host line))))))
+        (ignore-errors (cadgui-document-run-command host line))
+        (when after-command (ignore-errors (funcall after-command)))))))
 
 (defun cadgui-doc-display-list (doc)
   "The display list of DOC's OWN model -- what DOC's window renders. Same

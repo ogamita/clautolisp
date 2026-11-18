@@ -524,12 +524,212 @@ static int run_mdi_demo(const std::string &prefix) {
     return app.exec();
 }
 
+// ======================= the LIVE multi-window (MDI) app ===================
+// Real per-document windows: each a canvas + a command line, painting from its
+// OWN mutex-guarded snapshot that the document's thread publishes after each
+// command (so the paint is race-free). A Lisp driver thread multiplexes; the Qt
+// main thread owns the windows and routes a command line / a canvas click to
+// that document via cadgui-doc-feed. Headless (--mdi PREFIX) it drives synthetic
+// commands + points and grabs each window; on a display (no PREFIX) it is live.
+
+struct DocView {
+    std::mutex mutex;
+    std::vector<Prim> prims;
+    QWidget *canvas = nullptr;               // the MdiCanvas (a QWidget) to repaint
+    int idx = 0;
+};
+static std::vector<DocView*> g_mdidocs;
+
+// Called FROM the document's own thread (cadgui-document-command-loop's
+// after-command hook) -> pulls this document's model on the thread that owns it
+// (race-free) into the snapshot, then asks the Qt main thread to repaint.
+static cl_object cadgui_mdi_publish(cl_object idx_obj) {
+    int idx = (int)ecl_to_fixnum(idx_obj);
+    if (idx < 0 || idx >= (int)g_mdidocs.size()) return ECL_NIL;
+    DocView *dv = g_mdidocs[idx];
+    char form[160];
+    std::snprintf(form, sizeof form,
+                  "(clautolisp.cadgui:cadgui-doc-display-list (aref *mdi-docs* %d))", idx);
+    std::vector<Prim> prims = pull_prims(form);
+    { std::lock_guard<std::mutex> g(dv->mutex); dv->prims = std::move(prims); }
+    if (dv->canvas)
+        QMetaObject::invokeMethod(dv->canvas, [dv] { if (dv->canvas) dv->canvas->update(); },
+                                  Qt::QueuedConnection);
+    return ECL_NIL;
+}
+
+class MdiCanvas : public QWidget {
+public:
+    int idx = 0;
+    View view;
+    bool haveFit = false;
+    QPointF cursorDev;
+    MdiCanvas() { setMinimumSize(360, 300); setMouseTracking(true); }
+    void feedPoint(double wx, double wy) {
+        char form[220];
+        std::snprintf(form, sizeof form,
+            "(clautolisp.cadgui:cadgui-doc-feed-point *mdi-ws* (aref *mdi-docs* %d) %.10g %.10g)",
+            idx, wx, wy);
+        eval_str(form);
+    }
+protected:
+    void mousePressEvent(QMouseEvent *e) override {
+        if (e->button() == Qt::LeftButton) {
+            QPointF w = view.toWorld(e->position().x(), e->position().y());
+            feedPoint(w.x(), w.y());             // a click answers a getpoint
+        } else if (e->button() == Qt::MiddleButton) { panning = true; panFrom = e->position(); }
+    }
+    void mouseMoveEvent(QMouseEvent *e) override {
+        cursorDev = e->position();
+        if (panning) { QPointF d = e->position() - panFrom; view.ox += d.x(); view.oy += d.y();
+                       panFrom = e->position(); }
+        update();
+    }
+    void mouseReleaseEvent(QMouseEvent *e) override {
+        if (e->button() == Qt::MiddleButton) panning = false;
+    }
+    void wheelEvent(QWheelEvent *e) override {
+        view.zoomAt(e->position(), (e->angleDelta().y() > 0) ? 1.15 : 1.0/1.15); update();
+    }
+    void paintEvent(QPaintEvent *) override {
+        std::vector<Prim> prims;
+        { std::lock_guard<std::mutex> g(g_mdidocs[idx]->mutex); prims = g_mdidocs[idx]->prims; }
+        if (!haveFit && !prims.empty()) {        // first content -> fit
+            double x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;
+            for (const Prim &pr : prims) for (size_t i=0;i+1<pr.pts.size();i+=2) {
+                x0=std::min(x0,pr.pts[i]); x1=std::max(x1,pr.pts[i]);
+                y0=std::min(y0,pr.pts[i+1]); y1=std::max(y1,pr.pts[i+1]); }
+            if (x0<=x1) { view.fit(x0,y0,x1,y1,width(),height(),28); haveFit=true; }
+        }
+        QPainter g(this);
+        g.setRenderHint(QPainter::Antialiasing, true);
+        g.fillRect(rect(), QColor(18, 22, 30));
+        g.setPen(QPen(QColor(55, 64, 78), 1.0));
+        g.drawLine(view.toDev(-1e5,0), view.toDev(1e5,0));
+        g.drawLine(view.toDev(0,-1e5), view.toDev(0,1e5));
+        for (const Prim &pr : prims) {
+            QPen pen(aci_to_rgb(pr.aci)); pen.setWidthF(1.8); g.setPen(pen);
+            QVector<QPointF> poly;
+            for (size_t i=0;i+1<pr.pts.size();i+=2) poly.push_back(view.toDev(pr.pts[i],pr.pts[i+1]));
+            if (pr.closed && !poly.isEmpty()) poly.push_back(poly.first());
+            if (poly.size()>=2) g.drawPolyline(poly.constData(), poly.size());
+            else if (poly.size()==1) g.drawPoint(poly.first());
+        }
+    }
+private:
+    bool panning = false; QPointF panFrom;
+};
+
+class DocWindow : public QWidget {
+public:
+    MdiCanvas *canvas; QLineEdit *cmd; int idx;
+    DocWindow(int i) : idx(i) {
+        auto *lay = new QVBoxLayout(this); lay->setContentsMargins(0,0,0,0); lay->setSpacing(0);
+        canvas = new MdiCanvas; canvas->idx = i;
+        cmd = new QLineEdit; cmd->setPlaceholderText("command, e.g. (command \"LINE\" (getpoint) (getpoint))");
+        lay->addWidget(canvas, 1); lay->addWidget(cmd, 0);
+        QObject::connect(cmd, &QLineEdit::returnPressed, this, [this] {
+            std::string s = cmd->text().toStdString(); cmd->clear();
+            if (s.empty()) return;
+            // feed the TYPED command to this document (escape embedded quotes)
+            std::string esc; for (char c : s) { if (c=='"'||c=='\\') esc.push_back('\\'); esc.push_back(c); }
+            std::string form = "(clautolisp.cadgui:cadgui-doc-feed *mdi-ws* (aref *mdi-docs* "
+                               + std::to_string(idx) + ") \"" + esc + "\")";
+            eval_str(form.c_str());
+        });
+    }
+};
+
+// Set up the workspace + N documents (each publishing after every command) and
+// the Lisp driver thread. Registered C publish + the per-doc after-command hook.
+static const char *MDI_LIVE_SETUP =
+  "(progn"
+  "  (defparameter *mdi-ws* (clautolisp.cadgui:cadgui-make-workspace))"
+  "  (defparameter *mdi-docs*"
+  "    (vector"
+  "      (clautolisp.cadgui:cadgui-open-document *mdi-ws* :a"
+  "        (lambda (h) (clautolisp.cadgui:cadgui-document-command-loop h (lambda () (cadgui-mdi-publish 0)))))"
+  "      (clautolisp.cadgui:cadgui-open-document *mdi-ws* :b"
+  "        (lambda (h) (clautolisp.cadgui:cadgui-document-command-loop h (lambda () (cadgui-mdi-publish 1)))))))"
+  "  (dotimes (i (length *mdi-docs*))"
+  "    (clautolisp.cadgui:cadgui-workspace-launch *mdi-ws* (aref *mdi-docs* i))"
+  "    (format *error-output* \"~&mdi-setup: doc ~a step=~a~%\" i (clautolisp.cadgui:cadgui-workspace-drive-step *mdi-ws*)))"
+  "  (finish-output *error-output*)"
+  "  (mp:process-run-function \"mdi-driver\""
+  "    (lambda () (loop (let ((ev (clautolisp.cadgui:cadgui-workspace-drive-step *mdi-ws* 3)))"
+  "                       (format *error-output* \"~&mdi-live-driver: ~a~%\" ev) (finish-output *error-output*)"
+  "                       (when (eq ev :timeout) (return)))))))";
+
+static int run_mdi_live(const std::string &grabPrefix) {
+    const bool headless = !grabPrefix.empty();
+    if (headless) qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
+    ecl_def_c_function(c_string_to_object("CADGUI-MDI-PUBLISH"),
+                       (cl_objectfn_fixed)cadgui_mdi_publish, 1);
+    eval_str(MDI_LIVE_SETUP);
+
+    int argc0 = 0; QApplication app(argc0, nullptr);
+    const int N = 2;
+    std::vector<DocWindow *> wins;
+    for (int i = 0; i < N; i++) {
+        DocView *dv = new DocView; dv->idx = i;
+        DocWindow *w = new DocWindow(i);
+        dv->canvas = w->canvas;
+        g_mdidocs.push_back(dv);
+        w->resize(380, 340); w->setWindowTitle(QString("cadgui doc %1").arg(i == 0 ? "A" : "B"));
+        w->move(40 + i*420, 60); w->show();
+        wins.push_back(w);
+    }
+    if (!headless) return app.exec();            // live: real windows on a display
+
+    // Headless: TYPE a LINE command in each window's command line (exercising the
+    // real widget -> feed), then feed its two points; grab each window.
+    static int step = 0;
+    QTimer driver;
+    QObject::connect(&driver, &QTimer::timeout, &app, [&] {
+        switch (step++) {
+          case 1: wins[0]->cmd->setText("(command \"LINE\" (getpoint) (getpoint))");
+                  emit wins[0]->cmd->returnPressed(); break;
+          case 2: wins[1]->cmd->setText("(command \"LINE\" (getpoint) (getpoint))");
+                  emit wins[1]->cmd->returnPressed(); break;
+          case 3: wins[0]->canvas->feedPoint(0, 0);  break;
+          case 4: wins[1]->canvas->feedPoint(0, 0);  break;
+          case 5: wins[0]->canvas->feedPoint(5, 5);  break;
+          case 6: wins[1]->canvas->feedPoint(9, 9);  break;
+          case 7: eval_str("(clautolisp.cadgui:cadgui-doc-feed *mdi-ws* (aref *mdi-docs* 0) :eof)"); break;
+          case 8: eval_str("(clautolisp.cadgui:cadgui-doc-feed *mdi-ws* (aref *mdi-docs* 1) :eof)"); break;
+          default: break;
+        }
+    });
+    driver.start(25);
+    QTimer watchdog; int ticks = 0;
+    QObject::connect(&watchdog, &QTimer::timeout, &app, [&] {
+        bool done = (step > 8) &&
+            (eval_str("(if (clautolisp.cadgui:cadgui-workspace-all-finished-p *mdi-ws*) t nil)") != ECL_NIL);
+        if (done || ++ticks > 500) {
+            app.processEvents();
+            bool ok = true; size_t total = 0;
+            for (int i = 0; i < N; i++) {
+                { std::lock_guard<std::mutex> g(g_mdidocs[i]->mutex); total += g_mdidocs[i]->prims.size(); }
+                QPixmap pm = wins[i]->canvas->grab();
+                ok = ok && pm.save(QString::fromStdString(grabPrefix + (i==0?"-a.png":"-b.png")), "PNG");
+            }
+            std::fprintf(stderr, "cadgui-shell: --mdi done=%d; %zu prims across windows; saved %s\n",
+                         done ? 1 : 0, total, ok ? "OK" : "FAIL");
+            app.exit((done && ok && total == 2) ? 0 : 1);
+        }
+    });
+    watchdog.start(20);
+    return app.exec();
+}
+
 int main(int argc, char **argv) {
     std::string mode, file;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if ((a == "--render" || a == "--demo" || a == "--mdidemo") && i + 1 < argc) {
             mode = a; file = argv[++i];
+        } else if (a == "--mdi") {               // live multi-window; PREFIX => headless grab
+            mode = a; if (i + 1 < argc) file = argv[++i];
         }
     }
     const bool offscreen = (mode == "--render" || mode == "--demo" || mode == "--mdidemo");
@@ -541,6 +741,9 @@ int main(int argc, char **argv) {
 
     if (mode == "--mdidemo") {                    // the multi-window path: the
         return run_mdi_demo(file);                // driver + input are pure Lisp
+    }
+    if (mode == "--mdi") {                         // the LIVE multi-window app
+        return run_mdi_live(file);                 // (file empty => live on a display)
     }
 
     eval_str("(clautolisp.cadgui:cadgui-start)");

@@ -267,10 +267,22 @@ mouse, pan/zoom, coarse regen, offscreen-capable.
   cross-document bleed the two-window --mdidemo caught -- interleaved typed
   commands drew into one model). --mdidemo now TYPES a LINE command per window,
   fed out of order; each draws its own line in its own model. cadgui suite 113.
-- NEXT: the real-window GUI CHROME (actual QMainWindows per document with
-  per-document snapshots for continuous race-free paint, a command-line widget +
-  live click routing per window, open/close/switch) -- needs a DISPLAY to build
-  and validate (headless, the interactive core is exercised via --mdidemo's
-  synthetic events). One shared cador host with N drawings (vs a host per
-  document, the cador-correct model). The action-layer slices B-E
+- DONE (2026-11-18, 2.5.5): the real-window GUI CHROME -- =cadgui-shell.cpp=
+  =--mdi=. Real per-document windows (=DocWindow= = an =MdiCanvas= + a command-
+  line =QLineEdit=), each painting from its OWN std::mutex-guarded snapshot that
+  the DOCUMENT's thread publishes after every command (=cadgui_mdi_publish=,
+  called via =cadgui-document-command-loop='s after-command hook, on the owning
+  thread so the paint is race-free; repaint requested cross-thread). The command
+  line feeds a TYPED command to its document (=cadgui-doc-feed=); a canvas click
+  feeds a point (=cadgui-doc-feed-point=); a Lisp driver thread multiplexes. On
+  a display it is live (=QApplication::exec=); headless (=--mdi PREFIX=) it types
+  a LINE command + two points per window via the REAL widgets and grabs each
+  window. Validated: two windows, each document draws its own line from its own
+  typed command, rendered to its own frame (done=1, 2 prims). (A --mdi package
+  bug -- the frozen *package* after ecl_init_module is the engine's, not
+  CL-USER, so the setup's defparameters and cl-user:: feed refs were different
+  symbols -- fixed by using unqualified names consistently, as --mdidemo does.)
+- NEXT: the cador-correct ONE shared host with N drawings (vs a host per
+  document); window open/close/switch + a document list; grips/osnap/rubber-band
+  (phase 3). The action-layer slices B-E
   ([[cadgui-action-layer]]). Then [[cadgui-3-2d-parity]].
