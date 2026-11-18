@@ -90,3 +90,19 @@ the EPURE plug-in, stay not quiescent for 223-364 s (COM.READY.ERROR=0).
 Busy without a dialog suggests an active command or LISP (a startup script
 waiting at the command line?). alfe 2.4.30 logs COM.BUSY.STATE (document
 count, CMDNAMES, CMDACTIVE) after a minute of busy and at the end.
+
+* The CAD start itself hangs (2026-11-18, alfe 2.4.30, job 18138721392)
+
+COM.BUSY.STATE after a minute of busy: every read refused with 0x80010001
+(RPC_E_CALL_REJECTED), with no dialog (busy-windows.txt: only the enabled
+AutoCAD main frame). And probe:cad-session-state:windows (job 18138408700)
+now times out BricsCAD in batch mode too (exit 75, 307 s) -- a path with
+no COM and no quiescence gate -- while on 2026-11-17, before the EPURE
+user setup was rerun, BricsCAD batch reached READY in 8 s and automation
+in 51 s; AutoCAD batch still OK (45 s).
+
+So the CAD's main thread is held at startup, outside alfe: most likely
+startup code installed by the EPURE setup (LISP or .NET) waiting on a
+network resource, a licence or a share. Needs an observation at the
+console of PF5S26BT: start each CAD by hand in the runner's profile and
+see what its command line shows and when it becomes usable.
