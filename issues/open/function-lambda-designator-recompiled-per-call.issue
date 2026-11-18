@@ -1,0 +1,100 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: function-lambda-designator-recompiled-per-call — (function (lambda ...)) / '(lambda ...) is recompiled on every call of a compiled function
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-function-lambda-designator-recompiled-per-call
+#+DATE: 2026-11-18
+
+* Context
+
+Seen during a SCHMS+ relation-analysis run (EAMOA-25051) under
+~--host cador~, clautolisp 2.4.15:
+
+#+begin_example
+WARNING:
+   clautolisp: the host compiler has now run 1001 times in this image (most
+   recently for LAMBDA). ...
+#+end_example
+
+The code was ~(mapcar (function (lambda (e) (nth 4 e))) groups)~, evaluated
+once per group inside an ordinary DEFUN. That warning is the guard
+=count-usubr-compilation= added after =lambda-in-a-loop-never-compiles=
+(closed 2.0.25): the same body is being compiled over and over.
+
+=compiler-performance-followups= (DEFERRED) already lists "lambda in an
+INTERPRETED loop"; this is a different, and costlier, case: the enclosing
+function IS compiled.
+
+* Problem
+
+Measured with the installed clautolisp 2.4.15 (same code on master 2.4.31),
+~--host cador --dialect bricscad-v26~:
+
+#+begin_src lisp
+(setq l '())
+(repeat 20 (setq l (cons (list 0 1 2 3 4) l)))
+(defun f (l) BODY)
+(repeat 1100 (f l))
+#+end_src
+
+| BODY                                             | 10 elements | 20 elements |
+|--------------------------------------------------+-------------+-------------|
+| ~(mapcar (function (lambda (e) (nth 4 e))) l)~   | no warning  | WARNING     |
+| ~(mapcar '(lambda (e) (nth 4 e)) l)~             | no warning  | WARNING     |
+| ~(mapcar (lambda (e) (nth 4 e)) l)~              | no warning  | no warning  |
+
+A top-level ~(repeat 1100 (setq r (mapcar (function (lambda ...)) l)))~
+warns too.
+
+Cause, as read in the source:
+- the transpiler gives a bare ~(lambda ...)~ a =usubr-site= via
+  =(load-time-value (make-usubr-site) t)= (=autolisp-compiler/source/transpile.lisp=,
+  the "LAMBDA" branch), so every closure of that form shares one
+  compilation decision and one compiled body;
+- ~(function X)~ and ~'X~ are constants: they yield the LAMBDA LIST itself
+  (FUNCTION ≡ QUOTE, late resolution preserved);
+- MAPCAR / APPLY then turn that list into a function in
+  =resolve-autolisp-function-designator= (=autolisp-runtime/source/api.lisp=,
+  the =(lambda-form-p designator)= branch) and
+  =call-autolisp-function-in-context=, by
+  =(eval-lambda-form (rest designator) context)= -- WITHOUT a site;
+- so each call of F builds a fresh site-less usubr; MAPCAR calls it once
+  per element; at 16 calls (=*autolisp-compilation-threshold*=) it is
+  compiled, the compiled body is stored on that closure only, and the next
+  call of F starts from zero again. With a list of 16 elements or more, the
+  host compiler runs once per call of F; below 16 the lambda is never
+  compiled at all.
+
+~(function (lambda ...))~ is THE idiom of code written to be compiled into
+a VLX/FAS (and is all over SCHMS+), so the common case pays a host
+compilation per call instead of none.
+
+* Proposal
+
+Give a lambda designator the identity of its CODE, as a bare LAMBDA has:
+the designator list a compiled ~(function (lambda ...))~ yields is a
+literal, the same cons on every evaluation. Candidates (to measure, not
+yet chosen):
+1. in the transpiler, keep FUNCTION returning the list but register a site
+   for that literal (e.g. a =load-time-value= cons -> site association the
+   resolver can find), so =resolve-autolisp-function-designator= passes it
+   to =eval-lambda-form=;
+2. an EQ table designator -> site in the runtime; needs weak keys to avoid
+   retaining dead code -- portability cost already argued against in
+   =lambda-in-a-loop-never-compiles=;
+3. cache the coerced usubr on the designator site itself and rebind only
+   the environment (must not share the ENVIRONMENT -- that was the rejected
+   fix (3) of the closed issue).
+Late resolution of FUNCTION / QUOTE must stay as it is.
+
+* Acceptance criteria
+
+- The three BODY variants above compile the lambda body at most once per
+  site for 1100 calls of F with 20 elements (count via
+  =*usubr-compilation-count*=), and none prints the 1001-compilations
+  warning.
+- A regression test in the compiler suite covers ~(function (lambda ...))~
+  and ~'(lambda ...)~ inside a compiled DEFUN.
+- Measured before/after timing recorded here.

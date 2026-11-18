@@ -279,14 +279,74 @@ records, whose (0 . TYPE) names the record type."
                         (coerce (first dir) 'double-float))))
            (if (minusp a) (+ a (* 2 pi)) a)))))
 
+;;; --- XData: flat 1001 groups in the file, one -3 cell in entget ---
+;;;
+;;; A DXF file (and so a DWG: libredwg's DXF goes through this codec)
+;;; stores an object's XData as a flat run of groups at its end: a
+;;; (1001 . "APP") opening each application, then that application's
+;;; 1000-1071 groups. ENTGET reports it as ONE trailing cell
+;;;   (-3 ("APP" (1000 . ...) ...) ("APP2" ...))
+;;; and that cell is what the drawing stores: ENTMOD merges it per
+;;; application, the ENTGET application filter and SSGET's (-3 ...) test
+;;; read it. So the reader folds the run into the cell and the writer
+;;; (DXF-WRITE-OBJECT) expands it back.
+;;; See issues/closed/dxf-import-xdata-not-folded-into-minus-3-cell.issue.
+
+(defun dxf-xdata-code-p (code)
+  "True iff CODE is an XData group code (1000-1071)."
+  (and (integerp code) (<= 1000 code 1071)))
+
+(defun dxf-xdata-cell-p (pair)
+  "True iff PAIR is the (-3 . groups) XData cell of an object's data."
+  (and (consp pair) (eql (car pair) -3)))
+
+(defun dxf-fold-xdata (data)
+  "DATA (an object's group list, points already coalesced) with its flat
+XData run -- from the first (1001 . APP) on, while the codes are XData
+codes -- replaced by one trailing (-3 (APP . pairs) ...) cell. DATA
+without a 1001 group is returned as is; DATA is not modified."
+  (let ((start (position-if (lambda (pair) (and (consp pair) (eql (car pair) 1001)))
+                            data)))
+    (if (null start)
+        data
+        (let ((groups '()) (rest (nthcdr start data)))
+          (loop while (and rest (consp (first rest))
+                           (dxf-xdata-code-p (car (first rest))))
+                do (let ((pair (pop rest)))
+                     (if (eql (car pair) 1001)
+                         (push (list (cdr pair)) groups)
+                         (push pair (cdr (first groups))))))
+          (append (subseq data 0 start)
+                  rest
+                  (list (cons -3 (nreverse (mapcar (lambda (group)
+                                                     (cons (car group)
+                                                           (reverse (cdr group))))
+                                                   groups)))))))))
+
+(defun dxf-expand-xdata (data)
+  "DATA with its (-3 (APP . pairs) ...) XData cell, if any, replaced at
+the end by the file's flat run: (1001 . APP) then the pairs, per
+application. The inverse of DXF-FOLD-XDATA."
+  (let ((cell (find-if #'dxf-xdata-cell-p data)))
+    (if (null cell)
+        data
+        (append (remove cell data :test #'eq)
+                (loop for group in (cdr cell)
+                      when (and (consp group) (stringp (car group)))
+                        collect (cons 1001 (car group))
+                        and append (remove-if-not #'consp (cdr group)))))))
+
 (defun dxf-entity-from-file (data)
   "Entity DATA as read from a DXF file -> entget units (radians); an MTEXT
-without 50 gets the rotation of its 11 direction."
-  (let ((data (dxf-convert-entity-angles data #'dxf-degrees->radians)))
-    (if (and (%mtext-p data) (not (assoc 50 data)))
-        (let ((angle (%mtext-direction-angle data)))
-          (if angle (append data (list (cons 50 angle))) data))
-        data)))
+without 50 gets the rotation of its 11 direction; the XData groups are
+folded into the trailing (-3 ...) cell (DXF-FOLD-XDATA) -- after the
+angle conversion, whose scan stops at the first 1001."
+  (dxf-fold-xdata
+   (let ((data (dxf-convert-entity-angles data #'dxf-degrees->radians)))
+     (if (and (%mtext-p data) (not (assoc 50 data)))
+         (let ((angle (%mtext-direction-angle data)))
+           (if angle (append data (list (cons 50 angle))) data))
+         data))))
 
 (defun dxf-entity-for-file (data)
   "Entity DATA in entget units -> DXF file units (degrees); an MTEXT that
@@ -423,7 +483,7 @@ the entities are added with their :block owner set."
           ((string-equal tag "BLOCK")
            (let ((name (cdr (find 2 group :key #'car))))
              (setf current-block name)
-             (when name (add-block drawing name group))))
+             (when name (add-block drawing name (dxf-fold-xdata group)))))
           ((string-equal tag "ENDBLK")
            (setf current-block nil))
           (current-block
@@ -552,7 +612,10 @@ group codes."
         (dxf-emit code value))))
 
 (defun dxf-write-object (pairs)
-  (dolist (pair pairs)
+  "Emit one object's PAIRS; its (-3 ...) XData cell, wherever the pairs
+come from (entity, table record, block header, object), is written as
+the file's flat 1001 run (DXF-EXPAND-XDATA)."
+  (dolist (pair (dxf-expand-xdata pairs))
     (when (consp pair) (dxf-write-data-pair pair))))
 
 (defun dxf-write-section (name body-thunk)

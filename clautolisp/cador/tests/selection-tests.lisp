@@ -443,3 +443,78 @@ CIRCLE with xdata under application MYAPP."
       (autolisp-runtime-error (condition)
         (is (eq :invalid-sysvar-value
                 (autolisp-runtime-error-code condition)))))))
+
+;;; XData read from a DXF file (dxf-import-xdata-not-folded-into-minus-3-cell):
+;;; the file's flat 1001 groups must reach AutoLISP as the (-3 ...) cell, so
+;;; SSGET's -3 filter and ENTGET's application list see them.
+
+(defparameter +xdata-file-dxf-lines+
+  '("0" "SECTION" "2" "HEADER" "9" "$ACADVER" "1" "AC1027" "9" "$HANDSEED" "5" "64"
+    "0" "ENDSEC"
+    "0" "SECTION" "2" "TABLES"
+    "0" "TABLE" "2" "APPID" "70" "1"
+    "0" "APPID" "5" "12" "2" "TESTAPP" "70" "0"
+    "0" "ENDTAB"
+    "0" "TABLE" "2" "LAYER" "70" "1"
+    "0" "LAYER" "5" "13" "2" "NOTED" "70" "0" "62" "7" "6" "CONTINUOUS"
+    "1001" "TESTAPP" "1000" "layer-note"
+    "0" "ENDTAB"
+    "0" "ENDSEC"
+    "0" "SECTION" "2" "ENTITIES"
+    "0" "INSERT" "5" "20" "8" "0" "2" "BLK" "10" "1.0" "20" "2.0" "30" "0.0"
+    "1001" "TESTAPP" "1000" "/a/b/c" "1070" "2"
+    "0" "LINE" "5" "21" "8" "0" "10" "0.0" "20" "0.0" "30" "0.0"
+    "11" "1.0" "21" "1.0" "31" "0.0"
+    "0" "ENDSEC" "0" "EOF"))
+
+(test ssget-and-entget-see-xdata-read-from-a-dxf-file
+  (uiop:with-temporary-file (:pathname path :type "dxf")
+    (with-open-file (s path :direction :output :if-exists :supersede)
+      (format s "~{~A~%~}" +xdata-file-dxf-lines+))
+    (let ((mock (make-cador)))
+      (clautolisp.autolisp-host:host-open-startup-drawing mock (namestring path))
+      (is (= 1 (ss-x mock (list (cons 0 "INSERT") (list -3 (list "TESTAPP"))))))
+      (is (= 0 (ss-x mock (list (list -3 (list "OTHER"))))))
+      (let* ((ename (host-handent mock "20"))
+             (plain (host-entget mock ename))
+             (view (host-entget mock ename (list (make-autolisp-string "TESTAPP"))))
+             (group (first (cdr (assoc -3 view)))))
+        ;; Without an application list ENTGET shows no XData at all ...
+        (is (null (assoc -3 plain)))
+        (is (null (assoc 1001 plain)))
+        ;; ... with one, the -3 cell holds the file's groups.
+        (is (null (assoc 1001 view)))
+        (is (string= "TESTAPP" (autolisp-string-value (first group))))
+        (is (string= "/a/b/c" (autolisp-string-value (cdr (assoc 1000 (rest group))))))
+        (is (eql 2 (cdr (assoc 1070 (rest group)))))))))
+
+(test table-record-xdata-read-from-a-dxf-file-shows-only-on-request
+  ;; A record's XData, as an entity's: ENTGET shows the -3 cell only for the
+  ;; applications asked for; TBLSEARCH / TBLNEXT never show it.
+  (uiop:with-temporary-file (:pathname path :type "dxf")
+    (with-open-file (s path :direction :output :if-exists :supersede)
+      (format s "~{~A~%~}" +xdata-file-dxf-lines+))
+    (let ((mock (make-cador)))
+      (clautolisp.autolisp-host:host-open-startup-drawing mock (namestring path))
+      (let* ((layer (make-autolisp-string "LAYER"))
+             (name (make-autolisp-string "NOTED"))
+             (searched (host-tblsearch mock layer name))
+             (ename (host-tblobjname mock layer name))
+             (plain (host-entget mock ename))
+             (other (host-entget mock ename (list (make-autolisp-string "OTHER"))))
+             (view (host-entget mock ename (list (make-autolisp-string "TESTAPP"))))
+             (group (first (cdr (assoc -3 view)))))
+        (is (not (null searched)))
+        (is (null (assoc -3 searched)))
+        (is (null (assoc 1001 searched)))
+        (is (null (loop for rec = (host-tblnext mock layer :rewind t)
+                          then (host-tblnext mock layer)
+                        while rec
+                        when (assoc -3 rec) collect rec)))
+        (is (not (null plain)))
+        (is (null (assoc -3 plain)))
+        (is (null (assoc -3 other)))
+        (is (eq -3 (car (car (last view)))))
+        (is (string= "TESTAPP" (autolisp-string-value (first group))))
+        (is (string= "layer-note"
+                     (autolisp-string-value (cdr (assoc 1000 (rest group))))))))))

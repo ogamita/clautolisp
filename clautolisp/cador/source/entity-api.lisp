@@ -732,7 +732,7 @@ such entity exists or it has been deleted."
       (t
        ;; A table record, a BLOCK entity (tblobjname "BLOCK") or a TABLE
        ;; object is entget-able on the vendors (%NON-ENTITY-VIEW).
-       (%non-entity-view host handle ename)))))
+       (%non-entity-view host handle ename applist)))))
 
 (defun %normalise-entmade-arc-angles (pure operator-name)
   "AutoCAD stores an entmade ARC's 50/51 normalised into [0, 2pi) (measured
@@ -907,7 +907,11 @@ wrapped group-code data, plus — for a BLOCK record — the vendors'
 block-contents walk ((entnext (cdr (assoc -2 (tblsearch \"BLOCK\" n)))).
 An EMPTY block's -2 names its ENDBLK (entget-pointers section 13, both
 products)."
-  (let ((view (pure-data->al-view host (symbol-table-record-data record))))
+  (let ((view (pure-data->al-view
+               host
+               ;; no XData: tblsearch / tblnext follow ENTGET without an
+               ;; application list (dxf-import-xdata-not-folded-into-minus-3-cell)
+               (remove-if #'xdata-cell-p (symbol-table-record-data record)))))
     (if (eq (symbol-table-record-kind record) :block-record)
         (append view (list (cons -2 (handle->ename host (%block-walk-start host record)))))
         view)))
@@ -1050,11 +1054,18 @@ change of the drawing."
                       (clautolisp.drawing:drawing-dbmod drawing) dbmod)
                 (clautolisp.drawing:entity-handle-id entity))))))
 
-(defun %table-record-entget-view (host record ename)
-  "The entget view of a table RECORD (a BLOCK record shows its BLOCK_RECORD)."
+(defun %table-record-entget-view (host record ename &optional applist)
+  "The entget view of a table RECORD (a BLOCK record shows its BLOCK_RECORD).
+Its XData (a (-3 ...) cell, as read from a DXF / DWG file) is shown, as for
+an entity, only for the applications APPLIST requests (ENTITY->AL-VIEW)."
   (let* ((kind (symbol-table-record-kind record))
          (entry (assoc kind *symbol-tables*))
-         (data (symbol-table-record-data record))
+         (all-data (symbol-table-record-data record))
+         (data (remove-if #'xdata-cell-p all-data))
+         (xdata-cell (find-if #'xdata-cell-p all-data))
+         (names (%applist-names applist))
+         (kept (and xdata-cell names
+                    (%filter-xdata-groups (cdr xdata-cell) names)))
          (layout (or (cdr (assoc kind *record-layouts*)) '((2) (70 . 0))))
          ;; a block record made by entmake / a command holds the BLOCK header
          ;; (0 . "BLOCK"): its 70 / 10 / 1 are the BLOCK entity's, not the
@@ -1103,7 +1114,8 @@ change of the drawing."
                            (list* zero (append owner (list five))))))
                    (list (cons 100 "AcDbSymbolTableRecord"))
                    (and entry (list (cons 100 (fourth entry))))
-                   laid-out)))))
+                   laid-out
+                   (when kept (list (cons -3 kept))))))))
 
 (defun %cador-block-entity-handles (host)
   "Block name -> BLOCK entity handle, for the active drawing's blocks whose
@@ -1253,12 +1265,13 @@ CREATE is false and it has none yet)."
                    (list (cons 8 (or (%data-group-value header 8) "0"))
                          (cons 100 "AcDbBlockEnd")))))))
 
-(defun %non-entity-view (host handle ename)
+(defun %non-entity-view (host handle ename &optional applist)
   "The entget view of the object HANDLE names when it is no entity: a table
-record, a BLOCK entity or a TABLE object; NIL otherwise."
+record, a BLOCK entity or a TABLE object; NIL otherwise. APPLIST is
+ENTGET's application list: a table record's XData is shown for it only."
   (let ((record (%find-table-record-by-id host handle)))
     (cond
-      (record (%table-record-entget-view host record ename))
+      (record (%table-record-entget-view host record ename applist))
       ((setf record (%find-block-record-by-entity-handle host handle))
        (%block-entity-view host record ename))
       ((setf record (%find-block-record-by-endblk-handle host handle))

@@ -136,6 +136,12 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *XData read from a DXF or DWG file is a =(-3 ...)= cell* (2.4.31,
+  cador host): the file's flat =1001= / =10xx= groups used to stay in the
+  entity's list, so =(ssget "_X" '((-3 ("APP"))))= found nothing and
+  =(entget e '("APP"))= had no =-3=; a =-3= cell attached by =entmod= was
+  saved as an invalid group =-3=. See the manual, /XData in DXF and DWG files/.
+
 - *=xdsize= and =xdroom= work* (2.3.34): they were stubs returning nil.
   =(xdsize LIST)= gives the bytes an xdata list takes, =(xdroom ENAME)= the
   room left of the 16383 bytes an object may hold; malformed xdata and

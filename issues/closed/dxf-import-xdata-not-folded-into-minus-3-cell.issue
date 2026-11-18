@@ -1,0 +1,126 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: dxf-import-xdata-not-folded-into-minus-3-cell — XData read from a DXF/DWG stays as flat 1001 groups instead of the (-3 ...) cell
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: fix-dxf-import-xdata-not-folded-into-minus-3-cell
+#+DATE: 2026-11-18
+
+* Context
+
+Found by the SCHMS+ relation analysis (EAMOA-25051): a headless collector
+run under ~--host cador~ over real SCHMS+ drawings found NO XData-carrying
+INSERT, though thousands carry SCHMSPLUS XData. The collector only worked
+after a workaround re-injected the flattened groups as a proper
+~(-3 ("SCHMSPLUS" ...))~ with ~entmod~ (2221 INSERTs on one drawing).
+
+=vendor-probe-autocad-bricscad-divergences= and =entity-mutation-parity=
+cover XData attached at run time (ENTMAKE / ENTMOD), which worked; neither
+covered the file-import path.
+
+* Problem
+
+A DXF file stores an object's XData as a flat run of groups at its end:
+=1001 APP= opens each application, then its 1000-1071 groups. AutoCAD and
+BricsCAD present it to AutoLISP as ONE trailing cell:
+
+#+begin_example
+(... (210 0.0 0.0 1.0) (-3 ("SCHMSPLUS" (1000 . "...") (1070 . 2) ...)))
+#+end_example
+
+The DXF reader (=drawing/source/dxf.lisp=) copied the run as is, so a
+drawing opened with ~--dwg~ (DXF, or DWG -- the DWG codec goes through
+the DXF codec) gave:
+
+#+begin_example
+(... (210 0.0 0.0 1.0) (1001 . "SCHMSPLUS") (1000 . "...") (1070 . 2) ...)
+#+end_example
+
+Consequences, all diverging from both CADs:
+- ~(ssget "_X" '((0 . "INSERT") (-3 ("SCHMSPLUS"))))~ returned nil;
+- ~(entget e '("SCHMSPLUS"))~ had no ~-3~ group;
+- plain ~(entget e)~ showed the XData groups although no application was
+  asked for (the vendor suppresses XData then);
+- ENTMOD's per-application XData merge did not see the file's XData.
+
+The writer had the mirror defect: a ~-3~ cell attached at run time by
+ENTMOD was emitted as group =-3= with the printed list as its value
+(~-3 / ((TESTAPP (1000 . v) (1070 . 7)))~), i.e. saving lost the XData and
+wrote an invalid group.
+
+Reproduction (client drawing, not in the repository):
+
+#+begin_src sh
+clautolisp --no-init --host cador --dialect bricscad-v26 -Efile WINDOWS-1252 \
+  --dwg N1A_1_edward.dxf -x '(entget (handent "97EB0") (list "SCHMSPLUS"))'
+#+end_src
+
+Seen on DXF and on DWG files alike. The synthetic fixtures in the tests
+below reproduce it without client data.
+
+* Proposal
+
+Fold on read, expand on write, at the codec boundary, so the drawing only
+ever stores the ~-3~ cell (which ENTMOD, the ENTGET application filter and
+SSGET's ~-3~ test already used):
+- =dxf-fold-xdata=: from the first =1001= on, while the codes are XData
+  codes (1000-1071), replace the run by one trailing
+  ~(-3 (APP . pairs) ...)~ cell; applied by =dxf-entity-from-file= (after
+  the angle conversion, whose scan stops at 1001) to entities, block
+  entities, symbol-table records and handle-addressed objects, and to block
+  headers.
+- =dxf-expand-xdata=: in =dxf-write-object=, the single emitter every
+  section goes through, so entities, records, block headers and objects
+  are all covered (binary DXF too).
+
+* Acceptance criteria
+
+- [X] An entity loaded from a DXF has no top-level 1000-1071 group and one
+      trailing ~-3~ cell, applications in file order, values typed, XData
+      points coalesced (=dxf-read-folds-xdata-into-minus-3-cell=).
+- [X] Symbol-table records are folded too.
+- [X] Writing expands the cell to =1001= groups; no group =-3= in the file;
+      a DXF round trip keeps the cell (=dxf-write-expands-minus-3-cell-and-round-trips=,
+      =dxf-write-expands-xdata-attached-at-runtime=).
+- [X] Under cador, ~ssget "X"~ with a ~-3~ filter and ~entget~ with an
+      application list see XData read from a file
+      (=ssget-and-entget-see-xdata-read-from-a-dxf-file=; fails without the fix).
+- [X] A symbol-table record's XData, once folded, is shown like an
+      entity's: by ~entget~ only for the requested applications, never by
+      ~tblsearch~ / ~tblnext~ or a plain ~entget~
+      (=table-record-xdata-read-from-a-dxf-file-shows-only-on-request=;
+      before the fix those showed the flat groups, and a fold without the
+      cador change showed the cell).
+- [X] Checked on the client drawing that triggered the report, through
+      cador: ~ssget "X"~ with ~(-3 ("SCHMSPLUS"))~ finds 2221 INSERTs (the
+      count the SCHMS+ workaround produced); 26022 objects walked with
+      ~entnext~ / ~entget '("*")~, 3693 with a ~-3~ cell, codes 1000 1002
+      1005 1010 1040 1070 1071 seen, no error, no host string leaked. A
+      vendor fixture (=bricscad-v26-macos.dxf=, a STYLE with ACAD XData)
+      walked through ~tblnext~ / ~tblsearch~ / ~tblobjname~ + ~entget~ and
+      the named object dictionary: same. ~entmod~ of a ~-3~ cell, save to
+      DXF, reopen: ~ssget~ ~-3~ finds it, ~entget~ returns it intact.
+
+* Resolved (2026-11-18, clautolisp 2.4.31 / alfe 2.4.31)
+
+Shipped as proposed (=drawing/source/dxf.lisp=: =dxf-fold-xdata=,
+=dxf-expand-xdata=, =dxf-entity-from-file=, =dxf-write-object=,
+=dxf-load-blocks=), plus the record views in
+=cador/source/entity-api.lisp=: =table-record-al-view+extras= (tblsearch,
+tblnext) drops the cell, =%table-record-entget-view= appends it filtered by
+ENTGET's application list (=%non-entity-view= now passes that list on).
+Tests: three in =drawing/tests/dxf-tests.lisp=, two in
+=cador/tests/selection-tests.lisp= (each seen failing first); drawing suite
+619/619, cador suite 2307/2307, full =make test-sbcl= green. The DWG path
+was not executed (no libredwg shim in the build used): it reaches the same
+code, the DWG codec reading libredwg's DXF through =dxf-read-drawing=. Documented in the user manual, /XData in DXF and DWG
+files/, and RELEASE_NOTES.org.
+
+Not measured on the CADs, and not needed for the fix: the vendor ENTGET
+shape of XData is the one the existing ENTMAKE / ENTMOD XData support
+already reproduces (probe-xdata, 2026-10-03).
+
+Spun off while this was investigated:
+=function-lambda-designator-recompiled-per-call= (the "host compiler has
+now run 1001 times" warning seen in the same SCHMS+ run).

@@ -1300,6 +1300,25 @@ file values were copied unconverted, so an ARC of 0..90 degrees from a
 vendor DXF read as ~(51 . 90.0)~ (90 radians), and a saved ARC of
 0..pi/2 opened elsewhere as 0..1.57 degrees.
 
+*** XData in DXF and DWG files
+
+A DXF file stores an object's extended data (XData) as a flat run of
+groups at its end: ~(1001 . "APP")~ opens each application, followed by
+its 1000-1071 groups. ~entget~ reports it, as on AutoCAD and BricsCAD, as
+one trailing cell ~(-3 ("APP" (1000 . ...) ...) ("APP2" ...))~, shown only
+for the applications named in ~entget~'s second argument. cador folds the
+file's run into that cell when it loads a DXF (or a DWG, which goes through
+DXF) -- for entities, block definitions, symbol-table records and objects
+-- and writes it back as 1001 groups when it saves. A table record's
+XData is shown like an entity's: by ~entget~ of its ~tblobjname~ for the
+requested applications only, never by ~tblsearch~ or ~tblnext~. So
+~(ssget "_X" '((-3 ("APP"))))~ and ~(entget e '("APP"))~ see the XData of
+a drawing opened with ~--dwg~ or ~vla-open~, and XData attached with
+~entmod~ survives a save. Up to 2.4.30 the groups stayed flat in the
+entity's list: ~entget~ showed them without being asked, the ~-3~ filter
+matched nothing, and a ~-3~ cell attached at run time was saved as an
+invalid group ~-3~.
+
 *** DXF pointer group codes under cador
 
 cador stores the drawing's object references as handles, but -- like
