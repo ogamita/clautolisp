@@ -460,6 +460,7 @@ neither a launch nor a workdir handshake.
 | =--workdir DIR=               | Override the exchange directory (default: =$AUTOLISP_WORKDIR=). |
 | =--bootstrap-phase PHASE=     | Truncate the bootstrap at =marker=, =core=, =log= or =full=. |
 | =--ready-timeout SECS=        | How long the CAD may take to start (=READY=): 60 s batch, 300 s automation, 420 s with =--epure= by default; never less than =--timeout= (see /Timeouts/). |
+| =--cad-exit {quit,kill}=      | How a CAD alfe started ends after the run: =quit= (default), it is asked to stop and quits by itself; =kill=, once the results are recorded it is killed at once without quitting (for a CAD whose own exit crashes, e.g. BricsCAD V26 macOS). A CAD alfe attached to is only released. |
 | =--cad-log FILE=              | After the run, copy the CAD's own command-history log to FILE, in UTF-8 (see [[#cad-log][The CAD's log: =--cad-log=]]). |
 | =--result-file FILE=          | A file the run must have written (a JUnit report...); repeatable. Missing, empty, still growing, or an unclosed XML document: a run that succeeded exits 66 (see [[#owned-cad-cleanup][CAD session cleanup]]). |
 | =--cleanup-report FILE=       | Write the cleanup report -- the frontier, then how the CAD this run created ended, its raw exit code -- to FILE (see [[#owned-cad-cleanup][CAD session cleanup]]). |

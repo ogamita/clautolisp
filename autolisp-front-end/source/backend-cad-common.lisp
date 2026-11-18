@@ -2927,6 +2927,71 @@ the batch process's or the created CAD's end."
         (end-created-com-cad workdir))
       (kill-engine-process info :grace 0 :timeout *cad-kill-wait*)))
 
+;;; --cad-exit kill (ALFE.BACKEND:*CAD-EXIT-MODE* :KILL): the run is over and
+;;; its results are recorded, so the CAD alfe started is not asked to stop and
+;;; quit -- its own exit is what crashes on BricsCAD V26 macOS (SIGSEGV in
+;;; BdmModule::uninitApp, a crash report each time) -- it is killed at once.
+;;; SIGKILL, not SIGTERM: a GUI CAD may handle SIGTERM by running the same
+;;; exit path. Its drawing is left as is (not saved), as a QUIT without saving
+;;; would; lock files (.dwl, .dwl2) stay behind.
+
+(defun %kill-engine-now (info)
+  "SIGKILL the process INFO and poll, bounded by *CAD-KILL-WAIT*, until it is
+gone. Returns :KILLED, :EXITED when it was already gone, :SURVIVED, or NIL
+when INFO is NIL."
+  (when info
+    (if (not (ignore-errors (uiop:process-alive-p info)))
+        :exited
+        (progn
+          (ignore-errors (uiop:terminate-process info :urgent t))
+          (let ((start (get-internal-real-time)))
+            (loop while (and (ignore-errors (uiop:process-alive-p info))
+                             (< (/ (float (- (get-internal-real-time) start))
+                                   internal-time-units-per-second)
+                                *cad-kill-wait*))
+                  do (sleep 0.2)))
+          (if (ignore-errors (uiop:process-alive-p info)) :survived :killed)))))
+
+(defun %kill-launched-pid-now (launched)
+  "SIGKILL the CAD known by LAUNCHED (PID START-TIME), only while it is still
+that process. Returns :KILLED, :EXITED, :SURVIVED, or NIL when LAUNCHED is NIL."
+  (when launched
+    (if (not (launched-pid-alive-p launched))
+        :exited
+        (progn
+          (ignore-errors
+           (uiop:run-program (list "kill" "-KILL" (princ-to-string (first launched)))
+                             :ignore-error-status t :output nil :error-output nil))
+          (let ((start (get-internal-real-time)))
+            (loop while (and (launched-pid-alive-p launched)
+                             (< (/ (- (get-internal-real-time) start)
+                                   internal-time-units-per-second)
+                                *cad-kill-wait*))
+                  do (sleep 0.2)))
+          (if (launched-pid-alive-p launched) :survived :killed)))))
+
+(defun killed-cad-shutdown (backend info &key workdir com-p launched-pid)
+  "The --cad-exit kill shutdown. COM-P: the bridge's forced end (the CAD it
+created is ended by its revalidated handle; one it attached to is only
+released). Otherwise INFO, the CAD alfe launched, and LAUNCHED-PID, a CAD a
+launcher started, are killed at once. A deliberate kill is not a bad
+shutdown: only a CAD that survives it signals. Returns how it ended."
+  (log-verbose "backend ~(~A~): --cad-exit kill: ending the CAD without its QUIT" backend)
+  (if com-p
+      (progn
+        (kill-engine-process info :grace 0 :timeout *cad-kill-wait*)
+        (end-created-com-cad workdir))
+      (let* ((engine (%kill-engine-now info))
+             (launched (%kill-launched-pid-now launched-pid))
+             (outcome (if (member :survived (list engine launched))
+                          :survived
+                          (or launched engine))))
+        (when (eq outcome :survived)
+          (error 'backend-protocol-error :backend backend :phase :shutdown
+                 :code :cad-survived
+                 :message "The CAD alfe started is still running after its kill (--cad-exit kill)."))
+        outcome)))
+
 (defun shutdown-cad-session (backend protocol info &key workdir com-p launched-pid)
   "The shutdown of a CAD session, the same for every CAD
 (alfe-cad-lifecycle-rules). COM-P: Windows automation, through the retained
@@ -2945,6 +3010,10 @@ shutdown, which the CLI reports only when the script succeeded."
     (return-from shutdown-cad-session
       (progn (end-launched-pid launched-pid :grace 0)
              (forced-cad-shutdown backend info :workdir workdir :com-p com-p))))
+  (when (eq alfe.backend:*cad-exit-mode* :kill)
+    (return-from shutdown-cad-session
+      (killed-cad-shutdown backend info :workdir workdir :com-p com-p
+                                        :launched-pid launched-pid)))
   (let ((stop-error nil)
         (outcome nil))
     (unwind-protect

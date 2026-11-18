@@ -93,6 +93,15 @@
   (signals cli-usage-error
     (parse-arguments '("--bricscad" "--autocad"))))
 
+(test cli-parses-cad-exit
+  "--cad-exit is quit by default, quit or kill when given; anything else is a
+usage error."
+  (is (eq :quit (alfe.cli:cli-options-cad-exit (parse-arguments '("--bricscad")))))
+  (is (eq :quit (alfe.cli:cli-options-cad-exit (parse-arguments '("--cad-exit" "quit")))))
+  (is (eq :kill (alfe.cli:cli-options-cad-exit (parse-arguments '("--cad-exit" "KILL")))))
+  (signals cli-usage-error
+    (parse-arguments '("--cad-exit" "terminate"))))
+
 (test cli-parses-mode-and-variant
   "--mode and --backend accept both space-separated and =-separated values."
   (is (eq :automation (cli-options-mode (parse-arguments '("--mode" "automation")))))

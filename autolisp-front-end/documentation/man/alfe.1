@@ -292,6 +292,12 @@ it needs while the CAD lives, with one it is a hard cap. A longer
 How long the CAD may take to start (READY): 60 s in batch mode, 300 s in
 automation, 420 s with \-\-epure by default; never less than \-\-timeout.
 .TP
+.BR \-\-cad-exit " " \fIquit\fR|\fIkill\fR
+How a CAD alfe started ends after the run. \fIquit\fR (the default): it is
+asked to stop and quits by itself. \fIkill\fR: once the results are recorded it
+is killed at once, without quitting, for a CAD whose own exit crashes; the
+drawing is not saved. A CAD alfe attached to is only released.
+.TP
 .BR \-\-no-init ", " \-norc
 Skip user init files. Honoured equivalently via
 .BR $AUTOLISP_NO_INIT " / " $ALFE_NO_INIT .

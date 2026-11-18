@@ -66,6 +66,8 @@
   (timeout          nil)              ; A   positive integer
   (ready-timeout    nil)              ; A   --ready-timeout SECS: the CAD's start
                                       ;     (READY), apart from --timeout
+  (cad-exit         :quit)            ; A   --cad-exit {quit,kill}: how a CAD alfe
+                                      ;     started ends after the run
   (verbosity        :info)            ; AC  :debug / :verbose / :info / :warn
   (help-p           nil)              ; AC
   (version-p        nil)              ; AC

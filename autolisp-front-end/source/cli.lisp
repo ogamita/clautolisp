@@ -140,6 +140,7 @@
                 #:cli-options-write-workdir-path
                 #:cli-options-cad-log
                 #:cli-options-ready-timeout
+                #:cli-options-cad-exit
                 #:cli-options-result-files
                 #:cli-options-cleanup-report
                 #:cli-options-main
@@ -191,6 +192,7 @@
            #:cli-options-workdir
            #:cli-options-timeout
            #:cli-options-ready-timeout
+           #:cli-options-cad-exit
            #:cli-options-help-p
            #:cli-options-version-p
            #:cli-options-list-encodings-p
@@ -396,6 +398,11 @@ Bootstrap and runtime:
                          60 s in batch mode, 300 s in automation, 420 s under
                          --epure; never less than --timeout.
                          Mirrors $AUTOLISP_READY_WAIT_SECS.
+  --cad-exit {quit,kill} How a CAD alfe started ends after the run. quit (the
+                         default): it is asked to stop and quits by itself.
+                         kill: once the results are recorded it is killed
+                         at once, without quitting -- for a CAD whose exit
+                         crashes. A CAD alfe attached to is only released.
   --no-init, -norc       Skip the user init files, loaded in this order (all
                          that exist): ~/.autolisp, ~/.config/autolisp/init.lsp,
                          ~/.alfe, ~/.config/alfe/init.lsp.
@@ -792,6 +799,18 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (setf (cli-options-ready-timeout opts)
                      (parse-timeout value name))))
+   ;; --cad-exit {quit,kill}: how a CAD alfe started ends after the run
+   ;; (ALFE.BACKEND:*CAD-EXIT-MODE*).
+   (make-option-spec
+    :longs '("--cad-exit") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-cad-exit opts)
+                     (cond ((string-equal value "quit") :quit)
+                           ((string-equal value "kill") :kill)
+                           (t (error 'cli-usage-error
+                                     :option name
+                                     :message (format nil "~A expects quit or kill, not ~S"
+                                                      name value)))))))
    (make-option-spec
     :longs '("--dry-run") :takes-arg-p nil
     :handler (lambda (opts value name)
@@ -1853,7 +1872,8 @@ engine."
          (shutdown-error nil)
          (alfe.backend:*recorded-outcome* nil)
          (alfe.backend:*interrupt-requested* nil)
-         (alfe.backend:*forced-shutdown* nil))
+         (alfe.backend:*forced-shutdown* nil)
+         (alfe.backend:*cad-exit-mode* (cli-options-cad-exit options)))
     ;; Everything after the workdir exists is protected: whatever fails --
     ;; a hook, the engine's start, the plan -- the CAD alfe started is shut
     ;; down and the workdir cleaned up (alfe-cad-lifecycle-rules, rule 5).
