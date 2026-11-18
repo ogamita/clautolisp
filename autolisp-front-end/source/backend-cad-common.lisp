@@ -2550,6 +2550,28 @@ bridgeTrustChanged = True
 (defparameter *owned-com-ready-vbs*
   "' What holds a CAD busy -- usually a modal dialog -- goes beside the run, as
 ' busy-windows.txt (alfe-com-open-before-quiescent).
+' Busy with no dialog: what does the CAD itself say is running? Each read
+' may be refused while busy; the refusal is reported too.
+Sub LogBusyState(a, label)
+  Dim docs, cmds, active, e
+  docs = \"?\"
+  cmds = \"?\"
+  active = \"?\"
+  e = \"\"
+  On Error Resume Next
+  Err.Clear
+  docs = CStr(a.Documents.Count)
+  If Err.Number <> 0 Then e = e & \" docs:\" & Err.Number
+  Err.Clear
+  cmds = CStr(a.ActiveDocument.GetVariable(\"CMDNAMES\"))
+  If Err.Number <> 0 Then e = e & \" cmdnames:\" & Err.Number
+  Err.Clear
+  active = CStr(a.ActiveDocument.GetVariable(\"CMDACTIVE\"))
+  If Err.Number <> 0 Then e = e & \" cmdactive:\" & Err.Number
+  Err.Clear
+  On Error GoTo 0
+  AppendLine errFile, \"COM.BUSY.STATE.\" & label & \"=documents=\" & docs & \" CMDNAMES=\" & cmds & \" CMDACTIVE=\" & active & \" errors=\" & Trim(e)
+End Sub
 Sub ListBusyWindows(report)
   If lifeCadPid > 0 Then
     On Error Resume Next
@@ -2584,6 +2606,7 @@ Function OwnedComIsReady(a, secs)
     ' Busy for a minute: look now, while the CAD is surely still there.
     If Not listed And Timer - started > 60 Then
       ListBusyWindows \"busy-windows.txt\"
+      LogBusyState a, \"MINUTE\"
       listed = True
     End If
     WScript.Sleep 250
@@ -2597,6 +2620,7 @@ End Function
 If Not OwnedComIsReady(app, BudgetSecs(86400)) Then
   ' And at the end, beside the one-minute snapshot (empty if the CAD is gone).
   ListBusyWindows \"busy-windows-end.txt\"
+  LogBusyState app, \"END\"
   AppendLine errFile, \"ERROR COM bridge: COM application did not become quiescent before opening the job drawing\"
   If created Then
     On Error Resume Next

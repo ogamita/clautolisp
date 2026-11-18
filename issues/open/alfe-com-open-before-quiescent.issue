@@ -80,3 +80,13 @@ shows a dialog; its per-user setup must be rerun for each CAD version.
 BricsCAD with EPURE showed "Rapport de plantage" again in the same run.
 alfe 2.4.29 also writes a dialog's Static and Button texts, so the next
 report says what such an alert asks.
+
+* After the EPURE setup was rerun (2026-11-18, alfe 2.4.29, job 18113031000)
+
+No dialog any more: busy-windows.txt shows only enabled main windows
+(AutoCAD "Autodesk AutoCAD 2022 - [Dessin1.dwg]"; BricsCAD "BricsCAD Pro",
+with no document). Yet all four native automation rows, with and without
+the EPURE plug-in, stay not quiescent for 223-364 s (COM.READY.ERROR=0).
+Busy without a dialog suggests an active command or LISP (a startup script
+waiting at the command line?). alfe 2.4.30 logs COM.BUSY.STATE (document
+count, CMDNAMES, CMDACTIVE) after a minute of busy and at the end.
