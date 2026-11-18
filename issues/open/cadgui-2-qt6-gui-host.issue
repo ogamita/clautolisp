@@ -256,8 +256,21 @@ mouse, pan/zoom, coarse regen, offscreen-capable.
   (trace: feed/INPUT/PARK/DONE interleaved), each draws its own line in its own
   model, each rendered to its own PNG. Lisp helpers =cadgui-doc-display-list=,
   =cadgui-doc-extents=, =cadgui-workspace-all-finished-p= (cadgui suite).
-- NEXT: the LIVE interactive multi-window shell (real QMainWindows per document
-  with per-document snapshots for race-free paint, a command line per window,
-  click routing, open/close/switch UI) -- the --mdidemo wiring made live; one
-  shared cador host with N drawings (vs a host per document); the remaining
-  action-layer slices B-E ([[cadgui-action-layer]]). Then [[cadgui-3-2d-parity]].
+- DONE (2026-11-18, 2.5.3/2.5.4): the INTERACTIVE CORE of the multi-window app
+  -- documents run TYPED AutoLISP. =cadgui-document-run-command= evaluates a
+  command string in the document's OWN scheduler context (so getpoint/entsel
+  park and resume from that document's canvas, unlike the fresh-session
+  =cadgui-eval-command=); =cadgui-document-command-loop= is a document's thunk
+  (read a typed command, run it, repeat to :eof). Per-document ISOLATION despite
+  a shared session: =*document-activation-hook*= rebinds the session's HAL host
+  to the active document's host on every scheduler resume (2.5.4 fixed a
+  cross-document bleed the two-window --mdidemo caught -- interleaved typed
+  commands drew into one model). --mdidemo now TYPES a LINE command per window,
+  fed out of order; each draws its own line in its own model. cadgui suite 113.
+- NEXT: the real-window GUI CHROME (actual QMainWindows per document with
+  per-document snapshots for continuous race-free paint, a command-line widget +
+  live click routing per window, open/close/switch) -- needs a DISPLAY to build
+  and validate (headless, the interactive core is exercised via --mdidemo's
+  synthetic events). One shared cador host with N drawings (vs a host per
+  document, the cador-correct model). The action-layer slices B-E
+  ([[cadgui-action-layer]]). Then [[cadgui-3-2d-parity]].
