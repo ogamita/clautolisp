@@ -57,4 +57,5 @@
    #:cadgui-doc-supply-point
    #:cadgui-workspace-start
    #:cadgui-workspace-serve
+   #:cadgui-workspace-run
    #:cadgui-workspace-shutdown))

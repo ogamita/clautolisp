@@ -114,6 +114,30 @@ driver thread will run in a loop."
   (clautolisp.autolisp-runtime:scheduler-await-park
    (cadgui-workspace-scheduler workspace) timeout))
 
+(defun cadgui-workspace-run (workspace &optional (timeout 2))
+  "Drive WORKSPACE to quiescence UNATTENDED, with input already available on the
+documents' channels (pre-supplied, or supplied by another thread): start every
+document and serve parks until no document parks any more. Returns the number of
+parks served. This is the batch/scripted driver -- a script or an AI driving
+several documents headless; the live Qt shell runs the equivalent serve loop on
+its driver thread, with the input arriving from canvas clicks instead."
+  (let ((sched (cadgui-workspace-scheduler workspace))
+        (served 0)
+        (pending '()))
+    ;; Start each document (one at a time) to its first park; hold the notes.
+    (dolist (doc (reverse (cadgui-workspace-docs workspace)))
+      (let ((note (cadgui-workspace-start workspace doc timeout)))
+        (unless (eq note :timeout) (push note pending))))
+    ;; Serve held parks; each resume runs a document to its next park (collected)
+    ;; or to completion. Drains when no document parks within TIMEOUT.
+    (loop while pending do
+      (let ((note (pop pending)))
+        (clautolisp.autolisp-runtime:scheduler-serve-park sched note)
+        (incf served)
+        (let ((next (clautolisp.autolisp-runtime:scheduler-await-park sched timeout)))
+          (unless (eq next :timeout) (push next pending)))))
+    served))
+
 (defun cadgui-workspace-shutdown (workspace)
   "Stop every document thread: end its input, unpark it with :EXIT, and join.
 Safe to call on a partially-run workspace."
