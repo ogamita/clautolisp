@@ -44,9 +44,9 @@
            (is (eq :park (first na)))
            (is (eq :park (first nb)))
            (cadgui-doc-supply-point da 2 2)
-           (is (eq :timeout (cadgui-workspace-serve ws na 3)))  ; A finishes
+           (is (eq :done (first (cadgui-workspace-serve ws na 3))))  ; A finishes
            (cadgui-doc-supply-point db 20 20)
-           (is (eq :timeout (cadgui-workspace-serve ws nb 3)))  ; B finishes
+           (is (eq :done (first (cadgui-workspace-serve ws nb 3))))  ; B finishes
            ;; each document read ONLY its own points, in order (no cross-bleed)
            (let ((ar (reverse a)) (br (reverse b)))
              (is (= 2 (length ar)))
@@ -83,6 +83,50 @@
              (is (= 1 (length sa)))
              (is (= 1 (length sb)))
              ;; A's line ends at (5,5); B's at (9,9) -- the points did not bleed
+             (is (equal '(0d0 0d0 5d0 5d0) (sixth (first sa))))
+             (is (equal '(0d0 0d0 9d0 9d0) (sixth (first sb))))))
+      (cadgui-workspace-shutdown ws))))
+
+(test cadgui-multiplexing-driver-resumes-whichever-document-got-input
+  ;; The LIVE driver's defining property: input can arrive OUT OF ORDER (the
+  ;; user clicks in any window). Document A parks first, but B is fed first --
+  ;; the driver resumes B, not A. The batch driver (serve in park order) would
+  ;; block on A; this one multiplexes through one wait point.
+  (let* ((ws (cadgui-make-workspace))
+         (line-thunk
+           (lambda (h)
+             (let ((p1 (host-getpoint h nil)) (p2 (host-getpoint h nil)))
+               (clautolisp.autolisp-host:host-entmake
+                h (list (cons 0 "LINE")
+                        (cons 10 (list (first p1) (second p1) 0d0))
+                        (cons 11 (list (first p2) (second p2) 0d0)))))))
+         (da (cadgui-open-document ws :a line-thunk))
+         (db (cadgui-open-document ws :b line-thunk)))
+    (unwind-protect
+         (progn
+           ;; launch both; each parks at getpoint #1 (A first, then B)
+           (cadgui-workspace-launch ws da)
+           (is (eq :park (cadgui-workspace-drive-step ws)))   ; A awaiting
+           (cadgui-workspace-launch ws db)
+           (is (eq :park (cadgui-workspace-drive-step ws)))   ; B awaiting
+           ;; FEED B FIRST although A parked first -> the driver resumes B
+           (cadgui-doc-feed-point ws db 0 0)
+           (is (eq :input (cadgui-workspace-drive-step ws)))  ; resume B
+           (is (eq :park (cadgui-workspace-drive-step ws)))   ; B parks at getpoint #2
+           (cadgui-doc-feed-point ws da 0 0)
+           (is (eq :input (cadgui-workspace-drive-step ws)))  ; resume A
+           (is (eq :park (cadgui-workspace-drive-step ws)))   ; A parks at getpoint #2
+           (cadgui-doc-feed-point ws db 9 9)
+           (is (eq :input (cadgui-workspace-drive-step ws)))  ; resume B -> entmake
+           (is (eq :done (cadgui-workspace-drive-step ws)))   ; B finished
+           (cadgui-doc-feed-point ws da 5 5)
+           (is (eq :input (cadgui-workspace-drive-step ws)))  ; resume A -> entmake
+           (is (eq :done (cadgui-workspace-drive-step ws)))   ; A finished
+           ;; each document drew its own line from its own (out-of-order) input
+           (let ((sa (clautolisp.cador:cador-scene-display-list (cadgui-doc-host da)))
+                 (sb (clautolisp.cador:cador-scene-display-list (cadgui-doc-host db))))
+             (is (= 1 (length sa)))
+             (is (= 1 (length sb)))
              (is (equal '(0d0 0d0 5d0 5d0) (sixth (first sa))))
              (is (equal '(0d0 0d0 9d0 9d0) (sixth (first sb))))))
       (cadgui-workspace-shutdown ws))))

@@ -482,6 +482,26 @@ Returns SC."
       (park-mailbox-push (scheduled-context-mailbox sc) response)
       sc)))
 
+(defun scheduler-notify-driver (scheduler event)
+  "Push an arbitrary EVENT onto SCHEDULER's driver mailbox, so a driver blocked
+in SCHEDULER-AWAIT-PARK wakes and receives it alongside (:park ...) notifications.
+This lets a host route OUT-OF-BAND driver events -- a GUI input arrival, say --
+through the SAME single wait point the scheduler parks to, so one driver loop
+can multiplex park notifications and input events without a second wait. The
+event shape is the host's own; SCHEDULER-AWAIT-PARK returns it verbatim.
+Returns EVENT."
+  (park-mailbox-push (%scheduler-driver-mailbox scheduler) event)
+  event)
+
+(defun scheduler-resume-context (sc token)
+  "Driver-side: resume the parked context SC directly with TOKEN as its park
+RESPONSE (what its blocked read returns), bypassing SCHEDULER-SERVE-PARK's
+run-the-reader step. Used when the driver already HAS the value (e.g. a GUI
+supplied the input), so no blocking read is needed. Does NOT touch RUNNING --
+SC re-promotes itself on resume. Returns SC."
+  (park-mailbox-push (scheduled-context-mailbox sc) token)
+  sc)
+
 ;;; --- Correlation forest: per-document request stacks (slice 3g) ---
 ;;;
 ;;; A host request may nest — a host operation can itself trigger AutoLISP (a

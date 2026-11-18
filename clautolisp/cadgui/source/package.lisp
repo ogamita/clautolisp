@@ -58,4 +58,8 @@
    #:cadgui-workspace-start
    #:cadgui-workspace-serve
    #:cadgui-workspace-run
+   #:cadgui-doc-feed
+   #:cadgui-doc-feed-point
+   #:cadgui-workspace-launch
+   #:cadgui-workspace-drive-step
    #:cadgui-workspace-shutdown))

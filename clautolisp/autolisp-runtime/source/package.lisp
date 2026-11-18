@@ -125,6 +125,8 @@
    #:scheduler-park
    #:scheduler-await-park
    #:scheduler-serve-park
+   #:scheduler-notify-driver
+   #:scheduler-resume-context
    ;; slice 3g: per-document correlation forest (§13.4)
    #:scheduled-context-correlation-stack
    #:scheduler-push-correlation

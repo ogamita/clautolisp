@@ -38,10 +38,18 @@ mailbox the GUI fills and the scheduler driver drains)."
 (defstruct (cadgui-workspace (:constructor %make-cadgui-workspace))
   "A multi-document cadgui workspace: the runtime SESSION that carries the
 single-runner cooperative SCHEDULER, and the open DOCS. At most one document
-evaluates at a time; the rest hold parked evaluations."
+evaluates at a time; the rest hold parked evaluations.
+
+AWAITING / QUEUED are the MULTIPLEXING driver's state (used by
+CADGUI-WORKSPACE-DRIVE-STEP): AWAITING maps a scheduled-context to T while it is
+parked for input; QUEUED maps it to a FIFO of input lines that arrived before it
+parked. They let the driver resume WHICHEVER document just got input, even if
+another parked first (out-of-order input), through one wait point."
   (session nil)
   (scheduler nil)
-  (docs '()))
+  (docs '())
+  (awaiting (make-hash-table :test 'eq))
+  (queued (make-hash-table :test 'eq)))
 
 (defun cadgui-make-workspace ()
   "A fresh empty workspace with its own session + cooperative scheduler."
@@ -59,6 +67,78 @@ the GUI side of a click. Non-blocking. :EOF ends the document's input."
 (defun cadgui-doc-supply-point (doc x y)
   "Supply a world point (X,Y) to DOC -- what a canvas click on DOC's view sends."
   (cadgui-doc-supply doc (cadgui-point-line x y)))
+
+;;; --- the MULTIPLEXING driver (the live Qt driver thread runs this) --------
+;;;
+;;; Unlike the batch driver (CADGUI-WORKSPACE-RUN, which serves parks in order
+;;; and blocks on a document's read), the multiplexing driver routes BOTH park
+;;; notifications AND input arrivals through the scheduler's single driver wait
+;;; point (SCHEDULER-NOTIFY-DRIVER), and resumes a parked document DIRECTLY with
+;;; the supplied line (the line IS the read's response -- no blocking read on the
+;;; driver). So it resumes WHICHEVER document just received input, even if
+;;; another document parked first: the user can click in any window, in any
+;;; order. A canvas click calls CADGUI-DOC-FEED; the Qt driver thread loops
+;;; CADGUI-WORKSPACE-DRIVE-STEP.
+
+(defun cadgui-doc-feed (workspace doc line)
+  "Route an input LINE for DOC to the driver (the Qt main thread calls this on a
+click). Delivered through the scheduler's single driver wait point, so the
+driver resumes DOC even if another document parked earlier (out-of-order input).
+Non-blocking."
+  (clautolisp.autolisp-runtime:scheduler-notify-driver
+   (cadgui-workspace-scheduler workspace)
+   (list :input doc line))
+  doc)
+
+(defun cadgui-doc-feed-point (workspace doc x y)
+  "Feed a world point (X,Y) for DOC through the multiplexing driver."
+  (cadgui-doc-feed workspace doc (cadgui-point-line x y)))
+
+(defun cadgui-workspace-launch (workspace doc)
+  "Kick DOC's evaluation without waiting (the driver's DRIVE-STEP consumes the
+resulting park). Start documents one at a time -- launch, then DRIVE-STEP its
+park -- so the single-runner start is not raced."
+  (clautolisp.autolisp-runtime:scheduler-start
+   (cadgui-workspace-scheduler workspace) (cadgui-doc-context doc))
+  doc)
+
+(defun cadgui-workspace-drive-step (workspace &optional (timeout 5))
+  "One step of the multiplexing driver loop. Wait for ONE event and act:
+  - (:park sc ..)  -- a document parked for input. If it already has QUEUED
+                      input, resume it at once with the next line; else mark it
+                      AWAITING. Returns :PARK.
+  - (:input doc L) -- input L arrived for DOC (CADGUI-DOC-FEED). If DOC is
+                      AWAITING, resume it with L; else QUEUE L until it parks.
+                      Returns :INPUT.
+  - (:done sc ..)  -- a document finished. Returns :DONE.
+  - none in TIMEOUT -- returns :TIMEOUT.
+Resuming is DIRECT (SCHEDULER-RESUME-CONTEXT): the line is the parked read's
+response, no blocking read on the driver thread."
+  (let* ((sched (cadgui-workspace-scheduler workspace))
+         (ev (clautolisp.autolisp-runtime:scheduler-await-park sched timeout)))
+    (cond
+      ((eq ev :timeout) :timeout)
+      ((eq (first ev) :park)
+       (let* ((sc (second ev))
+              (q (gethash sc (cadgui-workspace-queued workspace))))
+         (if q
+             (progn
+               (setf (gethash sc (cadgui-workspace-queued workspace)) (rest q))
+               (clautolisp.autolisp-runtime:scheduler-resume-context sc (first q)))
+             (setf (gethash sc (cadgui-workspace-awaiting workspace)) t))
+         :park))
+      ((eq (first ev) :input)
+       (let* ((doc (second ev)) (line (third ev))
+              (sc (cadgui-doc-context doc)))
+         (if (gethash sc (cadgui-workspace-awaiting workspace))
+             (progn
+               (remhash sc (cadgui-workspace-awaiting workspace))
+               (clautolisp.autolisp-runtime:scheduler-resume-context sc line))
+             (setf (gethash sc (cadgui-workspace-queued workspace))
+                   (append (gethash sc (cadgui-workspace-queued workspace)) (list line))))
+         :input))
+      ((eq (first ev) :done) :done)
+      (t :unknown))))
 
 (defun cadgui-open-document (workspace key thunk)
   "Open document KEY in WORKSPACE and return its CADGUI-DOC. Creates a fresh cador
@@ -86,9 +166,16 @@ THUNK, getpoint/entsel/ssget park and are served from THIS document's channel."
     (setf (clautolisp.autolisp-runtime:document-namespace-host-document-key ns) key)
     (clautolisp.autolisp-runtime:scheduler-register-context
      (cadgui-workspace-scheduler workspace) sc)
-    (clautolisp.autolisp-runtime:scheduler-spawn-context
-     (cadgui-workspace-scheduler workspace) sc
-     (lambda () (funcall thunk host)))
+    (let ((sched (cadgui-workspace-scheduler workspace)))
+      (clautolisp.autolisp-runtime:scheduler-spawn-context
+       sched sc
+       (lambda ()
+         ;; Run the document's evaluation, then notify the driver it finished
+         ;; (so the multiplexing driver stops awaiting it). The notify runs
+         ;; AFTER the thunk, so a (:done sc) event means the thunk's model
+         ;; mutations are complete -- a safe point to read the document's model.
+         (unwind-protect (funcall thunk host)
+           (clautolisp.autolisp-runtime:scheduler-notify-driver sched (list :done sc))))))
     (push doc (cadgui-workspace-docs workspace))
     doc))
 
@@ -125,17 +212,19 @@ its driver thread, with the input arriving from canvas clicks instead."
         (served 0)
         (pending '()))
     ;; Start each document (one at a time) to its first park; hold the notes.
-    (dolist (doc (reverse (cadgui-workspace-docs workspace)))
-      (let ((note (cadgui-workspace-start workspace doc timeout)))
-        (unless (eq note :timeout) (push note pending))))
-    ;; Serve held parks; each resume runs a document to its next park (collected)
-    ;; or to completion. Drains when no document parks within TIMEOUT.
-    (loop while pending do
-      (let ((note (pop pending)))
-        (clautolisp.autolisp-runtime:scheduler-serve-park sched note)
-        (incf served)
-        (let ((next (clautolisp.autolisp-runtime:scheduler-await-park sched timeout)))
-          (unless (eq next :timeout) (push next pending)))))
+    ;; (A document that finishes without parking yields :done, not a :park.)
+    (flet ((parkp (ev) (and (consp ev) (eq (first ev) :park))))
+      (dolist (doc (reverse (cadgui-workspace-docs workspace)))
+        (let ((note (cadgui-workspace-start workspace doc timeout)))
+          (when (parkp note) (push note pending))))
+      ;; Serve held parks; each resume runs a document to its next park
+      ;; (collected) or to completion (:done). Drains when no document parks.
+      (loop while pending do
+        (let ((note (pop pending)))
+          (clautolisp.autolisp-runtime:scheduler-serve-park sched note)
+          (incf served)
+          (let ((next (clautolisp.autolisp-runtime:scheduler-await-park sched timeout)))
+            (when (parkp next) (push next pending))))))
     served))
 
 (defun cadgui-workspace-shutdown (workspace)
