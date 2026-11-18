@@ -173,6 +173,7 @@
    #:count-usubr-compilation
    #:usubr-site
    #:make-usubr-site
+   #:lambda-source-site
    #:autolisp-usubr-site
    #:usubr-site-call-count
    #:usubr-site-compiled-body

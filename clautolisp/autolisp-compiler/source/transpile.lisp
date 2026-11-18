@@ -787,8 +787,22 @@ Never fails: an unhandled form becomes an interpreter call on itself."
           ;; again: a struct baked in as a literal would have to print
           ;; and read back, and this way the site is simply made once
           ;; when the compiled code is loaded, however it got there.
+          ;;
+          ;; The site is the one the RUNTIME keys on this form's source
+          ;; (LAMBDA-SOURCE-SITE), so the closures a DEFUN built while it
+          ;; was still INTERPRETED and those its compiled body builds are
+          ;; one decision, not two (function-lambda-designator-
+          ;; recompiled-per-call). Compiled in memory, ',ARGUMENTS is the
+          ;; very cons the interpreter saw; read back from a .lap it is a
+          ;; copy, which only means a site of its own -- held by this
+          ;; LOAD-TIME-VALUE, so the weak table losing the copy loses
+          ;; nothing. MAKE-USUBR-SITE stays as the fallback for a Lisp
+          ;; without weak tables.
           `(eval-lambda-form ',arguments ,context-var
-                             (load-time-value (make-usubr-site) t)))
+                             (load-time-value
+                              (or (lambda-source-site ',arguments)
+                                  (make-usubr-site))
+                              t)))
 
          ((string= name "SET")
           ;; (set PLACE VALUE) -- SETQ with the place form EVALUATED,

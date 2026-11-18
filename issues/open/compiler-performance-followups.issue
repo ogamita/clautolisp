@@ -29,9 +29,12 @@ a design choice to revisit with a measurement in hand.
 - Reading the optimisation qualities from the configuration module, so a
   project sets them once (the --optimize half is done, slice 11); belongs with
   the "gather options / getenv / defaults into the configuration module" work.
-- A lambda in an INTERPRETED loop mints closures no site can share (the site
-  covers the compiled path only). Costs nothing today: the loop itself is
-  interpreted.
+- (Done 2026-11-18, 2.4.33 -- function-lambda-designator-recompiled-per-call.)
+  A lambda in an INTERPRETED loop minted closures no site could share. It was
+  thought to cost nothing because the loop is interpreted anyway. Measured, a
+  mapcar over 20 elements compiled the lambda once per iteration (1100
+  compilations for 1100 iterations). Interpreted lambdas now take the site of
+  their source.
 - Poll points: what remains is the per-poll-point work the debugger needs
   (two POLL-POINT calls, enter/exit bookkeeping, UNWIND-PROTECT).
 - Open-coding has reached diminishing returns for the operators; LENGTH, NTH,

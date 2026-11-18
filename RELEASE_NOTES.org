@@ -136,6 +136,13 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *A =lambda= is compiled once per place in the source* (2.4.33):
+  =(function (lambda ...))= and ='(lambda ...)= in a compiled function, and
+  any lambda in an interpreted loop, were compiled again on every
+  evaluation once =mapcar= applied them to 16 elements or more. That
+  triggered the "host compiler has now run 1001 times" warning. See the
+  manual, /A lambda compiles once per place in the source/.
+
 - *XData read from a DXF or DWG file is a =(-3 ...)= cell* (2.4.31,
   cador host): the file's flat =1001= / =10xx= groups used to stay in the
   entity's list, so =(ssget "_X" '((-3 ("APP"))))= found nothing and

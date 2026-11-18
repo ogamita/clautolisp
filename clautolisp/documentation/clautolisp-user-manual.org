@@ -3866,6 +3866,24 @@ the same code is being compiled again and again. If you see it, the
 report is worth making — it is far more likely to be a defect in
 clautolisp than in your program.
 
+**** A lambda compiles once per place in the source
+A ~lambda~ is compiled once for the place where it is written, however it
+reaches the function that calls it. That covers ~(lambda ...)~,
+~(function (lambda ...))~ and ~'(lambda ...)~, inside a compiled function
+or interpreted, at top level or in a loop. Each evaluation still builds
+its own closure, with its own variables. What the closures share is the
+compiled body.
+
+#+BEGIN_SRC autolisp
+(defun f (groups) (mapcar (function (lambda (g) (nth 4 g))) groups))
+(repeat 1100 (f groups))   ; the lambda's body is compiled once
+#+END_SRC
+
+Before clautolisp 2.4.33, the two designator spellings in a compiled
+function, and every spelling in an interpreted loop, were compiled again
+on every evaluation once ~mapcar~ had applied them to 16 elements or
+more. That is the repeated compilation this warning was reporting.
+
 *** ~CLAL-COMPILE-FILE~ / ~CLAL-COMPILE-SYSTEM~ -- compile an application
 ~(clal-compile-file SOURCE [OUTPUT])~ compiles one AutoLISP source file
 into a ~.lap~ compiled application; ~OUTPUT~ defaults to the source name

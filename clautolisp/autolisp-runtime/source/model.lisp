@@ -436,8 +436,11 @@ clautolisp-secureload-trust-model spec.")
   ;; it eagerly in the constructor would move the error from the call to
   ;; the DEFUN, which is a behaviour change and not this slot's business.
   (lambda-list-split nil :type list)
-  ;; The LAMBDA SITE this closure came from, or NIL for a DEFUN and for
-  ;; any closure the interpreter built (lambda-in-a-loop-never-compiles.issue).
+  ;; The LAMBDA SITE this closure came from, or NIL for a DEFUN
+  ;; (lambda-in-a-loop-never-compiles.issue). A closure the interpreter
+  ;; built, or one made from a lambda DESIGNATOR, has the site of its
+  ;; SOURCE -- see LAMBDA-SOURCE-SITE (function-lambda-designator-
+  ;; recompiled-per-call.issue) -- or NIL on a Lisp without weak tables.
   ;;
   ;; A LAMBDA form evaluated in a loop mints a NEW usubr per iteration,
   ;; so a compilation decision taken per OBJECT is retaken from scratch

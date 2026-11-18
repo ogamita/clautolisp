@@ -5345,6 +5345,63 @@ name; a LAMBDA has none and passes NIL."
                                               function-name)
           (return))))))
 
+;;; ONE SITE PER LAMBDA SOURCE, for the closures the transpiler's
+;;; LOAD-TIME-VALUE cannot reach (function-lambda-designator-recompiled-per-
+;;; call). Two ways of reaching EVAL-LAMBDA-FORM had no site:
+;;;
+;;;   - a DESIGNATOR -- (function (lambda ...)) or '(lambda ...) -- which
+;;;     FUNCTION and QUOTE return as the LIST, and which MAPCAR, APPLY and
+;;;     every other caller turn into a closure at the call;
+;;;   - a LAMBDA the INTERPRETER evaluates: a top-level loop, or a DEFUN not
+;;;     yet called often enough to be compiled itself.
+;;;
+;;; Each of those minted a closure whose call count started at zero, and
+;;; MAPCAR over 16 elements or more is enough to take one over the default
+;;; threshold: the host compiler ran once PER EVALUATION -- 1100 times for
+;;; 1100 calls, measured, and the 1001-compilations warning in a SCHMS+ run.
+;;;
+;;; The identity they all have is the SOURCE: the cons after LAMBDA is the
+;;; same object on every evaluation of one form, whether the interpreter
+;;; reaches it, a compiled function quotes it, or a designator carries it.
+;;; Keyed on that, all three share one site -- and with the transpiler's
+;;; own LAMBDA, since it registers the same cons.
+;;;
+;;; WHY A WEAK TABLE, after lambda-in-a-loop-never-compiles avoided one. The
+;;; transpiler could give a compiled LAMBDA a site of its own; nothing can
+;;; give one to a list that reaches MAPCAR as a VALUE, which may also be
+;;; built at run time -- (list 'lambda ...) is a new key on each call, and a
+;;; strong table would keep every one of them. Weak keys are what make
+;;; keying on the source safe, so the cost that issue declined is paid
+;;; here, behind MAKE-WEAK-KEY-EQ-HASH-TABLE. A Lisp it does not know gets
+;;; NIL and the old behaviour (a closure deciding alone), never a leak.
+
+(defun make-weak-key-eq-hash-table ()
+  "An EQ hash table whose entries go away with their keys, or NIL on a Lisp
+this function does not know how to ask -- the caller then does without
+rather than retain every key it is shown. Safe to share between threads:
+SBCL synchronizes weak tables anyway, CCL's tables are shared by default."
+  #+sbcl (make-hash-table :test 'eq :weakness :key :synchronized t)
+  #+ccl (make-hash-table :test 'eq :weak :key)
+  #+ecl (make-hash-table :test 'eq :weakness :key :synchronized t)
+  #+clisp (make-hash-table :test 'eq :weak :key)
+  #-(or sbcl ccl ecl clisp) nil)
+
+(defvar *lambda-source-sites* (make-weak-key-eq-hash-table)
+  "LAMBDA source (the cons after the LAMBDA symbol) -> its USUBR-SITE. See
+LAMBDA-SOURCE-SITE. NIL where weak tables are unavailable.")
+
+(defun lambda-source-site (arguments)
+  "The USUBR-SITE every closure of the LAMBDA whose source is ARGUMENTS (the
+form minus its LAMBDA) shares, made on first sight. NIL when there is no
+weak table on this Lisp.
+
+Only the BODY's compilation is shared through it, never an environment:
+see the SITE slot of AUTOLISP-USUBR."
+  (let ((table *lambda-source-sites*))
+    (when (and table (consp arguments))
+      (or (gethash arguments table)
+          (setf (gethash arguments table) (make-usubr-site))))))
+
 (defun eval-lambda-form (arguments context &optional site)
   "Build the closure a LAMBDA form denotes.
 
@@ -5354,14 +5411,18 @@ closure whose site already has a compiled body starts life with it, so
 a lambda in a loop compiles ONCE rather than once per iteration or,
 at the default threshold, never at all.
 
-NIL SITE is the interpreter's case and keeps the old behaviour exactly:
-the decision stays on the closure."
+NIL SITE -- the interpreter's LAMBDA, and a lambda DESIGNATOR made into a
+function by MAPCAR, APPLY and the like -- takes the site of the SOURCE,
+ARGUMENTS itself (LAMBDA-SOURCE-SITE), so those closures share one
+decision as well (function-lambda-designator-recompiled-per-call)."
   (unless (>= (length arguments) 2)
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
      "LAMBDA expects a lambda list and at least one body form, got ~D arguments."
      (length arguments)))
   (maybe-warn-about-rest-separator (first arguments) "LAMBDA")
+  (unless site
+    (setf site (lambda-source-site arguments)))
   (let ((function (make-autolisp-usubr "LAMBDA"
                                        (first arguments)
                                        (rest arguments)

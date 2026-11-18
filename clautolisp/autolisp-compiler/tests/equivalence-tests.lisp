@@ -385,10 +385,20 @@ the body was compiled inherits it rather than recompiling."
         "the two closures did not share a site")
     ;; and the site is a site, not merely non-nil
     (is (typep (autolisp-usubr-site a) 'usubr-site)))
-  ;; A closure the INTERPRETER built has no site, and keeps exactly the
-  ;; behaviour it had: the decision stays on the closure.
-  (let ((interpreted (%interpreted "(lambda (x) (* x 2))")))
-    (is (null (autolisp-usubr-site interpreted))))
+  ;; A closure the INTERPRETER built shares the site of its SOURCE
+  ;; (function-lambda-designator-recompiled-per-call): two evaluations of
+  ;; one lambda form, one site; two forms spelt alike, two sites.
+  (let* ((context (%fresh-context))
+         (form (%read-one "(lambda (x) (* x 2))"))
+         (a (autolisp-eval form context))
+         (b (autolisp-eval form context))
+         (other (autolisp-eval (%read-one "(lambda (x) (* x 2))") context)))
+    (is (not (eq a b)))
+    (is (typep (autolisp-usubr-site a) 'usubr-site))
+    (is (eq (autolisp-usubr-site a) (autolisp-usubr-site b))
+        "two evaluations of one interpreted lambda did not share a site")
+    (is (not (eq (autolisp-usubr-site a) (autolisp-usubr-site other)))
+        "two distinct lambda forms shared a site"))
   ;; The value is unchanged by any of this, compiled or not.
   (is (%agree-p "(apply (lambda (x) (* x 2)) (list 21))"))
   (is (eql 42 (%compiled "(apply (lambda (x) (* x 2)) (list 21))"))))
@@ -411,6 +421,106 @@ answer differently even though they share a site."
     (is (eql 101 (autolisp-eval (%read-one "(apply g (list 1))") context)))
     (is (eql 101 (autolisp-eval (%read-one "(apply f (list 1))") context))
         "K is a GLOBAL here, so both closures must see its current value")))
+
+;;; function-lambda-designator-recompiled-per-call: a lambda reached as a
+;;; DESIGNATOR -- (function (lambda ...)) or '(lambda ...), the value MAPCAR
+;;; or APPLY receives -- and a LAMBDA the INTERPRETER evaluates had no site,
+;;; so every evaluation minted a closure whose compilation decision started
+;;; from zero. With a list of 16 elements or more, MAPCAR alone pushed each
+;;; one over the default threshold: the host compiler ran ONCE PER
+;;; EVALUATION, and a SCHMS+ run hit the 1001-compilations warning.
+
+(defun %count-compilations (setup main)
+  "How many bodies the host compiler compiled while MAIN ran, after SETUP,
+in a fresh context at the SHIPPED threshold (the suite's own may differ)."
+  (let ((context (%fresh-context))
+        (*autolisp-compilation-threshold* 16)
+        (*usubr-compilation-count* 0)
+        (*usubr-compilation-warned-p* t))
+    (flet ((run-text (text)
+             (dolist (form (read-runtime-from-string text))
+               (autolisp-eval form context))))
+      (run-text "(setq l '()) (repeat 20 (setq l (cons (list 0 1 2 3 4) l)))")
+      (when setup (run-text setup))
+      (let ((*usubr-compilation-count* 0))
+        (run-text main)
+        *usubr-compilation-count*))))
+
+(defparameter +lambda-designator-spellings+
+  '("(function (lambda (e) (nth 4 e)))"
+    "'(lambda (e) (nth 4 e))"
+    "(lambda (e) (nth 4 e))")
+  "The three ways AutoLISP code hands MAPCAR a lambda.")
+
+(test a-lambda-designator-in-a-defun-compiles-once-not-once-per-call
+  "The issue's own measurement: F called 1100 times on a 20-element list.
+Before the fix the two designator spellings compiled 1101 bodies -- one
+per call of F, plus F -- and the bare LAMBDA 17, because each of F's 15
+INTERPRETED warm-up calls compiled its own closure. Now F compiles once
+and the lambda once: the interpreter and the transpiled F hand over the
+SAME source cons, so they share one site."
+  (dolist (spelling +lambda-designator-spellings+)
+    (is (eql 2 (%count-compilations
+                (format nil "(defun f (l) (mapcar ~A l))" spelling)
+                "(repeat 1100 (f l))"))
+        "~A in a DEFUN compiled more than F and the lambda" spelling)))
+
+(test a-lambda-in-an-interpreted-loop-compiles-once
+  "A loop the INTERPRETER runs -- at top level, or in a DEFUN called too
+few times to be compiled itself -- used to compile the lambda once per
+iteration, whichever way it was spelt: 1100 compilations for 1100
+iterations. compiler-performance-followups said this `costs nothing
+today'; measured, it was the same per-iteration recompilation the
+compiled path had been cured of."
+  (dolist (spelling +lambda-designator-spellings+)
+    (is (eql 1 (%count-compilations
+                nil
+                (format nil "(repeat 1100 (setq r (mapcar ~A l)))" spelling)))
+        "~A in a top-level loop compiled more than once" spelling)
+    (is (eql 1 (%count-compilations
+                (format nil "(defun g (l / r) (repeat 1100 (setq r (mapcar ~A l))) r)"
+                        spelling)
+                "(g l)"))
+        "~A in a once-called DEFUN's loop compiled more than once" spelling)))
+
+(test a-lambda-designator-shares-a-site-per-source-form
+  "The mechanism, pinned: resolving the same designator twice builds two
+closures -- the environment is the call's -- sharing ONE site. A designator
+CONSTRUCTED at run time is a different list each time, so it gets a site
+of its own and no false sharing; it still works."
+  (let* ((context (%fresh-context))
+         (designator (autolisp-eval (%read-one "'(lambda (x) (* x 2))") context))
+         (a (resolve-autolisp-function-designator designator context))
+         (b (resolve-autolisp-function-designator designator context)))
+    (is (not (eq a b)) "the two closures were the same object")
+    (is (typep (autolisp-usubr-site a) 'usubr-site))
+    (is (eq (autolisp-usubr-site a) (autolisp-usubr-site b))
+        "two resolutions of one designator did not share a site")
+    (let ((built-1 (autolisp-eval (%read-one "(list 'lambda '(x) '(* x 3))") context))
+          (built-2 (autolisp-eval (%read-one "(list 'lambda '(x) '(* x 3))") context)))
+      (is (not (eq (autolisp-usubr-site
+                    (resolve-autolisp-function-designator built-1 context))
+                   (autolisp-usubr-site
+                    (resolve-autolisp-function-designator built-2 context))))
+          "two distinct constructed designators shared a site")))
+  (is (eql 42 (%interpreted "(apply '(lambda (x) (* x 2)) (list 21))")))
+  (is (equal '(3 6) (%interpreted
+                      "(mapcar (eval (list 'lambda '(x) '(* x 3))) '(1 2))")))
+  (is (%agree-p "(mapcar (function (lambda (x) (* x 2))) '(1 2 3))")))
+
+(test a-designator-site-shares-a-compiled-body-but-never-an-environment
+  "As for a compiled LAMBDA: only the BODY is common to the closures of one
+site. K is a local of MK here, bound to a different value on each call, and
+the closures resolved from the one designator must each see their own --
+the body compiled on the first call must not carry the first K along."
+  (let ((context (%fresh-context))
+        (*autolisp-compilation-threshold* 1))
+    (autolisp-eval
+     (%read-one "(defun mk (k / ) (mapcar '(lambda (x) (+ x k)) (list 1 2)))")
+     context)
+    (is (equal '(2 3) (autolisp-eval (%read-one "(mk 1)") context)))
+    (is (equal '(101 102) (autolisp-eval (%read-one "(mk 100)") context)))
+    (is (equal '(1001 1002) (autolisp-eval (%read-one "(mk 1000)") context)))))
 
 (defun %com-context (&optional (items-hook :fake))
   "A fresh context whose COM collection hook is ITEMS-HOOK.
