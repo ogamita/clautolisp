@@ -77,9 +77,10 @@
            (cadgui-doc-supply-point db 0 0) (cadgui-doc-supply-point db 9 9)
            (let ((served (cadgui-workspace-run ws)))
              (is (= 4 served)))              ; 2 getpoints x 2 documents
-           ;; each host's model holds exactly its own line
-           (let ((sa (clautolisp.cador:cador-scene-display-list (cadgui-doc-host da)))
-                 (sb (clautolisp.cador:cador-scene-display-list (cadgui-doc-host db))))
+           (is (cadgui-workspace-all-finished-p ws))   ; the shell's quiescence poll
+           ;; each document's own display list holds exactly its own line
+           (let ((sa (cadgui-doc-display-list da))
+                 (sb (cadgui-doc-display-list db)))
              (is (= 1 (length sa)))
              (is (= 1 (length sb)))
              ;; A's line ends at (5,5); B's at (9,9) -- the points did not bleed

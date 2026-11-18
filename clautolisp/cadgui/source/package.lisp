@@ -62,4 +62,7 @@
    #:cadgui-doc-feed-point
    #:cadgui-workspace-launch
    #:cadgui-workspace-drive-step
+   #:cadgui-doc-display-list
+   #:cadgui-doc-extents
+   #:cadgui-workspace-all-finished-p
    #:cadgui-workspace-shutdown))

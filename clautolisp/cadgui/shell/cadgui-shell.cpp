@@ -415,18 +415,130 @@ static void boot_ecl_and_load(int argc, char **argv) {
 #endif
 }
 
+// ---- the MULTI-WINDOW (MDI) path -----------------------------------------
+// Render a document's own prim list to a PNG (one document window's frame).
+static bool render_prims_png(const std::vector<Prim> &prims, const std::string &file,
+                             int W, int H) {
+    View view;
+    double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
+    for (const Prim &pr : prims)
+        for (size_t i = 0; i + 1 < pr.pts.size(); i += 2) {
+            x0 = std::min(x0, pr.pts[i]);   x1 = std::max(x1, pr.pts[i]);
+            y0 = std::min(y0, pr.pts[i+1]); y1 = std::max(y1, pr.pts[i+1]);
+        }
+    if (x0 > x1) { x0 = 0; y0 = 0; x1 = 1; y1 = 1; }
+    view.fit(x0, y0, x1, y1, W, H, 28);
+    QPixmap pm(W, H);
+    QPainter g(&pm);
+    g.setRenderHint(QPainter::Antialiasing, true);
+    g.fillRect(0, 0, W, H, QColor(18, 22, 30));
+    g.setPen(QPen(QColor(55, 64, 78), 1.0));
+    g.drawLine(view.toDev(-1e5, 0), view.toDev(1e5, 0));
+    g.drawLine(view.toDev(0, -1e5), view.toDev(0, 1e5));
+    for (const Prim &pr : prims) {
+        QPen pen(aci_to_rgb(pr.aci)); pen.setWidthF(1.8); g.setPen(pen);
+        QVector<QPointF> poly;
+        for (size_t i = 0; i + 1 < pr.pts.size(); i += 2)
+            poly.push_back(view.toDev(pr.pts[i], pr.pts[i+1]));
+        if (pr.closed && !poly.isEmpty()) poly.push_back(poly.first());
+        if (poly.size() >= 2) g.drawPolyline(poly.constData(), poly.size());
+        else if (poly.size() == 1) g.drawPoint(poly.first());
+    }
+    g.end();
+    return pm.save(QString::fromStdString(file), "PNG");
+}
+
+// A 2-document workspace, launched and parked, with a Lisp DRIVER THREAD running
+// the multiplexing driver. Each document's command reads two points (getpoint)
+// and draws a line. Read in CL-USER so the bare symbols resolve there.
+static const char *MDI_SETUP =
+  "(progn"
+  "  (defparameter *mdi-ws* (clautolisp.cadgui:cadgui-make-workspace))"
+  "  (defun mdi-line-thunk (h)"
+  "    (let ((p1 (clautolisp.autolisp-host:host-getpoint h nil))"
+  "          (p2 (clautolisp.autolisp-host:host-getpoint h nil)))"
+  "      (clautolisp.autolisp-host:host-entmake h"
+  "        (list (cons 0 \"LINE\")"
+  "              (cons 10 (list (first p1) (second p1) 0d0))"
+  "              (cons 11 (list (first p2) (second p2) 0d0))))))"
+  "  (defparameter *mdi-da* (clautolisp.cadgui:cadgui-open-document *mdi-ws* :a (function mdi-line-thunk)))"
+  "  (defparameter *mdi-db* (clautolisp.cadgui:cadgui-open-document *mdi-ws* :b (function mdi-line-thunk)))"
+  "  (clautolisp.cadgui:cadgui-workspace-launch *mdi-ws* *mdi-da*)"
+  "  (format *error-output* \"~&mdi: a launched, step=~a~%\" (clautolisp.cadgui:cadgui-workspace-drive-step *mdi-ws*))"
+  "  (clautolisp.cadgui:cadgui-workspace-launch *mdi-ws* *mdi-db*)"
+  "  (format *error-output* \"~&mdi: b launched, step=~a~%\" (clautolisp.cadgui:cadgui-workspace-drive-step *mdi-ws*))"
+  "  (finish-output *error-output*)"
+  "  (mp:process-run-function \"mdi-driver\""
+  "    (lambda () (loop (let ((ev (clautolisp.cadgui:cadgui-workspace-drive-step *mdi-ws* 3)))"
+  "                       (format *error-output* \"~&mdi-driver: ~a~%\" ev) (finish-output *error-output*)"
+  "                       (when (eq ev :timeout) (return)))))))";
+
+// --mdidemo PREFIX: open two document windows on ONE workspace, drive them from
+// the Qt main thread with OUT-OF-ORDER input (document B fed before A) through
+// cadgui-doc-feed, let the Lisp driver thread + the two document context threads
+// run, and render each document's OWN scene to PREFIX-a.png / PREFIX-b.png. The
+// GUI realization of the multiplexing driver, headless.
+static int run_mdi_demo(const std::string &prefix) {
+    qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
+    eval_str(MDI_SETUP);                          // workspace + 2 docs + driver thread
+    int argc0 = 0; QApplication app(argc0, nullptr);
+
+    // Feed the four corner points, document B FIRST (out of order). The driver's
+    // per-document queue absorbs any that arrive before a document parks.
+    static const char *feeds[] = {
+        "(clautolisp.cadgui:cadgui-doc-feed-point *mdi-ws* *mdi-db* 0.0 0.0)",
+        "(clautolisp.cadgui:cadgui-doc-feed-point *mdi-ws* *mdi-da* 0.0 0.0)",
+        "(clautolisp.cadgui:cadgui-doc-feed-point *mdi-ws* *mdi-db* 9.0 9.0)",
+        "(clautolisp.cadgui:cadgui-doc-feed-point *mdi-ws* *mdi-da* 5.0 5.0)" };
+    static int fed = 0;
+    QTimer feeder;
+    QObject::connect(&feeder, &QTimer::timeout, &app, [] {
+        if (fed < 4) {
+            std::fprintf(stderr, "mdi-feed %d\n", fed); std::fflush(stderr);
+            eval_str(feeds[fed++]);               // on the Qt main thread
+        }
+    });
+    feeder.start(20);
+
+    QTimer watchdog; int ticks = 0;
+    QObject::connect(&watchdog, &QTimer::timeout, &app, [&] {
+        bool done = (fed >= 4) &&
+            (eval_str("(if (clautolisp.cadgui:cadgui-workspace-all-finished-p *mdi-ws*) t nil)")
+             != ECL_NIL);
+        if (done || ++ticks > 500) {
+            // Both document threads are finished -> pulling their models is race-free.
+            std::vector<Prim> a = pull_prims("(clautolisp.cadgui:cadgui-doc-display-list *mdi-da*)");
+            std::vector<Prim> b = pull_prims("(clautolisp.cadgui:cadgui-doc-display-list *mdi-db*)");
+            bool oka = render_prims_png(a, prefix + "-a.png", 360, 360);
+            bool okb = render_prims_png(b, prefix + "-b.png", 360, 360);
+            std::fprintf(stderr, "cadgui-shell: --mdidemo done=%d; doc A %zu prims, doc B %zu prims; "
+                         "saved %s\n", done ? 1 : 0, a.size(), b.size(), (oka && okb) ? "OK" : "FAIL");
+            app.exit((done && oka && okb && a.size() == 1 && b.size() == 1) ? 0 : 1);
+        }
+    });
+    watchdog.start(15);
+    return app.exec();
+}
+
 int main(int argc, char **argv) {
     std::string mode, file;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
-        if ((a == "--render" || a == "--demo") && i + 1 < argc) { mode = a; file = argv[++i]; }
+        if ((a == "--render" || a == "--demo" || a == "--mdidemo") && i + 1 < argc) {
+            mode = a; file = argv[++i];
+        }
     }
-    const bool offscreen = (mode == "--render" || mode == "--demo");
+    const bool offscreen = (mode == "--render" || mode == "--demo" || mode == "--mdidemo");
     if (offscreen) qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
 
     // 1. ECL + the base scene, all on the main thread BEFORE any runner starts
     //    (no concurrency yet, so main may touch the model here).
     boot_ecl_and_load(argc, argv);
+
+    if (mode == "--mdidemo") {                    // the multi-window path: the
+        return run_mdi_demo(file);                // driver + input are pure Lisp
+    }
+
     eval_str("(clautolisp.cadgui:cadgui-start)");
     eval_str("(progn (clautolisp.cadgui:cadgui-add-line 0 0 60 0 :color 1)"
              "       (clautolisp.cadgui:cadgui-add-line 60 0 60 40 :color 2)"

@@ -227,6 +227,24 @@ its driver thread, with the input arriving from canvas clicks instead."
             (when (parkp next) (push next pending))))))
     served))
 
+(defun cadgui-doc-display-list (doc)
+  "The display list of DOC's OWN model -- what DOC's window renders. Same
+(:POLYLINE ...) format as cadgui-display-list, but for this document's host."
+  (clautolisp.cador:cador-scene-display-list (cadgui-doc-host doc)))
+
+(defun cadgui-doc-extents (doc)
+  "(XMIN YMIN XMAX YMAX) of DOC's model, or NIL -- DOC's zoom-extents."
+  (clautolisp.cador:cador-scene-extents (cadgui-doc-host doc)))
+
+(defun cadgui-workspace-all-finished-p (workspace)
+  "True when every document's evaluation thread has finished -- the shell polls
+this to know when a batch of driven work is quiescent."
+  (every (lambda (doc)
+           (let ((th (clautolisp.autolisp-runtime:scheduled-context-thread
+                      (cadgui-doc-context doc))))
+             (or (null th) (not (bordeaux-threads:thread-alive-p th)))))
+         (cadgui-workspace-docs workspace)))
+
 (defun cadgui-workspace-shutdown (workspace)
   "Stop every document thread: end its input, unpark it with :EXIT, and join.
 Safe to call on a partially-run workspace."

@@ -246,8 +246,18 @@ mouse, pan/zoom, coarse regen, offscreen-capable.
   multi-window shell (a driver thread + per-document canvas, the active document
   routing clicks to its channel), ONE shared cador host with N drawings (slice 1
   gives each document its own host), and document switch/close UI.
-- NEXT: the Qt multi-window shell on the multi-document foundation (a driver
-  thread + a per-document canvas, the active document routing clicks to its
-  channel); one shared cador host with N drawings (vs a host per document);
-  document switch/close UI; the remaining action-layer slices B-E
-  ([[cadgui-action-layer]]). Then [[cadgui-3-2d-parity]].
+- DONE (2026-11-18, 2.5.2): the Qt MULTI-WINDOW shell path -- =cadgui-shell.cpp=
+  =--mdidemo=. One =cadgui-workspace= with two documents, a LISP DRIVER THREAD
+  running the multiplexing driver (=cadgui-workspace-drive-step=) on its own ECL
+  thread, the document context threads evaluating, and the Qt main thread feeding
+  input (=cadgui-doc-feed-point=) and rendering each document's OWN scene
+  (=cadgui-doc-display-list=) to its own frame. Validated headless on the FROZEN
+  binary: documents fed OUT OF ORDER (B before A) are resumed in input order
+  (trace: feed/INPUT/PARK/DONE interleaved), each draws its own line in its own
+  model, each rendered to its own PNG. Lisp helpers =cadgui-doc-display-list=,
+  =cadgui-doc-extents=, =cadgui-workspace-all-finished-p= (cadgui suite).
+- NEXT: the LIVE interactive multi-window shell (real QMainWindows per document
+  with per-document snapshots for race-free paint, a command line per window,
+  click routing, open/close/switch UI) -- the --mdidemo wiring made live; one
+  shared cador host with N drawings (vs a host per document); the remaining
+  action-layer slices B-E ([[cadgui-action-layer]]). Then [[cadgui-3-2d-parity]].
