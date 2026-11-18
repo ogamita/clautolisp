@@ -62,10 +62,13 @@ foreach ($engine in $engines) {
         $started = Get-Date
         $argv = @('--no-init', '--debug', "--$engine") + $opt.Args + `
                 @('--timeout', $t, '--keep-workdir', '-l', $probe)
-        $out = & $alfe @argv 2>&1 | Out-String
+        # Streamed, line by line: a run that hangs past its own --timeout still
+        # shows how far it got (job 18151974874 printed nothing in an hour).
+        $lines = New-Object System.Collections.Generic.List[string]
+        & $alfe @argv 2>&1 | ForEach-Object { $l = "$_"; $lines.Add($l); Write-Host $l }
+        $out = ($lines -join "`n")
         $status = $LASTEXITCODE
         $elapsed = [int]((Get-Date) - $started).TotalSeconds
-        Write-Host $out
         Write-Host "--- alfe exit $status after ${elapsed}s"
 
         $sawMarker = [bool]($out -match [regex]::Escape($marker))
