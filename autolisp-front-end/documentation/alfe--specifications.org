@@ -930,6 +930,15 @@ session ends), restores =SECURELOAD=, runs the =:after-load= lines, then
 (=vla-close ... :vlax-false=) and =._QUIT _N=. alfe gives the process 20 s to
 exit after =STOPPED=, then terminates it.
 
+With =--cad-exit kill= (default =quit=) alfe sends no =SHUTDOWN= once the
+results are recorded: it kills the CAD it launched at once (SIGKILL, so that
+no exit path runs), without closing the drawing (its lock files stay), and a
+created COM CAD is ended by the bridge's forced end; a CAD alfe attached to is
+only released. A deliberate kill is not a bad shutdown; only a CAD that
+survives it signals =:cad-survived=. This is for a CAD whose own exit crashes
+(BricsCAD V26.2.7 macOS: SIGSEGV in =BdmModule::uninitApp=, a crash report
+each time).
+
 * Backend autocad
 :PROPERTIES:
 :CUSTOM_ID: backend-autocad

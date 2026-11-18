@@ -68,6 +68,7 @@
    #:cli-options-write-workdir-path ; A — --write-workdir-path FILE
    #:cli-options-cad-log         ; A — --cad-log FILE
    #:cli-options-ready-timeout   ; A — --ready-timeout SECS
+   #:cli-options-cad-exit        ; A — --cad-exit {quit,kill}
    #:cli-options-result-files    ; A — --result-file FILE (repeatable)
    #:cli-options-cleanup-report  ; A — --cleanup-report FILE
    #:cli-options-main            ; A — symbol name (string)

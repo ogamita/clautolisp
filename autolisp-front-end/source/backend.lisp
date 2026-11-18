@@ -77,6 +77,7 @@
            #:*recorded-outcome*
            #:*interrupt-requested*
            #:*forced-shutdown*
+           #:*cad-exit-mode*
            #:*cleanup-report-file-name*
            #:write-key-value-file
            #:read-key-value-file
@@ -102,6 +103,15 @@ INTERRUPT through the protocol, and the plan stops before its next action
   "True after a SECOND Control-C: the shutdown does not wait for the CAD --
 it kills a CAD alfe launched at once, and disconnects from one it attached
 to (rule 4).")
+
+(defvar *cad-exit-mode* :quit
+  "How a CAD alfe started ends once the run is over (--cad-exit).
+:QUIT, the default: it is asked to stop, closes its drawing and quits by
+itself (alfe-cad-lifecycle-rules). :KILL: once the results are recorded it is
+killed at once (SIGKILL, or the COM bridge's forced end), without the stop
+request -- for a CAD whose own exit crashes (BricsCAD V26 macOS, campaign
+finding F-EXITCRASH), so that no crash report is produced. A CAD alfe only
+attached to is never killed: it is released as with :QUIT.")
 
 (defparameter *cleanup-report-file-name* "owned-cad-cleanup-report.txt"
   "The KEY=VALUE cleanup report a backend writes in its workdir when its

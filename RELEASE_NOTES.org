@@ -1987,6 +1987,13 @@ separate binary for tool integrators.
 
 * alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
 
+- New ~--cad-exit {quit,kill}~ (alfe 2.4.32): how a CAD alfe started ends
+  after the run. ~quit~, the default, is unchanged (asked to stop, it quits by
+  itself); ~kill~ kills it at once once the results are recorded, without its
+  QUIT -- for a CAD whose own exit crashes, as BricsCAD V26.2.7 macOS does
+  (SIGSEGV in its BIM module's unload, a crash report each time). The drawing
+  is not saved; a CAD alfe attached to is only released. See the user manual,
+  the options table.
 - Fixed (alfe 2.4.16): two alfe runs of the same Windows user that trust
   their workdir in AutoCAD's =TRUSTEDPATHS= at the same time no longer erase
   each other's entry, and a registry read that fails no longer replaces the

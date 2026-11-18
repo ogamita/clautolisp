@@ -2670,6 +2670,25 @@ fallback step, not the explicit-override steps ahead of it."
     (is (not (uiop:process-alive-p info))
         "the process outlived kill-engine-process")))
 
+(test killed-cad-shutdown-kills-at-once
+  "--cad-exit kill: the CAD alfe launched is killed without its QUIT, at once
+(no natural-exit grace), and a deliberate kill is not a bad shutdown."
+  (let* ((info (uiop:launch-program (list "sleep" "60") :output nil :error-output nil))
+         (start (get-internal-real-time))
+         (outcome (alfe.backend.cad-common::killed-cad-shutdown :bricscad info)))
+    (is (eq :killed outcome))
+    (is (not (uiop:process-alive-p info)))
+    (is (< (/ (- (get-internal-real-time) start) internal-time-units-per-second) 5)
+        "the kill waited for a grace")))
+
+(test shutdown-cad-session-honours-cad-exit-kill
+  "With *CAD-EXIT-MODE* :KILL, SHUTDOWN-CAD-SESSION sends no stop request (no
+protocol needed) and kills the CAD; the default :QUIT keeps the stop."
+  (let ((info (uiop:launch-program (list "sleep" "60") :output nil :error-output nil)))
+    (let ((alfe.backend:*cad-exit-mode* :kill))
+      (is (eq :killed (alfe.backend.cad-common::shutdown-cad-session :bricscad nil info))))
+    (is (not (uiop:process-alive-p info)))))
+
 (test kill-engine-process-allows-natural-exit
   "A CAD that has acknowledged shutdown may still be finishing QUIT."
   (let ((info (uiop:launch-program (list "sh" "-c" "sleep 0.3; exit 0")
