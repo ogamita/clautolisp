@@ -4707,6 +4707,9 @@ process gone (alfe-owned-cad-termination-after-recorded-results)."
             (is (search " -Operation Windows -ProcessId " text))
             (is (search "If Not listed And Timer - started > 60 Then" text))
             (is (search "ListBusyWindows \"busy-windows.txt\"" text))
+            ;; busy with no dialog: the CAD's own CMDNAMES / CMDACTIVE
+            (is (search "LogBusyState a, \"MINUTE\"" text))
+            (is (search "LogBusyState app, \"END\"" text))
             (let ((at-end (search "ListBusyWindows \"busy-windows-end.txt\"" text)))
               (is (and at-end (< ready at-end open))))))))
     (is (search "'Capture','Finish','Windows'"
