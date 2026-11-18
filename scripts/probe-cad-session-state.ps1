@@ -31,7 +31,12 @@ $tClautolisp= if ($env:PROBE_CLAUTOLISP_TIMEOUT){ $env:PROBE_CLAUTOLISP_TIMEOUT 
 
 $marker = 'PROBE.SESSION.MARKER.OK'
 $probe  = Join-Path ([System.IO.Path]::GetTempPath()) 'alfe-session-probe.lsp'
-"(progn (princ `"$marker`") (princ))" | Set-Content -Path $probe -Encoding ASCII
+# Then where the CAD found its startup files: a local copy or a network one
+# (alfe-com-open-before-quiescent, PF5S26BT 2026-11-18).
+$diagPaths = @'
+(progn (foreach f (quote ("acad.lsp" "acaddoc.lsp" "on_start.lsp" "es.lsp" "sncf_startup.lsp" "com/lisp/sncf_startup.lsp" "sncf_com.lsp" "com/lisp/sncf_com.lsp")) (princ (strcat "\nDIAG.PATH " f "=")) (prin1 (findfile f))) (princ "\nDIAG.PROFILE=") (prin1 (getvar "CPROFILE")) (princ "\nDIAG.PREFIX=") (prin1 (getvar "ACADPREFIX")) (princ "\n") (princ))
+'@
+@("(progn (princ `"$marker`") (princ))", $diagPaths) | Set-Content -Path $probe -Encoding ASCII
 
 # The matrix. clautolisp is the base: in-process, no external process, so it
 # is the control that must pass in EVERY session state -- if it does not, the

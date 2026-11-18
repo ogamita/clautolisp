@@ -45,6 +45,9 @@ foreach($case in $cases){
  }
  $forms+=@('(princ "\nDIAG.ATOMS=") (prin1 (atoms-family 1 (quote ("com_way" "COM_WAY" "com_tl_continu" "COM_TL_CONTINU"))))', '(princ "\nDIAG.ENV=") (prin1 (list (getvar "VENDORNAME") (getvar "CPROFILE") (getvar "SECURELOAD") (findfile "com/lisp/sncf_startup.lsp") (findfile "on_start.lsp") (getenv "APPDATA")))')
  $forms+='(if (entmakex (quote ((0 . "LINE") (10 0.0 0.0 0.0) (11 1.0 1.0 0.0)))) (princ "\nALFE.DIRTY.OK\n") (princ "\nALFE.DIRTY.FAIL\n"))'
+ $forms+=@'
+(progn (foreach f (quote ("acad.lsp" "acaddoc.lsp" "on_start.lsp" "es.lsp" "sncf_startup.lsp" "com/lisp/sncf_startup.lsp" "sncf_com.lsp" "com/lisp/sncf_com.lsp")) (princ (strcat "\nDIAG.PATH " f "=")) (prin1 (findfile f))) (princ "\nDIAG.PROFILE=") (prin1 (getvar "CPROFILE")) (princ "\nDIAG.PREFIX=") (prin1 (getvar "ACADPREFIX")) (princ "\n") (princ))
+'@
  $forms | Set-Content -LiteralPath $probe -Encoding ASCII
  $arguments=@('--no-init','--debug','--plugin-path',(Join-Path $repo 'autolisp-front-end/plugins'),('--'+$case.Cad),'--epure','--mode',$case.Mode,'--timeout',([string]$TimeoutSeconds),'--workdir',$work,'--keep-workdir','--cleanup-report',(Join-Path $work 'cleanup-report.txt'),'-l',$probe)
  if($case.Control){$arguments=@($arguments|Where-Object {$_ -ne '--epure'})+@('--no-plugins')}
