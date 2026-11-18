@@ -160,3 +160,37 @@
            ;; the typed command drew a line in this document's model
            (is (= 1 (length (cadgui-doc-display-list da)))))
       (cadgui-workspace-shutdown ws))))
+
+(test cadgui-two-documents-run-typed-commands-interleaved-without-cross-bleed
+  ;; Regression: the documents share ONE session, so its HAL host is one slot.
+  ;; Run two TYPED LINE commands INTERLEAVED (A's command, then B's, then A's
+  ;; points, ...). Without the per-document activation-hook host rebind, A's
+  ;; draw would use B's host and both lines would land in one document. Each
+  ;; must draw in its OWN model.
+  (let* ((ws (cadgui-make-workspace))
+         (da (cadgui-open-document ws :a #'cadgui-document-command-loop))
+         (db (cadgui-open-document ws :b #'cadgui-document-command-loop)))
+    (flet ((step! () (cadgui-workspace-drive-step ws)))
+      (unwind-protect
+           (progn
+             (cadgui-workspace-launch ws da) (step!)   ; a reads command
+             (cadgui-workspace-launch ws db) (step!)   ; b reads command
+             ;; both type their command (interleaved) -> both park at getpoint #1
+             (cadgui-doc-feed ws da "(command \"LINE\" (getpoint) (getpoint))") (step!) (step!)
+             (cadgui-doc-feed ws db "(command \"LINE\" (getpoint) (getpoint))") (step!) (step!)
+             ;; first corner each
+             (cadgui-doc-feed-point ws da 0 0) (step!) (step!)
+             (cadgui-doc-feed-point ws db 0 0) (step!) (step!)
+             ;; second corner each -> each LINE draws, loop reads next command
+             (cadgui-doc-feed-point ws da 5 5) (step!) (step!)
+             (cadgui-doc-feed-point ws db 9 9) (step!) (step!)
+             ;; end both
+             (cadgui-doc-feed ws da :eof) (step!) (step!)
+             (cadgui-doc-feed ws db :eof) (step!) (step!)
+             (let ((sa (cadgui-doc-display-list da))
+                   (sb (cadgui-doc-display-list db)))
+               (is (= 1 (length sa)))       ; NOT 2 (A) / 0 (B)
+               (is (= 1 (length sb)))
+               (is (equal '(0d0 0d0 5d0 5d0) (sixth (first sa))))
+               (is (equal '(0d0 0d0 9d0 9d0) (sixth (first sb))))))
+        (cadgui-workspace-shutdown ws)))))

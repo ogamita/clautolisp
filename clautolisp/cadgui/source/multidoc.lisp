@@ -56,7 +56,26 @@ another parked first (out-of-order input), through one wait point."
   (let ((session (clautolisp.autolisp-runtime:make-runtime-session))
         (sched (clautolisp.autolisp-runtime:make-document-scheduler)))
     (setf (clautolisp.autolisp-runtime:session-scheduler session) sched)
-    (%make-cadgui-workspace :session session :scheduler sched)))
+    (let ((ws (%make-cadgui-workspace :session session :scheduler sched)))
+      ;; The documents share ONE session, so its HAL host is a single slot. Bind
+      ;; it to the ACTIVE document's own host on every scheduler activation
+      ;; (set-runtime-session-current-document fires this hook on every resume),
+      ;; so typed (command)/entmake act on the right document -- otherwise an
+      ;; interleaved sibling's host would be left bound and the models would bleed.
+      (setf clautolisp.autolisp-runtime:*document-activation-hook*
+            (lambda (s doc) (%cadgui-activate-document ws s doc)))
+      ws)))
+
+(defun %cadgui-activate-document (workspace session namespace)
+  "Document-activation hook: bind SESSION's HAL host to the host of WORKSPACE's
+document whose key NAMESPACE carries. A no-op for a namespace this workspace does
+not own (so a stale global hook from another workspace never misbinds)."
+  (let* ((key (clautolisp.autolisp-runtime:document-namespace-host-document-key namespace))
+         (doc (and key (find key (cadgui-workspace-docs workspace)
+                             :key #'cadgui-doc-key :test #'eql))))
+    (when doc
+      (clautolisp.autolisp-runtime:set-runtime-session-host
+       session (cadgui-doc-host doc)))))
 
 (defun cadgui-doc-supply (doc line)
   "Supply the next input LINE (a string, e.g. a point \"x,y\") to DOC's channel --

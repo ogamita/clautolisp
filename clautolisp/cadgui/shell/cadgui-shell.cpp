@@ -449,20 +449,18 @@ static bool render_prims_png(const std::vector<Prim> &prims, const std::string &
 }
 
 // A 2-document workspace, launched and parked, with a Lisp DRIVER THREAD running
-// the multiplexing driver. Each document's command reads two points (getpoint)
-// and draws a line. Read in CL-USER so the bare symbols resolve there.
+// the multiplexing driver. Each document runs cadgui-document-command-loop: it
+// reads a TYPED AutoLISP command from its input and evaluates it IN ITS OWN
+// scheduler context -- so the command's getpoints park and resume from that
+// document's canvas, exactly as the live window drives it. Read in CL-USER so
+// the bare symbols resolve there.
 static const char *MDI_SETUP =
   "(progn"
   "  (defparameter *mdi-ws* (clautolisp.cadgui:cadgui-make-workspace))"
-  "  (defun mdi-line-thunk (h)"
-  "    (let ((p1 (clautolisp.autolisp-host:host-getpoint h nil))"
-  "          (p2 (clautolisp.autolisp-host:host-getpoint h nil)))"
-  "      (clautolisp.autolisp-host:host-entmake h"
-  "        (list (cons 0 \"LINE\")"
-  "              (cons 10 (list (first p1) (second p1) 0d0))"
-  "              (cons 11 (list (first p2) (second p2) 0d0))))))"
-  "  (defparameter *mdi-da* (clautolisp.cadgui:cadgui-open-document *mdi-ws* :a (function mdi-line-thunk)))"
-  "  (defparameter *mdi-db* (clautolisp.cadgui:cadgui-open-document *mdi-ws* :b (function mdi-line-thunk)))"
+  "  (defparameter *mdi-da* (clautolisp.cadgui:cadgui-open-document *mdi-ws* :a"
+  "                           (function clautolisp.cadgui:cadgui-document-command-loop)))"
+  "  (defparameter *mdi-db* (clautolisp.cadgui:cadgui-open-document *mdi-ws* :b"
+  "                           (function clautolisp.cadgui:cadgui-document-command-loop)))"
   "  (clautolisp.cadgui:cadgui-workspace-launch *mdi-ws* *mdi-da*)"
   "  (format *error-output* \"~&mdi: a launched, step=~a~%\" (clautolisp.cadgui:cadgui-workspace-drive-step *mdi-ws*))"
   "  (clautolisp.cadgui:cadgui-workspace-launch *mdi-ws* *mdi-db*)"
@@ -483,17 +481,23 @@ static int run_mdi_demo(const std::string &prefix) {
     eval_str(MDI_SETUP);                          // workspace + 2 docs + driver thread
     int argc0 = 0; QApplication app(argc0, nullptr);
 
-    // Feed the four corner points, document B FIRST (out of order). The driver's
-    // per-document queue absorbs any that arrive before a document parks.
+    // Each window TYPES a LINE command, then clicks two points; document B is fed
+    // FIRST (out of order). The driver's per-document queue absorbs input that
+    // arrives before a document parks, and :eof ends each document's loop.
     static const char *feeds[] = {
+        "(clautolisp.cadgui:cadgui-doc-feed *mdi-ws* *mdi-db* \"(command \\\"LINE\\\" (getpoint) (getpoint))\")",
+        "(clautolisp.cadgui:cadgui-doc-feed *mdi-ws* *mdi-da* \"(command \\\"LINE\\\" (getpoint) (getpoint))\")",
         "(clautolisp.cadgui:cadgui-doc-feed-point *mdi-ws* *mdi-db* 0.0 0.0)",
-        "(clautolisp.cadgui:cadgui-doc-feed-point *mdi-ws* *mdi-da* 0.0 0.0)",
         "(clautolisp.cadgui:cadgui-doc-feed-point *mdi-ws* *mdi-db* 9.0 9.0)",
-        "(clautolisp.cadgui:cadgui-doc-feed-point *mdi-ws* *mdi-da* 5.0 5.0)" };
+        "(clautolisp.cadgui:cadgui-doc-feed-point *mdi-ws* *mdi-da* 0.0 0.0)",
+        "(clautolisp.cadgui:cadgui-doc-feed-point *mdi-ws* *mdi-da* 5.0 5.0)",
+        "(clautolisp.cadgui:cadgui-doc-feed *mdi-ws* *mdi-db* :eof)",
+        "(clautolisp.cadgui:cadgui-doc-feed *mdi-ws* *mdi-da* :eof)" };
+    static const int nfeeds = 8;
     static int fed = 0;
     QTimer feeder;
     QObject::connect(&feeder, &QTimer::timeout, &app, [] {
-        if (fed < 4) {
+        if (fed < nfeeds) {
             std::fprintf(stderr, "mdi-feed %d\n", fed); std::fflush(stderr);
             eval_str(feeds[fed++]);               // on the Qt main thread
         }
@@ -502,7 +506,7 @@ static int run_mdi_demo(const std::string &prefix) {
 
     QTimer watchdog; int ticks = 0;
     QObject::connect(&watchdog, &QTimer::timeout, &app, [&] {
-        bool done = (fed >= 4) &&
+        bool done = (fed >= nfeeds) &&
             (eval_str("(if (clautolisp.cadgui:cadgui-workspace-all-finished-p *mdi-ws*) t nil)")
              != ECL_NIL);
         if (done || ++ticks > 500) {
