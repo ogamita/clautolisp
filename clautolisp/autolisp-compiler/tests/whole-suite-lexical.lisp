@@ -18,6 +18,8 @@
 (when (find-package :ql)
   (funcall (find-symbol "QUICKLOAD" :ql) "fiveam" :silent t))
 (require :asdf)
+;; make-test-loads-installed-clautolisp: this tree first, never an installed copy.
+(load (merge-pathnames "tools/checkout-source-registry.lisp" (uiop:getcwd)))
 (asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))
 (asdf:load-system "clautolisp/autolisp-compiler")
 (asdf:load-system "clautolisp/autolisp-builtins-core")

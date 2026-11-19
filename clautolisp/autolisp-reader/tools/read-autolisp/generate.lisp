@@ -161,11 +161,20 @@ when it cannot be read."
       (load setup))))
 
 (defun configure-asdf-directories (directories)
+  "Put the systems under DIRECTORIES ahead of the default registry.
+Each directory is scanned as a :TREE (make-test-loads-installed-clautolisp):
+a plain :DIRECTORY found clautolisp.asd but not tui-core.asd or
+clautolisp-tui-curses.asd in their subdirectories, so those two came from
+whatever the default registry reached first -- an installed copy under
+XDG_DATA_DIRS=/opt/local/share on poseidon -- and were baked into the
+image. third-party/ (vendored C), build/ and .cache/ hold no system of
+ours and are only slow to walk."
   (if (member :asdf3 *features*)
       (asdf:initialize-source-registry
        `(:source-registry
          :ignore-inherited-configuration
-         ,@(mapcar (lambda (dir) `(:directory ,dir)) directories)
+         (:also-exclude "third-party" "build" ".cache")
+         ,@(mapcar (lambda (dir) `(:tree ,dir)) directories)
          :default-registry))
       (setf asdf:*central-registry* directories)))
 

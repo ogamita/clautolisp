@@ -157,7 +157,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
 .PHONY: text-metrics
-.PHONY: all test test-sbcl test-ccl test-ecl test-compiler-equivalence \
+.PHONY: all test test-checkout-registry test-sbcl test-ccl test-ecl test-compiler-equivalence \
         test-debug-compiled test-shipped-compiler test-shipped-compiler-ccl \
         test-shipped-interrupt test-shipped-interrupt-ccl \
         check-docstrings spec-symbols operator-availability check-operator-availability \
@@ -248,7 +248,34 @@ build-libredwg: submodules  ## Build the vendored libredwg submodule + the CFFI 
 test-libredwg-compiler-path:
 	drawing-dwg/tests/compiler-runtime-path-test.sh
 
-test: test-sbcl
+test: test-checkout-registry test-sbcl
+
+# make-test-loads-installed-clautolisp: every image below loads
+# tools/checkout-source-registry.lisp right after (require :asdf), so the
+# systems of THIS tree win over an installed copy the inherited ASDF
+# source-registry may also see (XDG_DATA_DIRS=/opt/local/share, ...).
+# Without it ASDF:FIND-SYSTEM reloads clautolisp.asd from the registry and
+# the suite silently tests the INSTALLED sources. test-checkout-registry
+# proves it against a decoy install the inherited registry sees.
+CHECKOUT_REGISTRY_LOAD := --load tools/checkout-source-registry.lisp
+# The decoy is planted by the test file at CLAUTOLISP_CHECKOUT_REGISTRY_DECOY,
+# and CL_SOURCE_REGISTRY (which outranks a user conf file) points the
+# inherited configuration at it. Both are set here, not from Lisp: (setf
+# uiop:getenv) fails on Windows SBCL. The path is native (cygpath -m) because
+# the Lisp reads it.
+CHECKOUT_REGISTRY_DECOY := $(ROOT_DIR)/.cache/checkout-registry-decoy/share
+ifneq ($(filter MINGW% MSYS% CYGWIN%,$(shell uname -s)),)
+CHECKOUT_REGISTRY_DECOY_NATIVE := $(shell cygpath -m "$(CHECKOUT_REGISTRY_DECOY)")
+else
+CHECKOUT_REGISTRY_DECOY_NATIVE := $(CHECKOUT_REGISTRY_DECOY)
+endif
+test-checkout-registry:  ## Assert the test images load THIS checkout's systems, not an installed copy the inherited ASDF registry sees.
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	    CLAUTOLISP_CHECKOUT_REGISTRY_DECOY="$(CHECKOUT_REGISTRY_DECOY_NATIVE)/" \
+	    CL_SOURCE_REGISTRY='(:source-registry (:directory "$(CHECKOUT_REGISTRY_DECOY_NATIVE)/common-lisp/systems/") :inherit-configuration)' \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
+		--eval '(require :asdf)' \
+		--load tools/checkout-source-registry-test.lisp
 
 test-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
@@ -256,6 +283,7 @@ test-sbcl:
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
+		$(CHECKOUT_REGISTRY_LOAD) \
 		--eval '(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)'
 
@@ -317,6 +345,7 @@ test-ccl:
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
+		$(CHECKOUT_REGISTRY_LOAD) \
 		--eval '(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))' \
 		--eval '(ccl:quit (handler-case (progn (asdf:test-system "$(TEST_SYSTEM)" :verbose t) 0) (error (e) (format *error-output* "~&~A~%" e) 1)))'
 
@@ -344,6 +373,7 @@ test-ecl:
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
+		$(CHECKOUT_REGISTRY_LOAD) \
 		--eval '(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))' \
 		--eval '(ext:quit (handler-case (progn (asdf:test-system "$(TEST_SYSTEM)" :verbose t) 0) (error (e) (format *error-output* "~&~A~%" e) 1)))'
 

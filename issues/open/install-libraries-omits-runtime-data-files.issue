@@ -1,0 +1,67 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: install-libraries-omits-runtime-data-files -- the installed ASDF systems lack the data files their sources read (getcname tables, cadtui locales, the drawing template)
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+#+DATE: 2026-11-19
+
+* Symptom
+
+=make install-libraries= (=install-lisp-systems=, and the release-libraries
+artefact that mirrors it) copies only =*.lisp= and =*.asd= under
+=<PREFIX>/share/common-lisp/source/clautolisp/=. On poseidon, the 2.4.16
+and the 2.4.33 installs both have =cador/= and =drawing/= holding only
+=source/= and =tests/=, and =cadtui/= likewise. A program that does
+=(asdf:load-system "clautolisp")= from the installed tree, which is what
+the install is for (dwg-identifier, for one), then gets an engine that is
+quietly wrong:
+
+- =cador/source/getcname.lisp= embeds =../data/getcname/*.sexp= at compile
+  time. With no file present it embeds NIL, so =GETCNAME= returns NIL even
+  for "_LINE" -> "LINE" and loses every localised name (ÉTIRER under fr_FR).
+  Nothing signals.
+- =cadtui/source/locale.lisp= embeds =../data/locale/*/*.sexp= the same
+  way. cadtui therefore has no fr_FR / de_DE / es_ES keywords or verbs.
+- =drawing-template-path= is =drawing/template/empty-drawing.dxf= relative
+  to =clautolisp/drawing=. NEW / startup documents fail with "no bundled
+  template".
+
+These are exactly the 41 cador failures of
+=issues/closed/make-test-loads-installed-clautolisp.issue=, where the suite
+ran against the installed tree by mistake.
+
+* Cause
+
+The comment above =LISP_SOURCE_FILES= in =clautolisp/Makefile= says:
+"Every component of every system is a plain `:file' (i.e. .lisp), so
+.lisp + .asd is the complete set." That is true of ASDF components. It is
+not true of the files the sources read through =*compile-file-truename*= /
+=*load-truename*= or =asdf:system-relative-pathname=, which no .asd
+declares.
+
+* Files concerned (survey at 2.4.34)
+
+- =cador/data/getcname/*.sexp= (compile time)
+- =cadtui/data/locale/<locale>/*.sexp= (compile time, and reloaded at
+  load time from =system-relative-pathname=)
+- =drawing/template/empty-drawing.dxf= (run time)
+- probably not: =examples/*/*.dcl=, =autolisp-file-compat/scenarios/*.sexp=
+  (examples and test scenarios, not engine data). Decide when fixing.
+
+* Fix directions
+
+1. Install the data trees with the sources: extend =LISP_SOURCE_FILES= (or
+   add a =LISP_DATA_FILES= list) to =*/data/**= and =drawing/template/*=,
+   and keep the release-libraries artefact in step (root Makefile).
+2. Make them visible to ASDF too, as =:static-file= components of the
+   systems that read them. =getcname.lisp= and =locale.lisp= would then
+   also be recompiled when a table changes, which today needs a touch or a
+   full rebuild.
+3. Fail loudly: =%embed-getcname-tables= and =%embed-locale-tree= should
+   signal at compile time when their glob matches nothing, rather than bake
+   an empty table.
+4. Regression test: =install-lisp-systems= into a scratch =DESTDIR=, load
+   =clautolisp= from there in a fresh image (registry limited to that
+   tree), and check getcname "_LINE" and =drawing-template-path=.

@@ -518,6 +518,7 @@ test:clautolisp:sbcl:
   stage: test
   script:
     - *pre-warm-quicklisp-sbcl
+    - make -C clautolisp test-checkout-registry
     - make -C clautolisp test-sbcl
     - sh scripts/ci-build-cache.sh save fasl
 

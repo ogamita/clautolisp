@@ -67,6 +67,12 @@ ALFE_SBCL := $(ALFE_ROOT)/tools/alfe/bin/alfe-sbcl
 ALFE_CCL  := $(ALFE_ROOT)/tools/alfe/bin/alfe-ccl
 CLAUTOLISP_ROOT := $(ROOT_DIR)/../clautolisp
 CLAUTOLISP_ASD := $(CLAUTOLISP_ROOT)/clautolisp.asd
+# make-test-loads-installed-clautolisp: loaded right after (require :asdf)
+# in every image that LOAD-ASDs the checkout, so this tree's systems win over
+# an installed copy the inherited ASDF registry also sees (see the file).
+# Relative to this directory, the recipes' cwd: no MSYS /c/... path reaches
+# the Lisp reader.
+CHECKOUT_REGISTRY_LOAD := --load ../clautolisp/tools/checkout-source-registry.lisp
 AUTOLISP_TEST_ASD := $(ROOT_DIR)/autolisp-test.asd
 
 # Native (C:/...) forms of the .asd paths handed to asdf:load-asd below. On
@@ -221,6 +227,7 @@ test-asdf-sbcl:
 	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
+		$(CHECKOUT_REGISTRY_LOAD) \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(AUTOLISP_TEST_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
@@ -231,6 +238,7 @@ test-asdf-sbcl-debug:
 	"$(SBCL)" --noinform --no-userinit \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
+		$(CHECKOUT_REGISTRY_LOAD) \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(AUTOLISP_TEST_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
@@ -241,6 +249,7 @@ test-asdf-ccl:
 	"$(CCL)" --no-init --quiet --batch \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
+		$(CHECKOUT_REGISTRY_LOAD) \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(AUTOLISP_TEST_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
@@ -252,6 +261,7 @@ test-asdf-ccl-debug:
 	"$(CCL)" --no-init --quiet \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
+		$(CHECKOUT_REGISTRY_LOAD) \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(AUTOLISP_TEST_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
