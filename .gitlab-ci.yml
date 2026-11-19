@@ -520,6 +520,7 @@ test:clautolisp:sbcl:
     - *pre-warm-quicklisp-sbcl
     - make -C clautolisp test-checkout-registry
     - make -C clautolisp test-sbcl
+    - make -C clautolisp test-installed-libraries
     - sh scripts/ci-build-cache.sh save fasl
 
 test:clautolisp:ccl:

@@ -136,6 +136,14 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *The installed ASDF systems carry the data their sources read* (2.4.35):
+  =make install-libraries= (and the release-libraries artefact) installed
+  only =.lisp= / =.asd=, so a clautolisp loaded from =$PREFIX= with
+  =(asdf:load-system "clautolisp")= had empty GETCNAME and cadtui locale
+  tables and no NEW-drawing template, without any error. =cador/data/=,
+  =cadtui/data/= and =drawing/template/= are now installed. A missing table
+  is now a compile error, not a silently empty table.
+
 - *Building and testing from a checkout uses that checkout, never an
   installed copy* (2.4.34): when ASDF could also see a clautolisp under
   =$PREFIX= (for instance =XDG_DATA_DIRS=/opt/local/share=), =make test= ran

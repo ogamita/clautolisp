@@ -1,10 +1,10 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: install-libraries-omits-runtime-data-files -- the installed ASDF systems lack the data files their sources read (getcname tables, cadtui locales, the drawing template)
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
-#+BRANCH: -
+#+BRANCH: fix-install-libraries-omits-runtime-data-files
 #+DATE: 2026-11-19
 
 * Symptom
@@ -65,3 +65,37 @@ declares.
 4. Regression test: =install-lisp-systems= into a scratch =DESTDIR=, load
    =clautolisp= from there in a fresh image (registry limited to that
    tree), and check getcname "_LINE" and =drawing-template-path=.
+
+* Resolved
+
+2026-11-19, clautolisp 2.4.35 / alfe 2.4.35, branch
+=fix-install-libraries-omits-runtime-data-files= (stacked on
+=fix-make-test-loads-installed-clautolisp=, which took 2.4.34).
+
+- Direction 1: =install-lisp-systems= now also installs =LISP_DATA_FILES=,
+  every file under a =<subsystem>/data/= or =<subsystem>/template/=
+  directory outside =tests/=, =third-party/=, =build/= and =.cache/=.
+  Today that is the 11 files listed above. The release-libraries
+  artefact follows automatically: =stage-libraries= runs this same
+  target. The examples' =.dcl= and the file-compat scenarios stay out;
+  they are not engine data.
+- Direction 3: =%embed-getcname-tables= and =%embed-locale-tree= signal an
+  error at compile time when their glob matches nothing. An install
+  without its data now fails to compile with a message naming the
+  missing directory, instead of loading with empty tables.
+- Direction 4: =make -C clautolisp test-installed-libraries=, run by
+  =make test= and by =test:clautolisp:sbcl= in both CIs, takes about 13 s.
+  It runs =install-lisp-systems= into a scratch =DESTDIR= and loads
+  =clautolisp/drawing=, =clautolisp/cador= and =clautolisp/cadtui= from
+  that tree ALONE (=:ignore-inherited-configuration=; Quicklisp still
+  supplies the third-party systems). It then checks getcname
+  ="_LINE"= => "LINE", BricsCAD V26 fr_FR ="_STRETCH"= => "ÉTIRER",
+  cadtui's fr_FR locale, and the installed drawing template. Before the
+  fix it gave 4 failures. With the data tree deleted from the scratch
+  install it now stops on the new compile error.
+- Direction 2 (=:static-file= components, so editing a table recompiles
+  its reader) is not done. ASDF has no globs, so every data file would
+  have to be listed in the .asd. cadtui's load-time reload already
+  covers a source-tree build. Left for when a table changes often
+  enough to matter.
+
