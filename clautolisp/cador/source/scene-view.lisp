@@ -53,17 +53,20 @@ HANDLE (a string), or NIL when ENTITY has no drawable geometry."
             closed
             points))))
 
-(defun cador-scene-display-list (host)
-  "The display list of HOST's current (model) space graphical entities: a list of
+(defun cador-scene-display-list (host &optional (drawing (cador-active-drawing host)))
+  "The display list of DRAWING's (model) space graphical entities: a list of
   (:POLYLINE HANDLE LAYER ACI CLOSED (X0 Y0 X1 Y1 ...))
 in world coordinates, in creation order (back to front). HANDLE is the entity's
 creation-order handle as a string (for pick correlation/highlight), LAYER its
 layer name, ACI its colour index (256 = BYLAYER, 0 = BYBLOCK), CLOSED whether
 the polyline closes, and the last element the flat double-float coordinates.
-The render peer of HOST-SSGET \"X\"; the whole surface the cadgui canvas needs."
+The render peer of HOST-SSGET \"X\"; the whole surface the cadgui canvas needs.
+DRAWING defaults to the active one; pass a specific open document's drawing to
+render it without making it current (a multi-document GUI renders each window's
+own drawing while another document is active)."
   (let ((prims '()))
-    (dolist (handle (reverse (cador-creation-order host)))
-      (let ((entity (gethash handle (cador-entities host))))
+    (dolist (handle (reverse (clautolisp.drawing:drawing-creation-order drawing)))
+      (let ((entity (clautolisp.drawing:find-entity drawing handle)))
         (when (and entity
                    (not (entity-handle-deleted-p entity))
                    (main-space-entity-p entity)
@@ -81,12 +84,14 @@ tessellation, so the shell overdraws the exact same outline, highlighted."
              (clautolisp.drawing:graphical-entity-p entity))
     (%scene-entity-display-item host (clautolisp.drawing:entity-handle-string entity) entity)))
 
-(defun cador-scene-extents (host)
-  "(XMIN YMIN XMAX YMAX) of HOST's current-space graphical geometry as
-double-floats, or NIL when the space is empty. Drives zoom-extents."
+(defun cador-scene-extents (host &optional (drawing (cador-active-drawing host)))
+  "(XMIN YMIN XMAX YMAX) of DRAWING's model-space graphical geometry as
+double-floats, or NIL when the space is empty. Drives zoom-extents. DRAWING
+defaults to the active one; pass a specific open document's drawing to measure
+it without making it current."
   (let (xmin ymin xmax ymax)
-    (dolist (handle (cador-creation-order host))
-      (let ((entity (gethash handle (cador-entities host))))
+    (dolist (handle (clautolisp.drawing:drawing-creation-order drawing))
+      (let ((entity (clautolisp.drawing:find-entity drawing handle)))
         (when (and entity
                    (not (entity-handle-deleted-p entity))
                    (main-space-entity-p entity)

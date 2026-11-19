@@ -27,24 +27,32 @@
 (in-package #:clautolisp.cadgui)
 
 (defstruct (cadgui-doc (:constructor %make-cadgui-doc))
-  "An open document in a CADGUI-WORKSPACE: its cador HOST, its scheduled CONTEXT
-in the cooperative scheduler, and its per-document INPUT channel (a blocking
-mailbox the GUI fills and the scheduler driver drains)."
+  "An open document in a CADGUI-WORKSPACE, on the workspace's SHARED cador host
+(one host, N drawings -- the cador-correct multi-document model). KEY is the
+caller's label; CADOR-KEY is the cador document key (a string) on the shared
+host; DRAWING is this document's own drawing (so it can be rendered without
+being current); STREAM is this document's cador input stream (its channel), made
+current with the document; CONTEXT is its scheduled-context; INPUT its channel."
   (key nil)
-  (host nil)
+  (cador-key nil)
+  (host nil)                             ; the workspace's SHARED cador host
+  (drawing nil)
+  (stream nil)
   (context nil)                          ; a runtime scheduled-context
   (input nil))                           ; a park-mailbox of input LINES
 
 (defstruct (cadgui-workspace (:constructor %make-cadgui-workspace))
-  "A multi-document cadgui workspace: the runtime SESSION that carries the
-single-runner cooperative SCHEDULER, and the open DOCS. At most one document
-evaluates at a time; the rest hold parked evaluations.
+  "A multi-document cadgui workspace: the SHARED cador HOST (one host carrying all
+the open drawings), the runtime SESSION that carries the single-runner
+cooperative SCHEDULER, and the open DOCS. At most one document evaluates at a
+time; the rest hold parked evaluations.
 
 AWAITING / QUEUED are the MULTIPLEXING driver's state (used by
 CADGUI-WORKSPACE-DRIVE-STEP): AWAITING maps a scheduled-context to T while it is
 parked for input; QUEUED maps it to a FIFO of input lines that arrived before it
 parked. They let the driver resume WHICHEVER document just got input, even if
 another parked first (out-of-order input), through one wait point."
+  (host nil)
   (session nil)
   (scheduler nil)
   (docs '())
@@ -52,30 +60,37 @@ another parked first (out-of-order input), through one wait point."
   (queued (make-hash-table :test 'eq)))
 
 (defun cadgui-make-workspace ()
-  "A fresh empty workspace with its own session + cooperative scheduler."
+  "A fresh empty workspace: ONE shared cador host, a session carrying the
+cooperative scheduler, and the activation hook that switches the host's current
+document in lock-step with the scheduler."
   (let ((session (clautolisp.autolisp-runtime:make-runtime-session))
-        (sched (clautolisp.autolisp-runtime:make-document-scheduler)))
+        (sched (clautolisp.autolisp-runtime:make-document-scheduler))
+        (host (clautolisp.cador:make-cador)))
     (setf (clautolisp.autolisp-runtime:session-scheduler session) sched)
-    (let ((ws (%make-cadgui-workspace :session session :scheduler sched)))
-      ;; The documents share ONE session, so its HAL host is a single slot. Bind
-      ;; it to the ACTIVE document's own host on every scheduler activation
-      ;; (set-runtime-session-current-document fires this hook on every resume),
-      ;; so typed (command)/entmake act on the right document -- otherwise an
-      ;; interleaved sibling's host would be left bound and the models would bleed.
+    (clautolisp.autolisp-runtime:set-runtime-session-host session host)   ; the one HAL host
+    (let ((ws (%make-cadgui-workspace :host host :session session :scheduler sched)))
+      ;; Documents share ONE cador host with N drawings. On every scheduler
+      ;; activation (set-runtime-session-current-document fires this hook), make
+      ;; that document's drawing current AND point the host's prompt-stream at
+      ;; that document's input channel -- so typed (command)/entmake and
+      ;; getpoint/entsel act on the right document despite the shared host.
       (setf clautolisp.autolisp-runtime:*document-activation-hook*
             (lambda (s doc) (%cadgui-activate-document ws s doc)))
       ws)))
 
 (defun %cadgui-activate-document (workspace session namespace)
-  "Document-activation hook: bind SESSION's HAL host to the host of WORKSPACE's
-document whose key NAMESPACE carries. A no-op for a namespace this workspace does
-not own (so a stale global hook from another workspace never misbinds)."
-  (let* ((key (clautolisp.autolisp-runtime:document-namespace-host-document-key namespace))
-         (doc (and key (find key (cadgui-workspace-docs workspace)
-                             :key #'cadgui-doc-key :test #'eql))))
+  "Document-activation hook: on the workspace's shared host, make current the
+cador document NAMESPACE names, and point the host's prompt-stream at that
+document's input channel. A no-op for a namespace this workspace does not own (so
+a stale global hook from another workspace never misactivates)."
+  (declare (ignore session))
+  (let* ((cador-key (clautolisp.autolisp-runtime:document-namespace-host-document-key namespace))
+         (doc (and cador-key (find cador-key (cadgui-workspace-docs workspace)
+                                   :key #'cadgui-doc-cador-key :test #'equal))))
     (when doc
-      (clautolisp.autolisp-runtime:set-runtime-session-host
-       session (cadgui-doc-host doc)))))
+      (let ((host (cadgui-workspace-host workspace)))
+        (clautolisp.autolisp-host:host-activate-document host (cadgui-doc-cador-key doc))
+        (setf (clautolisp.cador:cador-prompt-stream host) (cadgui-doc-stream doc))))))
 
 (defun cadgui-doc-supply (doc line)
   "Supply the next input LINE (a string, e.g. a point \"x,y\") to DOC's channel --
@@ -160,29 +175,33 @@ response, no blocking read on the driver thread."
       (t :unknown))))
 
 (defun cadgui-open-document (workspace key thunk)
-  "Open document KEY in WORKSPACE and return its CADGUI-DOC. Creates a fresh cador
-host whose prompt-stream reads from this document's own input channel, a
-scheduler context, and spawns THUNK -- a function of the host -- as the
-document's evaluation (born parked; CADGUI-WORKSPACE-START kicks it). Inside
-THUNK, getpoint/entsel/ssget park and are served from THIS document's channel."
-  (let* ((input (clautolisp.autolisp-runtime:make-park-mailbox))
-         (host  (clautolisp.cador:make-cador))
-         (ns    (clautolisp.autolisp-runtime:make-document-namespace
-                 :name (string key)))
-         (ctx   (clautolisp.autolisp-runtime:make-evaluation-context
-                 :session (cadgui-workspace-session workspace)
-                 :current-document ns
-                 :current-namespace ns))
-         (sc    (clautolisp.autolisp-runtime:make-scheduled-context
-                 :context ctx :document-key key))
-         (doc   (%make-cadgui-doc :key key :host host :context sc :input input)))
-    ;; This document's cador reads block on ITS channel (not the global hook).
-    (setf (clautolisp.cador:cador-prompt-stream host)
-          (make-instance 'cadgui-input-stream
-                         :fill-fn (lambda ()
-                                    (let ((line (clautolisp.autolisp-runtime:park-mailbox-pop input)))
-                                      (if (eq line :eof) nil line)))))
-    (setf (clautolisp.autolisp-runtime:document-namespace-host-document-key ns) key)
+  "Open document KEY on WORKSPACE's shared cador host -- a NEW drawing on the one
+host -- and return its CADGUI-DOC. Creates this document's own input channel +
+cador input stream, a scheduler context, and spawns THUNK (a function of the
+host) as its evaluation (born parked; CADGUI-WORKSPACE-START kicks it). Inside
+THUNK, getpoint/entsel/ssget park and are served from THIS document's channel,
+and (command)/entmake act on THIS document's drawing (the activation hook makes
+it current)."
+  (let* ((host      (cadgui-workspace-host workspace))
+         (cador-key (clautolisp.autolisp-host:host-open-document host (string key)))
+         (drawing   (cdr (assoc cador-key (clautolisp.cador:cador-documents host) :test #'equal)))
+         (input     (clautolisp.autolisp-runtime:make-park-mailbox))
+         (stream    (make-instance 'cadgui-input-stream
+                                   :fill-fn (lambda ()
+                                              (let ((line (clautolisp.autolisp-runtime:park-mailbox-pop input)))
+                                                (if (eq line :eof) nil line)))))
+         (ns        (clautolisp.autolisp-runtime:make-document-namespace
+                     :name (string key)))
+         (ctx       (clautolisp.autolisp-runtime:make-evaluation-context
+                     :session (cadgui-workspace-session workspace)
+                     :current-document ns
+                     :current-namespace ns))
+         (sc        (clautolisp.autolisp-runtime:make-scheduled-context
+                     :context ctx :document-key cador-key))
+         (doc       (%make-cadgui-doc :key key :cador-key cador-key :host host
+                                      :drawing drawing :stream stream :context sc :input input)))
+    ;; The activation hook keys on the namespace's cador document key.
+    (setf (clautolisp.autolisp-runtime:document-namespace-host-document-key ns) cador-key)
     (clautolisp.autolisp-runtime:scheduler-register-context
      (cadgui-workspace-scheduler workspace) sc)
     (let ((sched (cadgui-workspace-scheduler workspace)))
@@ -288,13 +307,14 @@ the owning thread, so the paint is race-free)."
         (when after-command (ignore-errors (funcall after-command)))))))
 
 (defun cadgui-doc-display-list (doc)
-  "The display list of DOC's OWN model -- what DOC's window renders. Same
-(:POLYLINE ...) format as cadgui-display-list, but for this document's host."
-  (clautolisp.cador:cador-scene-display-list (cadgui-doc-host doc)))
+  "The display list of DOC's OWN drawing -- what DOC's window renders. Renders
+DOC's specific drawing on the shared host, so it is correct even when a DIFFERENT
+document is current. Same (:POLYLINE ...) format as cadgui-display-list."
+  (clautolisp.cador:cador-scene-display-list (cadgui-doc-host doc) (cadgui-doc-drawing doc)))
 
 (defun cadgui-doc-extents (doc)
-  "(XMIN YMIN XMAX YMAX) of DOC's model, or NIL -- DOC's zoom-extents."
-  (clautolisp.cador:cador-scene-extents (cadgui-doc-host doc)))
+  "(XMIN YMIN XMAX YMAX) of DOC's own drawing, or NIL -- DOC's zoom-extents."
+  (clautolisp.cador:cador-scene-extents (cadgui-doc-host doc) (cadgui-doc-drawing doc)))
 
 (defun cadgui-workspace-all-finished-p (workspace)
   "True when every document's evaluation thread has finished -- the shell polls

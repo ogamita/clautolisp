@@ -124,8 +124,8 @@
            (is (eq :input (cadgui-workspace-drive-step ws)))  ; resume A -> entmake
            (is (eq :done (cadgui-workspace-drive-step ws)))   ; A finished
            ;; each document drew its own line from its own (out-of-order) input
-           (let ((sa (clautolisp.cador:cador-scene-display-list (cadgui-doc-host da)))
-                 (sb (clautolisp.cador:cador-scene-display-list (cadgui-doc-host db))))
+           (let ((sa (cadgui-doc-display-list da))
+                 (sb (cadgui-doc-display-list db)))
              (is (= 1 (length sa)))
              (is (= 1 (length sb)))
              (is (equal '(0d0 0d0 5d0 5d0) (sixth (first sa))))
