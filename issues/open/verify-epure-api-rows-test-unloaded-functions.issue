@@ -1,0 +1,41 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: verify:epure:windows's EPURE API rows call functions EPURE does not load, and pass on failure
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-verify-epure-api-rows
+#+DATE: 2026-11-19
+
+* Symptom
+
+scripts/verify-epure-windows.ps1 runs, per CAD, two forms through
+alfe --epure, once with -x and once from a file:
+
+: (print (= "" (toutes_options nil)))
+: (print (equal (quote ((enabled) (message))) (f_DateHeure_UTC 0)))
+
+On PF5S26BT all four rows fail, the same on 2026-11-17 (job 18100605445,
+EPURE on V:) and 2026-11-19 (job 18182663143, EPURE on the local copy):
+
+- from the file: exit 1, "no function definition: TOUTES_OPTIONS";
+- with -x: exit 75 after "CAD did not acknowledge session restoration
+  before shutdown. [RESTORE-NOT-ACKNOWLEDGED]" (AutoCAD), exit 69 (BricsCAD,
+  2026-11-17).
+
+Yet the job succeeds: its gate counts only a row that exits 0 without its
+marker.
+
+* Three things
+
+1. The forms test functions EPURE does not load at start-up: toutes_options
+   is in COM/gestsauv/Sauvprm.lsp (see the notes in
+   scripts/verify-epure-api.ps1, which tests com_way / com_tl_continu
+   instead and passes). Replace them, or drop the rows.
+2. The gate lets a nonzero exit through: a timeout (75) or an error (1) on
+   an EPURE row must fail the job.
+3. The same undefined-function error gives exit 1 from a file but exit 75
+   with RESTORE-NOT-ACKNOWLEDGED from -x: alfe's -x error path does not
+   reach the restoration handshake. To reproduce off Windows with a
+   plugin-less --autocad / --bricscad -x on an undefined function, if the
+   file-protocol backend shows it too.
