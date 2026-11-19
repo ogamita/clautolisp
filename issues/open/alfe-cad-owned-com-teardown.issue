@@ -37,3 +37,27 @@ les anciennes observations ci-dessus ne sont pas une qualification actuelle.
 
 Implementee en 2.3.107 (contrat 2) : voir la section Implementation de
 [[file:alfe-owned-cad-termination-after-recorded-results.issue][l'issue de terminaison]] ; validation native en attente.
+
+* Native requalification (2026-11-19, PF5S26BT, master f4611e6a, EPURE on the local copy)
+
+After pjb's EPURE profiles moved from the V: network mount to the local
+4.4.1 copy C:\EPURE2022 (CAD starts with EPURE: 12-31 s), the Windows CAD
+qualification jobs were run one after the other on pipeline 3089160014:
+
+| job                                 | id          | result  | s    |
+|-------------------------------------+-------------+---------+------|
+| verify:epure-lifecycle:windows      | 18182663230 | success |  458 |
+| verify:epure:windows                | 18182663143 | success | 1231 |
+| verify:epure-api:windows            | 18182663142 | success |  248 |
+| verify:autocad-activex:windows      | 18182663149 | success |   55 |
+| probe:cad-heavy-automation:windows  | 18182663151 | success |  119 |
+| verify:bricscad-hidden-ui:windows   | 18189776985 | success |   32 |
+
+Lifecycle native cases (all passed, no crash event, no dump, none forced):
+autocad-automation native 0xC0000005 cleanup "exited"; bricscad-automation 0
+"already-gone"; bricscad-batch 0; autocad-automation-without-epure-plugin
+0x010FBABE "exited"; bricscad-automation-without-epure-plugin 0 "already-gone".
+
+Owned COM teardown held on both CADs: each created instance disappeared
+within the budget, with the result kept when AutoCAD faulted at close
+(0xC0000005, 0x....BABE).

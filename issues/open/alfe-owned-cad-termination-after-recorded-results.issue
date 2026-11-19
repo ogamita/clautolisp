@@ -153,3 +153,27 @@ experiences privees ALFE 97-100. La disparition reste obligatoire. Elle complete
 [[file:alfe-cad-owned-com-teardown.issue][la restauration ordonnee et la fermeture du COM possede]], sans clore
 cette implementation avant validation. Aucun correctif de composant tiers
 n'est revendique et aucun dump prive n'est ajoute au depot.
+
+* Native requalification (2026-11-19, PF5S26BT, master f4611e6a, EPURE on the local copy)
+
+After pjb's EPURE profiles moved from the V: network mount to the local
+4.4.1 copy C:\EPURE2022 (CAD starts with EPURE: 12-31 s), the Windows CAD
+qualification jobs were run one after the other on pipeline 3089160014:
+
+| job                                 | id          | result  | s    |
+|-------------------------------------+-------------+---------+------|
+| verify:epure-lifecycle:windows      | 18182663230 | success |  458 |
+| verify:epure:windows                | 18182663143 | success | 1231 |
+| verify:epure-api:windows            | 18182663142 | success |  248 |
+| verify:autocad-activex:windows      | 18182663149 | success |   55 |
+| probe:cad-heavy-automation:windows  | 18182663151 | success |  119 |
+| verify:bricscad-hidden-ui:windows   | 18189776985 | success |   32 |
+
+Lifecycle native cases (all passed, no crash event, no dump, none forced):
+autocad-automation native 0xC0000005 cleanup "exited"; bricscad-automation 0
+"already-gone"; bricscad-batch 0; autocad-automation-without-epure-plugin
+0x010FBABE "exited"; bricscad-automation-without-epure-plugin 0 "already-gone".
+
+Native AutoCAD and BricsCAD with alfe-sbcl: results kept after an exit fault
+(0xC0000005, 0x010FBABE) following the recorded result and restoration,
+disappearance proved. CCL is not covered by this run.

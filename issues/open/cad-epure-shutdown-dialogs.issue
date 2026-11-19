@@ -64,3 +64,29 @@ launcher-injection regression checks the requested fixture reaches argv
 and no replacement empty.dwg is written. 61 targeted checks pass on
 SBCL and CCL. Explicit fixture ownership remains the caller's decision;
 test harnesses stage private copies rather than opening shared sources.
+
+* Native requalification (2026-11-19, PF5S26BT, master f4611e6a, EPURE on the local copy)
+
+After pjb's EPURE profiles moved from the V: network mount to the local
+4.4.1 copy C:\EPURE2022 (CAD starts with EPURE: 12-31 s), the Windows CAD
+qualification jobs were run one after the other on pipeline 3089160014:
+
+| job                                 | id          | result  | s    |
+|-------------------------------------+-------------+---------+------|
+| verify:epure-lifecycle:windows      | 18182663230 | success |  458 |
+| verify:epure:windows                | 18182663143 | success | 1231 |
+| verify:epure-api:windows            | 18182663142 | success |  248 |
+| verify:autocad-activex:windows      | 18182663149 | success |   55 |
+| probe:cad-heavy-automation:windows  | 18182663151 | success |  119 |
+| verify:bricscad-hidden-ui:windows   | 18189776985 | success |   32 |
+
+Lifecycle native cases (all passed, no crash event, no dump, none forced):
+autocad-automation native 0xC0000005 cleanup "exited"; bricscad-automation 0
+"already-gone"; bricscad-batch 0; autocad-automation-without-epure-plugin
+0x010FBABE "exited"; bricscad-automation-without-epure-plugin 0 "already-gone".
+
+No shutdown dialog held a run: verify:epure:windows's --epure and control
+rows (AutoCAD, BricsCAD batch and automation) all exit 0 with their marker.
+Its four "EPURE API" rows still fail (toutes_options is not loaded at EPURE
+start-up) -- unchanged since 2026-11-17 (job 18100605445), filed as
+verify-epure-api-rows-test-unloaded-functions.
