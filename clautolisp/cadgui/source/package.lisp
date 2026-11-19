@@ -70,4 +70,6 @@
    #:cadgui-close-document
    #:cadgui-workspace-document-keys
    #:cadgui-workspace-active-document
+   #:cadgui-document-state
+   #:cadgui-workspace-state
    #:cadgui-workspace-shutdown))

@@ -365,6 +365,28 @@ NIL -- which window the GUI should show as focused."
     (and key (find key (cadgui-workspace-docs workspace)
                    :key #'cadgui-doc-cador-key :test #'equal))))
 
+(defun cadgui-document-state (doc)
+  "A structured snapshot of DOC: its key, its drawable entity count, and whether
+its evaluation thread is still alive. Plain data (a plist) for an AI / test
+driver (action-layer get-state)."
+  (list :key (cadgui-doc-key doc)
+        :entities (length (cadgui-doc-display-list doc))
+        :alive (let ((th (clautolisp.autolisp-runtime:scheduled-context-thread
+                          (cadgui-doc-context doc))))
+                 (and th (bordeaux-threads:thread-alive-p th) t))))
+
+(defun cadgui-workspace-state (workspace)
+  "A structured snapshot of WORKSPACE for an AI / test driver -- the action
+layer's GET-STATE (cadgui-action-layer slice B): the ACTIVE document key, each
+open document's state (CADGUI-DOCUMENT-STATE), and the registered ACTION ids.
+I.e. what is open, which is current, what each holds, and what can be invoked --
+as plain data, no screen-scraping."
+  (list :active (let ((d (cadgui-workspace-active-document workspace)))
+                  (and d (cadgui-doc-key d)))
+        :documents (mapcar #'cadgui-document-state
+                           (reverse (cadgui-workspace-docs workspace)))
+        :actions (cadgui-list-actions)))
+
 (defun cadgui-workspace-shutdown (workspace)
   "Stop every document thread (end input, resume with :EXIT, join). Safe to call
 on a partially-run workspace."

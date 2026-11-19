@@ -94,8 +94,14 @@ AI's feedback loop, and the bug repro -- one artefact for tests, agents and user
   :eval-command, :entity-count, :selection). Covered by cadgui-suite tests
   (actions-tests.lisp): list/describe the built-ins, invoke draws through the
   single entry point, an unknown action signals, re-registration replaces.
-- NEXT in this issue: =get-state= (active command + pending prompt + selection +
-  sysvars + view) to finish *B*; adapter over cador's =*cador-commands*= so
+- DONE (2026-11-19, 2.5.8): slice *B* get-state, for the multi-document workspace
+  -- =cadgui-workspace-state= returns plain data (the ACTIVE document, each open
+  document's =cadgui-document-state= -- key, entity count, thread alive -- and the
+  registered action ids). The introspection an AI / test driver reads without
+  screen-scraping. Test: a workspace with two documents, one that drew, reports
+  the current document, per-document entity counts, and the invocable actions.
+- NEXT in this issue: extend get-state with the pending prompt + selection +
+  sysvars + view; adapter over cador's =*cador-commands*= so
   every command is an action; *C* structured interaction (typed request/answer
   + event stream over the cadgui input bridge); *D* the driveability guard (CI
   check: every action registered + reachable only via =invoke-action= + headless

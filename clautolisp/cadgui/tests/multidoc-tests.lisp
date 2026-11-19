@@ -132,6 +132,36 @@
              (is (equal '(0d0 0d0 9d0 9d0) (sixth (first sb))))))
       (cadgui-workspace-shutdown ws))))
 
+(test cadgui-workspace-state-is-structured-introspection
+  ;; Action-layer get-state: the live workspace as plain data an AI / test driver
+  ;; reads -- the active document, each open document's state, and the invocable
+  ;; action ids.
+  (let* ((ws (cadgui-make-workspace))
+         (da (cadgui-open-document ws :a #'cadgui-document-command-loop))
+         (db (cadgui-open-document ws :b #'cadgui-document-command-loop)))
+    (unwind-protect
+         (progn
+           (cadgui-workspace-launch ws da) (cadgui-workspace-drive-step ws)
+           (cadgui-workspace-launch ws db) (cadgui-workspace-drive-step ws)
+           ;; draw a line in da through a typed command, interleaved with db idle
+           (cadgui-doc-feed ws da "(command \"LINE\" (getpoint) (getpoint))")
+           (cadgui-workspace-drive-step ws) (cadgui-workspace-drive-step ws)
+           (cadgui-doc-feed-point ws da 0 0)
+           (cadgui-workspace-drive-step ws) (cadgui-workspace-drive-step ws)
+           (cadgui-doc-feed-point ws da 4 4)
+           (cadgui-workspace-drive-step ws) (cadgui-workspace-drive-step ws)
+           (let ((st (cadgui-workspace-state ws)))
+             (is (eq :a (getf st :active)))               ; da ran last -> current
+             (is (= 2 (length (getf st :documents))))
+             (let ((da-st (find :a (getf st :documents) :key (lambda (p) (getf p :key))))
+                   (db-st (find :b (getf st :documents) :key (lambda (p) (getf p :key)))))
+               (is (= 1 (getf da-st :entities)))           ; da drew its line
+               (is (= 0 (getf db-st :entities)))           ; db still empty
+               (is (getf da-st :alive)) (is (getf db-st :alive)))
+             (is (member :add-line (getf st :actions)))
+             (is (member :eval-command (getf st :actions)))))
+      (cadgui-workspace-shutdown ws))))
+
 (test cadgui-workspace-open-close-document-lifecycle
   ;; Multi-document lifecycle on the shared host: open two documents, list them,
   ;; see which is current, close one (ending its parked thread + its cador
