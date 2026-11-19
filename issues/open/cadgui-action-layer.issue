@@ -117,15 +117,44 @@ AI's feedback loop, and the bug repro -- one artefact for tests, agents and user
   ahead of :done in the stream. The typed-request TYPE is :input generically --
   the canvas renders it as a point pick; a per-get-family typed request (point
   vs string vs keyword) threaded through cador's prompt-api seam is the follow-up.
+- DONE (2026-11-19, 2.5.10): slice *D (the driveability guard)* --
+  =cadgui/source/driveability.lisp=. =cadgui-driveability-violations= returns the
+  list of violations (empty = GREEN), checking (a) every registered action has a
+  docstring and TYPED params (each a (NAME TYPE DOC) triple); (b) every declared
+  GUI binding (=*cadgui-gui-bindings*=, the one enumerable place the shell
+  declares its signal/menu/ribbon entry points) names a REGISTERED action -- a
+  back-door is a binding to no action; (c) every registered action was actually
+  DISPATCHED through =cadgui-invoke-action= under coverage -- the guard
+  self-drives each with its declared sample args (=*cadgui-action-sample-args*=),
+  so coverage is tied to real dispatch, and an action with neither sample args nor
+  a test that drives it shows up :untested. Coverage + the record/replay
+  transcript hang off THE single entry point (=cadgui-invoke-action=), so nothing
+  that mutates app state escapes them. CI-callable runner
+  =cadgui/shell/run-cadgui-driveability.sh= (exits non-zero on any violation,
+  prints each -- wire into CI like =scripts/ci-classify-changes.py=; it loads the
+  production system, not the tests, so it is clean). Tests
+  (driveability-tests.lisp): the guard is green for the built-ins, and each
+  back-door kind (undocumented, mistyped params, a binding to an unregistered
+  action, an untested action) turns it red.
+- DONE (2026-11-19, 2.5.10): slice *E (record / replay)* --
+  =cadgui/source/replay.lisp=. A session records as a transcript of
+  =(:invoke ID . ARGS)= entries (plain serialisable s-exprs) via the
+  =cadgui-recording-transcript= macro -- recorded at the dispatch point
+  (=*cadgui-transcript*=) because every mutation goes through it (the slice-D
+  invariant). =cadgui-replay-transcript= re-invokes each entry on a fresh session,
+  reproducing the recorded run's final state deterministically; non-:invoke
+  entries are skipped (forward-compatible). Tests (replay-tests.lisp): record a
+  drawing session, replay on a fresh session, assert identical final geometry; the
+  transcript round-trips through print/read; replay skips unknown entry kinds.
 - NEXT in this issue: thread a per-get-family TYPE (point / string / keyword /
   entity) through cador's prompt-api park seam so =:request= events and
   =pending-requests= carry the precise expected input type (today :input);
   extend get-state further with selection + sysvars + view; adapter over cador's
-  =*cador-commands*= so every command is an action; *D* the driveability guard
-  (CI check: every action registered + reachable only via =invoke-action= +
-  headless test); *E* record/replay. The GUI command line already routes
-  AutoLISP through the =:eval-command= action's implementation; wiring widgets
-  exclusively through =invoke-action= lands with *D*.
+  =*cador-commands*= so every cador command is a registered action (which, with
+  the driveability guard now live, makes the "every command is an action"
+  acceptance criterion mechanically enforced); wire the Qt widgets exclusively
+  through =invoke-action= as the shell's menus/ribbon/dialogs are built, each
+  declaring its binding in =*cadgui-gui-bindings*=.
 
 * Where it sits, what it reuses
 
@@ -138,9 +167,13 @@ the alfe protocol as seeds.
 * Acceptance criteria
 
 - [ ] Every cadgui canvas interaction + command is a registered action.
-- [ ] GUI widgets mutate state ONLY via =invoke-action= (guard enforces).
-- [ ] =list-actions= / =describe-action= / =get-state= return structured data.
-- [ ] A scripted AI-style driver runs a command to completion via the typed
-      request/answer protocol, headless.
-- [ ] The driveability guard is green in CI and fails on a back-door.
-- [ ] A recorded session replays to the identical final state.
+      (Built-ins are; the =*cador-commands*= adapter is the remaining NEXT item.)
+- [-] GUI widgets mutate state ONLY via =invoke-action= (guard enforces). The
+      guard + =*cadgui-gui-bindings*= enforce it for declared bindings; completes
+      as the Qt menus/ribbon/dialogs are built and declared.
+- [X] =list-actions= / =describe-action= / =get-state= return structured data.
+- [X] A scripted AI-style driver runs a command to completion via the typed
+      request/answer protocol, headless. (slice C)
+- [X] The driveability guard is green and fails on a back-door. (slice D; CI lane
+      lands with the cadgui module's CI integration -- runner is ready.)
+- [X] A recorded session replays to the identical final state. (slice E)

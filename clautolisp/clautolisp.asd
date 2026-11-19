@@ -305,6 +305,8 @@ interactive input, command eval. cadgui-2-qt6-gui-host.issue."
    (:file "cadgui/source/session")
    (:file "cadgui/source/protocol")
    (:file "cadgui/source/actions")
+   (:file "cadgui/source/driveability")
+   (:file "cadgui/source/replay")
    (:file "cadgui/source/multidoc"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/cadgui/tests")))
@@ -323,6 +325,8 @@ interactive input, command eval. cadgui-2-qt6-gui-host.issue."
    (:file "cadgui/tests/input-tests")
    (:file "cadgui/tests/protocol-tests")
    (:file "cadgui/tests/actions-tests")
+   (:file "cadgui/tests/driveability-tests")
+   (:file "cadgui/tests/replay-tests")
    (:file "cadgui/tests/multidoc-tests"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

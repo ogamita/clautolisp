@@ -45,6 +45,23 @@
    #:cadgui-describe-action
    #:cadgui-unknown-action
    #:cadgui-unknown-action-id
+   ;; Driveability guard (slice D): the CHECKED invariant that every action is
+   ;; registered + reachable only via invoke-action + headlessly driven.
+   #:*cadgui-gui-bindings*
+   #:cadgui-register-gui-binding
+   #:cadgui-gui-bindings
+   #:cadgui-register-action-sample-args
+   #:cadgui-register-builtin-driveability
+   #:cadgui-drive-all-actions
+   #:cadgui-driveability-violations
+   #:cadgui-run-driveability-check
+   #:cadgui-driveability-report
+   #:*cadgui-action-coverage*
+   ;; Record / replay (slice E): a session as a transcript of invoke-action calls.
+   #:*cadgui-transcript*
+   #:cadgui-recording-transcript
+   #:cadgui-replay-transcript
+   #:cadgui-transcript-actions
    ;; Multi-document workspace (cooperative-scheduler integration slice 1) --
    ;; N documents interleaving through the single-runner scheduler, each with
    ;; its own cador host + input channel.

@@ -32,6 +32,16 @@ introspect (CADGUI-LIST-ACTIONS / CADGUI-DESCRIBE-ACTION).")
   ((id :initarg :id :reader cadgui-unknown-action-id))
   (:report (lambda (c s) (format s "No cadgui action ~S." (cadgui-unknown-action-id c)))))
 
+(defvar *cadgui-action-coverage* nil
+  "NIL (off) or a hash-table that CADGUI-INVOKE-ACTION records each invoked action
+ID into. The driveability guard (slice D) binds it while driving every action, so
+coverage is tied to REAL dispatch through the single entry point, not a hand list.")
+
+(defvar *cadgui-transcript* nil
+  "NIL (off) or a header cons whose CDR accumulates (:invoke ID . ARGS) entries,
+newest first -- the record/replay transcript (slice E). CADGUI-INVOKE-ACTION
+pushes to it when it is non-nil; CADGUI-RECORDING-TRANSCRIPT binds and reads it.")
+
 (defun cadgui-register-action (id &key params (doc "") category fn)
   "Register (or replace) the action ID (a keyword). PARAMS is a list of
 (NAME TYPE DOC) for introspection; FN is the implementation. Returns ID."
@@ -49,6 +59,11 @@ another route (the invariant a later driveability guard enforces). Signals
 CADGUI-UNKNOWN-ACTION when ID is not registered."
   (let ((a (gethash id *cadgui-actions*)))
     (unless a (error 'cadgui-unknown-action :id id))
+    ;; Record dispatch for the driveability guard (coverage) and record/replay
+    ;; (transcript) -- both hang off THE single entry point, so nothing that
+    ;; mutates app state escapes them.
+    (when *cadgui-action-coverage* (setf (gethash id *cadgui-action-coverage*) t))
+    (when *cadgui-transcript* (push (list* :invoke id args) (cdr *cadgui-transcript*)))
     (apply (action-fn a) args)))
 
 (defun cadgui-list-actions (&optional category)

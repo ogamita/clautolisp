@@ -7,7 +7,14 @@
                 #:cadgui-display-list #:cadgui-extents #:cadgui-entity-count
                 #:cadgui-regen-serial #:cadgui-selection #:cadgui-selection-geometry
                 #:cadgui-invoke-action #:cadgui-list-actions #:cadgui-describe-action
-                #:cadgui-unknown-action #:cadgui-register-action
+                #:cadgui-unknown-action #:cadgui-register-action #:*cadgui-actions*
+                #:cadgui-register-builtin-actions
+                #:cadgui-register-gui-binding #:*cadgui-gui-bindings*
+                #:cadgui-gui-bindings #:cadgui-register-action-sample-args
+                #:cadgui-drive-all-actions #:cadgui-driveability-violations
+                #:cadgui-run-driveability-check #:cadgui-driveability-report
+                #:cadgui-recording-transcript #:cadgui-replay-transcript
+                #:cadgui-transcript-actions
                 #:cadgui-make-workspace #:cadgui-workspace-docs #:cadgui-open-document
                 #:cadgui-doc-supply-point #:cadgui-doc-host #:cadgui-workspace-start
                 #:cadgui-workspace-serve #:cadgui-workspace-run #:cadgui-workspace-shutdown
