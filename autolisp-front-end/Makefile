@@ -20,6 +20,12 @@ LISP   ?= $(SBCL)
 ROOT_DIR := $(shell pwd)
 CLAUTOLISP_ROOT := $(ROOT_DIR)/../clautolisp
 CLAUTOLISP_ASD := $(CLAUTOLISP_ROOT)/clautolisp.asd
+# make-test-loads-installed-clautolisp: loaded right after (require :asdf)
+# in every image that LOAD-ASDs the checkout, so this tree's systems win over
+# an installed copy the inherited ASDF registry also sees (see the file).
+# Relative to this directory, the recipes' cwd: no MSYS /c/... path reaches
+# the Lisp reader.
+CHECKOUT_REGISTRY_LOAD := --load ../clautolisp/tools/checkout-source-registry.lisp
 ALFE_ASD := $(ROOT_DIR)/autolisp-front-end.asd
 
 # Native (C:/...) forms of the .asd paths handed to the SBCL/CCL engine below:
@@ -264,6 +270,7 @@ test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "usocket" :silent t))' \
 		--eval '(require :asdf)' \
+		$(CHECKOUT_REGISTRY_LOAD) \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)'
@@ -298,6 +305,7 @@ test-ccl:  ## Run the alfe FiveAM suite under CCL (killed after TEST_TIMEOUT s).
 		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "usocket" :silent t))' \
 		--eval '(require :asdf)' \
+		$(CHECKOUT_REGISTRY_LOAD) \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
 		--eval '(ccl:quit (handler-case (progn (asdf:test-system "$(TEST_SYSTEM)" :verbose t) 0) (error (e) (format *error-output* "~&~A~%" e) 1)))'
@@ -343,6 +351,7 @@ conformance: conformance-harness-tests  ## Run the alfe scenario corpus and exit
 		--eval '(when (find-package :ql) (ql:quickload "cffi" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "usocket" :silent t))' \
 		--eval '(require :asdf)' \
+		$(CHECKOUT_REGISTRY_LOAD) \
 		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
 		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-front-end/tool-run-alfe-conformance")' \

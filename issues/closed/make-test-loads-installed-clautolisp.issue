@@ -1,0 +1,150 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: make-test-loads-installed-clautolisp -- the test images run an INSTALLED copy instead of the checkout when ASDF's inherited registry can see one
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: infra
+#+DEPENDS: -
+#+BRANCH: fix-make-test-loads-installed-clautolisp
+#+DATE: 2026-11-19
+
+* Symptom
+
+poseidon (Debian, SBCL 2.5.2, bundled ASDF 3.3.1), checkout at 99a72e48
+(2.4.33), clautolisp 2.4.16 installed under /opt/local: the root =make test=
+failed CADOR-SUITE with 41 failures, among them
+
+- =GETCNAME-UNDER-A-LOCALE-WITHOUT-A-TABLE-IS-THE-IDENTITY=:
+  =(cador-getcname "_LINE" :autocad locale)= => NIL instead of "LINE";
+- =GETCNAME-FOLLOWS-EACH-PRODUCT-UNDER-FR-FR=,
+  =GETCNAME-BRICSCAD-V26-SPELLS-STRETCH-WITH-ITS-ACCENT=;
+- =NEW-DOCUMENT-USES-THE-TEMPLATE-THE-SYSVAR-NAMES= ("no bundled template"),
+  =NEW-DOCUMENT-TEMPLATE-RESOLVES-A-RELATIVE-NAME-AGAINST-TEMPLATEPATH=,
+  =STARTUP-DOCUMENT-FOLLOWS-THE-ENVIRONMENT-NOT-THE-SYSVAR=;
+- =COMMAND-NEW-OPEN-AND-MENULOAD-NOTIFY-THE-UI= (2 documents, expected 3).
+
+The same =make test= passed on thalassa (macOS), pfenny (Windows) and in
+GitLab CI, and the binary built on poseidon was fine. Because the job looked
+like an ordinary test failure, it blocked the 2.4.33 install.
+
+* Cause
+
+The suite was not testing the checkout. It was testing the INSTALLED sources
+under /opt/local/share/common-lisp/source/clautolisp/, which have neither
+=cador/data/= nor =drawing/template/= (see
+=install-libraries-omits-runtime-data-files=). So the getcname tables
+compiled empty, and =drawing-template-path= named a file that does not
+exist.
+
+1. Every test lane does =(asdf:load-asd <checkout>/clautolisp.asd)=, then
+   =asdf:test-system=. =asdf:find-system= (ASDF 3.3, =find-system.lisp=)
+   calls =locate-system=, which runs =search-for-system-definition=:
+   the source-registry is searched BEFORE the already-registered system is
+   considered. When the registry's .asd path differs from the registered
+   one, =find-system= calls =load-asd= on the REGISTRY's file. An explicit
+   =load-asd= therefore does not stick: the first =find-system= replaces it
+   with whatever the source-registry finds.
+2. On poseidon the user's shell sets =XDG_DATA_DIRS=/opt/local/share= (rc
+   =monolith.bash=). ASDF's default registry then includes
+   =/opt/local/share/common-lisp/systems/= (the =clautolisp.asd= symlink
+   that =make install-libraries= creates) and the =source/= tree. As a side
+   effect, =/usr/share= leaves the registry too, so Debian's ASDF is not
+   self-upgraded and the image stays on 3.3.1. That is irrelevant here: 3.3.7
+   behaves the same.
+3. thalassa has the same data-less installed copy but never failed, because
+   =~/.config/common-lisp/source-registry.conf= there says
+   =:ignore-inherited-configuration=, so XDG_DATA_DIRS is never consulted.
+   CI hosts have nothing installed. Anyone who follows
+   =50-clautolisp.conf='s own advice (=XDG_CONFIG_DIRS=/opt/local/etc=) gets
+   the same failure.
+
+Evidence on poseidon:
+- In the user's fasl cache, the installed copy's =cador/tests/=,
+  =drawing/source/persistence.fasl= and =tools/clautolisp/tests/run.fasl=
+  were compiled during the failing run (10:57-10:58), interleaved with the
+  checkout's fasls.
+- Probe: after the lanes' preamble and =load-asd=,
+  =(asdf:system-source-directory "clautolisp/cador/tests")= is the checkout
+  when XDG_DATA_DIRS is unset, and
+  =/opt/local/share/common-lisp/source/clautolisp/= when it is
+  =/opt/local/share=. The same holds under ASDF 3.3.7.3.
+- In a copy of this branch, with =XDG_DATA_DIRS=/opt/local/share=:
+  =make test-sbcl TEST_SYSTEM=clautolisp/cador/tests CHECKOUT_REGISTRY_LOAD==
+  (the fix switched off) gives *2262/2303, 41 failures*. The same command
+  with the fix gives *2307/2307*.
+
+Measured on poseidon: a bare =ssh poseidon 'cmd'= environment has no
+XDG_DATA_DIRS, while an interactive shell, and =ssh poseidon bash -s=, have
+=/opt/local/share=. That would explain why some earlier checks there
+("the cador suite alone passes", "every system resolves to the checkout")
+came out clean.
+
+The build had the same flaw, in a smaller form.
+=configure-asdf-directories= (=generate.lisp=) put the checkout first, but
+as a non-recursive =:directory=. So =tui-core.asd= and
+=clautolisp-tui-curses.asd=, which live in subdirectories, still came from
+the default registry, that is from the installed copy. In addition,
+=generate-clautolisp.lisp= pre-loaded =clautolisp-tui-curses= BEFORE
+configuring the registry at all. The 2.4.33 binary built on poseidon is
+nevertheless correct: those two directories are byte-identical between the
+installed 2.4.16 copy and the 2.4.33 checkout (=diff -rq=).
+
+* Fix (2.4.34)
+
+- =clautolisp/tools/checkout-source-registry.lisp=: re-initialises the
+  source-registry with this tree first (=:tree= of the clautolisp subproject
+  minus =third-party/=, =build/= and =.cache/=, then
+  =autolisp-front-end/= and =autolisp-test/= as =:directory=), then
+  =:inherit-configuration=. The first entry that names a system wins, so
+  third-party systems still come from wherever they came from. Paths come
+  from =*load-truename*=, never from a Makefile.
+- Loaded right after =(require :asdf)= by every image that =load-asd='s
+  the checkout:
+  - clautolisp =test-sbcl=, =test-ccl=, =test-ecl= (=CHECKOUT_REGISTRY_LOAD=);
+  - =whole-suite-compiled.lisp=, =whole-suite-lexical.lisp=,
+    =debug-suite-compiled.lisp=, =check-docstrings.lisp=;
+  - the alfe Makefile lanes (=test-sbcl=, =test-ccl=, =conformance=);
+  - the autolisp-test =test-asdf-*= lanes.
+- Build: =configure-asdf-directories= scans each directory as a =:tree=
+  (same exclusions). =generate-clautolisp.lisp= configures the registry
+  before its tui-curses pre-load.
+- Regression test =make -C clautolisp test-checkout-registry=, run first by
+  =make test= (=tools/checkout-source-registry-test.lisp=). It plants a
+  decoy install (=clautolisp.asd= with =clautolisp/cador= and
+  =clautolisp/cador/tests=, =tui-core.asd=, =clautolisp-tui-curses.asd=,
+  =autolisp-front-end.asd=) in a scratch dir under XDG_CACHE_HOME and makes
+  the inherited registry see it through =CL_SOURCE_REGISTRY=, which
+  outranks a user conf file such as thalassa's. It then checks that the
+  inherited registry alone finds the decoy, so the test is not vacuous, and
+  that after the fix and the lanes' =load-asd= every one of those systems,
+  plus the drawing template, resolves into the checkout. With the fix
+  emptied it reports 8 failures. With the fix it passes on thalassa and
+  poseidon.
+
+* Not covered (no =make test= lane uses them)
+
+=scripts/verify-vl-registry.lisp=, =scripts/verify-pathname-mapping.lisp=,
+=scripts/test-vendor-templates.sh=,
+=autolisp-front-end/scripts/check-spec-coverage.lisp=,
+=clautolisp/tools/generate-dialect-warnings-annex.lisp=,
+=run-file-compat/launch.lisp= and the tui-curses =test/*.lisp= still
+=load-asd= without the registry file. They can be fixed the same way when
+they are next touched.
+
+* Interim workaround for an unfixed checkout
+
+#+begin_src sh
+env -u XDG_DATA_DIRS -u XDG_CONFIG_DIRS -u CL_SOURCE_REGISTRY ~/update-clautolisp
+#+end_src
+
+* Resolved
+
+2026-11-19, clautolisp 2.4.34 / alfe 2.4.34, branch
+=fix-make-test-loads-installed-clautolisp=. =test-checkout-registry= also
+runs in both CIs (=test:clautolisp:sbcl= and its ci.yml mirror). Verified
+as follows:
+- thalassa, =make -C clautolisp test=: 34 suites, 13913 checks, 0 failures.
+- poseidon (copy of the branch, =XDG_DATA_DIRS=/opt/local/share=):
+  =test-checkout-registry= PASS, cador suite 2307/2307.
+- pfenny (Windows, copy of the branch): =test-checkout-registry= PASS. The
+  decoy environment is set by the Makefile, because =(setf uiop:getenv)=
+  fails on Windows SBCL.

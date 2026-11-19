@@ -47,6 +47,11 @@
         (when (probe-file setup) (load setup)))
       (when (find-package '#:ql)
         (funcall (find-symbol (symbol-name '#:quickload) '#:ql) "cffi" :silent t))
+      ;; make-test-loads-installed-clautolisp: the registry GENERATE-PROGRAM
+      ;; sets up below, BEFORE the first LOAD-ASD -- otherwise tui-core and
+      ;; clautolisp-tui-curses resolve to an installed copy, and that is the
+      ;; code this pre-load bakes into the image.
+      (configure-asdf-directories *asdf-directories*)
       (asdf:load-asd *clautolisp-asd-file*)
       (asdf:load-asd (truename (merge-pathnames
                                 #P"autolisp-debug-ui-tui-curses/clautolisp-tui-curses.asd"

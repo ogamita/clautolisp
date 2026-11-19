@@ -136,6 +136,15 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- *Building and testing from a checkout uses that checkout, never an
+  installed copy* (2.4.34): when ASDF could also see a clautolisp under
+  =$PREFIX= (for instance =XDG_DATA_DIRS=/opt/local/share=), =make test= ran
+  the installed sources, and the build took =tui-core= and
+  =clautolisp-tui-curses= from there. =make test= now starts with
+  =test-checkout-registry=, which checks this against a planted copy. New
+  installed files: =share/common-lisp/source/clautolisp/tools/checkout-source-registry{,-test}.lisp=.
+  See =issues/closed/make-test-loads-installed-clautolisp.issue=.
+
 - *A =lambda= is compiled once per place in the source* (2.4.33):
   =(function (lambda ...))= and ='(lambda ...)= in a compiled function, and
   any lambda in an interpreted loop, were compiled again on every

@@ -42,6 +42,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-lisp
 
+      - name: clautolisp — the test images load this checkout, not an installed copy
+        run: make -C clautolisp test-checkout-registry
+
       - name: clautolisp — FiveAM suite (SBCL)
         run: make -C clautolisp test-sbcl
 

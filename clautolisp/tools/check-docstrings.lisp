@@ -35,6 +35,8 @@
 ;;; The system has to be LOADED before the sources can be read: a form
 ;;; like `internal::dynamic-frame-bindings' is unreadable until the
 ;;; package exists. Reading is all that happens afterwards.
+;; make-test-loads-installed-clautolisp: this tree first, never an installed copy.
+(load (merge-pathnames "tools/checkout-source-registry.lisp" (uiop:getcwd)))
 (asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))
 (handler-bind ((warning #'muffle-warning))
   (asdf:load-system "clautolisp/clautolisp-tool" :verbose nil)
