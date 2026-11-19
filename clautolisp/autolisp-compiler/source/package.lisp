@@ -32,6 +32,7 @@
                 #:check-repeat-count
                 #:check-foreach-sequence
                 #:eval-lambda-form
+                #:lambda-source-site
                 #:eval-let-form
                 #:check-vlax-collection-support
                 #:vlax-collection-items
