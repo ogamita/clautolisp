@@ -1,5 +1,5 @@
 #+TITLE: Require native COM quiescence before opening the job DWG
-#+STATUS: NEXT
+#+STATUS: DONE (clautolisp/alfe 2.4.30, 2026-11-19; qualified natively on PF5S26BT, job 18176798078)
 #+PRIORITY: P1
 #+TYPE: bug
 #+DEPENDS: native-cad-validation
@@ -106,3 +106,28 @@ startup code installed by the EPURE setup (LISP or .NET) waiting on a
 network resource, a licence or a share. Needs an observation at the
 console of PF5S26BT: start each CAD by hand in the runner's profile and
 see what its command line shows and when it becomes usable.
+
+* Resolution (2026-11-19, clautolisp/alfe 2.4.30, master 99a72e48)
+
+verify:epure-lifecycle:windows passes natively on PF5S26BT (job
+18176798078, 794 s): autocad-automation, bricscad-automation,
+bricscad-batch and both controls without the EPURE plug-in all passed,
+cleanup "exited", no crash event, no dump. The quiescence gate holds
+(alfe 2.4.26 gives it the READY budget) and, when a CAD stays busy, the
+bridge now says why (busy-windows.txt with dialog texts, COM.BUSY.STATE).
+
+What held the CADs on 2026-11-17/18 was the machine, not alfe: the SNCF
+"Nouveautes"/EPURE dialogs, BricsCAD's pending crash reports, an EPURE
+installation that alerted at start, then a ~600 s startup. The
+session-state probe with DIAG.PATH (job 18176797998) shows the Epure
+profile loading its startup from V:\EPUREPLUS (acaddoc.lsp, on_start.lsp,
+com\lisp\sncf_startup.lsp, sncf_com.lsp), first in ACADPREFIX -- on
+2026-11-17 AutoCAD used the local C:\EPURE2022. The same rows took
+607-609 s on 2026-11-18 and 98-118 s on 2026-11-19: most likely V: is a
+network drive and was slow or unreachable (pjb's hypothesis); to confirm
+on the machine, and why the user setup points at V: rather than a local
+copy.
+
+Seen in passing: autocad-automation-without-epure-plugin exited with
+0xC0000005 at close (passed: the lifecycle accepts an exit fault after
+RESTORED; no event 1000, no dump), autocad-automation with 0x0482BABE.

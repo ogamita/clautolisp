@@ -1,0 +1,38 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: alfe --bricscad --mode batch ran an hour past its --timeout 1200
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-alfe-bricscad-batch-hangs-past-timeout
+#+DATE: 2026-11-19
+
+* Symptom
+
+probe:cad-session-state:windows on PF5S26BT (job 18151974874,
+2026-11-18, master e93b79d8 / alfe 2.4.30) started
+
+: alfe --no-init --debug --bricscad --mode batch --timeout 1200 --keep-workdir -l <probe>
+
+at 16:16:28 UTC. Nothing more was printed until the runner killed the job
+at its 3600 s limit: alfe never returned, 40 minutes after its own READY
+timeout should have ended the run. The same row took 10-18 s an hour
+before (job 18149419113) and the day after (job 18176797998).
+
+The probe then captured alfe's output with Out-String, shown only when
+alfe exits, so where alfe stood is unknown. Since !574 the probe streams
+alfe's output line by line: a recurrence will show the last step reached.
+
+* Context
+
+That afternoon the machine's SNCF/EPURE startup took ~600 s (V:\EPUREPLUS
+slow or unreachable, see alfe-com-open-before-quiescent), and the previous
+row of the previous job had ended AutoCAD by force at its READY timeout.
+Not established: whether alfe hung before READY (launch, wait) or after
+its timeout (termination of BricsCAD, cleanup, owned-process Finish).
+
+* Acceptance
+
+- Reproduce, or capture the streamed output of a recurrence.
+- Whatever BricsCAD does, alfe returns within --timeout plus its bounded
+  teardown, with a diagnostic, and the probe row is reported FAIL.
