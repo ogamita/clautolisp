@@ -39,8 +39,16 @@
 (defmacro %embed-getcname-tables (glob)
   "The tables of the files matching GLOB (relative to this source file),
 read at compile time: ((LOCALE . ((PRODUCT (INTERNATIONAL . LOCAL) ...) ...)) ...)."
-  (let ((here (or *compile-file-truename* *load-truename*)))
-    `',(loop for file in (directory (merge-pathnames glob here))
+  (let* ((here  (or *compile-file-truename* *load-truename*))
+         (files (directory (merge-pathnames glob here))))
+    ;; install-libraries-omits-runtime-data-files: an install that left the
+    ;; tables behind compiled an EMPTY table, and GETCNAME answered NIL for
+    ;; everything, "_LINE" included, with no diagnostic. Refuse instead.
+    (unless files
+      (error "GETCNAME tables missing: nothing matches ~A (relative to ~A). ~
+              The cador/data/ directory must be installed with the sources."
+             glob here))
+    `',(loop for file in files
              collect (cons (pathname-name file) (%read-getcname-table file)))))
 
 (defparameter *getcname-tables* (%embed-getcname-tables "../data/getcname/*.sexp")

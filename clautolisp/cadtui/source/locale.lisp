@@ -289,6 +289,12 @@ to this source file) and expand to code that registers them — baking the shipp
 dictionaries into the image so runtime needs no data files present."
   (let* ((here (or *compile-file-truename* *load-truename*))
          (files (directory (merge-pathnames glob here))))
+    ;; install-libraries-omits-runtime-data-files: with no data tree the image
+    ;; silently had no locale but "en". Refuse to compile that instead.
+    (unless files
+      (error "cadtui locale data missing: nothing matches ~A (relative to ~A). ~
+              The cadtui/data/ directory must be installed with the sources."
+             glob here))
     `(progn
        ,@(loop for file in files
                collect `(register-locale-dictionary

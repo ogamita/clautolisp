@@ -157,7 +157,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
 .PHONY: text-metrics
-.PHONY: all test test-checkout-registry test-sbcl test-ccl test-ecl test-compiler-equivalence \
+.PHONY: all test test-checkout-registry test-installed-libraries test-sbcl test-ccl test-ecl test-compiler-equivalence \
         test-debug-compiled test-shipped-compiler test-shipped-compiler-ccl \
         test-shipped-interrupt test-shipped-interrupt-ccl \
         check-docstrings spec-symbols operator-availability check-operator-availability \
@@ -248,7 +248,7 @@ build-libredwg: submodules  ## Build the vendored libredwg submodule + the CFFI 
 test-libredwg-compiler-path:
 	drawing-dwg/tests/compiler-runtime-path-test.sh
 
-test: test-checkout-registry test-sbcl
+test: test-checkout-registry test-sbcl test-installed-libraries
 
 # make-test-loads-installed-clautolisp: every image below loads
 # tools/checkout-source-registry.lisp right after (require :asdf), so the
@@ -276,6 +276,28 @@ test-checkout-registry:  ## Assert the test images load THIS checkout's systems,
 	"$(SBCL)" --noinform --no-userinit --non-interactive \
 		--eval '(require :asdf)' \
 		--load tools/checkout-source-registry-test.lisp
+
+# install-libraries-omits-runtime-data-files: install the ASDF systems into a
+# scratch DESTDIR with the very file list `install-libraries' and the
+# release-libraries artefact use, then load clautolisp from that tree ALONE
+# (tools/installed-libraries-test.lisp) and check the data its sources read:
+# the getcname tables, cadtui's locales, the NEW-drawing template. The path
+# handed to the Lisp is native (cygpath -m on Windows).
+INSTALLED_LIBRARIES_SCRATCH := $(ROOT_DIR)/.cache/installed-libraries-test
+ifneq ($(filter MINGW% MSYS% CYGWIN%,$(shell uname -s)),)
+INSTALLED_LIBRARIES_SCRATCH_NATIVE = $(shell cygpath -m "$(INSTALLED_LIBRARIES_SCRATCH)")
+else
+INSTALLED_LIBRARIES_SCRATCH_NATIVE = $(INSTALLED_LIBRARIES_SCRATCH)
+endif
+test-installed-libraries:  ## Install the ASDF systems into a scratch prefix and load clautolisp from there alone: getcname tables, cadtui locales and the drawing template must be installed.
+	rm -rf "$(INSTALLED_LIBRARIES_SCRATCH)"
+	"$(MAKE)" --no-print-directory install-lisp-systems PREFIX=/prefix DESTDIR="$(INSTALLED_LIBRARIES_SCRATCH)" >/dev/null
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	    CLAUTOLISP_INSTALLED_SOURCE="$(INSTALLED_LIBRARIES_SCRATCH_NATIVE)/prefix/share/common-lisp/source/clautolisp/" \
+	"$(SBCL)" --noinform --no-userinit --non-interactive \
+		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
+		--eval '(require :asdf)' \
+		--load tools/installed-libraries-test.lisp
 
 test-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
@@ -621,8 +643,10 @@ clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt:
 #                                                   run-file-compat (shell driver)
 #   $(PREFIX)/share/doc/clautolisp/                 .org + .pdf documentation
 #   $(PREFIX)/share/common-lisp/source/clautolisp/  the ASDF systems: every
-#                                                   tracked .lisp + .asd, in
-#                                                   the source tree's layout
+#                                                   tracked .lisp + .asd, and
+#                                                   the data the sources read
+#                                                   (*/data/**, */template/*),
+#                                                   in the source tree's layout
 #   $(PREFIX)/share/common-lisp/systems/            clautolisp.asd symlink so
 #                                                   ASDF's default source-registry
 #                                                   finds the systems
@@ -681,13 +705,28 @@ LIB_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/lib/$(SUBPROJECT_NAME)/$(REL_OS)/$(RE
 CL_SOURCE_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/common-lisp/source/$(SUBPROJECT_NAME)
 CL_SYSTEMS_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/common-lisp/systems
 # Every component of every system is a plain `:file' (i.e. .lisp), so
-# .lisp + .asd is the complete set. `find' rather than `git ls-files'
-# so installing from an unpacked source tarball (no .git) works; the
-# two agree exactly on a clean checkout. build/ and .cache/ hold
+# .lisp + .asd is the complete set of ASDF components. `find' rather than
+# `git ls-files' so installing from an unpacked source tarball (no .git)
+# works; the two agree exactly on a clean checkout. build/ and .cache/ hold
 # generated artefacts, third-party/ is vendored C.
 LISP_SOURCE_FILES = $(shell find . \( -name '*.lisp' -o -name '*.asd' \) \
                       -not -path './third-party/*' \
                       -not -path './build/*' \
+                      -not -path '*/.cache/*' | sed -e 's|^\./||' | sort)
+# ...but not the complete set of FILES the systems need: some sources read
+# data next to them, which no .asd declares (install-libraries-omits-
+# runtime-data-files). cador/source/getcname.lisp embeds
+# cador/data/getcname/*.sexp and cadtui/source/locale.lisp embeds
+# cadtui/data/locale/*/*.sexp at COMPILE time, and drawing-template-path
+# opens drawing/template/empty-drawing.dxf at run time. An install without
+# them loaded, silently, with empty getcname / locale tables and no NEW
+# template. Convention: such data lives in a <subsystem>/data/ or
+# <subsystem>/template/ directory, which is installed whole.
+# test-installed-libraries checks the installed tree.
+LISP_DATA_FILES = $(shell find . -type f \( -path './*/data/*' -o -path './*/template/*' \) \
+                      -not -path './third-party/*' \
+                      -not -path './build/*' \
+                      -not -path '*/tests/*' \
                       -not -path '*/.cache/*' | sed -e 's|^\./||' | sort)
 
 # The rest of the libraries phase: the codec's public header and the
@@ -887,7 +926,7 @@ install-libraries: install-lisp-systems  ## Install everything the release-libra
 	fi
 	@echo "libraries installed: $(LIB_INSTALL_DIR)"
 
-install-lisp-systems:  ## Install just the ASDF systems (every .lisp + .asd, in tree layout) under $$PREFIX/share/common-lisp/{source,systems}.
+install-lisp-systems:  ## Install just the ASDF systems (every .lisp + .asd, plus the */data/ and */template/ files the sources read, in tree layout) under $$PREFIX/share/common-lisp/{source,systems}.
 	install -d "$(CL_SOURCE_INSTALL_DIR)"
 	install -d "$(CL_SYSTEMS_INSTALL_DIR)"
 	@# Copied file-by-file (not `tar -T -') so the mode is normalised
@@ -895,13 +934,13 @@ install-lisp-systems:  ## Install just the ASDF systems (every .lisp + .asd, in 
 	@# created by install(1) — `install -D' is GNU-only, hence the
 	@# explicit `install -d' per directory.
 	@n=0 ; \
-	for f in $(LISP_SOURCE_FILES); do \
+	for f in $(LISP_SOURCE_FILES) $(LISP_DATA_FILES); do \
 	  d="$$(dirname "$$f")" ; \
 	  install -d "$(CL_SOURCE_INSTALL_DIR)/$$d" ; \
 	  install -m 0644 "$$f" "$(CL_SOURCE_INSTALL_DIR)/$$d/" ; \
 	  n=$$((n+1)) ; \
 	done ; \
-	echo "installed: $$n Lisp source/system files -> $(CL_SOURCE_INSTALL_DIR)/"
+	echo "installed: $$n Lisp source/system/data files -> $(CL_SOURCE_INSTALL_DIR)/"
 	@# Relative link so the tree stays relocatable. ASDF's default
 	@# source-registry scans share/common-lisp/systems/ for .asd files,
 	@# which is what makes (asdf:load-system "clautolisp") work with no

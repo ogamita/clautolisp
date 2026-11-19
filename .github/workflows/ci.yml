@@ -48,6 +48,9 @@ jobs:
       - name: clautolisp — FiveAM suite (SBCL)
         run: make -C clautolisp test-sbcl
 
+      - name: clautolisp — the installed ASDF systems carry the data their sources read
+        run: make -C clautolisp test-installed-libraries
+
       # The compiler gates: the whole corpus with every function body
       # compiled, then with every instrumented body compiled (both assert
       # that compiled and interpreted evaluation AGREE), then the question
