@@ -293,7 +293,9 @@ cooperatively and the document interleaves with its siblings."
 the document's input (parks), run it as AutoLISP through
 CADGUI-DOCUMENT-RUN-COMMAND, repeat until end of input. This is what each live
 document window drives -- the user types a command, it runs, its getpoints read
-the canvas. Blank lines are skipped; :EOF ends the loop.
+the canvas. Blank lines are skipped. ANY non-string read ends the loop -- :EOF
+(end of input) and :EXIT (the document is being closed, CADGUI-CLOSE-DOCUMENT
+resumes the parked thread with :exit so it can unwind).
 
 AFTER-COMMAND, when supplied, is a function of no arguments called ON THE
 DOCUMENT'S THREAD after each command runs -- the live shell sets it to publish
@@ -301,8 +303,8 @@ this document's display-list snapshot and request its window's repaint (done on
 the owning thread, so the paint is race-free)."
   (loop
     (let ((line (clautolisp.cador:read-prompt-line host)))
-      (when (eq line :eof) (return))
-      (when (and (stringp line) (plusp (length (string-trim '(#\Space #\Tab) line))))
+      (unless (stringp line) (return))          ; :EOF / :EXIT / anything non-string
+      (when (plusp (length (string-trim '(#\Space #\Tab) line)))
         (ignore-errors (cadgui-document-run-command host line))
         (when after-command (ignore-errors (funcall after-command)))))))
 
@@ -325,16 +327,47 @@ this to know when a batch of driven work is quiescent."
              (or (null th) (not (bordeaux-threads:thread-alive-p th)))))
          (cadgui-workspace-docs workspace)))
 
+(defun %cadgui-end-document-thread (doc)
+  "End DOC's evaluation thread: close its input and resume it with :EXIT so its
+command loop unwinds, then join. Shared by close and shutdown."
+  (let* ((sc (cadgui-doc-context doc))
+         (th (clautolisp.autolisp-runtime:scheduled-context-thread sc)))
+    (ignore-errors (clautolisp.autolisp-runtime:park-mailbox-push
+                    (cadgui-doc-input doc) :eof))
+    (ignore-errors (clautolisp.autolisp-runtime:park-mailbox-push
+                    (clautolisp.autolisp-runtime:scheduled-context-mailbox sc) :exit))
+    (when (and th (bordeaux-threads:thread-alive-p th))
+      (ignore-errors (bordeaux-threads:join-thread th))))
+  doc)
+
+(defun cadgui-close-document (workspace doc &key save file)
+  "Close DOC: end its evaluation thread, close its cador document (SAVE writes it,
+to FILE or its own path), and drop it from WORKSPACE. Returns T, or NIL when the
+cador document could not be closed (cador keeps at least one open). The dead
+scheduler context is left registered -- harmless, it never runs again."
+  (%cadgui-end-document-thread doc)
+  (if (clautolisp.autolisp-host:host-close-document
+       (cadgui-workspace-host workspace) (cadgui-doc-cador-key doc) :save save :file file)
+      (progn
+        (setf (cadgui-workspace-docs workspace)
+              (remove doc (cadgui-workspace-docs workspace)))
+        t)
+      nil))
+
+(defun cadgui-workspace-document-keys (workspace)
+  "The caller keys of WORKSPACE's open documents, in the order they were opened."
+  (mapcar #'cadgui-doc-key (reverse (cadgui-workspace-docs workspace))))
+
+(defun cadgui-workspace-active-document (workspace)
+  "The cadgui-doc whose cador document is currently active on the shared host, or
+NIL -- which window the GUI should show as focused."
+  (let ((key (clautolisp.cador:cador-active-document-key (cadgui-workspace-host workspace))))
+    (and key (find key (cadgui-workspace-docs workspace)
+                   :key #'cadgui-doc-cador-key :test #'equal))))
+
 (defun cadgui-workspace-shutdown (workspace)
-  "Stop every document thread: end its input, unpark it with :EXIT, and join.
-Safe to call on a partially-run workspace."
+  "Stop every document thread (end input, resume with :EXIT, join). Safe to call
+on a partially-run workspace."
   (dolist (doc (cadgui-workspace-docs workspace))
-    (let* ((sc (cadgui-doc-context doc))
-           (th (clautolisp.autolisp-runtime:scheduled-context-thread sc)))
-      (ignore-errors (clautolisp.autolisp-runtime:park-mailbox-push
-                      (cadgui-doc-input doc) :eof))
-      (ignore-errors (clautolisp.autolisp-runtime:park-mailbox-push
-                      (clautolisp.autolisp-runtime:scheduled-context-mailbox sc) :exit))
-      (when (and th (bordeaux-threads:thread-alive-p th))
-        (ignore-errors (bordeaux-threads:join-thread th)))))
+    (%cadgui-end-document-thread doc))
   workspace)

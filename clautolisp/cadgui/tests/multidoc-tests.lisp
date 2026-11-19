@@ -132,6 +132,26 @@
              (is (equal '(0d0 0d0 9d0 9d0) (sixth (first sb))))))
       (cadgui-workspace-shutdown ws))))
 
+(test cadgui-workspace-open-close-document-lifecycle
+  ;; Multi-document lifecycle on the shared host: open two documents, list them,
+  ;; see which is current, close one (ending its parked thread + its cador
+  ;; document), and confirm the other is untouched.
+  (let* ((ws (cadgui-make-workspace))
+         (da (cadgui-open-document ws :a #'cadgui-document-command-loop))
+         (db (cadgui-open-document ws :b #'cadgui-document-command-loop)))
+    (unwind-protect
+         (progn
+           (is (equal '(:a :b) (cadgui-workspace-document-keys ws)))
+           (cadgui-workspace-launch ws da) (cadgui-workspace-drive-step ws)
+           (cadgui-workspace-launch ws db) (cadgui-workspace-drive-step ws)
+           (is (eq db (cadgui-workspace-active-document ws)))   ; last launched is current
+           ;; close da while it is parked: its thread unwinds, the cador document
+           ;; closes, and it drops from the workspace
+           (is (cadgui-close-document ws da))
+           (is (equal '(:b) (cadgui-workspace-document-keys ws)))
+           (is (eq db (cadgui-workspace-active-document ws))))  ; db unaffected
+      (cadgui-workspace-shutdown ws))))
+
 (test cadgui-document-runs-a-typed-autolisp-command-that-getpoints-and-draws
   ;; The live interactive loop: a document runs cadgui-document-command-loop; the
   ;; user TYPES an AutoLISP command, which runs in the document's scheduler

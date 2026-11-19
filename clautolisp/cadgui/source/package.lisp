@@ -67,4 +67,7 @@
    #:cadgui-doc-display-list
    #:cadgui-doc-extents
    #:cadgui-workspace-all-finished-p
+   #:cadgui-close-document
+   #:cadgui-workspace-document-keys
+   #:cadgui-workspace-active-document
    #:cadgui-workspace-shutdown))

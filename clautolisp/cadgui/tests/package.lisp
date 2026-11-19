@@ -14,6 +14,8 @@
                 #:cadgui-doc-feed #:cadgui-doc-feed-point #:cadgui-workspace-launch
                 #:cadgui-workspace-drive-step #:cadgui-document-command-loop
                 #:cadgui-doc-display-list #:cadgui-workspace-all-finished-p
+                #:cadgui-close-document #:cadgui-workspace-document-keys
+                #:cadgui-workspace-active-document
                 #:cadgui-add-line #:cadgui-add-circle
                 #:cadgui-input-stream #:*cadgui-input-hook* #:*cadgui-pending-input*
                 #:cadgui-point-line #:cadgui-install-input

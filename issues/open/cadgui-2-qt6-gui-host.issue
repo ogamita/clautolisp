@@ -282,7 +282,19 @@ mouse, pan/zoom, coarse regen, offscreen-capable.
   bug -- the frozen *package* after ecl_init_module is the engine's, not
   CL-USER, so the setup's defparameters and cl-user:: feed refs were different
   symbols -- fixed by using unqualified names consistently, as --mdidemo does.)
-- NEXT: the cador-correct ONE shared host with N drawings (vs a host per
-  document); window open/close/switch + a document list; grips/osnap/rubber-band
-  (phase 3). The action-layer slices B-E
+- DONE (2026-11-18, 2.5.6): the cador-correct ONE shared cador host with N
+  drawings (vs a host per document). cador scene-view renders any open document's
+  drawing (optional DRAWING arg); the cadgui workspace is one =make-cador= host,
+  =cadgui-open-document= host-open-document's a drawing on it, the activation hook
+  host-activate-document's it + swaps the prompt-stream. cadgui 113 + cador 2279
+  green; --mdi confirmed each window renders its own drawing on the one host.
+- DONE (2026-11-19, 2.5.7): document LIFECYCLE -- =cadgui-close-document= (end the
+  document's thread, host-close-document, drop from the workspace),
+  =cadgui-workspace-document-keys=, =cadgui-workspace-active-document=. The
+  command loop now ends on ANY non-string read (:eof or :exit), so a parked
+  document's thread unwinds cleanly when closed. Test: open two, list, see the
+  current, close one, the other is untouched.
+- NEXT: window open/close/switch UI in the shell (open a new DocWindow, close
+  one, focus a document -- the Qt chrome over the lifecycle, needs a display);
+  grips/osnap/rubber-band + dynamic input (phase 3). The action-layer slices B-E
   ([[cadgui-action-layer]]). Then [[cadgui-3-2d-parity]].
