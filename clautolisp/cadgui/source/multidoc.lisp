@@ -51,13 +51,24 @@ AWAITING / QUEUED are the MULTIPLEXING driver's state (used by
 CADGUI-WORKSPACE-DRIVE-STEP): AWAITING maps a scheduled-context to T while it is
 parked for input; QUEUED maps it to a FIFO of input lines that arrived before it
 parked. They let the driver resume WHICHEVER document just got input, even if
-another parked first (out-of-order input), through one wait point."
+another parked first (out-of-order input), through one wait point.
+
+EVENTS / ENTITY-COUNTS are the STRUCTURED-INTERACTION protocol's state
+(cadgui-action-layer slice C): as the driver processes each step it records a
+structured event -- (:request ..), (:answer ..), (:entity-created ..), (:done ..)
+-- onto EVENTS (newest first; CADGUI-WORKSPACE-EVENTS returns them in order), the
+event stream an AI / test driver reads to follow what each command did without
+screen-scraping. ENTITY-COUNTS maps a scheduled-context to the drawable-entity
+count last observed for its document, so the driver can emit an :entity-created
+event by diffing at a safe point (just after a park/done, when no context runs)."
   (host nil)
   (session nil)
   (scheduler nil)
   (docs '())
   (awaiting (make-hash-table :test 'eq))
-  (queued (make-hash-table :test 'eq)))
+  (queued (make-hash-table :test 'eq))
+  (event-log '())
+  (entity-counts (make-hash-table :test 'eq)))
 
 (defun cadgui-make-workspace ()
   "A fresh empty workspace: ONE shared cador host, a session carrying the
@@ -101,6 +112,75 @@ the GUI side of a click. Non-blocking. :EOF ends the document's input."
 (defun cadgui-doc-supply-point (doc x y)
   "Supply a world point (X,Y) to DOC -- what a canvas click on DOC's view sends."
   (cadgui-doc-supply doc (cadgui-point-line x y)))
+
+;;; --- structured interaction: the event stream (slice C) -------------------
+;;;
+;;; The multiplexing driver is the one place that sees every park, every input
+;;; arrival and every completion, so it is where the structured-interaction
+;;; protocol lives. Each step records a machine-readable event onto the
+;;; workspace -- a REQUEST when a document parks awaiting input, an ANSWER when
+;;; input is delivered to it, an ENTITY-CREATED when a command grew a document's
+;;; model, and DONE when a document finishes. An AI / test driver reads the
+;;; stream (CADGUI-WORKSPACE-EVENTS) to follow a command to completion instead of
+;;; screen-scraping, and reads the open REQUESTS (CADGUI-WORKSPACE-PENDING-REQUESTS)
+;;; to know which document needs input next.
+
+(defun %cadgui-doc-by-context (workspace sc)
+  "The cadgui-doc whose scheduled-context is SC, or NIL."
+  (find sc (cadgui-workspace-docs workspace) :key #'cadgui-doc-context :test #'eq))
+
+(defun %cadgui-record-event (workspace event)
+  "Push EVENT (a plist-tailed list, e.g. (:done :document :a)) onto WORKSPACE's
+event stream. Newest first; CADGUI-WORKSPACE-EVENTS reverses to chronological."
+  (push event (cadgui-workspace-event-log workspace))
+  event)
+
+(defun %cadgui-doc-entity-count (doc)
+  "DOC's drawable-entity count -- the length of its own display list."
+  (length (cadgui-doc-display-list doc)))
+
+(defun %cadgui-note-entity-changes (workspace)
+  "At a SAFE point (just after SCHEDULER-AWAIT-PARK returns, when the single
+runner has yielded so NO context is running), diff each document's current
+entity count against the last count recorded for it; for each document whose
+model grew, record an (:entity-created :document KEY :count NEW :added DELTA)
+event and update the recorded count. This turns a command's model mutation into
+a structured event the driver can read without reaching into cador."
+  (dolist (doc (cadgui-workspace-docs workspace))
+    (let* ((sc  (cadgui-doc-context doc))
+           (now (%cadgui-doc-entity-count doc))
+           (was (gethash sc (cadgui-workspace-entity-counts workspace) 0)))
+      (when (> now was)
+        (%cadgui-record-event workspace
+                              (list :entity-created :document (cadgui-doc-key doc)
+                                    :count now :added (- now was))))
+      (setf (gethash sc (cadgui-workspace-entity-counts workspace)) now))))
+
+(defun cadgui-workspace-events (workspace)
+  "WORKSPACE's structured event stream in chronological order -- the record of
+what each document requested, was answered, drew, and finished, as plain data
+for an AI / test driver (cadgui-action-layer slice C)."
+  (reverse (cadgui-workspace-event-log workspace)))
+
+(defun %cadgui-answer-event (workspace sc line)
+  "The (:answer :document KEY :value LINE) event for delivering LINE to SC."
+  (let ((doc (%cadgui-doc-by-context workspace sc)))
+    (list :answer :document (and doc (cadgui-doc-key doc)) :value line)))
+
+(defun cadgui-workspace-pending-requests (workspace)
+  "The OPEN input requests: for each document currently parked awaiting input, a
+(:document KEY :type :input) plist. What an AI / test driver reads to know which
+document to answer next. TYPE is :input generically -- the cadgui canvas renders
+it as a point pick when the shell is in pick mode; a per-get-family typed request
+(point vs string vs keyword) is the follow-up over cador's prompt-api seam."
+  (let ((out '()))
+    (maphash (lambda (sc awaiting)
+               (when awaiting
+                 (let ((doc (%cadgui-doc-by-context workspace sc)))
+                   (when doc
+                     (push (list :document (cadgui-doc-key doc) :type :input) out)))))
+             (cadgui-workspace-awaiting workspace))
+    (nreverse out)))
 
 ;;; --- the MULTIPLEXING driver (the live Qt driver thread runs this) --------
 ;;;
@@ -150,16 +230,28 @@ Resuming is DIRECT (SCHEDULER-RESUME-CONTEXT): the line is the parked read's
 response, no blocking read on the driver thread."
   (let* ((sched (cadgui-workspace-scheduler workspace))
          (ev (clautolisp.autolisp-runtime:scheduler-await-park sched timeout)))
+    (when (eq ev :timeout) (return-from cadgui-workspace-drive-step :timeout))
+    ;; Safe point: the runner has yielded, so NO context is running -- diff each
+    ;; document's model and record any :entity-created events the LAST resume
+    ;; produced, before this step resumes another context.
+    (%cadgui-note-entity-changes workspace)
     (cond
-      ((eq ev :timeout) :timeout)
       ((eq (first ev) :park)
        (let* ((sc (second ev))
               (q (gethash sc (cadgui-workspace-queued workspace))))
          (if q
-             (progn
+             ;; input arrived before this park -- deliver it now (an ANSWER)
+             (let ((line (first q)))
                (setf (gethash sc (cadgui-workspace-queued workspace)) (rest q))
-               (clautolisp.autolisp-runtime:scheduler-resume-context sc (first q)))
-             (setf (gethash sc (cadgui-workspace-awaiting workspace)) t))
+               (%cadgui-record-event workspace (%cadgui-answer-event workspace sc line))
+               (clautolisp.autolisp-runtime:scheduler-resume-context sc line))
+             ;; no input yet -- the document is now awaiting (a REQUEST)
+             (progn
+               (setf (gethash sc (cadgui-workspace-awaiting workspace)) t)
+               (let ((doc (%cadgui-doc-by-context workspace sc)))
+                 (when doc
+                   (%cadgui-record-event
+                    workspace (list :request :document (cadgui-doc-key doc) :type :input))))))
          :park))
       ((eq (first ev) :input)
        (let* ((doc (second ev)) (line (third ev))
@@ -167,11 +259,16 @@ response, no blocking read on the driver thread."
          (if (gethash sc (cadgui-workspace-awaiting workspace))
              (progn
                (remhash sc (cadgui-workspace-awaiting workspace))
+               (%cadgui-record-event workspace (%cadgui-answer-event workspace sc line))
                (clautolisp.autolisp-runtime:scheduler-resume-context sc line))
              (setf (gethash sc (cadgui-workspace-queued workspace))
                    (append (gethash sc (cadgui-workspace-queued workspace)) (list line))))
          :input))
-      ((eq (first ev) :done) :done)
+      ((eq (first ev) :done)
+       (let ((doc (%cadgui-doc-by-context workspace (second ev))))
+         (when doc
+           (%cadgui-record-event workspace (list :done :document (cadgui-doc-key doc)))))
+       :done)
       (t :unknown))))
 
 (defun cadgui-open-document (workspace key thunk)
@@ -204,6 +301,10 @@ it current)."
     (setf (clautolisp.autolisp-runtime:document-namespace-host-document-key ns) cador-key)
     (clautolisp.autolisp-runtime:scheduler-register-context
      (cadgui-workspace-scheduler workspace) sc)
+    ;; Seed the entity-change baseline (slice C) so a document opened with
+    ;; pre-existing geometry does not report its whole model as newly created.
+    (setf (gethash sc (cadgui-workspace-entity-counts workspace))
+          (%cadgui-doc-entity-count doc))
     (let ((sched (cadgui-workspace-scheduler workspace)))
       (clautolisp.autolisp-runtime:scheduler-spawn-context
        sched sc
@@ -365,27 +466,41 @@ NIL -- which window the GUI should show as focused."
     (and key (find key (cadgui-workspace-docs workspace)
                    :key #'cadgui-doc-cador-key :test #'equal))))
 
-(defun cadgui-document-state (doc)
+(defun cadgui-document-state (doc &optional workspace)
   "A structured snapshot of DOC: its key, its drawable entity count, and whether
 its evaluation thread is still alive. Plain data (a plist) for an AI / test
-driver (action-layer get-state)."
-  (list :key (cadgui-doc-key doc)
-        :entities (length (cadgui-doc-display-list doc))
-        :alive (let ((th (clautolisp.autolisp-runtime:scheduled-context-thread
-                          (cadgui-doc-context doc))))
-                 (and th (bordeaux-threads:thread-alive-p th) t))))
+driver (action-layer get-state). With WORKSPACE, also reports :AWAITING -- whether
+DOC is currently parked awaiting input (an open request the driver must answer)."
+  (append
+   (list :key (cadgui-doc-key doc)
+         :entities (length (cadgui-doc-display-list doc))
+         :alive (let ((th (clautolisp.autolisp-runtime:scheduled-context-thread
+                           (cadgui-doc-context doc))))
+                  (and th (bordeaux-threads:thread-alive-p th) t)))
+   (when workspace
+     (list :awaiting
+           (and (gethash (cadgui-doc-context doc)
+                         (cadgui-workspace-awaiting workspace))
+                t)))))
 
 (defun cadgui-workspace-state (workspace)
   "A structured snapshot of WORKSPACE for an AI / test driver -- the action
 layer's GET-STATE (cadgui-action-layer slice B): the ACTIVE document key, each
 open document's state (CADGUI-DOCUMENT-STATE), and the registered ACTION ids.
 I.e. what is open, which is current, what each holds, and what can be invoked --
-as plain data, no screen-scraping."
+as plain data, no screen-scraping.
+
+Includes the structured-interaction surface (slice C): :REQUESTS, the open input
+requests (which documents are parked awaiting input), and :EVENTS, the structured
+event stream (requests, answers, entity-creations, completions) in chronological
+order."
   (list :active (let ((d (cadgui-workspace-active-document workspace)))
                   (and d (cadgui-doc-key d)))
-        :documents (mapcar #'cadgui-document-state
+        :documents (mapcar (lambda (doc) (cadgui-document-state doc workspace))
                            (reverse (cadgui-workspace-docs workspace)))
-        :actions (cadgui-list-actions)))
+        :actions (cadgui-list-actions)
+        :requests (cadgui-workspace-pending-requests workspace)
+        :events (cadgui-workspace-events workspace)))
 
 (defun cadgui-workspace-shutdown (workspace)
   "Stop every document thread (end input, resume with :EXIT, join). Safe to call

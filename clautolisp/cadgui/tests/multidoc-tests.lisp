@@ -162,6 +162,54 @@
              (is (member :eval-command (getf st :actions)))))
       (cadgui-workspace-shutdown ws))))
 
+(test cadgui-structured-interaction-request-answer-and-entity-event-stream
+  ;; Action-layer slice C: structured interaction. A scripted driver reads the
+  ;; app's REQUEST (which document awaits input), answers it with a point, and
+  ;; reads the structured EVENT STREAM -- including the :entity-created event the
+  ;; answered command produced -- without screen-scraping. This is the headless
+  ;; AI-driver protocol: observe a request, supply a typed answer, read what the
+  ;; command did.
+  (let* ((ws (cadgui-make-workspace))
+         (line-thunk
+           (lambda (h)
+             (let ((p1 (host-getpoint h nil)) (p2 (host-getpoint h nil)))
+               (clautolisp.autolisp-host:host-entmake
+                h (list (cons 0 "LINE")
+                        (cons 10 (list (first p1) (second p1) 0d0))
+                        (cons 11 (list (first p2) (second p2) 0d0)))))))
+         (da (cadgui-open-document ws :a line-thunk)))
+    (unwind-protect
+         (progn
+           (cadgui-workspace-launch ws da)
+           (is (eq :park (cadgui-workspace-drive-step ws)))   ; da awaits getpoint #1
+           ;; the app EMITS a request the driver can read as data
+           (is (equal '((:document :a :type :input))
+                      (cadgui-workspace-pending-requests ws)))
+           ;; answer it with a point, drive to the next park (getpoint #2)
+           (cadgui-doc-feed-point ws da 0 0)
+           (is (eq :input (cadgui-workspace-drive-step ws)))  ; answer delivered
+           (is (eq :park (cadgui-workspace-drive-step ws)))   ; da awaits getpoint #2
+           ;; answer the second point -> the LINE is drawn, da finishes
+           (cadgui-doc-feed-point ws da 5 5)
+           (is (eq :input (cadgui-workspace-drive-step ws)))
+           (is (eq :done (cadgui-workspace-drive-step ws)))   ; entity-created noted here
+           ;; no request is open any more
+           (is (null (cadgui-workspace-pending-requests ws)))
+           ;; the structured event stream recorded the whole interaction
+           (let* ((events (cadgui-workspace-events ws))
+                  (created (find :entity-created events :key #'first))
+                  (done    (find :done events :key #'first)))
+             (is (= 2 (count :request events :key #'first)))   ; two getpoints
+             (is (= 2 (count :answer events :key #'first)))
+             (is (equal :a (getf (rest (find :request events :key #'first)) :document)))
+             (is (not (null created)))
+             (is (equal :a (getf (rest created) :document)))
+             (is (= 1 (getf (rest created) :added)))
+             (is (not (null done)))
+             ;; entity-created precedes done in the stream
+             (is (< (position created events) (position done events)))))
+      (cadgui-workspace-shutdown ws))))
+
 (test cadgui-workspace-open-close-document-lifecycle
   ;; Multi-document lifecycle on the shared host: open two documents, list them,
   ;; see which is current, close one (ending its parked thread + its cador

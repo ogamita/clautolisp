@@ -72,4 +72,6 @@
    #:cadgui-workspace-active-document
    #:cadgui-document-state
    #:cadgui-workspace-state
+   #:cadgui-workspace-events
+   #:cadgui-workspace-pending-requests
    #:cadgui-workspace-shutdown))

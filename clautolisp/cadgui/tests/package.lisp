@@ -16,6 +16,7 @@
                 #:cadgui-doc-display-list #:cadgui-workspace-all-finished-p
                 #:cadgui-close-document #:cadgui-workspace-document-keys
                 #:cadgui-workspace-active-document #:cadgui-workspace-state
+                #:cadgui-workspace-events #:cadgui-workspace-pending-requests
                 #:cadgui-add-line #:cadgui-add-circle
                 #:cadgui-input-stream #:*cadgui-input-hook* #:*cadgui-pending-input*
                 #:cadgui-point-line #:cadgui-install-input

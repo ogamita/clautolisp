@@ -100,14 +100,32 @@ AI's feedback loop, and the bug repro -- one artefact for tests, agents and user
   registered action ids). The introspection an AI / test driver reads without
   screen-scraping. Test: a workspace with two documents, one that drew, reports
   the current document, per-document entity counts, and the invocable actions.
-- NEXT in this issue: extend get-state with the pending prompt + selection +
-  sysvars + view; adapter over cador's =*cador-commands*= so
-  every command is an action; *C* structured interaction (typed request/answer
-  + event stream over the cadgui input bridge); *D* the driveability guard (CI
-  check: every action registered + reachable only via =invoke-action= + headless
-  test); *E* record/replay. The GUI command line already routes AutoLISP through
-  the =:eval-command= action's implementation; wiring widgets exclusively
-  through =invoke-action= lands with *D*.
+- DONE (2026-11-19, 2.5.9): slice *C (structured interaction)* -- the
+  request/answer + event stream over the multiplexing driver. The driver records
+  a structured event per step onto the workspace: =(:request :document KEY :type
+  :input)= when a document parks awaiting input, =(:answer :document KEY :value
+  LINE)= when input is delivered, =(:entity-created :document KEY :count N :added
+  D)= when an answered command grew the model (detected by diffing each
+  document's entity count at the single-runner SAFE point, just after
+  SCHEDULER-AWAIT-PARK returns, so the read never races a running context), and
+  =(:done :document KEY)= on completion. Read as plain data via
+  =cadgui-workspace-events= (chronological) and the open requests via
+  =cadgui-workspace-pending-requests=; both folded into =cadgui-workspace-state=
+  (:requests + :events) and =cadgui-document-state= gains :awaiting. Test
+  (multidoc-tests.lisp): a scripted driver reads the request, answers it with a
+  point, drives to completion, and reads the resulting :entity-created event
+  ahead of :done in the stream. The typed-request TYPE is :input generically --
+  the canvas renders it as a point pick; a per-get-family typed request (point
+  vs string vs keyword) threaded through cador's prompt-api seam is the follow-up.
+- NEXT in this issue: thread a per-get-family TYPE (point / string / keyword /
+  entity) through cador's prompt-api park seam so =:request= events and
+  =pending-requests= carry the precise expected input type (today :input);
+  extend get-state further with selection + sysvars + view; adapter over cador's
+  =*cador-commands*= so every command is an action; *D* the driveability guard
+  (CI check: every action registered + reachable only via =invoke-action= +
+  headless test); *E* record/replay. The GUI command line already routes
+  AutoLISP through the =:eval-command= action's implementation; wiring widgets
+  exclusively through =invoke-action= lands with *D*.
 
 * Where it sits, what it reuses
 
